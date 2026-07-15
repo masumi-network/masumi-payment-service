@@ -15,11 +15,12 @@ import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
-import { deriveTotalCollateral, WALLET_SPLITTER_LOVELACE } from './batch-helpers';
+import { deriveTotalCollateral, lovelaceFromUtxo, WALLET_SPLITTER_LOVELACE } from './batch-helpers';
 
 // V2 mint contract `Action` enum: MintAction=0, UpdateAction=1, BurnAction=2.
 // See smart-contracts/registry-v2/validators/mint.ak.
 const V2_MINT_REDEEMER_ALTERNATIVE = 0;
+const V2_UPDATE_REDEEMER_ALTERNATIVE = 1;
 const V2_BURN_REDEEMER_ALTERNATIVE = 2;
 
 export type RegistryMetadata = {
@@ -61,6 +62,29 @@ export type BatchRegistryBurnItem = {
 	assetUtxo: UTxO;
 };
 
+/**
+ * One update leg of a V2 registry batch update transaction: burn the current
+ * asset and mint its version-bumped replacement in the same tx, both under one
+ * shared `UpdateAction` redeemer (alt=1).
+ *
+ * - `assetUtxo` MUST hold exactly one unit of `policyId + oldAssetName` and MUST
+ *   be a tx input — spending it both burns the old asset and authorizes the
+ *   update (possession is authority; the V2 mint policy is permissionless).
+ * - `newAssetName` MUST be `bumpRegistryAssetNameVersionV2(oldAssetName)`: same
+ *   1-byte nonce + 28-byte root, version incremented by one. The validator pairs
+ *   every burn to a mint via `asset_name_continues_with_next_version`, so a
+ *   mismatch fails the UpdateAction check.
+ * - `metadata` lands in the CIP-25 block for the NEW asset name.
+ */
+export type BatchRegistryUpdateItem = {
+	oldAssetName: string;
+	newAssetName: string;
+	assetUtxo: UTxO;
+	recipientWalletAddress: string;
+	fundingLovelace: string;
+	metadata: RegistryMetadata;
+};
+
 const DEFAULT_EX_UNITS = SERVICE_CONSTANTS.SMART_CONTRACT.defaultExUnits;
 const DEFAULT_EX_UNITS_FALLBACK = { mem: 7e6, steps: 3e9 } as const;
 
@@ -79,9 +103,9 @@ function refKey(utxo: UTxO): string {
  * hard to diagnose post-hoc, so failing fast off-chain is much friendlier.
  *
  * Used by the BURN builder where asset UTxOs MUST be in `inputs` for the
- * wallet to have authority to consume them — collateral overlapping with an
- * asset UTxO would either fail phase-1 or, if mesh routed it as collateral
- * only, would leave the asset un-spent on success and break the mint balance.
+ * wallet to have authority to consume them. Collateral/input overlap is legal
+ * for VKey UTxOs, but these burn/update builders keep collateral separate from
+ * forced asset inputs so success and phase-2-failure paths stay unambiguous.
  *
  * NOT used by the MINT builder: mint-only txs tolerate collateral/input
  * overlap (Mesh-SDK 1.9 routes `.txIn(...)` and `.txInCollateral(...)` into
@@ -96,7 +120,7 @@ function assertCollateralNotInInputs(collateralUtxo: UTxO, spendingInputs: UTxO[
 	for (const utxo of spendingInputs) {
 		if (refKey(utxo) === collateralKey) {
 			throw new Error(
-				`Collateral UTxO overlaps with a spending input (${collateralKey}); phase-1 Conway rules forbid this`,
+				`Collateral UTxO overlaps with a spending input (${collateralKey}); current builder requires a separate collateral ref`,
 			);
 		}
 	}
@@ -175,16 +199,24 @@ export async function generateRegistryBatchMintTransaction(
 	txBuilder.protocolParams(protocolParameters);
 	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(mintingWalletAddress);
 
-	// Mint context: select the policy script ONCE, then append every asset.
-	// `mintingScript` + `mintRedeemerValue` apply to the whole policy bucket
-	// — the V2 validator validates the bucket atomically against `MintAction`.
-	txBuilder.mintPlutusScript(script.version);
+	// Mint context: attach the policy script + shared `MintAction` redeemer to
+	// EVERY asset leg. Mesh's `mint()` flushes the previous mint item via
+	// `queueMint()`, which requires that item to already carry its `scriptSource`
+	// — so the script/redeemer must be set per leg, not once after the loop
+	// (doing it once throws `queueMint: Missing mint script information` as soon
+	// as the 2nd asset's `mint()` flushes the 1st). `mintPlutusScript()` must
+	// also precede each `mint()` because it only arms `addingPlutusMint` for the
+	// very next call. `queueMint` then merges every same-policy leg into one
+	// bucket (it asserts the redeemer + scriptSource are identical across legs,
+	// which they are), so the V2 validator still validates the bucket atomically
+	// against a single `MintAction`.
 	for (const item of items) {
-		txBuilder.mint(SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity, policyId, item.assetName);
+		txBuilder
+			.mintPlutusScript(script.version)
+			.mint(SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity, policyId, item.assetName)
+			.mintingScript(script.code)
+			.mintRedeemerValue({ alternative: V2_MINT_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits);
 	}
-	txBuilder
-		.mintingScript(script.code)
-		.mintRedeemerValue({ alternative: V2_MINT_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits);
 
 	// Combined CIP-25 metadata: one `721` label with one policy id entry whose
 	// per-asset map covers every minted name. `version: '1'` follows the V1
@@ -220,12 +252,10 @@ export async function generateRegistryBatchMintTransaction(
 	//      pass `spendableUtxos` UNFILTERED, so the splitter check below
 	//      would otherwise count the collateral input and over-emit a
 	//      splitter on healthy wallets.
-	//   2. Coin-selection correctness — mesh's `selectUtxosFrom` does NOT
-	//      automatically exclude UTxOs declared via `.txInCollateral(...)`;
-	//      if the wallet is fragmented enough that mesh picks the collateral
-	//      UTxO as a regular fee input, the resulting tx has the same UTxO
-	//      in both `inputs` and `collateral_inputs` and Conway phase-1
-	//      rejects it.
+	//   2. Coin-selection predictability — mesh's `selectUtxosFrom` does NOT
+	//      automatically exclude UTxOs declared via `.txInCollateral(...)`.
+	//      VKey collateral/input overlap is ledger-valid, but this builder keeps
+	//      the collateral reserve separate from incidental fee selection.
 	// The pre-existing tolerance for `firstUtxo == collateralUtxo` overlap
 	// (see jsdoc on this function) is unaffected: when they coincide, the
 	// ref is already in inputRefs via the firstUtxo add above.
@@ -239,7 +269,7 @@ export async function generateRegistryBatchMintTransaction(
 	// budget. `exUnits` is either the default (first pass) or the chain-
 	// evaluated MINT budget from `evaluateTx` (subsequent calls). See
 	// `deriveTotalCollateral` for the math.
-	const totalCollateral = deriveTotalCollateral([exUnits], protocolParameters);
+	const totalCollateral = deriveTotalCollateral([exUnits], protocolParameters, lovelaceFromUtxo(collateralUtxo));
 	txBuilder
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral(totalCollateral);
@@ -389,13 +419,18 @@ async function buildBatchDeregisterTx(
 		txBuilder.txIn(item.assetUtxo.input.txHash, item.assetUtxo.input.outputIndex);
 	}
 
-	txBuilder.mintPlutusScript(script.version);
+	// Per-leg script + shared `BurnAction` redeemer attachment. See the mint
+	// builder above for why this must be done inside the loop and not once
+	// after it (Mesh's `mint()` flushes the prior leg via `queueMint()`, which
+	// requires the leg's `scriptSource` to already be set, else it throws
+	// `queueMint: Missing mint script information`).
 	for (const item of items) {
-		txBuilder.mint('-1', policyId, item.assetName);
+		txBuilder
+			.mintPlutusScript(script.version)
+			.mint('-1', policyId, item.assetName)
+			.mintingScript(script.code)
+			.mintRedeemerValue({ alternative: V2_BURN_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits);
 	}
-	txBuilder
-		.mintingScript(script.code)
-		.mintRedeemerValue({ alternative: V2_BURN_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits);
 
 	// Hand remaining wallet UTxOs to Mesh's coin selector instead of force-adding
 	// every one. Anything already declared as a `.txIn` above (via inputRefs) is
@@ -410,7 +445,7 @@ async function buildBatchDeregisterTx(
 
 	// Conway phase-1 collateral derived from the shared BurnAction MINT-tag
 	// budget. See `deriveTotalCollateral` for the math.
-	const totalCollateral = deriveTotalCollateral([exUnits], protocolParameters);
+	const totalCollateral = deriveTotalCollateral([exUnits], protocolParameters, lovelaceFromUtxo(collateralUtxo));
 	txBuilder
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral(totalCollateral);
@@ -436,6 +471,193 @@ async function buildBatchDeregisterTx(
 		.setNetwork(network)
 		.metadataValue(SERVICE_CONSTANTS.METADATA.masumiLabel, {
 			msg: ['Masumi', 'DeregisterAgent'],
+		})
+		.changeAddress(walletAddress)
+		.complete();
+}
+
+/**
+ * Build a single tx that atomically updates N V2 registry NFTs: for every item
+ * it burns the current asset and mints its version-bumped replacement, all under
+ * one shared `UpdateAction` redeemer (alt=1). The V2 mint validator checks
+ * `minted_count == burned_count` and pairs every burn to a mint by
+ * `asset_name_continues_with_next_version` (same nonce+root, version+1), so the
+ * whole bucket validates atomically — see smart-contracts/registry-v2/validators/mint.ak.
+ *
+ * Every `assetUtxo` MUST be a tx input (spending it burns the old asset and
+ * authorizes the update). Two-pass `evaluateTx` is built in: pass 1 attaches
+ * default exUnits, pass 2 uses the chain-computed MINT budget.
+ */
+export async function generateRegistryBatchUpdateTransactionAutomaticFees(
+	blockchainProvider: BlockfrostProvider,
+	network: Network,
+	script: { version: LanguageVersion; code: string },
+	walletAddress: string,
+	policyId: string,
+	items: BatchRegistryUpdateItem[],
+	collateralUtxo: UTxO,
+	walletUtxos: UTxO[],
+	rpcApiKey?: string,
+): Promise<string> {
+	if (items.length === 0) {
+		throw new Error('no items in batch');
+	}
+	// Every asset name in the tx — old (burned) and new (minted) — must be
+	// distinct: Mesh queues mint legs by name and the validator pairs each burn
+	// to exactly one version-continuing mint.
+	assertDistinctAssetNames(items.flatMap((item) => [item.oldAssetName, item.newAssetName]));
+	// Old asset UTxOs MUST be inputs (to burn); this builder keeps collateral
+	// separate from those forced asset inputs.
+	assertCollateralNotInInputs(
+		collateralUtxo,
+		items.map((item) => item.assetUtxo),
+	);
+	for (const item of items) {
+		const unit = policyId + item.oldAssetName;
+		const hasAsset = item.assetUtxo.output.amount.some((asset) => asset.unit === unit && BigInt(asset.quantity) >= 1n);
+		if (!hasAsset) {
+			throw new Error(`assetUtxo ${refKey(item.assetUtxo)} does not contain asset ${unit}`);
+		}
+	}
+
+	if (rpcApiKey) {
+		await syncMeshCostModelsFromChainV2(rpcApiKey);
+	}
+
+	const evaluationTx = await buildBatchUpdateTx(
+		blockchainProvider,
+		network,
+		script,
+		walletAddress,
+		policyId,
+		items,
+		collateralUtxo,
+		walletUtxos,
+		DEFAULT_EX_UNITS_FALLBACK,
+		rpcApiKey,
+	);
+
+	const evaluated = (await blockchainProvider.evaluateTx(evaluationTx)) as EvalAction[];
+	const mintBudget = findMintExUnits(evaluated);
+	if (mintBudget == null) {
+		throw new Error(`evaluateTx did not return a MINT budget for batch update; got ${evaluated.length} action(s)`);
+	}
+
+	return await buildBatchUpdateTx(
+		blockchainProvider,
+		network,
+		script,
+		walletAddress,
+		policyId,
+		items,
+		collateralUtxo,
+		walletUtxos,
+		mintBudget,
+		rpcApiKey,
+	);
+}
+
+async function buildBatchUpdateTx(
+	blockchainProvider: IFetcher,
+	network: Network,
+	script: { version: LanguageVersion; code: string },
+	walletAddress: string,
+	policyId: string,
+	items: BatchRegistryUpdateItem[],
+	collateralUtxo: UTxO,
+	walletUtxos: UTxO[],
+	exUnits: ExUnits,
+	rpcApiKey?: string,
+): Promise<string> {
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
+
+	const txBuilder = new MeshTxBuilder({ fetcher: blockchainProvider });
+	txBuilder.protocolParams(protocolParameters);
+	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
+
+	// Bring every old-asset UTxO into the tx FIRST so the wallet holds the assets
+	// to burn. De-dupe against walletUtxos (the asset UTxO is usually already in
+	// the wallet set).
+	const inputRefs = new Set<string>();
+	for (const item of items) {
+		const key = refKey(item.assetUtxo);
+		if (inputRefs.has(key)) continue;
+		inputRefs.add(key);
+		txBuilder.txIn(item.assetUtxo.input.txHash, item.assetUtxo.input.outputIndex);
+	}
+
+	// Per-item legs: burn old (-1) + mint new (+1), both under one shared
+	// `UpdateAction` redeemer. Script + redeemer must attach to EACH leg (Mesh's
+	// `mint()` flushes the previous leg via `queueMint()`, which requires that
+	// leg's `scriptSource` already set — see the mint/burn builders above). Mesh
+	// merges every same-policy leg into one bucket with the shared redeemer, so
+	// the validator sees a single atomic `UpdateAction`.
+	for (const item of items) {
+		txBuilder
+			.mintPlutusScript(script.version)
+			.mint('-1', policyId, item.oldAssetName)
+			.mintingScript(script.code)
+			.mintRedeemerValue({ alternative: V2_UPDATE_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits)
+			.mintPlutusScript(script.version)
+			.mint(SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity, policyId, item.newAssetName)
+			.mintingScript(script.code)
+			.mintRedeemerValue({ alternative: V2_UPDATE_REDEEMER_ALTERNATIVE, fields: [] }, 'Mesh', exUnits);
+	}
+
+	// Combined CIP-25 metadata for the NEW asset names, one `721` block.
+	const perAssetMetadata: Record<string, RegistryMetadata> = {};
+	for (const item of items) {
+		perAssetMetadata[item.newAssetName] = item.metadata;
+	}
+	txBuilder.metadataValue(SERVICE_CONSTANTS.METADATA.nftLabel, {
+		[policyId]: perAssetMetadata,
+		version: '1',
+	});
+
+	// Hand the remaining wallet UTxOs to Mesh's coin selector for fees/change;
+	// exclude the asset inputs (already added) and the collateral (mesh does not
+	// auto-exclude collateral from selection; this builder keeps it reserved).
+	inputRefs.add(refKey(collateralUtxo));
+	const walletUtxosForSelection = walletUtxos.filter((u) => !inputRefs.has(refKey(u)));
+	if (walletUtxosForSelection.length > 0) {
+		txBuilder.selectUtxosFrom(walletUtxosForSelection);
+	}
+
+	const totalCollateral = deriveTotalCollateral([exUnits], protocolParameters, lovelaceFromUtxo(collateralUtxo));
+	txBuilder
+		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
+		.setTotalCollateral(totalCollateral);
+
+	// One recipient output per updated asset: the NEW asset + its funding lovelace.
+	for (const item of items) {
+		txBuilder.txOut(item.recipientWalletAddress, [
+			{
+				unit: policyId + item.newAssetName,
+				quantity: SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity,
+			},
+			{
+				unit: SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN,
+				quantity: item.fundingLovelace,
+			},
+		]);
+	}
+
+	if (walletUtxosForSelection.length === 1) {
+		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
+	}
+
+	logger.debug('Built V2 batch update tx', {
+		policyId,
+		assetCount: items.length,
+		exUnits,
+	});
+
+	return await txBuilder
+		.requiredSignerHash(deserializedAddress.pubKeyHash)
+		.setNetwork(network)
+		.metadataValue(SERVICE_CONSTANTS.METADATA.masumiLabel, {
+			msg: ['Masumi', 'UpdateAgent'],
 		})
 		.changeAddress(walletAddress)
 		.complete();

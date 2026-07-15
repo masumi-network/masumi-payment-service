@@ -3,18 +3,19 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Plus, ArrowLeftRight, PlusCircle, AlertTriangle } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
 
-import { shortenAddress } from '@/lib/utils';
+import { formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
 import { WalletTableSkeleton } from '@/components/skeletons/WalletTableSkeleton';
 import { Spinner } from '@/components/ui/spinner';
-import { fetchWalletBalance, usePaginatedWallets } from '@/lib/queries/useWallets';
+import { usePaginatedWallets } from '@/lib/queries/useWallets';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import formatBalance from '@/lib/formatBalance';
 import { Tabs } from '@/components/ui/tabs';
@@ -31,12 +32,9 @@ import { SearchInput } from '@/components/ui/search-input';
 
 interface WalletWithBalance extends BaseWalletWithBalance {
   network: 'Preprod' | 'Mainnet';
-  collectionBalance?: {
-    ada: string;
-    usdcx: string;
-  } | null;
   isLoadingBalance?: boolean;
-  isLoadingCollectionBalance?: boolean;
+  /** True when the balance fetch failed — render "—", not 0. */
+  isBalanceUnavailable?: boolean;
 }
 
 export default function WalletsPage() {
@@ -62,19 +60,12 @@ export default function WalletsPage() {
     refetch: refetchWalletsQuery,
   } = usePaginatedWallets(walletTypeFilter);
 
-  // Collection balance overrides fetched asynchronously
-  const [collectionBalanceMap, setCollectionBalanceMap] = useState<
-    Record<string, { ada: string; usdcx: string }>
-  >({});
-
   // State-based previous value tracking for router query initialization
   // (React-recommended pattern: https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
   const routerSearched = typeof router.query.searched === 'string' ? router.query.searched : '';
   const [prevRouterSearched, setPrevRouterSearched] = useState(routerSearched);
-  const routerAddAction = router.isReady && router.query.action === 'add_wallet';
-  const [handledAddAction, setHandledAddAction] = useState(false);
 
-  const { apiClient, network } = useAppContext();
+  const { network, selectedPaymentSource } = useAppContext();
   const { rate } = useRate();
   const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
     null,
@@ -91,60 +82,28 @@ export default function WalletsPage() {
     { name: 'Selling', count: null },
   ];
 
-  // Derive base wallets from walletsList via useMemo (no effect needed)
-  const baseWallets = useMemo<WalletWithBalance[]>(() => {
-    if (!walletsList) return [];
-    return walletsList.map(
-      (wallet) =>
-        ({
-          ...wallet,
-          collectionBalance: null,
-          isLoadingCollectionBalance: !!(wallet as any).collectionAddress,
-        }) as WalletWithBalance,
-    );
-  }, [walletsList]);
+  const allWallets = walletsList as WalletWithBalance[];
 
-  // Merge base wallets with fetched collection balances
-  const allWallets = useMemo(() => {
-    return baseWallets.map((wallet) => {
-      const balance = collectionBalanceMap[wallet.id];
-      if (balance) {
-        return { ...wallet, collectionBalance: balance, isLoadingCollectionBalance: false };
-      }
-      return wallet;
-    });
-  }, [baseWallets, collectionBalanceMap]);
+  // Also treat "payment source still resolving" as loading so the table shows a
+  // skeleton instead of flashing an empty state before the source-gated query
+  // can start (mirrors the dashboard fix).
+  const isLoading = (isLoadingWallets || !selectedPaymentSource) && allWallets.length === 0;
 
-  const isLoading = isLoadingWallets && allWallets.length === 0;
+  const queryClient = useQueryClient();
 
-  // Fetch collection balances (setState only in async callbacks after await)
-  useEffect(() => {
-    if (!walletsList) return;
-
-    walletsList.forEach(async (wallet) => {
-      const collectionAddress = (wallet as any).collectionAddress;
-      if (!collectionAddress) return;
-
-      try {
-        const collectionBalance = await fetchWalletBalance(
-          apiClient,
-          wallet.network,
-          collectionAddress,
-        );
-        setCollectionBalanceMap((prev) => ({
-          ...prev,
-          [wallet.id]: { ada: collectionBalance.ada, usdcx: collectionBalance.usdcx },
-        }));
-      } catch (error) {
-        console.error(`Failed to fetch collection balance for wallet ${wallet.id}:`, error);
-      }
-    });
-  }, [apiClient, network, walletsList]);
-
-  // Helper to refetch wallets (uses React Query refetch)
+  // Passive refresh (refresh button, top-up balance change): keep the current
+  // rows and refetch in the background.
   const refetchWallets = useCallback(async () => {
     await refetchWalletsQuery();
   }, [refetchWalletsQuery]);
+
+  // Adding a wallet changes list membership, so clear the paginated list to its
+  // skeleton while the fresh page loads; the dashboard aggregate refetches in
+  // place (invalidate, not reset).
+  const refetchAfterWalletAdded = useCallback(() => {
+    void queryClient.resetQueries({ queryKey: ['wallets-paginated'] });
+    void queryClient.invalidateQueries({ queryKey: ['wallets'] });
+  }, [queryClient]);
 
   // Adjust state during render when router query changes
   if (routerSearched !== prevRouterSearched) {
@@ -154,17 +113,15 @@ export default function WalletsPage() {
     }
   }
 
-  if (routerAddAction && !handledAddAction) {
-    setHandledAddAction(true);
-    setIsAddDialogOpen(true);
-  }
-
-  // Clean up the add_wallet query parameter (side effect only, no setState)
+  // Open the add-wallet dialog when the ?action=add_wallet deep link arrives,
+  // then strip the param so the same quick action can fire again while
+  // already on this page.
   useEffect(() => {
     if (router.isReady && router.query.action === 'add_wallet') {
-      router.replace('/wallets', undefined, { shallow: true });
+      queueMicrotask(() => setIsAddDialogOpen(true));
+      void router.replace('/wallets', undefined, { shallow: true });
     }
-  }, [router.isReady, router]);
+  }, [router.isReady, router.query.action, router]);
 
   const filteredWallets = useMemo(() => {
     let filtered = [...allWallets];
@@ -174,9 +131,9 @@ export default function WalletsPage() {
       filtered = filtered.filter((wallet) => {
         const matchAddress =
           wallet.walletAddress?.toLowerCase().includes(query) ||
-          (wallet as any).collectionAddress?.toLowerCase().includes(query) ||
+          wallet.collectionAddress?.toLowerCase().includes(query) ||
           false;
-        const matchNote = (wallet as any).note?.toLowerCase().includes(query) || false;
+        const matchNote = wallet.note?.toLowerCase().includes(query) || false;
         const matchType = wallet.type?.toLowerCase().includes(query) || false;
         const matchBalance = wallet.balance
           ? (parseInt(wallet.balance) / 1000000 || 0).toFixed(2).includes(query)
@@ -209,6 +166,7 @@ export default function WalletsPage() {
                 <Link
                   href="https://docs.masumi.network/core-concepts/wallets"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more
@@ -345,20 +303,23 @@ export default function WalletsPage() {
                                 <Spinner size={16} />
                               ) : (
                                 <span>
-                                  {wallet.balance
-                                    ? formatBalance((parseInt(wallet.balance) / 1000000).toFixed(2))
-                                    : '0'}
+                                  {wallet.isBalanceUnavailable
+                                    ? '—'
+                                    : formatSixDecimalAmount(wallet.balance || '0')}
                                 </span>
                               )}
                             </div>
-                            {!wallet.isLoadingBalance && wallet.balance && rate && (
-                              <span className="text-xs text-muted-foreground">
-                                $
-                                {formatBalance(
-                                  ((parseInt(wallet.balance) / 1000000) * rate).toFixed(2),
-                                ) || ''}
-                              </span>
-                            )}
+                            {!wallet.isLoadingBalance &&
+                              !wallet.isBalanceUnavailable &&
+                              wallet.balance &&
+                              rate && (
+                                <span className="text-xs text-muted-foreground">
+                                  $
+                                  {formatBalance(
+                                    ((Number(wallet.balance) / 1000000) * rate).toFixed(2),
+                                  ) || ''}
+                                </span>
+                              )}
                           </div>
                         </td>
                         <td className="p-4">
@@ -367,9 +328,9 @@ export default function WalletsPage() {
                               <Spinner size={16} />
                             ) : (
                               <span>
-                                {wallet.usdcxBalance
-                                  ? `$${formatBalance((parseInt(wallet.usdcxBalance) / 1000000).toFixed(2))}`
-                                  : '$0'}
+                                {wallet.isBalanceUnavailable
+                                  ? '—'
+                                  : `$${formatSixDecimalAmount(wallet.usdcxBalance || '0')}`}
                               </span>
                             )}
                           </div>
@@ -380,6 +341,7 @@ export default function WalletsPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                aria-label="Swap tokens"
                                 className="h-8 w-8"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -423,7 +385,7 @@ export default function WalletsPage() {
         <AddWalletDialog
           open={isAddDialogOpen}
           onClose={() => setIsAddDialogOpen(false)}
-          onSuccess={refetchWallets}
+          onSuccess={refetchAfterWalletAdded}
         />
 
         <SwapDialog

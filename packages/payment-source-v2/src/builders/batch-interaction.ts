@@ -22,7 +22,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, calculateTopUpAmount, getLovelaceFromAmounts, getNativeTokenCount } from '@/utils/min-utxo';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
-import { deriveTotalCollateral, WALLET_SPLITTER_LOVELACE } from './batch-helpers';
+import { deriveTotalCollateral, lovelaceFromUtxo, WALLET_SPLITTER_LOVELACE } from './batch-helpers';
 import { generateRedeemerData } from './redeemer-data';
 
 // Mirrors `FALLBACK_COINS_PER_UTXO_SIZE` in @masumi/payment-core/config.
@@ -100,7 +100,7 @@ function assertCollateralNotInBatch<T extends { smartContractUtxo: UTxO }>(items
 	for (const item of items) {
 		if (refKey(item.smartContractUtxo) === collateralKey) {
 			throw new Error(
-				`Collateral UTxO overlaps with a script input (${collateralKey}); phase-1 Conway rules forbid this`,
+				`Collateral UTxO overlaps with a script input (${collateralKey}); collateral must be payment-key-locked`,
 			);
 		}
 	}
@@ -402,7 +402,11 @@ async function buildBatchInteractionTx(
 	// multiplier, and floor at 3 ADA. See `deriveTotalCollateral` at the top
 	// of this file for the math; see batch-helpers `computeCollateralFromExUnits`
 	// for the underlying Conway formula.
-	const totalCollateral = deriveTotalCollateral(Array.from(exUnitsByIndex.values()), protocolParameters);
+	const totalCollateral = deriveTotalCollateral(
+		Array.from(exUnitsByIndex.values()),
+		protocolParameters,
+		lovelaceFromUtxo(collateralUtxo),
+	);
 	txBuilder
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral(totalCollateral);
@@ -499,7 +503,11 @@ async function buildBatchInteractionTx(
 		.changeAddress(walletAddress)
 		.setNetwork(network)
 		.metadataValue(674, {
-			msg: ['Masumi', sortedItems.map((i) => i.type).join(',')],
+			// One array element per leg. CIP-20 `msg` is an array of ≤64-byte
+			// strings; joining all leg type names into ONE string overflowed the
+			// 64-byte metadatum limit for realistic batch sizes and made every
+			// build throw, silently forcing single-item fallback.
+			msg: ['Masumi', ...sortedItems.map((i) => i.type)],
 		})
 		.complete();
 }
@@ -642,7 +650,11 @@ async function buildBatchWithdrawTx(
 	// Conway phase-1 collateral: derive from evaluated SPEND budgets. See the
 	// comment in `buildBatchInteractionTx` and `deriveTotalCollateral` at the
 	// top of this file for the rationale.
-	const totalCollateral = deriveTotalCollateral(Array.from(exUnitsByIndex.values()), protocolParameters);
+	const totalCollateral = deriveTotalCollateral(
+		Array.from(exUnitsByIndex.values()),
+		protocolParameters,
+		lovelaceFromUtxo(collateralUtxo),
+	);
 	txBuilder
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral(totalCollateral);
@@ -692,7 +704,11 @@ async function buildBatchWithdrawTx(
 		.changeAddress(walletAddress)
 		.setNetwork(network)
 		.metadataValue(674, {
-			msg: ['Masumi', sortedItems.map((i) => i.type).join(',')],
+			// One array element per leg. CIP-20 `msg` is an array of ≤64-byte
+			// strings; joining all leg type names into ONE string overflowed the
+			// 64-byte metadatum limit for realistic batch sizes and made every
+			// build throw, silently forcing single-item fallback.
+			msg: ['Masumi', ...sortedItems.map((i) => i.type)],
 		})
 		.complete();
 }

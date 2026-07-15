@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   UseFormRegister,
   UseFormSetValue,
@@ -114,11 +114,15 @@ export function useInputDataHash(
 ) {
   const [inputData, setInputData] = useState('');
   const [inputDataError, setInputDataError] = useState<string | null>(null);
+  // Monotonic counter so overlapping async hash computations resolving out of
+  // order cannot store the hash of stale input; only the latest call may write.
+  const hashCallIdRef = useRef(0);
 
   const identifierFromPurchaser = watch('identifierFromPurchaser');
 
   const recalculateHash = useCallback(
     async (data: string, identifier: string) => {
+      const callId = ++hashCallIdRef.current;
       if (!data.trim()) {
         setValue('inputHash', '');
         setInputDataError(null);
@@ -133,8 +137,10 @@ export function useInputDataHash(
         }
         setInputDataError(null);
         const hash = await generateMIP004InputHash(parsed, identifier);
+        if (callId !== hashCallIdRef.current) return;
         setValue('inputHash', hash);
       } catch {
+        if (callId !== hashCallIdRef.current) return;
         setInputDataError('Invalid JSON');
         setValue('inputHash', '');
       }
@@ -188,7 +194,7 @@ export function PaymentFormFields({
       {/* Agent Selection */}
       <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-1">
         <Label>
-          Agent <span className="text-red-500">*</span>
+          Agent <span className="text-destructive">*</span>
         </Label>
         <Controller
           control={control}
@@ -204,7 +210,7 @@ export function PaymentFormFields({
             >
               <SelectTrigger
                 disabled={isLoadingAgents || paidAgents.length === 0}
-                className={`transition-colors duration-200 ${errors.agentIdentifier ? 'border-red-500' : ''}`}
+                className={`transition-colors duration-200 ${errors.agentIdentifier ? 'border-destructive' : ''}`}
               >
                 <SelectValue
                   placeholder={
@@ -227,7 +233,9 @@ export function PaymentFormFields({
           )}
         />
         {errors.agentIdentifier && (
-          <p className="text-sm text-red-500 animate-fade-in">{errors.agentIdentifier.message}</p>
+          <p className="text-sm text-destructive animate-fade-in">
+            {errors.agentIdentifier.message}
+          </p>
         )}
         {paidAgents.length === 0 && !isLoadingAgents && (
           <p className="text-xs text-muted-foreground">
@@ -240,7 +248,7 @@ export function PaymentFormFields({
       <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-2">
         <div className="flex items-center justify-between">
           <Label>
-            Purchaser Identifier <span className="text-red-500">*</span>
+            Purchaser Identifier <span className="text-destructive">*</span>
           </Label>
           <Button
             type="button"
@@ -258,10 +266,10 @@ export function PaymentFormFields({
         <Input
           {...register('identifierFromPurchaser')}
           placeholder="14-26 character hex string"
-          className={`font-mono text-xs transition-colors duration-200 ${errors.identifierFromPurchaser ? 'border-red-500' : ''}`}
+          className={`font-mono text-xs transition-colors duration-200 ${errors.identifierFromPurchaser ? 'border-destructive' : ''}`}
         />
         {errors.identifierFromPurchaser && (
-          <p className="text-sm text-red-500 animate-fade-in">
+          <p className="text-sm text-destructive animate-fade-in">
             {errors.identifierFromPurchaser.message}
           </p>
         )}
@@ -300,17 +308,17 @@ export function PaymentFormFields({
 
           <div className="space-y-2">
             <Label>
-              Input Data <span className="text-red-500">*</span>
+              Input Data <span className="text-destructive">*</span>
             </Label>
             <Textarea
               value={inputData}
               onChange={(e) => setInputData(e.target.value)}
               placeholder='{"key": "value"}'
               rows={8}
-              className={`font-mono text-xs transition-colors duration-200 ${inputDataError ? 'border-red-500' : ''}`}
+              className={`font-mono text-xs transition-colors duration-200 ${inputDataError ? 'border-destructive' : ''}`}
             />
             {inputDataError && (
-              <p className="text-sm text-red-500 animate-fade-in">{inputDataError}</p>
+              <p className="text-sm text-destructive animate-fade-in">{inputDataError}</p>
             )}
           </div>
 
@@ -320,10 +328,10 @@ export function PaymentFormFields({
               {...register('inputHash')}
               readOnly
               placeholder="Auto-generated from input data"
-              className={`font-mono text-xs bg-muted cursor-default transition-colors duration-200 ${errors.inputHash ? 'border-red-500' : ''}`}
+              className={`font-mono text-xs bg-muted cursor-default transition-colors duration-200 ${errors.inputHash ? 'border-destructive' : ''}`}
             />
             {errors.inputHash && (
-              <p className="text-sm text-red-500 animate-fade-in">{errors.inputHash.message}</p>
+              <p className="text-sm text-destructive animate-fade-in">{errors.inputHash.message}</p>
             )}
           </div>
         </CardContent>
@@ -346,7 +354,7 @@ export function PaymentFormFields({
           <CardContent className="p-4 space-y-3">
             <div className="space-y-1">
               <Label className="text-sm font-medium">
-                Simulate Dynamic Price <span className="text-red-500">*</span>
+                Simulate Dynamic Price <span className="text-destructive">*</span>
               </Label>
               <p className="text-xs text-muted-foreground">
                 This agent uses dynamic pricing — in production the agent determines the price per

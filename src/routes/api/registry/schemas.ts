@@ -6,6 +6,7 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { supportedPaymentSourcesSchema } from '@/types/payment-source';
+import { verificationsSchema } from '@/types/verification';
 import { z } from '@masumi/payment-core/zod';
 
 export enum FilterStatus {
@@ -23,8 +24,15 @@ export const queryRegistryRequestSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no V2-aware filters, registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no source/address/identifier support filters, the endpoint defaults to Web3CardanoV1 for backwards compatibility.',
+		),
 	filterStatus: z.nativeEnum(FilterStatus).optional().describe('Filter by registration status category'),
 	searchQuery: z
 		.string()
@@ -38,7 +46,19 @@ export const queryRegistryRequestSchemaInput = z.object({
 		.max(250)
 		.optional()
 		.describe(
-			'When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)',
+			'When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions). This exact lookup does not apply the default Web3CardanoV1 compatibility filter.',
+		),
+	filterSupportedPaymentSourceAddress: z
+		.string()
+		.optional()
+		.describe(
+			'Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.',
+		),
+	filterSupportedPaymentSourceNetworks: z
+		.string()
+		.optional()
+		.describe(
+			'Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.',
 		),
 });
 
@@ -100,7 +120,7 @@ export const registryRequestOutputSchema = z
 							amount: z
 								.string()
 								.describe(
-									'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+									'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)',
 								),
 							unit: z
 								.string()
@@ -135,6 +155,9 @@ export const registryRequestOutputSchema = z
 		supportedPaymentSources: supportedPaymentSourcesSchema
 			.nullable()
 			.describe('Payment sources advertised by this registry entry. Null for legacy metadata.'),
+		verifications: verificationsSchema
+			.nullable()
+			.describe('KERI/Veridian verification claims advertised by this registry entry. Null when none.'),
 		SmartContractWallet: z
 			.object({
 				walletVkey: z.string().describe('Payment key hash of the smart contract wallet'),
@@ -174,8 +197,15 @@ export const queryRegistryCountSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, count defaults to Web3CardanoV1 for backwards compatibility.',
+		),
 });
 
 export const queryRegistryCountSchemaOutput = z.object({
@@ -214,6 +244,11 @@ export const registerAgentSchemaInput = z.object({
 		.describe(
 			'Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.',
 		),
+	verifications: verificationsSchema
+		.optional()
+		.describe(
+			'Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only.',
+		),
 	ExampleOutputs: z
 		.array(
 			z.object({
@@ -250,7 +285,7 @@ export const registerAgentSchemaInput = z.object({
 							.string()
 							.max(25)
 							.describe(
-								'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+								'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)',
 							),
 					}),
 				)

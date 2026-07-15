@@ -4,7 +4,7 @@ import type { UTxO } from '@meshsdk/core';
 import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
 import { prisma } from '@masumi/payment-core/db';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { CONFIG, type LowBalanceDefaultRule } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { logWarn } from '@/utils/logs';

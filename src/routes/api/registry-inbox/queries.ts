@@ -1,4 +1,5 @@
-import { RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
+import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { prisma } from '@masumi/payment-core/db';
 import { AuthContext } from '@masumi/payment-core/auth';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -6,6 +7,10 @@ import { z } from '@masumi/payment-core/zod';
 import { FilterStatus, queryRegistryInboxRequestSchemaInput } from './schemas';
 
 export type InboxRegistryListQueryInput = z.infer<typeof queryRegistryInboxRequestSchemaInput>;
+
+export function resolveInboxRegistryPaymentSourceTypeFilter(input: { filterSmartContractAddress?: string | null }) {
+	return input.filterSmartContractAddress != null ? undefined : PaymentSourceType.Web3CardanoV1;
+}
 
 function buildRegistryStateFilter(filterStatus?: FilterStatus): RegistrationState[] | undefined {
 	if (filterStatus === FilterStatus.Registered) {
@@ -17,7 +22,12 @@ function buildRegistryStateFilter(filterStatus?: FilterStatus): RegistrationStat
 	}
 
 	if (filterStatus === FilterStatus.Pending) {
-		return [RegistrationState.RegistrationRequested, RegistrationState.DeregistrationRequested];
+		return [
+			RegistrationState.RegistrationRequested,
+			RegistrationState.RegistrationInitiated,
+			RegistrationState.DeregistrationRequested,
+			RegistrationState.DeregistrationInitiated,
+		];
 	}
 
 	if (filterStatus === FilterStatus.Failed) {
@@ -51,6 +61,7 @@ export async function getInboxRegistryEntriesForQuery(
 				network: input.network,
 				deletedAt: null,
 				smartContractAddress: input.filterSmartContractAddress ?? undefined,
+				paymentSourceType: resolveInboxRegistryPaymentSourceTypeFilter(input),
 			},
 			SmartContractWallet: { deletedAt: null },
 			...buildManagedHolderWalletScopeFilter(walletScopeIds),
@@ -85,8 +96,7 @@ export async function getInboxRegistryEntriesForQuery(
 				: {}),
 		},
 		orderBy: { createdAt: 'desc' },
-		take: input.limit,
-		cursor: input.cursorId ? { id: input.cursorId } : undefined,
+		...cursorPaginationArgs(input.cursorId, input.limit),
 		include: {
 			SmartContractWallet: {
 				select: { walletVkey: true, walletAddress: true },

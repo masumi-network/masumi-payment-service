@@ -13,15 +13,18 @@ import { metadataToString } from '@/utils/converter/metadata-string-convert';
 import { generateSHA256Hash } from '@/utils/crypto';
 import stringify from 'canonical-json';
 import { fetchAssetInWalletAndMetadata } from '@/services/integrations/asset-metadata';
+import { resolveAgentPricingFromMetadata } from '@/routes/api/registry/wallet';
 import { decodeBlockchainIdentifier, generateBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { buildSignedBlockchainIdentifierPayload } from '@/utils/generator/blockchain-identifier-payload';
 import { validateHexString } from '@/utils/validator/hex';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
+import { resolveTransactionAgentName } from '@/utils/shared/resolve-transaction-agent-name';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { buildNeedsManualActionFilter } from '@/utils/shared/queries';
 import {
 	createPaymentSchemaOutput,
 	createPaymentsSchemaInput,
@@ -31,9 +34,9 @@ import {
 	queryPaymentsSchemaInput,
 	queryPaymentsSchemaOutput,
 } from './schemas';
-import { getPaymentsForQuery } from './queries';
+import { getPaymentsForQuery, resolvePaymentPaymentSourceTypeFilter } from './queries';
 import { serializePaymentsResponse } from './serializers';
-import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
+import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
 
 export {
 	createPaymentSchemaOutput,
@@ -72,10 +75,11 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 				PaymentSource: {
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: input.filterPaymentSourceType,
+					paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
 					deletedAt: null,
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...buildNeedsManualActionFilter(input.filterNeedsManualAction),
 			},
 		});
 
@@ -174,7 +178,10 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		}
 
 		const { assetInWallet, parsedMetadata } = fetchResult.data;
-		const pricing = parsedMetadata.agentPricing;
+		const pricing = resolveAgentPricingFromMetadata(parsedMetadata);
+		if (pricing == null) {
+			throw createHttpError(400, 'Agent metadata does not advertise any pricing');
+		}
 		if (pricing.pricingType == PricingType.Fixed && input.RequestedFunds != null) {
 			throw createHttpError(400, 'For fixed pricing, RequestedFunds must be null');
 		} else if (
@@ -226,12 +233,11 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		assertHotWalletInScope(ctx.walletScopeIds, sellingWallet.id);
 		const sellerReturnAddress = input.sellerReturnAddress ?? sellingWallet.collectionAddress;
 		const isV2 = specifiedPaymentContract.paymentSourceType === PaymentSourceType.Web3CardanoV2;
-		if (
-			isV2 &&
-			sellerReturnAddress != null &&
-			!isCardanoPubKeyBaseAddressForNetwork(sellerReturnAddress, input.network)
-		) {
-			throw createHttpError(400, 'sellerReturnAddress must be a Cardano base address with a stake credential');
+		if (isV2 && sellerReturnAddress != null && !isCardanoPubKeyAddressForNetwork(sellerReturnAddress, input.network)) {
+			throw createHttpError(
+				400,
+				'sellerReturnAddress must be a Cardano base or enterprise address with a payment key credential',
+			);
 		}
 		const sellerCUID = createId();
 		const sellerId = generateSHA256Hash(sellerCUID) + input.agentIdentifier;
@@ -365,6 +371,12 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			throw new HttpExistsError('Payment exists', existingPaymentRequest.id, serialized as never);
 		}
 
+		const agentName = await resolveTransactionAgentName({
+			agentIdentifier: input.agentIdentifier,
+			onChainName: metadataToString(parsedMetadata.name),
+			preferOnChain: true,
+		});
+
 		const payment = await prisma.paymentRequest.create({
 			data: {
 				totalBuyerCardanoFees: BigInt(0),
@@ -373,6 +385,8 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 				blockchainIdentifier: compressedEncodedBlockchainIdentifier,
 				agentIdentifier: input.agentIdentifier,
 				agentIdentifierSyncedAt: new Date(),
+				agentName,
+				agentNameSyncedAt: new Date(),
 				PaymentSource: { connect: { id: specifiedPaymentContract.id } },
 				RequestedFunds: {
 					createMany: {

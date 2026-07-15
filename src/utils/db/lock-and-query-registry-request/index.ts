@@ -1,7 +1,7 @@
 import { HotWalletType, PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { withSerializableSlotRetry } from '@/utils/db/serializable-semaphore';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
 export async function lockAndQueryRegistryRequests({
 	state,
@@ -116,6 +116,7 @@ export async function lockAndQueryRegistryRequests({
 											},
 											ExampleOutputs: true,
 											SupportedPaymentSources: true,
+											Verifications: true,
 										},
 										orderBy: {
 											createdAt: 'asc',

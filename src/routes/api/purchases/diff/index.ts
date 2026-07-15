@@ -10,6 +10,7 @@ import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { exhaustiveFallback } from '@/utils/assert-never';
+import { resolvePurchasePaymentSourceTypeFilter } from '../queries';
 
 type PurchaseDiffMode =
 	| 'nextActionLastChangedAt'
@@ -38,8 +39,15 @@ export const queryPurchaseDiffSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, purchase diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, purchase diff endpoints default to Web3CardanoV1 for backwards compatibility.',
+		),
 	includeHistory: z
 		.string()
 		.default('false')
@@ -70,7 +78,10 @@ function buildPurchaseDiffWhere({
 			deletedAt: null,
 			network,
 			smartContractAddress: filterSmartContractAddress ?? undefined,
-			paymentSourceType: filterPaymentSourceType,
+			paymentSourceType: resolvePurchasePaymentSourceTypeFilter({
+				filterPaymentSourceType,
+				filterSmartContractAddress,
+			}),
 		},
 		...buildWalletScopeFilter(walletScopeIds),
 	};

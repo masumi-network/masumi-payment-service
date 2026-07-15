@@ -6,7 +6,9 @@
 // V1 deployments and locked funds. See docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
 import { mPubKeyAddress, type Data, type PlutusScript } from '@meshsdk/core';
 import {
+	AddressType,
 	applyParamsToScript,
+	deserializeAddress,
 	deserializePlutusScript,
 	resolvePaymentKeyHash,
 	resolvePlutusScriptAddress,
@@ -162,15 +164,12 @@ function getSmartContractStateDatum(state: SmartContractState) {
 				fields: [],
 			};
 		case SmartContractState.WithdrawAuthorized:
-			return {
-				alternative: 4,
-				fields: [],
-			};
 		case SmartContractState.RefundAuthorized:
-			return {
-				alternative: 5,
-				fields: [],
-			};
+			// The deployed V1 on-chain `State` enum only has constructors 0-3
+			// (vested_pay.ak). Encoding alternatives 4/5 would write a datum the
+			// validator can never decode, permanently locking the UTxO's funds.
+			// These states only exist in the V2 contract; reject them here.
+			throw new Error(`Smart contract state ${state} is not valid for the V1 payment contract`);
 		default:
 			throw new Error('Unsupported V1 smart contract state');
 	}
@@ -230,6 +229,27 @@ export function getDatumFromBlockchainIdentifier({
 	});
 }
 
+function getPubKeyAddressDatum(address: string, fieldName: string) {
+	const parsedAddress = deserializeAddress(address);
+	const addressType = parsedAddress.getType();
+	// The V1 vested_pay validator only reads the payment credential of datum
+	// addresses (`address_to_verification_key`), so enterprise (stake-less)
+	// pubkey addresses are spendable alongside base addresses — mesh encodes
+	// the omitted stake credential as Plutus `None` (`Constr 1 []`), which the
+	// decoder in src/utils/converter/string-datum-convert already handles.
+	// Script payment credentials stay rejected: every spending redeemer does
+	// `expect Some(vk) = address_to_verification_key(...)`, so a script
+	// participant would permanently brick the escrow.
+	if (addressType === AddressType.EnterpriseKey) {
+		return mPubKeyAddress(resolvePaymentKeyHash(address));
+	}
+	if (addressType !== AddressType.BasePaymentKeyStakeKey) {
+		throw new Error(`${fieldName} must be a Cardano base or enterprise address with a payment key credential`);
+	}
+
+	return mPubKeyAddress(resolvePaymentKeyHash(address), resolveStakeKeyHash(address));
+}
+
 function getDatum({
 	buyerAddress,
 	sellerAddress,
@@ -265,8 +285,8 @@ function getDatum({
 	newCooldownTimeBuyer: bigint;
 	state: SmartContractState;
 }) {
-	const buyerPubKeyAddress = mPubKeyAddress(resolvePaymentKeyHash(buyerAddress), resolveStakeKeyHash(buyerAddress));
-	const sellerPubKeyAddress = mPubKeyAddress(resolvePaymentKeyHash(sellerAddress), resolveStakeKeyHash(sellerAddress));
+	const buyerPubKeyAddress = getPubKeyAddressDatum(buyerAddress, 'buyerAddress');
+	const sellerPubKeyAddress = getPubKeyAddressDatum(sellerAddress, 'sellerAddress');
 	if (!validateHexString(referenceKey)) {
 		throw new Error('Reference key is not a valid hex string');
 	}

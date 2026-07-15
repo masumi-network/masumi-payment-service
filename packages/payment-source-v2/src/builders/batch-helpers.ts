@@ -168,14 +168,15 @@ function refKey(input: { txHash: string; outputIndex: number }): string {
  * `computeCollateralFromExUnits` and is wired in by the caller AFTER the
  * first `evaluateTx` pass returns budgets.
  *
- * Conway phase-1 rejects a tx whose collateral UTxO reference is ALSO in
- * the *script* spending input set. The caller MUST pass every script input
- * ref (e.g. the per-item `smartContractUtxo.input` refs of an interaction
- * batch, or the asset UTxOs of a burn batch) via `excludeSpendingInputs`.
- * Regular wallet-input overlap is allowed — Mesh-SDK 1.9 routes
- * `.txIn(...)` and `.txInCollateral(...)` into separate body fields, so the
- * same UTxO ref can appear in both (the V1 single-tx register builder
- * already exploits this).
+ * Collateral must be payment-key-locked, so script-locked spending inputs can
+ * never serve as collateral. The caller MUST pass every script input ref
+ * (e.g. the per-item `smartContractUtxo.input` refs of an interaction batch)
+ * via `excludeSpendingInputs`. Some registry burn/update callers also pass
+ * forced asset inputs to preserve the current separate-collateral builder
+ * policy. Regular VKey wallet-input overlap is allowed by the ledger —
+ * Mesh-SDK 1.9 routes `.txIn(...)` and `.txInCollateral(...)` into separate
+ * body fields, so the same UTxO ref can appear in both (the V1 single-tx
+ * register builder already exploits this).
  *
  * Returns `null` (NOT throws) — the caller decides how to handle a missing
  * collateral (e.g. shrink the batch, fall back to single-item, surface to
@@ -404,10 +405,11 @@ export function shrinkBatchToFit<T>(
  * Throw with a clear error if any spending input matches the collateral
  * UTxO reference.
  *
- * Conway phase-1 rejects this scenario with an opaque
- * `EvaluationFailure: ScriptFailures: {}` from ogmios which is very hard to
- * diagnose post-hoc. Failing fast off-chain with a real message is much
- * friendlier — call this just before invoking the batch builder.
+ * For script inputs, the ledger reason is that collateral must be
+ * payment-key-locked. For other forced inputs, this is the current builder's
+ * separate-collateral policy. Failing fast off-chain with a real message is
+ * much friendlier than letting a later builder/submission error obscure the
+ * offending ref.
  *
  * @throws Error with the offending ref if overlap is found.
  */
@@ -419,7 +421,7 @@ export function assertNoCollateralOverlap(
 	for (const utxo of spendingUtxos) {
 		if (refKey(utxo.input) === collateralKey) {
 			throw new Error(
-				`Collateral UTxO overlaps with a spending input (${collateralKey}); phase-1 Conway rules forbid this`,
+				`Collateral UTxO overlaps with a spending input (${collateralKey}); current builder requires a separate collateral ref`,
 			);
 		}
 	}
@@ -457,6 +459,14 @@ export const COLLATERAL_SAFETY_DEN = 100n;
  * derived value from rounding down below mesh's minimum-collateral check.
  */
 export const MIN_TOTAL_COLLATERAL_LOVELACE = 3_000_000n;
+
+/**
+ * Min-ADA headroom kept aside on the collateral input when clamping declared
+ * total collateral, so the resulting collateral-return output still satisfies
+ * the ledger's min-UTxO rule. 1 ADA comfortably exceeds the min-ADA of a
+ * pure-ADA output at current `coinsPerUtxoSize`.
+ */
+export const COLLATERAL_RETURN_MIN_LOVELACE = 1_000_000n;
 
 /**
  * Shape we accept from any of mesh's `Protocol`, the V1 helper's cached
@@ -509,6 +519,7 @@ export function extractCollateralProtocolParams(
 export function deriveTotalCollateral(
 	budgets: Array<{ mem: number; steps: number }>,
 	protocolParameters: unknown,
+	collateralCapLovelace?: bigint,
 ): string {
 	const params = extractCollateralProtocolParams(protocolParameters);
 	if (params == null) {
@@ -516,8 +527,32 @@ export function deriveTotalCollateral(
 	}
 	const raw = computeCollateralFromExUnits(budgets, params);
 	const withSafety = (raw * COLLATERAL_SAFETY_NUM) / COLLATERAL_SAFETY_DEN;
-	const floored = withSafety > MIN_TOTAL_COLLATERAL_LOVELACE ? withSafety : MIN_TOTAL_COLLATERAL_LOVELACE;
-	return floored.toString();
+	let total = withSafety > MIN_TOTAL_COLLATERAL_LOVELACE ? withSafety : MIN_TOTAL_COLLATERAL_LOVELACE;
+	// Never declare more collateral than the single collateral input can cover.
+	// The first build pass uses inflated DEFAULT_EX_UNITS budgets, so the derived
+	// requirement can exceed the (typically 5 ADA) collateral UTxO; mesh then
+	// computes collateralInput - totalCollateral < 0, emits a negative
+	// collateral-return output, and throws at build time — silently forcing
+	// single-item fallback for any batch of ~4+ legs. Cap to the input value
+	// (leaving a min-ADA collateral-return) so the evaluation build succeeds; the
+	// second pass uses real, far smaller budgets that stay well under the cap.
+	if (collateralCapLovelace != null && collateralCapLovelace > COLLATERAL_RETURN_MIN_LOVELACE) {
+		const cap = collateralCapLovelace - COLLATERAL_RETURN_MIN_LOVELACE;
+		if (cap >= MIN_TOTAL_COLLATERAL_LOVELACE && total > cap) {
+			total = cap;
+		}
+	}
+	return total.toString();
+}
+
+/**
+ * Lovelace quantity held by a UTxO (0 if it somehow carries no ADA entry).
+ * Used to cap declared collateral to what the collateral input can actually
+ * cover.
+ */
+export function lovelaceFromUtxo(utxo: UTxO): bigint {
+	const entry = utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '');
+	return entry != null ? BigInt(entry.quantity) : 0n;
 }
 
 /**
@@ -550,4 +585,16 @@ export function assertTxSizeWithinLimit(unsignedTxHex: string, label: string): v
 			`${label}: unsigned tx size ${sizeBytes} bytes exceeds MAX_SAFE_TX_BYTES (${MAX_SAFE_TX_BYTES}); shrink the batch and retry`,
 		);
 	}
+}
+
+/**
+ * Non-throwing companion to `assertTxSizeWithinLimit`. Returns `true` when the
+ * unsigned tx (hex CBOR) is within `MAX_SAFE_TX_BYTES`. Use this to drive an
+ * async size-aware shrink loop where the builder is async and therefore cannot
+ * run inside the synchronous `shrinkBatchToFit` predicate.
+ *
+ * @param unsignedTxHex Hex-encoded CBOR — each pair of chars is one byte.
+ */
+export function isTxSizeWithinLimit(unsignedTxHex: string): boolean {
+	return Math.floor(unsignedTxHex.length / 2) <= MAX_SAFE_TX_BYTES;
 }

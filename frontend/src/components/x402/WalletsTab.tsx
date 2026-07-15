@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { formatDateTime } from '@/lib/format-date';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import {
@@ -37,9 +38,15 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useX402WalletsPaginated } from '@/lib/hooks/useX402';
-import { cn, handleApiCall, shortenAddress } from '@/lib/utils';
+import { cn, copyToClipboard, shortenAddress } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { extractApiPayload } from '@/lib/api-response';
-import { postX402Wallets, postX402WalletsDelete, X402Wallet } from '@/lib/api/generated';
+import {
+  postX402Wallets,
+  postX402WalletsDelete,
+  PostX402WalletsData,
+  X402Wallet,
+} from '@/lib/api/generated';
 import { EditWalletNoteDialog, WalletBalanceDialog } from '@/components/x402/WalletExtras';
 
 const PRIVATE_KEY_REGEX = /^0x[a-fA-F0-9]{64}$/;
@@ -82,28 +89,26 @@ export function WalletsTab() {
   const [editWallet, setEditWallet] = useState<X402Wallet | null>(null);
   const [walletToRetire, setWalletToRetire] = useState<X402Wallet | null>(null);
 
+  const retireWallet = useApiMutation({
+    mutationFn: (body: { id: string }) => postX402WalletsDelete({ client: apiClient, body }),
+    // Invalidate the whole 'x402-wallets' key space (paginated list AND the eager,
+    // type-filtered picker queries used by the Chains/Budgets/Alerts dialogs) so a
+    // retired wallet disappears from every picker immediately, not after staleTime.
+    // Retiring also disables this wallet's budgets and detaches it as a chain
+    // facilitator, so refresh those caches too.
+    invalidateKeys: [['x402-wallets'], ['x402-budgets'], ['x402-networks']],
+    errorMessage: 'Failed to retire wallet',
+  });
+
   const confirmRetire = async () => {
     if (!walletToRetire) return;
     const id = walletToRetire.id;
     setRetiringId(id);
-    await handleApiCall(() => postX402WalletsDelete({ client: apiClient, body: { id } }), {
-      onSuccess: () => {
-        toast.success('Wallet retired');
-        // Invalidate the whole 'x402-wallets' key space (paginated list AND the eager,
-        // type-filtered picker queries used by the Chains/Budgets/Alerts dialogs) so a
-        // retired wallet disappears from every picker immediately, not after staleTime.
-        queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
-        // Retiring disables this wallet's budgets and detaches it as a chain facilitator,
-        // so refresh those caches too.
-        queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
-        queryClient.invalidateQueries({ queryKey: ['x402-networks'] });
-      },
-      onFinally: () => {
-        setRetiringId(null);
-        setWalletToRetire(null);
-      },
-      errorMessage: 'Failed to retire wallet',
-    });
+    const response = await retireWallet.mutateAsync({ id }).catch(() => null);
+    setRetiringId(null);
+    setWalletToRetire(null);
+    if (!response) return;
+    toast.success('Wallet retired');
   };
 
   return (
@@ -178,7 +183,7 @@ export function WalletsTab() {
                     {wallet.note || <span className="italic opacity-60">—</span>}
                   </td>
                   <td className="p-4 text-sm text-muted-foreground">
-                    {new Date(wallet.createdAt).toLocaleString()}
+                    {formatDateTime(wallet.createdAt)}
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -285,7 +290,12 @@ export function CreateWalletDialog({
   const [privateKey, setPrivateKey] = useState('');
   const [showImportKey, setShowImportKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  const createWallet = useApiMutation({
+    mutationFn: (body: NonNullable<PostX402WalletsData['body']>) =>
+      postX402Wallets({ client: apiClient, body }),
+    errorMessage: 'Failed to create wallet',
+  });
+  const isSaving = createWallet.isPending;
   // Set once a generated key comes back, switching the dialog to its backup phase.
   const [backup, setBackup] = useState<{ address: string; privateKey: string } | null>(null);
 
@@ -297,40 +307,29 @@ export function CreateWalletDialog({
       return;
     }
     setError(null);
-    setIsSaving(true);
-    await handleApiCall(
-      () =>
-        postX402Wallets({
-          client: apiClient,
-          body: keySource === 'import' ? { type, privateKey: trimmed } : { type },
-        }),
-      {
-        onSuccess: (response) => {
-          const created = extractApiPayload<{ address: string; privateKey: string | null }>(
-            response,
-          );
-          if (keySource === 'generate') {
-            // The generated key is the only copy and is returned exactly once. Show the
-            // backup step when it is present; if it is somehow missing, never report plain
-            // success — warn loudly so the operator retires this unrecoverable wallet.
-            if (created?.privateKey) {
-              setBackup({ address: created.address, privateKey: created.privateKey });
-              return;
-            }
-            toast.error(
-              'Wallet was created but its private key was not returned, so it cannot be recovered. Retire it and create a new one.',
-            );
-            onSaved();
-            return;
-          }
-          // Imported wallets need no backup step — the operator already holds the key.
-          toast.success('Wallet created');
-          onSaved();
-        },
-        onFinally: () => setIsSaving(false),
-        errorMessage: 'Failed to create wallet',
-      },
-    );
+    const response = await createWallet
+      .mutateAsync(keySource === 'import' ? { type, privateKey: trimmed } : { type })
+      .catch(() => null);
+    if (!response) return;
+
+    const created = extractApiPayload<{ address: string; privateKey: string | null }>(response);
+    if (keySource === 'generate') {
+      // The generated key is the only copy and is returned exactly once. Show the
+      // backup step when it is present; if it is somehow missing, never report plain
+      // success — warn loudly so the operator retires this unrecoverable wallet.
+      if (created?.privateKey) {
+        setBackup({ address: created.address, privateKey: created.privateKey });
+        return;
+      }
+      toast.error(
+        'Wallet was created but its private key was not returned, so it cannot be recovered. Retire it and create a new one.',
+      );
+      onSaved();
+      return;
+    }
+    // Imported wallets need no backup step — the operator already holds the key.
+    toast.success('Wallet created');
+    onSaved();
   };
 
   return (
@@ -607,9 +606,14 @@ function BackupKeyStep({
             variant="outline"
             size="sm"
             className="flex-1 gap-1.5"
-            onClick={() => {
-              navigator.clipboard.writeText(privateKey);
-              toast.success('Private key copied');
+            onClick={async () => {
+              // Awaited so a blocked clipboard (e.g. plain-HTTP host) surfaces as an
+              // error instead of a false success on an unrecoverable secret.
+              if (await copyToClipboard(privateKey)) {
+                toast.success('Private key copied');
+              } else {
+                toast.error('Failed to copy private key. Reveal and copy it manually.');
+              }
             }}
           >
             <Copy className="h-3.5 w-3.5" /> Copy

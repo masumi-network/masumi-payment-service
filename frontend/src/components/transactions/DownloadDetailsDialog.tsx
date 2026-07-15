@@ -9,12 +9,12 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Download } from 'lucide-react';
-import { dateRangeUtils } from '@/lib/utils';
+import { dateRangeUtils, endOfDayLocal, parseDateOnlyLocal } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getPayment, getPurchase, Payment, Purchase } from '@/lib/api/generated';
-import { handleApiCall } from '@/lib/utils';
 import {
   buildTransactionDownloadQuery,
   mergeDownloadedTransactions,
@@ -47,13 +47,8 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
   const [selectedPreset, setSelectedPreset] = useState<PresetOption>('24h');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
-  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
 
-  const fetchAllTransactions = useCallback(async () => {
-    setIsLoading(true);
-
+  const fetchAllTransactions = useCallback(async (): Promise<Transaction[]> => {
     const allTx: Transaction[] = [];
     let purchaseCursor: string | null = null;
     let paymentCursor: string | null = null;
@@ -61,21 +56,21 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
     let hasMorePayments = true;
 
     try {
-      // Fetch all purchases with pagination
+      // Fetch all purchases with pagination. Failures are console-only (no
+      // toast) and end the loop with whatever pages already arrived — same
+      // contract as the previous handleApiCall onError override.
       while (hasMorePurchases) {
-        const purchases = await handleApiCall(
-          () =>
-            getPurchase({
-              client: apiClient,
-              query: buildTransactionDownloadQuery(network, purchaseCursor || undefined),
-            }),
-          {
-            onError: (error: unknown) => {
-              console.error('Failed to fetch purchases:', error);
-            },
-            errorMessage: 'Failed to fetch purchases',
-          },
-        );
+        const purchases: Awaited<ReturnType<typeof getPurchase>> | null = await getPurchase({
+          client: apiClient,
+          query: buildTransactionDownloadQuery(network, purchaseCursor || undefined),
+        }).catch((error: unknown) => {
+          console.error('Failed to fetch purchases:', error);
+          return null;
+        });
+        if (purchases && 'error' in purchases && purchases.error) {
+          console.error('Failed to fetch purchases:', purchases.error);
+          break;
+        }
 
         if (purchases?.data?.data?.Purchases) {
           const nextPurchases = purchases.data.data.Purchases.map(
@@ -96,21 +91,19 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
         }
       }
 
-      // Fetch all payments with pagination
+      // Fetch all payments with pagination (same failure contract as above).
       while (hasMorePayments) {
-        const payments = await handleApiCall(
-          () =>
-            getPayment({
-              client: apiClient,
-              query: buildTransactionDownloadQuery(network, paymentCursor || undefined),
-            }),
-          {
-            onError: (error: unknown) => {
-              console.error('Failed to fetch payments:', error);
-            },
-            errorMessage: 'Failed to fetch payments',
-          },
-        );
+        const payments: Awaited<ReturnType<typeof getPayment>> | null = await getPayment({
+          client: apiClient,
+          query: buildTransactionDownloadQuery(network, paymentCursor || undefined),
+        }).catch((error: unknown) => {
+          console.error('Failed to fetch payments:', error);
+          return null;
+        });
+        if (payments && 'error' in payments && payments.error) {
+          console.error('Failed to fetch payments:', payments.error);
+          break;
+        }
 
         if (payments?.data?.data?.Payments) {
           const nextPayments = payments.data.data.Payments.map(
@@ -130,13 +123,21 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
         }
       }
 
-      setAllTransactions(allTx);
+      return allTx;
     } catch (error) {
       console.error('Error fetching transactions:', error);
-    } finally {
-      setIsLoading(false);
+      return allTx;
     }
   }, [apiClient, network]);
+
+  // Refetches on every dialog open (enabled flip + zero staleTime), matching
+  // the previous fetch-on-open effect.
+  const { data: allTransactions = [], isFetching: isLoading } = useQuery<Transaction[]>({
+    queryKey: ['download-transactions', network],
+    queryFn: fetchAllTransactions,
+    enabled: open,
+    staleTime: 0,
+  });
   // Calculate filtered transactions for display
   const getFilteredTransactions = useCallback(() => {
     let startDate: Date;
@@ -146,8 +147,16 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
       if (!customStartDate || !customEndDate) {
         return [];
       }
-      startDate = new Date(customStartDate);
-      endDate = new Date(customEndDate);
+      // Parse the date-only inputs as a local-time range (start of the start
+      // day to end of the end day); UTC parsing would drop the whole end day
+      // for users west of UTC.
+      const start = parseDateOnlyLocal(customStartDate);
+      const end = parseDateOnlyLocal(customEndDate);
+      if (!start || !end) {
+        return [];
+      }
+      startDate = start;
+      endDate = endOfDayLocal(end);
     } else {
       const range = dateRangeUtils.getPresetRange(selectedPreset);
       startDate = range.start;
@@ -161,23 +170,12 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
 
     return filtered;
   }, [allTransactions, selectedPreset, customStartDate, customEndDate]);
-  useEffect(() => {
-    if (open) {
-      fetchAllTransactions();
-    }
-  }, [open, fetchAllTransactions]);
-  useEffect(() => {
-    if (open) {
-      setFilteredTransactions(getFilteredTransactions());
-    }
-  }, [
-    open,
-    allTransactions,
-    selectedPreset,
-    customStartDate,
-    customEndDate,
-    getFilteredTransactions,
-  ]);
+  // Pure derived state: recomputes from the fetched transactions and the
+  // selected range. Empty while the dialog is closed.
+  const filteredTransactions = useMemo(
+    () => (open ? getFilteredTransactions() : []),
+    [open, getFilteredTransactions],
+  );
 
   const handleDownload = () => {
     let startDate: Date;
@@ -187,8 +185,14 @@ export function DownloadDetailsDialog({ open, onClose, onDownload }: DownloadDet
       if (!customStartDate || !customEndDate) {
         return; // Don't download if custom dates are not set
       }
-      startDate = new Date(customStartDate);
-      endDate = new Date(customEndDate);
+      // Same local-time range as the preview count in getFilteredTransactions.
+      const start = parseDateOnlyLocal(customStartDate);
+      const end = parseDateOnlyLocal(customEndDate);
+      if (!start || !end) {
+        return;
+      }
+      startDate = start;
+      endDate = endOfDayLocal(end);
     } else {
       // Calculate start date based on preset
       const range = dateRangeUtils.getPresetRange(selectedPreset);

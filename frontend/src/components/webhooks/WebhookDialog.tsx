@@ -6,8 +6,7 @@ import { toast } from 'react-toastify';
 import { Info, CheckCheck } from 'lucide-react';
 import { patchWebhooks, postWebhooks } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { extractApiErrorMessage } from '@/lib/api-error';
-import { handleApiCall } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import {
   WEBHOOK_EVENT_LABELS,
   WEBHOOK_EVENTS,
@@ -132,7 +131,21 @@ export function WebhookDialog({
   onSuccess,
 }: WebhookDialogProps) {
   const { apiClient } = useAppContext();
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const saveWebhook = useApiMutation({
+    mutationFn: (payload: {
+      name: string | undefined;
+      format: WebhookFormValues['format'];
+      url: string;
+      authToken: string | undefined;
+      Events: WebhookFormValues['Events'];
+    }) =>
+      mode === 'create'
+        ? postWebhooks({ client: apiClient, body: { ...payload, paymentSourceId } })
+        : patchWebhooks({ client: apiClient, body: { webhookId: webhook!.id, ...payload } }),
+    errorMessage: mode === 'create' ? 'Failed to create webhook' : 'Failed to update webhook',
+  });
+  const isSubmitting = saveWebhook.isPending;
 
   const {
     control,
@@ -204,8 +217,6 @@ export function WebhookDialog({
   };
 
   const submit = async (values: WebhookFormValues) => {
-    setIsSubmitting(true);
-
     const payload = {
       name: values.name.trim() || undefined,
       format: values.format,
@@ -214,49 +225,17 @@ export function WebhookDialog({
       Events: values.Events,
     };
 
-    await handleApiCall(
-      async () => {
-        if (mode === 'create') {
-          return postWebhooks({
-            client: apiClient,
-            body: {
-              ...payload,
-              paymentSourceId,
-            },
-          });
-        }
+    const response = await saveWebhook.mutateAsync(payload).catch((error: unknown) => {
+      console.error(`Failed to ${mode} webhook:`, error);
+      return null;
+    });
+    if (!response) return;
 
-        return patchWebhooks({
-          client: apiClient,
-          body: {
-            webhookId: webhook!.id,
-            ...payload,
-          },
-        });
-      },
-      {
-        onSuccess: () => {
-          toast.success(
-            mode === 'create' ? 'Webhook created successfully' : 'Webhook updated successfully',
-          );
-          onSuccess();
-          onClose();
-        },
-        onError: (error: unknown) => {
-          console.error(`Failed to ${mode} webhook:`, error);
-          toast.error(
-            extractApiErrorMessage(
-              error,
-              mode === 'create' ? 'Failed to create webhook' : 'Failed to update webhook',
-            ),
-          );
-        },
-        onFinally: () => {
-          setIsSubmitting(false);
-        },
-        errorMessage: mode === 'create' ? 'Failed to create webhook' : 'Failed to update webhook',
-      },
+    toast.success(
+      mode === 'create' ? 'Webhook created successfully' : 'Webhook updated successfully',
     );
+    onSuccess();
+    onClose();
   };
 
   const handleDialogChange = (nextOpen: boolean) => {

@@ -186,8 +186,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   // with the same name + description, so we match on those (agentMigrationKey) to
   // hide already-migrated agents from the list. Union every V2 source — not just
   // the migration target — so an agent already minted on a different V2 contract
-  // isn't re-offered for a duplicate re-mint. Mirrors useMigrationStatus, which
-  // backs the dashboard count.
+  // isn't re-offered for a duplicate re-mint.
   const v2Addresses = useMemo(() => v2Sources.map((s) => s.smartContractAddress), [v2Sources]);
   const v2AgentsQuery = useQuery<RegistryEntry[]>({
     queryKey: ['migrate-v2-agents', network, [...v2Addresses].sort()],
@@ -438,7 +437,11 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       contactEmail?: string;
       contactOther?: string;
       organization?: string;
-    } = { name: agent.Author.name || 'Migrated Agent' };
+      // Preserve the real V1 author name verbatim — including empty. The
+      // backend accepts an empty author name (Author.name is `z.string()` with
+      // no min), so defaulting an empty value to a placeholder would fabricate
+      // on-chain authorship the operator never set. Empty in → empty out.
+    } = { name: agent.Author.name };
     if (agent.Author.contactEmail) author.contactEmail = agent.Author.contactEmail;
     if (agent.Author.contactOther) author.contactOther = agent.Author.contactOther;
     if (agent.Author.organization) author.organization = agent.Author.organization;
@@ -457,7 +460,10 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       sendFundingLovelace:
         v2HoldingAddress && agent.sendFundingLovelace ? agent.sendFundingLovelace : undefined,
       name: agent.name,
-      description: agent.description ?? agent.name,
+      // Preserve the real V1 description, empty included. The backend accepts
+      // an empty description; substituting the agent name would fabricate
+      // copy the operator never wrote.
+      description: agent.description ?? '',
       // Use the operator's edited URL when provided, otherwise keep the V1 value.
       // Trimmed (via resolveApiBaseUrl) to match exactly what the gate validated.
       apiBaseUrl: resolveApiBaseUrl(agent),
@@ -669,10 +675,6 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       // `handleClose` so the just-migrated rows stay visible on the success
       // screen — otherwise they vanish while the user is still reading results.
       invalidateAgentQueries(queryClient);
-      // Refresh the dashboard's "N agents still on V1" nudge so the count drops as agents
-      // migrate. (The dialog's own V1/V2 lists are deferred to handleClose so just-migrated
-      // rows stay visible on the success screen.)
-      queryClient.invalidateQueries({ queryKey: ['migration-status'] });
       queryClient.invalidateQueries({ queryKey: ['payment-sources-all'] });
       // Each successful re-mint debits ~5 ADA from the V2 selling wallet.
       // The wallet-balance / transactions caches would otherwise show
@@ -731,8 +733,15 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
             single wide child (long address, a non-wrapping line) would stretch the whole
             dialog past its max width — clipping the right edge and pushing the footer's
             primary button off-screen. `[&>*]:min-w-0` lets each grid row shrink/wrap, and
-            overflow-x-hidden clips any residual so the action button stays in the box. */}
-        <DialogContent className="sm:max-w-[700px] overflow-y-auto overflow-x-hidden max-h-[90vh] [&>*]:min-w-0">
+            overflow-x-hidden clips any residual so the action button stays in the box.
+            `pb-0` removes the base bottom padding: a `sticky bottom-0` child anchors that
+            padding's height ABOVE the real bottom edge, which would leave a gap below the
+            footer where scrolled-out content peeks through. The footer supplies its own
+            bottom spacing via `py-4`. */}
+        <DialogContent
+          size="lg"
+          className="overflow-y-auto overflow-x-hidden max-h-[90vh] pb-0 [&>*]:min-w-0"
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShieldCheck className="h-5 w-5 text-primary" />
@@ -974,7 +983,8 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                                           aria-invalid={urlError ? true : undefined}
                                           className={cn(
                                             'h-7 font-mono text-xs',
-                                            urlError && 'border-red-500 focus-visible:ring-red-500',
+                                            urlError &&
+                                              'border-destructive focus-visible:ring-destructive',
                                           )}
                                         />
                                         {urlError ? (
@@ -1021,7 +1031,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                                   <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-500" />
                                 ))}
                               {result?.status === 'failed' && (
-                                <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-500" />
+                                <AlertTriangle className="h-4 w-4 text-red-600 dark:text-destructive" />
                               )}
                             </div>
                           </label>
@@ -1087,7 +1097,7 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
             </div>
           )}
 
-          <DialogFooter className="gap-2 sm:gap-0 sticky bottom-0 -mx-6 -mb-6 border-t bg-background px-6 py-4">
+          <DialogFooter className="gap-2 sm:gap-0 sticky bottom-0 -mx-6 border-t bg-background px-6 py-4">
             {!isDone ? (
               <>
                 {/* Cancel-during-run: flips the `cancelRef` flag the loop

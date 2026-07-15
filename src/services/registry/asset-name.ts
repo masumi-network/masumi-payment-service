@@ -85,3 +85,34 @@ export function bumpRegistryAssetNameVersionV2(assetNameHex: string): string {
 	const nextVersionHex = nextVersion.toString(16).padStart(6, '0');
 	return noncePart + rootHashPart + nextVersionHex;
 }
+
+// Inverse of `bumpRegistryAssetNameVersionV2`: recover the previous-version
+// asset name by decrementing the 3-byte version, keeping the same nonce +
+// 28-byte root. Used by registry tx-sync when a submitted UpdateAction is
+// force-failed as dropped: the DB row's `agentIdentifier` was optimistically
+// flipped to the version-bumped value at submit time, but the bumped asset was
+// never minted on chain (the tx never landed), so the row must be reverted to
+// the still-on-chain previous identifier to stay reachable by the
+// identifier-keyed update/deregister routes.
+export function unbumpRegistryAssetNameVersionV2(assetNameHex: string): string {
+	if (assetNameHex.length !== V2_REGISTRY_ASSET_NAME_HEX_LENGTH) {
+		throw new Error(
+			`V2 registry asset name must be ${V2_REGISTRY_ASSET_NAME_HEX_LENGTH} hex chars, got ${assetNameHex.length}`,
+		);
+	}
+	const noncePart = assetNameHex.slice(0, 2);
+	const rootHashPart = assetNameHex.slice(2, 58);
+	const versionPart = assetNameHex.slice(58, 64);
+	const currentVersion = parseInt(versionPart, 16);
+	if (!Number.isFinite(currentVersion)) {
+		throw new Error(`V2 registry asset name has non-hex version segment: ${versionPart}`);
+	}
+	if (currentVersion <= 0) {
+		// Version 0 is the freshly-registered asset — there is no prior version to
+		// revert to. An UpdateInitiated row always carries a bumped (>= 1) version,
+		// so reaching here means the stored identifier is inconsistent.
+		throw new Error('V2 registry asset version cannot be decremented below 0');
+	}
+	const prevVersionHex = (currentVersion - 1).toString(16).padStart(6, '0');
+	return noncePart + rootHashPart + prevVersionHex;
+}

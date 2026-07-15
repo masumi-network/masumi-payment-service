@@ -1,17 +1,15 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { cn, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import { cn, shortenAddress, getExplorerUrl, formatAssetAmount } from '@/lib/utils';
+import { formatDateTime } from '@/lib/format-date';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CopyButton } from '@/components/ui/copy-button';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { toast } from 'react-toastify';
-import { getUsdmConfig, TESTUSDM_CONFIG, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
-  Payment,
-  Purchase,
   postPurchaseRequestRefund,
   postPurchaseCancelRefundRequest,
   postPaymentAuthorizeRefund,
@@ -27,12 +25,15 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
-
-type Transaction =
-  | (Payment & { type: 'payment' })
-  | (Purchase & {
-      type: 'purchase';
-    });
+import { TransactionHistorySection } from './TransactionHistorySection';
+import {
+  formatOnChainState,
+  formatRequestedAction,
+  formatStatus,
+  getLatestTxHash,
+  getStatusColor,
+  type Transaction,
+} from './transaction-format.helpers';
 
 interface TransactionDetailsDialogProps {
   transaction: Transaction | null;
@@ -42,47 +43,6 @@ interface TransactionDetailsDialogProps {
 
 const handleError = (error: unknown, fallback: string = 'An error occurred') => {
   toast.error(extractApiErrorMessage(error, fallback));
-};
-
-const formatTimestamp = (timestamp: string | Date | null | undefined): string => {
-  if (!timestamp) return '—';
-
-  if (timestamp instanceof Date) {
-    return timestamp.toLocaleString();
-  }
-
-  if (/^\d+$/.test(timestamp)) {
-    return new Date(parseInt(timestamp)).toLocaleString();
-  }
-
-  return new Date(timestamp).toLocaleString();
-};
-
-const getStatusColor = (status: string | null, hasError?: boolean) => {
-  if (hasError) return 'text-destructive';
-  switch (status?.toLowerCase()) {
-    case 'fundslocked':
-      return 'text-yellow-500';
-    case 'withdrawn':
-    case 'resultsubmitted':
-      return 'text-green-500';
-    case 'refundrequested':
-    case 'withdrawauthorized':
-    case 'refundauthorized':
-      return 'text-orange-500';
-    case 'refundwithdrawn':
-      return 'text-blue-500';
-    case 'disputed':
-    case 'disputedwithdrawn':
-      return 'text-red-500';
-    default:
-      return 'text-muted-foreground';
-  }
-};
-
-const formatStatus = (status: string | null) => {
-  if (!status) return '—';
-  return status.replace(/([A-Z])/g, ' $1').trim();
 };
 
 const canRequestRefund = (transaction: Transaction) => {
@@ -114,6 +74,9 @@ export default function TransactionDetailsDialog({
 }: TransactionDetailsDialogProps) {
   const { network, apiClient } = useAppContext();
   const { openAgentDetails } = useAgentDetailsDialog();
+  // Pin actions and explorer links to the network the transaction row lives
+  // on, not the ambient app network (they can diverge mid-navigation).
+  const transactionNetwork = transaction?.PaymentSource?.network ?? network;
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<'refund' | 'cancel' | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
@@ -242,7 +205,7 @@ export default function TransactionDetailsDialog({
           body: {
             blockchainIdentifier: transaction.blockchainIdentifier,
             updatedAt: new Date(transaction.updatedAt),
-            network: network,
+            network: transactionNetwork,
           },
         });
         if (response.error) {
@@ -260,7 +223,7 @@ export default function TransactionDetailsDialog({
           body: {
             blockchainIdentifier: transaction.blockchainIdentifier,
             updatedAt: new Date(transaction.updatedAt),
-            network: network,
+            network: transactionNetwork,
           },
         });
         if (response.error) {
@@ -283,10 +246,11 @@ export default function TransactionDetailsDialog({
   };
 
   const handleRefundRequest = async (transaction: Transaction) => {
+    setIsLoading(true);
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: network,
+        network: transactionNetwork,
       };
       const response = await postPurchaseRequestRefund({
         client: apiClient,
@@ -308,6 +272,8 @@ export default function TransactionDetailsDialog({
     } catch (error) {
       console.error('Refund error:', error);
       handleError(error, 'Refund request failed');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -315,7 +281,7 @@ export default function TransactionDetailsDialog({
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: network,
+        network: transactionNetwork,
       };
       const response = await postPaymentAuthorizeRefund({
         client: apiClient,
@@ -344,7 +310,7 @@ export default function TransactionDetailsDialog({
     try {
       const body = {
         blockchainIdentifier: transaction.blockchainIdentifier,
-        network: network,
+        network: transactionNetwork,
       };
       const response = await postPurchaseCancelRefundRequest({
         client: apiClient,
@@ -374,7 +340,7 @@ export default function TransactionDetailsDialog({
   return (
     <>
       <Dialog open={!!transaction && !showConfirmDialog} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-[600px]" isPushedBack={!!selectedWalletForDetails}>
+        <DialogContent size="md" isPushedBack={!!selectedWalletForDetails}>
           <DialogHeader>
             <DialogTitle>Transaction Details</DialogTitle>
           </DialogHeader>
@@ -453,7 +419,7 @@ export default function TransactionDetailsDialog({
               </div>
               <div>
                 <h4 className="font-semibold mb-1">Created</h4>
-                <p className="text-sm">{new Date(transaction.createdAt).toLocaleString()}</p>
+                <p className="text-sm">{formatDateTime(transaction.createdAt)}</p>
               </div>
             </div>
 
@@ -476,72 +442,11 @@ export default function TransactionDetailsDialog({
               <h4 className="font-semibold">Onchain state</h4>
               <div className="rounded-md border p-4 bg-muted/10">
                 <p className="text-sm font-medium">
-                  {(() => {
-                    const state = transaction.onChainState?.toLowerCase();
-                    switch (state) {
-                      case 'fundslocked':
-                        return 'Funds Locked';
-                      case 'resultsubmitted':
-                        return 'Result Submitted';
-                      case 'refundrequested':
-                        return 'Refund Requested (waiting for approval)';
-                      case 'withdrawauthorized':
-                        return 'Withdraw Authorized';
-                      case 'refundauthorized':
-                        return 'Refund Authorized';
-                      case 'refundwithdrawn':
-                        return 'Refund Withdrawn';
-                      case 'disputed':
-                        return 'Disputed';
-                      case 'disputedwithdrawn':
-                        return 'Disputed Withdrawn';
-                      case 'withdrawn':
-                        return 'Withdrawn';
-                      case 'fundsordatuminvalid':
-                        return 'Funds or Datum Invalid';
-                      default:
-                        return state ? state.charAt(0).toUpperCase() + state.slice(1) : '—';
-                    }
-                  })()}
+                  {formatOnChainState(transaction.onChainState)}
                 </p>
                 {transaction.NextAction?.requestedAction && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Next action:{' '}
-                    {(() => {
-                      const action = transaction.NextAction.requestedAction;
-                      switch (action) {
-                        case 'None':
-                          return 'None';
-                        case 'Ignore':
-                          return 'Ignore';
-                        case 'WaitingForManualAction':
-                          return 'Waiting for manual action';
-                        case 'WaitingForExternalAction':
-                          return 'Waiting for external action';
-                        case 'FundsLockingRequested':
-                          return 'Funds locking requested';
-                        case 'FundsLockingInitiated':
-                          return 'Funds locking initiated';
-                        case 'SetRefundRequestedRequested':
-                          return 'Refund request initiated';
-                        case 'SetRefundRequestedInitiated':
-                          return 'Refund request in progress';
-                        case 'WithdrawRequested':
-                          return 'Withdraw requested';
-                        case 'WithdrawInitiated':
-                          return 'Withdraw initiated';
-                        case 'WithdrawRefundRequested':
-                          return 'Refund withdraw requested';
-                        case 'WithdrawRefundInitiated':
-                          return 'Refund withdraw initiated';
-                        case 'AuthorizeWithdrawalRequested':
-                          return 'Withdrawal authorization requested';
-                        case 'AuthorizeWithdrawalInitiated':
-                          return 'Withdrawal authorization initiated';
-                        default:
-                          return action;
-                      }
-                    })()}
+                    Next action: {formatRequestedAction(transaction.NextAction.requestedAction)}
                   </p>
                 )}
               </div>
@@ -568,63 +473,19 @@ export default function TransactionDetailsDialog({
                     {transaction.type === 'payment' &&
                     transaction.RequestedFunds &&
                     transaction.RequestedFunds.length > 0 ? (
-                      transaction.RequestedFunds.map((fund, index) => {
-                        const usdmConfig = getUsdmConfig(network);
-                        const isUsdcx =
-                          fund.unit === USDCX_CONFIG.fullAssetId ||
-                          fund.unit === USDCX_CONFIG.policyId ||
-                          fund.unit === 'USDCx';
-                        const isUsdm =
-                          fund.unit === usdmConfig.fullAssetId ||
-                          fund.unit === usdmConfig.policyId ||
-                          fund.unit === 'USDM' ||
-                          fund.unit === 'tUSDM';
-                        const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
-
-                        return (
-                          <p key={index}>
-                            {fund.unit === 'lovelace' || !fund.unit
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
-                              : isUsdcx
-                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDCx`
-                                : isUsdm
-                                  ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
-                                  : isTestUsdm
-                                    ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                    : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
-                          </p>
-                        );
-                      })
+                      transaction.RequestedFunds.map((fund, index) => (
+                        <p key={index}>
+                          {formatAssetAmount(fund.amount, fund.unit, transactionNetwork)}
+                        </p>
+                      ))
                     ) : transaction.type === 'purchase' &&
                       transaction.PaidFunds &&
                       transaction.PaidFunds.length > 0 ? (
-                      transaction.PaidFunds.map((fund, index) => {
-                        const usdmConfig = getUsdmConfig(network);
-                        const isUsdcx =
-                          fund.unit === USDCX_CONFIG.fullAssetId ||
-                          fund.unit === USDCX_CONFIG.policyId ||
-                          fund.unit === 'USDCx';
-                        const isUsdm =
-                          fund.unit === usdmConfig.fullAssetId ||
-                          fund.unit === usdmConfig.policyId ||
-                          fund.unit === 'USDM' ||
-                          fund.unit === 'tUSDM';
-                        const isTestUsdm = fund.unit === TESTUSDM_CONFIG.unit;
-
-                        return (
-                          <p key={index}>
-                            {fund.unit === 'lovelace' || !fund.unit
-                              ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ADA`
-                              : isUsdcx
-                                ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} USDCx`
-                                : isUsdm
-                                  ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${network === 'Preprod' ? 'tUSDM' : 'USDM'}`
-                                  : isTestUsdm
-                                    ? `${(parseInt(fund.amount) / 1000000).toFixed(2)} tUSDM`
-                                    : `${(parseInt(fund.amount) / 1000000).toFixed(2)} ${fund.unit}`}
-                          </p>
-                        );
-                      })
+                      transaction.PaidFunds.map((fund, index) => (
+                        <p key={index}>
+                          {formatAssetAmount(fund.amount, fund.unit, transactionNetwork)}
+                        </p>
+                      ))
                     ) : (
                       <p>—</p>
                     )}
@@ -633,25 +494,32 @@ export default function TransactionDetailsDialog({
 
                 <div className="col-span-2">
                   <h5 className="text-sm font-medium mb-1">Transaction Hash</h5>
-                  {transaction.CurrentTransaction?.txHash ? (
-                    <div className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
-                      <a
-                        href={getExplorerUrl(
-                          transaction.CurrentTransaction.txHash,
-                          network,
-                          'transaction',
+                  {(() => {
+                    // Fall back to the latest historical hash so an error-state row
+                    // (cleared CurrentTransaction) still shows its last on-chain tx.
+                    const displayTxHash = getLatestTxHash(transaction);
+                    const isHistorical = !transaction.CurrentTransaction?.txHash;
+                    return displayTxHash ? (
+                      <div className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
+                        <a
+                          href={getExplorerUrl(displayTxHash, transactionNetwork, 'transaction')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-mono break-all hover:underline text-primary"
+                        >
+                          {displayTxHash}
+                        </a>
+                        <CopyButton value={displayTxHash} />
+                        {isHistorical && (
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            (previous)
+                          </span>
                         )}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-mono break-all hover:underline text-primary"
-                      >
-                        {transaction.CurrentTransaction.txHash}
-                      </a>
-                      <CopyButton value={transaction.CurrentTransaction?.txHash} />
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No transaction hash available</p>
-                  )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No transaction hash available</p>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -661,29 +529,27 @@ export default function TransactionDetailsDialog({
               <div className="grid grid-cols-2 gap-4 rounded-md border p-4 bg-muted/10">
                 <div>
                   <h5 className="text-sm font-medium mb-1">Created</h5>
-                  <p className="text-sm">{formatTimestamp(transaction.createdAt)}</p>
+                  <p className="text-sm">{formatDateTime(transaction.createdAt)}</p>
                 </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">Last Updated</h5>
-                  <p className="text-sm">{formatTimestamp(transaction.updatedAt)}</p>
+                  <p className="text-sm">{formatDateTime(transaction.updatedAt)}</p>
                 </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">Submit Result By</h5>
-                  <p className="text-sm">{formatTimestamp(transaction.submitResultTime)}</p>
+                  <p className="text-sm">{formatDateTime(transaction.submitResultTime)}</p>
                 </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">Unlock Time</h5>
-                  <p className="text-sm">{formatTimestamp(transaction.unlockTime)}</p>
+                  <p className="text-sm">{formatDateTime(transaction.unlockTime)}</p>
                 </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">External Dispute Unlock Time</h5>
-                  <p className="text-sm">
-                    {formatTimestamp(transaction.externalDisputeUnlockTime)}
-                  </p>
+                  <p className="text-sm">{formatDateTime(transaction.externalDisputeUnlockTime)}</p>
                 </div>
                 <div>
                   <h5 className="text-sm font-medium mb-1">Last Checked</h5>
-                  <p className="text-sm">{formatTimestamp(transaction.lastCheckedAt)}</p>
+                  <p className="text-sm">{formatDateTime(transaction.lastCheckedAt)}</p>
                 </div>
               </div>
             </div>
@@ -695,7 +561,10 @@ export default function TransactionDetailsDialog({
                   {walletInfo.smartContractAddress && (
                     <div>
                       <h5 className="text-sm font-medium mb-1">Smart Contract Address</h5>
-                      <WalletLink address={walletInfo.smartContractAddress} network={network} />
+                      <WalletLink
+                        address={walletInfo.smartContractAddress}
+                        network={transactionNetwork}
+                      />
                     </div>
                   )}
                   {(walletInfo.sellerVkey || walletInfo.sellerAddress) && (
@@ -704,7 +573,7 @@ export default function TransactionDetailsDialog({
                       <WalletLink
                         address={walletInfo.sellerAddress}
                         vkey={walletInfo.sellerVkey}
-                        network={network}
+                        network={transactionNetwork}
                         onInternalClick={
                           walletInfo.sellerVkey && isInternalWallet(walletInfo.sellerVkey)
                             ? () => handleWalletClick(walletInfo.sellerVkey!)
@@ -719,7 +588,7 @@ export default function TransactionDetailsDialog({
                       <WalletLink
                         address={walletInfo.buyerAddress}
                         vkey={walletInfo.buyerVkey}
-                        network={network}
+                        network={transactionNetwork}
                         onInternalClick={
                           walletInfo.buyerVkey && isInternalWallet(walletInfo.buyerVkey)
                             ? () => handleWalletClick(walletInfo.buyerVkey!)
@@ -767,13 +636,19 @@ export default function TransactionDetailsDialog({
               </div>
             )}
 
+            <TransactionHistorySection transaction={transaction} network={transactionNetwork} />
+
             <div className="flex gap-2 justify-end">
               {canRequestRefund(transaction) && transaction.type === 'purchase' && (
-                <Button variant="secondary" onClick={() => handleRefundRequest(transaction)}>
-                  Request Refund
+                <Button
+                  variant="secondary"
+                  onClick={() => handleRefundRequest(transaction)}
+                  disabled={isLoading}
+                >
+                  {isLoading ? 'Requesting refund...' : 'Request Refund'}
                 </Button>
               )}
-              {canAllowRefund(transaction) && (
+              {canAllowRefund(transaction) && transaction.type === 'payment' && (
                 <Button
                   variant="default"
                   onClick={() => {

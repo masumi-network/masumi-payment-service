@@ -1,18 +1,16 @@
 import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
-import { getUtxos, getWalletList, Utxo, UtxoAmount, WalletListItem } from '@/lib/api/generated';
-import { Client } from '@/lib/api/generated/client';
+import { getWalletList, WalletListItem } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getActiveStablecoinConfig } from '@/lib/constants/defaultWallets';
 import { handleApiCall } from '@/lib/utils';
+import { fetchWalletBalance } from '@/lib/wallet-balance';
 import {
   appendInclusiveCursorPage,
   flattenInclusiveCursorPages,
 } from '@/lib/pagination/cursor-pagination';
-import { toast } from 'react-toastify';
 
-type UTXO = Utxo;
-type UTXOAmount = UtxoAmount;
+export { fetchAllUtxos, fetchWalletBalance } from '@/lib/wallet-balance';
+export type { WalletBalanceResult } from '@/lib/wallet-balance';
 
 type Wallet = WalletListItem & {
   type: 'Purchasing' | 'Selling' | 'Funding';
@@ -23,63 +21,9 @@ export type WalletWithBalance = Wallet & {
   balance: string;
   usdcxBalance: string;
   isLoadingBalance?: boolean;
+  /** True when the balance fetch failed — render "unknown", not 0. */
+  isBalanceUnavailable?: boolean;
 };
-
-export async function fetchWalletBalance(
-  apiClient: Client,
-  network: 'Preprod' | 'Mainnet',
-  address: string,
-) {
-  const response = getUtxos({
-    client: apiClient,
-    query: {
-      address: address,
-      network: network,
-    },
-  });
-  const responseData = await response;
-
-  if (responseData.status == 404) {
-    return { ada: '0', usdcx: '0' };
-  }
-  if (responseData.error) {
-    console.error('Error fetching wallet balance:', responseData.error);
-    toast.error('Error fetching wallet balance: ' + errorToString(responseData.error));
-    return { ada: '0', usdcx: '0' };
-  }
-
-  if (!responseData.data?.data?.Utxos) {
-    return { ada: '0', usdcx: '0' };
-  }
-
-  try {
-    let adaBalance = 0;
-    let usdcxBalance = 0;
-
-    // Tracks only the active stablecoin for this network (USDCx on Mainnet, tUSDM on Preprod).
-    // Legacy USDM tokens in Mainnet wallets are intentionally excluded from this summary;
-    // they are still visible individually in WalletDetailsDialog.
-    const stablecoinConfig = getActiveStablecoinConfig(network);
-
-    responseData.data.data.Utxos.forEach((utxo: UTXO) => {
-      utxo.Amounts.forEach((amount: UTXOAmount) => {
-        if (amount.unit === 'lovelace' || amount.unit == '') {
-          adaBalance += amount.quantity || 0;
-        } else if (amount.unit === stablecoinConfig.fullAssetId) {
-          usdcxBalance += amount.quantity || 0;
-        }
-      });
-    });
-
-    return {
-      ada: adaBalance.toString(),
-      usdcx: usdcxBalance.toString(),
-    };
-  } catch (error) {
-    console.error('Error processing wallet balance:', error);
-    return { ada: '0', usdcx: '0' };
-  }
-}
 
 type WalletsResponse = {
   wallets: WalletWithBalance[];
@@ -88,10 +32,13 @@ type WalletsResponse = {
   nextCursor?: string;
 };
 
-export function useWallets() {
+export function useWallets(options?: { enabled?: boolean }) {
   const { apiClient, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
 
   const network = selectedPaymentSource?.network;
+  // Callers can defer this (e.g. the dashboard, until after first paint) so the
+  // eager all-wallet balance fan-out doesn't fire during the initial render.
+  const callerEnabled = options?.enabled ?? true;
 
   const query = useQuery<WalletsResponse>({
     queryKey: ['wallets', selectedPaymentSourceId, network],
@@ -149,22 +96,23 @@ export function useWallets() {
 
       const balanceResults = await Promise.all(balancePromises);
 
-      let totalAdaBalance = 0;
-      let totalUsdcxBalance = 0;
+      // BigInt totals: lovelace sums can exceed Number.MAX_SAFE_INTEGER.
+      let totalAdaBalance = BigInt(0);
+      let totalUsdcxBalance = BigInt(0);
 
       const walletsWithBalance: WalletWithBalance[] = allWallets.map((wallet, index) => {
         const balance = balanceResults[index];
-        const ada = parseInt(balance.ada || '0') || 0;
-        const usdcx = parseInt(balance.usdcx || '0') || 0;
-
-        totalAdaBalance += ada;
-        totalUsdcxBalance += usdcx;
+        if (!balance.unavailable) {
+          totalAdaBalance += BigInt(balance.ada || '0');
+          totalUsdcxBalance += BigInt(balance.usdcx || '0');
+        }
 
         return {
           ...wallet,
           balance: balance.ada,
           usdcxBalance: balance.usdcx,
           isLoadingBalance: false,
+          isBalanceUnavailable: balance.unavailable,
         };
       });
 
@@ -175,42 +123,24 @@ export function useWallets() {
         nextCursor: undefined,
       };
     },
-    enabled: !!selectedPaymentSourceId && !!network,
+    enabled: callerEnabled && !!selectedPaymentSourceId && !!network,
     staleTime: 25000,
   });
 
   const wallets = useMemo(() => query.data?.wallets ?? [], [query.data]);
 
-  const totalBalance = useMemo(
-    () => parseInt(query.data?.totalBalance || '0', 10) || 0,
-    [query.data],
-  );
-
-  const totalUsdcxBalance = useMemo(
-    () => parseInt(query.data?.totalUsdcxBalance || '0', 10) || 0,
-    [query.data],
-  );
-
   return {
     ...query,
     wallets,
-    totalBalance: totalBalance.toString(),
-    totalUsdcxBalance: totalUsdcxBalance.toString(),
+    totalBalance: query.data?.totalBalance ?? '0',
+    totalUsdcxBalance: query.data?.totalUsdcxBalance ?? '0',
   };
 }
-function errorToString(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (error !== null && error !== undefined) {
-    if (typeof error === 'object') {
-      return JSON.stringify(error);
-    }
-  }
-  return 'Unknown error';
-}
 
-const WALLET_PAGE_SIZE = 20;
+// Small page size so the wallets view + source dialogs load only a handful of
+// wallets (and their per-wallet balance lookups) up front; the rest come in on
+// demand via the "load more" affordance rather than all at once.
+const WALLET_PAGE_SIZE = 5;
 
 /**
  * Resolves a set of wallets by their payment key hashes via `GET /wallet/list`,
@@ -467,6 +397,7 @@ export function usePaginatedWallets(walletType?: 'Selling' | 'Purchasing') {
         balance: balances[index].ada,
         usdcxBalance: balances[index].usdcx,
         isLoadingBalance: false,
+        isBalanceUnavailable: balances[index].unavailable,
       }));
 
       const hasMore = items.length === WALLET_PAGE_SIZE;
@@ -478,7 +409,13 @@ export function usePaginatedWallets(walletType?: 'Selling' | 'Purchasing') {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>
       lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
-    enabled: !!apiClient && !!selectedPaymentSourceId,
+    // Gate on `network` too: it derives from `selectedPaymentSource`, which
+    // resolves a beat after `selectedPaymentSourceId` is restored from storage.
+    // Running before it resolves would cache an empty result under a key that
+    // never changes when the source loads — so the page would show no wallets
+    // until a manual refetch (the reload-then-empty bug). Not enabling until
+    // `network` is known means the query runs once, correctly.
+    enabled: !!apiClient && !!selectedPaymentSourceId && !!network,
     staleTime: 25000,
   });
 

@@ -30,8 +30,10 @@ import {
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { handleApiCall, shortenAddress } from '@/lib/utils';
-import { postX402Networks, X402Network } from '@/lib/api/generated';
+import { isTestnetEnv } from '@/lib/x402-rail';
+import { shortenAddress } from '@/lib/utils';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
+import { postX402Networks, X402Network, PostX402NetworksData } from '@/lib/api/generated';
 
 const NO_FACILITATOR = '__none__';
 
@@ -202,12 +204,16 @@ export function ChainsTab() {
       </div>
 
       <ChainDialog
-        key={editing?.id ?? 'new'}
+        key={dialogOpen ? (editing?.id ?? 'new') : 'closed'}
         open={dialogOpen}
         editing={editing}
-        onClose={() => setDialogOpen(false)}
+        onClose={() => {
+          setDialogOpen(false);
+          setEditing(null);
+        }}
         onSaved={() => {
           setDialogOpen(false);
+          setEditing(null);
           refetch();
         }}
       />
@@ -232,11 +238,16 @@ export function ChainDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const { apiClient } = useAppContext();
+  const { apiClient, network } = useAppContext();
   // Only load the wallet set while the form is open (it feeds the picker). A facilitator
   // settles inbound payments, so only Selling wallets are selectable.
   const { wallets } = useX402Wallets(open, 'Selling');
-  const [isSaving, setIsSaving] = useState(false);
+  const saveChain = useApiMutation({
+    mutationFn: (body: NonNullable<PostX402NetworksData['body']>) =>
+      postX402Networks({ client: apiClient, body }),
+    errorMessage: 'Failed to save chain',
+  });
+  const isSaving = saveChain.isPending;
 
   const {
     register,
@@ -249,7 +260,9 @@ export function ChainDialog({
       caip2Id: editing?.caip2Id ?? '',
       displayName: editing?.displayName ?? '',
       rpcUrl: editing?.rpcUrl ?? '',
-      isTestnet: editing?.isTestnet ?? false,
+      // A new chain should land in the environment it is created from (testnet chains
+      // pair with Preprod), otherwise it is invisible in the active env after saving.
+      isTestnet: editing?.isTestnet ?? isTestnetEnv(network),
       isEnabled: editing?.isEnabled ?? true,
       defaultAsset: editing?.defaultAsset ?? '',
       facilitatorWalletId: editing?.facilitatorWalletId ?? NO_FACILITATOR,
@@ -257,33 +270,23 @@ export function ChainDialog({
   });
 
   const onSubmit = async (data: ChainFormValues) => {
-    setIsSaving(true);
-    await handleApiCall(
-      () =>
-        postX402Networks({
-          client: apiClient,
-          body: {
-            caip2Id: data.caip2Id,
-            displayName: data.displayName,
-            rpcUrl: data.rpcUrl,
-            isTestnet: data.isTestnet,
-            isEnabled: data.isEnabled,
-            defaultAsset: data.defaultAsset ? data.defaultAsset : null,
-            facilitatorWalletId:
-              data.facilitatorWalletId && data.facilitatorWalletId !== NO_FACILITATOR
-                ? data.facilitatorWalletId
-                : null,
-          },
-        }),
-      {
-        onSuccess: () => {
-          toast.success(editing ? 'Chain updated' : 'Chain added');
-          onSaved();
-        },
-        onFinally: () => setIsSaving(false),
-        errorMessage: 'Failed to save chain',
-      },
-    );
+    const response = await saveChain
+      .mutateAsync({
+        caip2Id: data.caip2Id,
+        displayName: data.displayName,
+        rpcUrl: data.rpcUrl,
+        isTestnet: data.isTestnet,
+        isEnabled: data.isEnabled,
+        defaultAsset: data.defaultAsset ? data.defaultAsset : null,
+        facilitatorWalletId:
+          data.facilitatorWalletId && data.facilitatorWalletId !== NO_FACILITATOR
+            ? data.facilitatorWalletId
+            : null,
+      })
+      .catch(() => null);
+    if (!response) return;
+    toast.success(editing ? 'Chain updated' : 'Chain added');
+    onSaved();
   };
 
   return (

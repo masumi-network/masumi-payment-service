@@ -12,10 +12,12 @@ import { extractAssetName } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
+	SupportedPaymentSourceChain,
 	parseSupportedPaymentSourcesFromMetadata,
 	supportedPaymentSourceMetadataSchema,
 	supportedPaymentSourcesSchema,
 } from '@/types/payment-source';
+import { parseVerificationsFromMetadata, verificationMetadataSchema, verificationsSchema } from '@/types/verification';
 
 export const metadataSchema = z.object({
 	name: z
@@ -94,11 +96,47 @@ export const metadataSchema = z.object({
 			z.object({
 				pricingType: z.enum([PricingType.Dynamic]),
 			}),
-		),
+		)
+		// Optional: current metadata folds pricing into each Cardano supported
+		// payment source and drops this top-level block. Legacy entries still carry it.
+		.optional(),
 	image: z.string().or(z.array(z.string())),
 	metadata_version: z.coerce.number().int().min(1).max(2),
 	supported_payment_sources: z.array(supportedPaymentSourceMetadataSchema).optional(),
+	verifications: z.array(verificationMetadataSchema).optional(),
 });
+
+type MetadataAgentPricing = NonNullable<z.infer<typeof metadataSchema>['agentPricing']>;
+
+// Current metadata folds pricing into each Cardano supported payment source and no
+// longer emits a top-level `agentPricing` block. Resolve the effective agent pricing,
+// preferring the per-source Cardano pricing and falling back to the legacy top-level
+// block for entries minted before the move. Returns null only for malformed metadata
+// that carries neither.
+export function resolveAgentPricingFromMetadata(
+	parsed: Pick<z.infer<typeof metadataSchema>, 'agentPricing' | 'supported_payment_sources'>,
+): MetadataAgentPricing | null {
+	const cardanoSource = parsed.supported_payment_sources?.find(
+		(source) => metadataToString(source.chain) === SupportedPaymentSourceChain.Cardano,
+	);
+	const sourcePricing = cardanoSource?.pricing;
+	if (sourcePricing != null) {
+		const pricingType = metadataToString(sourcePricing.pricingType);
+		if (pricingType === PricingType.Fixed) {
+			return {
+				pricingType: PricingType.Fixed,
+				fixedPricing: (sourcePricing.fixed ?? []).map((entry) => ({
+					amount: BigInt(metadataToString(entry.amount) ?? '0'),
+					unit: entry.asset,
+				})),
+			};
+		}
+		if (pricingType === PricingType.Free) return { pricingType: PricingType.Free };
+		if (pricingType === PricingType.Dynamic) return { pricingType: PricingType.Dynamic };
+		return null;
+	}
+	return parsed.agentPricing ?? null;
+}
 
 export const queryAgentFromWalletSchemaInput = z.object({
 	walletVkey: z.string().max(250).describe('The payment key of the wallet to be queried'),
@@ -216,7 +254,7 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 												amount: z
 													.string()
 													.describe(
-														'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)',
+														'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)',
 													),
 												unit: z
 													.string()
@@ -245,6 +283,9 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 							supportedPaymentSources: supportedPaymentSourcesSchema
 								.nullable()
 								.describe('Payment sources advertised by this registry entry. Null for legacy metadata.'),
+							verifications: verificationsSchema
+								.nullable()
+								.describe('KERI/Veridian verification claims advertised by this registry entry. Null when none.'),
 						})
 						.describe('On-chain metadata for the agent'),
 				})
@@ -322,6 +363,11 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 					logger.error('Error parsing metadata', { error });
 					return;
 				}
+				const resolvedAgentPricing = resolveAgentPricingFromMetadata(parsedMetadata.data);
+				if (resolvedAgentPricing == null) {
+					logger.error('Agent metadata does not advertise any pricing', { unit: asset.unit });
+					return;
+				}
 				detailedAssets.push({
 					unit: asset.unit,
 					Metadata: {
@@ -355,22 +401,23 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 							: undefined,
 						Tags: parsedMetadata.data.tags.map((tag) => metadataToString(tag)!),
 						AgentPricing:
-							parsedMetadata.data.agentPricing.pricingType == PricingType.Fixed
+							resolvedAgentPricing.pricingType == PricingType.Fixed
 								? {
-										pricingType: parsedMetadata.data.agentPricing.pricingType,
-										Pricing: parsedMetadata.data.agentPricing.fixedPricing.map((price) => ({
+										pricingType: resolvedAgentPricing.pricingType,
+										Pricing: resolvedAgentPricing.fixedPricing.map((price) => ({
 											amount: price.amount.toString(),
 											unit: metadataToString(price.unit)!,
 										})),
 									}
 								: {
-										pricingType: parsedMetadata.data.agentPricing.pricingType,
+										pricingType: resolvedAgentPricing.pricingType,
 									},
 						image: metadataToString(parsedMetadata.data.image)!,
 						metadataVersion: parsedMetadata.data.metadata_version,
 						supportedPaymentSources: parseSupportedPaymentSourcesFromMetadata(
 							parsedMetadata.data.supported_payment_sources,
 						),
+						verifications: parseVerificationsFromMetadata(parsedMetadata.data.verifications),
 					},
 				});
 			}),

@@ -16,6 +16,12 @@ const nextConfig: NextConfig = {
     // Don't ignore build errors - fail the build on TypeScript errors
     ignoreBuildErrors: false,
   },
+  compiler: {
+    // Strip console.* from production bundles (keep console.error for real
+    // failures) so dev-time debug logging never ships to the browser console.
+    // Dev builds keep everything.
+    removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error'] } : false,
+  },
   // Note: eslint config was removed as it's no longer supported in Next.js 16
 };
 

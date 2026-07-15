@@ -9,35 +9,83 @@ import {
 
 dotenv.config();
 if (process.env.DATABASE_URL == null) throw new Error('Undefined DATABASE_URL ENV variable');
-if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length <= 20)
+if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length < 20)
 	throw new Error('Undefined or unsecure ENCRYPTION_KEY ENV variable. Require min 20 char');
 
-const batchPaymentInterval = Number(process.env.BATCH_PAYMENT_INTERVAL ?? '30');
-if (batchPaymentInterval < 5) throw new Error('BATCH_PAYMENT_INTERVAL must be at least 5 seconds');
-const checkTxInterval = Number(process.env.CHECK_TX_INTERVAL ?? '20');
-if (checkTxInterval < 15) throw new Error('CHECK_TX_INTERVAL must be at least 15 seconds');
-const checkCollectionInterval = Number(process.env.CHECK_COLLECTION_INTERVAL ?? '15');
-if (checkCollectionInterval < 5) throw new Error('CHECK_COLLECTION_INTERVAL must be at least 5 seconds');
-const checkCollectRefundInterval = Number(process.env.CHECK_COLLECT_REFUND_INTERVAL ?? '15');
-if (checkCollectRefundInterval < 5) throw new Error('CHECK_COLLECT_REFUND_INTERVAL must be at least 5 seconds');
-const checkSetRefundInterval = Number(process.env.CHECK_SET_REFUND_INTERVAL ?? '15');
-if (checkSetRefundInterval < 5) throw new Error('CHECK_SET_REFUND_INTERVAL must be at least 5 seconds');
-const checkUnsetRefundInterval = Number(process.env.CHECK_UNSET_REFUND_INTERVAL ?? '15');
-if (checkUnsetRefundInterval < 5) throw new Error('CHECK_UNSET_REFUND_INTERVAL must be at least 5 seconds');
-const checkWalletTransactionHashInterval = Number(process.env.CHECK_WALLET_TRANSACTION_HASH_INTERVAL ?? '20');
-if (checkWalletTransactionHashInterval < 5)
-	throw new Error('CHECK_WALLET_TRANSACTION_HASH_INTERVAL must be at least 5 seconds');
-const checkAuthorizeRefundInterval = Number(process.env.CHECK_AUTHORIZE_REFUND_INTERVAL ?? '15');
-if (checkAuthorizeRefundInterval < 5) throw new Error('CHECK_AUTHORIZE_REFUND_INTERVAL must be at least 5 seconds');
-const checkAuthorizeWithdrawalInterval = Number(process.env.CHECK_AUTHORIZE_WITHDRAWAL_INTERVAL ?? '15');
-if (checkAuthorizeWithdrawalInterval < 5)
-	throw new Error('CHECK_AUTHORIZE_WITHDRAWAL_INTERVAL must be at least 5 seconds');
-const checkSubmitResultInterval = Number(process.env.CHECK_SUBMIT_RESULT_INTERVAL ?? '15');
-if (checkSubmitResultInterval < 5) throw new Error('CHECK_SUBMIT_RESULT_INTERVAL must be at least 5 seconds');
-const registerAgentInterval = Number(process.env.REGISTER_AGENT_INTERVAL ?? '15');
-if (registerAgentInterval < 5) throw new Error('REGISTER_AGENT_INTERVAL must be at least 5 seconds');
-const deregisterAgentInterval = Number(process.env.DEREGISTER_AGENT_INTERVAL ?? '15');
-if (deregisterAgentInterval < 5) throw new Error('DEREGISTER_AGENT_INTERVAL must be at least 5 seconds');
+// Parse a numeric env var and reject non-finite values (NaN/Infinity) as well
+// as out-of-range values. A bare `Number('20s')` yields NaN, and `NaN < min`
+// is always false, so a plain `< min` guard silently lets typo'd config boot
+// and then feeds NaN into `setTimeout`/threshold math (delay coerces to 0 ->
+// cron hot-loop; `confirmations >= NaN` never true). `Number.isFinite` closes
+// that hole.
+function parseNumberEnv(name: string, rawValue: string | undefined, fallback: string, minValue: number): number {
+	const parsed = Number(rawValue ?? fallback);
+	if (!Number.isFinite(parsed)) {
+		throw new Error(`${name} must be a valid number`);
+	}
+	if (parsed < minValue) {
+		throw new Error(`${name} must be at least ${minValue}`);
+	}
+	return parsed;
+}
+
+const batchPaymentInterval = parseNumberEnv('BATCH_PAYMENT_INTERVAL', process.env.BATCH_PAYMENT_INTERVAL, '30', 5);
+const checkTxInterval = parseNumberEnv('CHECK_TX_INTERVAL', process.env.CHECK_TX_INTERVAL, '20', 15);
+const checkCollectionInterval = parseNumberEnv(
+	'CHECK_COLLECTION_INTERVAL',
+	process.env.CHECK_COLLECTION_INTERVAL,
+	'15',
+	5,
+);
+const checkCollectRefundInterval = parseNumberEnv(
+	'CHECK_COLLECT_REFUND_INTERVAL',
+	process.env.CHECK_COLLECT_REFUND_INTERVAL,
+	'15',
+	5,
+);
+const checkSetRefundInterval = parseNumberEnv(
+	'CHECK_SET_REFUND_INTERVAL',
+	process.env.CHECK_SET_REFUND_INTERVAL,
+	'15',
+	5,
+);
+const checkUnsetRefundInterval = parseNumberEnv(
+	'CHECK_UNSET_REFUND_INTERVAL',
+	process.env.CHECK_UNSET_REFUND_INTERVAL,
+	'15',
+	5,
+);
+const checkWalletTransactionHashInterval = parseNumberEnv(
+	'CHECK_WALLET_TRANSACTION_HASH_INTERVAL',
+	process.env.CHECK_WALLET_TRANSACTION_HASH_INTERVAL,
+	'20',
+	5,
+);
+const checkAuthorizeRefundInterval = parseNumberEnv(
+	'CHECK_AUTHORIZE_REFUND_INTERVAL',
+	process.env.CHECK_AUTHORIZE_REFUND_INTERVAL,
+	'15',
+	5,
+);
+const checkAuthorizeWithdrawalInterval = parseNumberEnv(
+	'CHECK_AUTHORIZE_WITHDRAWAL_INTERVAL',
+	process.env.CHECK_AUTHORIZE_WITHDRAWAL_INTERVAL,
+	'15',
+	5,
+);
+const checkSubmitResultInterval = parseNumberEnv(
+	'CHECK_SUBMIT_RESULT_INTERVAL',
+	process.env.CHECK_SUBMIT_RESULT_INTERVAL,
+	'15',
+	5,
+);
+const registerAgentInterval = parseNumberEnv('REGISTER_AGENT_INTERVAL', process.env.REGISTER_AGENT_INTERVAL, '15', 5);
+const deregisterAgentInterval = parseNumberEnv(
+	'DEREGISTER_AGENT_INTERVAL',
+	process.env.DEREGISTER_AGENT_INTERVAL,
+	'15',
+	5,
+);
 
 const autoWithdrawPayments =
 	process.env.AUTO_WITHDRAW_PAYMENTS?.toLowerCase() === 'true' ||
@@ -48,27 +96,49 @@ const autoWithdrawRefunds =
 	process.env.AUTO_WITHDRAW_REFUNDS === '' ||
 	process.env.AUTO_WITHDRAW_REFUNDS == undefined;
 
-const checkRegistryTransactionsInterval = Number(process.env.CHECK_REGISTRY_TRANSACTIONS_INTERVAL ?? '15');
-if (checkRegistryTransactionsInterval < 5)
-	throw new Error('CHECK_REGISTRY_TRANSACTIONS_INTERVAL must be at least 5 seconds');
+const checkRegistryTransactionsInterval = parseNumberEnv(
+	'CHECK_REGISTRY_TRANSACTIONS_INTERVAL',
+	process.env.CHECK_REGISTRY_TRANSACTIONS_INTERVAL,
+	'15',
+	5,
+);
 
-const autoDecisionInterval = Number(process.env.AUTO_DECISION_INTERVAL ?? '30');
-if (autoDecisionInterval < 5) throw new Error('AUTO_DECISION_INTERVAL must be at least 5 seconds');
+const autoDecisionInterval = parseNumberEnv('AUTO_DECISION_INTERVAL', process.env.AUTO_DECISION_INTERVAL, '30', 5);
 
-const webhookDeliveryInterval = Number(process.env.WEBHOOK_DELIVERY_INTERVAL ?? '10');
-if (webhookDeliveryInterval < 5) throw new Error('WEBHOOK_DELIVERY_INTERVAL must be at least 5 seconds');
+const webhookDeliveryInterval = parseNumberEnv(
+	'WEBHOOK_DELIVERY_INTERVAL',
+	process.env.WEBHOOK_DELIVERY_INTERVAL,
+	'10',
+	5,
+);
 
-const webhookCleanupInterval = Number(process.env.WEBHOOK_CLEANUP_INTERVAL ?? String(24 * 60 * 60));
-if (webhookCleanupInterval < 5) throw new Error('WEBHOOK_CLEANUP_INTERVAL must be at least 5 seconds');
+const webhookCleanupInterval = parseNumberEnv(
+	'WEBHOOK_CLEANUP_INTERVAL',
+	process.env.WEBHOOK_CLEANUP_INTERVAL,
+	String(24 * 60 * 60),
+	5,
+);
 
-const blockConfirmationsThreshold = Number(process.env.BLOCK_CONFIRMATIONS_THRESHOLD ?? '1');
-if (blockConfirmationsThreshold < 0) throw new Error('BLOCK_CONFIRMATIONS_THRESHOLD must be at least 0');
+const blockConfirmationsThreshold = parseNumberEnv(
+	'BLOCK_CONFIRMATIONS_THRESHOLD',
+	process.env.BLOCK_CONFIRMATIONS_THRESHOLD,
+	'1',
+	0,
+);
 
-const syncLockTimeoutInterval = Number(process.env.SYNC_LOCK_TIMEOUT_INTERVAL ?? '300');
-if (syncLockTimeoutInterval < 5) throw new Error('SYNC_LOCK_TIMEOUT_INTERVAL must be at least 5 seconds');
+const syncLockTimeoutInterval = parseNumberEnv(
+	'SYNC_LOCK_TIMEOUT_INTERVAL',
+	process.env.SYNC_LOCK_TIMEOUT_INTERVAL,
+	'300',
+	5,
+);
 
-const walletLockTimeoutInterval = Number(process.env.WALLET_LOCK_TIMEOUT_INTERVAL ?? '300');
-if (walletLockTimeoutInterval < 5) throw new Error('WALLET_LOCK_TIMEOUT_INTERVAL must be at least 5 seconds');
+const walletLockTimeoutInterval = parseNumberEnv(
+	'WALLET_LOCK_TIMEOUT_INTERVAL',
+	process.env.WALLET_LOCK_TIMEOUT_INTERVAL,
+	'300',
+	5,
+);
 
 export type LowBalanceDefaultRule = {
 	assetUnit: string;
@@ -154,8 +224,12 @@ function parseLowBalanceDefaultRules(
 	);
 }
 
-const lowBalanceCheckInterval = Number(process.env.LOW_BALANCE_CHECK_INTERVAL ?? '60');
-if (lowBalanceCheckInterval < 5) throw new Error('LOW_BALANCE_CHECK_INTERVAL must be at least 5 seconds');
+const lowBalanceCheckInterval = parseNumberEnv(
+	'LOW_BALANCE_CHECK_INTERVAL',
+	process.env.LOW_BALANCE_CHECK_INTERVAL,
+	'60',
+	5,
+);
 
 const lowBalanceDefaultRulesMainnet = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_MAINNET');
 const lowBalanceDefaultRulesPreprod = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_PREPROD');
@@ -199,8 +273,18 @@ export const CONFIG = {
 	LOW_BALANCE_DEFAULT_RULES_MAINNET: lowBalanceDefaultRulesMainnet,
 	LOW_BALANCE_DEFAULT_RULES_PREPROD: lowBalanceDefaultRulesPreprod,
 	// Prisma span filtering: only export outlier (slow) queries and cap volume
-	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: Number(process.env.OTEL_PRISMA_OUTLIER_THRESHOLD_MS ?? '100'),
-	OTEL_PRISMA_MAX_SPANS_PER_MINUTE: Number(process.env.OTEL_PRISMA_MAX_SPANS_PER_MINUTE ?? '60'),
+	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: parseNumberEnv(
+		'OTEL_PRISMA_OUTLIER_THRESHOLD_MS',
+		process.env.OTEL_PRISMA_OUTLIER_THRESHOLD_MS,
+		'100',
+		0,
+	),
+	OTEL_PRISMA_MAX_SPANS_PER_MINUTE: parseNumberEnv(
+		'OTEL_PRISMA_MAX_SPANS_PER_MINUTE',
+		process.env.OTEL_PRISMA_MAX_SPANS_PER_MINUTE,
+		'60',
+		0,
+	),
 	// Orphan-action cleanup cron. Periodically prunes PaymentActionData /
 	// PurchaseActionData rows that were created by a batch service's
 	// pre-submit then orphaned by a rollback drift-check that refused to
@@ -209,10 +293,21 @@ export const CONFIG = {
 	// keeps in-flight requests from being clobbered.
 	ORPHAN_ACTION_CLEANUP_INTERVAL_SECONDS: Math.max(
 		3600,
-		Number(process.env.ORPHAN_ACTION_CLEANUP_INTERVAL_SECONDS ?? String(24 * 3600)),
+		parseNumberEnv(
+			'ORPHAN_ACTION_CLEANUP_INTERVAL_SECONDS',
+			process.env.ORPHAN_ACTION_CLEANUP_INTERVAL_SECONDS,
+			String(24 * 3600),
+			0,
+		),
 	),
-	ORPHAN_ACTION_CLEANUP_MIN_AGE_HOURS: Math.max(1, Number(process.env.ORPHAN_ACTION_CLEANUP_MIN_AGE_HOURS ?? '72')),
-	ORPHAN_ACTION_CLEANUP_BATCH_SIZE: Math.max(10, Number(process.env.ORPHAN_ACTION_CLEANUP_BATCH_SIZE ?? '500')),
+	ORPHAN_ACTION_CLEANUP_MIN_AGE_HOURS: Math.max(
+		1,
+		parseNumberEnv('ORPHAN_ACTION_CLEANUP_MIN_AGE_HOURS', process.env.ORPHAN_ACTION_CLEANUP_MIN_AGE_HOURS, '72', 0),
+	),
+	ORPHAN_ACTION_CLEANUP_BATCH_SIZE: Math.max(
+		10,
+		parseNumberEnv('ORPHAN_ACTION_CLEANUP_BATCH_SIZE', process.env.ORPHAN_ACTION_CLEANUP_BATCH_SIZE, '500', 0),
+	),
 };
 
 export const CONSTANTS = {
@@ -313,5 +408,13 @@ export const DEFAULTS = {
 	REGISTRY_POLICY_ID_PREPROD: '7e8bdaf2b2b919a3a4b94002cafb50086c0c845fe535d07a77ab7f77',
 	PAYMENT_SMART_CONTRACT_ADDRESS_MAINNET: 'addr1wx7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsq87ujx7',
 	REGISTRY_POLICY_ID_MAINNET: 'ad6424e3ce9e47bbd8364984bd731b41de591f1d11f6d7d43d0da9b9',
+	// Web3CardanoV2 defaults (Aiken v1.1.23 + CIP-30 admin signatures with
+	// raw + CIP-8 hashed payload modes). Derived from ADMIN_WALLET{1,2,3}_*,
+	// DEFAULT_ADMIN_SIGNATURES_V2, COOLDOWN_TIME_*.
+	// See docs/migrations/v2-contract-cip30-upgrade.md when these change.
+	PAYMENT_SMART_CONTRACT_ADDRESS_V2_PREPROD: 'addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g',
+	REGISTRY_POLICY_ID_V2_PREPROD: '67ab0c92c4ac1610895a1c965ee50aba41a8f1513b15240723b3bd0b',
+	PAYMENT_SMART_CONTRACT_ADDRESS_V2_MAINNET: 'addr1wxs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgge2j6d',
+	REGISTRY_POLICY_ID_V2_MAINNET: '67ab0c92c4ac1610895a1c965ee50aba41a8f1513b15240723b3bd0b',
 	COOLDOWN_TIME_MAINNET: 1000 * 60 * 7,
 };

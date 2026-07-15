@@ -10,8 +10,10 @@ import { HttpExistsError } from '@masumi/payment-core/http-exists-error';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
+import { resolveTransactionAgentName } from '@/utils/shared/resolve-transaction-agent-name';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
+import { buildNeedsManualActionFilter } from '@/utils/shared/queries';
 import { resolvePurchaseCreationContext } from './shared';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import {
@@ -23,9 +25,9 @@ import {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 } from './schemas';
-import { getPurchasesForQuery } from './queries';
+import { getPurchasesForQuery, resolvePurchasePaymentSourceTypeFilter } from './queries';
 import { serializePurchasesResponse } from './serializers';
-import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
+import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
 
 export {
 	createPurchaseInitSchemaInput,
@@ -65,9 +67,10 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 					deletedAt: null,
 					network: input.network,
 					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: input.filterPaymentSourceType,
+					paymentSourceType: resolvePurchasePaymentSourceTypeFilter(input),
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
+				...buildNeedsManualActionFilter(input.filterNeedsManualAction),
 			},
 		});
 
@@ -291,7 +294,7 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			const wallets = await prisma.hotWallet.aggregate({
 				where: {
 					paymentSourceId: paymentSource.id,
-					type: HotWalletType.Selling,
+					type: HotWalletType.Purchasing,
 					deletedAt: null,
 				},
 				_count: true,
@@ -300,13 +303,14 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				recordBusinessEndpointError('/api/v1/purchase', 'POST', 404, 'No valid purchasing wallets found', {
 					network: input.network,
 					payment_source_id: paymentSource.id,
-					wallet_type: 'selling',
+					wallet_type: 'purchasing',
 					step: 'wallet_lookup',
 				});
 				throw createHttpError(404, 'No valid purchasing wallets found');
 			}
 			const {
 				externalDisputeUnlockTime,
+				onChainAgentName,
 				payByTime,
 				pricingType,
 				requestedCost,
@@ -327,12 +331,18 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			if (isV2) {
 				if (
 					input.buyerReturnAddress != null &&
-					!isCardanoPubKeyBaseAddressForNetwork(input.buyerReturnAddress, input.network)
+					!isCardanoPubKeyAddressForNetwork(input.buyerReturnAddress, input.network)
 				) {
-					throw createHttpError(400, 'buyerReturnAddress must be a Cardano base address with a stake credential');
+					throw createHttpError(
+						400,
+						'buyerReturnAddress must be a Cardano base or enterprise address with a payment key credential',
+					);
 				}
-				if (sellerReturnAddress != null && !isCardanoPubKeyBaseAddressForNetwork(sellerReturnAddress, input.network)) {
-					throw createHttpError(400, 'sellerReturnAddress must be a Cardano base address with a stake credential');
+				if (sellerReturnAddress != null && !isCardanoPubKeyAddressForNetwork(sellerReturnAddress, input.network)) {
+					throw createHttpError(
+						400,
+						'sellerReturnAddress must be a Cardano base or enterprise address with a payment key credential',
+					);
 				}
 			}
 			// V2 contract trap: `address_to_verification_key(seller)` returns None
@@ -342,10 +352,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			// referencing the seller principal would fail and funds locked
 			// against this seller would be permanently unspendable. Reject
 			// before constructing the purchase request.
-			if (isV2 && !isCardanoPubKeyBaseAddressForNetwork(sellerAddress, input.network)) {
+			if (isV2 && !isCardanoPubKeyAddressForNetwork(sellerAddress, input.network)) {
 				throw createHttpError(
 					400,
-					'Seller principal address (resolved from agent NFT holder) must be a Cardano base address with a verification-key payment credential. Script-credential addresses (smart wallets, multisig wrappers) cannot interact with the escrow contract; the seller must move the agent NFT to a verification-key address before purchases can be processed.',
+					'Seller principal address (resolved from agent NFT holder) must be a Cardano base or enterprise address with a verification-key payment credential. Script-credential addresses (smart wallets, multisig wrappers) cannot interact with the escrow contract; the seller must move the agent NFT to a verification-key address before purchases can be processed.',
 				);
 			}
 
@@ -367,6 +377,11 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				pricingType,
 				buyerReturnAddress: input.buyerReturnAddress ?? null,
 				sellerReturnAddress,
+				agentName: await resolveTransactionAgentName({
+					agentIdentifier: input.agentIdentifier,
+					onChainName: onChainAgentName,
+					preferOnChain: true,
+				}),
 			});
 
 			return {

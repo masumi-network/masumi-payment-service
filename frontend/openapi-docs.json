@@ -87,7 +87,7 @@
                                 },
                                 "amount": {
                                     "type": "string",
-                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                 }
                             },
                             "required": [
@@ -443,6 +443,11 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Identifier of the agent that is being paid"
+                    },
+                    "agentName": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Display name of the agent when known"
                     },
                     "pricingType": {
                         "type": "string",
@@ -899,7 +904,7 @@
                             "properties": {
                                 "amount": {
                                     "type": "string",
-                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                 },
                                 "unit": {
                                     "type": "string",
@@ -1051,6 +1056,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "agentName",
                     "pricingType",
                     "lastCheckedAt",
                     "payByTime",
@@ -1109,6 +1115,11 @@
                         "type": "string",
                         "nullable": true,
                         "description": "Identifier of the agent that is being purchased"
+                    },
+                    "agentName": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Display name of the agent when known"
                     },
                     "pricingType": {
                         "type": "string",
@@ -1695,6 +1706,7 @@
                     "updatedAt",
                     "blockchainIdentifier",
                     "agentIdentifier",
+                    "agentName",
                     "pricingType",
                     "lastCheckedAt",
                     "payByTime",
@@ -1895,7 +1907,7 @@
                                                     "properties": {
                                                         "amount": {
                                                             "type": "string",
-                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                         },
                                                         "unit": {
                                                             "type": "string",
@@ -2092,6 +2104,135 @@
                                 "minItems": 1,
                                 "maxItems": 25,
                                 "description": "Payment sources advertised by this registry entry. Null for legacy metadata."
+                            },
+                            "verifications": {
+                                "type": "array",
+                                "nullable": true,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "method": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 40,
+                                            "description": "Verification method discriminator, e.g. \"KERI-ACDC\""
+                                        },
+                                        "schemaVersion": {
+                                            "type": "string",
+                                            "maxLength": 16,
+                                            "description": "Version of this verification block"
+                                        },
+                                        "issuer": {
+                                            "type": "object",
+                                            "properties": {
+                                                "aid": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Issuer KERI AID (ACDC sad.i) — the root trust anchor"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the issuer KEL (key state) for signature verification"
+                                                }
+                                            },
+                                            "required": [
+                                                "aid",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential issuer identity"
+                                        },
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "said": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential schema SAID (ACDC sad.s)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the JSON schema; a verifier checks its hash equals said"
+                                                }
+                                            },
+                                            "required": [
+                                                "said",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential schema — the ACDC structure definition"
+                                        },
+                                        "credential": {
+                                            "type": "object",
+                                            "properties": {
+                                                "said": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential SAID (ACDC sad.d)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said"
+                                                },
+                                                "registry": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks"
+                                                }
+                                            },
+                                            "required": [
+                                                "said",
+                                                "oobi"
+                                            ],
+                                            "description": "The verifiable credential (ACDC)"
+                                        },
+                                        "holder": {
+                                            "type": "object",
+                                            "properties": {
+                                                "aid": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Issuee/holder KERI AID (ACDC sad.a.i)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the holder KEL"
+                                                }
+                                            },
+                                            "required": [
+                                                "aid",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential holder/issuee identity"
+                                        },
+                                        "baseUrl": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "Optional witness/KERIA resolver root for live key-state (\"verify at time T\") and TEL queries"
+                                        }
+                                    },
+                                    "required": [
+                                        "method",
+                                        "issuer",
+                                        "schema",
+                                        "credential",
+                                        "holder"
+                                    ]
+                                },
+                                "maxItems": 10,
+                                "description": "KERI/Veridian verification claims advertised by this registry entry. Null when none."
                             }
                         },
                         "required": [
@@ -2103,7 +2244,8 @@
                             "AgentPricing",
                             "image",
                             "metadataVersion",
-                            "supportedPaymentSources"
+                            "supportedPaymentSources",
+                            "verifications"
                         ],
                         "description": "On-chain metadata for the agent"
                     }
@@ -2282,7 +2424,7 @@
                                                     "properties": {
                                                         "amount": {
                                                             "type": "string",
-                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                            "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                         },
                                                         "unit": {
                                                             "type": "string",
@@ -2479,6 +2621,135 @@
                                 "minItems": 1,
                                 "maxItems": 25,
                                 "description": "Payment sources advertised by this registry entry. Null for legacy metadata."
+                            },
+                            "verifications": {
+                                "type": "array",
+                                "nullable": true,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "method": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 40,
+                                            "description": "Verification method discriminator, e.g. \"KERI-ACDC\""
+                                        },
+                                        "schemaVersion": {
+                                            "type": "string",
+                                            "maxLength": 16,
+                                            "description": "Version of this verification block"
+                                        },
+                                        "issuer": {
+                                            "type": "object",
+                                            "properties": {
+                                                "aid": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Issuer KERI AID (ACDC sad.i) — the root trust anchor"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the issuer KEL (key state) for signature verification"
+                                                }
+                                            },
+                                            "required": [
+                                                "aid",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential issuer identity"
+                                        },
+                                        "schema": {
+                                            "type": "object",
+                                            "properties": {
+                                                "said": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential schema SAID (ACDC sad.s)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the JSON schema; a verifier checks its hash equals said"
+                                                }
+                                            },
+                                            "required": [
+                                                "said",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential schema — the ACDC structure definition"
+                                        },
+                                        "credential": {
+                                            "type": "object",
+                                            "properties": {
+                                                "said": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential SAID (ACDC sad.d)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said"
+                                                },
+                                                "registry": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks"
+                                                }
+                                            },
+                                            "required": [
+                                                "said",
+                                                "oobi"
+                                            ],
+                                            "description": "The verifiable credential (ACDC)"
+                                        },
+                                        "holder": {
+                                            "type": "object",
+                                            "properties": {
+                                                "aid": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 128,
+                                                    "description": "Issuee/holder KERI AID (ACDC sad.a.i)"
+                                                },
+                                                "oobi": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "OOBI resolving the holder KEL"
+                                                }
+                                            },
+                                            "required": [
+                                                "aid",
+                                                "oobi"
+                                            ],
+                                            "description": "Credential holder/issuee identity"
+                                        },
+                                        "baseUrl": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "Optional witness/KERIA resolver root for live key-state (\"verify at time T\") and TEL queries"
+                                        }
+                                    },
+                                    "required": [
+                                        "method",
+                                        "issuer",
+                                        "schema",
+                                        "credential",
+                                        "holder"
+                                    ]
+                                },
+                                "maxItems": 10,
+                                "description": "KERI/Veridian verification claims advertised by this registry entry. Null when none."
                             }
                         },
                         "required": [
@@ -2490,7 +2761,8 @@
                             "AgentPricing",
                             "image",
                             "metadataVersion",
-                            "supportedPaymentSources"
+                            "supportedPaymentSources",
+                            "verifications"
                         ],
                         "description": "On-chain metadata for the agent"
                     }
@@ -2701,7 +2973,7 @@
                                             "properties": {
                                                 "amount": {
                                                     "type": "string",
-                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                 },
                                                 "unit": {
                                                     "type": "string",
@@ -2893,6 +3165,135 @@
                         "maxItems": 25,
                         "description": "Payment sources advertised by this registry entry. Null for legacy metadata."
                     },
+                    "verifications": {
+                        "type": "array",
+                        "nullable": true,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "method": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 40,
+                                    "description": "Verification method discriminator, e.g. \"KERI-ACDC\""
+                                },
+                                "schemaVersion": {
+                                    "type": "string",
+                                    "maxLength": 16,
+                                    "description": "Version of this verification block"
+                                },
+                                "issuer": {
+                                    "type": "object",
+                                    "properties": {
+                                        "aid": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 128,
+                                            "description": "Issuer KERI AID (ACDC sad.i) — the root trust anchor"
+                                        },
+                                        "oobi": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "OOBI resolving the issuer KEL (key state) for signature verification"
+                                        }
+                                    },
+                                    "required": [
+                                        "aid",
+                                        "oobi"
+                                    ],
+                                    "description": "Credential issuer identity"
+                                },
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "said": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 128,
+                                            "description": "Credential schema SAID (ACDC sad.s)"
+                                        },
+                                        "oobi": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "OOBI resolving the JSON schema; a verifier checks its hash equals said"
+                                        }
+                                    },
+                                    "required": [
+                                        "said",
+                                        "oobi"
+                                    ],
+                                    "description": "Credential schema — the ACDC structure definition"
+                                },
+                                "credential": {
+                                    "type": "object",
+                                    "properties": {
+                                        "said": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 128,
+                                            "description": "Credential SAID (ACDC sad.d)"
+                                        },
+                                        "oobi": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said"
+                                        },
+                                        "registry": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 128,
+                                            "description": "Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks"
+                                        }
+                                    },
+                                    "required": [
+                                        "said",
+                                        "oobi"
+                                    ],
+                                    "description": "The verifiable credential (ACDC)"
+                                },
+                                "holder": {
+                                    "type": "object",
+                                    "properties": {
+                                        "aid": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 128,
+                                            "description": "Issuee/holder KERI AID (ACDC sad.a.i)"
+                                        },
+                                        "oobi": {
+                                            "type": "string",
+                                            "maxLength": 500,
+                                            "format": "uri",
+                                            "description": "OOBI resolving the holder KEL"
+                                        }
+                                    },
+                                    "required": [
+                                        "aid",
+                                        "oobi"
+                                    ],
+                                    "description": "Credential holder/issuee identity"
+                                },
+                                "baseUrl": {
+                                    "type": "string",
+                                    "maxLength": 500,
+                                    "format": "uri",
+                                    "description": "Optional witness/KERIA resolver root for live key-state (\"verify at time T\") and TEL queries"
+                                }
+                            },
+                            "required": [
+                                "method",
+                                "issuer",
+                                "schema",
+                                "credential",
+                                "holder"
+                            ]
+                        },
+                        "maxItems": 10,
+                        "description": "KERI/Veridian verification claims advertised by this registry entry. Null when none."
+                    },
                     "SmartContractWallet": {
                         "type": "object",
                         "properties": {
@@ -3000,6 +3401,7 @@
                     "AgentPricing",
                     "sendFundingLovelace",
                     "supportedPaymentSources",
+                    "verifications",
                     "SmartContractWallet",
                     "RecipientWallet",
                     "CurrentTransaction"
@@ -3171,6 +3573,15 @@
                         "type": "string",
                         "description": "Address of the smart contract for this payment source"
                     },
+                    "contractSyncStatus": {
+                        "type": "string",
+                        "enum": [
+                            "in_sync",
+                            "outdated_contract",
+                            "custom_address"
+                        ],
+                        "description": "Whether a Web3CardanoV2 source is on the current on-chain contract. \"outdated_contract\": registry policyId differs from the current default (retired contract — agents orphaned, payment address stale); \"custom_address\": current version but a non-default admin-wallet address; \"in_sync\": matches the current default (also for V1 and any non-V2 source)."
+                    },
                     "PaymentSourceConfig": {
                         "type": "object",
                         "properties": {
@@ -3266,6 +3677,7 @@
                     "requiredAdminSignatures",
                     "policyId",
                     "smartContractAddress",
+                    "contractSyncStatus",
                     "PaymentSourceConfig",
                     "lastIdentifierChecked",
                     "syncInProgress",
@@ -3345,7 +3757,7 @@
                         "nullable": true,
                         "minimum": 0,
                         "maximum": 100000000000000,
-                        "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                        "description": "The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)"
                     }
                 },
                 "required": [
@@ -5828,7 +6240,7 @@
                                                 },
                                                 "amount": {
                                                     "type": "string",
-                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                 }
                                             },
                                             "required": [
@@ -6023,7 +6435,7 @@
                                                 },
                                                 "amount": {
                                                     "type": "string",
-                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                 }
                                             },
                                             "required": [
@@ -7069,10 +7481,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -7105,20 +7517,30 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                            "description": "When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
                         },
                         "required": false,
-                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "description": "When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount",
                         "name": "searchQuery",
                         "in": "query"
                     },
@@ -7172,6 +7594,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -7447,6 +7870,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -7717,7 +8145,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -7869,6 +8297,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -7914,6 +8343,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -8057,10 +8487,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -8071,10 +8501,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
@@ -8128,6 +8558,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -8274,10 +8705,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -8288,10 +8719,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
@@ -8345,6 +8776,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -8443,11 +8875,21 @@
                     {
                         "schema": {
                             "type": "string",
-                            "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -8458,10 +8900,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     }
@@ -8537,11 +8979,21 @@
                     {
                         "schema": {
                             "type": "string",
-                            "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, purchase count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
+                        },
+                        "required": false,
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, purchase count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -8552,10 +9004,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, purchase count defaults to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, purchase count defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     }
@@ -8679,10 +9131,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, payment diff endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -8693,10 +9145,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment diff endpoints default to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
@@ -8750,6 +9202,7 @@
                                                     "id": "cuid_v2_auto_generated",
                                                     "blockchainIdentifier": "blockchain_identifier",
                                                     "agentIdentifier": "agent_identifier",
+                                                    "agentName": "Example Agent",
                                                     "pricingType": "Fixed",
                                                     "createdAt": "1970-01-20T20:00:36.260Z",
                                                     "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -8907,6 +9360,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -9177,7 +9635,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -9329,6 +9787,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -9374,6 +9833,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -9524,6 +9984,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -9794,7 +10259,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -9946,6 +10411,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -9991,6 +10457,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -10164,6 +10631,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being paid"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -10434,7 +10906,7 @@
                                                         "properties": {
                                                             "amount": {
                                                                 "type": "string",
-                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                             },
                                                             "unit": {
                                                                 "type": "string",
@@ -10586,6 +11058,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -10814,6 +11287,11 @@
                                                     "type": "string",
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
+                                                },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
                                                 },
                                                 "pricingType": {
                                                     "type": "string",
@@ -11222,6 +11700,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -12525,10 +13004,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -12539,10 +13018,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, count defaults to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, count defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     }
@@ -13262,10 +13741,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -13298,20 +13777,30 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Search query to filter by ID, hash, state, network, wallet address, or amount"
+                            "description": "When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it"
                         },
                         "required": false,
-                        "description": "Search query to filter by ID, hash, state, network, wallet address, or amount",
+                        "description": "When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it",
+                        "name": "filterNeedsManualAction",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount"
+                        },
+                        "required": false,
+                        "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount",
                         "name": "searchQuery",
                         "in": "query"
                     },
@@ -13605,6 +14094,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -14012,6 +14506,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -14057,6 +14552,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -14165,6 +14661,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -14572,6 +15073,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -14621,6 +15123,7 @@
                                         "id": "cuid_v2_auto_generated",
                                         "blockchainIdentifier": "blockchain_identifier",
                                         "agentIdentifier": "agent_identifier",
+                                        "agentName": "Example Agent",
                                         "pricingType": "Fixed",
                                         "createdAt": "1970-01-20T20:00:36.260Z",
                                         "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -15311,6 +15814,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -15718,6 +16226,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -15763,6 +16272,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -15912,6 +16422,11 @@
                                                     "nullable": true,
                                                     "description": "Identifier of the agent that is being purchased"
                                                 },
+                                                "agentName": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Display name of the agent when known"
+                                                },
                                                 "pricingType": {
                                                     "type": "string",
                                                     "enum": [
@@ -16319,6 +16834,7 @@
                                                 "updatedAt",
                                                 "blockchainIdentifier",
                                                 "agentIdentifier",
+                                                "agentName",
                                                 "pricingType",
                                                 "lastCheckedAt",
                                                 "payByTime",
@@ -16364,6 +16880,7 @@
                                             "id": "cuid_v2_auto_generated",
                                             "blockchainIdentifier": "blockchain_identifier",
                                             "agentIdentifier": "agent_identifier",
+                                            "agentName": "Example Agent",
                                             "pricingType": "Fixed",
                                             "createdAt": "1970-01-20T20:00:36.260Z",
                                             "updatedAt": "1970-01-20T20:00:36.260Z",
@@ -17042,10 +17559,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no V2-aware filters, registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no V2-aware filters, registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -17056,10 +17573,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no source/address/identifier support filters, the endpoint defaults to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no source/address/identifier support filters, the endpoint defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     },
@@ -17094,11 +17611,31 @@
                             "type": "string",
                             "minLength": 57,
                             "maxLength": 250,
-                            "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)"
+                            "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions). This exact lookup does not apply the default Web3CardanoV1 compatibility filter."
                         },
                         "required": false,
-                        "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions)",
+                        "description": "When set, return only the registry entry whose on-chain agent identifier matches exactly (same scope as list: network, payment source, and wallet permissions). This exact lookup does not apply the default Web3CardanoV1 compatibility filter.",
                         "name": "filterAgentIdentifier",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter."
+                        },
+                        "required": false,
+                        "description": "Return only entries that advertise a supported payment source with this address (the Cardano smart-contract address, or an EVM x402 payTo/address). Matched server-side so callers do not have to fetch every entry and filter client-side. Combined with filterSupportedPaymentSourceNetworks as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.",
+                        "name": "filterSupportedPaymentSourceAddress",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter."
+                        },
+                        "required": false,
+                        "description": "Comma-separated list of supported-payment-source networks to match (Cardano network name, or CAIP-2 EVM chain ids such as eip155:8453). Returns entries advertising a supported payment source on any of these networks. Combined with filterSupportedPaymentSourceAddress as a logical OR. This V2-aware filter opts out of the default Web3CardanoV1 compatibility filter.",
+                        "name": "filterSupportedPaymentSourceNetworks",
                         "in": "query"
                     }
                 ],
@@ -17372,6 +17909,134 @@
                                         "maxItems": 25,
                                         "description": "Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source."
                                     },
+                                    "verifications": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "method": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 40,
+                                                    "description": "Verification method discriminator, e.g. \"KERI-ACDC\""
+                                                },
+                                                "schemaVersion": {
+                                                    "type": "string",
+                                                    "maxLength": 16,
+                                                    "description": "Version of this verification block"
+                                                },
+                                                "issuer": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "aid": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Issuer KERI AID (ACDC sad.i) — the root trust anchor"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the issuer KEL (key state) for signature verification"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "aid",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential issuer identity"
+                                                },
+                                                "schema": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "said": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential schema SAID (ACDC sad.s)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the JSON schema; a verifier checks its hash equals said"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "said",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential schema — the ACDC structure definition"
+                                                },
+                                                "credential": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "said": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential SAID (ACDC sad.d)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said"
+                                                        },
+                                                        "registry": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "said",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "The verifiable credential (ACDC)"
+                                                },
+                                                "holder": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "aid": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Issuee/holder KERI AID (ACDC sad.a.i)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the holder KEL"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "aid",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential holder/issuee identity"
+                                                },
+                                                "baseUrl": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "Optional witness/KERIA resolver root for live key-state (\"verify at time T\") and TEL queries"
+                                                }
+                                            },
+                                            "required": [
+                                                "method",
+                                                "issuer",
+                                                "schema",
+                                                "credential",
+                                                "holder"
+                                            ]
+                                        },
+                                        "maxItems": 10,
+                                        "description": "Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only."
+                                    },
                                     "ExampleOutputs": {
                                         "type": "array",
                                         "items": {
@@ -17473,7 +18138,7 @@
                                                                 "amount": {
                                                                     "type": "string",
                                                                     "maxLength": 25,
-                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                                 }
                                                             },
                                                             "required": [
@@ -17711,6 +18376,30 @@
                                                     "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
                                                 }
                                             ],
+                                            "verifications": [
+                                                {
+                                                    "method": "KERI-ACDC",
+                                                    "schemaVersion": "1",
+                                                    "issuer": {
+                                                        "aid": "EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y",
+                                                        "oobi": "https://witness.example.com/oobi/EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y/witness"
+                                                    },
+                                                    "schema": {
+                                                        "said": "EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p",
+                                                        "oobi": "https://schema.example.com/oobi/EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p"
+                                                    },
+                                                    "credential": {
+                                                        "said": "EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "oobi": "https://cred.example.com/oobi/EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "registry": "ER7yQ3kL9mN2pT5vX8a1b4c7d0e3f6g9h2j5k8l1m4n7"
+                                                    },
+                                                    "holder": {
+                                                        "aid": "EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4",
+                                                        "oobi": "https://keria.example.com/oobi/EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4/agent/EAgnt"
+                                                    },
+                                                    "baseUrl": "https://verify.example.com"
+                                                }
+                                            ],
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
@@ -17833,6 +18522,30 @@
                                                     "network": "Preprod",
                                                     "paymentSourceType": "Web3CardanoV2",
                                                     "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
+                                                }
+                                            ],
+                                            "verifications": [
+                                                {
+                                                    "method": "KERI-ACDC",
+                                                    "schemaVersion": "1",
+                                                    "issuer": {
+                                                        "aid": "EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y",
+                                                        "oobi": "https://witness.example.com/oobi/EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y/witness"
+                                                    },
+                                                    "schema": {
+                                                        "said": "EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p",
+                                                        "oobi": "https://schema.example.com/oobi/EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p"
+                                                    },
+                                                    "credential": {
+                                                        "said": "EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "oobi": "https://cred.example.com/oobi/EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "registry": "ER7yQ3kL9mN2pT5vX8a1b4c7d0e3f6g9h2j5k8l1m4n7"
+                                                    },
+                                                    "holder": {
+                                                        "aid": "EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4",
+                                                        "oobi": "https://keria.example.com/oobi/EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4/agent/EAgnt"
+                                                    },
+                                                    "baseUrl": "https://verify.example.com"
                                                 }
                                             ],
                                             "SmartContractWallet": {
@@ -18006,10 +18719,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted with no explicit payment source type, registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -18020,10 +18733,10 @@
                                 "Web3CardanoV1",
                                 "Web3CardanoV2"
                             ],
-                            "description": "Filter by payment source type"
+                            "description": "Filter by payment source type. When omitted with no smart-contract-address filter, registry diff defaults to Web3CardanoV1 for backwards compatibility."
                         },
                         "required": false,
-                        "description": "Filter by payment source type",
+                        "description": "Filter by payment source type. When omitted with no smart-contract-address filter, registry diff defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
                     }
@@ -18202,6 +18915,30 @@
                                                     "network": "Preprod",
                                                     "paymentSourceType": "Web3CardanoV2",
                                                     "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
+                                                }
+                                            ],
+                                            "verifications": [
+                                                {
+                                                    "method": "KERI-ACDC",
+                                                    "schemaVersion": "1",
+                                                    "issuer": {
+                                                        "aid": "EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y",
+                                                        "oobi": "https://witness.example.com/oobi/EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y/witness"
+                                                    },
+                                                    "schema": {
+                                                        "said": "EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p",
+                                                        "oobi": "https://schema.example.com/oobi/EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p"
+                                                    },
+                                                    "credential": {
+                                                        "said": "EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "oobi": "https://cred.example.com/oobi/EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "registry": "ER7yQ3kL9mN2pT5vX8a1b4c7d0e3f6g9h2j5k8l1m4n7"
+                                                    },
+                                                    "holder": {
+                                                        "aid": "EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4",
+                                                        "oobi": "https://keria.example.com/oobi/EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4/agent/EAgnt"
+                                                    },
+                                                    "baseUrl": "https://verify.example.com"
                                                 }
                                             ],
                                             "SmartContractWallet": {
@@ -18389,6 +19126,134 @@
                                         "maxItems": 25,
                                         "description": "Payment sources to replace on this registry request. Provide an empty array to clear them."
                                     },
+                                    "verifications": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "method": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 40,
+                                                    "description": "Verification method discriminator, e.g. \"KERI-ACDC\""
+                                                },
+                                                "schemaVersion": {
+                                                    "type": "string",
+                                                    "maxLength": 16,
+                                                    "description": "Version of this verification block"
+                                                },
+                                                "issuer": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "aid": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Issuer KERI AID (ACDC sad.i) — the root trust anchor"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the issuer KEL (key state) for signature verification"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "aid",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential issuer identity"
+                                                },
+                                                "schema": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "said": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential schema SAID (ACDC sad.s)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the JSON schema; a verifier checks its hash equals said"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "said",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential schema — the ACDC structure definition"
+                                                },
+                                                "credential": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "said": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential SAID (ACDC sad.d)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI/endpoint serving the signed ACDC; a verifier checks its hash equals said"
+                                                        },
+                                                        "registry": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Credential status registry / TEL SAID (ACDC sad.ri) for independent revocation checks"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "said",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "The verifiable credential (ACDC)"
+                                                },
+                                                "holder": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "aid": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 128,
+                                                            "description": "Issuee/holder KERI AID (ACDC sad.a.i)"
+                                                        },
+                                                        "oobi": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "OOBI resolving the holder KEL"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "aid",
+                                                        "oobi"
+                                                    ],
+                                                    "description": "Credential holder/issuee identity"
+                                                },
+                                                "baseUrl": {
+                                                    "type": "string",
+                                                    "maxLength": 500,
+                                                    "format": "uri",
+                                                    "description": "Optional witness/KERIA resolver root for live key-state (\"verify at time T\") and TEL queries"
+                                                }
+                                            },
+                                            "required": [
+                                                "method",
+                                                "issuer",
+                                                "schema",
+                                                "credential",
+                                                "holder"
+                                            ]
+                                        },
+                                        "maxItems": 10,
+                                        "description": "Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only."
+                                    },
                                     "ExampleOutputs": {
                                         "type": "array",
                                         "items": {
@@ -18490,7 +19355,7 @@
                                                                 "amount": {
                                                                     "type": "string",
                                                                     "maxLength": 25,
-                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)"
+                                                                    "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                                 }
                                                             },
                                                             "required": [
@@ -18725,6 +19590,30 @@
                                                     "address": "addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm"
                                                 }
                                             ],
+                                            "verifications": [
+                                                {
+                                                    "method": "KERI-ACDC",
+                                                    "schemaVersion": "1",
+                                                    "issuer": {
+                                                        "aid": "EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y",
+                                                        "oobi": "https://witness.example.com/oobi/EIaIeKvfBLmZf3wfqB0oR1uM5n8m9k2pQ7rT4sV1wX3y/witness"
+                                                    },
+                                                    "schema": {
+                                                        "said": "EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p",
+                                                        "oobi": "https://schema.example.com/oobi/EJ1gXWfzLyW2u0YY5Zb8c4d6e9f1g3h5j7k9l2m4n6p"
+                                                    },
+                                                    "credential": {
+                                                        "said": "EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "oobi": "https://cred.example.com/oobi/EHpH79tPZoSl7VJZ7xMi3JWF4rH9wZ2ntGvKABd9N14z",
+                                                        "registry": "ER7yQ3kL9mN2pT5vX8a1b4c7d0e3f6g9h2j5k8l1m4n7"
+                                                    },
+                                                    "holder": {
+                                                        "aid": "EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4",
+                                                        "oobi": "https://keria.example.com/oobi/EBcd1ef2gh3ij4kl5mn6op7qr8st9uv0wx1yz2ab3cd4/agent/EAgnt"
+                                                    },
+                                                    "baseUrl": "https://verify.example.com"
+                                                }
+                                            ],
                                             "SmartContractWallet": {
                                                 "walletVkey": "wallet_vkey",
                                                 "walletAddress": "wallet_address"
@@ -18887,6 +19776,20 @@
                         "description": "Used to paginate through the payment sources",
                         "name": "cursorId",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Restrict results to a single Cardano network (still bounded by the key network limit)"
+                        },
+                        "required": false,
+                        "description": "Restrict results to a single Cardano network (still bounded by the key network limit)",
+                        "name": "network",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -18935,6 +19838,7 @@
                                                     "syncInProgress": true,
                                                     "policyId": "policy_id",
                                                     "smartContractAddress": "address_of_the_smart_contract",
+                                                    "contractSyncStatus": "in_sync",
                                                     "AdminWallets": [
                                                         {
                                                             "walletAddress": "wallet_address",
@@ -19218,6 +20122,7 @@
                                             "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
+                                            "contractSyncStatus": "in_sync",
                                             "PaymentSourceConfig": {
                                                 "rpcProviderApiKey": "rpc_provider_api_key_blockfrost",
                                                 "rpcProvider": "Blockfrost"
@@ -19471,6 +20376,7 @@
                                             "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
+                                            "contractSyncStatus": "in_sync",
                                             "PaymentSourceConfig": {
                                                 "rpcProviderApiKey": "rpc_provider_api_key_blockfrost",
                                                 "rpcProvider": "Blockfrost"
@@ -19569,6 +20475,7 @@
                                             "requiredAdminSignatures": null,
                                             "policyId": "policy_id",
                                             "smartContractAddress": "address_of_the_smart_contract",
+                                            "contractSyncStatus": "in_sync",
                                             "PaymentSourceConfig": {
                                                 "rpcProviderApiKey": "rpc_provider_api_key_blockfrost",
                                                 "rpcProvider": "Blockfrost"
@@ -19931,7 +20838,7 @@
                                             "Web3CardanoV1",
                                             "Web3CardanoV2"
                                         ],
-                                        "description": "Filter by payment source type"
+                                        "description": "Filter by payment source type. When omitted, spending totals default to Web3CardanoV1 for backwards compatibility."
                                     }
                                 },
                                 "required": [
@@ -19996,7 +20903,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -20027,7 +20934,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -20058,7 +20965,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -20103,7 +21010,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20152,7 +21059,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20201,7 +21108,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20246,7 +21153,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20290,7 +21197,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20334,7 +21241,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20577,7 +21484,7 @@
                                             "Web3CardanoV1",
                                             "Web3CardanoV2"
                                         ],
-                                        "description": "Filter by payment source type"
+                                        "description": "Filter by payment source type. When omitted, income totals default to Web3CardanoV1 for backwards compatibility."
                                     }
                                 },
                                 "required": [
@@ -20642,7 +21549,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -20673,7 +21580,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -20704,7 +21611,7 @@
                                                                     "unit",
                                                                     "amount"
                                                                 ],
-                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                             }
                                                         },
                                                         "blockchainFees": {
@@ -20749,7 +21656,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20798,7 +21705,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20847,7 +21754,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20892,7 +21799,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20936,7 +21843,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -20980,7 +21887,7 @@
                                                                         "unit",
                                                                         "amount"
                                                                     ],
-                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 10000000 lovelace) and its unit is \"\""
+                                                                    "description": "The amount of the unit in the smallest unit. Meaning if the unit is ADA, the amount is in lovelace (1 ADA = 1000000 lovelace) and its unit is \"\""
                                                                 }
                                                             },
                                                             "blockchainFees": {
@@ -22263,10 +23170,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted, inbox registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted, inbox registry list/count endpoints default to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     },
@@ -22657,10 +23564,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted, inbox registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted, inbox registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     }
@@ -22875,10 +23782,10 @@
                         "schema": {
                             "type": "string",
                             "nullable": true,
-                            "description": "The smart contract address of the payment source"
+                            "description": "The smart contract address of the payment source. When omitted, inbox registry count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source."
                         },
                         "required": false,
-                        "description": "The smart contract address of the payment source",
+                        "description": "The smart contract address of the payment source. When omitted, inbox registry count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.",
                         "name": "filterSmartContractAddress",
                         "in": "query"
                     }
@@ -24644,6 +25551,20 @@
                         "description": "Filter by CAIP-2 chain id",
                         "name": "caip2Network",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ],
+                            "description": "When true, only returns attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter."
+                        },
+                        "required": false,
+                        "description": "When true, only returns attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.",
+                        "name": "filterNeedsManualAction",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -25598,6 +26519,20 @@
                         },
                         "required": false,
                         "name": "caip2Network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "true",
+                                "false"
+                            ],
+                            "description": "When true, only counts attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter."
+                        },
+                        "required": false,
+                        "description": "When true, only counts attempts that require manual reconciliation: settle failed or threw after verification, leaving the attempt Verified with a recorded error. Overrides the status filter.",
+                        "name": "filterNeedsManualAction",
                         "in": "query"
                     }
                 ],

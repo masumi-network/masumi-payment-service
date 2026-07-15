@@ -4,28 +4,27 @@ import { TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { recordV2CollateralPrepHashDivergence } from '@masumi/payment-core/metrics';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { resolveTxHash, SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
 import type { Network, UTxO } from '@meshsdk/core';
-import { isDefinitiveNodeRejection } from '../submit-error-classifier';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 
 /**
- * Required wallet shape for collateral readiness:
- *   - one UTxO of ≥ COLLATERAL_RESERVE_LOVELACE for collateral input. Tokens
- *     on the same UTxO are FINE — Babbage added `collateral_return_output` +
- *     `total_collateral` (CIP-40), and Mesh-SDK 1.9 auto-emits the return
- *     output when a token-bearing UTxO is declared as collateral, so the
- *     ledger accepts mixed-asset collateral inputs natively.
- *   - AT LEAST ONE additional UTxO so the fee input does not OVERLAP the
- *     collateral input.
+ * Current service-level wallet shape for collateral readiness:
+ *   - one payment-key wallet UTxO of ≥ COLLATERAL_RESERVE_LOVELACE for the
+ *     collateral input. Tokens on the same UTxO are FINE — Babbage added
+ *     `collateral_return_output` + `total_collateral` (CIP-40), and Mesh-SDK
+ *     1.9 auto-emits the return output when a token-bearing UTxO is declared
+ *     as collateral, so the ledger accepts mixed-asset collateral inputs.
+ *   - AT LEAST ONE additional wallet UTxO for the current V2 builders'
+ *     separate-collateral reserve policy.
  *
- * Cardano's ledger rules disallow the same input appearing in both
- * `inputs` and `collateral_inputs` of a script-spending transaction:
- * once a buyer wallet drains down to a single UTxO, any subsequent
- * script-spending action (request-refund, collect-refund, submit-result,
- * etc.) cannot build a valid tx until a second UTxO appears in the
- * wallet. This module owns the "before each script tx, top up the
- * wallet's UTxO count" responsibility.
+ * Cardano does NOT forbid a VKey wallet UTxO from appearing in both
+ * `inputs` and `collateral_inputs`. The real ledger constraint is that
+ * collateral must be payment-key-locked, so script-locked UTxOs can never be
+ * collateral. This helper still preserves a separate confirmed reserve so
+ * successful script txs leave a ready collateral candidate for the next tick
+ * and do not rely on Mesh coin selection sharing the collateral UTxO.
  */
 export const COLLATERAL_RESERVE_LOVELACE = 5_000_000n;
 /**
@@ -103,7 +102,7 @@ export type WalletStateClassification = {
  *     when a token-bearing UTxO is selected for collateral, so no special
  *     handling is required at this layer.
  *   - `utxoCount` — total UTxOs in the wallet (the second UTxO requirement
- *     is the whole reason this module exists; see the module-level note).
+ *     is a current service/builder invariant; see the module-level note).
  *   - `totalLovelace` — sum of `lovelace` across every UTxO, used to gate
  *     the prep-tx build (insufficient funds bail-out).
  *   - `ready` — composite gate: `hasGoodCollateral && utxoCount >= 2`.
@@ -273,8 +272,8 @@ export async function ensureCollateralReady(params: EnsureCollateralReadyParams)
 
 	// Build the prep tx. Send the collateral reserve explicitly back to
 	// the wallet's own address; mesh will then add a change output for
-	// the remainder, naturally producing the second UTxO we need to
-	// avoid the inputs/collateral_inputs overlap on the next script tx.
+	// the remainder, naturally restoring the separate reserve/change shape
+	// the current V2 builders expect on the next script tx.
 	const meshTx = new MeshTransaction({
 		initiator: meshWallet,
 		fetcher: params.blockchainProvider,

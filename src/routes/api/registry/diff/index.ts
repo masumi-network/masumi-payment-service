@@ -7,6 +7,7 @@ import createHttpError from 'http-errors';
 import { queryRegistryRequestSchemaOutput } from '@/routes/api/registry';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { resolveRegistryPaymentSourceTypeFilter } from '../queries';
 import { serializeRegistryEntriesResponse } from '../serializers';
 
 const registryDiffLastUpdateSchema = ez.dateIn();
@@ -27,8 +28,15 @@ export const queryRegistryDiffSchemaInput = z.object({
 		.string()
 		.optional()
 		.nullable()
-		.describe('The smart contract address of the payment source'),
-	filterPaymentSourceType: z.nativeEnum(PaymentSourceType).optional().describe('Filter by payment source type'),
+		.describe(
+			'The smart contract address of the payment source. When omitted with no explicit payment source type, registry diff defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.',
+		),
+	filterPaymentSourceType: z
+		.nativeEnum(PaymentSourceType)
+		.optional()
+		.describe(
+			'Filter by payment source type. When omitted with no smart-contract-address filter, registry diff defaults to Web3CardanoV1 for backwards compatibility.',
+		),
 });
 
 function buildRegistryDiffWhere({
@@ -51,7 +59,10 @@ function buildRegistryDiffWhere({
 			network,
 			deletedAt: null,
 			smartContractAddress: filterSmartContractAddress ?? undefined,
-			paymentSourceType: filterPaymentSourceType,
+			paymentSourceType: resolveRegistryPaymentSourceTypeFilter({
+				filterPaymentSourceType,
+				filterSmartContractAddress,
+			}),
 		},
 		SmartContractWallet: { deletedAt: null },
 		...buildManagedHolderWalletScopeFilter(walletScopeIds),
@@ -117,6 +128,7 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 						mimeType: true,
 					},
 				},
+				Verifications: true,
 				SupportedPaymentSources: {
 					select: {
 						chain: true,

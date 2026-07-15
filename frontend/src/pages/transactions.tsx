@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 
-import { cn, formatFundUnit } from '@/lib/utils';
+import { cn, formatAssetAmount } from '@/lib/utils';
+import { formatDateTime } from '@/lib/format-date';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import Head from 'next/head';
@@ -20,23 +21,22 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
-import { parseAmountSearchRange } from '@/lib/parseAmountSearchRange';
+import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { getPaymentSourceTypeLabel } from '@/lib/payment-source-type';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
+import { getLatestTxHash } from '@/components/transactions/transaction-format.helpers';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  TransactionFilters,
+  EMPTY_FILTERS,
+  type TransactionFilterState,
+} from '@/components/transactions/TransactionFilters';
+import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransactionErrors';
+import { toast } from 'react-toastify';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
-
-const formatTimestamp = (timestamp: string | null | undefined): string => {
-  if (!timestamp) return '—';
-
-  if (/^\d+$/.test(timestamp)) {
-    return new Date(parseInt(timestamp)).toLocaleString();
-  }
-
-  return new Date(timestamp).toLocaleString();
-};
 
 const formatStatus = (status: string | null) => {
   if (!status) return '—';
@@ -48,11 +48,14 @@ export default function Transactions() {
 
   const [activeTab, setActiveTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filters, setFilters] = useState<TransactionFilterState>(EMPTY_FILTERS);
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
+  const isNeedsActionTab = activeTab === 'Needs Action';
 
   const filterParams = useMemo(() => {
     const params: {
       filterOnChainState?: OnChainStateFilter;
+      filterNeedsManualAction?: boolean;
       searchQuery?: string;
       transactionType?: 'payment' | 'purchase';
     } = {};
@@ -61,11 +64,17 @@ export default function Transactions() {
     else if (activeTab === 'Purchases') params.transactionType = 'purchase';
     else if (activeTab === 'Refund Requests') params.filterOnChainState = 'RefundRequested';
     else if (activeTab === 'Disputes') params.filterOnChainState = 'Disputed';
+    else if (activeTab === 'Needs Action') params.filterNeedsManualAction = true;
+
+    // Explicit filters override the tab defaults (errorType is client-side only).
+    if (filters.type) params.transactionType = filters.type;
+    if (filters.status) params.filterOnChainState = filters.status;
+    if (filters.needsAction) params.filterNeedsManualAction = true;
 
     if (debouncedSearchQuery) params.searchQuery = debouncedSearchQuery;
 
     return params;
-  }, [activeTab, debouncedSearchQuery]);
+  }, [activeTab, debouncedSearchQuery, filters]);
 
   const {
     transactions,
@@ -81,19 +90,12 @@ export default function Transactions() {
   // Unfiltered call for tab badge counts (reuses dashboard cache when no args); only this instance updates localStorage
   const { transactions: allTransactionsForCounts, markAllAsRead } = useTransactions();
 
-  // Format price helper function
-  const formatPrice = (amount: string | undefined) => {
-    if (!amount) return '—';
-    const numericAmount = parseInt(amount) / 1000000;
-    return new Intl.NumberFormat(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-      useGrouping: true,
-    }).format(numericAmount);
-  };
-
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showDownloadDialog, setShowDownloadDialog] = useState(false);
+  // Multi-row selection is only offered on the Needs Action tab, where every row
+  // is in an error state that can be bulk-cleared. Keyed by transaction id.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const { clearErrors, isClearing } = useBulkClearTransactionErrors();
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && !transactions.length;
 
@@ -110,6 +112,12 @@ export default function Transactions() {
       (t) => t.onChainState === 'RefundRequested',
     ).length;
     const disputeCount = dedupedTransactions.filter((t) => t.onChainState === 'Disputed').length;
+    // Mirrors the backend filterNeedsManualAction predicate (buildNeedsManualActionFilter):
+    // parked in WaitingForManualAction or a recorded NextAction error.
+    const needsActionCount = dedupedTransactions.filter(
+      (t) =>
+        t.NextAction?.requestedAction === 'WaitingForManualAction' || !!t.NextAction?.errorType,
+    ).length;
 
     return [
       { name: 'All', count: null },
@@ -123,6 +131,11 @@ export default function Transactions() {
       {
         name: 'Disputes',
         count: disputeCount || null,
+        variant: 'alert' as const,
+      },
+      {
+        name: 'Needs Action',
+        count: needsActionCount || null,
         variant: 'alert' as const,
       },
     ];
@@ -161,7 +174,7 @@ export default function Transactions() {
 
     return filteredTransactions.filter((tx) => {
       if (tx.id?.toLowerCase().includes(query)) return true;
-      if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
+      if (getLatestTxHash(tx)?.toLowerCase().includes(query)) return true;
       if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (tx.PaymentSource?.network?.toLowerCase().includes(query)) return true;
       if (tx.PaymentSource?.paymentSourceType?.toLowerCase().includes(query)) return true;
@@ -169,13 +182,14 @@ export default function Transactions() {
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
       if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;
+      if (tx.agentName?.toLowerCase().includes(query)) return true;
       if (amountRange) {
         const funds =
           tx.type === 'payment' ? tx.RequestedFunds : tx.type === 'purchase' ? tx.PaidFunds : [];
         if (
           funds?.some((f) => {
-            const amt = parseInt(f.amount);
-            return amt >= amountRange.min && amt <= amountRange.max;
+            const amt = parseAmountToBigInt(f.amount);
+            return amt != null && amt >= amountRange.min && amt <= amountRange.max;
           })
         )
           return true;
@@ -183,6 +197,60 @@ export default function Transactions() {
       return false;
     });
   }, [filteredTransactions, searchQuery, debouncedSearchQuery, isPlaceholderData]);
+
+  const refreshTransactions = useCallback(() => {
+    void refetchTransactions?.();
+  }, [refetchTransactions]);
+
+  // Error type has no server-side param, so narrow it client-side. Pagination-limited.
+  const visibleTransactions = useMemo(() => {
+    if (!filters.errorType) return displayTransactions;
+    return displayTransactions.filter((tx) => tx.NextAction?.errorType === filters.errorType);
+  }, [displayTransactions, filters.errorType]);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const selectableIds = useMemo(
+    () => visibleTransactions.map((tx) => tx.id).filter((id): id is string => Boolean(id)),
+    [visibleTransactions],
+  );
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
+  const someSelected = selectedIds.size > 0 && !allSelected;
+
+  const toggleAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const everySelected = selectableIds.length > 0 && selectableIds.every((id) => prev.has(id));
+      return everySelected ? new Set() : new Set(selectableIds);
+    });
+  }, [selectableIds]);
+
+  const toggleRow = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBulkClearErrors = useCallback(async () => {
+    const selected = visibleTransactions.filter((tx) => tx.id && selectedIds.has(tx.id));
+    if (selected.length === 0) return;
+
+    const { succeeded, failed, failedIds } = await clearErrors(selected);
+    if (succeeded > 0) {
+      toast.success(
+        `Cleared error state for ${succeeded} transaction${succeeded === 1 ? '' : 's'}`,
+      );
+    }
+    if (failed > 0) {
+      toast.error(`Failed to clear ${failed} transaction${failed === 1 ? '' : 's'}`);
+    }
+
+    // Keep only the failed rows selected so the user can retry them.
+    setSelectedIds(new Set(failedIds));
+    refreshTransactions();
+  }, [visibleTransactions, selectedIds, clearErrors, refreshTransactions]);
 
   // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
   const markAllAsReadRef = useRef(markAllAsRead);
@@ -192,10 +260,6 @@ export default function Transactions() {
   useEffect(() => {
     markAllAsReadRef.current();
   }, [network, apiClient, selectedPaymentSourceId]);
-
-  const refreshTransactions = useCallback(() => {
-    refetchTransactions?.();
-  }, [refetchTransactions]);
 
   const handleLoadMore = useCallback(() => {
     if (hasMore && !isLoadingMore) {
@@ -219,7 +283,7 @@ export default function Transactions() {
         return 'text-blue-500';
       case 'disputed':
       case 'disputedwithdrawn':
-        return 'text-red-500';
+        return 'text-destructive';
       default:
         return 'text-muted-foreground';
     }
@@ -231,6 +295,7 @@ export default function Transactions() {
       const headers = [
         'Transaction Type',
         'Transaction Hash',
+        'Agent Name',
         'Agent Identifier',
         'Payment Amounts',
         'Network',
@@ -240,35 +305,41 @@ export default function Transactions() {
         'Fee rate (%)',
       ];
       const rows = transactions.map((transaction) => {
-        const feeRatePermille = selectedPaymentSource?.feeRatePermille;
+        // The list is filtered by network + source type only, so rows can
+        // belong to OTHER sources than the selected one. Only stamp the
+        // selected source's fee rate onto rows that actually belong to it.
+        const feeRatePermille =
+          transaction.PaymentSource?.id === selectedPaymentSource?.id
+            ? selectedPaymentSource?.feeRatePermille
+            : undefined;
         const feeRateDisplay =
           typeof feeRatePermille === 'number' ? (feeRatePermille / 10).toFixed(1) + '%' : 'Unknown';
-        const paymentAmounts = [];
+        const paymentAmounts: string[] = [];
         if (transaction.type === 'payment' && transaction.RequestedFunds) {
           paymentAmounts.push(
-            ...transaction.RequestedFunds.map((fund) => ({
-              amount: formatPrice(fund.amount),
-              unit: formatFundUnit(fund.unit, network),
-            })),
+            ...transaction.RequestedFunds.map((fund) =>
+              formatAssetAmount(fund.amount, fund.unit, network),
+            ),
           );
         } else if (transaction.type === 'purchase' && transaction.PaidFunds) {
           paymentAmounts.push(
-            ...transaction.PaidFunds.map((fund) => ({
-              amount: formatPrice(fund.amount),
-              unit: formatFundUnit(fund.unit, network),
-            })),
+            ...transaction.PaidFunds.map((fund) =>
+              formatAssetAmount(fund.amount, fund.unit, network),
+            ),
           );
         }
-        const amount = paymentAmounts.map((amount) => `${amount.amount} ${amount.unit}`).join(', ');
+        const amount = paymentAmounts.join(', ');
 
-        const hash = transaction.CurrentTransaction?.txHash || '—';
+        const hash = getLatestTxHash(transaction) || '—';
+        const agentName = transaction.agentName?.trim() || '—';
         const agentIdentifier = transaction.agentIdentifier?.trim() || '—';
         const status = formatStatus(transaction.onChainState);
-        const date = new Date(transaction.createdAt).toLocaleString();
+        const date = formatDateTime(transaction.createdAt);
 
         return [
           transaction.type,
           hash,
+          agentName,
           agentIdentifier,
           amount,
           transaction.PaymentSource.network,
@@ -289,7 +360,7 @@ export default function Transactions() {
         `"${String(value ?? '').replace(/"/g, '""')}"`;
       return [headers, ...rows].map((row) => row.map(escapeCsvField).join(',')).join('\n');
     },
-    [selectedPaymentSource?.feeRatePermille, network],
+    [selectedPaymentSource?.id, selectedPaymentSource?.feeRatePermille, network],
   );
 
   // Download CSV file
@@ -304,6 +375,7 @@ export default function Transactions() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -321,6 +393,7 @@ export default function Transactions() {
                 <a
                   href="https://docs.masumi.network/core-concepts/agent-to-agent-payments"
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="text-primary hover:underline"
                 >
                   Learn more
@@ -334,7 +407,7 @@ export default function Transactions() {
               />
               <Button
                 onClick={() => setShowDownloadDialog(true)}
-                disabled={displayTransactions.length === 0}
+                disabled={visibleTransactions.length === 0}
                 variant="outline"
                 className="flex items-center gap-2 btn-hover-lift"
               >
@@ -355,20 +428,57 @@ export default function Transactions() {
             activeTab={activeTab}
             onTabChange={(tab) => {
               setActiveTab(tab);
+              clearSelection();
             }}
           />
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
             <div className="flex-1">
               <SearchInput
                 value={searchQuery}
-                onChange={setSearchQuery}
-                placeholder="Search by ID, hash, status, amount, or source..."
+                onChange={(value) => {
+                  setSearchQuery(value);
+                  clearSelection();
+                }}
+                placeholder="Search by agent name, ID, hash, wallet, status, amount..."
                 className="max-w-xs"
                 isLoading={isSearchPending && !!searchQuery}
               />
             </div>
+            <TransactionFilters
+              filters={filters}
+              onChange={(next) => {
+                setFilters(next);
+                clearSelection();
+              }}
+            />
           </div>
+
+          {isNeedsActionTab && selectedIds.size > 0 && (
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 animate-fade-in">
+              <span className="text-sm font-medium">{selectedIds.size} selected</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedIds(new Set())}
+                  disabled={isClearing}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleBulkClearErrors}
+                  disabled={isClearing}
+                >
+                  {isClearing
+                    ? 'Clearing error states...'
+                    : `Clear error state (${selectedIds.size})`}
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="border rounded-lg overflow-x-auto">
             <table
@@ -379,15 +489,28 @@ export default function Transactions() {
             >
               <thead className="bg-muted/30 dark:bg-muted/15">
                 <tr className="border-b">
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground pl-6">
+                  {isNeedsActionTab && (
+                    <th className="p-4 pl-6 w-10">
+                      <Checkbox
+                        checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                        onCheckedChange={toggleAll}
+                        aria-label="Select all transactions"
+                        disabled={selectableIds.length === 0}
+                      />
+                    </th>
+                  )}
+                  <th
+                    className={cn(
+                      'p-4 text-left text-sm font-medium text-muted-foreground',
+                      !isNeedsActionTab && 'pl-6',
+                    )}
+                  >
                     Type
                   </th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Transaction Hash
                   </th>
-                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">
-                    Agent identifier
-                  </th>
+                  <th className="p-4 text-left text-sm font-medium text-muted-foreground">Agent</th>
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Amount
                   </th>
@@ -405,11 +528,11 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {isInitialLoading || (displayTransactions.length === 0 && isSearchPending) ? (
+                {isInitialLoading || (visibleTransactions.length === 0 && isSearchPending) ? (
                   <TransactionTableSkeleton rows={5} />
-                ) : displayTransactions.length === 0 ? (
+                ) : visibleTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={isNeedsActionTab ? 10 : 9}>
                       <EmptyState
                         icon={searchQuery ? 'search' : 'inbox'}
                         title={
@@ -437,7 +560,7 @@ export default function Transactions() {
                     </td>
                   </tr>
                 ) : (
-                  displayTransactions.map((transaction, index) => (
+                  visibleTransactions.map((transaction, index) => (
                     <tr
                       key={transaction.id}
                       className={cn(
@@ -446,28 +569,43 @@ export default function Transactions() {
                           ? 'bg-destructive/10 border-l-2 border-l-destructive'
                           : '',
                         'cursor-pointer hover:bg-muted/50',
+                        transaction.id && selectedIds.has(transaction.id) && 'bg-muted/50',
                       )}
                       style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                       onClick={() => setSelectedTransaction(transaction)}
                     >
-                      <td className="p-4 pl-6">
+                      {isNeedsActionTab && (
+                        <td className="p-4 pl-6 w-10" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={transaction.id ? selectedIds.has(transaction.id) : false}
+                            onCheckedChange={() => transaction.id && toggleRow(transaction.id)}
+                            disabled={!transaction.id}
+                            aria-label="Select transaction"
+                          />
+                        </td>
+                      )}
+                      <td className={cn('p-4', !isNeedsActionTab && 'pl-6')}>
                         <span className="capitalize">{transaction.type}</span>
                       </td>
                       <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-muted-foreground">
-                            {transaction.CurrentTransaction?.txHash
-                              ? `${transaction.CurrentTransaction.txHash.slice(0, 8)}...${transaction.CurrentTransaction.txHash.slice(-8)}`
-                              : '—'}
-                          </span>
-                          {transaction.CurrentTransaction?.txHash && (
-                            <CopyButton value={transaction.CurrentTransaction?.txHash} />
-                          )}
-                        </div>
+                        {(() => {
+                          const displayTxHash = getLatestTxHash(transaction);
+                          return (
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-sm text-muted-foreground">
+                                {displayTxHash
+                                  ? `${displayTxHash.slice(0, 8)}...${displayTxHash.slice(-8)}`
+                                  : '—'}
+                              </span>
+                              {displayTxHash && <CopyButton value={displayTxHash} />}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="p-4">
                         <TransactionAgentIdentifierCell
                           agentIdentifier={transaction.agentIdentifier}
+                          agentName={transaction.agentName}
                           smartContractAddress={
                             transaction.PaymentSource?.smartContractAddress ?? null
                           }
@@ -476,25 +614,17 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.type === 'payment' && transaction.RequestedFunds?.length
-                          ? transaction.RequestedFunds.map((fund, index) => {
-                              const amount = formatPrice(fund.amount);
-                              const unit = formatFundUnit(fund.unit, network);
-                              return (
-                                <div key={index} className="text-sm">
-                                  {amount} {unit}
-                                </div>
-                              );
-                            })
+                          ? transaction.RequestedFunds.map((fund, index) => (
+                              <div key={index} className="text-sm">
+                                {formatAssetAmount(fund.amount, fund.unit, network)}
+                              </div>
+                            ))
                           : transaction.type === 'purchase' && transaction.PaidFunds?.length
-                            ? transaction.PaidFunds.map((fund, index) => {
-                                const amount = formatPrice(fund.amount);
-                                const unit = formatFundUnit(fund.unit, network);
-                                return (
-                                  <div key={index} className="text-sm">
-                                    {amount} {unit}
-                                  </div>
-                                );
-                              })
+                            ? transaction.PaidFunds.map((fund, index) => (
+                                <div key={index} className="text-sm">
+                                  {formatAssetAmount(fund.amount, fund.unit, network)}
+                                </div>
+                              ))
                             : '—'}
                       </td>
                       <td className="p-4">
@@ -525,12 +655,17 @@ export default function Transactions() {
                       </td>
                       <td className="p-4">
                         {transaction.onChainState === 'ResultSubmitted'
-                          ? formatTimestamp(transaction.unlockTime)
+                          ? formatDateTime(transaction.unlockTime)
                           : '—'}
                       </td>
-                      <td className="p-4">{new Date(transaction.createdAt).toLocaleString()}</td>
+                      <td className="p-4">{formatDateTime(transaction.createdAt)}</td>
                       <td className="p-4 pr-8">
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="More actions"
+                          className="h-8 w-8"
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </td>

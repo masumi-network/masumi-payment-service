@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   postPayment,
@@ -54,6 +54,21 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
+  // The auto-purchase is scheduled with a delay; closing (or close+reopen) must not
+  // let a previous session's timer fire and mutate fresh dialog state.
+  const purchaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionIdRef = useRef(0);
+
+  const cancelScheduledPurchase = useCallback(() => {
+    sessionIdRef.current += 1;
+    if (purchaseTimerRef.current !== null) {
+      clearTimeout(purchaseTimerRef.current);
+      purchaseTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => cancelScheduledPurchase, [cancelScheduledPurchase]);
+
   const {
     register,
     handleSubmit,
@@ -95,6 +110,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
 
   useEffect(() => {
     if (open) {
+      cancelScheduledPurchase();
       resetInputData();
       setValue('identifierFromPurchaser', generateRandomHex(16));
       setStep(1);
@@ -105,7 +121,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
       setPaymentCurl('');
       setPurchaseCurl('');
     }
-  }, [open, setValue, resetInputData]);
+  }, [open, setValue, resetInputData, cancelScheduledPurchase]);
 
   const createPurchaseAutomatically = useCallback(
     async (payment: PostPaymentResponse['data'], originalFormData: PaymentFormValues) => {
@@ -226,7 +242,10 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           setPaymentResponse(payment);
           toast.success('Payment created successfully');
 
-          setTimeout(() => {
+          const sessionId = sessionIdRef.current;
+          purchaseTimerRef.current = setTimeout(() => {
+            purchaseTimerRef.current = null;
+            if (sessionIdRef.current !== sessionId) return;
             createPurchaseAutomatically(payment, data);
           }, 500);
         } else {
@@ -245,6 +264,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   );
 
   const handleClose = () => {
+    cancelScheduledPurchase();
     reset();
     resetInputData(false);
     setStep(1);
@@ -259,7 +279,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[800px] h-[85vh] flex flex-col overflow-hidden">
+      <DialogContent size="xl" className="h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader className="shrink-0">
           <DialogTitle>Full Payment Cycle</DialogTitle>
           <p className="text-sm text-muted-foreground mt-2">

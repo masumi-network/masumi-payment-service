@@ -2,7 +2,6 @@ import {
 	OnChainState,
 	PaymentSourceType,
 	Prisma,
-	PurchaseErrorType,
 	PurchasingAction,
 	TransactionStatus,
 } from '@/generated/prisma/client';
@@ -14,14 +13,15 @@ import { asV2Provider } from '../../provider-cast';
 import type { BlockfrostProvider } from '@/services/shared';
 import { logger } from '@masumi/payment-core/logger';
 import { recordV2BatchHashDivergence } from '@masumi/payment-core/metrics';
-import { SmartContractState, smartContractStateEqualsOnChainState } from '@/utils/generator/contract-generator';
+import { SmartContractState } from '@/utils/generator/contract-generator';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
-import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
+import { makeHotWalletUnlocker, makePurchaseRequestFailureMarker } from '../../request-failure';
+import { findMatchingPurchaseUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -119,62 +119,12 @@ function validatePurchaseRequestFields(request: PurchaseRequestWithRelations): v
 	}
 }
 
-async function markRequestFailed(request: PurchaseRequestWithRelations, error: unknown): Promise<void> {
-	logger.error(`Error requesting V2 refund ${request.id}`, { error });
-	await prisma.purchaseRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
-				errorType: PurchaseErrorType.Unknown,
-				errorNote: 'Requesting refund failed: ' + interpretBlockchainError(error),
-			}),
-			SmartContractWallet: { update: { lockedAt: null } },
-		},
-	});
-}
+const markRequestFailed = makePurchaseRequestFailureMarker({
+	logMessage: 'Error requesting V2 refund',
+	errorNotePrefix: 'Requesting refund failed: ',
+});
 
-async function unlockHotWallet(walletId: string): Promise<void> {
-	try {
-		await prisma.hotWallet.update({
-			where: { id: walletId, deletedAt: null },
-			data: { lockedAt: null },
-		});
-	} catch (error) {
-		logger.warn('Failed to unlock V2 request-refund hot wallet', { error, walletId });
-	}
-}
-
-function findMatchingUtxo(
-	utxoList: UTxO[],
-	txHash: string,
-	request: PurchaseRequestWithRelations,
-	network: 'mainnet' | 'preprod',
-	smartContractAddress: string,
-): UTxO | undefined {
-	return utxoList.find((utxo) => {
-		if (utxo.input.txHash !== txHash) return false;
-		const utxoDatum = utxo.output.plutusData;
-		if (!utxoDatum) return false;
-		const decodedDatum: unknown = deserializeDatum(utxoDatum);
-		const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
-		if (decodedContract == null) return false;
-		return (
-			smartContractStateEqualsOnChainState(decodedContract.state, request.onChainState) &&
-			decodedContract.buyerVkey === request.SmartContractWallet!.walletVkey &&
-			decodedContract.sellerVkey === request.SellerWallet.walletVkey &&
-			decodedContract.buyerAddress === request.SmartContractWallet!.walletAddress &&
-			decodedContract.sellerAddress === request.SellerWallet.walletAddress &&
-			decodedContract.blockchainIdentifier === request.blockchainIdentifier &&
-			decodedContract.inputHash === request.inputHash &&
-			BigInt(decodedContract.resultTime) === BigInt(request.submitResultTime) &&
-			BigInt(decodedContract.unlockTime) === BigInt(request.unlockTime) &&
-			BigInt(decodedContract.externalDisputeUnlockTime) === BigInt(request.externalDisputeUnlockTime) &&
-			BigInt(decodedContract.collateralReturnLovelace) === BigInt(request.collateralReturnLovelace ?? 0) &&
-			BigInt(decodedContract.payByTime) === BigInt(request.payByTime ?? 0)
-		);
-	});
-}
+const unlockHotWallet = makeHotWalletUnlocker('request-refund');
 
 function createRequestRefundDatum(params: {
 	decodedContract: DecodedV1ContractDatum;
@@ -212,7 +162,7 @@ async function validateAndBuildItem(
 	validatePurchaseRequestFields(request);
 	const txHash = request.CurrentTransaction!.txHash!;
 	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
-	const utxo = findMatchingUtxo(utxoByHash, txHash, request, network, smartContractAddress);
+	const utxo = findMatchingPurchaseUtxo(utxoByHash, txHash, request, network, smartContractAddress);
 	if (!utxo) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
 	}
@@ -304,7 +254,7 @@ async function processSinglePurchaseRequest(
 	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 	const txHash = request.CurrentTransaction!.txHash!;
 	const utxoByHash = await fetchUTxOsWithDeferOnEmpty(blockchainProvider, txHash);
-	const utxo = findMatchingUtxo(utxoByHash, txHash, request, network, smartContractAddress);
+	const utxo = findMatchingPurchaseUtxo(utxoByHash, txHash, request, network, smartContractAddress);
 	if (!utxo) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} UTXO not found`);
 	}
@@ -329,7 +279,14 @@ async function processSinglePurchaseRequest(
 	});
 
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
-	const collateralUtxo = limitedFilteredUtxos[0];
+	// Collateral must cover the pinned 3 ADA total_collateral. limitedFilteredUtxos
+	// is sorted by ASCENDING asset bloat, so [0] can be a pure-ADA DUST UTxO (< 3
+	// ADA) → deterministic phase-1 InsufficientCollateral. Prefer the smallest
+	// qualifying >= 5 ADA UTxO (the same floor the batch path enforces via
+	// pickBatchCollateral); ensureCollateralReady above provisions a 5 ADA
+	// reserve, so this normally succeeds. Fall back to [0] only if the wallet has
+	// nothing larger (no worse than the previous behaviour).
+	const collateralUtxo = pickBatchCollateral(limitedFilteredUtxos, [utxo.input]) ?? limitedFilteredUtxos[0];
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');
 	}
@@ -378,7 +335,16 @@ async function processSinglePurchaseRequest(
 			nodeTxHash: newTxHash,
 		});
 	}
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	// Non-fatal: the tx is already on-chain. A projection failure must NOT
+	// propagate to advancedRetry and rebuild+resubmit an already-broadcast tx.
+	try {
+		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	} catch (projectionError) {
+		logger.warn('V2 request-refund single-item: post-submit balance projection failed (non-fatal)', {
+			txHash: newTxHash,
+			error: projectionError instanceof Error ? projectionError.message : String(projectionError),
+		});
+	}
 	await retryOnSerializationConflict(
 		() =>
 			prisma.purchaseRequest.update({
@@ -510,11 +476,12 @@ async function processWalletBatch(
 		return;
 	}
 
-	// Cardano disallows the same UTxO appearing in both `inputs` and
-	// `collateral_inputs` of a script-spending tx. If the wallet has
-	// collapsed to a single UTxO (or has no pure-ADA collateral
-	// candidate), submit a self-send prep tx to restore the invariant
-	// and defer the batch to the next tick. ensureCollateralReady leaves
+	// Cardano allows a VKey wallet UTxO to appear in both `inputs` and
+	// `collateral_inputs`; only script-locked UTxOs are invalid collateral.
+	// The current V2 builders still maintain a separate collateral reserve for
+	// predictable next-tick readiness. If the wallet has collapsed to a single
+	// UTxO, submit a self-send prep tx to restore that service invariant and
+	// defer the batch to the next tick. ensureCollateralReady leaves
 	// the wallet locked (via its shared Tx row) when it returns
 	// 'deferred' or 'failed'; wallet-timeouts / tx-sync will release the
 	// lock once the prep tx confirms or times out.

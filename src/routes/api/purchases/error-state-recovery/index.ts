@@ -9,7 +9,7 @@ import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/u
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
-import { retryOnSerializationConflict } from '@/utils/db/retry';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { purchaseResponseSchema } from '..';
 import { z } from '@masumi/payment-core/zod';
 
@@ -64,6 +64,9 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 			);
 		}
 		assertWalletInScope(ctx.walletScopeIds, purchaseRequest.smartContractWalletId);
+		if (purchaseRequest.requestedById !== ctx.id && !ctx.canAdmin) {
+			throw createHttpError(403, 'You are not authorized to recover this purchase request');
+		}
 		if (!purchaseRequest.onChainState) {
 			throw createHttpError(
 				400,

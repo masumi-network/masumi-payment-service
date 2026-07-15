@@ -58,10 +58,15 @@ export const supportedPaymentSourceSchema = z.discriminatedUnion('chain', [
 	x402SupportedPaymentSourceSchema,
 ]);
 
+// Hard cap on advertised payment sources, enforced both on parse and when
+// emitting on-chain metadata. v2 auto-injects a Cardano source, so the emitted
+// list must be guarded against overflowing this same limit before minting.
+export const MAX_SUPPORTED_PAYMENT_SOURCES = 25;
+
 export const supportedPaymentSourcesSchema = z
 	.array(supportedPaymentSourceSchema)
 	.min(1)
-	.max(25)
+	.max(MAX_SUPPORTED_PAYMENT_SOURCES)
 	.describe('Payment sources advertised by this registry entry');
 
 export type SupportedPaymentSource = z.infer<typeof supportedPaymentSourceSchema>;
@@ -87,18 +92,45 @@ function metadataToString(value: string | string[] | undefined) {
 	return value.join('');
 }
 
-export const supportedPaymentSourceMetadataSchema = z.object({
-	chain: metadataStringSchema,
-	network: metadataStringSchema,
+// One asset/amount line inside a `pricing.fixed` array. `asset` is the rail's
+// currency id: `''` (lovelace) or `policyId+assetName` hex for Cardano, the
+// ERC-20 contract `0x…` for x402/EVM. `decimals` is display-only and present
+// for EVM (escrow settles in atomic units, so Cardano may omit it).
+const supportedPaymentSourceMetadataAmountSchema = z.object({
+	asset: metadataStringSchema,
+	amount: metadataStringSchema,
+	decimals: metadataStringSchema.optional(),
+});
+
+// Shared pricing sub-object, identical across rails. `pricingType` is
+// Fixed/Free/Dynamic; `fixed` is present only for Fixed.
+const supportedPaymentSourceMetadataPricingSchema = z.object({
+	pricingType: metadataStringSchema,
+	fixed: z.array(supportedPaymentSourceMetadataAmountSchema).optional(),
+});
+
+// Superset of both rails' settlement fields; the parser reads only the keys
+// relevant to `chain`. Cardano uses `paymentSourceType`/`address` (escrow
+// contract); x402/EVM uses `scheme`/`payTo`/`resource`/`extra`.
+const supportedPaymentSourceMetadataSettlementSchema = z.object({
 	paymentSourceType: metadataStringSchema.optional(),
 	address: metadataStringSchema.optional(),
 	scheme: metadataStringSchema.optional(),
-	asset: metadataStringSchema.optional(),
-	amount: metadataStringSchema.optional(),
-	decimals: metadataStringSchema.optional(),
 	payTo: metadataStringSchema.optional(),
 	resource: metadataStringSchema.optional(),
 	extra: z.unknown().optional(),
+});
+
+// On-chain (CIP-25) shape of one supported payment source. Each leaf may be a
+// single string or an array of <=60-char chunks. A source is self-contained:
+// rail-native `settlement` (where/how funds move) + shared `pricing` (how much).
+// Reassembled into the flat `SupportedPaymentSource` domain shape by
+// `parseSupportedPaymentSourcesFromMetadata`.
+export const supportedPaymentSourceMetadataSchema = z.object({
+	chain: metadataStringSchema,
+	network: metadataStringSchema,
+	settlement: supportedPaymentSourceMetadataSettlementSchema.optional(),
+	pricing: supportedPaymentSourceMetadataPricingSchema.optional(),
 });
 
 function validateCardanoAddressForNetwork(address: string, network: Network) {
@@ -123,24 +155,37 @@ export function isCardanoAddressForNetwork(address: string, network: Network): b
 	}
 }
 
-function validateCardanoPubKeyBaseAddressForNetwork(address: string, network: Network) {
+function validateCardanoPubKeyAddressForNetwork(address: string, network: Network) {
 	validateCardanoAddressForNetwork(address, network);
 	const parsedAddress = deserializeAddress(address);
-	if (parsedAddress.getType() !== AddressType.BasePaymentKeyStakeKey) {
-		throw new Error('Cardano address must be a base address with payment and stake key credentials');
+	const addressType = parsedAddress.getType();
+	// The vested_pay validators (V1 and V2) only ever read the PAYMENT
+	// credential of participant addresses (`address_to_verification_key`
+	// matches `VerificationKey(vkey)` and ignores the stake part), and payouts
+	// are full-address equality against the datum. Base (payment key + stake
+	// key) and enterprise (payment key, no stake) addresses are therefore both
+	// safe; the datum builders encode a missing stake credential as Plutus
+	// `None`. Script payment credentials remain banned — every spending
+	// redeemer does `expect Some(vk) = address_to_verification_key(...)`, so a
+	// script-credential participant permanently bricks the escrow. Pointer,
+	// reward, and script-stake variants stay rejected as well.
+	if (addressType !== AddressType.BasePaymentKeyStakeKey && addressType !== AddressType.EnterpriseKey) {
+		throw new Error('Cardano address must be a base or enterprise address with a payment key credential');
 	}
 
 	try {
 		resolvePaymentKeyHash(address);
-		resolveStakeKeyHash(address);
+		if (addressType === AddressType.BasePaymentKeyStakeKey) {
+			resolveStakeKeyHash(address);
+		}
 	} catch {
-		throw new Error('Cardano address must include payment and stake key credentials');
+		throw new Error('Cardano address must include a payment key credential');
 	}
 }
 
-export function isCardanoPubKeyBaseAddressForNetwork(address: string, network: Network): boolean {
+export function isCardanoPubKeyAddressForNetwork(address: string, network: Network): boolean {
 	try {
-		validateCardanoPubKeyBaseAddressForNetwork(address, network);
+		validateCardanoPubKeyAddressForNetwork(address, network);
 		return true;
 	} catch {
 		return false;
@@ -213,19 +258,35 @@ export function parseSupportedPaymentSourcesFromMetadata(value: unknown): Suppor
 	}
 
 	const reparsed = supportedPaymentSourcesSchema.safeParse(
-		parsed.data.map((source) => ({
-			chain: metadataToString(source.chain),
-			network: metadataToString(source.network),
-			paymentSourceType: metadataToString(source.paymentSourceType),
-			address: metadataToString(source.address),
-			scheme: metadataToString(source.scheme),
-			asset: metadataToString(source.asset),
-			amount: metadataToString(source.amount),
-			decimals: metadataToString(source.decimals) != null ? Number(metadataToString(source.decimals)) : undefined,
-			payTo: metadataToString(source.payTo),
-			resource: metadataToString(source.resource),
-			extra: source.extra,
-		})),
+		parsed.data.map((source) => {
+			const chain = metadataToString(source.chain);
+			const settlement = source.settlement ?? {};
+			// x402/EVM money lives in `pricing.fixed` (single entry); Cardano price
+			// is folded in for on-chain self-description but is read internally from
+			// the top-level `agentPricing`, so it is dropped on the way back to the
+			// flat domain shape.
+			const fixed = source.pricing?.fixed?.[0];
+			if (chain === SupportedPaymentSourceChain.EVM) {
+				const decimals = metadataToString(fixed?.decimals);
+				return {
+					chain,
+					network: metadataToString(source.network),
+					scheme: metadataToString(settlement.scheme),
+					asset: metadataToString(fixed?.asset),
+					amount: metadataToString(fixed?.amount),
+					decimals: decimals != null ? Number(decimals) : undefined,
+					payTo: metadataToString(settlement.payTo),
+					resource: metadataToString(settlement.resource),
+					extra: settlement.extra,
+				};
+			}
+			return {
+				chain,
+				network: metadataToString(source.network),
+				paymentSourceType: metadataToString(settlement.paymentSourceType),
+				address: metadataToString(settlement.address),
+			};
+		}),
 	);
 	return reparsed.success ? reparsed.data : null;
 }

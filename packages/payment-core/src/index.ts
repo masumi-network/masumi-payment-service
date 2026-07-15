@@ -7,9 +7,10 @@ export type PaymentSourceAdapter = {
 
 export { PaymentSourceType };
 export {
+	MAX_SUPPORTED_PAYMENT_SOURCES,
 	SupportedPaymentSourceChain,
 	isCardanoAddressForNetwork,
-	isCardanoPubKeyBaseAddressForNetwork,
+	isCardanoPubKeyAddressForNetwork,
 	parseSupportedPaymentSourcesFromMetadata,
 	paymentSourceTypeSchema,
 	supportedPaymentSourceMetadataSchema,
@@ -20,6 +21,18 @@ export {
 	type SupportedPaymentSource,
 } from './payment-source';
 export { SmartContractState, smartContractStateEqualsOnChainState } from './smart-contract-state';
+export {
+	VerificationMethod,
+	parseVerificationsFromMetadata,
+	verificationMetadataSchema,
+	verificationRowToApi,
+	verificationSchema,
+	verificationToRow,
+	verificationsSchema,
+	verificationsToMetadata,
+	type AgentVerificationRow,
+	type Verification,
+} from './verification';
 export {
 	decodeBlockchainIdentifier,
 	generateBlockchainIdentifier,
