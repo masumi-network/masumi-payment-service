@@ -1179,24 +1179,25 @@ export async function batchLatestPaymentEntriesV2() {
 					}
 					//only go into error state if we did not reach max batch size, as otherwise we might have enough funds in other wallets
 					if (paymentRequestsRemaining.length > 0 && maxBatchSizeReached == false) {
+						//count all existing wallets, including ones busy with a pending transaction or locked by
+						//a concurrent run: a busy wallet frees up with its funds intact, so it must suppress the
+						//permanent error state instead of being treated as nonexistent
 						const allWalletCount = await prisma.hotWallet.count({
 							where: {
 								deletedAt: null,
 								type: HotWalletType.Purchasing,
-								PendingTransaction: null,
 								PaymentSource: {
 									id: paymentContract.id,
 								},
 							},
 						});
-						//only go into error state if all eligible wallets were unlocked, otherwise we might have enough funds in other wallets
+						//only go into error state if all eligible wallets were evaluated this run, otherwise we might have enough funds in busy wallets
 						for (const paymentRequest of paymentRequestsRemaining) {
 							const eligibleWalletCount = paymentRequest.isLimitedToHotWallets
 								? await prisma.hotWallet.count({
 										where: {
 											deletedAt: null,
 											type: HotWalletType.Purchasing,
-											PendingTransaction: null,
 											PaymentSource: { id: paymentContract.id },
 											id: { in: paymentRequest.HotWalletLimit.map((hw) => hw.id) },
 										},
@@ -1208,6 +1209,8 @@ export async function batchLatestPaymentEntriesV2() {
 							if (eligibleWalletCount == eligiblePotentialCount) {
 								logger.warn('No wallets with funds found, going into error state for', {
 									purchaseRequestId: paymentRequest.id,
+									eligibleWalletCount,
+									eligiblePotentialCount,
 								});
 								await prisma.purchaseRequest.update({
 									where: { id: paymentRequest.id },
