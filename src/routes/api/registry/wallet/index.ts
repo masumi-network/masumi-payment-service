@@ -106,6 +106,30 @@ export const metadataSchema = z.object({
 	verifications: z.array(verificationMetadataSchema).optional(),
 });
 
+// MIP-002-A2A (metadata_version=2) on-chain schema
+export const metadataSchemaV2 = z.object({
+	name: z
+		.string()
+		.min(1)
+		.or(z.array(z.string().min(1))),
+	api_url: z
+		.string()
+		.min(1)
+		.or(z.array(z.string().min(1))),
+	agent_card_url: z
+		.string()
+		.min(1)
+		.or(z.array(z.string().min(1))),
+	a2a_protocol_versions: z.array(z.string().min(1)).min(1),
+	metadata_version: z.coerce.number().int().min(2).max(2),
+	description: z.string().or(z.array(z.string())).optional(),
+	tags: z.array(z.string().min(1)).optional(),
+	image: z.string().or(z.array(z.string())).optional(),
+});
+
+// Combined parser — tries v1 first, then v2
+export const metadataSchemaCombined = z.union([metadataSchema, metadataSchemaV2]);
+
 type MetadataAgentPricing = NonNullable<z.infer<typeof metadataSchema>['agentPricing']>;
 
 // Current metadata folds pricing into each Cardano supported payment source and no
@@ -279,9 +303,24 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 								)
 								.describe('Pricing information for the agent'),
 							image: z.string().max(250).describe('URL to the agent image/logo'),
-							metadataVersion: z.coerce.number().int().min(1).max(2).describe('Version of the metadata schema'),
+							metadataVersion: z.coerce
+								.number()
+								.int()
+								.min(1)
+								.max(2)
+								.describe('Version of the metadata schema (1=standard MIP-002, 2=MIP-002-A2A)'),
+							agentCardUrl: z
+								.string()
+								.nullable()
+								.optional()
+								.describe('Agent Card URL for A2A agents. Null for standard agents'),
+							a2aProtocolVersions: z
+								.array(z.string())
+								.optional()
+								.describe('A2A protocol versions. Empty for standard agents'),
 							supportedPaymentSources: supportedPaymentSourcesSchema
 								.nullable()
+								.optional()
 								.describe('Payment sources advertised by this registry entry. Null for legacy metadata.'),
 							verifications: verificationsSchema
 								.nullable()
@@ -357,69 +396,95 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 		await Promise.all(
 			assets.map(async (asset) => {
 				const assetInfo = await blockfrost.assetsById(asset.unit);
-				const parsedMetadata = metadataSchema.safeParse(assetInfo.onchain_metadata);
+				const parsedMetadata = metadataSchemaCombined.safeParse(assetInfo.onchain_metadata);
 				if (!parsedMetadata.success) {
 					const error = parsedMetadata.error;
 					logger.error('Error parsing metadata', { error });
 					return;
 				}
-				const resolvedAgentPricing = resolveAgentPricingFromMetadata(parsedMetadata.data);
-				if (resolvedAgentPricing == null) {
-					logger.error('Agent metadata does not advertise any pricing', { unit: asset.unit });
-					return;
-				}
-				detailedAssets.push({
-					unit: asset.unit,
-					Metadata: {
-						name: metadataToString(parsedMetadata.data.name)!,
-						description: metadataToString(parsedMetadata.data.description),
-						apiBaseUrl: metadataToString(parsedMetadata.data.api_base_url)!,
-						ExampleOutputs:
-							parsedMetadata.data.example_output?.map((exampleOutput) => ({
-								name: metadataToString(exampleOutput.name)!,
-								mimeType: metadataToString(exampleOutput.mime_type)!,
-								url: metadataToString(exampleOutput.url)!,
-							})) ?? [],
-						Capability: parsedMetadata.data.capability
-							? {
-									name: metadataToString(parsedMetadata.data.capability.name)!,
-									version: metadataToString(parsedMetadata.data.capability.version)!,
-								}
-							: undefined,
-						Author: {
-							name: metadataToString(parsedMetadata.data.author.name)!,
-							contactEmail: metadataToString(parsedMetadata.data.author.contact_email),
-							contactOther: metadataToString(parsedMetadata.data.author.contact_other),
-							organization: metadataToString(parsedMetadata.data.author.organization),
+				const isV2 = parsedMetadata.data.metadata_version === 2;
+
+				if (isV2) {
+					const data = parsedMetadata.data as z.infer<typeof metadataSchemaV2>;
+					detailedAssets.push({
+						unit: asset.unit,
+						Metadata: {
+							name: metadataToString(data.name)!,
+							description: metadataToString(data.description),
+							apiBaseUrl: metadataToString(data.api_url)!,
+							agentCardUrl: metadataToString(data.agent_card_url) ?? null,
+							a2aProtocolVersions: data.a2a_protocol_versions,
+							ExampleOutputs: [],
+							Capability: null,
+							Author: { name: '', contactEmail: null, contactOther: null, organization: null },
+							Legal: null,
+							Tags: (data.tags ?? []).map((tag) => metadataToString(tag)!),
+							AgentPricing: { pricingType: PricingType.Free },
+							image: metadataToString(data.image) ?? '',
+							metadataVersion: 2,
+							verifications: null,
 						},
-						Legal: parsedMetadata.data.legal
-							? {
-									privacyPolicy: metadataToString(parsedMetadata.data.legal.privacy_policy),
-									terms: metadataToString(parsedMetadata.data.legal.terms),
-									other: metadataToString(parsedMetadata.data.legal.other),
-								}
-							: undefined,
-						Tags: parsedMetadata.data.tags.map((tag) => metadataToString(tag)!),
-						AgentPricing:
-							resolvedAgentPricing.pricingType == PricingType.Fixed
+					});
+				} else {
+					const data = parsedMetadata.data as z.infer<typeof metadataSchema>;
+					const resolvedAgentPricing = resolveAgentPricingFromMetadata(data);
+					if (resolvedAgentPricing == null) {
+						logger.error('Agent metadata does not advertise any pricing', { unit: asset.unit });
+						return;
+					}
+					detailedAssets.push({
+						unit: asset.unit,
+						Metadata: {
+							name: metadataToString(data.name)!,
+							description: metadataToString(data.description),
+							apiBaseUrl: metadataToString(data.api_base_url)!,
+							agentCardUrl: null,
+							a2aProtocolVersions: [],
+							ExampleOutputs:
+								data.example_output?.map((exampleOutput) => ({
+									name: metadataToString(exampleOutput.name)!,
+									mimeType: metadataToString(exampleOutput.mime_type)!,
+									url: metadataToString(exampleOutput.url)!,
+								})) ?? [],
+							Capability: data.capability
 								? {
-										pricingType: resolvedAgentPricing.pricingType,
-										Pricing: resolvedAgentPricing.fixedPricing.map((price) => ({
-											amount: price.amount.toString(),
-											unit: metadataToString(price.unit)!,
-										})),
+										name: metadataToString(data.capability.name)!,
+										version: metadataToString(data.capability.version)!,
 									}
-								: {
-										pricingType: resolvedAgentPricing.pricingType,
-									},
-						image: metadataToString(parsedMetadata.data.image)!,
-						metadataVersion: parsedMetadata.data.metadata_version,
-						supportedPaymentSources: parseSupportedPaymentSourcesFromMetadata(
-							parsedMetadata.data.supported_payment_sources,
-						),
-						verifications: parseVerificationsFromMetadata(parsedMetadata.data.verifications),
-					},
-				});
+								: undefined,
+							Author: {
+								name: metadataToString(data.author.name)!,
+								contactEmail: metadataToString(data.author.contact_email),
+								contactOther: metadataToString(data.author.contact_other),
+								organization: metadataToString(data.author.organization),
+							},
+							Legal: data.legal
+								? {
+										privacyPolicy: metadataToString(data.legal.privacy_policy),
+										terms: metadataToString(data.legal.terms),
+										other: metadataToString(data.legal.other),
+									}
+								: undefined,
+							Tags: data.tags.map((tag) => metadataToString(tag)!),
+							AgentPricing:
+								resolvedAgentPricing.pricingType == PricingType.Fixed
+									? {
+											pricingType: resolvedAgentPricing.pricingType,
+											Pricing: resolvedAgentPricing.fixedPricing.map((price) => ({
+												amount: price.amount.toString(),
+												unit: metadataToString(price.unit)!,
+											})),
+										}
+									: {
+											pricingType: resolvedAgentPricing.pricingType,
+										},
+							image: metadataToString(data.image)!,
+							metadataVersion: data.metadata_version,
+							supportedPaymentSources: parseSupportedPaymentSourcesFromMetadata(data.supported_payment_sources),
+							verifications: parseVerificationsFromMetadata(data.verifications),
+						},
+					});
+				}
 			}),
 		);
 
@@ -429,7 +494,6 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 				assetName: extractAssetName(asset.unit),
 				agentIdentifier: asset.unit,
 				Metadata: asset.Metadata,
-				Tags: asset.Metadata.Tags,
 			})),
 		};
 	},

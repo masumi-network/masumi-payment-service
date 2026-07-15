@@ -3,7 +3,10 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { convertNetwork } from '@masumi/payment-core/network';
 // TODO(v1-package-boundary): move lock-and-query-registry-request, contract-generator, blockchain-error-interpreter, agent-identifier, utxo to @masumi/payment-core
-import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
+import {
+	lockAndQueryA2ARegistryRequests,
+	lockAndQueryRegistryRequests,
+} from '@/utils/db/lock-and-query-registry-request';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { advancedRetry, delayErrorResolver, RetryResult } from 'advanced-retry';
@@ -58,6 +61,34 @@ async function handlePotentialDeregistrationFailure(
 	}
 }
 
+async function handlePotentialA2ADeregistrationFailure(
+	result: RetryResult<boolean>,
+	registryRequest: {
+		id: string;
+		SmartContractWallet: { id: string };
+		DeregistrationHotWallet: { id: string } | null;
+	},
+): Promise<void> {
+	if (result.success !== true || result.result !== true) {
+		const error = result.error;
+		const walletToUnlock = registryRequest.DeregistrationHotWallet ?? registryRequest.SmartContractWallet;
+		logger.error(`Error deregistering A2A agent ${registryRequest.id}`, {
+			error: error,
+		});
+		await prisma.a2ARegistryRequest.update({
+			where: { id: registryRequest.id },
+			data: {
+				state: RegistrationState.DeregistrationFailed,
+				error: interpretBlockchainError(error),
+			},
+		});
+		await prisma.hotWallet.update({
+			where: { id: walletToUnlock.id, deletedAt: null },
+			data: { lockedAt: null },
+		});
+	}
+}
+
 export async function deRegisterAgentV1() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -68,14 +99,17 @@ export async function deRegisterAgentV1() {
 	}
 
 	try {
-		const paymentSourcesWithWalletLocked = await lockAndQueryRegistryRequests({
-			state: RegistrationState.DeregistrationRequested,
-			maxBatchSize: 1,
-			paymentSourceType: PaymentSourceType.Web3CardanoV1,
-		});
+		const [standardSources, a2aSources] = await Promise.all([
+			lockAndQueryRegistryRequests({
+				state: RegistrationState.DeregistrationRequested,
+				maxBatchSize: 1,
+				paymentSourceType: PaymentSourceType.Web3CardanoV1,
+			}),
+			lockAndQueryA2ARegistryRequests({ state: RegistrationState.DeregistrationRequested, maxBatchSize: 1 }),
+		]);
 
-		await Promise.allSettled(
-			paymentSourcesWithWalletLocked.map(async (paymentSource) => {
+		await Promise.allSettled([
+			...standardSources.map(async (paymentSource) => {
 				if (paymentSource.RegistryRequest.length == 0) return;
 				logger.info(
 					`Deregistering ${paymentSource.RegistryRequest.length} V1 agents for payment source ${paymentSource.id}`,
@@ -90,6 +124,7 @@ export async function deRegisterAgentV1() {
 					logger.warn('No V1 agents to deregister');
 					return;
 				}
+
 				const result = await advancedRetry({
 					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
 					operation: async () => {
@@ -133,7 +168,7 @@ export async function deRegisterAgentV1() {
 						);
 						const signedTx = await wallet.signTx(unsignedTx);
 						await prisma.registryRequest.update({
-							where: { id: request.id },
+							where: { id: deregistrationRequest.id },
 							data: {
 								state: RegistrationState.DeregistrationInitiated,
 								...createPendingTransaction(deregistrationWallet.id),
@@ -154,7 +189,76 @@ export async function deRegisterAgentV1() {
 				});
 				await handlePotentialDeregistrationFailure(result, deregistrationRequest);
 			}),
-		);
+			...a2aSources.map(async (paymentSource) => {
+				if (paymentSource.A2ARegistryRequest.length == 0) return;
+				logger.info(
+					`Deregistering ${paymentSource.A2ARegistryRequest.length} A2A agents for payment source ${paymentSource.id}`,
+				);
+				const network = convertNetwork(paymentSource.network);
+				const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+				const deregistrationRequest = paymentSource.A2ARegistryRequest[0];
+				if (deregistrationRequest == null) {
+					logger.warn('No A2A agents to deregister');
+					return;
+				}
+
+				const result = await advancedRetry({
+					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
+					operation: async () => {
+						validateDeregistrationRequest(deregistrationRequest);
+						const deregistrationWallet = deregistrationRequest.SmartContractWallet;
+						const walletSession = await loadHotWalletSession({
+							network: paymentSource.network,
+							rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+							encryptedMnemonic: deregistrationWallet.Secret.encryptedMnemonic,
+							hotWalletId: deregistrationWallet.id,
+						});
+						const { wallet, utxos, address } = walletSession;
+						if (utxos.length === 0) throw new Error('No UTXOs found for the wallet');
+						const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+						if (!deregistrationRequest.agentIdentifier)
+							throw new Error('Agent identifier is required for deregistration');
+						const tokenUtxo = findRegistryTokenUtxo(utxos, deregistrationRequest.agentIdentifier);
+						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+						const collateralUtxo = limitedFilteredUtxos[0];
+						if (collateralUtxo == null) throw new Error('Collateral UTXO not found');
+						const assetName = extractAssetName(deregistrationRequest.agentIdentifier);
+						const unsignedTx = await generateRegistryDeregisterTransactionAutomaticFees(
+							blockchainProvider,
+							network,
+							script,
+							address,
+							policyId,
+							assetName,
+							tokenUtxo,
+							collateralUtxo,
+							limitedFilteredUtxos,
+						);
+						const signedTx = await wallet.signTx(unsignedTx);
+						await prisma.a2ARegistryRequest.update({
+							where: { id: deregistrationRequest.id },
+							data: {
+								state: RegistrationState.DeregistrationInitiated,
+								...createPendingTransaction(deregistrationWallet.id),
+							},
+						});
+						const newTxHash = await wallet.submitTx(signedTx);
+						await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+						await prisma.a2ARegistryRequest.update({
+							where: { id: deregistrationRequest.id },
+							data: updateCurrentTransactionHash(newTxHash),
+						});
+						logger.debug(`A2A deregistration tx: ${newTxHash}`);
+						return true;
+					},
+				});
+				await handlePotentialA2ADeregistrationFailure(result, {
+					id: deregistrationRequest.id,
+					SmartContractWallet: deregistrationRequest.SmartContractWallet,
+					DeregistrationHotWallet: null,
+				});
+			}),
+		]);
 	} catch (error) {
 		logger.error('Error deregistering V1 agents', { error });
 	} finally {

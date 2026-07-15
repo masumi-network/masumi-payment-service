@@ -34,6 +34,7 @@ import {
 	serializeVerifications,
 } from './serializers';
 import { resolveScopedRecipientWalletOrThrow, resolveScopedSellingWalletOrThrow } from './shared';
+import { mapA2ARegistryRequestToOutput } from './utils';
 
 export {
 	deleteAgentRegistrationSchemaInput,
@@ -444,6 +445,67 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 			});
 
 			if (!registryRequest) {
+				// A2A fallback: the id may belong to an A2A registry request, which
+				// lives in its own table. Delete it here so the single DELETE endpoint
+				// covers both registry types before reporting not-found.
+				const a2aRequest = await prisma.a2ARegistryRequest.findUnique({
+					where: { id: input.id },
+				});
+
+				if (a2aRequest) {
+					const validStatesForA2ADeletion: RegistrationState[] = [
+						RegistrationState.RegistrationFailed,
+						RegistrationState.DeregistrationConfirmed,
+					];
+					if (!validStatesForA2ADeletion.includes(a2aRequest.state)) {
+						recordBusinessEndpointError(
+							'/api/v1/registry',
+							'DELETE',
+							400,
+							`Agent registration cannot be deleted in its current state: ${a2aRequest.state}`,
+							{
+								registry_id: input.id,
+								operation: 'delete_agent_registration',
+								step: 'state_validation',
+								current_state: a2aRequest.state,
+								valid_states: validStatesForA2ADeletion.join(', '),
+							},
+						);
+						throw createHttpError(
+							400,
+							`Agent registration cannot be deleted in its current state: ${a2aRequest.state}`,
+						);
+					}
+
+					const item = await prisma.a2ARegistryRequest.delete({
+						where: { id: a2aRequest.id },
+						include: {
+							Pricing: {
+								include: {
+									FixedPricing: {
+										include: { Amounts: { select: { unit: true, amount: true } } },
+									},
+								},
+							},
+							SmartContractWallet: {
+								select: { walletVkey: true, walletAddress: true },
+							},
+							CurrentTransaction: {
+								select: {
+									txHash: true,
+									status: true,
+									confirmations: true,
+									fees: true,
+									blockHeight: true,
+									blockTime: true,
+								},
+							},
+						},
+					});
+
+					return mapA2ARegistryRequestToOutput(item);
+				}
+
 				recordBusinessEndpointError('/api/v1/registry', 'DELETE', 404, 'Agent Registration not found', {
 					registry_id: input.id,
 					operation: 'delete_agent_registration',

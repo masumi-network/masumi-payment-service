@@ -2,7 +2,9 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { useQueryClient } from '@tanstack/react-query';
 import { resetAgentQueries } from '@/lib/queries/agent-cache';
 import { AIAgentDetailsDialog } from '@/components/ai-agents/AIAgentDetailsDialog';
-import type { RegistryEntry } from '@/lib/api/generated';
+import type { RegistryEntry, A2aRegistryEntry } from '@/lib/api/generated';
+
+type AgentDetailsEntry = RegistryEntry | A2aRegistryEntry;
 
 export type OpenAgentDetailsOptions = {
   initialTab?: 'Details' | 'Earnings';
@@ -11,7 +13,7 @@ export type OpenAgentDetailsOptions = {
 };
 
 type AgentDetailsDialogContextValue = {
-  openAgentDetails: (agent: RegistryEntry, options?: OpenAgentDetailsOptions) => void;
+  openAgentDetails: (agent: AgentDetailsEntry, options?: OpenAgentDetailsOptions) => void;
   closeAgentDetails: () => void;
 };
 
@@ -20,7 +22,7 @@ const AgentDetailsDialogContext = createContext<AgentDetailsDialogContextValue |
 );
 
 export function AgentDetailsDialogProvider({ children }: { children: ReactNode }) {
-  const [agent, setAgent] = useState<RegistryEntry | null>(null);
+  const [agent, setAgent] = useState<AgentDetailsEntry | null>(null);
   const [initialTab, setInitialTab] = useState<'Details' | 'Earnings'>('Details');
   const [elevatedStack, setElevatedStack] = useState(false);
   const queryClient = useQueryClient();
@@ -31,11 +33,14 @@ export function AgentDetailsDialogProvider({ children }: { children: ReactNode }
     setElevatedStack(false);
   }, []);
 
-  const openAgentDetails = useCallback((next: RegistryEntry, options?: OpenAgentDetailsOptions) => {
-    setAgent(next);
-    setInitialTab(options?.initialTab ?? 'Details');
-    setElevatedStack(Boolean(options?.stackOverParentModal));
-  }, []);
+  const openAgentDetails = useCallback(
+    (next: AgentDetailsEntry, options?: OpenAgentDetailsOptions) => {
+      setAgent(next);
+      setInitialTab(options?.initialTab ?? 'Details');
+      setElevatedStack(Boolean(options?.stackOverParentModal));
+    },
+    [],
+  );
 
   const handleSuccess = useCallback(() => {
     // Deregister/delete/re-register from the details dialog changes list

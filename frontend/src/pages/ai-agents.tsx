@@ -10,7 +10,12 @@ import { Badge } from '@/components/ui/badge';
 
 import { cn, formatAssetAmount, shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { deleteRegistry, RegistryEntry, postRegistryDeregister } from '@/lib/api/generated';
+import {
+  deleteRegistry,
+  RegistryEntry,
+  A2aRegistryEntry,
+  postRegistryDeregister,
+} from '@/lib/api/generated';
 import { agentHasX402Options } from '@/components/ai-agents/AgentX402Options';
 import { agentHasVerifications } from '@/components/ai-agents/AgentVerifications';
 import { toast } from 'react-toastify';
@@ -20,6 +25,7 @@ import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleto
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
+import { useA2AAgents } from '@/lib/queries/useA2AAgents';
 import { invalidateAgentQueries, resetAgentQueries } from '@/lib/queries/agent-cache';
 import { rowActivation } from '@/lib/a11y';
 import { isDeregisterableAgentState } from '@/lib/registry-states';
@@ -43,10 +49,15 @@ import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { formatDate } from '@/lib/format-date';
-type AIAgent = RegistryEntry & { relation?: AgentRelation };
+
+// A2A registrations are a separate, off-chain-priced entity type (no update/verify
+// flow, no supportedPaymentSources/x402/verifications) — the union covers both so
+// this page's shared list, search, and row rendering handle either.
+type AIAgent = (RegistryEntry | A2aRegistryEntry) & { relation?: AgentRelation };
 
 // Tells apart agents registered on the active source from those registered elsewhere that
-// merely accept payment on it (or over x402 on an EVM chain).
+// merely accept payment on it (or over x402 on an EVM chain). A2A agents have no
+// cross-source payment-target concept, so they always fall through to "Registered here".
 function RelationBadge({ relation }: { relation?: AgentRelation }) {
   if (relation === 'payment') {
     return (
@@ -65,7 +76,10 @@ function RelationBadge({ relation }: { relation?: AgentRelation }) {
   );
 }
 
-const getHoldingWallet = (agent: AIAgent) => agent.RecipientWallet ?? agent.SmartContractWallet;
+const getHoldingWallet = (agent: AIAgent) =>
+  'RecipientWallet' in agent
+    ? (agent.RecipientWallet ?? agent.SmartContractWallet)
+    : agent.SmartContractWallet;
 
 const usesCombinedWallet = (agent: AIAgent) =>
   getHoldingWallet(agent).walletVkey === agent.SmartContractWallet.walletVkey;
@@ -84,22 +98,52 @@ export default function AIAgentsPage() {
     return activeTab as 'Registered' | 'Deregistered' | 'Pending' | 'Failed';
   }, [activeTab]);
 
+  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource, activeRail } =
+    useAppContext();
+
   // Rail-aware agent list: shows agents registered on the active context plus those
   // registered elsewhere that accept payment on it (Cardano source, or EVM chains over
   // x402). Results load one cursor page at a time so navigation stays quick.
   const {
-    agents,
+    agents: standardAgents,
     truncated,
-    hasMore: hasMoreAgents,
-    isLoading,
+    hasMore: hasMoreStandard,
+    isLoading: isLoadingStandard,
     isFetching: isFetchingAgents,
     isFetchingNextPage,
     isPlaceholderData,
-    loadMore,
+    loadMore: loadMoreStandard,
   } = useContextAgents({
     filterStatus,
     searchQuery: debouncedSearchQuery || undefined,
   });
+
+  // A2A registrations are Cardano-only and don't yet carry a supportedPaymentSources /
+  // x402 concept, so they only ever show up on the cardano rail — merged into the same
+  // list (sorted together) rather than given a separate section.
+  const {
+    agents: a2aAgents,
+    hasMore: hasMoreA2A,
+    isLoading: isLoadingA2A,
+    loadMore: loadMoreA2A,
+  } = useA2AAgents({
+    filterStatus,
+    searchQuery: debouncedSearchQuery || undefined,
+  });
+
+  const agents: AIAgent[] = useMemo(() => {
+    if (activeRail !== 'cardano' || a2aAgents.length === 0) return standardAgents;
+    return [...standardAgents, ...a2aAgents].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [standardAgents, a2aAgents, activeRail]);
+
+  const isLoading = isLoadingStandard || (activeRail === 'cardano' && isLoadingA2A);
+  const hasMoreAgents = hasMoreStandard || (activeRail === 'cardano' && hasMoreA2A);
+  const loadMore = useCallback(() => {
+    void loadMoreStandard();
+    if (activeRail === 'cardano') void loadMoreA2A();
+  }, [loadMoreStandard, loadMoreA2A, activeRail]);
 
   const queryClient = useQueryClient();
   const { openAgentDetails, closeAgentDetails } = useAgentDetailsDialog();
@@ -143,7 +187,11 @@ export default function AIAgentsPage() {
       // Backend uses hasSome (exact match against tag array), not partial
       if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
       if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+      if (
+        'RecipientWallet' in agent &&
+        agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)
+      )
+        return true;
       if (agent.state?.toLowerCase().includes(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
       if (agent.AgentPricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
@@ -182,7 +230,9 @@ export default function AIAgentsPage() {
   // synchronously on the first call so the duplicate is rejected immediately;
   // `isDeleting` on the button is post-render defence-in-depth.
   const isDeletingRef = useRef(false);
-  const [selectedAgentToUpdate, setSelectedAgentToUpdate] = useState<AIAgent | null>(null);
+  // Update mode is a standard-agent (RegistryEntry) flow only; A2A agents have no
+  // on-chain update action (handleUpdateClick narrows out A2A before setting this).
+  const [selectedAgentToUpdate, setSelectedAgentToUpdate] = useState<RegistryEntry | null>(null);
   // Snapshot the agent's payment-source smart-contract address AT CLICK TIME.
   // The agent list is already filtered to `selectedPaymentSource`, so at the
   // moment of the click that source IS the agent's source. We must not read the
@@ -193,8 +243,6 @@ export default function AIAgentsPage() {
   const [updateAgentSmartContractAddress, setUpdateAgentSmartContractAddress] = useState<
     string | null
   >(null);
-  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource, activeRail } =
-    useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
   const currentNetworkPaymentSources = useMemo(
@@ -302,6 +350,12 @@ export default function AIAgentsPage() {
   };
 
   const handleUpdateClick = (agent: AIAgent) => {
+    if ('agentCardUrl' in agent) {
+      // Update mode is a standard-agent (RegistryEntry) flow; A2A agents have
+      // no on-chain update action.
+      toast.error('Update is not supported for A2A agents');
+      return;
+    }
     if (!selectedPaymentSource?.smartContractAddress) {
       toast.error('Cannot update agent: Missing payment source');
       return;
@@ -565,6 +619,7 @@ export default function AIAgentsPage() {
                     displayAgents.map((agent, index) => {
                       const holdingWallet = getHoldingWallet(agent);
                       const isCombinedWallet = usesCombinedWallet(agent);
+                      const isA2A = 'agentCardUrl' in agent;
 
                       return (
                         <tr
@@ -583,8 +638,16 @@ export default function AIAgentsPage() {
                           {...rowActivation(() => handleAgentClick(agent))}
                         >
                           <td className="p-4 max-w-50 truncate pl-6">
-                            <div className="text-sm font-medium truncate" title={agent.name}>
+                            <div
+                              className="text-sm font-medium truncate flex items-center gap-2"
+                              title={agent.name}
+                            >
                               {agent.name}
+                              {isA2A && (
+                                <Badge variant="outline" className="text-[10px] font-mono shrink-0">
+                                  A2A
+                                </Badge>
+                              )}
                             </div>
                             <div
                               className="text-xs text-muted-foreground truncate"
@@ -671,28 +734,37 @@ export default function AIAgentsPage() {
                             </div>
                           </td>
                           <td className="p-4 text-sm truncate max-w-25">
-                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
-                              <div className="whitespace-nowrap">Free</div>
-                            )}
-                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Dynamic' && (
-                              <div className="whitespace-nowrap">Dynamic</div>
-                            )}
-                            {agent.AgentPricing &&
-                              agent.AgentPricing.pricingType == 'Fixed' &&
-                              agent.AgentPricing.Pricing?.map((price, index) => (
-                                <div key={index} className="whitespace-nowrap">
-                                  {formatAssetAmount(price.amount, price.unit, network)}
-                                </div>
-                              ))}
-                            {agentHasX402Options(agent.supportedPaymentSources) && (
-                              <div className="mt-1">
-                                <Badge variant="secondary">x402</Badge>
+                            {isA2A ? (
+                              <div className="whitespace-nowrap text-xs text-muted-foreground">
+                                Off-chain
                               </div>
-                            )}
-                            {agentHasVerifications(agent.verifications) && (
-                              <div className="mt-1">
-                                <Badge variant="outline">Verifiable</Badge>
-                              </div>
+                            ) : (
+                              <>
+                                {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
+                                  <div className="whitespace-nowrap">Free</div>
+                                )}
+                                {agent.AgentPricing &&
+                                  agent.AgentPricing.pricingType == 'Dynamic' && (
+                                    <div className="whitespace-nowrap">Dynamic</div>
+                                  )}
+                                {agent.AgentPricing &&
+                                  agent.AgentPricing.pricingType == 'Fixed' &&
+                                  agent.AgentPricing.Pricing?.map((price, index) => (
+                                    <div key={index} className="whitespace-nowrap">
+                                      {formatAssetAmount(price.amount, price.unit, network)}
+                                    </div>
+                                  ))}
+                                {agentHasX402Options(agent.supportedPaymentSources) && (
+                                  <div className="mt-1">
+                                    <Badge variant="secondary">x402</Badge>
+                                  </div>
+                                )}
+                                {agentHasVerifications(agent.verifications) && (
+                                  <div className="mt-1">
+                                    <Badge variant="outline">Verifiable</Badge>
+                                  </div>
+                                )}
+                              </>
                             )}
                           </td>
                           <td className="p-4">
@@ -712,8 +784,10 @@ export default function AIAgentsPage() {
                               <div className="flex items-center gap-1">
                                 {/* Manage actions (verify/update/delete) only apply to agents
                                     registered on the active source. Agents shown because they
-                                    accept payment here are managed from their home source. */}
-                                {agent.relation !== 'payment' && (
+                                    accept payment here are managed from their home source.
+                                    Verify/update have no A2A equivalent (off-chain pricing,
+                                    no on-chain UpdateAction). */}
+                                {agent.relation !== 'payment' && !isA2A && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -740,6 +814,7 @@ export default function AIAgentsPage() {
                                   <ExternalLink className="h-4 w-4" />
                                 </Button>
                                 {agent.relation !== 'payment' &&
+                                  !isA2A &&
                                   selectedPaymentSource &&
                                   isV2PaymentSource(selectedPaymentSource) && (
                                     <Button
@@ -832,7 +907,11 @@ export default function AIAgentsPage() {
           />
 
           <VerifyAndPublishAgentDialog
-            agent={selectedAgentForVerification}
+            agent={
+              selectedAgentForVerification && !('agentCardUrl' in selectedAgentForVerification)
+                ? selectedAgentForVerification
+                : null
+            }
             open={!!selectedAgentForVerification}
             onClose={() => setSelectedAgentForVerification(null)}
           />

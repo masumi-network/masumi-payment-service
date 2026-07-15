@@ -1,9 +1,14 @@
 import { PaymentSourceType, RegistrationState, PricingType } from '@/generated/prisma/client';
+import { IFetcher, LanguageVersion, MeshTxBuilder, Network, UTxO } from '@meshsdk/core';
+import { blake2b } from 'ethereum-cryptography/blake2b';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { convertNetwork } from '@masumi/payment-core/network';
 // TODO(v1-package-boundary): move lock-and-query-registry-request, contract-generator, metadata-string-convert, blockchain-error-interpreter, utxo to @masumi/payment-core
-import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
+import {
+	lockAndQueryA2ARegistryRequests,
+	lockAndQueryRegistryRequests,
+} from '@/utils/db/lock-and-query-registry-request';
 import { DEFAULTS, SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { getRegistryScriptFromNetworkHandlerV1 } from '@/utils/generator/contract-generator';
 import { stringToMetadata, cleanMetadata } from '@/utils/converter/metadata-string-convert';
@@ -189,6 +194,143 @@ export function buildAgentMetadata(
 	return cleanMetadata(metadata) as RegistryMetadata;
 }
 
+function buildAgentMetadataV2(request: {
+	name: string;
+	description: string | null;
+	apiBaseUrl: string;
+	agentCardUrl: string;
+	a2aProtocolVersions: string[];
+	tags: string[];
+	metadataVersion: number;
+}): AgentMetadata {
+	return {
+		name: stringToMetadata(request.name),
+		api_url: stringToMetadata(request.apiBaseUrl),
+		agent_card_url: stringToMetadata(request.agentCardUrl),
+		a2a_protocol_versions: request.a2aProtocolVersions,
+		metadata_version: request.metadataVersion.toString(),
+		...(request.description ? { description: stringToMetadata(request.description) } : {}),
+		...(request.tags.length > 0 ? { tags: request.tags } : {}),
+		image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
+	};
+}
+
+async function processA2ARegistrationRequests(
+	paymentSource: Awaited<ReturnType<typeof lockAndQueryA2ARegistryRequests>>[number],
+) {
+	if (paymentSource.A2ARegistryRequest.length === 0) return;
+
+	logger.info(
+		`Registering ${paymentSource.A2ARegistryRequest.length} A2A agents for payment source ${paymentSource.id}`,
+	);
+
+	const network = convertNetwork(paymentSource.network);
+	const blockchainProvider = await createMeshProvider(paymentSource.PaymentSourceConfig.rpcProviderApiKey);
+
+	const results = await advancedRetryAll({
+		errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
+		operations: paymentSource.A2ARegistryRequest.map((request) => async () => {
+			validateRegistrationPricing(request);
+			const walletSession = await loadHotWalletSession({
+				network: paymentSource.network,
+				rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
+				encryptedMnemonic: request.SmartContractWallet.Secret.encryptedMnemonic,
+				hotWalletId: request.SmartContractWallet.id,
+			});
+			const { wallet, utxos, address } = walletSession;
+			if (utxos.length === 0) throw new Error('No UTXOs found for the wallet');
+
+			const { script, policyId } = await getRegistryScriptFromNetworkHandlerV1(paymentSource);
+			const limitedFilteredUtxos = sortUtxosByLovelaceDesc(utxos);
+			const firstUtxo = limitedFilteredUtxos[0];
+			const collateralUtxo = limitedFilteredUtxos[0];
+			const assetName = generateAssetName(firstUtxo);
+
+			const metadata = buildAgentMetadataV2({
+				name: request.name,
+				description: request.description,
+				apiBaseUrl: request.apiBaseUrl,
+				agentCardUrl: request.agentCardUrl,
+				a2aProtocolVersions: request.a2aProtocolVersions,
+				tags: request.tags,
+				metadataVersion: DEFAULTS.A2A_METADATA_VERSION,
+			});
+
+			const evaluationTx = await generateRegisterAgentTransaction(
+				blockchainProvider,
+				network,
+				script,
+				address,
+				policyId,
+				assetName,
+				firstUtxo,
+				collateralUtxo,
+				limitedFilteredUtxos,
+				metadata,
+			);
+			const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+				budget: { mem: number; steps: number };
+			}>;
+			if (estimatedFee.length === 0) {
+				throw new Error('Transaction evaluation returned no budget estimates');
+			}
+			const unsignedTx = await generateRegisterAgentTransaction(
+				blockchainProvider,
+				network,
+				script,
+				address,
+				policyId,
+				assetName,
+				firstUtxo,
+				collateralUtxo,
+				limitedFilteredUtxos,
+				metadata,
+				estimatedFee[0].budget,
+			);
+
+			const signedTx = await wallet.signTx(unsignedTx, true);
+			await prisma.a2ARegistryRequest.update({
+				where: { id: request.id },
+				data: {
+					state: RegistrationState.RegistrationInitiated,
+					...createPendingTransaction(request.SmartContractWallet.id),
+				},
+			});
+
+			const newTxHash = await wallet.submitTx(signedTx);
+			await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+			await prisma.a2ARegistryRequest.update({
+				where: { id: request.id },
+				data: {
+					agentIdentifier: policyId + assetName,
+					...updateCurrentTransactionHash(newTxHash),
+				},
+			});
+			logger.debug(
+				`Created A2A registration transaction: ${newTxHash} — https://${network === 'preprod' ? 'preprod.' : ''}cardanoscan.io/transaction/${newTxHash}`,
+			);
+			return true;
+		}),
+	});
+
+	let index = 0;
+	for (const result of results) {
+		const request = paymentSource.A2ARegistryRequest[index];
+		if (result.success === false || result.result !== true) {
+			logger.error(`Error registering A2A agent ${request.id}`, { error: result.error });
+			await prisma.a2ARegistryRequest.update({
+				where: { id: request.id },
+				data: {
+					state: RegistrationState.RegistrationFailed,
+					error: interpretBlockchainError(result.error),
+					SmartContractWallet: { update: { lockedAt: null } },
+				},
+			});
+		}
+		index++;
+	}
+}
+
 export async function registerAgentV1() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -199,14 +341,17 @@ export async function registerAgentV1() {
 	}
 
 	try {
-		const paymentSourcesWithWalletLocked = await lockAndQueryRegistryRequests({
-			state: RegistrationState.RegistrationRequested,
-			maxBatchSize: 1,
-			paymentSourceType: PaymentSourceType.Web3CardanoV1,
-		});
+		const [standardSources, a2aSources] = await Promise.all([
+			lockAndQueryRegistryRequests({
+				state: RegistrationState.RegistrationRequested,
+				maxBatchSize: 1,
+				paymentSourceType: PaymentSourceType.Web3CardanoV1,
+			}),
+			lockAndQueryA2ARegistryRequests({ state: RegistrationState.RegistrationRequested, maxBatchSize: 1 }),
+		]);
 
-		await Promise.allSettled(
-			paymentSourcesWithWalletLocked.map(async (paymentSource) => {
+		await Promise.allSettled([
+			...standardSources.map(async (paymentSource) => {
 				if (paymentSource.RegistryRequest.length === 0) return;
 				logger.info(
 					`Registering ${paymentSource.RegistryRequest.length} V1 agents for payment source ${paymentSource.id}`,
@@ -323,10 +468,85 @@ export async function registerAgentV1() {
 					index++;
 				}
 			}),
-		);
+			...a2aSources.map(processA2ARegistrationRequests),
+		]);
 	} catch (error) {
 		logger.error('Error registering V1 agents', { error });
 	} finally {
 		release?.();
 	}
+}
+
+type AgentMetadata = {
+	[key: string]: string | string[] | AgentMetadata | AgentMetadata[] | undefined;
+};
+
+function generateAssetName(firstUtxo: UTxO): string {
+	const txId = firstUtxo.input.txHash;
+	const txIndex = firstUtxo.input.outputIndex;
+	const serializedOutput = txId + txIndex.toString(16).padStart(8, '0');
+	const serializedOutputUint8Array = new Uint8Array(Buffer.from(serializedOutput.toString(), 'hex'));
+	const blake2b256 = blake2b(serializedOutputUint8Array, 32);
+	return Buffer.from(blake2b256).toString('hex');
+}
+
+async function generateRegisterAgentTransaction(
+	blockchainProvider: IFetcher,
+	network: Network,
+	script: {
+		version: LanguageVersion;
+		code: string;
+	},
+	walletAddress: string,
+	policyId: string,
+	assetName: string,
+	firstUtxo: UTxO,
+	collateralUtxo: UTxO,
+	utxos: UTxO[],
+	metadata: AgentMetadata,
+	exUnits: {
+		mem: number;
+		steps: number;
+	} = SERVICE_CONSTANTS.SMART_CONTRACT.defaultExUnits,
+) {
+	const txBuilder = new MeshTxBuilder({
+		fetcher: blockchainProvider,
+	});
+	const deserializedAddress = txBuilder.serializer.deserializer.key.deserializeAddress(walletAddress);
+	txBuilder
+		.txIn(firstUtxo.input.txHash, firstUtxo.input.outputIndex)
+		.mintPlutusScript(script.version)
+		.mint('1', policyId, assetName)
+		.mintingScript(script.code)
+		.mintRedeemerValue({ alternative: 0, fields: [] }, 'Mesh', exUnits)
+		.metadataValue(SERVICE_CONSTANTS.METADATA.nftLabel, {
+			[policyId]: {
+				[assetName]: metadata,
+			},
+			version: '1',
+		})
+		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
+		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
+		.setTotalCollateral(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount)
+		.txOut(walletAddress, [
+			{
+				unit: policyId + assetName,
+				quantity: SERVICE_CONSTANTS.SMART_CONTRACT.mintQuantity,
+			},
+			{
+				unit: SERVICE_CONSTANTS.CARDANO.NATIVE_TOKEN,
+				quantity: SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount,
+			},
+		]);
+	for (const utxo of utxos) {
+		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
+	}
+	return await txBuilder
+		.requiredSignerHash(deserializedAddress.pubKeyHash)
+		.setNetwork(network)
+		.metadataValue(SERVICE_CONSTANTS.METADATA.masumiLabel, {
+			msg: ['Masumi', 'RegisterAgent'],
+		})
+		.changeAddress(walletAddress)
+		.complete();
 }

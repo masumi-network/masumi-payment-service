@@ -5,8 +5,12 @@ import { cn, shortenAddress, formatFundUnit, formatAssetAmount, getExplorerUrl }
 import { WalletLink } from '@/components/ui/wallet-link';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import { postRegistryDeregister } from '@/lib/api/generated';
-import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
+import {
+  postRegistryDeregister,
+  RegistryEntry,
+  A2aRegistryEntry,
+  deleteRegistry,
+} from '@/lib/api/generated';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { formatDateTime } from '@/lib/format-date';
 import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
@@ -16,7 +20,7 @@ import { Separator } from '@/components/ui/separator';
 import { Link2, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { RegisterAIAgentDialog } from './RegisterAIAgentDialog';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -25,7 +29,6 @@ import { Tabs } from '@/components/ui/tabs';
 import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
-import { useMemo } from 'react';
 import { VerifyAndPublishAgentDialog } from './VerifyAndPublishAgentDialog';
 import { AgentX402Options } from './AgentX402Options';
 import { AgentCardanoSources } from './AgentCardanoSources';
@@ -35,7 +38,9 @@ import { AgentVerifications } from './AgentVerifications';
 // source ('payment' = registered elsewhere, merely accepts payment here).
 // Optional because lookups that don't compute it (deep links, transaction
 // dialogs) are already scoped to the active source and default to managed.
-type AIAgent = RegistryEntry & { relation?: AgentRelation };
+// A2A registrations are a separate, off-chain-priced entity type — the union
+// covers both so this dialog (and the shared sections below) can render either.
+type AIAgent = (RegistryEntry | A2aRegistryEntry) & { relation?: AgentRelation };
 
 interface AIAgentDetailsDialogProps {
   agent: AIAgent | null;
@@ -88,7 +93,12 @@ export function AIAgentDetailsDialog({
     [paymentSources, network],
   );
   const holdingWallet = useMemo(
-    () => (agent ? (agent.RecipientWallet ?? agent.SmartContractWallet) : null),
+    () =>
+      agent
+        ? 'RecipientWallet' in agent
+          ? (agent.RecipientWallet ?? agent.SmartContractWallet)
+          : agent.SmartContractWallet
+        : null,
     [agent],
   );
   const usesCombinedWallet = useMemo(
@@ -122,9 +132,12 @@ export function AIAgentDetailsDialog({
   // with no live on-chain registration — either deregistered (the old asset was
   // burned) or a registration that never completed (RegistrationFailed) — and
   // that is managed on the active payment source (the mint targets the active
-  // source).
+  // source). A2A agents have no re-register flow (RegisterAIAgentDialog's
+  // prefill/update path is RegistryEntry-only).
   const canReRegister =
-    (agent?.state === 'DeregistrationConfirmed' || agent?.state === 'RegistrationFailed') &&
+    agent != null &&
+    !('agentCardUrl' in agent) &&
+    (agent.state === 'DeregistrationConfirmed' || agent.state === 'RegistrationFailed') &&
     isManagedOnActiveSource;
 
   // Synchronous in-flight guard for delete/deregister: `setIsDeleting(true)`
@@ -229,9 +242,14 @@ export function AIAgentDetailsDialog({
             <>
               <DialogHeader className="px-6 shrink-0">
                 <div className="flex items-start justify-between gap-3 pr-6">
-                  <DialogTitle className="text-xl leading-tight break-words">
-                    {agent.name}
-                  </DialogTitle>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <DialogTitle className="text-xl leading-tight break-words">
+                      {agent.name}
+                    </DialogTitle>
+                    <Badge variant="outline" className="text-xs font-mono shrink-0">
+                      {'agentCardUrl' in agent ? 'A2A' : 'Standard'}
+                    </Badge>
+                  </div>
                   <Badge
                     variant={getAgentStatusBadgeVariant(agent.state)}
                     className="mt-0.5 shrink-0 whitespace-nowrap"
@@ -307,6 +325,182 @@ export function AIAgentDetailsDialog({
                       </Card>
                     )}
 
+                    {/* ── A2A-specific sections ─────────────────────────── */}
+                    {'agentCardUrl' in agent && (
+                      <>
+                        {/* Agent Card URL */}
+                        {agent.agentCardUrl && (
+                          <Card>
+                            <CardHeader>
+                              <CardTitle className="text-sm font-medium">Agent Card</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="flex items-center justify-between py-2 gap-2 bg-muted/40 p-2 rounded-lg border">
+                                <span className="text-sm text-muted-foreground">
+                                  Agent Card URL
+                                </span>
+                                <div className="font-mono text-sm flex items-center gap-2 truncate">
+                                  <a
+                                    href={agent.agentCardUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="hover:underline text-primary truncate flex items-center gap-1"
+                                  >
+                                    {agent.agentCardUrl} <Link2 className="h-3 w-3 shrink-0" />
+                                  </a>
+                                  <CopyButton value={agent.agentCardUrl} />
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        )}
+
+                        {/* A2A Protocol Versions */}
+                        {agent.a2aProtocolVersions && agent.a2aProtocolVersions.length > 0 && (
+                          <div>
+                            <h3 className="font-medium mb-2">A2A Protocol Versions</h3>
+                            <div className="flex flex-wrap gap-2">
+                              {agent.a2aProtocolVersions.map((v) => (
+                                <Badge key={v} variant="secondary" className="font-mono text-xs">
+                                  {v}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Input / Output Modes */}
+                        {((agent.a2aDefaultInputModes && agent.a2aDefaultInputModes.length > 0) ||
+                          (agent.a2aDefaultOutputModes &&
+                            agent.a2aDefaultOutputModes.length > 0)) && (
+                          <div className="grid grid-cols-2 gap-4">
+                            {agent.a2aDefaultInputModes &&
+                              agent.a2aDefaultInputModes.length > 0 && (
+                                <div>
+                                  <h3 className="font-medium mb-2 text-sm">Input Modes</h3>
+                                  <div className="flex flex-wrap gap-1">
+                                    {agent.a2aDefaultInputModes.map((m) => (
+                                      <Badge key={m} variant="outline" className="text-xs">
+                                        {m}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            {agent.a2aDefaultOutputModes &&
+                              agent.a2aDefaultOutputModes.length > 0 && (
+                                <div>
+                                  <h3 className="font-medium mb-2 text-sm">Output Modes</h3>
+                                  <div className="flex flex-wrap gap-1">
+                                    {agent.a2aDefaultOutputModes.map((m) => (
+                                      <Badge key={m} variant="outline" className="text-xs">
+                                        {m}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                          </div>
+                        )}
+
+                        {/* A2A Capabilities */}
+                        {(agent.a2aCapabilitiesStreaming !== null ||
+                          agent.a2aCapabilitiesPushNotifications !== null) && (
+                          <div>
+                            <h3 className="font-medium mb-2">Capabilities</h3>
+                            <div className="flex flex-wrap gap-2">
+                              {agent.a2aCapabilitiesStreaming !== null && (
+                                <Badge
+                                  variant={agent.a2aCapabilitiesStreaming ? 'default' : 'secondary'}
+                                  className="text-xs"
+                                >
+                                  Streaming:{' '}
+                                  {agent.a2aCapabilitiesStreaming ? 'Supported' : 'Not supported'}
+                                </Badge>
+                              )}
+                              {agent.a2aCapabilitiesPushNotifications !== null && (
+                                <Badge
+                                  variant={
+                                    agent.a2aCapabilitiesPushNotifications ? 'default' : 'secondary'
+                                  }
+                                  className="text-xs"
+                                >
+                                  Push Notifications:{' '}
+                                  {agent.a2aCapabilitiesPushNotifications
+                                    ? 'Supported'
+                                    : 'Not supported'}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Provider */}
+                        {(agent.a2aProviderName || agent.a2aProviderUrl) && (
+                          <div>
+                            <h3 className="font-medium mb-2">Provider</h3>
+                            <div className="space-y-2 text-sm p-3 bg-muted/40 rounded-md">
+                              {agent.a2aProviderName && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Name:</span>
+                                  <span>{agent.a2aProviderName}</span>
+                                </div>
+                              )}
+                              {agent.a2aProviderUrl && (
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">URL:</span>
+                                  <a
+                                    href={agent.a2aProviderUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary hover:underline flex items-center gap-1"
+                                  >
+                                    {agent.a2aProviderUrl} <Link2 className="h-3 w-3" />
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Documentation */}
+                        {agent.a2aDocumentationUrl && (
+                          <div>
+                            <h3 className="font-medium mb-2">Documentation</h3>
+                            <a
+                              href={agent.a2aDocumentationUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-primary hover:underline flex items-center gap-1"
+                            >
+                              {agent.a2aDocumentationUrl} <Link2 className="h-3 w-3" />
+                            </a>
+                          </div>
+                        )}
+
+                        {/* A2A Agent Version */}
+                        {agent.a2aAgentVersion && (
+                          <div className="flex justify-between text-sm p-3 bg-muted/40 rounded-md">
+                            <span className="text-muted-foreground">Agent Version:</span>
+                            <span className="font-mono">{agent.a2aAgentVersion}</span>
+                          </div>
+                        )}
+
+                        {/* Pricing (off-chain note) */}
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="text-sm font-medium">Pricing</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <p className="text-sm text-muted-foreground">
+                              Off-chain — pricing is defined in the Agent Card (via x402 or similar
+                              protocol).
+                            </p>
+                          </CardContent>
+                        </Card>
+                      </>
+                    )}
+
                     {/* Tags */}
                     <Card>
                       <CardHeader>
@@ -327,223 +521,236 @@ export function AIAgentDetailsDialog({
                       </CardContent>
                     </Card>
 
-                    {/* Pricing */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-sm font-medium">Pricing Details</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
-                          {agent.AgentPricing?.pricingType == 'Free' && (
-                            <div className="text-sm text-muted-foreground">
-                              <span className="font-medium">Free</span>
-                            </div>
-                          )}
-                          {agent.AgentPricing?.pricingType == 'Dynamic' && (
-                            <div className="text-sm text-muted-foreground">
-                              <span className="font-medium">Dynamic</span>
-                              <span className="ml-1 text-xs">(price set per request)</span>
-                            </div>
-                          )}
-                          {agent.AgentPricing &&
-                            agent.AgentPricing?.pricingType == 'Fixed' &&
-                            agent.AgentPricing?.Pricing?.map((price, index, arr) => (
-                              <div
-                                key={index}
-                                className={cn(
-                                  'flex items-center justify-between py-2',
-                                  index < arr.length - 1 && 'border-b',
-                                )}
-                              >
-                                <span className="text-sm text-muted-foreground">
-                                  Price ({formatFundUnit(price.unit, network)})
-                                </span>
-                                <span className="font-medium">
-                                  {formatAssetAmount(price.amount, price.unit, network)}
-                                </span>
-                              </div>
-                            ))}
-                          {(!agent.AgentPricing ||
-                            (agent.AgentPricing.pricingType == 'Fixed' &&
-                              agent.AgentPricing.Pricing.length === 0)) && (
-                            <div className="text-sm text-muted-foreground">
-                              No pricing information available
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <AgentCardanoSources sources={agent.supportedPaymentSources} />
-
-                    <AgentX402Options sources={agent.supportedPaymentSources} />
-
-                    <AgentVerifications verifications={agent.verifications} />
-
-                    <div className="flex items-center gap-4 pt-2">
-                      <Separator className="flex-1" />
-                      <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                        Additional Details
-                      </h3>
-                      <Separator className="flex-1" />
-                    </div>
-
-                    {/* Author and Legal */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Author</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3 text-sm">
-                            <div className="flex justify-between gap-3">
-                              <span className="text-muted-foreground shrink-0">Name</span>
-                              <span className="text-right break-words">{agent.Author.name}</span>
-                            </div>
-                            {agent.Author.contactEmail && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Email</span>
-                                <a
-                                  href={`mailto:${agent.Author.contactEmail}`}
-                                  className="text-primary hover:underline text-right break-all"
-                                >
-                                  {agent.Author.contactEmail}
-                                </a>
-                              </div>
-                            )}
-                            {agent.Author.organization && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Organization</span>
-                                <span className="text-right break-words">
-                                  {agent.Author.organization}
-                                </span>
-                              </div>
-                            )}
-                            {agent.Author.contactOther && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Website</span>
-                                <a
-                                  href={agent.Author.contactOther}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1 text-right break-all"
-                                >
-                                  {agent.Author.contactOther} <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Legal</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3 text-sm">
-                            {agent.Legal?.terms && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Terms of Use</span>
-                                <a
-                                  href={agent.Legal.terms}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {agent.Legal?.privacyPolicy && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">
-                                  Privacy Policy
-                                </span>
-                                <a
-                                  href={agent.Legal.privacyPolicy}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {agent.Legal?.other && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Support</span>
-                                <a
-                                  href={agent.Legal.other}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {(!agent.Legal || Object.values(agent.Legal).every((v) => !v)) && (
-                              <span className="text-muted-foreground">
-                                No legal information provided.
-                              </span>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    {/* Capability */}
-                    {agent.Capability && (agent.Capability.name || agent.Capability.version) && (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Capability</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex justify-between text-sm py-2 px-3 bg-muted/40 border rounded-md">
-                            <span className="text-muted-foreground">Model</span>
-                            <span>
-                              {agent.Capability.name} (v
-                              {agent.Capability.version})
-                            </span>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-
-                    {/* Example Outputs */}
-                    {agent.ExampleOutputs && agent.ExampleOutputs.length > 0 && (
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Example Outputs</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            {agent.ExampleOutputs.map((output, index) => (
-                              <div
-                                key={index}
-                                className="text-sm py-2 px-3 bg-muted/40 border rounded-md"
-                              >
-                                <div className="flex justify-between items-center gap-3">
-                                  <div className="min-w-0">
-                                    <p className="font-medium truncate">{output.name}</p>
-                                    <p className="text-xs text-muted-foreground truncate">
-                                      {output.mimeType}
-                                    </p>
-                                  </div>
-                                  <a
-                                    href={output.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-primary hover:underline flex items-center gap-1 shrink-0"
-                                  >
-                                    View <Link2 className="h-3 w-3" />
-                                  </a>
+                    {/* ── Standard-only sections ── */}
+                    {!('agentCardUrl' in agent) && (
+                      <>
+                        {/* Pricing */}
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="text-sm font-medium">Pricing Details</CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
+                              {agent.AgentPricing?.pricingType == 'Free' && (
+                                <div className="text-sm text-muted-foreground">
+                                  <span className="font-medium">Free</span>
                                 </div>
+                              )}
+                              {agent.AgentPricing?.pricingType == 'Dynamic' && (
+                                <div className="text-sm text-muted-foreground">
+                                  <span className="font-medium">Dynamic</span>
+                                  <span className="ml-1 text-xs">(price set per request)</span>
+                                </div>
+                              )}
+                              {agent.AgentPricing &&
+                                agent.AgentPricing?.pricingType == 'Fixed' &&
+                                agent.AgentPricing?.Pricing?.map((price, index, arr) => (
+                                  <div
+                                    key={index}
+                                    className={cn(
+                                      'flex items-center justify-between py-2',
+                                      index < arr.length - 1 && 'border-b',
+                                    )}
+                                  >
+                                    <span className="text-sm text-muted-foreground">
+                                      Price ({formatFundUnit(price.unit, network)})
+                                    </span>
+                                    <span className="font-medium">
+                                      {formatAssetAmount(price.amount, price.unit, network)}
+                                    </span>
+                                  </div>
+                                ))}
+                              {(!agent.AgentPricing ||
+                                (agent.AgentPricing.pricingType == 'Fixed' &&
+                                  agent.AgentPricing.Pricing.length === 0)) && (
+                                <div className="text-sm text-muted-foreground">
+                                  No pricing information available
+                                </div>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <AgentCardanoSources sources={agent.supportedPaymentSources} />
+
+                        <AgentX402Options sources={agent.supportedPaymentSources} />
+
+                        <AgentVerifications verifications={agent.verifications} />
+
+                        <div className="flex items-center gap-4 pt-2">
+                          <Separator className="flex-1" />
+                          <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                            Additional Details
+                          </h3>
+                          <Separator className="flex-1" />
+                        </div>
+
+                        {/* Author and Legal */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <Card>
+                            <CardHeader>
+                              <CardTitle className="text-sm font-medium">Author</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="space-y-3 text-sm">
+                                <div className="flex justify-between gap-3">
+                                  <span className="text-muted-foreground shrink-0">Name</span>
+                                  <span className="text-right break-words">
+                                    {agent.Author.name}
+                                  </span>
+                                </div>
+                                {agent.Author.contactEmail && (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">Email</span>
+                                    <a
+                                      href={`mailto:${agent.Author.contactEmail}`}
+                                      className="text-primary hover:underline text-right break-all"
+                                    >
+                                      {agent.Author.contactEmail}
+                                    </a>
+                                  </div>
+                                )}
+                                {agent.Author.organization && (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">
+                                      Organization
+                                    </span>
+                                    <span className="text-right break-words">
+                                      {agent.Author.organization}
+                                    </span>
+                                  </div>
+                                )}
+                                {agent.Author.contactOther && (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">Website</span>
+                                    <a
+                                      href={agent.Author.contactOther}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1 text-right break-all"
+                                    >
+                                      {agent.Author.contactOther}{' '}
+                                      <Link2 className="h-3 w-3 shrink-0" />
+                                    </a>
+                                  </div>
+                                )}
                               </div>
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardHeader>
+                              <CardTitle className="text-sm font-medium">Legal</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="space-y-3 text-sm">
+                                {agent.Legal?.terms && (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">
+                                      Terms of Use
+                                    </span>
+                                    <a
+                                      href={agent.Legal.terms}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1"
+                                    >
+                                      View Link <Link2 className="h-3 w-3 shrink-0" />
+                                    </a>
+                                  </div>
+                                )}
+                                {agent.Legal?.privacyPolicy && (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">
+                                      Privacy Policy
+                                    </span>
+                                    <a
+                                      href={agent.Legal.privacyPolicy}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1"
+                                    >
+                                      View Link <Link2 className="h-3 w-3 shrink-0" />
+                                    </a>
+                                  </div>
+                                )}
+                                {agent.Legal?.other && (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">Support</span>
+                                    <a
+                                      href={agent.Legal.other}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1"
+                                    >
+                                      View Link <Link2 className="h-3 w-3 shrink-0" />
+                                    </a>
+                                  </div>
+                                )}
+                                {(!agent.Legal || Object.values(agent.Legal).every((v) => !v)) && (
+                                  <span className="text-muted-foreground">
+                                    No legal information provided.
+                                  </span>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+
+                        {/* Capability */}
+                        {agent.Capability &&
+                          (agent.Capability.name || agent.Capability.version) && (
+                            <Card>
+                              <CardHeader>
+                                <CardTitle className="text-sm font-medium">Capability</CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="flex justify-between text-sm py-2 px-3 bg-muted/40 border rounded-md">
+                                  <span className="text-muted-foreground">Model</span>
+                                  <span>
+                                    {agent.Capability.name} (v
+                                    {agent.Capability.version})
+                                  </span>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          )}
+
+                        {/* Example Outputs */}
+                        {agent.ExampleOutputs && agent.ExampleOutputs.length > 0 && (
+                          <Card>
+                            <CardHeader>
+                              <CardTitle className="text-sm font-medium">Example Outputs</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="space-y-2">
+                                {agent.ExampleOutputs.map((output, index) => (
+                                  <div
+                                    key={index}
+                                    className="text-sm py-2 px-3 bg-muted/40 border rounded-md"
+                                  >
+                                    <div className="flex justify-between items-center gap-3">
+                                      <div className="min-w-0">
+                                        <p className="font-medium truncate">{output.name}</p>
+                                        <p className="text-xs text-muted-foreground truncate">
+                                          {output.mimeType}
+                                        </p>
+                                      </div>
+                                      <a
+                                        href={output.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-primary hover:underline flex items-center gap-1 shrink-0"
+                                      >
+                                        View <Link2 className="h-3 w-3" />
+                                      </a>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        )}
+                      </>
                     )}
 
                     {/* Wallet Information */}
@@ -626,7 +833,7 @@ export function AIAgentDetailsDialog({
                               )}
                             </>
                           )}
-                          {agent.sendFundingLovelace && (
+                          {'sendFundingLovelace' in agent && agent.sendFundingLovelace && (
                             <div className="flex items-center justify-between py-2.5 border-t">
                               <span className="text-sm text-muted-foreground">
                                 Holding Wallet Funding Override
@@ -684,7 +891,8 @@ export function AIAgentDetailsDialog({
                   (agent.state === 'RegistrationConfirmed' ||
                     agent.state === 'UpdateConfirmed' ||
                     agent.state === 'UpdateFailed') &&
-                  agent.agentIdentifier && (
+                  agent.agentIdentifier &&
+                  !('agentCardUrl' in agent) && (
                     <Button variant="outline" onClick={() => setIsVerifyDialogOpen(true)}>
                       <ShieldCheck className="h-4 w-4" />
                       Verify & Publish
@@ -725,7 +933,7 @@ export function AIAgentDetailsDialog({
         elevatedChildStack={elevatedStack}
       />
       <VerifyAndPublishAgentDialog
-        agent={agent}
+        agent={agent && !('agentCardUrl' in agent) ? agent : null}
         open={isVerifyDialogOpen}
         onClose={() => setIsVerifyDialogOpen(false)}
         elevatedChildStack={elevatedStack}
@@ -750,8 +958,8 @@ export function AIAgentDetailsDialog({
         }}
       />
       <RegisterAIAgentDialog
-        open={isReRegisterOpen && !!agent}
-        prefillAgent={agent}
+        open={isReRegisterOpen && !!agent && !('agentCardUrl' in agent)}
+        prefillAgent={agent && !('agentCardUrl' in agent) ? agent : null}
         elevatedChildStack={elevatedStack}
         onClose={() => setIsReRegisterOpen(false)}
         onSuccess={() => {
