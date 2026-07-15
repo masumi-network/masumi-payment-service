@@ -9,10 +9,11 @@
  *
  * Run: pnpm exec tsx hydra-l2-flow/13-settle.mts
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { HydraNode } from '@/lib/hydra/hydra/node';
 import { HydraHeadStatus } from '@/generated/prisma/client';
+import { fanoutWithRetry, lastTxIdForTag, toWsUrl, waitForStatus } from './settle-shared.mts';
 
 const NODE1 = process.env.NODE1 ?? 'http://127.0.0.1:4001';
 const NATIVE_LOG = process.env.NATIVE_LOG ?? '';
@@ -24,33 +25,12 @@ const STATE_FILE = process.env.SETTLEMENT_STATE ?? 'hydra-l2-flow/.native-state/
 // hydra-native.sh) before ReadyToFanout is reached, plus margin for the node's own
 // observed chain-time to catch up to the deadline. A value tuned for devnet's 3s CP
 // (previously a flat 30s) unconditionally times out on preprod's much longer CP.
+// Also reused as the total budget for the fanout retry loop below — the caller's
+// RUN_TIMEOUT must therefore cover ~2x this value (see cmd_settle).
 const FANOUT_WAIT_MS = Number(process.env.FANOUT_WAIT_MS ?? (NETWORK === 'preprod' ? 300000 : 30000));
 
 function log(m: string): void {
 	console.log(`[settle] ${new Date().toISOString().slice(11, 19)} ${m}`);
-}
-
-// Best-effort: pull the most recent L1 tx id the node posted for a given tag
-// (e.g. CloseTx / FanoutTx) out of the native node log. Returns '' if unknown.
-function lastTxIdForTag(tag: string): string {
-	if (!NATIVE_LOG || !existsSync(NATIVE_LOG)) return '';
-	const lines = readFileSync(NATIVE_LOG, 'utf-8').split('\n');
-	for (let i = lines.length - 1; i >= 0; i--) {
-		if (lines[i].includes(tag)) {
-			const m = lines[i].match(/"transactionId":"([0-9a-f]{64})"/) ?? lines[i].match(/"txId":"([0-9a-f]{64})"/);
-			if (m) return m[1];
-		}
-	}
-	return '';
-}
-
-async function waitForStatus(node: HydraNode, target: HydraHeadStatus, timeoutMs: number): Promise<boolean> {
-	const start = Date.now();
-	while (node.status !== target) {
-		if (Date.now() - start > timeoutMs) return false;
-		await new Promise((r) => setTimeout(r, 500));
-	}
-	return true;
 }
 
 async function main(): Promise<void> {
@@ -81,7 +61,7 @@ async function main(): Promise<void> {
 		log('(if this is PPViewHashesDontMatch, re-run align-cost-models on all nodes)');
 		process.exit(1);
 	}
-	const closeTx = lastTxIdForTag('CloseTx');
+	const closeTx = lastTxIdForTag(NATIVE_LOG, 'CloseTx');
 	log(`HeadIsClosed (status ${node.status})${closeTx ? ` — close tx ${closeTx.slice(0, 16)}…` : ''}`);
 
 	// 3. Wait out the contestation period until the node signals ReadyToFanout.
@@ -93,15 +73,24 @@ async function main(): Promise<void> {
 	}
 	log('ReadyToFanout');
 
-	// 4. Fanout: distribute the head's final UTxOs back onto L1.
+	// 4. Fanout: distribute the head's final UTxOs back onto L1. Uses the robust
+	//    raw-WS submitter (settle-shared.mts) instead of node.fanout(): bounded
+	//    per-attempt timeout, auto-retry on RejectedInputBecauseUnsynced, and
+	//    CommandFailed-with-Idle-state counts as success (already finalized).
 	log('fanning out (settling UTxOs to L1)…');
-	try {
-		await node.fanout();
-	} catch (e) {
-		log(`Fanout failed: ${e instanceof Error ? e.message : String(e)}`);
+	const result = await fanoutWithRetry(toWsUrl(NODE1), {
+		maxTotalWaitMs: FANOUT_WAIT_MS,
+		log,
+	});
+	if (result.outcome === 'failed') {
+		log(`Fanout failed: ${result.detail}`);
 		process.exit(1);
 	}
-	const fanoutTx = lastTxIdForTag('FanoutTx');
+	if (result.outcome !== 'finalized') {
+		log(`Fanout gave no definitive result within ${FANOUT_WAIT_MS / 1000}s (last: ${result.outcome}).`);
+		process.exit(1);
+	}
+	const fanoutTx = lastTxIdForTag(NATIVE_LOG, 'FanoutTx');
 	log(`=== HEAD FINALIZED === (status ${node.status})${fanoutTx ? ` — fanout tx ${fanoutTx.slice(0, 16)}…` : ''}`);
 
 	// 5. Persist settlement facts as state for build-evidence.cjs to render into
@@ -109,7 +98,8 @@ async function main(): Promise<void> {
 	const state = {
 		generated: new Date().toISOString(),
 		node: NODE1,
-		network: process.env.HYDRA_FLOW_NETWORK === 'preprod' ? 'Cardano preprod (blockfrost)' : 'local devnet (testnet-magic 42)',
+		network:
+			process.env.HYDRA_FLOW_NETWORK === 'preprod' ? 'Cardano preprod (blockfrost)' : 'local devnet (testnet-magic 42)',
 		preCloseUtxoCount: pre.length,
 		totalLovelaceSettled: totalLovelace.toString(),
 		closeTx: closeTx || null,

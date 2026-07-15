@@ -33,6 +33,14 @@
 #   ./hydra-native.sh publish   # (re)publish 2.2.0 reference scripts natively -> $DEMO/.env
 #   ./hydra-native.sh bin       # ensure native binary is present (download if missing)
 #
+# Testing an unreleased fix (e.g. master, ahead of the 2.2.0 tag) without
+# disturbing the pinned binary:
+#   HYDRA_BIN_TAG=master-6e2754c \
+#   HYDRA_BIN_RUN_ID=28878987397 \
+#   HYDRA_BIN_ARTIFACT=hydra-aarch64-darwin-2.2.0-46-g6e2754c5a \
+#     ./hydra-native.sh bin
+#   # then pass the same three env vars to `up`/`restart`/etc. to run against it.
+#
 set -uo pipefail
 
 REPO="${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -46,12 +54,25 @@ HYDRA_VERSION="${HYDRA_VERSION:-2.2.0}"
 # assets exist; the binaries are published as workflow artifacts).
 HYDRA_BIN_RUN_ID="${HYDRA_BIN_RUN_ID:-27418396480}"
 HYDRA_BIN_ARTIFACT="${HYDRA_BIN_ARTIFACT:-hydra-aarch64-darwin-${HYDRA_VERSION}}"
+# Optional channel tag (e.g. "master-6e2754c") to test an unreleased fix
+# without disturbing the pinned 2.2.0 binary at .bin/hydra-node. Set alongside
+# HYDRA_BIN_RUN_ID/HYDRA_BIN_ARTIFACT to point at a specific CI artifact; the
+# binary lands at .bin/hydra-node-<tag> and is left in place for reuse/rollback.
+HYDRA_BIN_TAG="${HYDRA_BIN_TAG:-}"
 
 NETWORK="${NETWORK:-devnet}"   # devnet | preprod
 PREPROD_DIR="${PREPROD_DIR:-$REPO/hydra-l2-flow/preprod}"
+# Which persistence/<party> tree under $PREPROD_DIR to run against — override to
+# point at an archived head (e.g. a copy of persistence-closed-20260706) without
+# touching the live "persistence" dir.
+PERSIST_SUBDIR="${PERSIST_SUBDIR:-persistence}"
 
 BIN_DIR="${BIN_DIR:-$REPO/hydra-l2-flow/.bin}"
-NATIVE_BIN="${NATIVE_BIN:-$BIN_DIR/hydra-node}"
+if [ -n "$HYDRA_BIN_TAG" ]; then
+  NATIVE_BIN="${NATIVE_BIN:-$BIN_DIR/hydra-node-${HYDRA_BIN_TAG}}"
+else
+  NATIVE_BIN="${NATIVE_BIN:-$BIN_DIR/hydra-node}"
+fi
 STATE="${STATE:-$REPO/hydra-l2-flow/.native-state}"
 
 BRIDGE_NAME="${BRIDGE_NAME:-hydra-n2c-bridge}"
@@ -209,7 +230,7 @@ start_node_preprod(){
   local idx="$1" party="$2"
   local api=$((4000 + idx)) p2p=$((5000 + idx)) mon=$((6000 + idx))
   local other=$(( idx == 1 ? 2 : 1 ))
-  local persist="$PREPROD_DIR/persistence/$party"
+  local persist="$PREPROD_DIR/$PERSIST_SUBDIR/$party"
   mkdir -p "$persist"
   local other_vk; other_vk="$([ "$idx" = 1 ] && echo selling-hydra.vk || echo purchasing-hydra.vk)"
   local other_cvk; other_cvk="$([ "$idx" = 1 ] && echo selling-cardano.vk || echo purchasing-cardano.vk)"
@@ -231,6 +252,7 @@ start_node_preprod(){
       --deposit-period "${DEPOSIT_PERIOD:-300s}" \
       --unsynced-period "${UNSYNCED_PERIOD:-1800s}" \
       ${START_CHAIN_FROM:+--start-chain-from "${START_CHAIN_FROM//\//.}"} \
+      ${PERSISTENCE_ROTATE_AFTER:+--persistence-rotate-after "$PERSISTENCE_ROTATE_AFTER"} \
       >>"$STATE/node$idx.log" 2>&1 ) &
   echo $! > "$STATE/node$idx.pid"
 }
