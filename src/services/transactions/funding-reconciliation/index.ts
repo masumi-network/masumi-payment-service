@@ -545,5 +545,27 @@ async function resolvePaymentSourceForOrphanTx(
 		};
 	}
 
+	// Fund distribution links its batch via FundDistributionRequest.transactionId
+	// rather than a currentTransactionId, and reaches its PaymentSource through
+	// the fund wallet. Without this branch a distribution tx whose BlocksWallet
+	// was severed resolves to null and this worker skips it forever — leaving the
+	// row Pending with intendedTxHash set, so `reconcileInFlightRequests` never
+	// gets a verdict and the batch strands permanently.
+	const fundDistributionReq = await prisma.fundDistributionRequest.findFirst({
+		where: { transactionId: txId },
+		select: {
+			FundWallet: {
+				select: { PaymentSource: { select: { network: true, PaymentSourceConfig: true } } },
+			},
+		},
+	});
+	const fundSource = fundDistributionReq?.FundWallet?.PaymentSource;
+	if (fundSource?.PaymentSourceConfig != null) {
+		return {
+			network: fundSource.network,
+			apiKey: fundSource.PaymentSourceConfig.rpcProviderApiKey,
+		};
+	}
+
 	return null;
 }
