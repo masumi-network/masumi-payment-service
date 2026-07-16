@@ -1675,6 +1675,17 @@ export type UtxoAmount = {
     quantity: number | null;
 };
 
+export type BalanceAmount = {
+    /**
+     * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+     */
+    unit: string;
+    /**
+     * The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 10000000 lovelace)
+     */
+    quantity: number | null;
+};
+
 export type RpcProviderKey = {
     /**
      * Unique identifier for the RPC provider key
@@ -8030,6 +8041,39 @@ export type GetUtxosResponses = {
 };
 
 export type GetUtxosResponse = GetUtxosResponses[keyof GetUtxosResponses];
+
+export type GetBalanceData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The address to get the confirmed balance for
+         */
+        address: string;
+        /**
+         * The Cardano network
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    url: '/balance';
+};
+
+export type GetBalanceResponses = {
+    /**
+     * Complete confirmed address balance
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * Complete confirmed address balance aggregated across all UTXOs
+             */
+            Balance: Array<BalanceAmount>;
+        };
+    };
+};
+
+export type GetBalanceResponse = GetBalanceResponses[keyof GetBalanceResponses];
 
 export type GetRpcApiKeysData = {
     body?: never;

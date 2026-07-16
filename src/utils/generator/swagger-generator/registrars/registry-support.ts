@@ -27,6 +27,7 @@ import {
 	paymentSourceExtendedUpdateSchemaOutput,
 } from '@/routes/api/payment-source-extended/schemas';
 import { getUTXOSchemaInput, getUTXOSchemaOutput } from '@/routes/api/utxos';
+import { getBalanceSchemaInput, getBalanceSchemaOutput } from '@/routes/api/balance';
 import { getRpcProviderKeysSchemaInput, getRpcProviderKeysSchemaOutput } from '@/routes/api/rpc-api-keys';
 import { postPurchaseSpendingSchemaInput, postPurchaseSpendingSchemaOutput } from '@/routes/api/purchases/spending';
 import { postPaymentIncomeSchemaInput, postPaymentIncomeSchemaOutput } from '@/routes/api/payments/income';
@@ -825,6 +826,46 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 											dataHash: 'data_hash',
 											inlineDatum: 'inline_datum',
 											referenceScriptHash: 'reference_script_hash',
+										},
+									],
+								},
+							},
+						}),
+					},
+				},
+			},
+		},
+	});
+
+	registry.registerPath({
+		method: 'get',
+		path: '/balance',
+		description: 'Gets an address balance (internal)',
+		summary:
+			'Helper endpoint that returns the complete confirmed balance at a Cardano address, independent of UTXO pagination. (READ access required)',
+		tags: ['balance'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: getBalanceSchemaInput.openapi({
+				example: {
+					network: Network.Preprod,
+					address: 'addr1qx2ej34k567890',
+				},
+			}),
+		},
+		responses: {
+			200: {
+				description: 'Complete confirmed address balance',
+				content: {
+					'application/json': {
+						schema: z.object({ status: z.string(), data: getBalanceSchemaOutput }).openapi({
+							example: {
+								status: 'Success',
+								data: {
+									Balance: [
+										{
+											unit: 'lovelace',
+											quantity: 10000000,
 										},
 									],
 								},

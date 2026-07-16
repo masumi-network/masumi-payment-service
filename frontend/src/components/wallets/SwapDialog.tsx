@@ -12,8 +12,8 @@ import { Button } from '@/components/ui/button';
 import swappableTokens from '@/assets/swappableTokens.json';
 import { ArrowDownUp, Check, ChevronDown, ExternalLink, RefreshCw, XCircle } from 'lucide-react';
 import {
+  getBalance,
   getSwapEstimate,
-  getUtxos,
   postSwap,
   postSwapCancel,
   postSwapAcknowledgeTimeout,
@@ -305,7 +305,7 @@ export function SwapDialog({
 
   const fetchBalance = async () => {
     try {
-      const result = await getUtxos({
+      const result = await getBalance({
         client: apiClient,
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -317,49 +317,28 @@ export function SwapDialog({
           network: network,
         },
       });
-      const lovelace =
-        result?.data?.data?.Utxos?.reduce((acc, utxo) => {
-          return (
-            acc +
-            utxo.Amounts.reduce((acc, asset) => {
-              if (asset.unit === 'lovelace' || asset.unit === '') {
-                return acc + (asset.quantity ?? 0);
-              }
-              return acc;
-            }, 0)
-          );
-        }, 0) ?? 0;
+      if (result.error) {
+        throw new Error(extractApiErrorMessage(result.error, 'Failed to fetch balance'));
+      }
+      const balance = result.data?.data?.Balance;
+      if (!balance) {
+        throw new Error('Wallet balance response is missing data');
+      }
+      const getRawBalance = (unit: string) =>
+        balance.reduce(
+          (sum, asset) => (asset.unit === unit ? sum + (asset.quantity ?? 0) : sum),
+          0,
+        );
+      const lovelace = getRawBalance('lovelace') + getRawBalance('');
       const usdmConfig = getUsdmConfig(network);
-      const usdm =
-        result?.data?.data?.Utxos?.reduce((acc, utxo) => {
-          return (
-            acc +
-            utxo.Amounts.reduce((acc, asset) => {
-              if (asset.unit === usdmConfig.fullAssetId) {
-                return acc + (asset.quantity ?? 0);
-              }
-              return acc;
-            }, 0)
-          );
-        }, 0) ?? 0;
+      const usdm = getRawBalance(usdmConfig.fullAssetId);
 
       const others: Record<string, number> = {};
       for (const token of swappableTokens) {
         if (token.symbol === 'ADA' || token.symbol === 'USDM') continue;
         if (!token.policyId || !token.hexedAssetName || token.hexedAssetName === 'NATIVE') continue;
         const fullUnit = token.policyId + token.hexedAssetName;
-        const sum =
-          result?.data?.data?.Utxos?.reduce((acc, utxo) => {
-            return (
-              acc +
-              utxo.Amounts.reduce((acc, asset) => {
-                if (asset.unit === fullUnit) {
-                  return acc + (asset.quantity ?? 0);
-                }
-                return acc;
-              }, 0)
-            );
-          }, 0) ?? 0;
+        const sum = getRawBalance(fullUnit);
         const decimals = (token as { decimals?: number }).decimals ?? 6;
         others[token.symbol] = sum / Math.pow(10, decimals);
       }

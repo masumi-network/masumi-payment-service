@@ -24,6 +24,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deleteWalletLowBalance,
+  getBalance,
   getUtxos,
   getWallet,
   patchWallet,
@@ -579,7 +580,7 @@ export function WalletDetailsDialog({
 
     await handleApiCall(
       () =>
-        getUtxos({
+        getBalance({
           client: apiClient,
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -593,19 +594,11 @@ export function WalletDetailsDialog({
         }),
       {
         onSuccess: (response) => {
-          const utxos = response.data?.data?.Utxos;
-          if (utxos) {
-            const balanceMap = new Map<string, number>();
-
-            utxos.forEach((utxo) => {
-              utxo.Amounts.forEach((amount) => {
-                const currentAmount = balanceMap.get(amount.unit) || 0;
-                balanceMap.set(amount.unit, currentAmount + (amount.quantity || 0));
-              });
-            });
-
+          const balance = response.data?.data?.Balance;
+          if (balance) {
             const tokens: TokenBalance[] = [];
-            balanceMap.forEach((quantity, unit) => {
+            balance.forEach(({ quantity: rawQuantity, unit }) => {
+              const quantity = rawQuantity ?? 0;
               if (unit === 'lovelace' || unit === '') {
                 tokens.push({
                   unit: 'lovelace',
@@ -632,9 +625,8 @@ export function WalletDetailsDialog({
           }
         },
         onError: () => {
-          // Don't set error for no token balances - treat as normal state
           setTokenBalances([]);
-          setError(null);
+          setError('Failed to fetch token balances');
         },
         onFinally: () => {
           setIsLoading(false);

@@ -24,7 +24,7 @@ import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interp
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONSTANTS } from '@/utils/config';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
-import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
+import { type BalanceMap, toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import { connectPreviousAction, createNextPurchaseAction } from '@/services/shared';
 import { isPrismaWriteConflict, retryPrismaWriteConflict } from '@/utils/db/write-conflict-retry';
 import { runBatchSubmissionLifecycle } from './submission-lifecycle';
@@ -63,6 +63,7 @@ type WalletPairing = {
 	walletId: string;
 	changeAddress: string;
 	utxos: UTxO[];
+	currentBalanceMap: BalanceMap | null;
 	batchedRequests: BatchedRequest[];
 };
 
@@ -360,6 +361,7 @@ async function executeSpecificBatchPayment(
 			walletUtxos: walletPairing.utxos,
 			unsignedTx: completeTx,
 			checkSource: 'submission',
+			currentBalanceMap: walletPairing.currentBalanceMap ?? undefined,
 		});
 	} catch (error) {
 		logger.error('Failed to evaluate projected wallet balance after transaction submission', {
@@ -546,12 +548,16 @@ export async function batchLatestPaymentEntriesV1() {
 								wallet.Secret.encryptedMnemonic,
 							);
 							const balanceMap = toBalanceMapFromMeshUtxos(utxos);
-							await walletLowBalanceMonitorService.evaluateHotWalletById(wallet.id, balanceMap, 'submission');
+							const currentBalanceMap = await walletLowBalanceMonitorService.evaluateCurrentHotWalletById(
+								wallet.id,
+								'submission',
+							);
 							return {
 								wallet: meshWallet,
 								walletId: wallet.id,
 								changeAddress: address,
 								utxos,
+								currentBalanceMap,
 								scriptAddress: paymentContract.smartContractAddress,
 								amounts: Array.from(balanceMap.entries()).map(([unit, quantity]) => ({
 									unit: unit === 'lovelace' ? '' : unit,
@@ -727,6 +733,7 @@ export async function batchLatestPaymentEntriesV1() {
 								walletId: walletData.walletId,
 								changeAddress: walletData.changeAddress,
 								utxos: walletData.utxos,
+								currentBalanceMap: walletData.currentBalanceMap,
 								batchedRequests: batchedPaymentRequests,
 							});
 						}

@@ -1,13 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { getUtxos, Utxo, UtxoAmount, PurchasingWallet, SellingWallet } from '@/lib/api/generated';
+import { getBalance, PurchasingWallet, SellingWallet } from '@/lib/api/generated';
 import { Client } from '@/lib/api/generated/client';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { getActiveStablecoinConfig } from '@/lib/constants/defaultWallets';
 import { toast } from 'react-toastify';
-
-type UTXO = Utxo;
-type UTXOAmount = UtxoAmount;
 
 type Wallet =
   | (PurchasingWallet & {
@@ -30,7 +27,7 @@ export async function fetchWalletBalance(
   network: 'Preprod' | 'Mainnet',
   address: string,
 ) {
-  const response = getUtxos({
+  const response = getBalance({
     client: apiClient,
     query: {
       address: address,
@@ -39,17 +36,15 @@ export async function fetchWalletBalance(
   });
   const responseData = await response;
 
-  if (responseData.status == 404) {
-    return { ada: '0', usdcx: '0' };
-  }
   if (responseData.error) {
     console.error('Error fetching wallet balance:', responseData.error);
     toast.error('Error fetching wallet balance: ' + errorToString(responseData.error));
-    return { ada: '0', usdcx: '0' };
+    throw new Error(errorToString(responseData.error));
   }
 
-  if (!responseData.data?.data?.Utxos) {
-    return { ada: '0', usdcx: '0' };
+  const responsePayload = responseData.data?.data;
+  if (!responsePayload) {
+    throw new Error('Wallet balance response is missing data');
   }
 
   try {
@@ -60,15 +55,14 @@ export async function fetchWalletBalance(
     // Legacy USDM tokens in Mainnet wallets are intentionally excluded from this summary;
     // they are still visible individually in WalletDetailsDialog.
     const stablecoinConfig = getActiveStablecoinConfig(network);
+    const balanceAmounts = responsePayload.Balance;
 
-    responseData.data.data.Utxos.forEach((utxo: UTXO) => {
-      utxo.Amounts.forEach((amount: UTXOAmount) => {
-        if (amount.unit === 'lovelace' || amount.unit == '') {
-          adaBalance += amount.quantity || 0;
-        } else if (amount.unit === stablecoinConfig.fullAssetId) {
-          usdcxBalance += amount.quantity || 0;
-        }
-      });
+    balanceAmounts.forEach((amount) => {
+      if (amount.unit === 'lovelace' || amount.unit == '') {
+        adaBalance += amount.quantity || 0;
+      } else if (amount.unit === stablecoinConfig.fullAssetId) {
+        usdcxBalance += amount.quantity || 0;
+      }
     });
 
     return {
@@ -77,7 +71,7 @@ export async function fetchWalletBalance(
     };
   } catch (error) {
     console.error('Error processing wallet balance:', error);
-    return { ada: '0', usdcx: '0' };
+    throw error;
   }
 }
 

@@ -34,6 +34,7 @@ import {
 } from './wallet/low-balance';
 import { queryRpcProviderKeysEndpointGet } from './rpc-api-keys';
 import { queryUTXOEndpointGet } from './utxos';
+import { queryBalanceEndpointGet } from './balance';
 import { paymentSourceEndpointGet } from './payment-source';
 import { submitPaymentResultEndpointPost } from './payments/submit-result';
 import { authorizePaymentRefundEndpointPost } from './payments/authorize-refund';
@@ -243,6 +244,9 @@ export const apiRouter: Routing = {
 		},
 		utxos: {
 			get: queryUTXOEndpointGet,
+		},
+		balance: {
+			get: queryBalanceEndpointGet,
 		},
 		'payment-source': {
 			get: paymentSourceEndpointGet,
