@@ -522,12 +522,20 @@ class WebhookSenderService {
 			return lines.join('\n');
 		}
 
-		if (payload.event_type === WebhookEventType.FUND_DISTRIBUTION_SENT) {
+		if (
+			payload.event_type === WebhookEventType.FUND_DISTRIBUTION_SENT ||
+			payload.event_type === WebhookEventType.FUND_DISTRIBUTION_CONFIRMED ||
+			payload.event_type === WebhookEventType.FUND_DISTRIBUTION_FAILED
+		) {
 			lines.push('');
 			this.appendDetailLine(lines, '🏦', 'Fund Wallet ID', payload.data.fundWalletId);
 			this.appendDetailLine(lines, '📬', 'Fund Wallet address', payload.data.fundWalletAddress);
-			this.appendDetailLine(lines, '🔗', 'Tx hash', payload.data.txHash);
+			this.appendDetailLine(lines, '🔗', 'Tx hash', payload.data.txHash ?? 'not submitted');
 			this.appendDetailLine(lines, '🌐', 'Network', payload.data.network);
+			this.appendDetailLine(lines, '📦', 'Recipients', String(payload.data.distributions.length));
+			if (payload.event_type === WebhookEventType.FUND_DISTRIBUTION_FAILED) {
+				this.appendDetailLine(lines, '❌', 'Error', payload.data.error);
+			}
 			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
 			return lines.join('\n');
 		}
@@ -602,6 +610,10 @@ class WebhookSenderService {
 				return { emoji: '🪫', title: 'Wallet balance low' };
 			case WebhookEventType.FUND_DISTRIBUTION_SENT:
 				return { emoji: '💸', title: 'Fund distribution sent' };
+			case WebhookEventType.FUND_DISTRIBUTION_CONFIRMED:
+				return { emoji: '✅', title: 'Fund distribution confirmed' };
+			case WebhookEventType.FUND_DISTRIBUTION_FAILED:
+				return { emoji: '🚨', title: 'Fund distribution failed' };
 			case WebhookEventType.X402_PAYMENT_SETTLED:
 				return { emoji: '✅', title: 'x402 payment settled' };
 			case WebhookEventType.X402_PAYMENT_FAILED:

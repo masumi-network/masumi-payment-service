@@ -3,6 +3,7 @@ import {
 	FundDistributionStatus,
 	HotWalletType,
 	LowBalanceStatus,
+	Network,
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
@@ -11,6 +12,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { Mutex } from 'async-mutex';
 import { withJobLock } from '@/services/shared/job-runner';
+import { webhookEventsService } from '@/services/webhooks';
 import { getFundWalletForPaymentSource, loadFundWalletContext } from './context';
 import { processRequestsForFundWallet } from './batch-executor';
 
@@ -373,9 +375,14 @@ export class FundDistributionService {
 				txHash: true,
 				updatedAt: true,
 				fundWalletId: true,
+				batchId: true,
+				amount: true,
+				targetWalletId: true,
+				TargetWallet: { select: { walletAddress: true } },
 				FundWallet: {
 					select: {
 						id: true,
+						walletAddress: true,
 						lockedAt: true,
 						pendingTransactionId: true,
 						PaymentSource: {
@@ -417,6 +424,21 @@ export class FundDistributionService {
 			let hasUnresolved = false;
 
 			for (const [txHash, txRequests] of byTxHash) {
+				// Every request under this txHash shares one batch, so one payload
+				// describes the whole outcome.
+				const outcomePayload = {
+					batchId: txRequests[0]?.batchId ?? '',
+					fundWalletId,
+					fundWalletAddress: txRequests[0]?.FundWallet.walletAddress ?? '',
+					network: txRequests[0]?.FundWallet.PaymentSource.network ?? Network.Preprod,
+					distributions: txRequests.map((req) => ({
+						requestId: req.id,
+						targetWalletId: req.targetWalletId,
+						targetWalletAddress: req.TargetWallet.walletAddress,
+						amount: req.amount.toString(),
+					})),
+				};
+
 				try {
 					const txInfo = await provider.fetchTxInfo(txHash);
 
@@ -425,6 +447,7 @@ export class FundDistributionService {
 							where: { id: { in: txRequests.map((r) => r.id) } },
 							data: { status: FundDistributionStatus.Confirmed, error: null },
 						});
+						await webhookEventsService.triggerFundDistributionConfirmed({ ...outcomePayload, txHash });
 					} else {
 						// Only mark as Failed after the confirmation timeout has elapsed.
 						// Within the window the requests stay Submitted and will be retried next cycle
@@ -433,13 +456,18 @@ export class FundDistributionService {
 						const timedOut = Date.now() - submittedAt > CONSTANTS.FUND_DISTRIBUTION_TX_CONFIRMATION_TIMEOUT_MS;
 
 						if (timedOut) {
+							const error = 'Transaction not found on-chain after timeout';
 							await prisma.fundDistributionRequest.updateMany({
 								where: { id: { in: txRequests.map((r) => r.id) } },
 								data: {
 									status: FundDistributionStatus.Failed,
-									error: 'Transaction not found on-chain after timeout',
+									error,
 								},
 							});
+							// The batch was submitted but never landed. Without this the
+							// operator's last signal was FUND_DISTRIBUTION_SENT and they
+							// would believe the wallets were topped up.
+							await webhookEventsService.triggerFundDistributionFailed({ ...outcomePayload, txHash, error });
 						} else {
 							logger.debug('Fund distribution tx not yet indexed, will retry next cycle', {
 								component: 'fund_distribution',

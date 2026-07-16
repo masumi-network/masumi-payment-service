@@ -205,26 +205,79 @@ class WebhookEventsService {
 		await this.triggerGenericWebhook(WebhookEventType.PAYMENT_ON_ERROR, paymentId, 'payment');
 	}
 
-	async triggerFundDistributionSent(payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_SENT'>): Promise<void> {
+	/**
+	 * Queue one of the three fund-distribution lifecycle events. A throw here is
+	 * swallowed by design: webhook delivery must never fail the distribution
+	 * flow that triggered it, least of all after funds have moved.
+	 */
+	/**
+	 * Shared logging + swallow for the fund-distribution lifecycle events. Takes
+	 * a thunk rather than an (event, payload) pair because
+	 * `WebhookPayloadDataByEvent` is a deferred conditional type: threading it
+	 * through a generic here defeats the per-event payload checking that makes
+	 * the discriminated union worth having. The callers below keep it exact.
+	 *
+	 * Swallowing is deliberate: webhook delivery must never fail the
+	 * distribution flow, least of all after funds have already moved.
+	 */
+	private async triggerFundDistribution(
+		event: WebhookEventType,
+		meta: { fundWalletId: string; batchId: string; txHash: string | null },
+		queue: () => Promise<void>,
+	): Promise<void> {
 		try {
-			await webhookQueueService.queueWebhook(
-				WebhookEventType.FUND_DISTRIBUTION_SENT,
-				payload,
-				payload.fundWalletId,
-				undefined,
-			);
-
-			logger.info('FUND_DISTRIBUTION_SENT webhook triggered', {
-				fundWalletId: payload.fundWalletId,
-				txHash: payload.txHash,
-				batchId: payload.batchId,
-			});
+			await queue();
+			logger.info(`${event} webhook triggered`, meta);
 		} catch (error) {
-			logger.error('Failed to trigger FUND_DISTRIBUTION_SENT webhook', {
-				fundWalletId: payload.fundWalletId,
+			logger.error(`Failed to trigger ${event} webhook`, {
+				...meta,
 				error: error instanceof Error ? error.message : 'Unknown error',
 			});
 		}
+	}
+
+	async triggerFundDistributionSent(payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_SENT'>): Promise<void> {
+		await this.triggerFundDistribution(
+			WebhookEventType.FUND_DISTRIBUTION_SENT,
+			{ fundWalletId: payload.fundWalletId, batchId: payload.batchId, txHash: payload.txHash },
+			() =>
+				webhookQueueService.queueWebhook(
+					WebhookEventType.FUND_DISTRIBUTION_SENT,
+					payload,
+					payload.fundWalletId,
+					undefined,
+				),
+		);
+	}
+
+	async triggerFundDistributionConfirmed(
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_CONFIRMED'>,
+	): Promise<void> {
+		await this.triggerFundDistribution(
+			WebhookEventType.FUND_DISTRIBUTION_CONFIRMED,
+			{ fundWalletId: payload.fundWalletId, batchId: payload.batchId, txHash: payload.txHash },
+			() =>
+				webhookQueueService.queueWebhook(
+					WebhookEventType.FUND_DISTRIBUTION_CONFIRMED,
+					payload,
+					payload.fundWalletId,
+					undefined,
+				),
+		);
+	}
+
+	async triggerFundDistributionFailed(payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_FAILED'>): Promise<void> {
+		await this.triggerFundDistribution(
+			WebhookEventType.FUND_DISTRIBUTION_FAILED,
+			{ fundWalletId: payload.fundWalletId, batchId: payload.batchId, txHash: payload.txHash },
+			() =>
+				webhookQueueService.queueWebhook(
+					WebhookEventType.FUND_DISTRIBUTION_FAILED,
+					payload,
+					payload.fundWalletId,
+					undefined,
+				),
+		);
 	}
 
 	async triggerWalletLowBalance(payload: WalletLowBalanceWebhookData): Promise<void> {

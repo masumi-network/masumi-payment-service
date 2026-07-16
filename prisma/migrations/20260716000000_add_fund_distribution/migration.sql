@@ -8,7 +8,12 @@ CREATE TYPE "FundDistributionStatus" AS ENUM ('Pending', 'Submitted', 'Confirmed
 ALTER TYPE "HotWalletType" ADD VALUE 'Funding';
 
 -- AlterEnum
+-- Postgres allows ADD VALUE inside a transaction (which Prisma wraps this file
+-- in) only so long as the new value is not USED in the same transaction. These
+-- are declared here and first written by application code, so this is safe.
 ALTER TYPE "WebhookEventType" ADD VALUE 'FUND_DISTRIBUTION_SENT';
+ALTER TYPE "WebhookEventType" ADD VALUE 'FUND_DISTRIBUTION_CONFIRMED';
+ALTER TYPE "WebhookEventType" ADD VALUE 'FUND_DISTRIBUTION_FAILED';
 
 -- CreateTable
 CREATE TABLE "FundDistributionConfig" (

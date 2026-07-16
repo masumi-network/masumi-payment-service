@@ -162,6 +162,19 @@ export async function processRequestsForFundWallet(
 
 	const requestIds = affordableRequests.map((r) => r.id);
 
+	const batchPayload = {
+		batchId,
+		fundWalletId: fundWallet.id,
+		fundWalletAddress: fundWallet.walletAddress,
+		network: fundWallet.network,
+		distributions: affordableRequests.map((req) => ({
+			requestId: req.id,
+			targetWalletId: req.targetWalletId,
+			targetWalletAddress: req.targetAddress,
+			amount: req.amount.toString(),
+		})),
+	};
+
 	// Revert = unlock the wallet, drop the orphaned Transaction row, fail the
 	// requests. ONLY safe when the tx body provably never reached the chain.
 	const revertNeverBroadcast = async (errorMsg: string) => {
@@ -175,6 +188,13 @@ export async function processRequestsForFundWallet(
 		await prisma.fundDistributionRequest.updateMany({
 			where: { id: { in: requestIds } },
 			data: { status: FundDistributionStatus.Failed, error: errorMsg, batchId },
+		});
+		// Tell operators the top-up did not happen. These wallets are still low
+		// and no funds moved, so this is the actionable signal.
+		await webhookEventsService.triggerFundDistributionFailed({
+			...batchPayload,
+			txHash: null,
+			error: errorMsg,
 		});
 	};
 
@@ -301,18 +321,8 @@ export async function processRequestsForFundWallet(
 		recipient_count: affordableRequests.length,
 	});
 
-	// Trigger webhook
-	await webhookEventsService.triggerFundDistributionSent({
-		batchId,
-		fundWalletId: fundWallet.id,
-		fundWalletAddress: fundWallet.walletAddress,
-		txHash,
-		network: fundWallet.network,
-		distributions: affordableRequests.map((req) => ({
-			requestId: req.id,
-			targetWalletId: req.targetWalletId,
-			targetWalletAddress: req.targetAddress,
-			amount: req.amount.toString(),
-		})),
-	});
+	// Submission only. The confirm phase emits CONFIRMED or FAILED once the
+	// chain has spoken — an operator who saw only this event would never learn
+	// whether the top-up actually landed.
+	await webhookEventsService.triggerFundDistributionSent({ ...batchPayload, txHash });
 }

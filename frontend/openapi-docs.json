@@ -22347,6 +22347,8 @@
                                                                         "PAYMENT_ON_ERROR",
                                                                         "WALLET_LOW_BALANCE",
                                                                         "FUND_DISTRIBUTION_SENT",
+                                                                        "FUND_DISTRIBUTION_CONFIRMED",
+                                                                        "FUND_DISTRIBUTION_FAILED",
                                                                         "X402_PAYMENT_SETTLED",
                                                                         "X402_PAYMENT_FAILED",
                                                                         "X402_WALLET_LOW_BALANCE"
@@ -22522,6 +22524,8 @@
                                                 "PAYMENT_ON_ERROR",
                                                 "WALLET_LOW_BALANCE",
                                                 "FUND_DISTRIBUTION_SENT",
+                                                "FUND_DISTRIBUTION_CONFIRMED",
+                                                "FUND_DISTRIBUTION_FAILED",
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE"
@@ -22600,6 +22604,8 @@
                                                             "PAYMENT_ON_ERROR",
                                                             "WALLET_LOW_BALANCE",
                                                             "FUND_DISTRIBUTION_SENT",
+                                                            "FUND_DISTRIBUTION_CONFIRMED",
+                                                            "FUND_DISTRIBUTION_FAILED",
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE"
@@ -22730,6 +22736,8 @@
                                                 "PAYMENT_ON_ERROR",
                                                 "WALLET_LOW_BALANCE",
                                                 "FUND_DISTRIBUTION_SENT",
+                                                "FUND_DISTRIBUTION_CONFIRMED",
+                                                "FUND_DISTRIBUTION_FAILED",
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE"
@@ -22806,6 +22814,8 @@
                                                             "PAYMENT_ON_ERROR",
                                                             "WALLET_LOW_BALANCE",
                                                             "FUND_DISTRIBUTION_SENT",
+                                                            "FUND_DISTRIBUTION_CONFIRMED",
+                                                            "FUND_DISTRIBUTION_FAILED",
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE"
