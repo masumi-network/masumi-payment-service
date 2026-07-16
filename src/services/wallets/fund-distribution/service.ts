@@ -1,10 +1,8 @@
-import { createId } from '@paralleldrive/cuid2';
 import {
 	FundDistributionPriority,
 	FundDistributionStatus,
 	HotWalletType,
 	LowBalanceStatus,
-	PaymentSourceType,
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
@@ -13,288 +11,10 @@ import { logger } from '@masumi/payment-core/logger';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { Mutex } from 'async-mutex';
 import { withJobLock } from '@/services/shared/job-runner';
-import { buildAndSubmitFundDistributionTx } from './transaction-builder';
-import { webhookEventsService } from '@/services/webhooks';
-
-type FundWalletContext = {
-	id: string;
-	walletAddress: string;
-	walletVkey: string;
-	lowBalanceRuleId: string;
-	paymentSourceId: string;
-	paymentSourceType: PaymentSourceType;
-	network: string;
-	rpcProviderApiKey: string;
-	encryptedMnemonic: string;
-	config: {
-		warningThreshold: bigint;
-		criticalThreshold: bigint;
-		topupAmount: bigint;
-		batchWindowMs: number;
-	};
-};
+import { getFundWalletForPaymentSource, loadFundWalletContext } from './context';
+import { processRequestsForFundWallet } from './batch-executor';
 
 const mutex = new Mutex();
-
-async function getFundWalletForPaymentSource(paymentSourceId: string): Promise<FundWalletContext | null> {
-	const fundWallet = await prisma.hotWallet.findFirst({
-		where: {
-			paymentSourceId,
-			type: HotWalletType.Funding,
-			deletedAt: null,
-			FundDistributionConfig: {
-				enabled: true,
-			},
-		},
-		select: {
-			id: true,
-			walletAddress: true,
-			walletVkey: true,
-			paymentSourceId: true,
-			LowBalanceRules: {
-				where: { assetUnit: 'lovelace', enabled: true },
-				select: { id: true },
-				take: 1,
-			},
-			Secret: { select: { encryptedMnemonic: true } },
-			PaymentSource: {
-				select: {
-					network: true,
-					paymentSourceType: true,
-					PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
-				},
-			},
-			FundDistributionConfig: {
-				select: {
-					warningThreshold: true,
-					criticalThreshold: true,
-					topupAmount: true,
-					batchWindowMs: true,
-				},
-			},
-		},
-	});
-
-	if (
-		!fundWallet ||
-		!fundWallet.Secret ||
-		!fundWallet.FundDistributionConfig ||
-		!fundWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey
-	) {
-		return null;
-	}
-
-	return {
-		id: fundWallet.id,
-		walletAddress: fundWallet.walletAddress,
-		walletVkey: fundWallet.walletVkey,
-		lowBalanceRuleId: fundWallet.LowBalanceRules[0]?.id ?? '',
-		paymentSourceId: fundWallet.paymentSourceId,
-		paymentSourceType: fundWallet.PaymentSource.paymentSourceType,
-		network: fundWallet.PaymentSource.network,
-		rpcProviderApiKey: fundWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
-		encryptedMnemonic: fundWallet.Secret.encryptedMnemonic,
-		config: {
-			warningThreshold: fundWallet.FundDistributionConfig.warningThreshold,
-			criticalThreshold: fundWallet.FundDistributionConfig.criticalThreshold,
-			topupAmount: fundWallet.FundDistributionConfig.topupAmount,
-			batchWindowMs: fundWallet.FundDistributionConfig.batchWindowMs,
-		},
-	};
-}
-
-async function processRequestsForFundWallet(
-	fundWallet: FundWalletContext,
-	requests: Array<{ id: string; targetWalletId: string; targetAddress: string; amount: bigint }>,
-): Promise<void> {
-	if (requests.length === 0) return;
-
-	// Get current balance via Blockfrost
-	let fundWalletBalance: bigint;
-	try {
-		const { generateWalletExtended } = await import('@/utils/generator/wallet-generator');
-		const { utxos } = await generateWalletExtended(
-			fundWallet.network as Parameters<typeof generateWalletExtended>[0],
-			fundWallet.rpcProviderApiKey,
-			fundWallet.encryptedMnemonic,
-		);
-		const { toBalanceMapFromMeshUtxos } = await import('@/services/wallets');
-		const balanceMap = toBalanceMapFromMeshUtxos(utxos);
-		fundWalletBalance = balanceMap.get('lovelace') ?? 0n;
-	} catch (error) {
-		logger.error('Failed to fetch fund wallet balance', {
-			component: 'fund_distribution',
-			fund_wallet_id: fundWallet.id,
-			error: interpretBlockchainError(error),
-		});
-		return;
-	}
-
-	// Determine which requests we can actually fulfill given balance constraints
-	const feeBuffer = CONSTANTS.MIN_TX_FEE_BUFFER_LOVELACE;
-	let remainingBalance = fundWalletBalance - feeBuffer;
-
-	if (remainingBalance <= 0n) {
-		logger.warn('Fund wallet has insufficient balance for any distributions', {
-			component: 'fund_distribution',
-			fund_wallet_id: fundWallet.id,
-			balance: fundWalletBalance.toString(),
-		});
-		await webhookEventsService.triggerWalletLowBalance({
-			ruleId: fundWallet.lowBalanceRuleId,
-			walletId: fundWallet.id,
-			walletAddress: fundWallet.walletAddress,
-			walletVkey: fundWallet.walletVkey,
-			walletType: HotWalletType.Funding,
-			paymentSourceId: fundWallet.paymentSourceId,
-			paymentSourceType: fundWallet.paymentSourceType,
-			network: fundWallet.network as 'Mainnet' | 'Preprod',
-			assetUnit: 'lovelace',
-			thresholdAmount: '0',
-			currentAmount: fundWalletBalance.toString(),
-			checkedAt: new Date().toISOString(),
-		});
-		return;
-	}
-
-	const affordableRequests = requests.filter((req) => {
-		if (req.amount <= remainingBalance) {
-			remainingBalance -= req.amount;
-			return true;
-		}
-		return false;
-	});
-
-	if (affordableRequests.length === 0) {
-		logger.warn('Fund wallet cannot afford any pending distributions', {
-			component: 'fund_distribution',
-			fund_wallet_id: fundWallet.id,
-			balance: fundWalletBalance.toString(),
-			first_request_amount: requests[0]?.amount.toString(),
-		});
-		return;
-	}
-
-	const batchId = createId();
-	const outputs = affordableRequests.map((req) => ({ address: req.targetAddress, lovelace: req.amount }));
-
-	// Atomically check the wallet is still unlocked, create the Transaction record, and lock the wallet.
-	// All three steps run in a single DB transaction to eliminate the TOCTOU race.
-	let transaction: { id: string };
-	try {
-		transaction = await prisma.$transaction(async (tx) => {
-			const currentWallet = await tx.hotWallet.findUnique({
-				where: { id: fundWallet.id },
-				select: { lockedAt: true, pendingTransactionId: true },
-			});
-
-			if (currentWallet == null) {
-				throw Object.assign(new Error('WALLET_NOT_FOUND'), { code: 'WALLET_NOT_FOUND' });
-			}
-			if (currentWallet.lockedAt != null || currentWallet.pendingTransactionId != null) {
-				throw Object.assign(new Error('WALLET_LOCKED'), { code: 'WALLET_LOCKED' });
-			}
-
-			const newTx = await tx.transaction.create({
-				data: {
-					txHash: null,
-					status: TransactionStatus.Pending,
-				},
-			});
-
-			await tx.hotWallet.update({
-				where: { id: fundWallet.id, deletedAt: null },
-				data: {
-					lockedAt: new Date(),
-					pendingTransactionId: newTx.id,
-				},
-			});
-
-			return newTx;
-		});
-	} catch (error) {
-		if (error instanceof Error && (error as { code?: string }).code === 'WALLET_LOCKED') {
-			logger.info('Fund wallet is locked, skipping distribution cycle', {
-				component: 'fund_distribution',
-				fund_wallet_id: fundWallet.id,
-			});
-			return;
-		}
-		if (error instanceof Error && (error as { code?: string }).code === 'WALLET_NOT_FOUND') {
-			return;
-		}
-		throw error;
-	}
-
-	let txHash: string;
-	try {
-		const result = await buildAndSubmitFundDistributionTx({
-			encryptedMnemonic: fundWallet.encryptedMnemonic,
-			network: fundWallet.network as Parameters<typeof buildAndSubmitFundDistributionTx>[0]['network'],
-			rpcProviderApiKey: fundWallet.rpcProviderApiKey,
-			outputs,
-		});
-		txHash = result.txHash;
-	} catch (error) {
-		const errorMsg = interpretBlockchainError(error);
-		logger.error('Fund distribution transaction failed', {
-			component: 'fund_distribution',
-			fund_wallet_id: fundWallet.id,
-			batch_id: batchId,
-			error: errorMsg,
-		});
-
-		// Unlock wallet, delete orphaned transaction record, and mark requests as failed
-		await prisma.$transaction([
-			prisma.hotWallet.update({
-				where: { id: fundWallet.id, deletedAt: null },
-				data: { lockedAt: null, pendingTransactionId: null },
-			}),
-			prisma.transaction.delete({ where: { id: transaction.id } }),
-		]);
-
-		await prisma.fundDistributionRequest.updateMany({
-			where: { id: { in: affordableRequests.map((r) => r.id) } },
-			data: { status: FundDistributionStatus.Failed, error: errorMsg, batchId },
-		});
-		return;
-	}
-
-	// Update transaction with hash
-	await prisma.transaction.update({
-		where: { id: transaction.id },
-		data: { txHash },
-	});
-
-	// Mark requests as submitted
-	await prisma.fundDistributionRequest.updateMany({
-		where: { id: { in: affordableRequests.map((r) => r.id) } },
-		data: { status: FundDistributionStatus.Submitted, txHash, batchId },
-	});
-
-	logger.info('Fund distribution transaction submitted', {
-		component: 'fund_distribution',
-		fund_wallet_id: fundWallet.id,
-		tx_hash: txHash,
-		batch_id: batchId,
-		recipient_count: affordableRequests.length,
-	});
-
-	// Trigger webhook
-	await webhookEventsService.triggerFundDistributionSent({
-		batchId,
-		fundWalletId: fundWallet.id,
-		fundWalletAddress: fundWallet.walletAddress,
-		txHash,
-		network: fundWallet.network as 'Mainnet' | 'Preprod',
-		distributions: affordableRequests.map((req) => ({
-			requestId: req.id,
-			targetWalletId: req.targetWalletId,
-			targetWalletAddress: req.targetAddress,
-			amount: req.amount.toString(),
-		})),
-	});
-}
 
 export class FundDistributionService {
 	isRunning(): boolean {
@@ -399,18 +119,101 @@ export class FundDistributionService {
 
 	async processDistributionCycle(): Promise<void> {
 		await withJobLock(mutex, 'fund_distribution_cycle', async () => {
-			// Phase A: Scan for Low-status wallets with no pending/submitted distribution request
+			// Phase A: Adopt outcomes that funding-reconciliation decided for
+			// ambiguously-submitted batches. Runs FIRST so a promoted batch is
+			// marked Submitted (and a rolled-back one released) before the
+			// scan below considers those targets un-serviced.
+			await this.reconcileInFlightRequests();
+
+			// Phase B: Scan for Low-status wallets with no pending/submitted distribution request
 			await this.scanAndCreateMissingRequests();
 
-			// Phase B: Process critical pending requests immediately
+			// Phase C: Process critical pending requests immediately
 			await this.processCriticalRequests();
 
-			// Phase C: Process warning requests whose batch window has expired
+			// Phase D: Process warning requests whose batch window has expired
 			await this.processExpiredBatchRequests();
 
-			// Phase D: Confirm submitted transactions
+			// Phase E: Confirm submitted transactions
 			await this.confirmSubmittedRequests();
 		});
+	}
+
+	/**
+	 * Adopt the outcome funding-reconciliation reached for a batch whose submit
+	 * was ambiguous.
+	 *
+	 * On an ambiguous submit we leave the requests Pending, the Transaction
+	 * Pending with `intendedTxHash` set, and the fund wallet locked.
+	 * `reconcileOne` then resolves the Transaction against the chain — but it
+	 * only knows about PurchaseRequests, so nothing maps its decision back onto
+	 * the distribution rows. Without this phase a promoted batch strands
+	 * forever: the requests stay Pending, `confirmSubmittedRequests` only looks
+	 * at Submitted, and the wallet never unlocks.
+	 *
+	 *   - Transaction promoted (txHash set)  → the tx IS on chain. Advance the
+	 *     requests to Submitted so the normal confirmation phase adopts them.
+	 *     Re-sending here would double-spend the float.
+	 *   - Transaction RolledBack             → the ledger provably never took
+	 *     the body (TTL elapsed) and reconcileOne already freed the wallet.
+	 *     Release the link and leave the requests Pending for a fresh build
+	 *     with different inputs.
+	 *   - Otherwise                          → still in flight; leave alone.
+	 */
+	private async reconcileInFlightRequests(): Promise<void> {
+		const inFlight = await prisma.fundDistributionRequest.findMany({
+			where: {
+				status: FundDistributionStatus.Pending,
+				transactionId: { not: null },
+			},
+			select: {
+				id: true,
+				batchId: true,
+				transactionId: true,
+				Transaction: { select: { txHash: true, status: true } },
+			},
+		});
+
+		if (inFlight.length === 0) return;
+
+		const promotedByTxHash = new Map<string, string[]>();
+		const rolledBackIds: string[] = [];
+
+		for (const request of inFlight) {
+			const tx = request.Transaction;
+			if (tx == null) continue;
+
+			if (tx.txHash != null) {
+				const group = promotedByTxHash.get(tx.txHash) ?? [];
+				group.push(request.id);
+				promotedByTxHash.set(tx.txHash, group);
+			} else if (tx.status === TransactionStatus.RolledBack) {
+				rolledBackIds.push(request.id);
+			}
+		}
+
+		for (const [txHash, ids] of promotedByTxHash) {
+			await prisma.fundDistributionRequest.updateMany({
+				where: { id: { in: ids }, status: FundDistributionStatus.Pending },
+				data: { status: FundDistributionStatus.Submitted, txHash },
+			});
+			logger.info('Adopted reconciliation-promoted fund distribution batch', {
+				component: 'fund_distribution',
+				tx_hash: txHash,
+				request_count: ids.length,
+			});
+		}
+
+		if (rolledBackIds.length > 0) {
+			await prisma.fundDistributionRequest.updateMany({
+				where: { id: { in: rolledBackIds }, status: FundDistributionStatus.Pending },
+				data: { transactionId: null, batchId: null },
+			});
+			logger.warn('Released fund distribution requests after reconciliation rollback; will rebuild', {
+				component: 'fund_distribution',
+				request_count: rolledBackIds.length,
+			});
+		}
 	}
 
 	private async scanAndCreateMissingRequests(): Promise<void> {
@@ -482,7 +285,7 @@ export class FundDistributionService {
 		}
 
 		for (const [fundWalletId, requests] of byFundWallet) {
-			const fundWallet = await this.loadFundWalletContext(fundWalletId);
+			const fundWallet = await loadFundWalletContext(fundWalletId);
 			if (!fundWallet) continue;
 
 			const mappedRequests = requests.map((r) => ({
@@ -538,7 +341,7 @@ export class FundDistributionService {
 
 			if (now - oldestCreatedAt < batchWindowMs) continue;
 
-			const fundWallet = await this.loadFundWalletContext(fundWalletId);
+			const fundWallet = await loadFundWalletContext(fundWalletId);
 			if (!fundWallet) continue;
 
 			await processRequestsForFundWallet(
@@ -680,65 +483,6 @@ export class FundDistributionService {
 		}
 	}
 
-	private async loadFundWalletContext(fundWalletId: string): Promise<FundWalletContext | null> {
-		const wallet = await prisma.hotWallet.findFirst({
-			where: { id: fundWalletId, deletedAt: null },
-			select: {
-				id: true,
-				walletAddress: true,
-				walletVkey: true,
-				paymentSourceId: true,
-				LowBalanceRules: {
-					where: { assetUnit: 'lovelace', enabled: true },
-					select: { id: true },
-					take: 1,
-				},
-				Secret: { select: { encryptedMnemonic: true } },
-				PaymentSource: {
-					select: {
-						network: true,
-						paymentSourceType: true,
-						PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
-					},
-				},
-				FundDistributionConfig: {
-					select: {
-						enabled: true,
-						warningThreshold: true,
-						criticalThreshold: true,
-						topupAmount: true,
-						batchWindowMs: true,
-					},
-				},
-			},
-		});
-
-		if (
-			!wallet?.Secret ||
-			!wallet.FundDistributionConfig?.enabled ||
-			!wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey
-		) {
-			return null;
-		}
-
-		return {
-			id: wallet.id,
-			walletAddress: wallet.walletAddress,
-			walletVkey: wallet.walletVkey,
-			lowBalanceRuleId: wallet.LowBalanceRules[0]?.id ?? '',
-			paymentSourceId: wallet.paymentSourceId,
-			paymentSourceType: wallet.PaymentSource.paymentSourceType,
-			network: wallet.PaymentSource.network,
-			rpcProviderApiKey: wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
-			encryptedMnemonic: wallet.Secret.encryptedMnemonic,
-			config: {
-				warningThreshold: wallet.FundDistributionConfig.warningThreshold,
-				criticalThreshold: wallet.FundDistributionConfig.criticalThreshold,
-				topupAmount: wallet.FundDistributionConfig.topupAmount,
-				batchWindowMs: wallet.FundDistributionConfig.batchWindowMs,
-			},
-		};
-	}
 }
 
 export const fundDistributionService = new FundDistributionService();

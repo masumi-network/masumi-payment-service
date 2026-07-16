@@ -171,6 +171,7 @@ model Transaction {
   PurchaseRequestCurrent        PurchaseRequest[]               @relation("CurrentPurchaseTransaction")
   RegistryRequest               RegistryRequest[]
   InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
+  FundDistributionRequests      FundDistributionRequest[]       @relation("FundDistributionTransaction")
   // History is many-to-many because a V2 batch can move one shared Transaction
   // row through multiple request histories after it leaves CurrentTransaction.
   PaymentRequestHistory         PaymentRequest[]                @relation("PaymentTransactionHistory")
@@ -935,11 +936,22 @@ model FundDistributionRequest {
   txHash         String?
   error          String?
   batchId        String?
+  /// The Transaction row this request was batched into, set atomically with the
+  /// fund-wallet lock BEFORE the tx is signed or broadcast. This link is what
+  /// lets `reconcileReconciledRequests` observe the outcome that
+  /// funding-reconciliation wrote: on promote (chain found the intended hash)
+  /// the requests are advanced to Submitted; on RolledBack (TTL provably
+  /// elapsed) they are released back to Pending for a fresh build. Without it
+  /// an ambiguous submit strands the requests — reconciliation resolves the
+  /// Transaction but nothing maps that back to the distribution rows.
+  transactionId  String?
+  Transaction    Transaction?             @relation("FundDistributionTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
 
   @@index([fundWalletId, status])
   @@index([status, priority, createdAt])
   @@index([fundWalletId, targetWalletId, status])
   @@index([status, updatedAt])
+  @@index([transactionId])
 }
 
 enum ApiKeyStatus {

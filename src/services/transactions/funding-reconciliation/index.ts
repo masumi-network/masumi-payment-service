@@ -368,15 +368,21 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 						return;
 					}
 
-					// Invariant: intendedTxHash is only set on Transactions owned by
+					// Invariant: intendedTxHash is set on Transactions owned by
 					// PurchaseRequest (V2 batch-payments, the refund/withdraw services,
-					// and collateral-prep on their behalf). The revert path below only
-					// resets PurchaseRequest.currentTransactionId. If a
-					// future caller ever sets intendedTxHash on a Transaction also
-					// referenced by PaymentRequest or RegistryRequest, this assert fires
-					// so the orphan-FK is caught at runtime instead of silently
-					// stranding rows. To extend the flow, generalize the revert below
-					// to disconnect all three request types.
+					// and collateral-prep on their behalf) and — since MAS-392 — by
+					// fund distribution. FundDistributionRequest needs no reset here:
+					// its rows stay Pending for the whole in-flight window, so the
+					// wallet unlock below is enough for the next distribution cycle to
+					// rebuild them with fresh inputs. `reconcileReconciledRequests` in
+					// the fund-distribution service observes this RolledBack row via
+					// FundDistributionRequest.transactionId and releases the link.
+					//
+					// PaymentRequest / RegistryRequest remain unsupported: the revert
+					// below only resets PurchaseRequest.currentTransactionId, so if a
+					// future caller sets intendedTxHash on a Transaction referenced by
+					// those, this assert fires and the orphan-FK is caught at runtime
+					// instead of silently stranding rows.
 					const dependentPayments = await txdb.paymentRequest.count({
 						where: { currentTransactionId: tx.id },
 					});
