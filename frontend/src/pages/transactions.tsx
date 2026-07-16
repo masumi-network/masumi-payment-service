@@ -38,6 +38,15 @@ const formatStatus = (status: string | null) => {
 const isHydraTransaction = (transaction: Transaction) =>
   transaction.CurrentTransaction?.layer === 'L2';
 
+// The layer (L1 vs Hydra L2) is only known once the request has been picked up
+// and locked (i.e. a CurrentTransaction exists). Before that, show neither.
+const getTransactionLayerLabel = (transaction: Transaction): 'Hydra L2' | 'L1' | null => {
+  const layer = transaction.CurrentTransaction?.layer;
+  if (layer === 'L2') return 'Hydra L2';
+  if (layer === 'L1') return 'L1';
+  return null;
+};
+
 const getHydraHeadId = (transaction: Transaction) =>
   transaction.CurrentTransaction?.hydraHeadId ?? null;
 
@@ -283,7 +292,7 @@ export default function Transactions() {
           amount,
           transaction.PaymentSource.network,
           getPaymentSourceTypeLabel(transaction.PaymentSource.paymentSourceType),
-          isHydraTransaction(transaction) ? 'Hydra L2' : 'L1',
+          getTransactionLayerLabel(transaction) ?? '',
           getHydraHeadId(transaction) ?? '',
           status,
           date,
@@ -510,12 +519,16 @@ export default function Transactions() {
                             showDefault
                           />
                           <div className="flex items-center gap-1.5">
-                            <Badge
-                              variant={isHydraTransaction(transaction) ? 'success' : 'outline'}
-                              className="w-fit"
-                            >
-                              {isHydraTransaction(transaction) ? 'Hydra L2' : 'L1'}
-                            </Badge>
+                            {getTransactionLayerLabel(transaction) ? (
+                              <Badge
+                                variant={isHydraTransaction(transaction) ? 'success' : 'outline'}
+                                className="w-fit"
+                              >
+                                {getTransactionLayerLabel(transaction)}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
                             {isHydraTransaction(transaction) && getHydraHeadId(transaction) && (
                               <span
                                 className="max-w-[120px] truncate font-mono text-xs text-muted-foreground"

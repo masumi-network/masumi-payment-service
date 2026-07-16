@@ -94,6 +94,13 @@ export interface IHydraNode {
 }
 
 export class HydraNode extends EventEmitter {
+	// Upper bound on how long init() waits to observe HeadIsInitializing after
+	// posting Init. Sized for preprod's Blockfrost observation lag (the node's
+	// chain-time can trail real time by minutes) while still failing fast enough
+	// that a dropped InitTx surfaces as a retryable error rather than an infinite
+	// hang. Overridable per-call for devnet (sub-second) or slow-sync scenarios.
+	static readonly INIT_OBSERVE_TIMEOUT_MS = 300_000;
+
 	private readonly _httpUrl: string;
 	private readonly _wsUrl: string;
 	private _status: HydraHeadStatus;
@@ -165,7 +172,7 @@ export class HydraNode extends EventEmitter {
 		return this._headClock;
 	}
 
-	async init() {
+	async init(timeoutMs: number = HydraNode.INIT_OBSERVE_TIMEOUT_MS) {
 		// The head may already be initializing or open (e.g. on reconnect, or
 		// when hydra-node transitions past Initializing before we observe it).
 		// The WS is opened with `?history=no`, so a missed HeadIsInitializing is
@@ -177,10 +184,24 @@ export class HydraNode extends EventEmitter {
 
 		this._connection.send({ tag: 'Init' });
 
+		// hydra-node posts the InitTx to L1 through its own chain backend. Over
+		// Blockfrost that submit can be SILENTLY DROPPED (accepted then never
+		// propagated); the node does not resubmit a dropped tx, so
+		// HeadIsInitializing never arrives and this promise would otherwise hang
+		// forever — wedging the init endpoint and leaving no signal to retry.
+		// Bound the wait: on timeout, reject with an actionable error so the
+		// caller can surface a retry instead of blocking indefinitely.
 		return new Promise<void>((resolve, reject) => {
+			// cleanup/resolveCallback reference `timer` and each other; all uses are
+			// deferred (fired on a WS message or the timeout), so declaration order
+			// is safe and `timer` can stay const.
+			const cleanup = () => {
+				clearTimeout(timer);
+				this._connection.removeListener('message', resolveCallback);
+			};
 			const resolveCallback = (data: string) => {
 				const rejectCb = (reason?: unknown) => {
-					this._connection.removeListener('message', resolveCallback);
+					cleanup();
 					reject(reason);
 				};
 
@@ -194,10 +215,21 @@ export class HydraNode extends EventEmitter {
 					message.tag === 'HeadIsOpen' ||
 					(message.tag === 'Greetings' && (message.headStatus === 'Initializing' || message.headStatus === 'Open'))
 				) {
-					this._connection.removeListener('message', resolveCallback);
+					cleanup();
 					resolve();
 				}
 			};
+
+			const timer = setTimeout(() => {
+				cleanup();
+				reject(
+					new Error(
+						`Head did not reach Initializing within ${Math.round(
+							timeoutMs / 1000,
+						)}s of Init — the InitTx was likely dropped by the chain backend (Blockfrost silent-drop). The node does not resubmit; clear the hydra-node persistence and retry init.`,
+					),
+				);
+			}, timeoutMs);
 
 			this._connection.on('message', resolveCallback);
 		});

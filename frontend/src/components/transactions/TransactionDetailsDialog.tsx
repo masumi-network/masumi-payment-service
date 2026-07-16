@@ -89,6 +89,15 @@ const formatStatus = (status: string | null) => {
 const isHydraTransaction = (transaction: Transaction) =>
   transaction.CurrentTransaction?.layer === 'L2';
 
+// Layer is only known once the request is picked up + locked (CurrentTransaction
+// exists). Before that, show neither L1 nor Hydra L2.
+const getTransactionLayerLabel = (transaction: Transaction): 'Hydra L2' | 'L1' | null => {
+  const layer = transaction.CurrentTransaction?.layer;
+  if (layer === 'L2') return 'Hydra L2';
+  if (layer === 'L1') return 'L1';
+  return null;
+};
+
 const canRequestRefund = (transaction: Transaction) => {
   return (
     (transaction.onChainState === 'ResultSubmitted' ||
@@ -576,9 +585,13 @@ export default function TransactionDetailsDialog({
                 <div>
                   <h5 className="text-sm font-medium mb-1">Layer</h5>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={isHydraTransaction(transaction) ? 'success' : 'secondary'}>
-                      {isHydraTransaction(transaction) ? 'Hydra L2' : 'L1'}
-                    </Badge>
+                    {getTransactionLayerLabel(transaction) ? (
+                      <Badge variant={isHydraTransaction(transaction) ? 'success' : 'secondary'}>
+                        {getTransactionLayerLabel(transaction)}
+                      </Badge>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
                     {transaction.CurrentTransaction?.hydraHeadId && (
                       <>
                         <span className="text-xs text-muted-foreground">Head</span>
