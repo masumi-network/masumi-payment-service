@@ -22,6 +22,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -31,6 +32,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useX402LowBalanceRules, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
 import { cn, formatX402Amount, groupDigits, shortenAddress } from '@/lib/utils';
+import { walletsForNetworks } from '@/lib/x402-rail';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import {
   deleteX402LowBalance,
@@ -302,6 +304,10 @@ function AlertDialog({
   const { apiClient } = useAppContext();
   const { networks } = useX402Networks();
   const { wallets } = useX402Wallets(open);
+  const availableWallets = useMemo(
+    () => walletsForNetworks(wallets, networks),
+    [wallets, networks],
+  );
   type NewAlertBody = {
     evmWalletId: string;
     caip2Network: string;
@@ -339,6 +345,19 @@ function AlertDialog({
 
   const assetKind = useWatch({ control, name: 'assetKind' });
   const selectedNetwork = useWatch({ control, name: 'caip2Network' });
+  const selectedChain = networks.find((network) => network.caip2Id === selectedNetwork);
+
+  const onSelectWallet = (walletId: string) => {
+    setValue('evmWalletId', walletId, { shouldValidate: true });
+    const wallet = availableWallets.find((candidate) => candidate.id === walletId);
+    const caip2Network = wallet?.caip2Network ?? '';
+    setValue('caip2Network', caip2Network, { shouldValidate: true });
+
+    if (assetKind === 'token') {
+      const chain = networks.find((candidate) => candidate.caip2Id === caip2Network);
+      setValue('asset', chain?.defaultAsset ?? '', { shouldValidate: false });
+    }
+  };
 
   const onSubmit = async (data: RuleFormValues) => {
     const asset = data.assetKind === 'native' ? NATIVE : data.asset;
@@ -379,17 +398,23 @@ function AlertDialog({
               control={control}
               name="evmWalletId"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={!!editing}>
+                <Select value={field.value} onValueChange={onSelectWallet} disabled={!!editing}>
                   <SelectTrigger aria-label="Managed wallet">
                     <SelectValue placeholder="Select a wallet" />
                   </SelectTrigger>
                   <SelectContent>
-                    {wallets.map((wallet) => (
-                      <SelectItem key={wallet.id} value={wallet.id} className="font-mono">
-                        {shortenAddress(wallet.address, 8)}
-                        <span className="ml-2 text-muted-foreground">{wallet.type}</span>
-                      </SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {availableWallets.map((wallet) => (
+                        <SelectItem key={wallet.id} value={wallet.id} className="font-mono">
+                          {shortenAddress(wallet.address, 8)}
+                          <span className="ml-2 text-muted-foreground">
+                            {networks.find((network) => network.id === wallet.networkId)
+                              ?.displayName ?? wallet.caip2Network}{' '}
+                            · {wallet.type}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               )}
@@ -401,36 +426,16 @@ function AlertDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Chain</label>
-            <Controller
-              control={control}
-              name="caip2Network"
-              render={({ field }) => (
-                <Select
-                  value={field.value}
-                  onValueChange={(caip2) => {
-                    field.onChange(caip2);
-                    // Token contracts are chain-specific, so re-sync the asset to the new
-                    // chain's default (or clear it) when an ERC-20 is selected — otherwise a
-                    // contract from the previously chosen chain could be saved against this one.
-                    if (assetKind === 'token') {
-                      const chain = networks.find((n) => n.caip2Id === caip2);
-                      setValue('asset', chain?.defaultAsset ?? '', { shouldValidate: true });
-                    }
-                  }}
-                  disabled={!!editing}
-                >
-                  <SelectTrigger aria-label="Chain">
-                    <SelectValue placeholder="Select a chain" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {networks.map((network) => (
-                      <SelectItem key={network.id} value={network.caip2Id}>
-                        {network.displayName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+            <input type="hidden" {...register('caip2Network')} />
+            <Input
+              aria-label="Chain"
+              value={
+                selectedChain
+                  ? `${selectedChain.displayName} (${selectedChain.caip2Id})`
+                  : selectedNetwork
+              }
+              placeholder="Select a wallet first"
+              readOnly
             />
             {errors.caip2Network && (
               <p className="text-xs text-destructive">{errors.caip2Network.message}</p>
@@ -459,8 +464,10 @@ function AlertDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="native">Native gas token</SelectItem>
-                    <SelectItem value="token">ERC-20 token</SelectItem>
+                    <SelectGroup>
+                      <SelectItem value="native">Native gas token</SelectItem>
+                      <SelectItem value="token">ERC-20 token</SelectItem>
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               )}

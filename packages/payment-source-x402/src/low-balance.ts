@@ -1,15 +1,15 @@
 import createHttpError from 'http-errors';
 import { LowBalanceStatus, Prisma, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { assertHexAddress, assertRpcServesDeclaredChain, getManagedWalletOrThrow, normalizeAddress } from './internal';
+import { assertHexAddress, assertRpcServesDeclaredChain, normalizeAddress } from './internal';
 import { NATIVE_ASSET, buildPublicClient, readAssetAmount } from './balance';
 import type { HexAddress } from './internal';
 
 const RULE_SELECT = {
 	id: true,
 	evmWalletId: true,
-	EvmWallet: { select: { address: true } },
-	caip2Network: true,
+	// The rule's chain is implied by its wallet's bound network; project it for output.
+	EvmWallet: { select: { address: true, Network: { select: { caip2Id: true } } } },
 	asset: true,
 	thresholdAmount: true,
 	enabled: true,
@@ -20,6 +20,15 @@ const RULE_SELECT = {
 	createdAt: true,
 	updatedAt: true,
 } satisfies Prisma.X402EvmWalletLowBalanceRuleSelect;
+
+type RuleRow = Prisma.X402EvmWalletLowBalanceRuleGetPayload<{ select: typeof RULE_SELECT }>;
+
+// Preserve the previous wire shape (flat caip2Network + EvmWallet.address) even though the
+// rule no longer stores the chain — it is resolved through the wallet's network.
+function flattenRule(rule: RuleRow) {
+	const { EvmWallet, ...rest } = rule;
+	return { ...rest, caip2Network: EvmWallet.Network.caip2Id, EvmWallet: { address: EvmWallet.address } };
+}
 
 // A balance is Low when it is strictly below the configured threshold. Pure so the
 // transition logic stays unit-testable without RPC or DB.
@@ -37,18 +46,22 @@ function normalizeRuleAsset(asset: string): string {
 
 export async function setX402LowBalanceRule(input: {
 	evmWalletId: string;
-	caip2Network: string;
+	// Optional now: the rule inherits the wallet's bound network. When supplied it must match,
+	// so a caller cannot arm a rule against a chain the wallet does not operate on.
+	caip2Network?: string;
 	asset: string;
 	thresholdAmount: string;
 	enabled?: boolean;
 }) {
-	await getManagedWalletOrThrow(input.evmWalletId);
-	const network = await prisma.x402Network.findUnique({
-		where: { caip2Id: input.caip2Network },
-		select: { caip2Id: true },
+	const wallet = await prisma.x402EvmWallet.findUnique({
+		where: { id: input.evmWalletId, deletedAt: null },
+		select: { id: true, Network: { select: { caip2Id: true } } },
 	});
-	if (network == null) {
-		throw createHttpError(404, 'x402 network is not registered; add the network before adding a rule');
+	if (wallet == null) {
+		throw createHttpError(404, 'Managed EVM wallet not found');
+	}
+	if (input.caip2Network != null && input.caip2Network !== wallet.Network.caip2Id) {
+		throw createHttpError(400, 'caip2Network does not match the wallet network');
 	}
 	const asset = normalizeRuleAsset(input.asset);
 	const thresholdAmount = BigInt(input.thresholdAmount);
@@ -56,17 +69,15 @@ export async function setX402LowBalanceRule(input: {
 		throw createHttpError(400, 'thresholdAmount must not be negative');
 	}
 
-	return prisma.x402EvmWalletLowBalanceRule.upsert({
+	const rule = await prisma.x402EvmWalletLowBalanceRule.upsert({
 		where: {
-			evmWalletId_caip2Network_asset: {
+			evmWalletId_asset: {
 				evmWalletId: input.evmWalletId,
-				caip2Network: input.caip2Network,
 				asset,
 			},
 		},
 		create: {
 			evmWalletId: input.evmWalletId,
-			caip2Network: input.caip2Network,
 			asset,
 			thresholdAmount,
 			enabled: input.enabled ?? true,
@@ -80,6 +91,7 @@ export async function setX402LowBalanceRule(input: {
 		},
 		select: RULE_SELECT,
 	});
+	return flattenRule(rule);
 }
 
 export async function listX402LowBalanceRules(input?: {
@@ -87,7 +99,7 @@ export async function listX402LowBalanceRules(input?: {
 	onlyLow?: boolean;
 	includeDisabled?: boolean;
 }) {
-	return prisma.x402EvmWalletLowBalanceRule.findMany({
+	const rules = await prisma.x402EvmWalletLowBalanceRule.findMany({
 		where: {
 			evmWalletId: input?.evmWalletId,
 			enabled: input?.includeDisabled ? undefined : true,
@@ -96,6 +108,7 @@ export async function listX402LowBalanceRules(input?: {
 		orderBy: { createdAt: 'desc' },
 		select: RULE_SELECT,
 	});
+	return rules.map(flattenRule);
 }
 
 export async function updateX402LowBalanceRule(input: { ruleId: string; thresholdAmount?: string; enabled?: boolean }) {
@@ -110,7 +123,7 @@ export async function updateX402LowBalanceRule(input: { ruleId: string; threshol
 	if (thresholdAmount != null && thresholdAmount < 0n) {
 		throw createHttpError(400, 'thresholdAmount must not be negative');
 	}
-	return prisma.x402EvmWalletLowBalanceRule.update({
+	const rule = await prisma.x402EvmWalletLowBalanceRule.update({
 		where: { id: input.ruleId },
 		data: {
 			thresholdAmount,
@@ -122,6 +135,7 @@ export async function updateX402LowBalanceRule(input: { ruleId: string; threshol
 		},
 		select: RULE_SELECT,
 	});
+	return flattenRule(rule);
 }
 
 export async function deleteX402LowBalanceRule(ruleId: string) {
@@ -159,18 +173,21 @@ export async function evaluateX402LowBalanceRules(): Promise<X402LowBalanceAlert
 		where: { enabled: true, EvmWallet: { deletedAt: null } },
 		select: {
 			id: true,
-			caip2Network: true,
 			asset: true,
 			thresholdAmount: true,
 			status: true,
-			EvmWallet: { select: { id: true, address: true, type: true } },
+			// The rule's chain is the wallet's bound network.
+			EvmWallet: { select: { id: true, address: true, type: true, Network: { select: { caip2Id: true } } } },
 		},
 	});
 	if (rules.length === 0) return [];
 
-	// Build one RPC client per distinct network referenced by the rules.
+	// Build one RPC client per distinct network referenced by the rules' wallets.
 	const networks = await prisma.x402Network.findMany({
-		where: { isEnabled: true, caip2Id: { in: Array.from(new Set(rules.map((r) => r.caip2Network))) } },
+		where: {
+			isEnabled: true,
+			caip2Id: { in: Array.from(new Set(rules.map((r) => r.EvmWallet.Network.caip2Id))) },
+		},
 		select: { caip2Id: true, rpcUrl: true, displayName: true },
 	});
 	const networkById = new Map(networks.map((n) => [n.caip2Id, n]));
@@ -179,13 +196,14 @@ export async function evaluateX402LowBalanceRules(): Promise<X402LowBalanceAlert
 	const alerts: X402LowBalanceAlert[] = [];
 
 	for (const rule of rules) {
-		const network = networkById.get(rule.caip2Network);
+		const caip2Network = rule.EvmWallet.Network.caip2Id;
+		const network = networkById.get(caip2Network);
 		if (network == null) continue; // network disabled/removed since the rule was set
 		try {
 			const client = buildPublicClient(network);
 			// Verify the RPC serves the chain it claims before trusting its balance, so a
 			// misconfigured RPC cannot raise (or suppress) alerts off the wrong chain.
-			await assertRpcServesDeclaredChain(client, rule.caip2Network);
+			await assertRpcServesDeclaredChain(client, caip2Network);
 			const amount = await readAssetAmount(client, rule.EvmWallet.address as HexAddress, rule.asset);
 			const nextStatus = computeLowBalanceStatus(amount, rule.thresholdAmount);
 			const transitionedToLow = nextStatus === LowBalanceStatus.Low && rule.status !== LowBalanceStatus.Low;
@@ -206,7 +224,7 @@ export async function evaluateX402LowBalanceRules(): Promise<X402LowBalanceAlert
 					evmWalletId: rule.EvmWallet.id,
 					walletAddress: rule.EvmWallet.address,
 					walletType: rule.EvmWallet.type,
-					caip2Network: rule.caip2Network,
+					caip2Network,
 					asset: rule.asset,
 					thresholdAmount: rule.thresholdAmount.toString(),
 					currentAmount: amount.toString(),

@@ -25,7 +25,7 @@ Learn more about Masumi in our [Introduction Guide](https://www.masumi.network/d
 
 ## Getting Started
 
-Prerequisites: Node.js ≥ 20, [pnpm](https://pnpm.io), and a PostgreSQL database.
+Prerequisites: Node.js ≥ 20, [pnpm](https://pnpm.io), and a PostgreSQL ≥ 13 database (the x402 migrations use the built-in `gen_random_uuid()`).
 
 ```bash
 git clone https://github.com/masumi-network/masumi-payment-service.git
