@@ -2578,6 +2578,234 @@ export type X402LowBalanceRule = {
     updatedAt: Date;
 };
 
+export type FundWallet = {
+    /**
+     * Fund wallet id
+     */
+    id: string;
+    /**
+     * Cardano address of the fund wallet
+     */
+    walletAddress: string;
+    /**
+     * Payment key hash
+     */
+    walletVkey: string;
+    /**
+     * Optional note
+     */
+    note: string | null;
+    /**
+     * Associated payment source id
+     */
+    paymentSourceId: string;
+    /**
+     * Timestamp when wallet was locked. Null if not locked
+     */
+    lockedAt: Date | null;
+    LowBalanceSummary: {
+        /**
+         * Whether any enabled low-balance rule for this wallet is currently below threshold
+         */
+        isLow: boolean;
+        /**
+         * How many enabled rules for this wallet are currently in low state
+         */
+        lowRuleCount: number;
+        /**
+         * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
+         */
+        lastCheckedAt: Date | null;
+    };
+    /**
+     * Distribution configuration
+     */
+    FundDistributionConfig: {
+        /**
+         * Config id
+         */
+        id: string;
+        /**
+         * Whether automatic distribution is enabled
+         */
+        enabled: boolean;
+        /**
+         * Balance below this triggers a batched topup (lovelace)
+         */
+        warningThreshold: string;
+        /**
+         * Balance below this triggers an immediate topup (lovelace)
+         */
+        criticalThreshold: string;
+        /**
+         * Amount to send per topup (lovelace)
+         */
+        topupAmount: string;
+        /**
+         * Milliseconds to wait before sending batched warning topups
+         */
+        batchWindowMs: number;
+    } | null;
+    /**
+     * Number of pending distribution requests
+     */
+    pendingRequestCount: number;
+};
+
+export type FundWalletCreated = {
+    /**
+     * Fund wallet id
+     */
+    id: string;
+    /**
+     * Cardano address
+     */
+    walletAddress: string;
+    /**
+     * Payment key hash
+     */
+    walletVkey: string;
+    /**
+     * Associated payment source id
+     */
+    paymentSourceId: string;
+    /**
+     * Created distribution config
+     */
+    FundDistributionConfig: {
+        /**
+         * Config id
+         */
+        id: string;
+        /**
+         * Whether automatic distribution is enabled
+         */
+        enabled: boolean;
+        /**
+         * Balance below this triggers a batched topup (lovelace)
+         */
+        warningThreshold: string;
+        /**
+         * Balance below this triggers an immediate topup (lovelace)
+         */
+        criticalThreshold: string;
+        /**
+         * Amount to send per topup (lovelace)
+         */
+        topupAmount: string;
+        /**
+         * Milliseconds to wait before sending batched warning topups
+         */
+        batchWindowMs: number;
+    };
+};
+
+export type FundWalletUpdated = {
+    /**
+     * Fund wallet id
+     */
+    id: string;
+    /**
+     * Updated distribution config
+     */
+    FundDistributionConfig: {
+        /**
+         * Config id
+         */
+        id: string;
+        /**
+         * Whether automatic distribution is enabled
+         */
+        enabled: boolean;
+        /**
+         * Balance below this triggers a batched topup (lovelace)
+         */
+        warningThreshold: string;
+        /**
+         * Balance below this triggers an immediate topup (lovelace)
+         */
+        criticalThreshold: string;
+        /**
+         * Amount to send per topup (lovelace)
+         */
+        topupAmount: string;
+        /**
+         * Milliseconds to wait before sending batched warning topups
+         */
+        batchWindowMs: number;
+    };
+};
+
+export type FundWalletDeleted = {
+    /**
+     * Deleted fund wallet id
+     */
+    id: string;
+};
+
+export type FundDistributionList = {
+    /**
+     * List of distribution requests
+     */
+    FundDistributions: Array<{
+        /**
+         * Distribution request id
+         */
+        id: string;
+        /**
+         * When the request was created
+         */
+        createdAt: Date;
+        /**
+         * When the request was last updated
+         */
+        updatedAt: Date;
+        /**
+         * Id of the fund wallet sending the funds
+         */
+        fundWalletId: string;
+        /**
+         * Id of the wallet receiving the funds
+         */
+        targetWalletId: string;
+        /**
+         * Warning = batched, Critical = immediate
+         */
+        priority: 'Warning' | 'Critical';
+        /**
+         * Amount sent in lovelace
+         */
+        amount: string;
+        /**
+         * Current status of the distribution request
+         */
+        status: 'Pending' | 'Submitted' | 'Confirmed' | 'Failed';
+        /**
+         * On-chain transaction hash. Null until submitted
+         */
+        txHash: string | null;
+        /**
+         * Error message if the distribution failed
+         */
+        error: string | null;
+        /**
+         * Groups requests sent in the same transaction
+         */
+        batchId: string | null;
+    }>;
+};
+
+export type FundDistributionTriggered = {
+    /**
+     * Always true — indicates the request was received
+     */
+    triggered: boolean;
+    /**
+     * True if a distribution cycle was already in progress when this request arrived
+     */
+    alreadyRunning: boolean;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -11622,3 +11850,294 @@ export type PostX402AnalyticsResponses = {
 };
 
 export type PostX402AnalyticsResponse = PostX402AnalyticsResponses[keyof PostX402AnalyticsResponses];
+
+export type DeleteFundWalletData = {
+    /**
+     * Fund wallet to delete
+     */
+    body?: {
+        /**
+         * Fund wallet id to delete
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/fund-wallet';
+};
+
+export type DeleteFundWalletErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Fund wallet not found
+     */
+    404: unknown;
+};
+
+export type DeleteFundWalletResponses = {
+    /**
+     * Fund wallet deleted
+     */
+    200: {
+        status: 'success';
+        data: FundWalletDeleted;
+    };
+};
+
+export type DeleteFundWalletResponse = DeleteFundWalletResponses[keyof DeleteFundWalletResponses];
+
+export type GetFundWalletData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Fund wallet id
+         */
+        id?: string;
+        /**
+         * Payment source id
+         */
+        paymentSourceId?: string;
+    };
+    url: '/fund-wallet';
+};
+
+export type GetFundWalletErrors = {
+    /**
+     * Neither id nor paymentSourceId was provided
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Fund wallet not found
+     */
+    404: unknown;
+};
+
+export type GetFundWalletResponses = {
+    /**
+     * Fund wallet
+     */
+    200: {
+        status: 'success';
+        data: FundWallet;
+    };
+};
+
+export type GetFundWalletResponse = GetFundWalletResponses[keyof GetFundWalletResponses];
+
+export type PatchFundWalletData = {
+    /**
+     * Distribution settings to change
+     */
+    body?: {
+        /**
+         * Fund wallet id to update
+         */
+        id: string;
+        /**
+         * Enable or disable automatic distribution
+         */
+        enabled?: boolean;
+        /**
+         * New warning threshold in lovelace
+         */
+        warningThreshold?: string;
+        /**
+         * New critical threshold in lovelace
+         */
+        criticalThreshold?: string;
+        /**
+         * New topup amount in lovelace
+         */
+        topupAmount?: string;
+        /**
+         * New batch window in milliseconds
+         */
+        batchWindowMs?: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/fund-wallet';
+};
+
+export type PatchFundWalletErrors = {
+    /**
+     * criticalThreshold is not below warningThreshold
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Fund wallet not found, or it has no distribution config
+     */
+    404: unknown;
+};
+
+export type PatchFundWalletResponses = {
+    /**
+     * Fund wallet updated
+     */
+    200: {
+        status: 'success';
+        data: FundWalletUpdated;
+    };
+};
+
+export type PatchFundWalletResponse = PatchFundWalletResponses[keyof PatchFundWalletResponses];
+
+export type PostFundWalletData = {
+    /**
+     * Fund wallet mnemonic and distribution thresholds
+     */
+    body?: {
+        /**
+         * Payment source to associate the fund wallet with
+         */
+        paymentSourceId: string;
+        /**
+         * 24-word mnemonic phrase for the fund wallet
+         */
+        walletMnemonic: string;
+        /**
+         * Warning balance threshold in lovelace
+         */
+        warningThreshold: string;
+        /**
+         * Critical balance threshold in lovelace
+         */
+        criticalThreshold: string;
+        /**
+         * Amount to send per topup in lovelace
+         */
+        topupAmount: string;
+        /**
+         * Batch window in milliseconds (default 5 min)
+         */
+        batchWindowMs?: number;
+        /**
+         * Optional note for this fund wallet
+         */
+        note?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/fund-wallet';
+};
+
+export type PostFundWalletErrors = {
+    /**
+     * criticalThreshold is not below warningThreshold, or the mnemonic yields no address
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Payment source not found
+     */
+    404: unknown;
+    /**
+     * The payment source already has a fund wallet, or this mnemonic already backs a wallet
+     */
+    409: unknown;
+};
+
+export type PostFundWalletResponses = {
+    /**
+     * Fund wallet created
+     */
+    200: {
+        status: 'success';
+        data: FundWalletCreated;
+    };
+};
+
+export type PostFundWalletResponse = PostFundWalletResponses[keyof PostFundWalletResponses];
+
+export type GetFundDistributionData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter by payment source
+         */
+        paymentSourceId?: string;
+        /**
+         * Filter by fund wallet
+         */
+        fundWalletId?: string;
+        /**
+         * Filter by status
+         */
+        status?: 'Pending' | 'Submitted' | 'Confirmed' | 'Failed';
+        /**
+         * Number of results (max 100, default 20)
+         */
+        take?: number;
+        /**
+         * Cursor id for pagination
+         */
+        cursorId?: string;
+    };
+    url: '/fund-distribution';
+};
+
+export type GetFundDistributionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetFundDistributionResponses = {
+    /**
+     * Fund distribution requests
+     */
+    200: {
+        status: 'success';
+        data: FundDistributionList;
+    };
+};
+
+export type GetFundDistributionResponse = GetFundDistributionResponses[keyof GetFundDistributionResponses];
+
+export type PostFundDistributionTriggerData = {
+    /**
+     * No parameters
+     */
+    body?: {
+        [key: string]: unknown;
+    };
+    path?: never;
+    query?: never;
+    url: '/fund-distribution/trigger';
+};
+
+export type PostFundDistributionTriggerErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostFundDistributionTriggerResponses = {
+    /**
+     * Distribution cycle triggered
+     */
+    200: {
+        status: 'success';
+        data: FundDistributionTriggered;
+    };
+};
+
+export type PostFundDistributionTriggerResponse = PostFundDistributionTriggerResponses[keyof PostFundDistributionTriggerResponses];

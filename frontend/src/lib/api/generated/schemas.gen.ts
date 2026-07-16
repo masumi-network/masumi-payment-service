@@ -4836,3 +4836,355 @@ export const X402LowBalanceRuleSchema = {
         'updatedAt'
     ]
 } as const;
+
+export const FundWalletSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Fund wallet id'
+        },
+        walletAddress: {
+            type: 'string',
+            description: 'Cardano address of the fund wallet'
+        },
+        walletVkey: {
+            type: 'string',
+            description: 'Payment key hash'
+        },
+        note: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional note'
+        },
+        paymentSourceId: {
+            type: 'string',
+            description: 'Associated payment source id'
+        },
+        lockedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time',
+            description: 'Timestamp when wallet was locked. Null if not locked'
+        },
+        LowBalanceSummary: {
+            type: 'object',
+            properties: {
+                isLow: {
+                    type: 'boolean',
+                    description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
+                },
+                lowRuleCount: {
+                    type: 'integer',
+                    minimum: 0,
+                    description: 'How many enabled rules for this wallet are currently in low state'
+                },
+                lastCheckedAt: {
+                    type: 'string',
+                    nullable: true,
+                    format: 'date-time',
+                    description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
+                }
+            },
+            required: [
+                'isLow',
+                'lowRuleCount',
+                'lastCheckedAt'
+            ]
+        },
+        FundDistributionConfig: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                id: {
+                    type: 'string',
+                    description: 'Config id'
+                },
+                enabled: {
+                    type: 'boolean',
+                    description: 'Whether automatic distribution is enabled'
+                },
+                warningThreshold: {
+                    type: 'string',
+                    description: 'Balance below this triggers a batched topup (lovelace)'
+                },
+                criticalThreshold: {
+                    type: 'string',
+                    description: 'Balance below this triggers an immediate topup (lovelace)'
+                },
+                topupAmount: {
+                    type: 'string',
+                    description: 'Amount to send per topup (lovelace)'
+                },
+                batchWindowMs: {
+                    type: 'integer',
+                    description: 'Milliseconds to wait before sending batched warning topups'
+                }
+            },
+            required: [
+                'id',
+                'enabled',
+                'warningThreshold',
+                'criticalThreshold',
+                'topupAmount',
+                'batchWindowMs'
+            ],
+            description: 'Distribution configuration'
+        },
+        pendingRequestCount: {
+            type: 'integer',
+            description: 'Number of pending distribution requests'
+        }
+    },
+    required: [
+        'id',
+        'walletAddress',
+        'walletVkey',
+        'note',
+        'paymentSourceId',
+        'lockedAt',
+        'LowBalanceSummary',
+        'FundDistributionConfig',
+        'pendingRequestCount'
+    ]
+} as const;
+
+export const FundWalletCreatedSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Fund wallet id'
+        },
+        walletAddress: {
+            type: 'string',
+            description: 'Cardano address'
+        },
+        walletVkey: {
+            type: 'string',
+            description: 'Payment key hash'
+        },
+        paymentSourceId: {
+            type: 'string',
+            description: 'Associated payment source id'
+        },
+        FundDistributionConfig: {
+            type: 'object',
+            properties: {
+                id: {
+                    type: 'string',
+                    description: 'Config id'
+                },
+                enabled: {
+                    type: 'boolean',
+                    description: 'Whether automatic distribution is enabled'
+                },
+                warningThreshold: {
+                    type: 'string',
+                    description: 'Balance below this triggers a batched topup (lovelace)'
+                },
+                criticalThreshold: {
+                    type: 'string',
+                    description: 'Balance below this triggers an immediate topup (lovelace)'
+                },
+                topupAmount: {
+                    type: 'string',
+                    description: 'Amount to send per topup (lovelace)'
+                },
+                batchWindowMs: {
+                    type: 'integer',
+                    description: 'Milliseconds to wait before sending batched warning topups'
+                }
+            },
+            required: [
+                'id',
+                'enabled',
+                'warningThreshold',
+                'criticalThreshold',
+                'topupAmount',
+                'batchWindowMs'
+            ],
+            description: 'Created distribution config'
+        }
+    },
+    required: [
+        'id',
+        'walletAddress',
+        'walletVkey',
+        'paymentSourceId',
+        'FundDistributionConfig'
+    ]
+} as const;
+
+export const FundWalletUpdatedSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Fund wallet id'
+        },
+        FundDistributionConfig: {
+            type: 'object',
+            properties: {
+                id: {
+                    type: 'string',
+                    description: 'Config id'
+                },
+                enabled: {
+                    type: 'boolean',
+                    description: 'Whether automatic distribution is enabled'
+                },
+                warningThreshold: {
+                    type: 'string',
+                    description: 'Balance below this triggers a batched topup (lovelace)'
+                },
+                criticalThreshold: {
+                    type: 'string',
+                    description: 'Balance below this triggers an immediate topup (lovelace)'
+                },
+                topupAmount: {
+                    type: 'string',
+                    description: 'Amount to send per topup (lovelace)'
+                },
+                batchWindowMs: {
+                    type: 'integer',
+                    description: 'Milliseconds to wait before sending batched warning topups'
+                }
+            },
+            required: [
+                'id',
+                'enabled',
+                'warningThreshold',
+                'criticalThreshold',
+                'topupAmount',
+                'batchWindowMs'
+            ],
+            description: 'Updated distribution config'
+        }
+    },
+    required: [
+        'id',
+        'FundDistributionConfig'
+    ]
+} as const;
+
+export const FundWalletDeletedSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Deleted fund wallet id'
+        }
+    },
+    required: [
+        'id'
+    ]
+} as const;
+
+export const FundDistributionListSchema = {
+    type: 'object',
+    properties: {
+        FundDistributions: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    id: {
+                        type: 'string',
+                        description: 'Distribution request id'
+                    },
+                    createdAt: {
+                        type: 'string',
+                        format: 'date-time',
+                        description: 'When the request was created'
+                    },
+                    updatedAt: {
+                        type: 'string',
+                        format: 'date-time',
+                        description: 'When the request was last updated'
+                    },
+                    fundWalletId: {
+                        type: 'string',
+                        description: 'Id of the fund wallet sending the funds'
+                    },
+                    targetWalletId: {
+                        type: 'string',
+                        description: 'Id of the wallet receiving the funds'
+                    },
+                    priority: {
+                        type: 'string',
+                        enum: [
+                            'Warning',
+                            'Critical'
+                        ],
+                        description: 'Warning = batched, Critical = immediate'
+                    },
+                    amount: {
+                        type: 'string',
+                        description: 'Amount sent in lovelace'
+                    },
+                    status: {
+                        type: 'string',
+                        enum: [
+                            'Pending',
+                            'Submitted',
+                            'Confirmed',
+                            'Failed'
+                        ],
+                        description: 'Current status of the distribution request'
+                    },
+                    txHash: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'On-chain transaction hash. Null until submitted'
+                    },
+                    error: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Error message if the distribution failed'
+                    },
+                    batchId: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Groups requests sent in the same transaction'
+                    }
+                },
+                required: [
+                    'id',
+                    'createdAt',
+                    'updatedAt',
+                    'fundWalletId',
+                    'targetWalletId',
+                    'priority',
+                    'amount',
+                    'status',
+                    'txHash',
+                    'error',
+                    'batchId'
+                ]
+            },
+            description: 'List of distribution requests'
+        }
+    },
+    required: [
+        'FundDistributions'
+    ]
+} as const;
+
+export const FundDistributionTriggeredSchema = {
+    type: 'object',
+    properties: {
+        triggered: {
+            type: 'boolean',
+            description: 'Always true — indicates the request was received'
+        },
+        alreadyRunning: {
+            type: 'boolean',
+            description: 'True if a distribution cycle was already in progress when this request arrived'
+        }
+    },
+    required: [
+        'triggered',
+        'alreadyRunning'
+    ]
+} as const;
