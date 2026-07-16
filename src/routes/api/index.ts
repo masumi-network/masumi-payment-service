@@ -39,6 +39,7 @@ import {
 } from './wallet/low-balance';
 import { queryRpcProviderKeysEndpointGet } from './rpc-api-keys';
 import { queryUTXOEndpointGet } from './utxos';
+import { queryBalanceEndpointGet } from './balance';
 import { paymentSourceEndpointGet } from './payment-source';
 import { submitPaymentResultEndpointPost } from './payments/submit-result';
 import { authorizePaymentRefundEndpointPost } from './payments/authorize-refund';
@@ -101,12 +102,15 @@ import {
 	createX402WalletPost,
 	deleteX402LowBalanceRuleDelete,
 	deleteX402WalletPost,
+	listAvailableX402NetworksGet,
 	listX402BudgetsGet,
 	listX402LowBalanceRulesGet,
 	listX402NetworksGet,
+	getX402WalletGet,
 	listX402PaymentAttemptsGet,
 	listX402SettlementsGet,
 	listX402WalletsGet,
+	reconcileX402PaymentPost,
 	setX402BudgetPost,
 	setX402LowBalanceRulePost,
 	settleX402Post,
@@ -287,6 +291,9 @@ export const apiRouter: Routing = {
 		utxos: {
 			get: queryUTXOEndpointGet,
 		},
+		balance: {
+			get: queryBalanceEndpointGet,
+		},
 		'payment-source': {
 			get: paymentSourceEndpointGet,
 		},
@@ -303,6 +310,9 @@ export const apiRouter: Routing = {
 			wallets: {
 				get: listX402WalletsGet,
 				post: createX402WalletPost,
+				detail: {
+					get: getX402WalletGet,
+				},
 				update: {
 					post: updateX402WalletPost,
 				},
@@ -319,6 +329,9 @@ export const apiRouter: Routing = {
 			networks: {
 				get: listX402NetworksGet,
 				post: upsertX402NetworkPost,
+				available: {
+					get: listAvailableX402NetworksGet,
+				},
 			},
 			budgets: {
 				get: listX402BudgetsGet,
@@ -334,6 +347,9 @@ export const apiRouter: Routing = {
 				get: listX402PaymentAttemptsGet,
 				count: {
 					get: x402PaymentAttemptsCountGet,
+				},
+				reconcile: {
+					post: reconcileX402PaymentPost,
 				},
 			},
 			settlements: {

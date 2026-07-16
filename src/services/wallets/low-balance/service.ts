@@ -9,9 +9,9 @@ import { CONFIG, type LowBalanceDefaultRule } from '@masumi/payment-core/config'
 import { logger } from '@masumi/payment-core/logger';
 import { logWarn } from '@/utils/logs';
 import { recordWalletLowBalanceAlert } from '@masumi/payment-core/metrics';
-import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { webhookEventsService } from '@/services/webhooks';
 import { fundDistributionService } from '@/services/wallets/fund-distribution';
+import { fetchAddressBalanceMap } from '@/services/shared/address-balance';
 
 type BalanceMap = Map<string, bigint>;
 
@@ -86,6 +86,7 @@ type ProjectedSubmissionEvaluation = {
 	walletUtxos: ProjectableWalletUtxo[];
 	unsignedTx: string;
 	checkSource: WalletBalanceCheckSource;
+	currentBalanceMap?: BalanceMap;
 };
 
 const LOW_BALANCE_WARNING_EVENT = 'wallet.low_balance';
@@ -199,8 +200,10 @@ function projectBalanceMapFromUnsignedTx(
 	walletAddress: string,
 	walletUtxos: ProjectableWalletUtxo[],
 	unsignedTx: string,
+	currentBalanceMap?: BalanceMap,
 ): BalanceMap {
-	const projectedBalanceMap = toBalanceMapFromProjectableUtxos(walletUtxos);
+	const projectedBalanceMap =
+		currentBalanceMap == null ? toBalanceMapFromProjectableUtxos(walletUtxos) : new Map(currentBalanceMap);
 	const knownWalletInputs = new Map<string, BalanceMap>();
 
 	for (const utxo of walletUtxos) {
@@ -441,17 +444,48 @@ export class WalletLowBalanceMonitorService {
 		await this.evaluateWalletContext(wallet, balanceMap, checkSource);
 	}
 
+	async evaluateCurrentHotWalletById(
+		hotWalletId: string,
+		checkSource: WalletBalanceCheckSource,
+	): Promise<BalanceMap | null> {
+		const balanceMap = await this.fetchCurrentBalanceMapForWallet(hotWalletId);
+		if (balanceMap == null) {
+			return null;
+		}
+
+		await this.evaluateHotWalletById(hotWalletId, balanceMap, checkSource);
+		return balanceMap;
+	}
+
 	async evaluateProjectedHotWalletById({
 		hotWalletId,
 		walletAddress,
 		walletUtxos,
 		unsignedTx,
 		checkSource,
+		currentBalanceMap: providedCurrentBalanceMap,
 	}: ProjectedSubmissionEvaluation): Promise<void> {
-		const currentBalanceMap = toBalanceMapFromProjectableUtxos(walletUtxos);
+		const currentBalanceMap =
+			providedCurrentBalanceMap == null
+				? await this.fetchCurrentBalanceMapForWallet(hotWalletId)
+				: new Map(providedCurrentBalanceMap);
+		if (currentBalanceMap == null) {
+			logger.warn('Skipping projected wallet balance evaluation because the confirmed balance is unavailable', {
+				component: 'wallet_low_balance_monitor',
+				operation: 'projected_balance_skip',
+				wallet_id: hotWalletId,
+				check_source: checkSource,
+			});
+			return;
+		}
 
 		try {
-			const projectedBalanceMap = projectBalanceMapFromUnsignedTx(walletAddress, walletUtxos, unsignedTx);
+			const projectedBalanceMap = projectBalanceMapFromUnsignedTx(
+				walletAddress,
+				walletUtxos,
+				unsignedTx,
+				currentBalanceMap,
+			);
 			await this.evaluateHotWalletById(hotWalletId, projectedBalanceMap, checkSource);
 		} catch (error) {
 			logger.warn('Failed to project post-submission wallet balance, falling back to current balance monitoring', {
@@ -587,11 +621,6 @@ export class WalletLowBalanceMonitorService {
 				walletVkey: true,
 				walletAddress: true,
 				type: true,
-				Secret: {
-					select: {
-						encryptedMnemonic: true,
-					},
-				},
 				PaymentSource: {
 					select: {
 						id: true,
@@ -649,17 +678,13 @@ export class WalletLowBalanceMonitorService {
 						continue;
 					}
 
-					const { utxos } = await generateWalletExtended(
-						wallet.PaymentSource.network,
-						wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
-						wallet.Secret.encryptedMnemonic,
-					);
+					const balanceMap = await fetchAddressBalanceMap({
+						network: wallet.PaymentSource.network,
+						rpcProviderApiKey: wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+						address: wallet.walletAddress,
+					});
 
-					await this.evaluateWalletContext(
-						wallet,
-						toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]),
-						'interval_check',
-					);
+					await this.evaluateWalletContext(wallet, balanceMap, 'interval_check');
 					checkedWalletCount += 1;
 				} catch (error) {
 					failedWalletCount += 1;
@@ -821,11 +846,7 @@ export class WalletLowBalanceMonitorService {
 			},
 			select: {
 				id: true,
-				Secret: {
-					select: {
-						encryptedMnemonic: true,
-					},
-				},
+				walletAddress: true,
 				PaymentSource: {
 					select: {
 						id: true,
@@ -857,16 +878,15 @@ export class WalletLowBalanceMonitorService {
 		}
 
 		try {
-			const { utxos } = await generateWalletExtended(
-				wallet.PaymentSource.network,
+			return await fetchAddressBalanceMap({
+				network: wallet.PaymentSource.network,
 				rpcProviderApiKey,
-				wallet.Secret.encryptedMnemonic,
-			);
-			return toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]);
+				address: wallet.walletAddress,
+			});
 		} catch (error) {
-			logger.warn('Failed to refresh low balance state after rule mutation', {
+			logger.warn('Failed to fetch current wallet balance', {
 				component: 'wallet_low_balance_monitor',
-				operation: 'rule_refresh_error',
+				operation: 'current_balance_fetch_error',
 				wallet_id: wallet.id,
 				payment_source_id: wallet.PaymentSource.id,
 				network: wallet.PaymentSource.network,

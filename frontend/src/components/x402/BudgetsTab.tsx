@@ -20,6 +20,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -30,6 +31,7 @@ import { useApiKey } from '@/lib/hooks/useApiKey';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
 import { CopyButton } from '@/components/ui/copy-button';
 import { groupDigits, shortenAddress } from '@/lib/utils';
+import { walletsForNetworks } from '@/lib/x402-rail';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { postX402Budgets, X402Budget, PostX402BudgetsData } from '@/lib/api/generated';
 
@@ -211,8 +213,12 @@ export function BudgetDialog({
   const { allApiKeys, hasMore, loadMore, isFetchingNextPage } = useApiKey();
   const { networks } = useX402Networks();
   // Only load the wallet set while the form is open (it feeds the picker). Budgets fund
-  // outbound payments, so only Purchasing wallets are selectable.
+  // outbound payments, so only Purchasing wallets in the active environment are selectable.
   const { wallets } = useX402Wallets(open, 'Purchasing');
+  const availableWallets = useMemo(
+    () => walletsForNetworks(wallets, networks),
+    [wallets, networks],
+  );
   const saveBudget = useApiMutation({
     mutationFn: (body: NonNullable<PostX402BudgetsData['body']>) =>
       postX402Budgets({ client: apiClient, body }),
@@ -247,13 +253,19 @@ export function BudgetDialog({
   });
 
   const selectedNetwork = useWatch({ control, name: 'caip2Network' });
+  const selectedChain = networks.find((network) => network.caip2Id === selectedNetwork);
 
-  const onSelectNetwork = (caip2: string) => {
-    setValue('caip2Network', caip2, { shouldValidate: true });
-    // Prefill the asset with the chain default when the asset field is still empty.
-    const chain = networks.find((n) => n.caip2Id === caip2);
-    if (chain?.defaultAsset && !editing) {
-      setValue('asset', chain.defaultAsset, { shouldValidate: true });
+  const onSelectWallet = (walletId: string) => {
+    setValue('evmWalletId', walletId, { shouldValidate: true });
+    const wallet = availableWallets.find((candidate) => candidate.id === walletId);
+    const caip2Network = wallet?.caip2Network ?? '';
+    setValue('caip2Network', caip2Network, { shouldValidate: true });
+
+    if (!editing) {
+      // Token contracts are chain-specific. Moving to another bound wallet must not retain
+      // an asset from the previous chain; use that network's default or require a fresh value.
+      const chain = networks.find((candidate) => candidate.caip2Id === caip2Network);
+      setValue('asset', chain?.defaultAsset ?? '', { shouldValidate: false });
     }
   };
 
@@ -295,12 +307,14 @@ export function BudgetDialog({
                     <SelectValue placeholder="Select an API key" />
                   </SelectTrigger>
                   <SelectContent>
-                    {allApiKeys.map((key) => (
-                      <SelectItem key={key.id} value={key.id}>
-                        <span className="font-mono text-xs">{key.token}</span>
-                        <span className="ml-2 text-muted-foreground">{key.id}</span>
-                      </SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {allApiKeys.map((key) => (
+                        <SelectItem key={key.id} value={key.id}>
+                          <span className="font-mono text-xs">{key.token}</span>
+                          <span className="ml-2 text-muted-foreground">{key.id}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               )}
@@ -316,16 +330,22 @@ export function BudgetDialog({
               control={control}
               name="evmWalletId"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={!!editing}>
+                <Select value={field.value} onValueChange={onSelectWallet} disabled={!!editing}>
                   <SelectTrigger aria-label="Managed wallet">
                     <SelectValue placeholder="Select a wallet" />
                   </SelectTrigger>
                   <SelectContent>
-                    {wallets.map((wallet) => (
-                      <SelectItem key={wallet.id} value={wallet.id} className="font-mono">
-                        {shortenAddress(wallet.address, 8)}
-                      </SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {availableWallets.map((wallet) => (
+                        <SelectItem key={wallet.id} value={wallet.id} className="font-mono">
+                          {shortenAddress(wallet.address, 8)}
+                          <span className="ml-2 text-muted-foreground">
+                            {networks.find((network) => network.id === wallet.networkId)
+                              ?.displayName ?? wallet.caip2Network}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               )}
@@ -337,21 +357,17 @@ export function BudgetDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Chain</label>
-            <Select value={selectedNetwork} onValueChange={onSelectNetwork} disabled={!!editing}>
-              <SelectTrigger aria-label="Chain">
-                <SelectValue placeholder="Select a chain" />
-              </SelectTrigger>
-              <SelectContent>
-                {networks.map((network) => (
-                  <SelectItem key={network.id} value={network.caip2Id}>
-                    {network.displayName}
-                    <span className="ml-2 font-mono text-xs text-muted-foreground">
-                      {network.caip2Id}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <input type="hidden" {...register('caip2Network')} />
+            <Input
+              aria-label="Chain"
+              value={
+                selectedChain
+                  ? `${selectedChain.displayName} (${selectedChain.caip2Id})`
+                  : selectedNetwork
+              }
+              placeholder="Select a wallet first"
+              readOnly
+            />
             {errors.caip2Network && (
               <p className="text-xs text-destructive">{errors.caip2Network.message}</p>
             )}

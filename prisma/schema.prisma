@@ -369,36 +369,72 @@ model X402Network {
   isTestnet           Boolean              @default(false)
   isEnabled           Boolean              @default(true)
   defaultAsset        String?
+  // Facilitator config: EXACTLY ONE of facilitatorWalletId (self-hosted — an owned
+  // Selling wallet signs settlements locally) or facilitatorUrl (remote — verify/settle
+  // are delegated to an external x402 facilitator over HTTP; the node owns no key here).
+  // Enforced at the application layer (a partial DB CHECK cannot span the wallet relation).
   facilitatorWalletId String?
+  facilitatorUrl      String?
+  // Encrypted auth header value for the remote facilitator (only meaningful with
+  // facilitatorUrl); encrypted at rest like other wallet secrets.
+  facilitatorAuthEnc  String?
   createdById         String?
   FacilitatorWallet   X402EvmWallet?       @relation("X402NetworkFacilitatorWallet", fields: [facilitatorWalletId], references: [id], onDelete: SetNull)
   CreatedBy           ApiKey?              @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  WalletBudgets       X402WalletBudget[]
+  // Wallets bound to this network/payment source (mirrors PaymentSource.HotWallets).
+  Wallets             X402EvmWallet[]      @relation("X402NetworkWallets")
   PaymentAttempts     X402PaymentAttempt[]
 
   @@index([isEnabled])
   @@index([createdById])
 }
 
+model X402WalletSecret {
+  id                  String          @id @default(cuid())
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  // Public key identity for the encrypted private key. The unique constraint makes
+  // concurrent imports of one EVM key converge on one secret across every network.
+  address             String          @unique
+  encryptedPrivateKey String
+  // One secret backs N wallet rows — the same EVM keypair reused across chains.
+  Wallets             X402EvmWallet[]
+}
+
 model X402EvmWallet {
   id                  String                        @id @default(cuid())
   createdAt           DateTime                      @default(now())
   updatedAt           DateTime                      @updatedAt
-  address             String                        @unique
+  // Bound to exactly one payment source (network). The SAME EVM keypair on N chains is
+  // modelled as N wallet rows (one per network) sharing one X402WalletSecret — mirrors the
+  // Cardano HotWallet/WalletSecret split. address is thus unique per network, not globally.
+  networkId           String
+  secretId            String
+  address             String
   type                X402EvmWalletType
-  encryptedPrivateKey String
   note                String?
   deletedAt           DateTime?
   createdById         String?
+  // Cross-instance settle lock, held on the wallet itself — the direct analogue of Cardano's
+  // HotWallet.lockedAt. A self-hosted facilitator broadcasts each settle as a tx from this single
+  // account, so the account nonce is a shared resource; this row-level lock serializes concurrent
+  // settles per facilitator wallet across processes. Set while a settle is in flight, cleared on
+  // completion; a stale lock (holder crashed) is stolen after the app's stale timeout. Only ever
+  // set on a Selling/facilitator wallet — Purchasing wallets sign offline and never lock.
+  lockedAt            DateTime?
+  Network             X402Network                   @relation("X402NetworkWallets", fields: [networkId], references: [id], onDelete: Restrict)
+  Secret              X402WalletSecret              @relation(fields: [secretId], references: [id])
   CreatedBy           ApiKey?                       @relation(fields: [createdById], references: [id], onDelete: SetNull)
   FacilitatesNetworks X402Network[]                 @relation("X402NetworkFacilitatorWallet")
   Budgets             X402WalletBudget[]
   PaymentAttempts     X402PaymentAttempt[]
   LowBalanceRules     X402EvmWalletLowBalanceRule[]
 
+  @@unique([networkId, address])
   @@index([deletedAt])
   @@index([createdById])
   @@index([type])
+  @@index([secretId])
 }
 
 model X402EvmWalletLowBalanceRule {
@@ -406,10 +442,10 @@ model X402EvmWalletLowBalanceRule {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   evmWalletId     String
-  caip2Network    String
   // ERC-20 token contract address (lowercased), or the literal "native" for the
   // chain's gas token (ETH). A Selling/facilitator wallet typically monitors "native"
-  // (gas to settle); a Purchasing wallet monitors its payment token plus gas.
+  // (gas to settle); a Purchasing wallet monitors its payment token plus gas. The chain
+  // is implied by the wallet's network — no caip2Network column needed here.
   asset           String
   thresholdAmount BigInt
   enabled         Boolean          @default(true)
@@ -419,7 +455,7 @@ model X402EvmWalletLowBalanceRule {
   lastAlertedAt   DateTime?
   EvmWallet       X402EvmWallet    @relation(fields: [evmWalletId], references: [id], onDelete: Cascade)
 
-  @@unique([evmWalletId, caip2Network, asset])
+  @@unique([evmWalletId, asset])
   @@index([evmWalletId, enabled])
   @@index([enabled, status])
 }
@@ -430,21 +466,23 @@ model X402WalletBudget {
   updatedAt       DateTime      @updatedAt
   apiKeyId        String
   evmWalletId     String
-  caip2Network    String
+  // Chain is implied by the wallet's network (EvmWallet.networkId); no caip2Network here.
   asset           String
   remainingAmount BigInt
   spentAmount     BigInt        @default(0)
+  // Incremented whenever an admin replaces the grant. In-flight refunds must match the
+  // generation they reserved from so they cannot credit a later replacement grant.
+  generation      Int           @default(0)
   enabled         Boolean       @default(true)
   createdById     String?
   ApiKey          ApiKey        @relation("X402WalletBudgetGrantee", fields: [apiKeyId], references: [id], onDelete: Cascade)
   CreatedBy       ApiKey?       @relation("X402WalletBudgetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   EvmWallet       X402EvmWallet @relation(fields: [evmWalletId], references: [id], onDelete: Cascade)
-  Network         X402Network   @relation(fields: [caip2Network], references: [caip2Id], onDelete: Restrict)
 
-  @@unique([apiKeyId, evmWalletId, caip2Network, asset])
+  @@unique([apiKeyId, evmWalletId, asset])
   @@index([apiKeyId, enabled])
   @@index([evmWalletId, enabled])
-  @@index([caip2Network, asset])
+  @@index([evmWalletId, asset])
   @@index([createdById])
 }
 
@@ -455,15 +493,27 @@ model X402PaymentAttempt {
   direction                X402PaymentDirection
   status                   X402PaymentStatus
   apiKeyId                 String
+  // The payment source / rail this attempt ran on. Network is structural here (FK to the
+  // rail), NOT derived from the wallet: an inbound settle handled by a REMOTE facilitator
+  // has no owned wallet, so the rail is the authoritative record of the chain.
+  networkId                String
+  // Own managed wallet, when the node holds one: outbound → purchasing wallet; inbound with
+  // a self-hosted facilitator → the facilitator wallet; inbound with a remote facilitator → null.
   evmWalletId              String?
+  // Immutable facilitator-mode snapshot for inbound settles. Null is deliberate for legacy
+  // rows whose historical mode cannot be reconstructed truthfully from today's network config.
+  facilitatorMode          X402FacilitatorMode?
+  // Counterparty (other side) of the transfer: outbound → the payee (payTo); inbound → the
+  // payer (buyer), linked after settle once the facilitator reports the address.
+  counterpartyWalletId     String?
   registryRequestId        String?
   supportedPaymentSourceId String?
-  caip2Network             String
   scheme                   X402PaymentScheme       @default(Exact)
   asset                    String
   amount                   BigInt
-  payTo                    String
-  payer                    String?
+  // Immutable recipient snapshot. Inbound attempts must not derive historical payTo
+  // solely from SupportedPaymentSource because registry updates replace those rows.
+  payTo                    String?
   resource                 String?
   paymentPayloadHash       String?
   paymentPayload           Json?
@@ -471,10 +521,11 @@ model X402PaymentAttempt {
   errorReason              String?
   errorMessage             String?
   ApiKey                   ApiKey                  @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
-  EvmWallet                X402EvmWallet?          @relation(fields: [evmWalletId], references: [id], onDelete: SetNull)
+  Network                  X402Network             @relation(fields: [networkId], references: [id], onDelete: Restrict)
+  EvmWallet                X402EvmWallet?          @relation(fields: [evmWalletId], references: [id], onDelete: Restrict)
+  CounterpartyWallet       X402CounterpartyWallet? @relation(fields: [counterpartyWalletId], references: [id], onDelete: Restrict)
   RegistryRequest          RegistryRequest?        @relation(fields: [registryRequestId], references: [id], onDelete: SetNull)
   SupportedPaymentSource   SupportedPaymentSource? @relation(fields: [supportedPaymentSourceId], references: [id], onDelete: SetNull)
-  Network                  X402Network             @relation(fields: [caip2Network], references: [caip2Id], onDelete: Restrict)
   Settlement               X402Settlement?
   // A partial unique index created by migration 20260712000000 permits only one
   // InboundSettle attempt in Verified/Settled state per paymentPayloadHash.
@@ -484,8 +535,10 @@ model X402PaymentAttempt {
   @@index([registryRequestId, createdAt])
   @@index([supportedPaymentSourceId])
   @@index([paymentIdentifier])
-  @@index([caip2Network, asset])
+  @@index([networkId, asset])
   @@index([status, createdAt])
+  @@index([evmWalletId])
+  @@index([counterpartyWalletId])
   // Settle dedup/crash-window guards look up attempts by paymentPayloadHash
   // (+ direction/status) on every settle; without this they scan the table.
   @@index([paymentPayloadHash])
@@ -499,14 +552,31 @@ model X402Settlement {
   paymentPayloadHash String             @unique
   success            Boolean
   txHash             String?
-  caip2Network       String
   amount             BigInt?
-  payer              String?
+  // network + payer are derivable from the linked attempt (Network.caip2Id) and its
+  // CounterpartyWallet; the facilitator-reported originals remain in rawResponse for audit.
   rawResponse        Json?
   PaymentAttempt     X402PaymentAttempt @relation(fields: [paymentAttemptId], references: [id], onDelete: Cascade)
 
   @@index([txHash])
-  @@index([caip2Network])
+}
+
+// The counterparty (other side) of an x402 transfer — the EVM analogue of Cardano's
+// WalletBase. No vkey: on EVM the address IS the identity. caip2Network is a loose string
+// (not an FK) on purpose: a counterparty may sit on a chain this decentralized node does
+// not fully configure, and node config can change over time.
+model X402CounterpartyWallet {
+  id              String               @id @default(cuid())
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  caip2Network    String
+  address         String
+  role            X402CounterpartyRole
+  note            String?
+  PaymentAttempts X402PaymentAttempt[]
+
+  @@unique([caip2Network, address, role])
+  @@index([address])
 }
 
 model InboxAgentRegistrationRequest {
@@ -973,6 +1043,18 @@ enum X402PaymentDirection {
   InboundVerify
   InboundSettle
   OutboundPayment
+}
+
+enum X402CounterpartyRole {
+  // The counterparty receives funds (attempt's payTo). Set for outbound payments.
+  Payee
+  // The counterparty sends funds (attempt's payer/buyer). Set for inbound settlements.
+  Payer
+}
+
+enum X402FacilitatorMode {
+  SelfHosted
+  Remote
 }
 
 enum X402PaymentStatus {

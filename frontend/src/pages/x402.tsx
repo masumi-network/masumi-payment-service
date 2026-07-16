@@ -49,7 +49,7 @@ export default function X402Page() {
               Manage the EVM payment rail: chains, managed wallets, spend budgets, balance alerts
               and payment activity.{' '}
               <a
-                href="https://docs.masumi.network"
+                href="https://www.masumi.network/dev/masumi"
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-0.5 font-medium text-foreground underline-offset-2 hover:underline"

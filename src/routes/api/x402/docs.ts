@@ -9,6 +9,7 @@ import {
 	createWalletSchemaOutput,
 	deleteWalletSchemaInput,
 	deleteWalletSchemaOutput,
+	listAvailableNetworksSchemaOutput,
 	listBudgetSchemaInput,
 	listBudgetSchemaOutput,
 	listNetworksSchemaInput,
@@ -19,11 +20,15 @@ import {
 	listSettlementsSchemaOutput,
 	listWalletsSchemaInput,
 	listWalletsSchemaOutput,
+	reconcilePaymentSchemaInput,
+	reconcilePaymentSchemaOutput,
 	setBudgetSchemaInput,
 	settleSchemaOutput,
 	upsertNetworkSchemaInput,
 	verifySchemaOutput,
 	verifySettleSchemaInput,
+	walletDetailSchemaInput,
+	walletSchemaOutput,
 	x402NetworkSchema,
 } from '@/routes/api/x402/schemas';
 import {
@@ -33,6 +38,7 @@ import {
 	createX402WalletResponseExample,
 	deleteX402WalletBodyExample,
 	deleteX402WalletResponseExample,
+	listAvailableX402NetworksResponseExample,
 	listX402BudgetsQueryExample,
 	listX402BudgetsResponseExample,
 	listX402NetworksResponseExample,
@@ -49,10 +55,29 @@ import {
 	verifyX402ResponseExample,
 	x402BudgetExample,
 	x402NetworkExample,
+	x402WalletExample,
 } from '@/routes/api/x402/examples';
 import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator/swagger-generator/shared';
 
 export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarContext) {
+	registry.registerPath({
+		method: 'get',
+		path: '/x402/networks/available',
+		description:
+			'Lists the safe network projection needed to create managed wallets. Non-admin results are restricted to the API key CAIP-2 network limit; RPC and facilitator configuration are never returned.',
+		summary: 'List accessible x402 EVM chains. (pay access required)',
+		tags: ['x402'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: { query: listNetworksSchemaInput },
+		responses: {
+			200: successResponse(
+				'Accessible x402 EVM chains',
+				listAvailableNetworksSchemaOutput,
+				listAvailableX402NetworksResponseExample,
+			),
+		},
+	});
+
 	registry.registerPath({
 		method: 'get',
 		path: '/x402/networks',
@@ -89,8 +114,9 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 	registry.registerPath({
 		method: 'get',
 		path: '/x402/wallets',
-		description: 'Lists the managed EVM wallets used to fund x402 payments and settle inbound payments.',
-		summary: 'List managed x402 EVM wallets. (admin access required)',
+		description:
+			'Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Non-admin results are limited by both wallet owner and permitted network.',
+		summary: 'List managed x402 EVM wallets. (pay access required)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -105,8 +131,8 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'post',
 		path: '/x402/wallets',
 		description:
-			'Creates a managed EVM wallet. A new private key is generated when none is supplied; the key is stored encrypted and never returned.',
-		summary: 'Create a managed x402 EVM wallet. (admin access required)',
+			'Creates a managed EVM wallet on a network permitted for the API key. When no key is supplied, the generated private key is returned once for backup and stored only in encrypted form.',
+		summary: 'Create a managed x402 EVM wallet. (pay access required; owned by the creating key)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -125,11 +151,27 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 	});
 
 	registry.registerPath({
+		method: 'get',
+		path: '/x402/wallets/detail',
+		description:
+			'Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their owner or network scope.',
+		summary: 'Get a managed x402 EVM wallet by id. (pay access required)',
+		tags: ['x402'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			query: walletDetailSchemaInput.openapi({ example: { id: x402WalletExample.id } }),
+		},
+		responses: {
+			200: successResponse('Managed x402 EVM wallet', walletSchemaOutput, x402WalletExample),
+		},
+	});
+
+	registry.registerPath({
 		method: 'post',
 		path: '/x402/wallets/delete',
 		description:
 			'Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.',
-		summary: 'Retire a managed x402 EVM wallet. (admin access required)',
+		summary: 'Retire a managed x402 EVM wallet. (pay access required; owner and network scoped)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -253,7 +295,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/payments',
 		description:
 			'Lists x402 payment attempts (inbound verify/settle and outbound payments), newest first, with their settlement result.',
-		summary: 'List x402 payment attempts. (admin access required)',
+		summary: 'List x402 payment attempts. (pay access required; non-admin keys see only their own)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -269,10 +311,42 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 	});
 
 	registry.registerPath({
+		method: 'post',
+		path: '/x402/payments/reconcile',
+		description:
+			'Manually resolves an inbound settle left awaiting reconciliation: a Verified attempt whose settle threw, timed out, or was interrupted becomes eligible once stale; a stale Settled attempt missing its settlement record is also eligible but only accepts "settled". The operator confirms on-chain whether funds moved: "settled" records the settlement (txHash required), while "failed" marks it Failed so a fresh settle can retry.',
+		summary: 'Reconcile an ambiguous x402 settlement. (admin access required)',
+		tags: ['x402'],
+		security: [{ [apiKeyAuth.name]: [] }],
+		request: {
+			body: {
+				description: 'The attempt to reconcile and the operator-confirmed outcome',
+				content: {
+					'application/json': {
+						schema: reconcilePaymentSchemaInput.openapi({
+							example: {
+								attemptId: 'clx402attempt0001',
+								resolution: 'settled',
+								txHash: '0x4242424242424242424242424242424242424242424242424242424242424242',
+							},
+						}),
+					},
+				},
+			},
+		},
+		responses: {
+			200: successResponse('Reconciliation result', reconcilePaymentSchemaOutput, {
+				attemptId: 'clx402attempt0001',
+				status: 'Settled',
+			}),
+		},
+	});
+
+	registry.registerPath({
 		method: 'get',
 		path: '/x402/settlements',
 		description: 'Lists x402 on-chain settlements, newest first.',
-		summary: 'List x402 settlements. (admin access required)',
+		summary: 'List x402 settlements. (pay access required; non-admin keys see only their own)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

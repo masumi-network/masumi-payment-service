@@ -9,7 +9,7 @@ import {
   flattenInclusiveCursorPages,
 } from '@/lib/pagination/cursor-pagination';
 
-export { fetchAllUtxos, fetchWalletBalance } from '@/lib/wallet-balance';
+export { fetchAddressBalance, fetchAllUtxos, fetchWalletBalance } from '@/lib/wallet-balance';
 export type { WalletBalanceResult } from '@/lib/wallet-balance';
 
 type Wallet = WalletListItem & {

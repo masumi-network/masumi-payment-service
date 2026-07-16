@@ -3759,6 +3759,27 @@ export const UtxoAmountSchema = {
     ]
 } as const;
 
+export const BalanceAmountSchema = {
+    type: 'object',
+    properties: {
+        unit: {
+            type: 'string',
+            description: 'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
+        },
+        quantity: {
+            type: 'integer',
+            nullable: true,
+            minimum: 0,
+            maximum: 100000000000000,
+            description: 'The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)'
+        }
+    },
+    required: [
+        'unit',
+        'quantity'
+    ]
+} as const;
+
 export const RpcProviderKeySchema = {
     type: 'object',
     properties: {
@@ -4257,6 +4278,47 @@ export const StoppedMonitoringSchema = {
     ]
 } as const;
 
+export const X402AvailableNetworkSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Opaque x402 network id accepted by managed-wallet endpoints'
+        },
+        caip2Id: {
+            type: 'string',
+            pattern: '^eip155:\\d+$',
+            description: 'CAIP-2 EVM chain id, for example eip155:8453'
+        },
+        displayName: {
+            type: 'string',
+            description: 'Human readable chain name'
+        },
+        isTestnet: {
+            type: 'boolean',
+            description: 'Whether this chain belongs to the testnet environment'
+        },
+        isEnabled: {
+            type: 'boolean',
+            description: 'Whether this chain may currently be used for x402 payments'
+        },
+        defaultAsset: {
+            type: 'string',
+            nullable: true,
+            pattern: '^0x[a-fA-F0-9]{40}$',
+            description: 'Default settlement asset (token contract) for this chain'
+        }
+    },
+    required: [
+        'id',
+        'caip2Id',
+        'displayName',
+        'isTestnet',
+        'isEnabled',
+        'defaultAsset'
+    ]
+} as const;
+
 export const X402NetworkSchema = {
     type: 'object',
     properties: {
@@ -4293,12 +4355,17 @@ export const X402NetworkSchema = {
         facilitatorWalletId: {
             type: 'string',
             nullable: true,
-            description: 'Id of the managed EVM wallet used to settle payments on this chain'
+            description: 'Id of the managed EVM wallet used to settle payments on this chain (self-hosted facilitator)'
         },
         facilitatorWalletAddress: {
             type: 'string',
             nullable: true,
-            description: 'Resolved address of the facilitator wallet. Null when no facilitator is set.'
+            description: 'Resolved address of the facilitator wallet. Null when no self-hosted facilitator is set.'
+        },
+        facilitatorUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'HTTPS URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)'
         },
         createdById: {
             type: 'string',
@@ -4324,6 +4391,7 @@ export const X402NetworkSchema = {
         'defaultAsset',
         'facilitatorWalletId',
         'facilitatorWalletAddress',
+        'facilitatorUrl',
         'createdById',
         'createdAt',
         'updatedAt'
@@ -4336,6 +4404,15 @@ export const X402WalletSchema = {
         id: {
             type: 'string',
             description: 'Unique identifier of the managed EVM wallet'
+        },
+        networkId: {
+            type: 'string',
+            description: 'Id of the x402 network (payment source) this wallet is bound to'
+        },
+        caip2Network: {
+            type: 'string',
+            pattern: '^eip155:\\d+$',
+            description: 'CAIP-2 chain id of the network this wallet is bound to'
         },
         address: {
             type: 'string',
@@ -4371,6 +4448,8 @@ export const X402WalletSchema = {
     },
     required: [
         'id',
+        'networkId',
+        'caip2Network',
         'address',
         'type',
         'note',
@@ -4523,7 +4602,9 @@ export const X402PaymentAttemptSchema = {
             description: 'Payment amount in token base units'
         },
         payTo: {
-            type: 'string'
+            type: 'string',
+            nullable: true,
+            description: 'Immutable payee-address snapshot. Null only for legacy transition rows without a snapshot.'
         },
         payer: {
             type: 'string',
@@ -4544,6 +4625,31 @@ export const X402PaymentAttemptSchema = {
         errorMessage: {
             type: 'string',
             nullable: true
+        },
+        facilitator: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                mode: {
+                    type: 'string',
+                    enum: [
+                        'self_hosted',
+                        'remote',
+                        'unknown'
+                    ],
+                    description: 'Whether an owned wallet, a remote URL, or an unknown legacy facilitator settled'
+                },
+                address: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Self-hosted facilitator wallet address; null for remote or unknown legacy mode'
+                }
+            },
+            required: [
+                'mode',
+                'address'
+            ],
+            description: 'The facilitator that settled this inbound payment; null for outbound payments and verifies.'
         },
         Settlement: {
             type: 'object',
@@ -4603,6 +4709,7 @@ export const X402PaymentAttemptSchema = {
         'paymentIdentifier',
         'errorReason',
         'errorMessage',
+        'facilitator',
         'Settlement'
     ]
 } as const;

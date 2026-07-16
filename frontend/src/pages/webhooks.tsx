@@ -400,7 +400,7 @@ export default function WebhooksPage() {
                   ? 'Send x402 payment events to custom endpoints, Slack, Google Chat, or Discord. '
                   : 'Send Cardano payment source events to custom endpoints, Slack, Google Chat, or Discord. '}
                 <Link
-                  href="https://docs.masumi.network/api-reference/payment-service/post-webhooks"
+                  href="https://www.masumi.network/dev/masumi/api-reference"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"

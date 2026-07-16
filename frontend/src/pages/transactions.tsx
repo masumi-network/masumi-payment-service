@@ -391,7 +391,7 @@ export default function Transactions() {
               <p className="text-sm text-muted-foreground">
                 View and manage your transaction history.{' '}
                 <a
-                  href="https://docs.masumi.network/core-concepts/agent-to-agent-payments"
+                  href="https://www.masumi.network/dev/masumi/core-concepts/agent-to-agent-payments"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"

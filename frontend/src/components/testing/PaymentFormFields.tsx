@@ -282,7 +282,7 @@ export function PaymentFormFields({
             <p className="text-xs text-muted-foreground">
               Input hashed per{' '}
               <a
-                href="https://docs.masumi.network/mips/_mip-004"
+                href="https://www.masumi.network/dev/masumi/mips/_mip-004"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline inline-flex items-center gap-0.5 hover:text-foreground transition-colors duration-150"
