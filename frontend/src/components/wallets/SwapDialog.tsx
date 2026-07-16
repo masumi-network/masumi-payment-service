@@ -17,7 +17,7 @@ import {
   postSwapCancel,
   postSwapAcknowledgeTimeout,
 } from '@/lib/api/generated';
-import { fetchAllUtxos } from '@/lib/wallet-balance';
+import { fetchAddressBalance } from '@/lib/wallet-balance';
 import { useQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useRate } from '@/lib/hooks/useRate';
@@ -308,7 +308,7 @@ export function SwapDialog({
 
   const fetchBalance = async () => {
     try {
-      const utxos = await fetchAllUtxos(apiClient, network, walletAddress);
+      const balance = await fetchAddressBalance(apiClient, network, walletAddress);
       const usdmConfig = getUsdmConfig(network);
 
       const otherTokens = swappableTokens.filter(
@@ -325,16 +325,14 @@ export function SwapDialog({
 
       let lovelace = BigInt(0);
       let usdm = BigInt(0);
-      for (const utxo of utxos) {
-        for (const asset of utxo.Amounts) {
-          const quantity = BigInt(asset.quantity ?? 0);
-          if (asset.unit === 'lovelace' || asset.unit === '') {
-            lovelace += quantity;
-          } else if (asset.unit === usdmConfig.fullAssetId) {
-            usdm += quantity;
-          } else if (otherSums.has(asset.unit)) {
-            otherSums.set(asset.unit, (otherSums.get(asset.unit) ?? BigInt(0)) + quantity);
-          }
+      for (const asset of balance) {
+        const quantity = BigInt(asset.quantity ?? 0);
+        if (asset.unit === 'lovelace' || asset.unit === '') {
+          lovelace += quantity;
+        } else if (asset.unit === usdmConfig.fullAssetId) {
+          usdm += quantity;
+        } else if (otherSums.has(asset.unit)) {
+          otherSums.set(asset.unit, (otherSums.get(asset.unit) ?? BigInt(0)) + quantity);
         }
       }
 

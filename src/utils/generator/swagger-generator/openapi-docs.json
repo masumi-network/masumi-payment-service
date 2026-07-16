@@ -3764,6 +3764,26 @@
                     "quantity"
                 ]
             },
+            "BalanceAmount": {
+                "type": "object",
+                "properties": {
+                    "unit": {
+                        "type": "string",
+                        "description": "Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "nullable": true,
+                        "minimum": 0,
+                        "maximum": 100000000000000,
+                        "description": "The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)"
+                    }
+                },
+                "required": [
+                    "unit",
+                    "quantity"
+                ]
+            },
             "RpcProviderKey": {
                 "type": "object",
                 "properties": {
@@ -20721,6 +20741,94 @@
                                                     "dataHash": "data_hash",
                                                     "inlineDatum": "inline_datum",
                                                     "referenceScriptHash": "reference_script_hash"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/balance": {
+            "get": {
+                "description": "Gets an address balance (internal)",
+                "summary": "Helper endpoint that returns the complete confirmed balance at a Cardano address, independent of UTXO pagination. (READ access required)",
+                "tags": [
+                    "balance"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 150,
+                            "description": "The address to get the confirmed balance for"
+                        },
+                        "required": true,
+                        "description": "The address to get the confirmed balance for",
+                        "name": "address",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "The Cardano network"
+                        },
+                        "required": true,
+                        "description": "The Cardano network",
+                        "name": "network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Complete confirmed address balance",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Balance": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/BalanceAmount"
+                                                    },
+                                                    "description": "Complete confirmed address balance aggregated across all UTXOs"
+                                                }
+                                            },
+                                            "required": [
+                                                "Balance"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "Success",
+                                        "data": {
+                                            "Balance": [
+                                                {
+                                                    "unit": "lovelace",
+                                                    "quantity": 10000000
                                                 }
                                             ]
                                         }
