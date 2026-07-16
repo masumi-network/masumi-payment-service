@@ -1,4 +1,4 @@
-import { CONFIG } from '@masumi/payment-core/config';
+import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
 import {
 	checkLatestTransactions,
@@ -275,7 +275,7 @@ export const scheduledJobs: JobDefinition[] = [
 	},
 	{
 		initialDelayMs: 55000,
-		intervalMs: 30 * 1000,
+		intervalMs: CONSTANTS.FUND_DISTRIBUTION_CHECK_INTERVAL_S * 1000,
 		startMessage: 'Starting fund distribution processing',
 		finishMessage: 'Finished fund distribution processing',
 		run: () => fundDistributionService.processDistributionCycle(),

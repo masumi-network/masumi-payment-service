@@ -2,7 +2,8 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { logger } from '@masumi/payment-core/logger';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { HotWalletType, FundDistributionStatus } from '@/generated/prisma/client';
+import { CONSTANTS } from '@masumi/payment-core/config';
+import { HotWalletType, FundDistributionStatus, Prisma } from '@/generated/prisma/client';
 import { encrypt } from '@/utils/security/encryption';
 import { resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
@@ -166,35 +167,51 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 		const vKey = resolvePaymentKeyHash(address);
 		const encryptedMnemonic = encrypt(input.walletMnemonic);
 
-		const result = await prisma.$transaction(async (tx) => {
-			const secret = await tx.walletSecret.create({
-				data: { encryptedMnemonic },
-			});
+		let result;
+		try {
+			result = await prisma.$transaction(async (tx) => {
+				const secret = await tx.walletSecret.create({
+					data: { encryptedMnemonic },
+				});
 
-			const hotWallet = await tx.hotWallet.create({
-				data: {
-					walletAddress: address,
-					walletVkey: vKey,
-					type: HotWalletType.Funding,
-					secretId: secret.id,
-					paymentSourceId: input.paymentSourceId,
-					note: input.note ?? null,
-				},
-			});
+				const hotWallet = await tx.hotWallet.create({
+					data: {
+						walletAddress: address,
+						walletVkey: vKey,
+						type: HotWalletType.Funding,
+						secretId: secret.id,
+						paymentSourceId: input.paymentSourceId,
+						note: input.note ?? null,
+					},
+				});
 
-			const config = await tx.fundDistributionConfig.create({
-				data: {
-					hotWalletId: hotWallet.id,
-					enabled: true,
-					warningThreshold,
-					criticalThreshold,
-					topupAmount,
-					batchWindowMs: input.batchWindowMs ?? 300000,
-				},
-			});
+				const config = await tx.fundDistributionConfig.create({
+					data: {
+						hotWalletId: hotWallet.id,
+						enabled: true,
+						warningThreshold,
+						criticalThreshold,
+						topupAmount,
+						batchWindowMs: input.batchWindowMs ?? CONSTANTS.FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS,
+					},
+				});
 
-			return { hotWallet, config };
-		});
+				return { hotWallet, config };
+			});
+		} catch (error) {
+			// HotWallet.walletVkey is globally unique, not per payment source, so the
+			// same mnemonic cannot back two wallets anywhere in the system. The
+			// natural operator move -- reuse one treasury mnemonic for the V1 and the
+			// V2 source -- lands here. Without this it surfaced as a raw Prisma error
+			// and a 500, which reads as a bug rather than a constraint.
+			if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+				throw createHttpError(
+					409,
+					'This wallet is already registered. A wallet mnemonic can only back one wallet, so each payment source needs its own fund wallet with its own mnemonic.',
+				);
+			}
+			throw error;
+		}
 
 		// Seed default low-balance rules. Runs outside the creation transaction because
 		// seedDefaultRulesForWallets uses the global prisma client, not a tx client.

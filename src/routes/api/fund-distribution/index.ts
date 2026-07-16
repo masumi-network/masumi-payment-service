@@ -45,7 +45,10 @@ export const getFundDistributionEndpointGet = adminAuthenticatedEndpointFactory.
 			},
 			orderBy: { createdAt: 'desc' },
 			take,
-			...(input.cursorId ? { cursor: { id: input.cursorId }, skip: 1 } : {}),
+			// Cursor-inclusive, matching every other list endpoint here: the cursor
+			// row is returned again and clients dedupe. Deliberate -- don't add
+			// `skip: 1` to "fix" it without changing the others too.
+			...(input.cursorId ? { cursor: { id: input.cursorId } } : {}),
 			select: {
 				id: true,
 				createdAt: true,

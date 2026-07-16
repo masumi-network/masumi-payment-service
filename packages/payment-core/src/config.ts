@@ -319,6 +319,10 @@ export const CONSTANTS = {
 	FUND_DISTRIBUTION_TX_CONFIRMATION_TIMEOUT_MS: 30 * 60 * 1000, // 30 minutes
 	FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS: 5 * 60 * 1000, // 5 minutes
 	FUND_DISTRIBUTION_CHECK_INTERVAL_S: 30, // seconds between distribution cycles
+	// Grace before a submitted distribution is even checked for confirmation.
+	// Blockfrost has not indexed a tx submitted in the current cycle, and a
+	// not-found there would otherwise look like a failure.
+	FUND_DISTRIBUTION_CONFIRMATION_DELAY_MS: 5 * 60 * 1000, // 5 minutes
 	MAX_DEFAULT_SMART_CONTRACT_HISTORY_LEVELS: 10,
 
 	FALLBACK_COINS_PER_UTXO_SIZE: 4310,

@@ -94,6 +94,19 @@ export class FundDistributionService {
 		});
 
 		if (priority === FundDistributionPriority.Critical) {
+			// Critical requests skip the batch window and go out immediately -- but
+			// only when we're not already inside a distribution cycle. `scanAndCreate
+			// MissingRequests` calls requestTopup while holding this same mutex, so
+			// attempting to re-acquire it always fails (tryAcquire is not reentrant)
+			// and logged "already running, skipping cycle" on every critical topup.
+			// The cycle's own critical phase picks this request up moments later, so
+			// there is genuinely nothing to do here.
+			//
+			// The check is racy by nature, but benignly: losing it just means
+			// withJobLock declines and the next cycle (<=30s) sends the request --
+			// exactly what happened before, minus the misleading log.
+			if (mutex.isLocked()) return;
+
 			await withJobLock(mutex, 'fund_distribution_critical', async () => {
 				const targetWallet = await prisma.hotWallet.findUnique({
 					where: { id: targetWalletId },
@@ -121,6 +134,22 @@ export class FundDistributionService {
 
 	async processDistributionCycle(): Promise<void> {
 		await withJobLock(mutex, 'fund_distribution_cycle', async () => {
+			// Fund distribution is opt-in: it does nothing until an operator creates
+			// a Funding wallet for a payment source. Resolve the funded sources once
+			// up front and bail when there are none, so the common (unconfigured)
+			// deployment costs one indexed query per cycle instead of a full
+			// low-balance scan plus a lookup per low wallet, every 30s, forever.
+			const fundWallets = await prisma.hotWallet.findMany({
+				where: {
+					type: HotWalletType.Funding,
+					deletedAt: null,
+					FundDistributionConfig: { enabled: true },
+				},
+				select: { paymentSourceId: true },
+			});
+			if (fundWallets.length === 0) return;
+			const fundedPaymentSourceIds = fundWallets.map((wallet) => wallet.paymentSourceId);
+
 			// Phase A: Adopt outcomes that funding-reconciliation decided for
 			// ambiguously-submitted batches. Runs FIRST so a promoted batch is
 			// marked Submitted (and a rolled-back one released) before the
@@ -128,7 +157,7 @@ export class FundDistributionService {
 			await this.reconcileInFlightRequests();
 
 			// Phase B: Scan for Low-status wallets with no pending/submitted distribution request
-			await this.scanAndCreateMissingRequests();
+			await this.scanAndCreateMissingRequests(fundedPaymentSourceIds);
 
 			// Phase C: Process critical pending requests immediately
 			await this.processCriticalRequests();
@@ -218,12 +247,17 @@ export class FundDistributionService {
 		}
 	}
 
-	private async scanAndCreateMissingRequests(): Promise<void> {
-		// Find all wallets with Low balance rules that have no pending/submitted distribution request
+	private async scanAndCreateMissingRequests(fundedPaymentSourceIds: string[]): Promise<void> {
+		// Find wallets with Low balance rules that have no pending/submitted
+		// distribution request. Scoped to payment sources that actually have an
+		// enabled fund wallet: without that filter, every low wallet on an
+		// unfunded source triggered a getFundWalletForPaymentSource lookup that
+		// could only ever return null -- N wasted queries per wallet, per cycle.
 		const lowBalanceWallets = await prisma.hotWallet.findMany({
 			where: {
 				deletedAt: null,
 				type: { not: HotWalletType.Funding },
+				paymentSourceId: { in: fundedPaymentSourceIds },
 				LowBalanceRules: {
 					some: {
 						status: LowBalanceStatus.Low,
@@ -359,10 +393,10 @@ export class FundDistributionService {
 	}
 
 	private async confirmSubmittedRequests(): Promise<void> {
-		// Only confirm requests submitted more than 5 minutes ago.
+		// Only confirm requests submitted more than one indexing delay ago.
 		// Transactions submitted in the current cycle will not be indexed by Blockfrost yet —
 		// confirming them immediately would incorrectly mark them as Failed.
-		const confirmableAfter = new Date(Date.now() - 300_000);
+		const confirmableAfter = new Date(Date.now() - CONSTANTS.FUND_DISTRIBUTION_CONFIRMATION_DELAY_MS);
 
 		const submittedRequests = await prisma.fundDistributionRequest.findMany({
 			where: {

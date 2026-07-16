@@ -1,4 +1,5 @@
 import { z } from '@masumi/payment-core/zod';
+import { CONSTANTS } from '@masumi/payment-core/config';
 import { lowBalanceSummarySchema } from '@/routes/api/wallet/low-balance.schemas';
 
 const fundDistributionConfigSchema = z.object({
@@ -39,7 +40,7 @@ export const postFundWalletSchemaInput = z.object({
 		.number()
 		.int()
 		.min(1000)
-		.default(300000)
+		.default(CONSTANTS.FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS)
 		.optional()
 		.describe('Batch window in milliseconds (default 5 min)'),
 	note: z.string().max(250).optional().describe('Optional note for this fund wallet'),
