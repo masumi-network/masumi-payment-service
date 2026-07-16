@@ -1,11 +1,12 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, ArrowLeftRight, PlusCircle, AlertTriangle } from 'lucide-react';
+import { Plus, ArrowLeftRight, PlusCircle, AlertTriangle, Landmark } from 'lucide-react';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
+import { FundWalletDialog } from '@/components/wallets/FundWalletDialog';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -44,6 +45,7 @@ export default function WalletsPage() {
     typeof router.query.searched === 'string' ? router.query.searched : '',
   );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isFundWalletDialogOpen, setIsFundWalletDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
 
   // The type tab is applied server-side so each tab paginates independently.
@@ -177,6 +179,14 @@ export default function WalletsPage() {
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={refetchWallets} isRefreshing={isFetchingWallets} />
+              <Button
+                variant="outline"
+                className="flex items-center gap-2"
+                onClick={() => setIsFundWalletDialogOpen(true)}
+              >
+                <Landmark className="h-4 w-4" />
+                Fund wallet
+              </Button>
               <Button
                 className="flex items-center gap-2 btn-hover-lift"
                 onClick={() => setIsAddDialogOpen(true)}
@@ -383,6 +393,12 @@ export default function WalletsPage() {
         <AddWalletDialog
           open={isAddDialogOpen}
           onClose={() => setIsAddDialogOpen(false)}
+          onSuccess={refetchAfterWalletAdded}
+        />
+
+        <FundWalletDialog
+          open={isFundWalletDialogOpen}
+          onClose={() => setIsFundWalletDialogOpen(false)}
           onSuccess={refetchAfterWalletAdded}
         />
 
