@@ -28138,7 +28138,7 @@
                         }
                     },
                     "400": {
-                        "description": "criticalThreshold is not below warningThreshold, or the mnemonic yields no address"
+                        "description": "criticalThreshold is not below warningThreshold, topupAmount is below the min-UTxO floor, or the mnemonic is invalid"
                     },
                     "401": {
                         "description": "Unauthorized"
@@ -28267,7 +28267,7 @@
                 }
             },
             "delete": {
-                "description": "Soft-deletes a fund wallet, disables its distribution config and cancels any outstanding distribution requests. Does NOT move funds: withdraw the remaining balance from the wallet address first, since the mnemonic can no longer be exported through the fund-wallet API afterwards.",
+                "description": "Soft-deletes a fund wallet, disables its distribution config and cancels any outstanding distribution requests. Does NOT move funds. Refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true to delete regardless, accepting that any remaining balance is recoverable only with direct database access.",
                 "summary": "Delete a fund wallet. (admin access required)",
                 "tags": [
                     "fund-wallet"
@@ -28289,13 +28289,18 @@
                                         "minLength": 1,
                                         "maxLength": 250,
                                         "description": "Fund wallet id to delete"
+                                    },
+                                    "force": {
+                                        "type": "boolean",
+                                        "description": "Delete even if the wallet still holds funds, or if the balance cannot be checked. Deletion makes the mnemonic unexportable, so the remaining balance would be recoverable only with direct database access"
                                     }
                                 },
                                 "required": [
                                     "id"
                                 ],
                                 "example": {
-                                    "id": "cuid_v2_auto_generated"
+                                    "id": "cuid_v2_auto_generated",
+                                    "force": false
                                 }
                             }
                         }
@@ -28338,6 +28343,12 @@
                     },
                     "404": {
                         "description": "Fund wallet not found"
+                    },
+                    "409": {
+                        "description": "Fund wallet still holds funds; withdraw them or pass force=true"
+                    },
+                    "503": {
+                        "description": "Balance could not be checked; retry or pass force=true"
                     }
                 }
             }

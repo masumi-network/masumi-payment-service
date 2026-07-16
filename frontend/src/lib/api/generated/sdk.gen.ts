@@ -1628,7 +1628,7 @@ export const postX402Analytics = <ThrowOnError extends boolean = false>(options?
 /**
  * Delete a fund wallet. (admin access required)
  *
- * Soft-deletes a fund wallet, disables its distribution config and cancels any outstanding distribution requests. Does NOT move funds: withdraw the remaining balance from the wallet address first, since the mnemonic can no longer be exported through the fund-wallet API afterwards.
+ * Soft-deletes a fund wallet, disables its distribution config and cancels any outstanding distribution requests. Does NOT move funds. Refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true to delete regardless, accepting that any remaining balance is recoverable only with direct database access.
  */
 export const deleteFundWallet = <ThrowOnError extends boolean = false>(options?: Options<DeleteFundWalletData, ThrowOnError>): RequestResult<DeleteFundWalletResponses, DeleteFundWalletErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteFundWalletResponses, DeleteFundWalletErrors, ThrowOnError>({
     responseType: 'json',

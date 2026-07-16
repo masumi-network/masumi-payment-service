@@ -74,6 +74,12 @@ export const patchFundWalletSchemaOutput = z
 
 export const deleteFundWalletSchemaInput = z.object({
 	id: z.string().min(1).max(250).describe('Fund wallet id to delete'),
+	force: z
+		.boolean()
+		.optional()
+		.describe(
+			'Delete even if the wallet still holds funds, or if the balance cannot be checked. Deletion makes the mnemonic unexportable, so the remaining balance would be recoverable only with direct database access',
+		),
 });
 
 export const deleteFundWalletSchemaOutput = z

@@ -11860,6 +11860,10 @@ export type DeleteFundWalletData = {
          * Fund wallet id to delete
          */
         id: string;
+        /**
+         * Delete even if the wallet still holds funds, or if the balance cannot be checked. Deletion makes the mnemonic unexportable, so the remaining balance would be recoverable only with direct database access
+         */
+        force?: boolean;
     };
     path?: never;
     query?: never;
@@ -11875,6 +11879,14 @@ export type DeleteFundWalletErrors = {
      * Fund wallet not found
      */
     404: unknown;
+    /**
+     * Fund wallet still holds funds; withdraw them or pass force=true
+     */
+    409: unknown;
+    /**
+     * Balance could not be checked; retry or pass force=true
+     */
+    503: unknown;
 };
 
 export type DeleteFundWalletResponses = {
@@ -12035,7 +12047,7 @@ export type PostFundWalletData = {
 
 export type PostFundWalletErrors = {
     /**
-     * criticalThreshold is not below warningThreshold, or the mnemonic yields no address
+     * criticalThreshold is not below warningThreshold, topupAmount is below the min-UTxO floor, or the mnemonic is invalid
      */
     400: unknown;
     /**

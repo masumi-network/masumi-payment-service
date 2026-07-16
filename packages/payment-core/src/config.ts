@@ -323,6 +323,11 @@ export const CONSTANTS = {
 	// Blockfrost has not indexed a tx submitted in the current cycle, and a
 	// not-found there would otherwise look like a failure.
 	FUND_DISTRIBUTION_CONFIRMATION_DELAY_MS: 5 * 60 * 1000, // 5 minutes
+	// Floor for a single topup. Each distribution is one tx output, so anything
+	// below Cardano's min-UTxO can never build. Set at the collateral amount
+	// (5 ADA) rather than the bare ~1 ADA minimum: a topup smaller than that is
+	// not a useful top-up for a wallet that needs to pay fees and collateral.
+	MIN_TOPUP_LOVELACE: 5_000_000n,
 	MAX_DEFAULT_SMART_CONTRACT_HISTORY_LEVELS: 10,
 
 	FALLBACK_COINS_PER_UTXO_SIZE: 4310,

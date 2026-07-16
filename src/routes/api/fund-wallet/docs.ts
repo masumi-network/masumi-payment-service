@@ -94,7 +94,10 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 				paymentSourceId: 'cuid_v2_auto_generated',
 				FundDistributionConfig: fundDistributionConfigExample,
 			}),
-			400: { description: 'criticalThreshold is not below warningThreshold, or the mnemonic yields no address' },
+			400: {
+				description:
+					'criticalThreshold is not below warningThreshold, topupAmount is below the min-UTxO floor, or the mnemonic is invalid',
+			},
 			401: { description: 'Unauthorized' },
 			404: { description: 'Payment source not found' },
 			409: { description: 'The payment source already has a fund wallet, or this mnemonic already backs a wallet' },
@@ -143,7 +146,7 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 		method: 'delete',
 		path: '/fund-wallet',
 		description:
-			'Soft-deletes a fund wallet, disables its distribution config and cancels any outstanding distribution requests. Does NOT move funds: withdraw the remaining balance from the wallet address first, since the mnemonic can no longer be exported through the fund-wallet API afterwards.',
+			'Soft-deletes a fund wallet, disables its distribution config and cancels any outstanding distribution requests. Does NOT move funds. Refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true to delete regardless, accepting that any remaining balance is recoverable only with direct database access.',
 		summary: 'Delete a fund wallet. (admin access required)',
 		tags: ['fund-wallet'],
 		security: secured,
@@ -152,7 +155,7 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 				description: 'Fund wallet to delete',
 				content: {
 					'application/json': {
-						schema: deleteFundWalletSchemaInput.openapi({ example: { id: 'cuid_v2_auto_generated' } }),
+						schema: deleteFundWalletSchemaInput.openapi({ example: { id: 'cuid_v2_auto_generated', force: false } }),
 					},
 				},
 			},
@@ -161,6 +164,8 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 			200: successResponse('Fund wallet deleted', deleteFundWalletSchemaOutput, { id: 'cuid_v2_auto_generated' }),
 			401: { description: 'Unauthorized' },
 			404: { description: 'Fund wallet not found' },
+			409: { description: 'Fund wallet still holds funds; withdraw them or pass force=true' },
+			503: { description: 'Balance could not be checked; retry or pass force=true' },
 		},
 	});
 }

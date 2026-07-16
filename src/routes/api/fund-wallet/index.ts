@@ -7,6 +7,7 @@ import { HotWalletType, FundDistributionStatus, Prisma } from '@/generated/prism
 import { encrypt } from '@/utils/security/encryption';
 import { resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
+import { fetchAddressBalanceMap } from '@/services/shared/address-balance';
 import { walletLowBalanceMonitorService, serializeLowBalanceSummary } from '@/services/wallets';
 import {
 	deleteFundWalletSchemaInput,
@@ -29,6 +30,24 @@ export {
 	deleteFundWalletSchemaInput,
 	deleteFundWalletSchemaOutput,
 };
+
+/**
+ * Reject a topup that could never produce a valid output.
+ *
+ * Every distribution becomes one tx output, so a topupAmount below Cardano's
+ * min-UTxO makes `build()` throw every time: the batch fails, the requests are
+ * re-created next cycle, and it loops every 30s with a FAILED webhook each
+ * round. Cheap to catch here; impossible to recover from downstream.
+ */
+function assertTopupAboveMinUtxo(topupAmount: bigint) {
+	if (topupAmount < CONSTANTS.MIN_TOPUP_LOVELACE) {
+		throw createHttpError(
+			400,
+			`topupAmount must be at least ${CONSTANTS.MIN_TOPUP_LOVELACE.toString()} lovelace; ` +
+				'a smaller output cannot satisfy the Cardano min-UTxO requirement',
+		);
+	}
+}
 
 function serializeConfig(config: {
 	id: string;
@@ -156,11 +175,21 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 		if (criticalThreshold >= warningThreshold) {
 			throw createHttpError(400, 'criticalThreshold must be less than warningThreshold');
 		}
+		assertTopupAboveMinUtxo(topupAmount);
 
-		const mnemonicWords = input.walletMnemonic.trim().split(/\s+/);
-		const offlineWallet = generateOfflineWallet(paymentSource.network, mnemonicWords);
-		const unusedAddresses = await offlineWallet.getUnusedAddresses();
-		const address = unusedAddresses[0];
+		// A typo'd or truncated phrase is ordinary user input, not an exception:
+		// MeshWallet throws a bare bip39 Error, which would otherwise surface as a
+		// 500 plus an error-level log and a business-error metric.
+		let address: string | undefined;
+		try {
+			const mnemonicWords = input.walletMnemonic.trim().split(/\s+/);
+			const offlineWallet = generateOfflineWallet(paymentSource.network, mnemonicWords);
+			const unusedAddresses = await offlineWallet.getUnusedAddresses();
+			address = unusedAddresses[0];
+		} catch {
+			// Deliberately does not echo the cause: it can quote the phrase back.
+			throw createHttpError(400, 'Invalid mnemonic phrase');
+		}
 		if (!address) {
 			throw createHttpError(400, 'Could not derive address from provided mnemonic');
 		}
@@ -267,6 +296,11 @@ export const patchFundWalletEndpointPatch = adminAuthenticatedEndpointFactory.bu
 		if (newCritical >= newWarning) {
 			throw createHttpError(400, 'criticalThreshold must be less than warningThreshold');
 		}
+		// Enforced on update too, or the floor is trivially bypassed by creating a
+		// valid wallet and editing the amount down afterwards.
+		if (input.topupAmount != null) {
+			assertTopupAboveMinUtxo(BigInt(input.topupAmount));
+		}
 
 		const updated = await prisma.fundDistributionConfig.update({
 			where: { id: wallet.FundDistributionConfig.id },
@@ -293,11 +327,51 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 	handler: async ({ input }) => {
 		const wallet = await prisma.hotWallet.findUnique({
 			where: { id: input.id, type: HotWalletType.Funding, deletedAt: null },
-			select: { id: true },
+			select: {
+				id: true,
+				walletAddress: true,
+				PaymentSource: {
+					select: { network: true, PaymentSourceConfig: { select: { rpcProviderApiKey: true } } },
+				},
+			},
 		});
 
 		if (!wallet) {
 			throw createHttpError(404, 'Fund wallet not found');
+		}
+
+		// Refuse to strand funds. Every read path filters `deletedAt: null`, so
+		// once soft-deleted the mnemonic is unreachable through the API and the
+		// balance is recoverable only with DB access plus the ENCRYPTION_KEY.
+		// `force` exists for the case where the operator knows the funds are gone
+		// or accepts the loss — but it must be a deliberate act, not the default.
+		if (!input.force) {
+			const rpcProviderApiKey = wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
+			if (rpcProviderApiKey) {
+				try {
+					const balanceMap = await fetchAddressBalanceMap({
+						network: wallet.PaymentSource.network,
+						rpcProviderApiKey,
+						address: wallet.walletAddress,
+					});
+					const lovelace = balanceMap.get('lovelace') ?? 0n;
+					if (lovelace > 0n) {
+						throw createHttpError(
+							409,
+							`Fund wallet still holds ${lovelace.toString()} lovelace. Withdraw it first — after deletion the ` +
+								'mnemonic can no longer be exported through the API. Pass force=true to delete anyway.',
+						);
+					}
+				} catch (error) {
+					if (createHttpError.isHttpError(error)) throw error;
+					// Balance unknown (indexer down). Deleting blind could strand funds,
+					// so make the operator choose rather than guessing for them.
+					throw createHttpError(
+						503,
+						'Could not check the fund wallet balance before deleting. Retry, or pass force=true to delete without the check.',
+					);
+				}
+			}
 		}
 
 		await prisma.$transaction(async (tx) => {

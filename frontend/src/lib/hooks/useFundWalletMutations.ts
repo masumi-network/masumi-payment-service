@@ -33,7 +33,10 @@ export function useFundWalletMutations(paymentSourceId: string | null | undefine
   });
 
   const removeFundWallet = useApiMutation({
-    mutationFn: (id: string) => deleteFundWallet({ client: apiClient, body: { id } }),
+    // `force` skips the server's still-holds-funds guard. Surfaced as an
+    // argument rather than hardcoded, so the caller has to opt in per click.
+    mutationFn: (args: { id: string; force?: boolean }) =>
+      deleteFundWallet({ client: apiClient, body: args }),
     invalidateKeys,
     errorMessage: 'Failed to delete fund wallet',
   });

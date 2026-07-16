@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs } from '@/components/ui/tabs';
@@ -45,36 +46,75 @@ export function FundWalletDialog({
   const { selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
   const [activeTab, setActiveTab] = useState('Settings');
 
-  const { fundWallet, isLoading } = useFundWallet();
+  const { fundWallet, isLoading, error, refetch } = useFundWallet();
   const { distributions, isLoading: isLoadingDistributions } = useFundDistributions(
     fundWallet?.id,
     {
       enabled: open && activeTab === 'Activity',
     },
   );
-  const { createFundWallet, updateFundWallet, triggerDistribution } =
+  const { createFundWallet, updateFundWallet, removeFundWallet, triggerDistribution } =
     useFundWalletMutations(selectedPaymentSourceId);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
   const network = selectedPaymentSource?.network ?? 'Preprod';
 
+  // useApiMutation already toasts on failure, but mutateAsync still rejects.
+  // Swallow it here so a handled error doesn't surface as an unhandled rejection.
   const handleCreate = async (values: FundWalletSetupSubmit) => {
     if (!selectedPaymentSourceId) return;
-    await createFundWallet.mutateAsync({ ...values, paymentSourceId: selectedPaymentSourceId });
-    toast.success('Fund wallet created. Send ADA to its address to start topping up.');
-    onSuccess?.();
+    try {
+      await createFundWallet.mutateAsync({ ...values, paymentSourceId: selectedPaymentSourceId });
+      toast.success('Fund wallet created. Send ADA to its address to start topping up.');
+      onSuccess?.();
+    } catch {
+      /* surfaced by useApiMutation's error toast */
+    }
   };
 
   const handleUpdate = async (values: FundWalletSettingsSubmit) => {
     if (!fundWallet) return;
-    await updateFundWallet.mutateAsync({ id: fundWallet.id, ...values });
-    toast.success('Fund wallet settings saved');
-    onSuccess?.();
+    try {
+      await updateFundWallet.mutateAsync({ id: fundWallet.id, ...values });
+      toast.success('Fund wallet settings saved');
+      onSuccess?.();
+    } catch {
+      /* surfaced by useApiMutation's error toast */
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!fundWallet) return;
+    try {
+      // Deliberately NOT forced. The server refuses while the wallet still holds
+      // funds, and that 409 is the useful outcome — it tells the operator to
+      // withdraw first, rather than silently stranding the balance.
+      await removeFundWallet.mutateAsync({ id: fundWallet.id });
+      toast.success('Fund wallet deleted');
+      setIsConfirmingDelete(false);
+      onSuccess?.();
+      onClose();
+    } catch {
+      // The 409 ("still holds N lovelace, withdraw first") is surfaced by
+      // useApiMutation's toast. Keep the confirm open so the message is read.
+    }
   };
 
   const handleTrigger = async () => {
-    await triggerDistribution.mutateAsync(undefined);
-    // The endpoint returns before the cycle runs, so don't claim funds moved.
-    toast.success('Distribution cycle triggered');
+    try {
+      const response = await triggerDistribution.mutateAsync(undefined);
+      // Report what actually happened. The endpoint returns before the cycle
+      // runs (so never claim funds moved), and when a cycle is already in
+      // flight the trigger is a no-op — saying "triggered" would be a lie.
+      const alreadyRunning = response?.data?.data?.alreadyRunning === true;
+      toast.success(
+        alreadyRunning
+          ? 'A distribution cycle is already running'
+          : 'Distribution cycle triggered. Top-ups appear here once submitted.',
+      );
+    } catch {
+      /* surfaced by useApiMutation's error toast */
+    }
   };
 
   return (
@@ -90,6 +130,18 @@ export function FundWalletDialog({
         {isLoading ? (
           <div className="flex justify-center py-8">
             <Spinner size={20} />
+          </div>
+        ) : error ? (
+          // Never fall through to the create form on a failed load: this source
+          // may already have a funded treasury, and offering "create" would ask
+          // for a seed phrase the server can only reject.
+          <div className="space-y-3 py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              Could not load the fund wallet for this payment source.
+            </p>
+            <Button variant="outline" size="sm" onClick={() => void refetch()}>
+              Retry
+            </Button>
           </div>
         ) : !fundWallet ? (
           <FundWalletSetupForm onSubmit={handleCreate} isSubmitting={createFundWallet.isPending} />
@@ -125,17 +177,36 @@ export function FundWalletDialog({
             />
 
             {activeTab === 'Settings' ? (
-              fundWallet.FundDistributionConfig ? (
-                <FundWalletSettingsForm
-                  config={fundWallet.FundDistributionConfig}
-                  onSubmit={handleUpdate}
-                  isSubmitting={updateFundWallet.isPending}
-                />
-              ) : (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  This fund wallet has no distribution config.
-                </p>
-              )
+              <div className="space-y-4">
+                {fundWallet.FundDistributionConfig ? (
+                  <FundWalletSettingsForm
+                    config={fundWallet.FundDistributionConfig}
+                    onSubmit={handleUpdate}
+                    isSubmitting={updateFundWallet.isPending}
+                  />
+                ) : (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    This fund wallet has no distribution config.
+                  </p>
+                )}
+
+                <div className="border-t pt-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      To stop top-ups temporarily, turn off automatic distribution above — deleting
+                      is permanent and does not move funds.
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 text-destructive hover:text-destructive"
+                      onClick={() => setIsConfirmingDelete(true)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="space-y-3">
                 <div className="flex justify-end">
@@ -158,6 +229,21 @@ export function FundWalletDialog({
           </div>
         )}
       </DialogContent>
+
+      <ConfirmDialog
+        open={isConfirmingDelete}
+        onClose={() => setIsConfirmingDelete(false)}
+        title="Delete fund wallet?"
+        description={
+          'This does not move any funds. After deletion the mnemonic can no longer be exported, so withdraw the balance first — otherwise it is recoverable only with direct database access. Outstanding top-up requests are cancelled.'
+        }
+        onConfirm={() => void handleDelete()}
+        isLoading={removeFundWallet.isPending}
+        requireConfirmation
+        confirmationText="DELETE"
+        // Rendered inside the fund wallet dialog, so it needs to stack above it.
+        elevatedChildStack
+      />
     </Dialog>
   );
 }

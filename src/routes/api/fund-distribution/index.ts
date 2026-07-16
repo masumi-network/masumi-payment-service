@@ -35,7 +35,15 @@ export const getFundDistributionEndpointGet = adminAuthenticatedEndpointFactory.
 				},
 				select: { id: true },
 			});
-			resolvedFundWalletId = fundWallet?.id;
+
+			if (fundWallet == null) {
+				// The source has no fund wallet, so it has no distributions. Returning
+				// early matters: falling through would leave the filter unset and the
+				// query would answer a scoped request with every distribution in the
+				// system, silently.
+				return { FundDistributions: [] };
+			}
+			resolvedFundWalletId = fundWallet.id;
 		}
 
 		const requests = await prisma.fundDistributionRequest.findMany({
