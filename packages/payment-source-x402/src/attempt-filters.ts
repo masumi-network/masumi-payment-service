@@ -1,35 +1,93 @@
-import { X402PaymentDirection, X402PaymentStatus } from '@masumi/payment-core/db';
+import createHttpError from 'http-errors';
+import { Prisma, X402PaymentDirection, X402PaymentStatus } from '@masumi/payment-core/db';
+import { SETTLE_STALE_MS } from './settle-lock';
 
 export type X402AttemptFilterInput = {
 	status?: X402PaymentStatus;
 	direction?: X402PaymentDirection;
+	// Coarse buy/sell filter for the "Pay" (outbound) vs "Receive" (both inbound directions)
+	// views. A specific `direction` takes precedence when both are supplied.
+	side?: 'buy' | 'sell';
 	caip2Network?: string;
 	filterNeedsManualAction?: boolean;
+	// Tenant scope: when set, restricts to attempts initiated by this API key (undefined = all,
+	// for an admin/operator). This is how a downgraded pay key sees only its own node history.
+	apiKeyId?: string;
 };
+
+// Resolve the direction filter: an explicit direction wins; otherwise a side maps to its group
+// (buy → the single outbound direction, sell → both inbound directions).
+function resolveDirectionFilter(input: X402AttemptFilterInput): Prisma.X402PaymentAttemptWhereInput['direction'] {
+	if (input.direction != null) return input.direction;
+	if (input.side === 'buy') return X402PaymentDirection.OutboundPayment;
+	if (input.side === 'sell') {
+		return { in: [X402PaymentDirection.InboundVerify, X402PaymentDirection.InboundSettle] };
+	}
+	return undefined;
+}
 
 /**
  * Where-fragment shared by listX402PaymentAttempts and
  * countX402PaymentAttempts.
  *
- * `filterNeedsManualAction` selects the settle-reconciliation backlog: rows
- * the settle path intentionally left `Verified` with a recorded error
- * (settle threw, or the facilitator reported failure) instead of
- * auto-failing — see the settle handling in service.ts. Those rows need an
- * operator to check the chain before retrying or refunding, so this filter
- * overrides an explicit status filter.
+ * `filterNeedsManualAction` selects the settle-reconciliation backlog —
+ * the states reconcileX402PaymentAttempt accepts:
+ *   - a stale `Verified` InboundSettle marker, with or without a recorded
+ *     error (settle threw, timed out, or was interrupted).
+ *   - a stale `Settled` InboundSettle missing its settlement row (settle
+ *     succeeded but persisting the settlement failed).
+ * Staleness (SETTLE_STALE_MS) keeps live in-flight settles out of the
+ * backlog. A fresh self-hosted facilitator lock does too, even if the
+ * attempt heartbeat itself is late. Those rows need an operator to check
+ * the chain before retrying or refunding, so this filter overrides an
+ * explicit status filter.
  */
-export function buildX402AttemptWhere(input: X402AttemptFilterInput) {
+export function buildX402AttemptWhere(
+	input: X402AttemptFilterInput,
+	databaseNow?: Date,
+): Prisma.X402PaymentAttemptWhereInput {
+	// Network is filtered through the rail relation now that the attempt has no caip2Network column.
+	const networkFilter: Prisma.X402PaymentAttemptWhereInput =
+		input.caip2Network != null ? { Network: { caip2Id: input.caip2Network } } : {};
 	if (input.filterNeedsManualAction === true) {
+		// `Verified` is also the terminal state of every successful InboundVerify attempt, so the
+		// branch pins direction to InboundSettle instead of flooding the backlog with healthy
+		// verifies. Reconcile only accepts inbound settlement attempts.
+		if (databaseNow == null) {
+			throw createHttpError(500, 'databaseNow is required for the x402 manual-action filter');
+		}
+		const stuckBefore = new Date(databaseNow.getTime() - SETTLE_STALE_MS);
+		// Reconciliation uses this exact second half of the lease check too: a row is not
+		// abandoned while its facilitator wallet has a fresh lock. `NOT relation.is` keeps remote
+		// attempts (no EvmWallet relation) and stale/null locks eligible.
+		const hasNoFreshFacilitatorLock: Prisma.X402PaymentAttemptWhereInput = {
+			NOT: { EvmWallet: { is: { lockedAt: { gte: stuckBefore } } } },
+		};
 		return {
-			direction: input.direction,
-			caip2Network: input.caip2Network,
-			status: X402PaymentStatus.Verified,
-			errorReason: { not: null },
+			...networkFilter,
+			apiKeyId: input.apiKeyId,
+			direction: resolveDirectionFilter(input),
+			OR: [
+				{
+					direction: X402PaymentDirection.InboundSettle,
+					status: X402PaymentStatus.Verified,
+					updatedAt: { lt: stuckBefore },
+					...hasNoFreshFacilitatorLock,
+				},
+				{
+					direction: X402PaymentDirection.InboundSettle,
+					status: X402PaymentStatus.Settled,
+					Settlement: { is: null },
+					updatedAt: { lt: stuckBefore },
+					...hasNoFreshFacilitatorLock,
+				},
+			],
 		};
 	}
 	return {
+		...networkFilter,
+		apiKeyId: input.apiKeyId,
 		status: input.status,
-		direction: input.direction,
-		caip2Network: input.caip2Network,
+		direction: resolveDirectionFilter(input),
 	};
 }

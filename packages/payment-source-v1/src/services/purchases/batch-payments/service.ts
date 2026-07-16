@@ -24,7 +24,7 @@ import { isTransientPreSubmitError } from '@masumi/payment-core/pre-submit-error
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
-import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
+import { type BalanceMap, toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
 	connectExistingTransaction,
 	connectPreviousAction,
@@ -69,6 +69,7 @@ type WalletPairing = {
 	changeAddress: string;
 	collectionAddress: string | null;
 	utxos: UTxO[];
+	currentBalanceMap: BalanceMap | null;
 	batchedRequests: BatchedRequest[];
 };
 
@@ -371,6 +372,7 @@ async function executeSpecificBatchPayment(
 			walletUtxos: walletPairing.utxos,
 			unsignedTx: completeTx,
 			checkSource: 'submission',
+			currentBalanceMap: walletPairing.currentBalanceMap ?? undefined,
 		});
 	} catch (balanceError) {
 		logger.warn('batch-payments post-submit balance monitor failed (non-fatal; tx already on chain)', {
@@ -588,13 +590,17 @@ export async function batchLatestPaymentEntriesV1() {
 								wallet.Secret.encryptedMnemonic,
 							);
 							const balanceMap = toBalanceMapFromMeshUtxos(utxos);
-							await walletLowBalanceMonitorService.evaluateHotWalletById(wallet.id, balanceMap, 'submission');
+							const currentBalanceMap = await walletLowBalanceMonitorService.evaluateCurrentHotWalletById(
+								wallet.id,
+								'submission',
+							);
 							return {
 								wallet: meshWallet,
 								walletId: wallet.id,
 								changeAddress: address,
 								collectionAddress: wallet.collectionAddress,
 								utxos,
+								currentBalanceMap,
 								scriptAddress: paymentContract.smartContractAddress,
 								amounts: Array.from(balanceMap.entries()).map(([unit, quantity]) => ({
 									unit: unit === 'lovelace' ? '' : unit,
@@ -771,30 +777,32 @@ export async function batchLatestPaymentEntriesV1() {
 								changeAddress: walletData.changeAddress,
 								collectionAddress: walletData.collectionAddress,
 								utxos: walletData.utxos,
+								currentBalanceMap: walletData.currentBalanceMap,
 								batchedRequests: batchedPaymentRequests,
 							});
 						}
 					}
 					//only go into error state if we did not reach max batch size, as otherwise we might have enough funds in other wallets
 					if (paymentRequestsRemaining.length > 0 && maxBatchSizeReached == false) {
+						//count all existing wallets, including ones busy with a pending transaction or locked by
+						//a concurrent run: a busy wallet frees up with its funds intact, so it must suppress the
+						//permanent error state instead of being treated as nonexistent
 						const allWalletCount = await prisma.hotWallet.count({
 							where: {
 								deletedAt: null,
 								type: HotWalletType.Purchasing,
-								PendingTransaction: null,
 								PaymentSource: {
 									id: paymentContract.id,
 								},
 							},
 						});
-						//only go into error state if all eligible wallets were unlocked, otherwise we might have enough funds in other wallets
+						//only go into error state if all eligible wallets were evaluated this run, otherwise we might have enough funds in busy wallets
 						for (const paymentRequest of paymentRequestsRemaining) {
 							const eligibleWalletCount = paymentRequest.isLimitedToHotWallets
 								? await prisma.hotWallet.count({
 										where: {
 											deletedAt: null,
 											type: HotWalletType.Purchasing,
-											PendingTransaction: null,
 											PaymentSource: { id: paymentContract.id },
 											id: { in: paymentRequest.HotWalletLimit.map((hw) => hw.id) },
 										},
@@ -806,6 +814,8 @@ export async function batchLatestPaymentEntriesV1() {
 							if (eligibleWalletCount == eligiblePotentialCount) {
 								logger.warn('No wallets with funds found, going into error state for', {
 									purchaseRequestId: paymentRequest.id,
+									eligibleWalletCount,
+									eligiblePotentialCount,
 								});
 								await prisma.purchaseRequest.update({
 									where: { id: paymentRequest.id },

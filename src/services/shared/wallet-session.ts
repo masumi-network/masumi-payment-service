@@ -1,11 +1,10 @@
 import { Network } from '@/generated/prisma/client';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import {
-	type MeshLikeUtxo,
+	type BalanceMap,
 	type ProjectableMeshLikeUtxo,
 	type ProjectableWalletUtxo,
 	type WalletBalanceCheckSource,
-	toBalanceMapFromMeshUtxos,
 	walletLowBalanceMonitorService,
 } from '@/services/wallets';
 
@@ -28,11 +27,11 @@ export async function loadHotWalletSession(params: {
 }): Promise<WalletSession> {
 	const checkSource = params.checkSource ?? 'submission';
 	const session = await generateWalletExtended(params.network, params.rpcProviderApiKey, params.encryptedMnemonic);
+	let currentBalanceMap: BalanceMap | null = null;
 
 	if (params.evaluateBalance !== false) {
-		await walletLowBalanceMonitorService.evaluateHotWalletById(
+		currentBalanceMap = await walletLowBalanceMonitorService.evaluateCurrentHotWalletById(
 			params.hotWalletId,
-			toBalanceMapFromMeshUtxos(session.utxos as MeshLikeUtxo[]),
 			checkSource,
 		);
 	}
@@ -51,6 +50,7 @@ export async function loadHotWalletSession(params: {
 				walletUtxos: walletUtxos ?? session.utxos,
 				unsignedTx,
 				checkSource,
+				currentBalanceMap: currentBalanceMap ?? undefined,
 			});
 		},
 	};

@@ -1,4 +1,4 @@
-import type { X402Network } from '@/lib/api/generated';
+import type { X402Budget, X402Network, X402Wallet } from '@/lib/api/generated';
 import type { NetworkType } from '@/lib/contexts/AppContext';
 
 /**
@@ -27,14 +27,33 @@ export function chainsForEnv(chains: X402Network[], network: NetworkType): X402N
   return chains.filter((chain) => chain.isEnabled && chain.isTestnet === wantTestnet);
 }
 
+/** Managed wallets structurally bound to one of the supplied x402 networks. */
+export function walletsForNetworks(wallets: X402Wallet[], networks: X402Network[]): X402Wallet[] {
+  const networkIds = new Set(networks.map((network) => network.id));
+  return wallets.filter((wallet) => networkIds.has(wallet.networkId));
+}
+
+/** Whether any budget belongs to an enabled network in the supplied environment scope. */
+export function hasBudgetOnEnabledNetworks(
+  budgets: Pick<X402Budget, 'caip2Network'>[],
+  networks: X402Network[],
+): boolean {
+  const enabledNetworkIds = new Set(
+    networks.filter((network) => network.isEnabled).map((network) => network.caip2Id),
+  );
+  return budgets.some((budget) => enabledNetworkIds.has(budget.caip2Network));
+}
+
 /**
  * Whether a chain can actually serve x402 payments right now: enabled, reachable (RPC
- * URL set), and with a facilitator wallet assigned to settle on it. An enabled-but-
+ * URL set), and with either a self-hosted wallet or remote facilitator assigned. An enabled-but-
  * unconfigured chain (no facilitator / blank RPC) is not selectable as an active rail —
  * picking it should route to setup instead of pretending the rail works.
  */
 export function isX402ChainUsable(chain: X402Network): boolean {
-  return chain.isEnabled && !!chain.facilitatorWalletId && !!chain.rpcUrl;
+  return (
+    chain.isEnabled && (!!chain.facilitatorWalletId || !!chain.facilitatorUrl) && !!chain.rpcUrl
+  );
 }
 
 /**

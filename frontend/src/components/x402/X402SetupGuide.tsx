@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, CheckCircle2, ChevronDown, Coins, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { X402_ACCENT } from '@/lib/x402-rail';
+import { hasBudgetOnEnabledNetworks, walletsForNetworks, X402_ACCENT } from '@/lib/x402-rail';
 import { X402Network, X402Wallet } from '@/lib/api/generated';
 import { CreateWalletDialog } from './WalletsTab';
 import { ChainDialog } from './ChainsTab';
@@ -37,19 +37,22 @@ export function X402SetupGuide() {
   const [collapsed, setCollapsed] = useState(false);
 
   const loading = walletsLoading || networksLoading || budgetsLoading;
+  const envWallets = useMemo(() => walletsForNetworks(wallets, networks), [wallets, networks]);
   // Wallets are split by direction: a Selling wallet settles inbound payments (facilitator),
   // a Purchasing wallet funds outbound ones (budget). Each capability needs its own type.
-  const hasSellingWallet = wallets.some((wallet) => wallet.type === 'Selling');
-  const hasPurchasingWallet = wallets.some((wallet) => wallet.type === 'Purchasing');
+  const hasPurchasingWallet = envWallets.some((wallet) => wallet.type === 'Purchasing');
+  // A chain settles either through an owned Selling wallet or a remote facilitator URL —
+  // both count as "receiving works", so a remote-only rail doesn't re-show the guide.
   const hasFacilitator = networks.some(
-    (network) => network.isEnabled && !!network.facilitatorWalletId,
+    (network) => network.isEnabled && (!!network.facilitatorWalletId || !!network.facilitatorUrl),
   );
-  // `networks` is already scoped to the active environment (testnet chains ↔ Preprod,
-  // mainnet ↔ Mainnet), but budgets are fetched across every environment. Scope budgets
-  // to the active env by their chain, so a budget on another environment can't mark this
-  // env's rail "usable" and suppress the guide while receiving here is still unset.
-  const envChainIds = new Set(networks.map((network) => network.caip2Id));
-  const hasBudget = budgets.some((budget) => envChainIds.has(budget.caip2Network));
+  // `networks` is already scoped to the active environment, but budgets span every environment.
+  // Only an enabled chain can make the outbound rail ready; budgets may be preconfigured while
+  // their chain is disabled and must not suppress setup in that state.
+  const hasBudget = useMemo(
+    () => hasBudgetOnEnabledNetworks(budgets, networks),
+    [budgets, networks],
+  );
   const completedCount = [hasFacilitator, hasBudget].filter(Boolean).length;
   // "Usable" = at least one side works (facilitator for receiving, budget for paying).
   // We intentionally don't require both — an operator may only do one side.
@@ -62,12 +65,17 @@ export function X402SetupGuide() {
   if (!apiClient || !authorized || loading || usable) return null;
 
   // Prefer attaching a facilitator to an existing enabled chain — Base ships
-  // preconfigured by the seed — and fall back to adding a brand new chain.
+  // preconfigured by the seed — and fall back to adding a brand new chain. Never pick a
+  // chain that already has a facilitator (wallet OR remote): re-opening a configured
+  // remote chain in the edit dialog would resend its URL without the write-only auth.
   const chainToConfigure: X402Network | null =
-    networks.find((network) => network.isEnabled && !network.facilitatorWalletId) ??
+    networks.find(
+      (network) => network.isEnabled && !network.facilitatorWalletId && !network.facilitatorUrl,
+    ) ??
     networks[0] ??
     null;
-  const configuredChain = networks.find((n) => n.isEnabled && !!n.facilitatorWalletId) ?? null;
+  const configuredChain =
+    networks.find((n) => n.isEnabled && (!!n.facilitatorWalletId || !!n.facilitatorUrl)) ?? null;
 
   const invalidate = (keys: string[][]) =>
     keys.forEach((queryKey) => queryClient.invalidateQueries({ queryKey }));
@@ -80,7 +88,7 @@ export function X402SetupGuide() {
   // Show the wallets the operator already has for a direction, so the guide reflects state
   // rather than re-asking them to create one.
   const walletChips = (type: X402Wallet['type']) => {
-    const matching = wallets.filter((wallet) => wallet.type === type);
+    const matching = envWallets.filter((wallet) => wallet.type === type);
     if (matching.length === 0) return null;
     return (
       <div className="flex flex-wrap gap-1.5 pt-1.5">
@@ -105,7 +113,7 @@ export function X402SetupGuide() {
       done: hasFacilitator,
       icon: Link2,
       title: 'Enable receiving payments',
-      body: 'Create a Selling wallet and assign it as a chain facilitator (Base is preconfigured) so your agents can be paid over x402.',
+      body: 'Configure a remote facilitator, or assign a Selling wallet for self-hosted settlement, so your agents can be paid over x402.',
       detail: (
         <>
           {walletChips('Selling')}
@@ -116,12 +124,8 @@ export function X402SetupGuide() {
           )}
         </>
       ),
-      actionLabel: !hasSellingWallet
-        ? 'Create selling wallet'
-        : hasFacilitator
-          ? 'Manage chains'
-          : 'Assign facilitator',
-      onAction: () => (hasSellingWallet ? setOpenDialog('chain') : openWalletDialog('Selling')),
+      actionLabel: hasFacilitator ? 'Manage chains' : 'Configure facilitator',
+      onAction: () => setOpenDialog('chain'),
     },
     {
       done: hasBudget,
@@ -151,8 +155,8 @@ export function X402SetupGuide() {
           </div>
           <p className="max-w-2xl text-sm text-muted-foreground">
             The x402 rail lets your agents pay — and get paid by — other agents over EVM chains
-            using stablecoins. Create a Selling wallet to receive payments and a Purchasing wallet
-            to send them.
+            using stablecoins. Configure a remote or self-hosted facilitator to receive payments,
+            and use a Purchasing wallet with a budget to send them.
           </p>
         </div>
         <Button

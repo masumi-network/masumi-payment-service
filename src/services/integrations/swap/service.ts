@@ -7,12 +7,7 @@ import { SundaeUtils } from '@sundaeswap/core/utilities';
 import type { IPoolData } from '@sundaeswap/core';
 import { logger } from '@masumi/payment-core/logger';
 import { BlockFrostAPI } from '@blockfrost/blockfrost-js';
-import {
-	toBalanceMapFromLucidUtxos,
-	type LucidLikeUtxo,
-	type ProjectableLucidLikeUtxo,
-	walletLowBalanceMonitorService,
-} from '@/services/wallets';
+import { type ProjectableLucidLikeUtxo, walletLowBalanceMonitorService } from '@/services/wallets';
 
 export interface Token {
 	policyId: string;
@@ -139,9 +134,8 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 
 		const wallet = await getWalletFromMnemonic(params.mnemonic, blockfrostApiKey);
 		const walletUtxos = await wallet.lucid.wallet.getUtxos();
-		await walletLowBalanceMonitorService.evaluateHotWalletById(
+		const currentBalanceMap = await walletLowBalanceMonitorService.evaluateCurrentHotWalletById(
 			params.walletId,
-			toBalanceMapFromLucidUtxos(walletUtxos as LucidLikeUtxo[]),
 			'submission',
 		);
 		const adaBalance =
@@ -229,6 +223,7 @@ export async function swapTokens(params: SwapParams, blockfrostApiKey: string): 
 			walletUtxos: walletUtxos as ProjectableLucidLikeUtxo[],
 			unsignedTx,
 			checkSource: 'submission',
+			currentBalanceMap: currentBalanceMap ?? undefined,
 		});
 
 		logger.info('Transaction submitted successfully', {
@@ -271,9 +266,8 @@ export async function cancelSwapOrder(params: CancelSwapParams, blockfrostApiKey
 
 		const wallet = await getWalletFromMnemonic(params.mnemonic, blockfrostApiKey);
 		const walletUtxos = await wallet.lucid.wallet.getUtxos();
-		await walletLowBalanceMonitorService.evaluateHotWalletById(
+		const currentBalanceMap = await walletLowBalanceMonitorService.evaluateCurrentHotWalletById(
 			params.walletId,
-			toBalanceMapFromLucidUtxos(walletUtxos as LucidLikeUtxo[]),
 			'submission',
 		);
 		const txBuilder = new TxBuilderLucidV3(wallet.lucid, 'mainnet', new QueryProviderSundaeSwap('mainnet'));
@@ -375,6 +369,7 @@ export async function cancelSwapOrder(params: CancelSwapParams, blockfrostApiKey
 			walletUtxos: walletUtxos as ProjectableLucidLikeUtxo[],
 			unsignedTx: txHex,
 			checkSource: 'submission',
+			currentBalanceMap: currentBalanceMap ?? undefined,
 		});
 
 		logger.info('Cancel transaction submitted', {

@@ -1,5 +1,5 @@
 import createHttpError from 'http-errors';
-import { X402EvmWalletType, prisma } from '@masumi/payment-core/db';
+import { Prisma, X402CounterpartyRole, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { defineChain, http } from 'viem';
 
@@ -72,19 +72,30 @@ function isPrivateHost(hostname: string): boolean {
 // that are literal private/loopback/link-local addresses (e.g. the cloud metadata IP).
 // This checks the hostname/literal IP only and does not resolve DNS, so it is a
 // mitigation rather than a complete SSRF defense.
-export function assertSafeRpcUrl(rpcUrl: string): void {
+function assertSafeHttpUrl(value: string, label: string, requireHttps: boolean): void {
 	let url: URL;
 	try {
-		url = new URL(rpcUrl);
+		url = new URL(value);
 	} catch {
-		throw createHttpError(400, 'x402 network rpcUrl must be a valid URL');
+		throw createHttpError(400, `${label} must be a valid URL`);
 	}
-	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-		throw createHttpError(400, 'x402 network rpcUrl must use http or https');
+	if (requireHttps ? url.protocol !== 'https:' : url.protocol !== 'http:' && url.protocol !== 'https:') {
+		throw createHttpError(400, `${label} must use ${requireHttps ? 'https' : 'http or https'}`);
 	}
 	if (isPrivateHost(url.hostname)) {
-		throw createHttpError(400, 'x402 network rpcUrl must not target a private, loopback or link-local address');
+		throw createHttpError(400, `${label} must not target a private, loopback or link-local address`);
 	}
+}
+
+export function assertSafeRpcUrl(rpcUrl: string): void {
+	assertSafeHttpUrl(rpcUrl, 'x402 network rpcUrl', false);
+}
+
+// Remote facilitator calls carry a payment authorization and can also carry an encrypted-at-rest
+// Authorization header. Unlike an RPC URL, plaintext HTTP is never acceptable for that material.
+// Keep the literal-host SSRF guard as defense in depth at both persistence and use time.
+export function assertSafeFacilitatorUrl(facilitatorUrl: string): void {
+	assertSafeHttpUrl(facilitatorUrl, 'x402 network facilitatorUrl', true);
 }
 
 // Build a viem HTTP transport with an SSRF check and a request timeout, so a slow or
@@ -162,7 +173,10 @@ export async function getX402NetworkOrThrow(caip2Network: string) {
 	const network = await prisma.x402Network.findUnique({
 		where: { caip2Id: caip2Network },
 		include: {
-			FacilitatorWallet: true,
+			// The facilitator's Secret is needed to build a local settlement signer; loading it
+			// here keeps getFacilitatorForNetwork to a single query. Remote-facilitator networks
+			// have no FacilitatorWallet and rely on facilitatorUrl instead.
+			FacilitatorWallet: { include: { Secret: true } },
 		},
 	});
 	if (network == null || !network.isEnabled) {
@@ -171,13 +185,25 @@ export async function getX402NetworkOrThrow(caip2Network: string) {
 	return network;
 }
 
-export async function getManagedWalletOrThrow(evmWalletId: string, expectedType?: X402EvmWalletType) {
-	const wallet = await prisma.x402EvmWallet.findUnique({
-		where: { id: evmWalletId, deletedAt: null },
-	});
-	if (wallet == null) {
+// Ownership scope for managed EVM wallets. A wallet is owned by the API key that created it
+// (createdById). A null scope is an admin/operator with access to every wallet; a string scope
+// restricts access to the wallets that key created. This is the tenant-isolation primitive that
+// lets a downgraded (pay-authenticated) key manage and spend only its own custodial wallets —
+// without it any key could address another tenant's node-custodied wallet and drain it.
+export type X402OwnerScope = string | null;
+
+export function buildOwnerScopeWhere(scope: X402OwnerScope): { createdById?: string } {
+	return scope == null ? {} : { createdById: scope };
+}
+
+export function assertWalletOwner(scope: X402OwnerScope, wallet: { createdById: string | null }) {
+	// 404 (not 403) so a scoped key cannot distinguish "exists but not yours" from "absent".
+	if (scope != null && wallet.createdById !== scope) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
+}
+
+function assertWalletType(wallet: { type: X402EvmWalletType }, expectedType?: X402EvmWalletType) {
 	// Enforce the direction split: a Purchasing wallet may only fund outbound payments
 	// and a Selling wallet may only settle inbound ones, so reject a wallet used for the
 	// wrong side rather than letting it sign on a side it was not provisioned for.
@@ -189,5 +215,68 @@ export async function getManagedWalletOrThrow(evmWalletId: string, expectedType?
 				: 'Managed EVM wallet is not a Selling wallet',
 		);
 	}
+}
+
+export async function getManagedWalletOrThrow(
+	evmWalletId: string,
+	expectedType?: X402EvmWalletType,
+	ownerScope: X402OwnerScope = null,
+) {
+	const wallet = await prisma.x402EvmWallet.findUnique({
+		where: { id: evmWalletId, deletedAt: null },
+	});
+	if (wallet == null) {
+		throw createHttpError(404, 'Managed EVM wallet not found');
+	}
+	assertWalletOwner(ownerScope, wallet);
+	assertWalletType(wallet, expectedType);
 	return wallet;
+}
+
+// Load a managed wallet together with its encrypted key (Secret) and bound Network, for the
+// signing/settling paths that must decrypt the key and pin the chain. Kept separate from
+// getManagedWalletOrThrow so validation-only callers never over-fetch the secret material.
+export async function getManagedWalletWithSecretOrThrow(
+	evmWalletId: string,
+	expectedType?: X402EvmWalletType,
+	ownerScope: X402OwnerScope = null,
+) {
+	const wallet = await prisma.x402EvmWallet.findUnique({
+		where: { id: evmWalletId, deletedAt: null },
+		include: { Secret: true, Network: true },
+	});
+	if (wallet == null) {
+		throw createHttpError(404, 'Managed EVM wallet not found');
+	}
+	assertWalletOwner(ownerScope, wallet);
+	assertWalletType(wallet, expectedType);
+	return wallet;
+}
+
+// Resolve (idempotently) the counterparty entity for an attempt and return its id. The
+// address is normalized so the same on-chain party dedupes to one row per (chain, role).
+// Returns null for a missing/empty address (e.g. an inbound payer not yet reported).
+export async function upsertCounterpartyWalletId(
+	client: Prisma.TransactionClient | typeof prisma,
+	input: { caip2Network: string; address: string | null | undefined; role: X402CounterpartyRole },
+): Promise<string | null> {
+	if (input.address == null || input.address === '') return null;
+	const address = normalizeAddress(input.address);
+	// Prisma's `upsert` compiles to find-then-create under the pg driver adapter (not a native
+	// ON CONFLICT), so two concurrent first-inserts of the same counterparty lose the unique race
+	// with P2002 — which, when this runs inside a transaction (the outbound reserve path), aborts
+	// the whole tx and fails the payment. Use a native ON CONFLICT DO NOTHING so concurrent callers
+	// converge on one row with no error, then read the id back (it is guaranteed to exist).
+	await client.$executeRaw`
+		INSERT INTO "X402CounterpartyWallet" ("id", "updatedAt", "caip2Network", "address", "role")
+		VALUES (gen_random_uuid()::text, now(), ${input.caip2Network}, ${address}, ${input.role}::"X402CounterpartyRole")
+		ON CONFLICT ("caip2Network", "address", "role") DO NOTHING
+	`;
+	const counterparty = await client.x402CounterpartyWallet.findUniqueOrThrow({
+		where: {
+			caip2Network_address_role: { caip2Network: input.caip2Network, address, role: input.role },
+		},
+		select: { id: true },
+	});
+	return counterparty.id;
 }
