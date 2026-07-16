@@ -4,7 +4,6 @@ import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
-import { HotWalletType } from '@/generated/prisma/client';
 import { isCardanoAddressForNetwork } from '@masumi/payment-core/payment-source';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
@@ -94,187 +93,91 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof getWalletSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
-			if (input.walletType == 'Selling') {
-				const result = await prisma.hotWallet.findFirst({
-					where: {
-						id: input.id,
-						type: HotWalletType.Selling,
-						PaymentSource: {
-							network: { in: ctx.networkLimit },
-						},
-						deletedAt: null,
+			// One query parameterised by type. Previously this was a
+			// Selling branch and a near-identical Purchasing branch with a
+			// trailing `throw 400`, which meant every new HotWalletType was
+			// rejected here by default -- Funding wallets 400'd on both Export
+			// Wallet and the low-balance rules panel.
+			const walletTypeLabel = input.walletType.toLowerCase();
+			const result = await prisma.hotWallet.findFirst({
+				where: {
+					id: input.id,
+					type: input.walletType,
+					PaymentSource: {
+						network: { in: ctx.networkLimit },
 					},
-					include: {
-						Secret: {
-							select: {
-								encryptedMnemonic: true,
-								createdAt: true,
-								updatedAt: true,
-							},
-						},
-						PendingTransaction: {
-							select: {
-								createdAt: true,
-								updatedAt: true,
-								txHash: true,
-								lastCheckedAt: true,
-							},
-						},
-						LowBalanceRules: {
-							orderBy: [{ assetUnit: 'asc' }],
-							select: {
-								id: true,
-								assetUnit: true,
-								thresholdAmount: true,
-								enabled: true,
-								status: true,
-								lastKnownAmount: true,
-								lastCheckedAt: true,
-								lastAlertedAt: true,
-							},
+					deletedAt: null,
+				},
+				include: {
+					Secret: {
+						select: {
+							encryptedMnemonic: true,
+							createdAt: true,
+							updatedAt: true,
 						},
 					},
+					PendingTransaction: {
+						select: {
+							createdAt: true,
+							updatedAt: true,
+							txHash: true,
+							lastCheckedAt: true,
+						},
+					},
+					LowBalanceRules: {
+						orderBy: [{ assetUnit: 'asc' }],
+						select: {
+							id: true,
+							assetUnit: true,
+							thresholdAmount: true,
+							enabled: true,
+							status: true,
+							lastKnownAmount: true,
+							lastCheckedAt: true,
+							lastAlertedAt: true,
+						},
+					},
+				},
+			});
+			if (result == null) {
+				recordBusinessEndpointError('/api/v1/wallet', 'GET', 404, `${input.walletType} wallet not found`, {
+					wallet_id: input.id,
+					wallet_type: walletTypeLabel,
+					operation: 'wallet_lookup',
 				});
-				if (result == null) {
-					recordBusinessEndpointError('/api/v1/wallet', 'GET', 404, 'Selling wallet not found', {
-						wallet_id: input.id,
-						wallet_type: 'selling',
-						operation: 'wallet_lookup',
-					});
-					throw createHttpError(404, 'Selling wallet not found');
-				}
+				throw createHttpError(404, `${input.walletType} wallet not found`);
+			}
 
-				// Success is automatically recorded by middleware
+			// Success is automatically recorded by middleware
 
-				if (input.includeSecret == true) {
-					const decodedMnemonic = decrypt(result.Secret.encryptedMnemonic);
-					return {
-						PendingTransaction: result.PendingTransaction
-							? {
-									createdAt: result.PendingTransaction.createdAt,
-									updatedAt: result.PendingTransaction.updatedAt,
-									hash: result.PendingTransaction.txHash,
-									lastCheckedAt: result.PendingTransaction.lastCheckedAt,
-								}
-							: null,
-						note: result.note,
-						walletVkey: result.walletVkey,
-						walletAddress: result.walletAddress,
-						collectionAddress: result.collectionAddress,
-						LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
-						LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
-						Secret: {
-							createdAt: result.Secret.createdAt,
-							updatedAt: result.Secret.updatedAt,
-							mnemonic: decodedMnemonic,
-						},
-					};
-				}
+			const base = {
+				PendingTransaction: result.PendingTransaction
+					? {
+							createdAt: result.PendingTransaction.createdAt,
+							updatedAt: result.PendingTransaction.updatedAt,
+							hash: result.PendingTransaction.txHash,
+							lastCheckedAt: result.PendingTransaction.lastCheckedAt,
+						}
+					: null,
+				note: result.note,
+				walletVkey: result.walletVkey,
+				walletAddress: result.walletAddress,
+				collectionAddress: result.collectionAddress,
+				LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
+				LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
+			};
+
+			if (input.includeSecret == true) {
 				return {
-					PendingTransaction: result.PendingTransaction
-						? {
-								createdAt: result.PendingTransaction.createdAt,
-								updatedAt: result.PendingTransaction.updatedAt,
-								hash: result.PendingTransaction.txHash,
-								lastCheckedAt: result.PendingTransaction.lastCheckedAt,
-							}
-						: null,
-					note: result.note,
-					collectionAddress: result.collectionAddress,
-					walletVkey: result.walletVkey,
-					walletAddress: result.walletAddress,
-					LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
-					LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
-				};
-			} else if (input.walletType == 'Purchasing') {
-				const result = await prisma.hotWallet.findFirst({
-					where: {
-						id: input.id,
-						type: HotWalletType.Purchasing,
-						PaymentSource: {
-							network: { in: ctx.networkLimit },
-						},
-						deletedAt: null,
+					...base,
+					Secret: {
+						createdAt: result.Secret.createdAt,
+						updatedAt: result.Secret.updatedAt,
+						mnemonic: decrypt(result.Secret.encryptedMnemonic),
 					},
-					include: {
-						Secret: {
-							select: {
-								encryptedMnemonic: true,
-								createdAt: true,
-								updatedAt: true,
-							},
-						},
-						PendingTransaction: {
-							select: {
-								createdAt: true,
-								updatedAt: true,
-								txHash: true,
-								lastCheckedAt: true,
-							},
-						},
-						LowBalanceRules: {
-							orderBy: [{ assetUnit: 'asc' }],
-							select: {
-								id: true,
-								assetUnit: true,
-								thresholdAmount: true,
-								enabled: true,
-								status: true,
-								lastKnownAmount: true,
-								lastCheckedAt: true,
-								lastAlertedAt: true,
-							},
-						},
-					},
-				});
-				if (result == null) {
-					throw createHttpError(404, 'Purchasing wallet not found');
-				}
-
-				// Success is automatically recorded by middleware
-
-				if (input.includeSecret == true) {
-					const decodedMnemonic = decrypt(result.Secret.encryptedMnemonic);
-					return {
-						PendingTransaction: result.PendingTransaction
-							? {
-									createdAt: result.PendingTransaction.createdAt,
-									updatedAt: result.PendingTransaction.updatedAt,
-									hash: result.PendingTransaction.txHash,
-									lastCheckedAt: result.PendingTransaction.lastCheckedAt,
-								}
-							: null,
-						note: result.note,
-						walletVkey: result.walletVkey,
-						walletAddress: result.walletAddress,
-						collectionAddress: result.collectionAddress,
-						LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
-						LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
-						Secret: {
-							createdAt: result.Secret.createdAt,
-							updatedAt: result.Secret.updatedAt,
-							mnemonic: decodedMnemonic,
-						},
-					};
-				}
-				return {
-					PendingTransaction: result.PendingTransaction
-						? {
-								createdAt: result.PendingTransaction.createdAt,
-								updatedAt: result.PendingTransaction.updatedAt,
-								hash: result.PendingTransaction.txHash,
-								lastCheckedAt: result.PendingTransaction.lastCheckedAt,
-							}
-						: null,
-					note: result.note,
-					walletVkey: result.walletVkey,
-					collectionAddress: result.collectionAddress,
-					walletAddress: result.walletAddress,
-					LowBalanceSummary: serializeLowBalanceSummary(result.LowBalanceRules),
-					LowBalanceRules: result.LowBalanceRules.map(serializeLowBalanceRecord),
 				};
 			}
-			throw createHttpError(400, 'Invalid wallet type');
+			return base;
 		} catch (error) {
 			const errorInstance = error instanceof Error ? error : new Error(String(error));
 			const statusCode =

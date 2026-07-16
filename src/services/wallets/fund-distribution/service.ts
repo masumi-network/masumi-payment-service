@@ -482,7 +482,6 @@ export class FundDistributionService {
 			}
 		}
 	}
-
 }
 
 export const fundDistributionService = new FundDistributionService();

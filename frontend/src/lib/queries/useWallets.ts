@@ -4,6 +4,7 @@ import { getWalletList, WalletListItem } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
 import { fetchWalletBalance } from '@/lib/wallet-balance';
+import type { HotWalletType } from '@/lib/wallet-type';
 import {
   appendInclusiveCursorPage,
   flattenInclusiveCursorPages,
@@ -13,7 +14,7 @@ export { fetchAddressBalance, fetchAllUtxos, fetchWalletBalance } from '@/lib/wa
 export type { WalletBalanceResult } from '@/lib/wallet-balance';
 
 type Wallet = WalletListItem & {
-  type: 'Purchasing' | 'Selling' | 'Funding';
+  type: HotWalletType;
   network: 'Preprod' | 'Mainnet';
 };
 
@@ -356,7 +357,7 @@ export function usePaymentSourceWalletList(args: {
  * this does NOT eagerly load every wallet, so it must not be used where an
  * aggregate over all wallets is required (e.g. dashboard totals).
  */
-export function usePaginatedWallets(walletType?: 'Selling' | 'Purchasing') {
+export function usePaginatedWallets(walletType?: HotWalletType) {
   const { apiClient, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
   const network = selectedPaymentSource?.network;
 

@@ -1,5 +1,6 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { getWalletTypeRowLabel } from '@/lib/wallet-type';
 import { GetStaticProps } from 'next';
 import Head from 'next/head';
 import { Button } from '@/components/ui/button';
@@ -459,9 +460,7 @@ export default function Overview() {
                                 </td>
                                 <td className="py-3 px-2 max-w-25">
                                   <div className="text-sm font-medium truncate">
-                                    {wallet.type === 'Purchasing'
-                                      ? 'Buying wallet'
-                                      : 'Selling wallet'}
+                                    {getWalletTypeRowLabel(wallet.type)}
                                   </div>
                                   <div className="text-xs text-muted-foreground truncate">
                                     {wallet.note || 'Created by seeding'}

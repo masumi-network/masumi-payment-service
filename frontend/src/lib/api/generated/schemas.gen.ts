@@ -320,7 +320,7 @@ export const WalletListItemSchema = {
                 'Purchasing',
                 'Funding'
             ],
-            description: 'Whether this is a Selling (seller side) or Purchasing (buyer side) wallet'
+            description: 'Whether this is a Selling (seller side), Purchasing (buyer side) or Funding (treasury that tops up the other two) wallet'
         },
         walletVkey: {
             type: 'string',

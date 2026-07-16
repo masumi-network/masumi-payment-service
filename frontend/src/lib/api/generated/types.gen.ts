@@ -194,7 +194,7 @@ export type WalletListItem = {
      */
     paymentSourceId: string;
     /**
-     * Whether this is a Selling (seller side) or Purchasing (buyer side) wallet
+     * Whether this is a Selling (seller side), Purchasing (buyer side) or Funding (treasury that tops up the other two) wallet
      */
     type: 'Selling' | 'Purchasing' | 'Funding';
     /**
@@ -2628,7 +2628,7 @@ export type GetWalletData = {
         /**
          * The type of wallet to query
          */
-        walletType: 'Selling' | 'Purchasing';
+        walletType: 'Selling' | 'Purchasing' | 'Funding';
         /**
          * The id of the wallet to query
          */
@@ -2729,7 +2729,7 @@ export type GetWalletListData = {
          */
         paymentSourceId?: string;
         /**
-         * Filter wallets by type (Selling or Purchasing)
+         * Filter wallets by type (Selling, Purchasing or Funding)
          */
         walletType?: 'Selling' | 'Purchasing' | 'Funding';
         /**

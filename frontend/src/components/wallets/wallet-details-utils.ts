@@ -1,6 +1,7 @@
 import { shortenAddress, hexToAscii } from '@/lib/utils';
 import formatBalance from '@/lib/formatBalance';
 import { getUsdmConfig, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
+import type { DisplayWalletType } from '@/lib/wallet-type';
 
 export interface TokenBalance {
   unit: string;
@@ -54,7 +55,7 @@ export interface WalletWithBalance {
   walletAddress: string;
   collectionAddress: string | null;
   note: string | null;
-  type: 'Purchasing' | 'Selling' | 'Funding' | 'Collection';
+  type: DisplayWalletType;
   balance: string;
   usdcxBalance: string;
   /** True when the balance fetch failed — render "unknown", not 0. */

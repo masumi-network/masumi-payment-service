@@ -38,6 +38,7 @@ CREATE TABLE "FundDistributionRequest" (
     "txHash" TEXT,
     "error" TEXT,
     "batchId" TEXT,
+    "transactionId" TEXT,
 
     CONSTRAINT "FundDistributionRequest_pkey" PRIMARY KEY ("id")
 );
@@ -54,6 +55,12 @@ CREATE INDEX "FundDistributionRequest_status_priority_createdAt_idx" ON "FundDis
 -- CreateIndex
 CREATE INDEX "FundDistributionRequest_fundWalletId_targetWalletId_status_idx" ON "FundDistributionRequest"("fundWalletId", "targetWalletId", "status");
 
+-- CreateIndex
+CREATE INDEX "FundDistributionRequest_status_updatedAt_idx" ON "FundDistributionRequest"("status", "updatedAt");
+
+-- CreateIndex
+CREATE INDEX "FundDistributionRequest_transactionId_idx" ON "FundDistributionRequest"("transactionId");
+
 -- AddForeignKey
 ALTER TABLE "FundDistributionConfig" ADD CONSTRAINT "FundDistributionConfig_hotWalletId_fkey" FOREIGN KEY ("hotWalletId") REFERENCES "HotWallet"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -63,5 +70,5 @@ ALTER TABLE "FundDistributionRequest" ADD CONSTRAINT "FundDistributionRequest_fu
 -- AddForeignKey
 ALTER TABLE "FundDistributionRequest" ADD CONSTRAINT "FundDistributionRequest_targetWalletId_fkey" FOREIGN KEY ("targetWalletId") REFERENCES "HotWallet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- CreateIndex
-CREATE INDEX "FundDistributionRequest_status_updatedAt_idx" ON "FundDistributionRequest"("status", "updatedAt");
+-- AddForeignKey
+ALTER TABLE "FundDistributionRequest" ADD CONSTRAINT "FundDistributionRequest_transactionId_fkey" FOREIGN KEY ("transactionId") REFERENCES "Transaction"("id") ON DELETE SET NULL ON UPDATE CASCADE;

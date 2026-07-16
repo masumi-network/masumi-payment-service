@@ -338,7 +338,7 @@
                             "Purchasing",
                             "Funding"
                         ],
-                        "description": "Whether this is a Selling (seller side) or Purchasing (buyer side) wallet"
+                        "description": "Whether this is a Selling (seller side), Purchasing (buyer side) or Funding (treasury that tops up the other two) wallet"
                     },
                     "walletVkey": {
                         "type": "string",
@@ -4963,7 +4963,8 @@
                             "type": "string",
                             "enum": [
                                 "Selling",
-                                "Purchasing"
+                                "Purchasing",
+                                "Funding"
                             ],
                             "description": "The type of wallet to query"
                         },
@@ -5279,10 +5280,10 @@
                                 "Purchasing",
                                 "Funding"
                             ],
-                            "description": "Filter wallets by type (Selling or Purchasing)"
+                            "description": "Filter wallets by type (Selling, Purchasing or Funding)"
                         },
                         "required": false,
-                        "description": "Filter wallets by type (Selling or Purchasing)",
+                        "description": "Filter wallets by type (Selling, Purchasing or Funding)",
                         "name": "walletType",
                         "in": "query"
                     },

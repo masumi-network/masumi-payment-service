@@ -78,9 +78,16 @@ export async function buildAndSignFundDistributionTx(params: {
 	const completeTx = await unsignedTx.build();
 	const signedTx = await wallet.signTx(completeTx);
 
+	// V1 mesh (beta.96, which this root-level file resolves) declares
+	// `resolveTxHash: (txHex: string) => any`; V2 mesh (beta.102) declares it
+	// `=> string`. Same blake2b_256-over-signed-body implementation, tightened
+	// typings only — so the cast is a types-only bridge, not a behavioural
+	// assumption. Drop it if the root ever moves to the .102 line.
+	const intendedTxHash = resolveTxHash(signedTx) as string;
+
 	return {
 		signedTx,
-		intendedTxHash: resolveTxHash(signedTx),
+		intendedTxHash,
 		invalidHereafterSlot,
 		submit: () => wallet.submitTx(signedTx),
 	};

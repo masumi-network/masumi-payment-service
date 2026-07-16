@@ -9,6 +9,7 @@ import {
 } from '@/lib/api/generated';
 import { handleApiCall } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { isHotWalletType } from '@/lib/wallet-type';
 import {
   EMPTY_LOW_BALANCE_SUMMARY,
   getRuleAssetMeta,
@@ -47,10 +48,15 @@ export function useLowBalanceRules({
   const [pendingDeleteRule, setPendingDeleteRule] = useState<LowBalanceRule | null>(null);
 
   const refreshWalletDetails = useCallback(async () => {
-    if (!wallet || wallet.type === 'Collection') {
+    if (!wallet || !isHotWalletType(wallet.type)) {
       setWalletDetails(null);
       return;
     }
+
+    // Bind the narrowed type: TS drops narrowing on `wallet.type` inside the
+    // callback below, and the previous `as 'Purchasing' | 'Selling'` cast is
+    // what let Funding wallets reach an endpoint that rejected them.
+    const walletType = wallet.type;
 
     setIsWalletDetailsLoading(true);
 
@@ -59,7 +65,7 @@ export function useLowBalanceRules({
         getWallet({
           client: apiClient,
           query: {
-            walletType: wallet.type as 'Purchasing' | 'Selling',
+            walletType,
             id: wallet.id,
           },
         }),

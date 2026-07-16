@@ -9,6 +9,7 @@ import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { getWalletTypeRowLabel, WALLET_TYPE_TABS, type HotWalletType } from '@/lib/wallet-type';
 
 import { formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
@@ -46,8 +47,10 @@ export default function WalletsPage() {
   const [activeTab, setActiveTab] = useState('All');
 
   // The type tab is applied server-side so each tab paginates independently.
-  const walletTypeFilter =
-    activeTab === 'Purchasing' ? 'Purchasing' : activeTab === 'Selling' ? 'Selling' : undefined;
+  // 'All' (and any unknown tab) means no filter.
+  const walletTypeFilter = WALLET_TYPE_TABS.includes(activeTab as HotWalletType)
+    ? (activeTab as HotWalletType)
+    : undefined;
 
   // Paginated wallet data for the selected payment source (cursor + load-more).
   const {
@@ -78,8 +81,7 @@ export default function WalletsPage() {
 
   const tabs = [
     { name: 'All', count: null },
-    { name: 'Purchasing', count: null },
-    { name: 'Selling', count: null },
+    ...WALLET_TYPE_TABS.map((name) => ({ name, count: null })),
   ];
 
   const allWallets = walletsList as WalletWithBalance[];
@@ -266,11 +268,7 @@ export default function WalletsPage() {
                         </td>
                         <td className="p-4">
                           <div className="text-sm font-medium truncate">
-                            {wallet.type === 'Purchasing'
-                              ? 'Buying wallet'
-                              : wallet.type === 'Funding'
-                                ? 'Funding wallet'
-                                : 'Selling wallet'}
+                            {getWalletTypeRowLabel(wallet.type)}
                           </div>
                           <div className="text-xs text-muted-foreground truncate">
                             {wallet.note || 'Created by seeding'}

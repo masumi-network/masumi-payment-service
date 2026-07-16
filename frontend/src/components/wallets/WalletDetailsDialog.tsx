@@ -15,6 +15,7 @@ import {
 import { toast } from 'react-toastify';
 import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { isHotWalletType } from '@/lib/wallet-type';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
@@ -351,14 +352,18 @@ export function WalletDetailsDialog({
   }, [isOpen, wallet?.walletAddress]);
 
   const handleExport = async () => {
-    if (!wallet || wallet.type === 'Collection') return;
+    if (!wallet || !isHotWalletType(wallet.type)) return;
+    // Bind the narrowed type: TS drops narrowing on `wallet.type` inside the
+    // callback below, and the previous `as 'Purchasing' | 'Selling'` cast is
+    // what let Funding wallets reach an endpoint that rejected them.
+    const walletType = wallet.type;
     setIsExporting(true);
     await handleApiCall(
       () =>
         getWallet({
           client: apiClient,
           query: {
-            walletType: wallet.type as 'Purchasing' | 'Selling',
+            walletType,
             id: wallet.id,
             includeSecret: 'true',
           },
