@@ -90,7 +90,11 @@ export function ApiKeyDialog() {
         </p>
 
         <Button variant="muted" className="text-sm mb-8 hover:underline" asChild>
-          <Link href={'https://docs.masumi.network/'} target="_blank" rel="noopener noreferrer">
+          <Link
+            href={'https://www.masumi.network/dev/masumi/'}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             Learn more
           </Link>
         </Button>

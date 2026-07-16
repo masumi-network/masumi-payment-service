@@ -828,6 +828,60 @@ describe('x402 service helpers', () => {
 		);
 	});
 
+	it('maps the database active-claim unique constraint to 409 before settling', async () => {
+		// An older replica that does not take the payload claim races its marker create past
+		// the guard; the partial unique index rejects ours. No authorization was submitted,
+		// so the caller gets the same 409 as the in-claim guard and can retry cleanly.
+		mockX402PaymentAttemptCreate.mockRejectedValueOnce(
+			new MockPrismaClientKnownRequestError(
+				'Unique constraint failed on X402PaymentAttempt_active_settlement_payload_key',
+				'P2002',
+			),
+		);
+
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toMatchObject({ status: 409 });
+
+		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+		// No marker of ours exists, so nothing may be error-stamped.
+		expect(mockX402PaymentAttemptUpdate).not.toHaveBeenCalled();
+	});
+
+	it('stamps settle_persist_failed with the txHash when persisting a successful outcome fails', async () => {
+		mockX402SettlementCreate.mockRejectedValueOnce(new Error('connection reset'));
+
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toThrow('connection reset');
+
+		// Funds moved but the receipt could not be persisted: the marker keeps its Verified
+		// status (never auto-fail) and is stamped with the reason plus the on-chain txHash so
+		// it enters the needs-manual-action backlog immediately with the operator's reference.
+		expect(mockX402PaymentAttemptUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: 'attempt-1', status: 'Verified' },
+				data: {
+					errorReason: 'settle_persist_failed',
+					errorMessage: expect.stringContaining('txHash=0xsettlement'),
+				},
+			}),
+		);
+		expect(mockX402PaymentAttemptUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: 'Failed' }) }),
+		);
+	});
+
 	it('does not overwrite a concurrent manual resolution after the facilitator returns success', async () => {
 		mockX402PaymentAttemptUpdateMany.mockResolvedValueOnce({ count: 0 });
 

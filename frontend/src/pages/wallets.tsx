@@ -164,7 +164,7 @@ export default function WalletsPage() {
               <p className="text-sm text-muted-foreground">
                 Manage your buying and selling wallets.{' '}
                 <Link
-                  href="https://docs.masumi.network/core-concepts/wallets"
+                  href="https://www.masumi.network/dev/masumi/core-concepts/wallets"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"

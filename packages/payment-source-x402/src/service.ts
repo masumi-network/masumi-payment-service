@@ -326,7 +326,18 @@ export async function settleX402Payment({
 	} catch (settleError) {
 		// Only a throw AFTER the marker exists is ambiguous; a lock-timeout or the 409 guard throws
 		// before creating it (attemptId still null) → nothing to record, clean retry.
-		if (attemptId != null) {
+		if (attemptId == null) {
+			// The partial unique index on active inbound-settle attempts (migration
+			// 20260712000000) is the deployment-safe backstop for callers that do not
+			// take the payload claim (an older replica during a rollout). Map its
+			// violation to the same 409 the in-claim guard returns.
+			if (settleError instanceof Prisma.PrismaClientKnownRequestError && settleError.code === 'P2002') {
+				throw createHttpError(
+					409,
+					'a settlement for this payment payload is already in progress or awaiting reconciliation',
+				);
+			}
+		} else {
 			const errorMessage = settleError instanceof Error ? settleError.message : String(settleError);
 			await prisma.x402PaymentAttempt
 				.update({
@@ -431,12 +442,34 @@ export async function settleX402Payment({
 		}
 	} catch (writeError) {
 		if (settleResponse.success) {
+			const persistenceError = writeError instanceof Error ? writeError.message : String(writeError);
+			// Best-effort: stamp the reason AND the txHash onto the still-Verified marker so the
+			// row enters the needs-manual-action backlog immediately (instead of only after the
+			// stale timeout) and the operator has the on-chain reference for reconcile. Guarded
+			// by status so a concurrently resolved attempt is never overwritten; a failure here
+			// only delays discovery until the stale-Verified filter picks the row up.
+			await prisma.x402PaymentAttempt
+				.updateMany({
+					where: { id: attemptIdForSettle, status: X402PaymentStatus.Verified },
+					data: {
+						errorReason: 'settle_persist_failed',
+						errorMessage: `txHash=${settleResponse.transaction ?? 'unknown'}; ${persistenceError}`,
+					},
+				})
+				.catch((recordError) => {
+					logger.error('x402 settlement persistence failed AND recording reconciliation data failed', {
+						supportedPaymentSourceId,
+						paymentPayloadHash,
+						attemptId: attemptIdForSettle,
+						recordError: recordError instanceof Error ? recordError.message : String(recordError),
+					});
+				});
 			logger.error('x402 settle SUCCEEDED but persisting the outcome failed; funds moved — needs reconciliation', {
 				supportedPaymentSourceId,
 				paymentPayloadHash,
 				attemptId: attemptIdForSettle,
 				txHash: settleResponse.transaction ?? null,
-				error: writeError instanceof Error ? writeError.message : writeError,
+				error: persistenceError,
 			});
 		}
 		if (writeError instanceof Prisma.PrismaClientKnownRequestError && writeError.code === 'P2002') {

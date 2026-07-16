@@ -518,6 +518,9 @@ model X402PaymentAttempt {
   RegistryRequest          RegistryRequest?        @relation(fields: [registryRequestId], references: [id], onDelete: SetNull)
   SupportedPaymentSource   SupportedPaymentSource? @relation(fields: [supportedPaymentSourceId], references: [id], onDelete: SetNull)
   Settlement               X402Settlement?
+  // A partial unique index created by migration 20260712000000 permits only one
+  // InboundSettle attempt in Verified/Settled state per paymentPayloadHash.
+  // Prisma schema syntax cannot represent partial unique indexes.
 
   @@index([apiKeyId, createdAt])
   @@index([registryRequestId, createdAt])
