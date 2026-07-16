@@ -21,6 +21,11 @@ const mockLoggerError = jest.fn() as AnyMock;
 const HotWalletType = {
 	Purchasing: 'Purchasing',
 	Selling: 'Selling',
+	// Must be present: the alert path guards on `type !== HotWalletType.Funding`
+	// before requesting a topup. Omitting it makes that compare against
+	// undefined, so the guard passes for every wallet and the test proves
+	// nothing about it.
+	Funding: 'Funding',
 } as const;
 
 const Network = {
