@@ -17646,6 +17646,145 @@
             ]
         },
         {
+            "name": "balance",
+            "description": "",
+            "item": [
+                {
+                    "id": "9b6114ea-5da9-436b-814c-93e7382482b8",
+                    "name": "Helper endpoint that returns the complete confirmed balance at a Cardano address, independent of UTXO pagination. (READ access required)",
+                    "request": {
+                        "name": "Helper endpoint that returns the complete confirmed balance at a Cardano address, independent of UTXO pagination. (READ access required)",
+                        "description": {
+                            "content": "Gets an address balance (internal)",
+                            "type": "text/plain"
+                        },
+                        "url": {
+                            "path": [
+                                "balance"
+                            ],
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "query": [
+                                {
+                                    "disabled": false,
+                                    "description": {
+                                        "content": "(Required) The address to get the confirmed balance for",
+                                        "type": "text/plain"
+                                    },
+                                    "key": "address",
+                                    "value": "<string>"
+                                },
+                                {
+                                    "disabled": false,
+                                    "description": {
+                                        "content": "(Required) The Cardano network (This can only be one of Preprod,Mainnet)",
+                                        "type": "text/plain"
+                                    },
+                                    "key": "network",
+                                    "value": "Preprod"
+                                }
+                            ],
+                            "variable": []
+                        },
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "method": "GET",
+                        "body": {},
+                        "auth": {
+                            "type": "apikey",
+                            "apikey": [
+                                {
+                                    "key": "key",
+                                    "value": "token"
+                                },
+                                {
+                                    "key": "value",
+                                    "value": "{{apiKey}}"
+                                },
+                                {
+                                    "key": "in",
+                                    "value": "header"
+                                }
+                            ]
+                        }
+                    },
+                    "response": [
+                        {
+                            "id": "6de2d47e-e02d-4c36-b1ea-fca01da228a0",
+                            "name": "Complete confirmed address balance",
+                            "originalRequest": {
+                                "url": {
+                                    "path": [
+                                        "balance"
+                                    ],
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "query": [
+                                        {
+                                            "disabled": false,
+                                            "description": {
+                                                "content": "(Required) The address to get the confirmed balance for",
+                                                "type": "text/plain"
+                                            },
+                                            "key": "address",
+                                            "value": "<string>"
+                                        },
+                                        {
+                                            "disabled": false,
+                                            "description": {
+                                                "content": "(Required) The Cardano network (This can only be one of Preprod,Mainnet)",
+                                                "type": "text/plain"
+                                            },
+                                            "key": "network",
+                                            "value": "Preprod"
+                                        }
+                                    ],
+                                    "variable": []
+                                },
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    },
+                                    {
+                                        "description": {
+                                            "content": "Added as a part of security scheme: apikey",
+                                            "type": "text/plain"
+                                        },
+                                        "key": "token",
+                                        "value": "<API Key>"
+                                    }
+                                ],
+                                "method": "GET",
+                                "body": {}
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "header": [
+                                {
+                                    "key": "Content-Type",
+                                    "value": "application/json"
+                                }
+                            ],
+                            "body": "{\n  \"status\": \"<string>\",\n  \"data\": {\n    \"Balance\": [\n      {\n        \"unit\": \"<string>\",\n        \"quantity\": \"<integer>\"\n      },\n      {\n        \"unit\": \"<string>\",\n        \"quantity\": \"<integer>\"\n      }\n    ]\n  }\n}",
+                            "cookie": [],
+                            "_postman_previewlanguage": "json"
+                        }
+                    ],
+                    "event": [],
+                    "protocolProfileBehavior": {
+                        "disableBodyPruning": true
+                    }
+                }
+            ]
+        },
+        {
             "name": "rpc-api-keys",
             "description": "",
             "item": [

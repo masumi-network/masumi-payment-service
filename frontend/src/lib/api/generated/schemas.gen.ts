@@ -3758,6 +3758,27 @@ export const UtxoAmountSchema = {
     ]
 } as const;
 
+export const BalanceAmountSchema = {
+    type: 'object',
+    properties: {
+        unit: {
+            type: 'string',
+            description: 'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
+        },
+        quantity: {
+            type: 'integer',
+            nullable: true,
+            minimum: 0,
+            maximum: 100000000000000,
+            description: 'The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)'
+        }
+    },
+    required: [
+        'unit',
+        'quantity'
+    ]
+} as const;
+
 export const RpcProviderKeySchema = {
     type: 'object',
     properties: {

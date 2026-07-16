@@ -1,4 +1,4 @@
-import { getUtxos, Utxo } from '@/lib/api/generated';
+import { BalanceAmount, getBalance, getUtxos, Utxo } from '@/lib/api/generated';
 import { Client } from '@/lib/api/generated/client';
 import { getActiveStablecoinConfig } from '@/lib/constants/defaultWallets';
 
@@ -18,12 +18,44 @@ export type WalletBalanceResult = {
 };
 
 /**
+ * Fetch the provider's aggregate confirmed balance for an address.
+ *
+ * This is independent of UTxO pagination and is the canonical source for
+ * balance displays. An unused address returns an empty array; API and provider
+ * failures throw so callers can render an unknown/error state instead of zero.
+ */
+export async function fetchAddressBalance(
+  apiClient: Client,
+  network: 'Preprod' | 'Mainnet',
+  address: string,
+): Promise<BalanceAmount[]> {
+  const response = await getBalance({
+    client: apiClient,
+    query: {
+      address,
+      network,
+    },
+  });
+
+  if (response.error) {
+    throw new Error(
+      typeof response.error === 'object' ? JSON.stringify(response.error) : String(response.error),
+    );
+  }
+
+  const balance = response.data?.data?.Balance;
+  if (balance == null) {
+    throw new Error('Wallet balance response is missing data');
+  }
+  return balance;
+}
+
+/**
  * Fetch ALL UTxOs for an address, paging through GET /utxos.
  *
- * The backend defaults `count` to 10 and does not aggregate pages, so a single
- * un-paged call silently understates the balance of any wallet holding more
- * than 10 UTxOs. Every balance computation must go through this helper (or
- * `fetchWalletBalance`) instead of calling getUtxos directly.
+ * The backend defaults `count` to 10 and does not aggregate pages. Use this
+ * only when the actual UTxO set is needed, such as checking whether an address
+ * has been used. Balance displays must use `fetchAddressBalance` instead.
  *
  * Returns [] for a 404 (address never used). Throws on other API errors so
  * callers can distinguish "no funds" from "unknown".
@@ -68,7 +100,7 @@ export async function fetchAllUtxos(
 }
 
 /**
- * Sum an address's ADA and active-stablecoin balances across all its UTxOs.
+ * Read an address's aggregate ADA and active-stablecoin balances.
  *
  * Tracks only the active stablecoin for this network (USDCx on Mainnet, tUSDM
  * on Preprod). Legacy USDM tokens in Mainnet wallets are intentionally excluded
@@ -83,9 +115,9 @@ export async function fetchWalletBalance(
   network: 'Preprod' | 'Mainnet',
   address: string,
 ): Promise<WalletBalanceResult> {
-  let utxos: Utxo[];
+  let balanceAmounts: BalanceAmount[];
   try {
-    utxos = await fetchAllUtxos(apiClient, network, address);
+    balanceAmounts = await fetchAddressBalance(apiClient, network, address);
   } catch (error) {
     console.error('Error fetching wallet balance:', error);
     return { ada: '0', usdcx: '0', unavailable: true };
@@ -95,13 +127,11 @@ export async function fetchWalletBalance(
   let usdcxBalance = BigInt(0);
   const stablecoinConfig = getActiveStablecoinConfig(network);
 
-  for (const utxo of utxos) {
-    for (const amount of utxo.Amounts) {
-      if (amount.unit === 'lovelace' || amount.unit === '') {
-        adaBalance += BigInt(amount.quantity ?? 0);
-      } else if (amount.unit === stablecoinConfig.fullAssetId) {
-        usdcxBalance += BigInt(amount.quantity ?? 0);
-      }
+  for (const amount of balanceAmounts) {
+    if (amount.unit === 'lovelace' || amount.unit === '') {
+      adaBalance += BigInt(amount.quantity ?? 0);
+    } else if (amount.unit === stablecoinConfig.fullAssetId) {
+      usdcxBalance += BigInt(amount.quantity ?? 0);
     }
   }
 

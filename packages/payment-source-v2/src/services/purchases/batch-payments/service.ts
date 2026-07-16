@@ -21,7 +21,7 @@ import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
-import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
+import { type BalanceMap, toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
 	connectExistingTransaction,
 	connectPreviousAction,
@@ -116,6 +116,7 @@ type WalletPairing = {
 	changeAddress: string;
 	collectionAddress: string | null;
 	utxos: UTxO[];
+	currentBalanceMap: BalanceMap | null;
 	batchedRequests: BatchedRequest[];
 	// Placeholder Transaction row id created at lock time. The placeholder
 	// already carries `BlocksWallet → wallet` so the wallet's
@@ -590,6 +591,7 @@ async function executeSpecificBatchPayment(
 			walletUtxos: walletPairing.utxos,
 			unsignedTx: completeTx,
 			checkSource: 'submission',
+			currentBalanceMap: walletPairing.currentBalanceMap ?? undefined,
 		});
 	} catch (balanceError) {
 		logger.warn('batch-payments post-submit balance monitor failed (non-fatal; tx already on chain)', {
@@ -875,13 +877,17 @@ export async function batchLatestPaymentEntriesV2() {
 								wallet.Secret.encryptedMnemonic,
 							);
 							const balanceMap = toBalanceMapFromMeshUtxos(utxos);
-							await walletLowBalanceMonitorService.evaluateHotWalletById(wallet.id, balanceMap, 'submission');
+							const currentBalanceMap = await walletLowBalanceMonitorService.evaluateCurrentHotWalletById(
+								wallet.id,
+								'submission',
+							);
 							return {
 								wallet: meshWallet,
 								walletId: wallet.id,
 								changeAddress: address,
 								collectionAddress: wallet.collectionAddress,
 								utxos,
+								currentBalanceMap,
 								scriptAddress: paymentContract.smartContractAddress,
 								amounts: Array.from(balanceMap.entries()).map(([unit, quantity]) => ({
 									unit: unit === 'lovelace' ? '' : unit,
@@ -1164,6 +1170,7 @@ export async function batchLatestPaymentEntriesV2() {
 								changeAddress: walletData.changeAddress,
 								collectionAddress: walletData.collectionAddress,
 								utxos: walletData.utxos,
+								currentBalanceMap: walletData.currentBalanceMap,
 								batchedRequests: batchedPaymentRequests,
 								placeholderTransactionId: walletData.placeholderTransactionId,
 							});

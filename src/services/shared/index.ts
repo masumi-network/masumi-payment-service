@@ -1,6 +1,8 @@
 export type { JobDefinition } from './job-runner';
 export { withJobLock } from './job-runner';
 export { createApiClient, createMeshProvider } from './provider-factory';
+export { fetchAddressBalance, fetchAddressBalanceMap, toBalanceMapFromAddressAmounts } from './address-balance';
+export type { AddressBalanceAmount, AddressBalanceMap } from './address-balance';
 // CAUTION — partial ADR-0005 (`docs/adr/0005-meshsdk-version-pinning-v1-v2.md`)
 // boundary. This file lives at the repo root, whose `package.json` pins
 // `@meshsdk/core@1.9.0-beta.96` (V1 mesh). The re-exports below therefore
