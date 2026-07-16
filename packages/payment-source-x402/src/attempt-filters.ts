@@ -1,3 +1,4 @@
+import createHttpError from 'http-errors';
 import { Prisma, X402PaymentDirection, X402PaymentStatus } from '@masumi/payment-core/db';
 import { SETTLE_STALE_MS } from './settle-lock';
 
@@ -31,27 +32,37 @@ function resolveDirectionFilter(input: X402AttemptFilterInput): Prisma.X402Payme
  *
  * `filterNeedsManualAction` selects the settle-reconciliation backlog —
  * the states reconcileX402PaymentAttempt accepts:
- *   - `Verified` with a recorded error (settle threw, or the facilitator
- *     reported failure) — intentionally never auto-failed; see service.ts.
- *   - a stale trace-less `Verified` InboundSettle marker (settle was
- *     interrupted before anything could be recorded).
+ *   - a stale `Verified` InboundSettle marker, with or without a recorded
+ *     error (settle threw, timed out, or was interrupted).
  *   - a stale `Settled` InboundSettle missing its settlement row (settle
  *     succeeded but persisting the settlement failed).
  * Staleness (SETTLE_STALE_MS) keeps live in-flight settles out of the
- * backlog. Those rows need an operator to check the chain before retrying
- * or refunding, so this filter overrides an explicit status filter.
+ * backlog. A fresh self-hosted facilitator lock does too, even if the
+ * attempt heartbeat itself is late. Those rows need an operator to check
+ * the chain before retrying or refunding, so this filter overrides an
+ * explicit status filter.
  */
-export function buildX402AttemptWhere(input: X402AttemptFilterInput): Prisma.X402PaymentAttemptWhereInput {
+export function buildX402AttemptWhere(
+	input: X402AttemptFilterInput,
+	databaseNow?: Date,
+): Prisma.X402PaymentAttemptWhereInput {
 	// Network is filtered through the rail relation now that the attempt has no caip2Network column.
 	const networkFilter: Prisma.X402PaymentAttemptWhereInput =
 		input.caip2Network != null ? { Network: { caip2Id: input.caip2Network } } : {};
 	if (input.filterNeedsManualAction === true) {
-		// `Verified` is also the terminal state of every successful InboundVerify attempt, so every
+		// `Verified` is also the terminal state of every successful InboundVerify attempt, so the
 		// branch pins direction to InboundSettle instead of flooding the backlog with healthy
-		// verifies. The errored branch needs the pin too: reconcile only accepts InboundSettle, so
-		// a Verified verify row carrying an errorReason (e.g. a remote facilitator returning
-		// isValid with an invalidReason) would otherwise be an unclearable backlog entry.
-		const stuckBefore = new Date(Date.now() - SETTLE_STALE_MS);
+		// verifies. Reconcile only accepts inbound settlement attempts.
+		if (databaseNow == null) {
+			throw createHttpError(500, 'databaseNow is required for the x402 manual-action filter');
+		}
+		const stuckBefore = new Date(databaseNow.getTime() - SETTLE_STALE_MS);
+		// Reconciliation uses this exact second half of the lease check too: a row is not
+		// abandoned while its facilitator wallet has a fresh lock. `NOT relation.is` keeps remote
+		// attempts (no EvmWallet relation) and stale/null locks eligible.
+		const hasNoFreshFacilitatorLock: Prisma.X402PaymentAttemptWhereInput = {
+			NOT: { EvmWallet: { is: { lockedAt: { gte: stuckBefore } } } },
+		};
 		return {
 			...networkFilter,
 			apiKeyId: input.apiKeyId,
@@ -60,18 +71,15 @@ export function buildX402AttemptWhere(input: X402AttemptFilterInput): Prisma.X40
 				{
 					direction: X402PaymentDirection.InboundSettle,
 					status: X402PaymentStatus.Verified,
-					errorReason: { not: null },
-				},
-				{
-					direction: X402PaymentDirection.InboundSettle,
-					status: X402PaymentStatus.Verified,
 					updatedAt: { lt: stuckBefore },
+					...hasNoFreshFacilitatorLock,
 				},
 				{
 					direction: X402PaymentDirection.InboundSettle,
 					status: X402PaymentStatus.Settled,
 					Settlement: { is: null },
 					updatedAt: { lt: stuckBefore },
+					...hasNoFreshFacilitatorLock,
 				},
 			],
 		};

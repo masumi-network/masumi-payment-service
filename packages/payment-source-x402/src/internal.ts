@@ -72,19 +72,30 @@ function isPrivateHost(hostname: string): boolean {
 // that are literal private/loopback/link-local addresses (e.g. the cloud metadata IP).
 // This checks the hostname/literal IP only and does not resolve DNS, so it is a
 // mitigation rather than a complete SSRF defense.
-export function assertSafeRpcUrl(rpcUrl: string): void {
+function assertSafeHttpUrl(value: string, label: string, requireHttps: boolean): void {
 	let url: URL;
 	try {
-		url = new URL(rpcUrl);
+		url = new URL(value);
 	} catch {
-		throw createHttpError(400, 'x402 network rpcUrl must be a valid URL');
+		throw createHttpError(400, `${label} must be a valid URL`);
 	}
-	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-		throw createHttpError(400, 'x402 network rpcUrl must use http or https');
+	if (requireHttps ? url.protocol !== 'https:' : url.protocol !== 'http:' && url.protocol !== 'https:') {
+		throw createHttpError(400, `${label} must use ${requireHttps ? 'https' : 'http or https'}`);
 	}
 	if (isPrivateHost(url.hostname)) {
-		throw createHttpError(400, 'x402 network rpcUrl must not target a private, loopback or link-local address');
+		throw createHttpError(400, `${label} must not target a private, loopback or link-local address`);
 	}
+}
+
+export function assertSafeRpcUrl(rpcUrl: string): void {
+	assertSafeHttpUrl(rpcUrl, 'x402 network rpcUrl', false);
+}
+
+// Remote facilitator calls carry a payment authorization and can also carry an encrypted-at-rest
+// Authorization header. Unlike an RPC URL, plaintext HTTP is never acceptable for that material.
+// Keep the literal-host SSRF guard as defense in depth at both persistence and use time.
+export function assertSafeFacilitatorUrl(facilitatorUrl: string): void {
+	assertSafeHttpUrl(facilitatorUrl, 'x402 network facilitatorUrl', true);
 }
 
 // Build a viem HTTP transport with an SSRF check and a request timeout, so a slow or

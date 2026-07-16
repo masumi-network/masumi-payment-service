@@ -5,6 +5,7 @@ import {
 	createPaymentSchemaOutput,
 	createWalletSchemaInput,
 	createWalletSchemaOutput,
+	listAvailableNetworksSchemaOutput,
 	listBudgetSchemaOutput,
 	listNetworksSchemaOutput,
 	listPaymentAttemptsSchemaOutput,
@@ -14,6 +15,7 @@ import {
 	verifySchemaOutput,
 	verifySettleSchemaInput,
 	walletSchemaOutput,
+	x402AvailableNetworkSchema,
 	x402NetworkSchema,
 	x402PaymentAttemptSchema,
 	x402SettlementSchema,
@@ -64,6 +66,15 @@ export const x402NetworkExample = {
 	createdAt: exampleDate,
 	updatedAt: exampleDate,
 } satisfies z.infer<typeof x402NetworkSchema>;
+
+const x402AvailableNetworkExample = {
+	id: x402NetworkExample.id,
+	caip2Id: x402NetworkExample.caip2Id,
+	displayName: x402NetworkExample.displayName,
+	isTestnet: x402NetworkExample.isTestnet,
+	isEnabled: x402NetworkExample.isEnabled,
+	defaultAsset: x402NetworkExample.defaultAsset,
+} satisfies z.infer<typeof x402AvailableNetworkSchema>;
 
 export const x402BudgetExample = {
 	id: 'clx402budget0001',
@@ -133,6 +144,10 @@ export const listX402WalletsResponseExample = {
 export const listX402NetworksResponseExample = {
 	Networks: [x402NetworkExample],
 } satisfies z.infer<typeof listNetworksSchemaOutput>;
+
+export const listAvailableX402NetworksResponseExample = {
+	Networks: [x402AvailableNetworkExample],
+} satisfies z.infer<typeof listAvailableNetworksSchemaOutput>;
 
 export const listX402BudgetsResponseExample = {
 	Budgets: [x402BudgetExample],

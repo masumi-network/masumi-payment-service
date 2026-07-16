@@ -1,5 +1,6 @@
-import { Prisma, X402PaymentDirection, X402PaymentStatus, prisma } from '@masumi/payment-core/db';
+import { Prisma, X402FacilitatorMode, X402PaymentDirection, X402PaymentStatus, prisma } from '@masumi/payment-core/db';
 import { buildX402AttemptWhere } from './attempt-filters';
+import { getX402DatabaseNow } from './settle-lock';
 
 // Attempt projection for the dashboard. Network and payer are reconstructed from the rail and
 // wallet relations. payTo is retained as an immutable snapshot so inbound history survives
@@ -13,6 +14,7 @@ const ATTEMPT_SELECT = {
 	status: true,
 	apiKeyId: true,
 	evmWalletId: true,
+	facilitatorMode: true,
 	registryRequestId: true,
 	supportedPaymentSourceId: true,
 	asset: true,
@@ -44,20 +46,22 @@ type AttemptRow = Prisma.X402PaymentAttemptGetPayload<{ select: typeof ATTEMPT_S
 //   inbound  → payer is the Payer counterparty; null snapshot falls back to the live source
 // The settlement's payer mirrors the attempt payer (the buyer) for inbound settlements.
 function mapAttempt(attempt: AttemptRow) {
-	const { Network, EvmWallet, CounterpartyWallet, SupportedPaymentSource, Settlement, ...rest } = attempt;
+	const { Network, EvmWallet, CounterpartyWallet, SupportedPaymentSource, Settlement, facilitatorMode, ...rest } =
+		attempt;
 	const isOutbound = attempt.direction === X402PaymentDirection.OutboundPayment;
 	const counterparty = CounterpartyWallet?.address ?? null;
 	const payer = isOutbound ? (EvmWallet?.address ?? null) : counterparty;
 	const payTo = attempt.payTo ?? (isOutbound ? counterparty : (SupportedPaymentSource?.payTo ?? null));
-	// Which facilitator settled this: only inbound settles have one. A self-hosted facilitator is
-	// the owned wallet on evmWalletId (its address is EvmWallet.address); a remote facilitator
-	// leaves evmWalletId null (the node owns no key). Outbound/verify rows have no facilitator.
-	// NOTE: the specific remote facilitator URL is not persisted, so `address` is null there.
+	// Which facilitator settled this: new inbound attempts snapshot the mode at execution time.
+	// Legacy rows deliberately keep a null snapshot because today's network/wallet assignment
+	// cannot prove which facilitator handled a historical payment.
 	const facilitator =
 		attempt.direction === X402PaymentDirection.InboundSettle
-			? attempt.evmWalletId != null
+			? facilitatorMode === X402FacilitatorMode.SelfHosted
 				? { mode: 'self_hosted' as const, address: EvmWallet?.address ?? null }
-				: { mode: 'remote' as const, address: null }
+				: facilitatorMode === X402FacilitatorMode.Remote
+					? { mode: 'remote' as const, address: null }
+					: { mode: 'unknown' as const, address: null }
 			: null;
 	return {
 		...rest,
@@ -80,8 +84,9 @@ export async function listX402PaymentAttempts(input: {
 	// Tenant scope: restricts to attempts initiated by this API key (undefined = all).
 	apiKeyId?: string;
 }) {
+	const databaseNow = input.filterNeedsManualAction === true ? await getX402DatabaseNow() : undefined;
 	const attempts = await prisma.x402PaymentAttempt.findMany({
-		where: buildX402AttemptWhere(input),
+		where: buildX402AttemptWhere(input, databaseNow),
 		orderBy: { createdAt: 'desc' },
 		take: input.take,
 		cursor: input.cursorId ? { id: input.cursorId } : undefined,

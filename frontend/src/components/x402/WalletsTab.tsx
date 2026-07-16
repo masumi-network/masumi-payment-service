@@ -37,6 +37,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -44,7 +45,7 @@ import {
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { useX402Networks, useX402WalletsPaginated } from '@/lib/hooks/useX402';
+import { useAvailableX402Networks, useX402WalletsPaginated } from '@/lib/hooks/useX402';
 import { cn, copyToClipboard, shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { extractApiPayload } from '@/lib/api-response';
@@ -92,7 +93,7 @@ export function WalletsTab() {
     useX402WalletsPaginated();
   // Label-only network lookup: the wallet list spans both environments, and a label miss
   // falls back to the raw CAIP-2 id, so load silently across all environments.
-  const { networks } = useX402Networks({ silentErrors: true, allEnvironments: true });
+  const { networks } = useAvailableX402Networks({ silentErrors: true, allEnvironments: true });
   const chainLabel = (caip2: string) =>
     networks.find((network) => network.caip2Id === caip2)?.displayName ?? caip2;
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -128,8 +129,8 @@ export function WalletsTab() {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           Managed EVM wallets are split by direction: Purchasing wallets fund outbound x402
-          payments, Selling wallets settle inbound ones as chain facilitators. Private keys are
-          stored encrypted and never leave the server.
+          payments, Selling wallets settle inbound ones as chain facilitators. Keys are encrypted at
+          rest; generated keys are returned once for backup and imported keys are never echoed.
         </p>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
@@ -302,7 +303,7 @@ export function CreateWalletDialog({
 }) {
   const { apiClient } = useAppContext();
   // A managed wallet is bound to exactly one x402 network (payment source).
-  const { networks, isLoading: networksLoading } = useX402Networks();
+  const { networks, isLoading: networksLoading } = useAvailableX402Networks();
   const [networkId, setNetworkId] = useState('');
   const [type, setType] = useState<WalletType>(defaultType);
   const [keySource, setKeySource] = useState<KeySource>('generate');
@@ -382,8 +383,8 @@ export function CreateWalletDialog({
             <DialogHeader>
               <DialogTitle>Create managed wallet</DialogTitle>
               <DialogDescription>
-                Wallets are split by direction. Keys are encrypted at rest and never leave the
-                server.
+                Wallets are split by direction. Keys are encrypted at rest; generated keys are
+                returned once for backup and imported keys are never echoed.
               </DialogDescription>
             </DialogHeader>
 
@@ -403,11 +404,13 @@ export function CreateWalletDialog({
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {networks.map((network) => (
-                    <SelectItem key={network.id} value={network.id}>
-                      {network.displayName}
-                    </SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {networks.map((network) => (
+                      <SelectItem key={network.id} value={network.id}>
+                        {network.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               {networkError ? (

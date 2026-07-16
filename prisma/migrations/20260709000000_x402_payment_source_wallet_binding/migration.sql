@@ -11,17 +11,48 @@
 --
 -- Ordering: (1) additive DDL, (2) data backfill incl. per-network wallet fan-out,
 -- (3) enforce NOT NULL + swap indexes/constraints + drop legacy columns.
+--
+-- This is intentionally an atomic maintenance cutover, not a rolling expand/contract
+-- migration: the final schema removes columns required by the old binary. Stop application
+-- writers before deploy. The transaction makes every DDL/backfill step rollback together,
+-- while the table locks prevent a surviving old writer from changing rows mid-backfill.
+
+BEGIN;
+
+SELECT pg_advisory_xact_lock(hashtextextended('masumi:x402-wallet-binding-migration', 0));
+
+LOCK TABLE
+  "X402Network",
+  "X402EvmWallet",
+  "X402WalletBudget",
+  "X402EvmWalletLowBalanceRule",
+  "X402PaymentAttempt",
+  "X402Settlement"
+IN SHARE ROW EXCLUSIVE MODE;
 
 -- A legacy wallet was allowed to exist without any configured network. The new model
--- requires every wallet to belong to one, and inventing a chain/rpcUrl here would bind
--- its key to an arbitrary payment rail. Fail before the first DDL so the operator can
--- configure the intended network and rerun the migration without partial mutation.
+-- requires every wallet to belong to one. An unassociated wallet is fanned out to every
+-- configured network below, preserving its old chain-agnostic semantics. With no configured
+-- network there is no truthful binding, so fail before the first DDL.
 DO $$
+DECLARE
+  invalid_rule_ids TEXT;
 BEGIN
   IF EXISTS (SELECT 1 FROM "X402EvmWallet")
      AND NOT EXISTS (SELECT 1 FROM "X402Network") THEN
     RAISE EXCEPTION 'Cannot migrate managed EVM wallets: no X402 network exists'
       USING HINT = 'Configure at least one X402 network before rerunning this migration.';
+  END IF;
+
+  SELECT string_agg(r."id", ', ' ORDER BY r."id")
+  INTO invalid_rule_ids
+  FROM "X402EvmWalletLowBalanceRule" r
+  LEFT JOIN "X402Network" n ON n."caip2Id" = r."caip2Network"
+  WHERE n."id" IS NULL;
+
+  IF invalid_rule_ids IS NOT NULL THEN
+    RAISE EXCEPTION 'Cannot migrate x402 low-balance rules with unregistered networks: %', invalid_rule_ids
+      USING HINT = 'Register each rule caip2Network or remove the listed rules before rerunning this migration.';
   END IF;
 END $$;
 
@@ -30,14 +61,17 @@ END $$;
 -- ---------------------------------------------------------------------------
 
 CREATE TYPE "X402CounterpartyRole" AS ENUM ('Payee', 'Payer');
+CREATE TYPE "X402FacilitatorMode" AS ENUM ('SelfHosted', 'Remote');
 
 CREATE TABLE "X402WalletSecret" (
   "id" TEXT NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
+  "address" TEXT NOT NULL,
   "encryptedPrivateKey" TEXT NOT NULL,
   CONSTRAINT "X402WalletSecret_pkey" PRIMARY KEY ("id")
 );
+CREATE UNIQUE INDEX "X402WalletSecret_address_key" ON "X402WalletSecret"("address");
 
 CREATE TABLE "X402CounterpartyWallet" (
   "id" TEXT NOT NULL,
@@ -56,6 +90,9 @@ CREATE INDEX "X402CounterpartyWallet_address_idx" ON "X402CounterpartyWallet"("a
 ALTER TABLE "X402Network"
   ADD COLUMN "facilitatorUrl" TEXT,
   ADD COLUMN "facilitatorAuthEnc" TEXT;
+ALTER TABLE "X402Network"
+  ADD CONSTRAINT "X402Network_facilitator_mode_check"
+  CHECK ("facilitatorUrl" IS NULL OR "facilitatorWalletId" IS NULL);
 
 ALTER TABLE "X402EvmWallet"
   ADD COLUMN "networkId" TEXT,
@@ -63,21 +100,24 @@ ALTER TABLE "X402EvmWallet"
 
 ALTER TABLE "X402PaymentAttempt"
   ADD COLUMN "networkId" TEXT,
+  ADD COLUMN "facilitatorMode" "X402FacilitatorMode",
   ADD COLUMN "counterpartyWalletId" TEXT;
 
 -- ---------------------------------------------------------------------------
 -- (2) Backfill
 -- ---------------------------------------------------------------------------
 
--- 2a. One secret per distinct key; link every wallet to it.
-INSERT INTO "X402WalletSecret" ("id", "updatedAt", "encryptedPrivateKey")
-SELECT gen_random_uuid()::text, CURRENT_TIMESTAMP, k."encryptedPrivateKey"
-FROM (SELECT DISTINCT "encryptedPrivateKey" FROM "X402EvmWallet") k;
+-- 2a. The legacy address was globally unique, so it is the stable public identity for
+--     each encrypted key. Keeping it on the secret provides the database invariant that
+--     concurrent cross-network imports of one EVM key converge on one secret row.
+INSERT INTO "X402WalletSecret" ("id", "updatedAt", "address", "encryptedPrivateKey")
+SELECT gen_random_uuid()::text, CURRENT_TIMESTAMP, w."address", w."encryptedPrivateKey"
+FROM "X402EvmWallet" w;
 
 UPDATE "X402EvmWallet" w
 SET "secretId" = s."id"
 FROM "X402WalletSecret" s
-WHERE s."encryptedPrivateKey" = w."encryptedPrivateKey";
+WHERE s."address" = w."address";
 
 -- 2b. Attempt network is structural: map the legacy caip2Network string to the rail id.
 --     Every attempt had a NOT NULL caip2Network FK'd to X402Network.caip2Id, so all map.
@@ -90,7 +130,8 @@ WHERE n."caip2Id" = a."caip2Network";
 --     low-balance rules, outbound attempts, or facilitator role) becomes K wallet rows,
 --     one per network, all sharing the secret. The original row keeps the first network;
 --     each extra network gets a fresh row and its budgets/rules/attempts/facilitator link
---     are repointed to it. Orphan wallets (no association) fall back to a deterministic net.
+--     are repointed to it. A wallet with no historical association is cloned to EVERY
+--     configured network, preserving the unrestricted semantics of the legacy global wallet.
 --     Drop the legacy global address uniqueness before cloning: the replacement uniqueness
 --     is per-network and is created after the fan-out.
 DROP INDEX "X402EvmWallet_address_key";
@@ -99,16 +140,37 @@ DO $$
 DECLARE
   w RECORD;
   net RECORD;
-  fallback_net TEXT;
   new_wallet_id TEXT;
   assigned BOOLEAN;
+  has_associations BOOLEAN;
 BEGIN
-  FOR w IN SELECT * FROM "X402EvmWallet" LOOP
+  FOR w IN SELECT * FROM "X402EvmWallet" ORDER BY "id" ASC LOOP
     assigned := FALSE;
+
+    SELECT EXISTS (
+      SELECT 1
+      FROM "X402WalletBudget" b
+      JOIN "X402Network" n ON n."caip2Id" = b."caip2Network"
+      WHERE b."evmWalletId" = w."id"
+      UNION ALL
+      SELECT 1
+      FROM "X402EvmWalletLowBalanceRule" r
+      JOIN "X402Network" n ON n."caip2Id" = r."caip2Network"
+      WHERE r."evmWalletId" = w."id"
+      UNION ALL
+      SELECT 1
+      FROM "X402PaymentAttempt" a
+      JOIN "X402Network" n ON n."caip2Id" = a."caip2Network"
+      WHERE a."evmWalletId" = w."id"
+      UNION ALL
+      SELECT 1 FROM "X402Network" n WHERE n."facilitatorWalletId" = w."id"
+    ) INTO has_associations;
+
     FOR net IN
       SELECT n."id" AS network_id, n."caip2Id" AS caip2
       FROM "X402Network" n
-      WHERE n."caip2Id" IN (
+      WHERE NOT has_associations
+         OR n."caip2Id" IN (
               SELECT b."caip2Network" FROM "X402WalletBudget" b WHERE b."evmWalletId" = w."id"
               UNION
               SELECT r."caip2Network" FROM "X402EvmWalletLowBalanceRule" r WHERE r."evmWalletId" = w."id"
@@ -144,25 +206,15 @@ BEGIN
     END LOOP;
 
     IF NOT assigned THEN
-      SELECT n."id" INTO fallback_net
-      FROM "X402Network" n
-      ORDER BY n."isEnabled" DESC, n."isTestnet" ASC, n."id" ASC
-      LIMIT 1;
-      UPDATE "X402EvmWallet" SET "networkId" = fallback_net WHERE "id" = w."id";
+      RAISE EXCEPTION 'Cannot derive any network binding for legacy x402 wallet %', w."id"
+        USING HINT = 'Register the referenced network or remove the wallet before rerunning this migration.';
     END IF;
   END LOOP;
 END $$;
 
--- 2d. Inbound settlements handled by a SELF-HOSTED facilitator get their own wallet set to
---     that network's facilitator row. Remote-facilitator networks (facilitatorWalletId NULL)
---     leave evmWalletId NULL — legitimate, the node owns no key there.
-UPDATE "X402PaymentAttempt" a
-SET "evmWalletId" = n."facilitatorWalletId"
-FROM "X402Network" n
-WHERE a."networkId" = n."id"
-  AND a."evmWalletId" IS NULL
-  AND a."direction" = 'InboundSettle'
-  AND n."facilitatorWalletId" IS NOT NULL;
+-- 2d. Do NOT infer a historical inbound attempt's facilitator from today's network
+--     configuration. Legacy facilitatorMode remains NULL (reported as unknown), and its
+--     evmWalletId remains unchanged. New application writes snapshot the actual mode.
 
 -- 2e. Counterparty entities from the legacy loose strings.
 --     Outbound -> payTo is the Payee; inbound -> payer is the Payer (when known).
@@ -272,3 +324,5 @@ ALTER TABLE "X402PaymentAttempt"
 ALTER TABLE "X402PaymentAttempt"
   ADD CONSTRAINT "X402PaymentAttempt_counterpartyWalletId_fkey"
   FOREIGN KEY ("counterpartyWalletId") REFERENCES "X402CounterpartyWallet"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+COMMIT;

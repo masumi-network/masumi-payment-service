@@ -6,10 +6,12 @@ import {
   getX402Budgets,
   getX402LowBalance,
   getX402Networks,
+  getX402NetworksAvailable,
   getX402Payments,
   getX402Wallets,
   X402Budget,
   X402LowBalanceRule,
+  X402AvailableNetwork,
   X402Network,
   X402PaymentAttempt,
   X402Wallet,
@@ -63,6 +65,46 @@ export function useX402Networks(options?: {
 
   return {
     networks: (query.data ?? []) as X402Network[],
+    isLoading: query.isLoading,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+}
+
+export function useAvailableX402Networks(options?: {
+  silentErrors?: boolean;
+  network?: NetworkType;
+  allEnvironments?: boolean;
+}) {
+  const { apiClient, authorized, network: activeNetwork } = useAppContext();
+  const silentErrors = options?.silentErrors ?? false;
+  const network = options?.network ?? activeNetwork;
+  const isTestnet = isTestnetEnv(network);
+  const allEnvironments = options?.allEnvironments ?? false;
+
+  const query = useQuery({
+    // Keep this under the shared x402-networks prefix so chain mutations invalidate
+    // both the admin projection and this pay-authenticated safe projection.
+    queryKey: ['x402-networks', 'available', silentErrors, allEnvironments ? 'all' : isTestnet],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          getX402NetworksAvailable({
+            client: apiClient,
+            query: allEnvironments ? {} : { isTestnet: isTestnet ? 'true' : 'false' },
+          }),
+        silentErrors ? { onError: () => {} } : { errorMessage: 'Failed to fetch available chains' },
+      );
+      return response?.data?.data?.Networks ?? [];
+    },
+    enabled: !!apiClient && authorized,
+    staleTime: 30000,
+  });
+
+  return {
+    networks: (query.data ?? []) as X402AvailableNetwork[],
     isLoading: query.isLoading,
     isRefetching: query.isRefetching,
     refetch: async () => {
@@ -237,7 +279,7 @@ export type X402PaymentFilters = {
   /** Coarse side switch: buy = outbound payments, sell = inbound (verify + settle). */
   side?: 'buy' | 'sell';
   caip2Network?: string;
-  /** Only attempts left Verified with a recorded settle error (manual reconciliation). */
+  /** Stale ambiguous inbound settles awaiting operator reconciliation. */
   needsManualAction?: boolean;
 };
 

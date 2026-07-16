@@ -369,17 +369,33 @@ export const x402NetworkSchema = z
 		facilitatorUrl: z
 			.string()
 			.nullable()
-			.describe('URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)'),
+			.describe(
+				'HTTPS URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)',
+			),
 		createdById: z.string().nullable().describe('Id of the API key that created this chain configuration'),
 		createdAt: z.date(),
 		updatedAt: z.date(),
 	})
 	.openapi('X402Network');
 
+export const x402AvailableNetworkSchema = z
+	.object({
+		id: z.string().describe('Opaque x402 network id accepted by managed-wallet endpoints'),
+		caip2Id: caip2Eip155Schema.describe('CAIP-2 EVM chain id, for example eip155:8453'),
+		displayName: z.string().describe('Human readable chain name'),
+		isTestnet: z.boolean().describe('Whether this chain belongs to the testnet environment'),
+		isEnabled: z.boolean().describe('Whether this chain may currently be used for x402 payments'),
+		defaultAsset: evmAddressSchema.nullable().describe('Default settlement asset (token contract) for this chain'),
+	})
+	.openapi('X402AvailableNetwork');
+
 export const upsertNetworkSchemaInput = z.object({
 	caip2Id: caip2Eip155Schema,
 	displayName: z.string().min(1).max(120),
-	rpcUrl: z.string().url(),
+	rpcUrl: z
+		.string()
+		.url()
+		.regex(/^https?:\/\//, 'RPC URL must use HTTP or HTTPS'),
 	isTestnet: z.boolean().optional(),
 	isEnabled: z.boolean().optional(),
 	defaultAsset: evmAddressSchema.nullable().optional(),
@@ -395,9 +411,10 @@ export const upsertNetworkSchemaInput = z.object({
 	facilitatorUrl: z
 		.string()
 		.url()
+		.regex(/^https:\/\//, 'Remote facilitator URL must use HTTPS')
 		.nullable()
 		.optional()
-		.describe('Remote facilitator: HTTP(S) endpoint (null clears it)'),
+		.describe('Remote facilitator: HTTPS endpoint (null clears it)'),
 	facilitatorAuth: z
 		.string()
 		.nullable()
@@ -415,6 +432,10 @@ export const listNetworksSchemaInput = z.object({
 
 export const listNetworksSchemaOutput = z.object({
 	Networks: z.array(x402NetworkSchema),
+});
+
+export const listAvailableNetworksSchemaOutput = z.object({
+	Networks: z.array(x402AvailableNetworkSchema),
 });
 
 export const budgetSchema = z
@@ -483,11 +504,13 @@ export const x402PaymentAttemptSchema = z
 		errorMessage: z.string().nullable(),
 		facilitator: z
 			.object({
-				mode: z.enum(['self_hosted', 'remote']).describe('Whether an owned wallet or a remote URL settled'),
+				mode: z
+					.enum(['self_hosted', 'remote', 'unknown'])
+					.describe('Whether an owned wallet, a remote URL, or an unknown legacy facilitator settled'),
 				address: z
 					.string()
 					.nullable()
-					.describe('Self-hosted facilitator wallet address; null for remote (URL is not persisted)'),
+					.describe('Self-hosted facilitator wallet address; null for remote or unknown legacy mode'),
 			})
 			.nullable()
 			.describe('The facilitator that settled this inbound payment; null for outbound payments and verifies.'),
@@ -516,19 +539,27 @@ export const listPaymentAttemptsSchemaOutput = z.object({
 	PaymentAttempts: z.array(x402PaymentAttemptSchema),
 });
 
-export const reconcilePaymentSchemaInput = z.object({
-	attemptId: z.string().describe('Id of the InboundSettle attempt awaiting reconciliation'),
-	resolution: z
-		.enum(['settled', 'failed'])
-		.describe(
-			"Operator's on-chain finding: 'settled' if funds moved (provide txHash), 'failed' if they did not (safe to retry).",
-		),
-	txHash: z
-		.string()
-		.regex(/^0x[a-fA-F0-9]{64}$/, 'txHash must be a 0x-prefixed 32-byte hex transaction hash')
-		.optional()
-		.describe('On-chain settlement transaction hash; required when resolution is settled'),
-});
+const reconcileAttemptIdSchema = z.string().describe('Id of the InboundSettle attempt awaiting reconciliation');
+const reconcileTxHashSchema = z
+	.string()
+	.regex(/^0x[a-fA-F0-9]{64}$/, 'txHash must be a 0x-prefixed 32-byte hex transaction hash')
+	.describe('On-chain settlement transaction hash');
+
+export const reconcilePaymentSchemaInput = z.discriminatedUnion('resolution', [
+	z
+		.object({
+			attemptId: reconcileAttemptIdSchema,
+			resolution: z.literal('settled').describe('Funds moved on-chain'),
+			txHash: reconcileTxHashSchema,
+		})
+		.strict(),
+	z
+		.object({
+			attemptId: reconcileAttemptIdSchema,
+			resolution: z.literal('failed').describe('Funds did not move on-chain and the payment is safe to retry'),
+		})
+		.strict(),
+]);
 
 export const reconcilePaymentSchemaOutput = z.object({
 	attemptId: z.string(),

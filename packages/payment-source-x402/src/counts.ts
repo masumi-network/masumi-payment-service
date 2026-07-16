@@ -1,16 +1,27 @@
 import { Prisma, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { buildX402AttemptWhere, X402AttemptFilterInput } from './attempt-filters';
 import { buildOwnerScopeWhere, type X402OwnerScope } from './internal';
+import { getX402DatabaseNow } from './settle-lock';
 
-export async function countX402ManagedWallets(input?: { type?: X402EvmWalletType; ownerScope?: X402OwnerScope }) {
+export async function countX402ManagedWallets(input?: {
+	type?: X402EvmWalletType;
+	ownerScope?: X402OwnerScope;
+	caip2NetworkLimit?: string[] | null;
+}) {
 	return prisma.x402EvmWallet.count({
-		where: { deletedAt: null, type: input?.type, ...buildOwnerScopeWhere(input?.ownerScope ?? null) },
+		where: {
+			deletedAt: null,
+			type: input?.type,
+			Network: input?.caip2NetworkLimit == null ? undefined : { caip2Id: { in: input.caip2NetworkLimit } },
+			...buildOwnerScopeWhere(input?.ownerScope ?? null),
+		},
 	});
 }
 
 export async function countX402PaymentAttempts(input?: X402AttemptFilterInput) {
+	const databaseNow = input?.filterNeedsManualAction === true ? await getX402DatabaseNow() : undefined;
 	return prisma.x402PaymentAttempt.count({
-		where: buildX402AttemptWhere(input ?? {}),
+		where: buildX402AttemptWhere(input ?? {}, databaseNow),
 	});
 }
 

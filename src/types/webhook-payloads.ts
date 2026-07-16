@@ -85,10 +85,7 @@ const x402PaymentEventData = z.object({
 	caip2Network: z.string().describe('CAIP-2 chain id'),
 	asset: z.string().describe('Token contract'),
 	amount: z.string().describe('Amount in token base units'),
-	payTo: z
-		.string()
-		.nullable()
-		.describe('Recipient address; null only when a reconciled attempt has no linked registered source'),
+	payTo: z.string().describe('Recipient address'),
 	payer: z.string().nullable().describe('Payer address'),
 	txHash: z.string().nullable().describe('On-chain settlement transaction hash, when settled'),
 	success: z.boolean().describe('Whether the settlement succeeded'),

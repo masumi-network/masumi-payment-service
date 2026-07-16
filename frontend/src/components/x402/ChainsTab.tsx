@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useRouter } from 'next/router';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -23,6 +22,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -43,7 +43,10 @@ const chainSchema = z
       .string()
       .regex(/^eip155:\d+$/, 'Must be a CAIP-2 EVM chain id, for example eip155:8453'),
     displayName: z.string().min(1, 'Required').max(120),
-    rpcUrl: z.string().url('Must be a valid URL'),
+    rpcUrl: z
+      .string()
+      .url('Must be a valid URL')
+      .regex(/^https?:\/\//, 'RPC URL must use HTTP or HTTPS'),
     isTestnet: z.boolean(),
     isEnabled: z.boolean(),
     defaultAsset: z
@@ -55,8 +58,14 @@ const chainSchema = z
     // facilitator URL — exactly one, enforced by the backend and by the mode toggle here.
     facilitatorMode: z.enum(['wallet', 'remote']),
     facilitatorWalletId: z.string().optional(),
-    facilitatorUrl: z.string().url('Must be a valid URL').or(z.literal('')).optional(),
+    facilitatorUrl: z
+      .string()
+      .url('Must be a valid URL')
+      .regex(/^https:\/\//, 'Remote facilitator URL must use HTTPS')
+      .or(z.literal(''))
+      .optional(),
     facilitatorAuth: z.string().optional(),
+    clearFacilitatorAuth: z.boolean(),
   })
   // An enabled chain becomes a live payment source the moment it is saved, so it must be
   // fully configured: a facilitator is required to settle on it. Leave the chain disabled
@@ -67,7 +76,7 @@ const chainSchema = z
       if (!data.facilitatorWalletId || data.facilitatorWalletId === NO_FACILITATOR) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'A facilitator wallet is required to enable a chain',
+          message: 'Select a Selling wallet or switch to a remote facilitator',
           path: ['facilitatorWalletId'],
         });
       }
@@ -83,14 +92,15 @@ const chainSchema = z
 type ChainFormValues = z.infer<typeof chainSchema>;
 
 export function ChainsTab() {
-  const router = useRouter();
   const { networks, isLoading, isRefetching, refetch } = useX402Networks();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<X402Network | null>(null);
 
-  // Adding a chain goes through the guided setup wizard instead of the raw form, so a new
-  // chain is always created complete (wallet → facilitator) rather than as a bare row. The
-  // inline dialog stays only for editing an already-configured chain.
+  const openCreate = () => {
+    setEditing(null);
+    setDialogOpen(true);
+  };
+
   const openEdit = (network: X402Network) => {
     setEditing(network);
     setDialogOpen(true);
@@ -105,7 +115,7 @@ export function ChainsTab() {
         </p>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
-          <Button onClick={() => router.push('/x402-setup')} className="flex items-center gap-2">
+          <Button onClick={openCreate} className="flex items-center gap-2">
             <Plus className="h-4 w-4" />
             Add chain
           </Button>
@@ -286,7 +296,9 @@ export function ChainDialog({
       // A new chain should land in the environment it is created from (testnet chains
       // pair with Preprod), otherwise it is invisible in the active env after saving.
       isTestnet: editing?.isTestnet ?? isTestnetEnv(network),
-      isEnabled: editing?.isEnabled ?? true,
+      // A new self-hosted chain cannot have a bound facilitator wallet until the network row
+      // exists. Save it disabled first; remote-facilitator users may enable it in this form.
+      isEnabled: editing?.isEnabled ?? false,
       defaultAsset: editing?.defaultAsset ?? '',
       // Existing remote-facilitator chains open in remote mode; everything else defaults to
       // the owned-wallet mode. facilitatorAuth is write-only, so it is never prefilled.
@@ -294,10 +306,13 @@ export function ChainDialog({
       facilitatorWalletId: editing?.facilitatorWalletId ?? NO_FACILITATOR,
       facilitatorUrl: editing?.facilitatorUrl ?? '',
       facilitatorAuth: '',
+      clearFacilitatorAuth: false,
     },
   });
 
   const facilitatorMode = useWatch({ control, name: 'facilitatorMode' });
+  const clearFacilitatorAuth = useWatch({ control, name: 'clearFacilitatorAuth' });
+  const hasExistingRemoteFacilitator = !!editing?.facilitatorUrl;
 
   const onSubmit = async (data: ChainFormValues) => {
     // Send exactly one facilitator mode; null the other so the backend's exactly-one rule is met.
@@ -315,10 +330,13 @@ export function ChainDialog({
             ? data.facilitatorWalletId
             : null,
         facilitatorUrl: isRemote && data.facilitatorUrl ? data.facilitatorUrl : null,
-        // Auth is write-only and never prefilled. Omission lets the backend preserve it for a
-        // same-origin URL edit; changing origin clears it so credentials cannot cross origins.
-        // A retyped value sets/rotates it for the submitted URL.
-        facilitatorAuth: isRemote && data.facilitatorAuth ? data.facilitatorAuth : undefined,
+        // Auth is write-only and never prefilled. Blank preserves it for same-origin edits,
+        // explicit clear sends null, and a retyped value sets/rotates it for the submitted URL.
+        facilitatorAuth: !isRemote
+          ? undefined
+          : data.clearFacilitatorAuth
+            ? null
+            : data.facilitatorAuth || undefined,
       })
       .catch(() => null);
     if (!response) return;
@@ -399,8 +417,10 @@ export function ChainDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="wallet">Owned Selling wallet (self-hosted)</SelectItem>
-                    <SelectItem value="remote">Remote facilitator URL</SelectItem>
+                    <SelectGroup>
+                      <SelectItem value="wallet">Owned Selling wallet (self-hosted)</SelectItem>
+                      <SelectItem value="remote">Remote facilitator URL</SelectItem>
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               )}
@@ -417,12 +437,14 @@ export function ChainDialog({
                         <SelectValue placeholder="Select a managed wallet" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={NO_FACILITATOR}>None</SelectItem>
-                        {wallets.map((wallet) => (
-                          <SelectItem key={wallet.id} value={wallet.id} className="font-mono">
-                            {shortenAddress(wallet.address, 8)}
-                          </SelectItem>
-                        ))}
+                        <SelectGroup>
+                          <SelectItem value={NO_FACILITATOR}>None</SelectItem>
+                          {wallets.map((wallet) => (
+                            <SelectItem key={wallet.id} value={wallet.id} className="font-mono">
+                              {shortenAddress(wallet.address, 8)}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                   )}
@@ -452,19 +474,46 @@ export function ChainDialog({
                   <p className="text-xs text-destructive">{errors.facilitatorUrl.message}</p>
                 )}
                 <Input
+                  type="password"
                   placeholder={
-                    editing
+                    hasExistingRemoteFacilitator
                       ? 'Authorization header value (blank keeps it on the same origin)'
                       : 'Authorization header value (optional)'
                   }
                   aria-label="Facilitator auth"
+                  autoComplete="new-password"
+                  spellCheck={false}
+                  disabled={clearFacilitatorAuth}
                   {...register('facilitatorAuth')}
                 />
+                {hasExistingRemoteFacilitator && (
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div>
+                      <p className="text-sm font-medium">Clear stored authorization</p>
+                      <p className="text-xs text-muted-foreground">
+                        Stop sending the existing Authorization header after this save.
+                      </p>
+                    </div>
+                    <Controller
+                      control={control}
+                      name="clearFacilitatorAuth"
+                      render={({ field }) => (
+                        <Switch
+                          aria-label="Clear stored facilitator authorization"
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      )}
+                    />
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground">
-                  A remote facilitator settles inbound payments over HTTP — the node holds no key on
-                  this chain. Auth is stored encrypted and never shown again
-                  {editing
-                    ? '; blank preserves it only while the URL origin stays unchanged.'
+                  A remote facilitator settles inbound payments over HTTPS — the node holds no key
+                  on this chain. Auth is stored encrypted and never shown again
+                  {hasExistingRemoteFacilitator
+                    ? clearFacilitatorAuth
+                      ? '; the stored value will be cleared when saved.'
+                      : '; blank preserves it only while the URL origin stays unchanged.'
                     : '.'}
                 </p>
               </>

@@ -98,8 +98,13 @@ export async function getX402WalletBalances(input: {
 	evmWalletId: string;
 	caip2Network?: string;
 	ownerScope?: X402OwnerScope;
+	caip2NetworkLimit?: string[] | null;
 }): Promise<{ evmWalletId: string; address: string; Balances: X402NetworkBalance[] }> {
-	const wallet = await getX402ManagedWallet(input.evmWalletId, input.ownerScope ?? null);
+	const wallet = await getX402ManagedWallet(
+		input.evmWalletId,
+		input.ownerScope ?? null,
+		input.caip2NetworkLimit ?? null,
+	);
 	const owner = wallet.address as HexAddress;
 
 	// A managed wallet is bound to exactly one payment source, so its balance is read on that

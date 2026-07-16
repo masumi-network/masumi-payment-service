@@ -9,7 +9,13 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { chainsForEnv, isTestnetEnv, X402_ACCENT } from '@/lib/x402-rail';
+import {
+  chainsForEnv,
+  hasBudgetOnEnabledNetworks,
+  isTestnetEnv,
+  walletsForNetworks,
+  X402_ACCENT,
+} from '@/lib/x402-rail';
 import { X402Network, X402Wallet } from '@/lib/api/generated';
 import { CreateWalletDialog } from '@/components/x402/WalletsTab';
 import { ChainDialog } from '@/components/x402/ChainsTab';
@@ -58,22 +64,22 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   const loading = !authorized || walletsLoading || networksLoading || budgetsLoading;
 
   const envChains = useMemo(() => chainsForEnv(networks, networkType), [networks, networkType]);
+  const envWallets = useMemo(() => walletsForNetworks(wallets, envChains), [wallets, envChains]);
   // Wallets are split by direction: a Selling wallet settles inbound payments (facilitator),
   // a Purchasing wallet funds outbound ones (budget). Each step owns its type.
-  const hasSellingWallet = wallets.some((wallet) => wallet.type === 'Selling');
-  const hasPurchasingWallet = wallets.some((wallet) => wallet.type === 'Purchasing');
+  const hasSellingWallet = envWallets.some((wallet) => wallet.type === 'Selling');
+  const hasPurchasingWallet = envWallets.some((wallet) => wallet.type === 'Purchasing');
   const hasFacilitator = envChains.some(
     (chain) => !!chain.facilitatorWalletId || !!chain.facilitatorUrl,
   );
   const configuredChain =
     envChains.find((chain) => !!chain.facilitatorWalletId || !!chain.facilitatorUrl) ?? null;
-  // Scope budgets to the active environment so a budget on the other env doesn't mark this
-  // env's optional step complete.
-  const envCaip2 = useMemo(() => {
-    const wantTestnet = isTestnetEnv(networkType);
-    return new Set(networks.filter((n) => n.isTestnet === wantTestnet).map((n) => n.caip2Id));
-  }, [networks, networkType]);
-  const hasBudget = budgets.some((budget) => envCaip2.has(budget.caip2Network));
+  // Scope budgets to enabled chains in this environment so a preconfigured budget on a disabled
+  // or other-environment chain cannot mark the optional outbound step complete.
+  const hasBudget = useMemo(
+    () => hasBudgetOnEnabledNetworks(budgets, envChains),
+    [budgets, envChains],
+  );
 
   // Prefer attaching a facilitator to an enabled chain in the active env that lacks one (Base
   // ships preconfigured), then any chain in the same env, never crossing environments.
@@ -112,7 +118,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   // Chips for the wallets the operator already has of a direction, so each step reflects state
   // rather than re-asking them to create one.
   const walletChips = (type: X402Wallet['type']) => {
-    const matching = wallets.filter((wallet) => wallet.type === type);
+    const matching = envWallets.filter((wallet) => wallet.type === type);
     if (matching.length === 0) return null;
     return (
       <div className="flex flex-wrap justify-center gap-1.5">

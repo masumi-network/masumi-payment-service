@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const mockSupportedPaymentSourceFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402NetworkFindUnique = jest.fn() as jest.Mock<any>;
+const mockTxX402NetworkFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402NetworkUpsert = jest.fn() as jest.Mock<any>;
 const mockX402SettlementFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402SettlementCreate = jest.fn() as jest.Mock<any>;
@@ -10,11 +11,13 @@ const mockX402PaymentAttemptUpdate = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptUpdateMany = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptFindFirst = jest.fn() as jest.Mock<any>;
 const mockX402PaymentAttemptFindUnique = jest.fn() as jest.Mock<any>;
+const mockTxX402PaymentAttemptFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletFindFirst = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletUpdateMany = jest.fn() as jest.Mock<any>;
 const mockApiKeyFindUnique = jest.fn() as jest.Mock<any>;
 const mockX402EvmWalletCreate = jest.fn() as jest.Mock<any>;
+const mockX402WalletSecretFindUniqueOrThrow = jest.fn() as jest.Mock<any>;
 const mockCounterpartyUpsert = jest.fn() as jest.Mock<any>;
 const mockCounterpartyFindUniqueOrThrow = jest.fn() as jest.Mock<any>;
 const mockExecuteRaw = jest.fn() as jest.Mock<any>;
@@ -88,6 +91,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		Payee: 'Payee',
 		Payer: 'Payer',
 	},
+	X402FacilitatorMode: {
+		SelfHosted: 'SelfHosted',
+		Remote: 'Remote',
+	},
 	X402PaymentDirection: {
 		InboundVerify: 'InboundVerify',
 		InboundSettle: 'InboundSettle',
@@ -131,6 +138,9 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			create: mockX402EvmWalletCreate,
 			updateMany: mockX402EvmWalletUpdateMany,
 			findMany: jest.fn(),
+		},
+		x402WalletSecret: {
+			findUniqueOrThrow: mockX402WalletSecretFindUniqueOrThrow,
 		},
 		x402CounterpartyWallet: {
 			upsert: mockCounterpartyUpsert,
@@ -181,6 +191,13 @@ class HTTPFacilitatorClientMock {
 jest.unstable_mockModule('@x402/core/http', () => ({
 	encodePaymentSignatureHeader: mockEncodePaymentSignatureHeader,
 	HTTPFacilitatorClient: HTTPFacilitatorClientMock,
+}));
+
+jest.unstable_mockModule('./remote-facilitator', () => ({
+	RemoteHTTPFacilitatorClient: jest.fn(() => ({
+		verify: mockFacilitatorVerify,
+		settle: mockFacilitatorSettle,
+	})),
 }));
 
 jest.unstable_mockModule('@x402/evm', () => ({
@@ -250,6 +267,9 @@ const source = {
 	},
 };
 
+const networkUpdatedAt = new Date('2026-01-01T00:00:00.000Z');
+const databaseClockNow = new Date('2026-07-16T12:00:00.000Z');
+
 const requirements = {
 	scheme: 'exact',
 	network: source.network,
@@ -284,6 +304,12 @@ const paymentRequired = {
 describe('x402 service helpers', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		mockQueryRaw.mockImplementation(async (queryParts: readonly string[]) => {
+			const sql = queryParts.join('');
+			if (sql.includes('UPDATE "X402EvmWallet"')) return [{ lockedAt: databaseClockNow }];
+			if (sql.includes('SELECT clock_timestamp()')) return [{ now: databaseClockNow }];
+			return [];
+		});
 		latestClient = null;
 		mockSupportedPaymentSourceFindUnique.mockResolvedValue(source);
 		mockX402NetworkFindUnique.mockResolvedValue({
@@ -292,6 +318,7 @@ describe('x402 service helpers', () => {
 			displayName: 'Base Sepolia',
 			rpcUrl: 'https://sepolia.base.org',
 			isEnabled: true,
+			updatedAt: networkUpdatedAt,
 			facilitatorWalletId: 'wallet-facilitator',
 			facilitatorUrl: null,
 			facilitatorAuthEnc: null,
@@ -318,7 +345,8 @@ describe('x402 service helpers', () => {
 			},
 		});
 		mockX402EvmWalletFindFirst.mockResolvedValue(null);
-		// Settle lock acquire/release both go through updateMany (wallet.lockedAt); count:1 = ok.
+		mockX402WalletSecretFindUniqueOrThrow.mockResolvedValue({ id: 'secret-1' });
+		// Lease acquire/renew use atomic raw UPDATEs; compare-and-release remains updateMany.
 		mockX402EvmWalletUpdateMany.mockResolvedValue({ count: 1 });
 		mockCounterpartyUpsert.mockResolvedValue({ id: 'counterparty-1' });
 		// Counterparty resolution is now a native ON CONFLICT insert ($executeRaw) + id read-back.
@@ -396,6 +424,14 @@ describe('x402 service helpers', () => {
 			updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 			EvmWallet: { address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', Network: { caip2Id: source.network } },
 		});
+		mockTxX402NetworkFindUnique.mockResolvedValue({
+			isEnabled: true,
+			updatedAt: networkUpdatedAt,
+			rpcUrl: 'https://sepolia.base.org',
+			facilitatorWalletId: 'wallet-facilitator',
+			facilitatorUrl: null,
+			facilitatorAuthEnc: null,
+		});
 		mockTxPaymentAttemptCreate.mockResolvedValue({ id: 'attempt-outbound-1' });
 		mockPrismaTransaction.mockImplementation(async (arg: unknown) => {
 			// Prisma.$transaction supports both the array form (wallet delete) and the callback form
@@ -403,6 +439,9 @@ describe('x402 service helpers', () => {
 			if (Array.isArray(arg)) return Promise.all(arg);
 			const callback = arg as (tx: unknown) => Promise<unknown>;
 			return callback({
+				x402Network: {
+					findUnique: mockTxX402NetworkFindUnique,
+				},
 				x402WalletBudget: {
 					findFirst: mockBudgetFindFirst,
 					updateMany: mockBudgetUpdateMany,
@@ -413,6 +452,7 @@ describe('x402 service helpers', () => {
 							? mockX402PaymentAttemptCreate(args)
 							: mockTxPaymentAttemptCreate(args),
 					findFirst: mockX402PaymentAttemptFindFirst,
+					findUnique: mockTxX402PaymentAttemptFindUnique,
 					update: mockX402PaymentAttemptUpdate,
 					updateMany: mockX402PaymentAttemptUpdateMany,
 				},
@@ -794,12 +834,23 @@ describe('x402 service helpers', () => {
 		// The pre-settle Verified marker is stamped with the error for diagnosis,
 		// NOT auto-failed (auto-failing could tell a possibly-charged buyer "failed"
 		// after a post-broadcast throw). The row stays Verified for reconciliation.
-		expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledWith(
+		expect(mockX402PaymentAttemptUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: 'attempt-1' },
-				data: { errorReason: 'settle_threw', errorMessage: 'rpc getCode failed' },
+				where: { id: 'attempt-1', status: 'Verified' },
+				data: {
+					errorReason: 'settle_threw',
+					errorMessage: 'rpc getCode failed',
+					updatedAt: new Date('2026-07-16T12:00:00.000Z'),
+				},
 			}),
 		);
+		// The call may have broadcast before throwing. Refresh and retain the wallet lease rather
+		// than immediately exposing the signer nonce to another settlement.
+		const leaseUpdates = (mockQueryRaw.mock.calls as Array<[readonly string[], ...unknown[]]>).filter(([parts]) =>
+			parts.join('').includes('UPDATE "X402EvmWallet"'),
+		);
+		expect(leaseUpdates).toHaveLength(2); // acquire + ambiguous-error retention renew
+		expect(mockX402EvmWalletUpdateMany).not.toHaveBeenCalled();
 		// No settlement row is written when settle throws.
 		expect(mockX402SettlementCreate).not.toHaveBeenCalled();
 	});
@@ -828,6 +879,90 @@ describe('x402 service helpers', () => {
 		);
 	});
 
+	it('maps an adapter-pg settlement uniqueness error to 409', async () => {
+		const error = new Error('duplicate key value violates unique constraint') as Error & {
+			name: string;
+			cause?: { code: string };
+		};
+		error.name = 'DriverAdapterError';
+		error.cause = { code: '23505' };
+		mockX402SettlementCreate.mockRejectedValueOnce(error);
+
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toMatchObject({ status: 409 });
+	});
+
+	it('retries a transient adapter deadlock while persisting a successful settlement', async () => {
+		const error = new Error('deadlock detected') as Error & {
+			name: string;
+			cause?: { code: string };
+		};
+		error.name = 'DriverAdapterError';
+		error.cause = { code: '40P01' };
+		mockX402SettlementCreate.mockRejectedValueOnce(error);
+
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).resolves.toMatchObject({
+			replay: false,
+			settleResponse: { success: true, transaction: '0xsettlement' },
+		});
+
+		expect(mockX402SettlementCreate).toHaveBeenCalledTimes(2);
+		expect(mockX402PaymentAttemptUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ errorReason: 'settle_persist_failed' }),
+			}),
+		);
+	});
+
+	it('returns the committed settlement when the transaction reports an error after commit', async () => {
+		const runTransaction = mockPrismaTransaction.getMockImplementation();
+		if (runTransaction == null) throw new Error('missing transaction mock implementation');
+		let transactionCalls = 0;
+		mockPrismaTransaction.mockImplementation(async (...args: unknown[]) => {
+			transactionCalls += 1;
+			const result = await runTransaction(...args);
+			if (transactionCalls === 2) {
+				throw new Error('connection lost after commit');
+			}
+			return result;
+		});
+		mockX402PaymentAttemptUpdateMany.mockImplementation(async (args: any) => ({
+			count: args.data?.errorReason === 'settle_persist_failed' ? 0 : 1,
+		}));
+		mockX402SettlementFindUnique
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce({ paymentAttemptId: 'attempt-1', txHash: '0xsettlement' });
+
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).resolves.toMatchObject({
+			replay: false,
+			settleResponse: { success: true, transaction: '0xsettlement' },
+			webhook: { success: true, txHash: '0xsettlement' },
+		});
+
+		expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
+		expect(mockX402SettlementCreate).toHaveBeenCalledTimes(1);
+	});
+
 	it('maps the database active-claim unique constraint to 409 before settling', async () => {
 		// An older replica that does not take the payload claim races its marker create past
 		// the guard; the partial unique index rejects ours. No authorization was submitted,
@@ -853,6 +988,23 @@ describe('x402 service helpers', () => {
 		expect(mockX402PaymentAttemptUpdate).not.toHaveBeenCalled();
 	});
 
+	it('maps an adapter-pg active-claim 23505 to 409 before settling', async () => {
+		const error = new Error('duplicate key value violates unique constraint') as Error & { code?: string };
+		error.code = '23505';
+		mockX402PaymentAttemptCreate.mockRejectedValueOnce(error);
+
+		await expect(
+			service.settleX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toMatchObject({ status: 409 });
+
+		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+	});
+
 	it('stamps settle_persist_failed with the txHash when persisting a successful outcome fails', async () => {
 		mockX402SettlementCreate.mockRejectedValueOnce(new Error('connection reset'));
 
@@ -867,14 +1019,15 @@ describe('x402 service helpers', () => {
 
 		// Funds moved but the receipt could not be persisted: the marker keeps its Verified
 		// status (never auto-fail) and is stamped with the reason plus the on-chain txHash so
-		// it enters the needs-manual-action backlog immediately with the operator's reference.
+		// it enters the needs-manual-action backlog once stale with the operator's reference.
 		expect(mockX402PaymentAttemptUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: { id: 'attempt-1', status: 'Verified' },
-				data: {
+				data: expect.objectContaining({
 					errorReason: 'settle_persist_failed',
 					errorMessage: expect.stringContaining('txHash=0xsettlement'),
-				},
+					updatedAt: new Date('2026-07-16T12:00:00.000Z'),
+				}),
 			}),
 		);
 		expect(mockX402PaymentAttemptUpdateMany).not.toHaveBeenCalledWith(
@@ -1453,6 +1606,39 @@ describe('x402 service helpers', () => {
 	});
 
 	describe('facilitator + counterparty modelling', () => {
+		it('rejects a network row with both remote and self-hosted facilitators', async () => {
+			mockX402NetworkFindUnique.mockResolvedValue({
+				id: 'network-1',
+				caip2Id: source.network,
+				displayName: 'Base Sepolia',
+				rpcUrl: 'https://sepolia.base.org',
+				isEnabled: true,
+				updatedAt: networkUpdatedAt,
+				facilitatorWalletId: 'wallet-facilitator',
+				facilitatorUrl: 'https://facilitator.example',
+				facilitatorAuthEnc: null,
+				FacilitatorWallet: {
+					id: 'wallet-facilitator',
+					type: 'Selling',
+					deletedAt: null,
+					Secret: { encryptedPrivateKey: 'encrypted-private-key' },
+				},
+			});
+
+			await expect(
+				service.settleX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					supportedPaymentSourceId: source.id,
+					paymentPayload: typedPaymentPayload,
+				}),
+			).rejects.toMatchObject({
+				status: 500,
+				message: 'x402 network has conflicting facilitator configuration',
+			});
+			expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+		});
+
 		it('settles through a remote facilitator (facilitatorUrl) with no owned wallet', async () => {
 			mockX402NetworkFindUnique.mockResolvedValue({
 				id: 'network-1',
@@ -1460,10 +1646,19 @@ describe('x402 service helpers', () => {
 				displayName: 'Base Sepolia',
 				rpcUrl: 'https://sepolia.base.org',
 				isEnabled: true,
+				updatedAt: networkUpdatedAt,
 				facilitatorWalletId: null,
 				facilitatorUrl: 'https://facilitator.example',
 				facilitatorAuthEnc: null,
 				FacilitatorWallet: null,
+			});
+			mockTxX402NetworkFindUnique.mockResolvedValue({
+				isEnabled: true,
+				updatedAt: networkUpdatedAt,
+				rpcUrl: 'https://sepolia.base.org',
+				facilitatorWalletId: null,
+				facilitatorUrl: 'https://facilitator.example',
+				facilitatorAuthEnc: null,
 			});
 
 			const result = await service.settleX402Payment({
@@ -1479,8 +1674,11 @@ describe('x402 service helpers', () => {
 			expect(mockX402PaymentAttemptCreate).toHaveBeenCalledWith(
 				expect.objectContaining({
 					data: expect.objectContaining({
+						createdAt: new Date('2026-07-16T12:00:00.000Z'),
+						updatedAt: new Date('2026-07-16T12:00:00.000Z'),
 						direction: 'InboundSettle',
 						evmWalletId: null,
+						facilitatorMode: 'Remote',
 						networkId: 'network-1',
 					}),
 				}),
@@ -1500,6 +1698,7 @@ describe('x402 service helpers', () => {
 					data: expect.objectContaining({
 						direction: 'InboundSettle',
 						evmWalletId: 'wallet-facilitator',
+						facilitatorMode: 'SelfHosted',
 						payTo: source.payTo.toLowerCase(),
 					}),
 				}),
@@ -1530,6 +1729,7 @@ describe('x402 service helpers', () => {
 					data: expect.objectContaining({
 						direction: 'InboundVerify',
 						counterpartyWalletId: 'counterparty-1',
+						facilitatorMode: 'SelfHosted',
 						networkId: 'network-1',
 						payTo: source.payTo.toLowerCase(),
 					}),
@@ -1575,6 +1775,18 @@ describe('x402 service helpers', () => {
 					facilitatorUrl: 'https://facilitator.example',
 				}),
 			).rejects.toMatchObject({ status: 400 });
+		});
+
+		it('rejects a plaintext remote facilitator URL', async () => {
+			await expect(
+				service.upsertX402Network({
+					caip2Id: source.network,
+					displayName: 'Base Sepolia',
+					rpcUrl: 'https://sepolia.base.org',
+					facilitatorUrl: 'http://facilitator.example',
+				}),
+			).rejects.toMatchObject({ status: 400 });
+			expect(mockX402NetworkUpsert).not.toHaveBeenCalled();
 		});
 
 		it('rejects a facilitator wallet bound to a different network', async () => {
@@ -1665,6 +1877,14 @@ describe('x402 service helpers', () => {
 			expect(mockX402NetworkUpsert).not.toHaveBeenCalled();
 		});
 
+		it('rejects an auth-only change for a legacy plaintext facilitator URL', async () => {
+			mockX402NetworkFindUnique.mockResolvedValueOnce({ facilitatorUrl: 'http://facilitator.example' });
+			await expect(
+				service.upsertX402Network({ ...baseInput, facilitatorAuth: 'Bearer rotated' }),
+			).rejects.toMatchObject({ status: 400 });
+			expect(mockX402NetworkUpsert).not.toHaveBeenCalled();
+		});
+
 		it('detaches the facilitator when both selectors are explicitly null', async () => {
 			await service.upsertX402Network({ ...baseInput, facilitatorWalletId: null, facilitatorUrl: null });
 			const update = upsertUpdateArg();
@@ -1691,15 +1911,18 @@ describe('x402 service helpers', () => {
 	});
 
 	describe('reconcileX402PaymentAttempt', () => {
+		// Older than SETTLE_STALE_MS (300s): no live settle can still own an unrenewed row this old.
+		const staleUpdatedAt = new Date(databaseClockNow.getTime() - 600_000);
 		// The reconciliation backlog: an inbound settle left Verified with a recorded error.
 		const backlogAttempt = {
 			id: 'attempt-stuck',
+			evmWalletId: 'wallet-facilitator',
 			direction: 'InboundSettle',
 			status: 'Verified',
 			errorReason: 'settle_threw',
 			errorMessage: 'rpc getCode failed',
 			paymentPayloadHash: 'hash-1',
-			updatedAt: new Date(),
+			updatedAt: staleUpdatedAt,
 			// Fields the reconciliation webhook reads.
 			supportedPaymentSourceId: source.id,
 			registryRequestId: source.registryRequestId,
@@ -1707,19 +1930,32 @@ describe('x402 service helpers', () => {
 			amount: source.amount,
 			payTo: source.payTo.toLowerCase(),
 			Network: { caip2Id: source.network },
+			EvmWallet: { lockedAt: null },
 			CounterpartyWallet: { address: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
 			SupportedPaymentSource: { payTo: source.payTo },
 			Settlement: null,
 		};
-		// Older than SETTLE_STALE_MS (300s): no live settle can still hold a row this old.
-		const staleUpdatedAt = new Date(Date.now() - 600_000);
-
+		const mockReconciliationAttempt = (attempt: any, lockedAttempt: any = attempt) => {
+			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({
+				id: attempt.id,
+				evmWalletId: attempt.evmWalletId,
+			});
+			mockTxX402PaymentAttemptFindUnique.mockResolvedValueOnce(lockedAttempt);
+		};
 		it('marks an ambiguous attempt Failed when the operator confirms funds did not move', async () => {
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
+			mockReconciliationAttempt(backlogAttempt);
 
 			const result = await service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' });
 
 			expect(result).toMatchObject({ attemptId: 'attempt-stuck', status: 'Failed' });
+			const [walletLockQuery] = mockQueryRaw.mock.calls[0] as [readonly string[]];
+			const [attemptLockQuery] = mockQueryRaw.mock.calls[1] as [readonly string[]];
+			const [databaseClockQuery] = mockQueryRaw.mock.calls[2] as [readonly string[]];
+			expect(walletLockQuery.join('')).toContain('"X402EvmWallet"');
+			expect(attemptLockQuery.join('')).toContain('"X402PaymentAttempt"');
+			expect(databaseClockQuery.join('')).toContain('clock_timestamp()');
+			expect(mockQueryRaw.mock.invocationCallOrder[0]).toBeLessThan(mockQueryRaw.mock.invocationCallOrder[1]);
+			expect(mockQueryRaw.mock.invocationCallOrder[1]).toBeLessThan(mockQueryRaw.mock.invocationCallOrder[2]);
 			// Guarded on the status still being Verified so a concurrent resolution loses cleanly.
 			expect(mockX402PaymentAttemptUpdateMany).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -1737,7 +1973,7 @@ describe('x402 service helpers', () => {
 		});
 
 		it('409s a failed-resolution that lost the race to a concurrent resolution', async () => {
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
+			mockReconciliationAttempt(backlogAttempt);
 			// The eligibility read saw Verified, but by the time the guarded update runs another
 			// reconcile (or a late settle) already resolved the attempt.
 			mockX402PaymentAttemptUpdateMany.mockResolvedValueOnce({ count: 0 });
@@ -1748,7 +1984,7 @@ describe('x402 service helpers', () => {
 		});
 
 		it('records the settlement and marks the attempt Settled when funds moved', async () => {
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
+			mockReconciliationAttempt(backlogAttempt);
 			mockX402SettlementCreate.mockResolvedValueOnce({
 				paymentAttemptId: 'attempt-stuck',
 				paymentPayloadHash: 'hash-1',
@@ -1785,7 +2021,7 @@ describe('x402 service helpers', () => {
 		});
 
 		it('409s when another reconcile or attempt owns the unique settlement claim', async () => {
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
+			mockReconciliationAttempt(backlogAttempt);
 			mockX402SettlementCreate.mockRejectedValueOnce(
 				new MockPrismaClientKnownRequestError('Unique constraint failed on paymentPayloadHash', 'P2002'),
 			);
@@ -1799,8 +2035,27 @@ describe('x402 service helpers', () => {
 			).rejects.toMatchObject({ status: 409 });
 		});
 
+		it('409s adapter-pg 23505 settlement claim conflicts', async () => {
+			mockReconciliationAttempt(backlogAttempt);
+			const error = new Error('duplicate key value violates unique constraint') as Error & {
+				name: string;
+				cause?: { code: string };
+			};
+			error.name = 'DriverAdapterError';
+			error.cause = { code: '23505' };
+			mockX402SettlementCreate.mockRejectedValueOnce(error);
+
+			await expect(
+				service.reconcileX402PaymentAttempt({
+					attemptId: 'attempt-stuck',
+					resolution: 'settled',
+					txHash: '0xloser',
+				}),
+			).rejects.toMatchObject({ status: 409 });
+		});
+
 		it('409s a settled-resolution that lost the race to a concurrent resolution', async () => {
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
+			mockReconciliationAttempt(backlogAttempt);
 			mockX402PaymentAttemptUpdateMany.mockResolvedValueOnce({ count: 0 });
 
 			await expect(
@@ -1811,7 +2066,7 @@ describe('x402 service helpers', () => {
 		});
 
 		it('requires a txHash to reconcile as settled', async () => {
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce(backlogAttempt);
+			mockReconciliationAttempt(backlogAttempt);
 			await expect(
 				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'settled' }),
 			).rejects.toMatchObject({ status: 400 });
@@ -1820,7 +2075,7 @@ describe('x402 service helpers', () => {
 
 		it('refuses to reconcile an attempt that is not awaiting reconciliation', async () => {
 			// Already Settled WITH its settlement row → fully resolved, not in the backlog.
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({
+			mockReconciliationAttempt({
 				...backlogAttempt,
 				status: 'Settled',
 				errorReason: null,
@@ -1835,7 +2090,7 @@ describe('x402 service helpers', () => {
 		it('reconciles an interrupted settle that left no error trace once it is stale', async () => {
 			// Process died mid-settle (or recording the outcome failed): Verified, NO errorReason.
 			// Reconcilable purely by age — the marker outlived every legitimate settle.
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({
+			mockReconciliationAttempt({
 				...backlogAttempt,
 				errorReason: null,
 				updatedAt: staleUpdatedAt,
@@ -1849,7 +2104,26 @@ describe('x402 service helpers', () => {
 		it('refuses to reconcile a trace-less Verified marker that may still be an in-flight settle', async () => {
 			// Fresh + no errorReason: the settle may be live right now; declaring an outcome here
 			// could race the real one, so age must gate it.
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({ ...backlogAttempt, errorReason: null });
+			mockReconciliationAttempt({
+				...backlogAttempt,
+				errorReason: null,
+				updatedAt: databaseClockNow,
+			});
+			await expect(
+				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' }),
+			).rejects.toMatchObject({ status: 409 });
+			expect(mockX402PaymentAttemptUpdateMany).not.toHaveBeenCalled();
+		});
+
+		it('refuses to reconcile while the self-hosted facilitator lock is fresh', async () => {
+			// Discovery saw a stale marker, then the active settle renewed before reconciliation
+			// obtained both row locks. Eligibility must come from the locked re-read.
+			mockReconciliationAttempt(backlogAttempt, {
+				...backlogAttempt,
+				updatedAt: databaseClockNow,
+				EvmWallet: { lockedAt: databaseClockNow },
+			});
+
 			await expect(
 				service.reconcileX402PaymentAttempt({ attemptId: 'attempt-stuck', resolution: 'failed' }),
 			).rejects.toMatchObject({ status: 409 });
@@ -1859,7 +2133,7 @@ describe('x402 service helpers', () => {
 		it('records the lost settlement row for a stale Settled attempt missing one', async () => {
 			// Settle succeeded but persisting the settlement failed: buyer replays 409 until the
 			// row exists. Reconciling as settled recreates it (status update is a no-op).
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({
+			mockReconciliationAttempt({
 				...backlogAttempt,
 				status: 'Settled',
 				errorReason: null,
@@ -1888,7 +2162,7 @@ describe('x402 service helpers', () => {
 		it('refuses to mark a stale settlement-less Settled attempt as failed', async () => {
 			// The facilitator already reported success — funds moved and the nonce is consumed, so
 			// Failed (which would invite a retry) can never be the right resolution here.
-			mockX402PaymentAttemptFindUnique.mockResolvedValueOnce({
+			mockReconciliationAttempt({
 				...backlogAttempt,
 				status: 'Settled',
 				errorReason: null,
@@ -1902,6 +2176,108 @@ describe('x402 service helpers', () => {
 	});
 
 	describe('settle concurrency lock', () => {
+		it('refuses a network config changed after the second resolver snapshot', async () => {
+			// Both resolver reads see the same old snapshot, but the transaction-level CAS sees an
+			// admin update that committed immediately afterward. No marker or chain call may start.
+			mockTxX402NetworkFindUnique.mockResolvedValueOnce({
+				isEnabled: true,
+				updatedAt: new Date(networkUpdatedAt.getTime() + 1_000),
+				rpcUrl: 'https://sepolia.base.org',
+				facilitatorWalletId: 'wallet-facilitator',
+				facilitatorUrl: null,
+				facilitatorAuthEnc: null,
+			});
+
+			await expect(
+				service.settleX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					supportedPaymentSourceId: source.id,
+					paymentPayload: typedPaymentPayload,
+				}),
+			).rejects.toMatchObject({ status: 409 });
+
+			expect(mockX402NetworkFindUnique).toHaveBeenCalledTimes(2);
+			expect(mockX402PaymentAttemptCreate).not.toHaveBeenCalled();
+			expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+		});
+
+		it('re-resolves after locking and refuses a rotated facilitator wallet', async () => {
+			const initialNetwork = {
+				id: 'network-1',
+				caip2Id: source.network,
+				displayName: 'Base Sepolia',
+				rpcUrl: 'https://sepolia.base.org',
+				isEnabled: true,
+				updatedAt: networkUpdatedAt,
+				facilitatorWalletId: 'wallet-facilitator',
+				facilitatorUrl: null,
+				facilitatorAuthEnc: null,
+				FacilitatorWallet: {
+					id: 'wallet-facilitator',
+					type: 'Selling',
+					deletedAt: null,
+					Secret: { encryptedPrivateKey: 'encrypted-private-key' },
+				},
+			};
+			mockX402NetworkFindUnique.mockResolvedValueOnce(initialNetwork).mockResolvedValueOnce({
+				...initialNetwork,
+				facilitatorWalletId: 'wallet-replacement',
+				FacilitatorWallet: {
+					...initialNetwork.FacilitatorWallet,
+					id: 'wallet-replacement',
+				},
+			});
+
+			await expect(
+				service.settleX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					supportedPaymentSourceId: source.id,
+					paymentPayload: typedPaymentPayload,
+				}),
+			).rejects.toMatchObject({ status: 409 });
+
+			expect(mockX402NetworkFindUnique).toHaveBeenCalledTimes(2);
+			expect(mockX402PaymentAttemptCreate).not.toHaveBeenCalled();
+			expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+		});
+
+		it('re-resolves after locking and refuses a network disabled while queued', async () => {
+			const initialNetwork = {
+				id: 'network-1',
+				caip2Id: source.network,
+				displayName: 'Base Sepolia',
+				rpcUrl: 'https://sepolia.base.org',
+				isEnabled: true,
+				updatedAt: networkUpdatedAt,
+				facilitatorWalletId: 'wallet-facilitator',
+				facilitatorUrl: null,
+				facilitatorAuthEnc: null,
+				FacilitatorWallet: {
+					id: 'wallet-facilitator',
+					type: 'Selling',
+					deletedAt: null,
+					Secret: { encryptedPrivateKey: 'encrypted-private-key' },
+				},
+			};
+			mockX402NetworkFindUnique
+				.mockResolvedValueOnce(initialNetwork)
+				.mockResolvedValueOnce({ ...initialNetwork, isEnabled: false });
+
+			await expect(
+				service.settleX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					supportedPaymentSourceId: source.id,
+					paymentPayload: typedPaymentPayload,
+				}),
+			).rejects.toMatchObject({ status: 404 });
+
+			expect(mockX402PaymentAttemptCreate).not.toHaveBeenCalled();
+			expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+		});
+
 		it('takes and releases the per-facilitator DB settle lock around the on-chain settle', async () => {
 			await service.settleX402Payment({
 				apiKeyId: 'api-key-1',
@@ -1910,13 +2286,14 @@ describe('x402 service helpers', () => {
 				paymentPayload: typedPaymentPayload,
 			});
 
-			// Acquire: atomically set wallet.lockedAt on the facilitator wallet when it is free/stale.
-			expect(mockX402EvmWalletUpdateMany).toHaveBeenCalledWith(
-				expect.objectContaining({
-					where: expect.objectContaining({ id: 'wallet-facilitator' }),
-					data: { lockedAt: expect.any(Date) },
-				}),
+			// Acquire: the stale check and clock token are one PostgreSQL UPDATE, so application pauses
+			// cannot turn a freshly written lease into an already-stale one.
+			const acquireCall = (mockQueryRaw.mock.calls as Array<[readonly string[], ...unknown[]]>).find(
+				([parts]) => parts.join('').includes('UPDATE "X402EvmWallet"') && parts.join('').includes('"lockedAt" IS NULL'),
 			);
+			expect(acquireCall?.[0].join('')).toContain('SET "lockedAt" = clock_timestamp()');
+			expect(acquireCall?.[0].join('')).toContain('RETURNING "lockedAt"');
+			expect(acquireCall?.[1]).toBe('wallet-facilitator');
 			// Release: clear it, guarded on the token still being ours (compare-and-release).
 			expect(mockX402EvmWalletUpdateMany).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -1935,11 +2312,24 @@ describe('x402 service helpers', () => {
 				paymentPayload: typedPaymentPayload,
 			});
 
-			expect(mockQueryRaw).toHaveBeenCalledTimes(1);
-			const [queryParts, lockedPayloadHash] = mockQueryRaw.mock.calls[0] as [readonly string[], string];
+			const rawCalls = mockQueryRaw.mock.calls as Array<[readonly string[], ...unknown[]]>;
+			const advisoryCallIndex = rawCalls.findIndex(([queryParts]) =>
+				queryParts.join('').includes('pg_advisory_xact_lock(hashtextextended('),
+			);
+			const networkLockCallIndex = rawCalls.findIndex(([queryParts]) =>
+				queryParts.join('').includes('FROM "X402Network"'),
+			);
+			expect(advisoryCallIndex).toBeGreaterThanOrEqual(0);
+			expect(networkLockCallIndex).toBeGreaterThanOrEqual(0);
+			const [queryParts, lockedPayloadHash] = rawCalls[advisoryCallIndex] as [readonly string[], string];
 			expect(queryParts.join('')).toContain('pg_advisory_xact_lock(hashtextextended(');
 			expect(lockedPayloadHash).toBe(service.hashX402PaymentPayload(paymentPayload));
-			expect(mockQueryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+			const [networkLockQuery, lockedNetworkId] = rawCalls[networkLockCallIndex] as [readonly string[], string];
+			expect(networkLockQuery.join('')).toContain('FROM "X402Network"');
+			expect(networkLockQuery.join('')).toContain('FOR SHARE');
+			expect(lockedNetworkId).toBe('network-1');
+			expect(rawCalls.filter(([parts]) => parts.join('').includes('clock_timestamp()'))).toHaveLength(3);
+			expect(mockQueryRaw.mock.invocationCallOrder[advisoryCallIndex]).toBeLessThan(
 				mockX402PaymentAttemptFindFirst.mock.invocationCallOrder[0],
 			);
 			expect(mockX402PaymentAttemptFindFirst.mock.invocationCallOrder[0]).toBeLessThan(
@@ -1965,7 +2355,7 @@ describe('x402 service helpers', () => {
 
 			expect(mockX402PaymentAttemptCreate).not.toHaveBeenCalled();
 			expect(mockFacilitatorSettle).not.toHaveBeenCalled();
-			expect(mockX402PaymentAttemptUpdate).not.toHaveBeenCalledWith(
+			expect(mockX402PaymentAttemptUpdateMany).not.toHaveBeenCalledWith(
 				expect.objectContaining({ data: expect.objectContaining({ errorReason: 'settle_threw' }) }),
 			);
 		});
@@ -1977,10 +2367,19 @@ describe('x402 service helpers', () => {
 				displayName: 'Base Sepolia',
 				rpcUrl: 'https://sepolia.base.org',
 				isEnabled: true,
+				updatedAt: networkUpdatedAt,
 				facilitatorWalletId: null,
 				facilitatorUrl: 'https://facilitator.example',
 				facilitatorAuthEnc: null,
 				FacilitatorWallet: null,
+			});
+			mockTxX402NetworkFindUnique.mockResolvedValue({
+				isEnabled: true,
+				updatedAt: networkUpdatedAt,
+				rpcUrl: 'https://sepolia.base.org',
+				facilitatorWalletId: null,
+				facilitatorUrl: 'https://facilitator.example',
+				facilitatorAuthEnc: null,
 			});
 
 			await service.settleX402Payment({
@@ -1992,8 +2391,15 @@ describe('x402 service helpers', () => {
 
 			expect(mockFacilitatorSettle).toHaveBeenCalledTimes(1);
 			expect(mockX402EvmWalletUpdateMany).not.toHaveBeenCalled();
-			expect(mockQueryRaw).toHaveBeenCalledTimes(1);
-			expect(mockQueryRaw.mock.calls[0]?.[1]).toBe(service.hashX402PaymentPayload(paymentPayload));
+			const rawCalls = mockQueryRaw.mock.calls as Array<[readonly string[], ...unknown[]]>;
+			const advisoryCall = rawCalls.find(([parts]) => parts.join('').includes('pg_advisory_xact_lock'));
+			const networkLockCall = rawCalls.find(([parts]) => parts.join('').includes('FROM "X402Network"'));
+			expect(advisoryCall?.[1]).toBe(service.hashX402PaymentPayload(paymentPayload));
+			const [networkLockQuery, lockedNetworkId] = networkLockCall as [readonly string[], string];
+			expect(networkLockQuery.join('')).toContain('FROM "X402Network"');
+			expect(networkLockQuery.join('')).toContain('FOR SHARE');
+			expect(lockedNetworkId).toBe('network-1');
+			expect(rawCalls.filter(([parts]) => parts.join('').includes('clock_timestamp()'))).toHaveLength(1);
 		});
 	});
 });

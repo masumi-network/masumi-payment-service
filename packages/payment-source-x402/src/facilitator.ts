@@ -1,7 +1,6 @@
 import createHttpError from 'http-errors';
 import { x402Client } from '@x402/core/client';
 import { x402Facilitator } from '@x402/core/facilitator';
-import { HTTPFacilitatorClient } from '@x402/core/http';
 import type { Network } from '@x402/core/types';
 import { toClientEvmSigner, toFacilitatorEvmSigner } from '@x402/evm';
 import { registerExactEvmScheme as registerExactEvmClientScheme } from '@x402/evm/exact/client';
@@ -12,6 +11,7 @@ import { createPublicClient, createWalletClient, publicActions } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
 	assertRpcServesDeclaredChain,
+	assertSafeFacilitatorUrl,
 	createChain,
 	getEip155ChainId,
 	getManagedWalletWithSecretOrThrow,
@@ -20,6 +20,7 @@ import {
 	type PrivateKey,
 	type X402OwnerScope,
 } from './internal';
+import { RemoteHTTPFacilitatorClient } from './remote-facilitator';
 
 // Build a signing client for an outbound payment. The wallet is bound to exactly one payment
 // source, so we refuse to sign on any chain other than the one it was provisioned for — this
@@ -65,7 +66,7 @@ type ResolvedNetwork = Awaited<ReturnType<typeof getX402NetworkOrThrow>>;
 
 // Both the local x402Facilitator and the remote HTTPFacilitatorClient expose the verify/settle
 // surface the settle/verify flows use; this union is the common shape returned by the resolver.
-export type X402SettlingFacilitator = x402Facilitator | HTTPFacilitatorClient;
+export type X402SettlingFacilitator = x402Facilitator | RemoteHTTPFacilitatorClient;
 
 // Resolve a facilitator for a network in one of two modes, returning it alongside the resolved
 // network (its id pins the attempt's rail):
@@ -75,21 +76,21 @@ export async function getFacilitatorForNetwork(
 	caip2Network: string,
 ): Promise<{ facilitator: X402SettlingFacilitator; network: ResolvedNetwork }> {
 	const network = await getX402NetworkOrThrow(caip2Network);
+	if (network.facilitatorUrl != null && network.facilitatorWalletId != null) {
+		throw createHttpError(500, 'x402 network has conflicting facilitator configuration');
+	}
 
-	// Remote facilitator takes precedence: no owned wallet is required or expected here.
+	// Remote facilitator mode owns no wallet. The conflicting-mode guard above prevents a
+	// corrupted legacy row from silently choosing one credential over the other.
 	if (network.facilitatorUrl != null) {
+		// Persistence validation protects new writes; this use-time check also rejects unsafe
+		// legacy rows before decrypting or sending their stored Authorization header.
+		assertSafeFacilitatorUrl(network.facilitatorUrl);
 		const authEnc = network.facilitatorAuthEnc;
-		const facilitator = new HTTPFacilitatorClient({
+		const facilitator = new RemoteHTTPFacilitatorClient({
 			url: network.facilitatorUrl,
-			...(authEnc != null
-				? {
-						createAuthHeaders: async () => {
-							// The stored value is the full Authorization header value, encrypted at rest.
-							const headers = { Authorization: decrypt(authEnc) };
-							return { verify: headers, settle: headers, supported: headers };
-						},
-					}
-				: {}),
+			// The stored value is the full Authorization header value, encrypted at rest.
+			...(authEnc != null ? { getAuthorizationHeader: () => decrypt(authEnc) } : {}),
 		});
 		return { facilitator, network };
 	}

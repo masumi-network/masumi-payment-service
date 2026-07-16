@@ -46,7 +46,7 @@ export function registerX402ManagementPaths({ registry, apiKeyAuth }: SwaggerReg
 		method: 'post',
 		path: '/x402/wallets/update',
 		description: 'Updates the human-readable note of a managed EVM wallet.',
-		summary: 'Update a managed x402 EVM wallet. (pay access required; non-admin keys only their own)',
+		summary: 'Update a managed x402 EVM wallet. (pay access required; owner and network scoped)',
 		tags: ['x402'],
 		security: secured,
 		request: {
@@ -65,7 +65,7 @@ export function registerX402ManagementPaths({ registry, apiKeyAuth }: SwaggerReg
 		path: '/x402/wallets/balance',
 		description:
 			"Reads on-chain balances (native gas plus the default token) of a managed EVM wallet on the wallet's bound network.",
-		summary: 'Read managed x402 wallet balances. (pay access required; non-admin keys only their own)',
+		summary: 'Read managed x402 wallet balances. (pay access required; owner and network scoped)',
 		tags: ['x402'],
 		security: secured,
 		request: { query: walletBalanceSchemaInput.openapi({ example: x402WalletBalanceQueryExample }) },
@@ -77,8 +77,9 @@ export function registerX402ManagementPaths({ registry, apiKeyAuth }: SwaggerReg
 	registry.registerPath({
 		method: 'get',
 		path: '/x402/wallets/count',
-		description: 'Counts active managed EVM wallets, optionally filtered by direction.',
-		summary: 'Count managed x402 wallets. (pay access required; non-admin keys count only their own)',
+		description:
+			'Counts active managed EVM wallets, optionally filtered by direction. Non-admin counts are limited by owner and permitted network.',
+		summary: 'Count managed x402 wallets. (pay access required)',
 		tags: ['x402'],
 		security: secured,
 		request: { query: walletsCountSchemaInput },

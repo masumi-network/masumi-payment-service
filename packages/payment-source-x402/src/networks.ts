@@ -1,7 +1,13 @@
 import createHttpError from 'http-errors';
 import { Prisma, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { encrypt } from '@masumi/payment-core/encryption';
-import { assertHexAddress, assertSafeRpcUrl, getEip155ChainId, normalizeAddress } from './internal';
+import {
+	assertHexAddress,
+	assertSafeFacilitatorUrl,
+	assertSafeRpcUrl,
+	getEip155ChainId,
+	normalizeAddress,
+} from './internal';
 
 const NETWORK_SELECT = {
 	id: true,
@@ -27,6 +33,15 @@ function flattenNetwork({ FacilitatorWallet, ...network }: NetworkRow) {
 	return { ...network, facilitatorWalletAddress: FacilitatorWallet?.address ?? null };
 }
 
+const AVAILABLE_NETWORK_SELECT = {
+	id: true,
+	caip2Id: true,
+	displayName: true,
+	isTestnet: true,
+	isEnabled: true,
+	defaultAsset: true,
+} satisfies Prisma.X402NetworkSelect;
+
 export async function listX402Networks(input?: { isTestnet?: boolean }) {
 	const networks = await prisma.x402Network.findMany({
 		// Split by environment at the query level: testnet chains belong to the Preprod
@@ -36,6 +51,20 @@ export async function listX402Networks(input?: { isTestnet?: boolean }) {
 		select: NETWORK_SELECT,
 	});
 	return networks.map(flattenNetwork);
+}
+
+// Pay-capable clients need the opaque network id to create a wallet, but must not receive
+// operator-only connection or facilitator configuration. Scope this minimal projection by the
+// API key's CAIP-2 limit at the query boundary so an inaccessible network is never disclosed.
+export async function listAvailableX402Networks(input?: { isTestnet?: boolean; caip2NetworkLimit?: string[] | null }) {
+	return prisma.x402Network.findMany({
+		where: {
+			isTestnet: input?.isTestnet,
+			caip2Id: input?.caip2NetworkLimit == null ? undefined : { in: input.caip2NetworkLimit },
+		},
+		orderBy: { caip2Id: 'asc' },
+		select: AVAILABLE_NETWORK_SELECT,
+	});
 }
 
 // Resolve the facilitator configuration into the columns to persist, enforcing the
@@ -89,7 +118,7 @@ async function resolveFacilitatorData(input: {
 	if (wantsUrl) {
 		// The remote facilitator endpoint is admin-supplied and reached server-side, so guard
 		// it against SSRF exactly like the RPC URL.
-		assertSafeRpcUrl(input.facilitatorUrl as string);
+		assertSafeFacilitatorUrl(input.facilitatorUrl as string);
 		const data: Prisma.X402NetworkUncheckedUpdateInput = {
 			facilitatorWalletId: null,
 			facilitatorUrl: input.facilitatorUrl,
@@ -147,6 +176,9 @@ async function resolveFacilitatorData(input: {
 		if (existing?.facilitatorUrl == null) {
 			throw createHttpError(400, 'facilitatorAuth can only be set on a network with a remote facilitator URL');
 		}
+		// Auth-only updates still persist a remote-facilitator configuration snapshot. Reject a
+		// legacy plaintext endpoint instead of rotating a credential that can only be sent unsafely.
+		assertSafeFacilitatorUrl(existing.facilitatorUrl);
 		// Snapshot the whole observed remote mode, not only the credential. Otherwise an auth-only
 		// update that races a URL/mode switch could commit last and attach this old-origin secret to
 		// the newly configured endpoint. Last-writer-wins may restore the observed URL, but never

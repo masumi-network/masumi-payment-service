@@ -18,25 +18,30 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { RefreshButton } from '@/components/RefreshButton';
 import {
-  useX402Networks,
+  useAvailableX402Networks,
   useX402PaymentAttempts,
   type X402PaymentFilters,
 } from '@/lib/hooks/useX402';
 import { cn, groupDigits, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
-import { postX402PaymentsReconcile, X402PaymentAttempt } from '@/lib/api/generated';
+import {
+  postX402PaymentsReconcile,
+  type PostX402PaymentsReconcileData,
+  X402PaymentAttempt,
+} from '@/lib/api/generated';
 
 const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
-// Mirrors the backend's SETTLE_STALE_MS: a trace-less settle younger than this may still be a
-// live in-flight settle, so the backend refuses to reconcile it and the panel must not offer to.
+// Mirrors the backend's SETTLE_STALE_MS: an ambiguous settle younger than this may still be live,
+// so the backend refuses to reconcile it and the panel must not offer to.
 const SETTLE_STALE_MS = 300_000;
 
 const ALL = '__all__';
@@ -74,7 +79,7 @@ const DIRECTION_LABEL: Record<X402PaymentAttempt['direction'], string> = {
 };
 
 export function PaymentsTab() {
-  const { networks } = useX402Networks();
+  const { networks } = useAvailableX402Networks();
   const { activeRail, selectedX402ChainId } = useAppContext();
   const [filters, setFilters] = useState<X402PaymentFilters>({});
   const [selected, setSelected] = useState<X402PaymentAttempt | null>(null);
@@ -138,7 +143,11 @@ export function PaymentsTab() {
       </p>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border bg-muted/40 p-0.5">
+          <div
+            className="inline-flex rounded-lg border bg-muted/40 p-0.5"
+            role="group"
+            aria-label="Payment view"
+          >
             {VIEW_OPTIONS.map((v) => (
               <button
                 key={v.key}
@@ -171,12 +180,14 @@ export function PaymentsTab() {
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={ALL}>All statuses</SelectItem>
-                {STATUS_OPTIONS.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {status}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  <SelectItem value={ALL}>All statuses</SelectItem>
+                  {STATUS_OPTIONS.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
           )}
@@ -194,12 +205,14 @@ export function PaymentsTab() {
               <SelectValue placeholder="All chains" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All chains</SelectItem>
-              {networks.map((network) => (
-                <SelectItem key={network.id} value={network.caip2Id}>
-                  {network.displayName}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                <SelectItem value={ALL}>All chains</SelectItem>
+                {networks.map((network) => (
+                  <SelectItem key={network.id} value={network.caip2Id}>
+                    {network.displayName}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
         </div>
@@ -389,7 +402,9 @@ function PaymentDetailsDialog({
                   value={
                     attempt.facilitator.mode === 'remote'
                       ? 'Remote facilitator'
-                      : (attempt.facilitator.address ?? 'Self-hosted wallet')
+                      : attempt.facilitator.mode === 'self_hosted'
+                        ? (attempt.facilitator.address ?? 'Self-hosted wallet')
+                        : 'Unknown (legacy attempt)'
                   }
                   mono={attempt.facilitator.mode === 'self_hosted' && !!attempt.facilitator.address}
                 />
@@ -468,9 +483,8 @@ function PaymentDetailsDialog({
 
 // An inbound settle can get stuck when the on-chain settle result is ambiguous (the settle threw
 // or crashed after broadcasting). Only an operator can resolve it — by confirming on-chain whether
-// funds moved. Shown only for the states the backend actually accepts: Verified with a recorded
-// error, or (once stale) a trace-less Verified marker / a Settled attempt missing its settlement
-// record — a fresh trace-less marker may still be a live in-flight settle.
+// funds moved. Every Verified marker must first become stale: even one carrying an error can belong
+// to a remote facilitator that accepted the request before this node lost the response.
 function ReconcileSection({
   attempt,
   openedAtMs,
@@ -484,7 +498,7 @@ function ReconcileSection({
   const [txHash, setTxHash] = useState('');
   const [pendingResolution, setPendingResolution] = useState<'settled' | 'failed' | null>(null);
   const reconcile = useApiMutation({
-    mutationFn: (body: { attemptId: string; resolution: 'settled' | 'failed'; txHash?: string }) =>
+    mutationFn: (body: NonNullable<PostX402PaymentsReconcileData['body']>) =>
       postX402PaymentsReconcile({ client: apiClient, body }),
     // Every filter combination is its own query key; invalidate the whole keyspace so the
     // "Needs action" view can't keep showing an already-reconciled attempt from its cache.
@@ -494,7 +508,7 @@ function ReconcileSection({
 
   const isStale = openedAtMs - new Date(attempt.updatedAt).getTime() > SETTLE_STALE_MS;
   const settledMissingRecord = attempt.status === 'Settled' && !attempt.Settlement && isStale;
-  const ambiguousVerified = attempt.status === 'Verified' && (!!attempt.errorReason || isStale);
+  const ambiguousVerified = attempt.status === 'Verified' && isStale;
   const isReconcilable =
     attempt.direction === 'InboundSettle' && (ambiguousVerified || settledMissingRecord);
   if (!isReconcilable) return null;
@@ -502,12 +516,12 @@ function ReconcileSection({
   const txHashValid = TX_HASH_REGEX.test(txHash);
   const submit = async (resolution: 'settled' | 'failed') => {
     setPendingResolution(resolution);
+    const body: NonNullable<PostX402PaymentsReconcileData['body']> =
+      resolution === 'settled'
+        ? { attemptId: attempt.id, resolution, txHash }
+        : { attemptId: attempt.id, resolution };
     const response = await reconcile
-      .mutateAsync({
-        attemptId: attempt.id,
-        resolution,
-        txHash: resolution === 'settled' ? txHash : undefined,
-      })
+      .mutateAsync(body)
       .catch(() => null)
       .finally(() => setPendingResolution(null));
     if (!response) return;

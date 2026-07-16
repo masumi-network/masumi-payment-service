@@ -2334,6 +2334,33 @@ export type StoppedMonitoring = {
     stopped: boolean;
 };
 
+export type X402AvailableNetwork = {
+    /**
+     * Opaque x402 network id accepted by managed-wallet endpoints
+     */
+    id: string;
+    /**
+     * CAIP-2 EVM chain id, for example eip155:8453
+     */
+    caip2Id: string;
+    /**
+     * Human readable chain name
+     */
+    displayName: string;
+    /**
+     * Whether this chain belongs to the testnet environment
+     */
+    isTestnet: boolean;
+    /**
+     * Whether this chain may currently be used for x402 payments
+     */
+    isEnabled: boolean;
+    /**
+     * Default settlement asset (token contract) for this chain
+     */
+    defaultAsset: string | null;
+};
+
 export type X402Network = {
     id: string;
     /**
@@ -2369,7 +2396,7 @@ export type X402Network = {
      */
     facilitatorWalletAddress: string | null;
     /**
-     * URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)
+     * HTTPS URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)
      */
     facilitatorUrl: string | null;
     /**
@@ -2485,11 +2512,11 @@ export type X402PaymentAttempt = {
      */
     facilitator: {
         /**
-         * Whether an owned wallet or a remote URL settled
+         * Whether an owned wallet, a remote URL, or an unknown legacy facilitator settled
          */
-        mode: 'self_hosted' | 'remote';
+        mode: 'self_hosted' | 'remote' | 'unknown';
         /**
-         * Self-hosted facilitator wallet address; null for remote (URL is not persisted)
+         * Self-hosted facilitator wallet address; null for remote or unknown legacy mode
          */
         address: string | null;
     } | null;
@@ -10522,6 +10549,32 @@ export type PostMonitoringStopResponses = {
 
 export type PostMonitoringStopResponse = PostMonitoringStopResponses[keyof PostMonitoringStopResponses];
 
+export type GetX402NetworksAvailableData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter chains by environment: true for testnet (Preprod), false for mainnet
+         */
+        isTestnet?: 'true' | 'false';
+    };
+    url: '/x402/networks/available';
+};
+
+export type GetX402NetworksAvailableResponses = {
+    /**
+     * Accessible x402 EVM chains
+     */
+    200: {
+        status: 'success';
+        data: {
+            Networks: Array<X402AvailableNetwork>;
+        };
+    };
+};
+
+export type GetX402NetworksAvailableResponse = GetX402NetworksAvailableResponses[keyof GetX402NetworksAvailableResponses];
+
 export type GetX402NetworksData = {
     body?: never;
     path?: never;
@@ -10564,7 +10617,7 @@ export type PostX402NetworksData = {
          */
         facilitatorWalletId?: string | null;
         /**
-         * Remote facilitator: HTTP(S) endpoint (null clears it)
+         * Remote facilitator: HTTPS endpoint (null clears it)
          */
         facilitatorUrl?: string | null;
         /**
@@ -11051,13 +11104,22 @@ export type PostX402PaymentsReconcileData = {
          */
         attemptId: string;
         /**
-         * Operator's on-chain finding: 'settled' if funds moved (provide txHash), 'failed' if they did not (safe to retry).
+         * Funds moved on-chain
          */
-        resolution: 'settled' | 'failed';
+        resolution: 'settled';
         /**
-         * On-chain settlement transaction hash; required when resolution is settled
+         * On-chain settlement transaction hash
          */
-        txHash?: string;
+        txHash: string;
+    } | {
+        /**
+         * Id of the InboundSettle attempt awaiting reconciliation
+         */
+        attemptId: string;
+        /**
+         * Funds did not move on-chain and the payment is safe to retry
+         */
+        resolution: 'failed';
     };
     path?: never;
     query?: never;

@@ -4256,6 +4256,47 @@ export const StoppedMonitoringSchema = {
     ]
 } as const;
 
+export const X402AvailableNetworkSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Opaque x402 network id accepted by managed-wallet endpoints'
+        },
+        caip2Id: {
+            type: 'string',
+            pattern: '^eip155:\\d+$',
+            description: 'CAIP-2 EVM chain id, for example eip155:8453'
+        },
+        displayName: {
+            type: 'string',
+            description: 'Human readable chain name'
+        },
+        isTestnet: {
+            type: 'boolean',
+            description: 'Whether this chain belongs to the testnet environment'
+        },
+        isEnabled: {
+            type: 'boolean',
+            description: 'Whether this chain may currently be used for x402 payments'
+        },
+        defaultAsset: {
+            type: 'string',
+            nullable: true,
+            pattern: '^0x[a-fA-F0-9]{40}$',
+            description: 'Default settlement asset (token contract) for this chain'
+        }
+    },
+    required: [
+        'id',
+        'caip2Id',
+        'displayName',
+        'isTestnet',
+        'isEnabled',
+        'defaultAsset'
+    ]
+} as const;
+
 export const X402NetworkSchema = {
     type: 'object',
     properties: {
@@ -4302,7 +4343,7 @@ export const X402NetworkSchema = {
         facilitatorUrl: {
             type: 'string',
             nullable: true,
-            description: 'URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)'
+            description: 'HTTPS URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)'
         },
         createdById: {
             type: 'string',
@@ -4571,14 +4612,15 @@ export const X402PaymentAttemptSchema = {
                     type: 'string',
                     enum: [
                         'self_hosted',
-                        'remote'
+                        'remote',
+                        'unknown'
                     ],
-                    description: 'Whether an owned wallet or a remote URL settled'
+                    description: 'Whether an owned wallet, a remote URL, or an unknown legacy facilitator settled'
                 },
                 address: {
                     type: 'string',
                     nullable: true,
-                    description: 'Self-hosted facilitator wallet address; null for remote (URL is not persisted)'
+                    description: 'Self-hosted facilitator wallet address; null for remote or unknown legacy mode'
                 }
             },
             required: [

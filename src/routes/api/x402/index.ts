@@ -16,6 +16,7 @@ import {
 	getX402Analytics,
 	getX402ManagedWallet,
 	getX402WalletBalances,
+	listAvailableX402Networks,
 	listX402LowBalanceRules,
 	listX402ManagedWallets,
 	listX402Networks,
@@ -46,6 +47,7 @@ import {
 	deleteWalletSchemaOutput,
 	listBudgetSchemaInput,
 	listBudgetSchemaOutput,
+	listAvailableNetworksSchemaOutput,
 	listLowBalanceRulesSchemaInput,
 	listLowBalanceRulesSchemaOutput,
 	listNetworksSchemaInput,
@@ -77,13 +79,17 @@ import {
 	x402NetworkSchema,
 } from './schemas';
 
-// Non-admin (pay) API keys are scoped to the managed wallets they created; an admin/operator key
-// (canAdmin) sees and controls every wallet. `x402OwnerScope` is the wallet-ownership scope
-// (null = admin) enforced on wallet CRUD and the buy path; `x402TenantApiKeyId` is the same tenant
-// scope for attempt/settlement history (undefined = admin), where isolation is by the initiating
-// apiKeyId rather than wallet ownership.
+// Non-admin (pay) API keys are scoped to the managed wallets they created and the CAIP-2 networks
+// in their key limit; an admin/operator key (canAdmin) sees and controls every wallet/network.
+// `x402OwnerScope` is the wallet-ownership scope (null = admin) enforced on wallet CRUD and the buy
+// path; `x402TenantApiKeyId` is the same tenant scope for attempt/settlement history (undefined =
+// admin), where isolation is by the initiating apiKeyId rather than wallet ownership.
 function x402OwnerScope(ctx: AuthContext): string | null {
 	return ctx.canAdmin ? null : ctx.id;
+}
+
+function x402NetworkLimit(ctx: AuthContext): string[] | null {
+	return ctx.canAdmin ? null : ctx.caip2NetworkLimit;
 }
 
 function x402TenantApiKeyId(ctx: AuthContext): string | undefined {
@@ -146,7 +152,7 @@ export const verifyX402Post = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof verifySettleSchemaInput>; ctx: AuthContext }) =>
 		verifyX402Payment({
 			apiKeyId: ctx.id,
-			caip2NetworkLimit: ctx.caip2NetworkLimit,
+			caip2NetworkLimit: x402NetworkLimit(ctx),
 			supportedPaymentSourceId: input.supportedPaymentSourceId,
 			paymentPayload: input.paymentPayload as Parameters<typeof verifyX402Payment>[0]['paymentPayload'],
 		}),
@@ -159,7 +165,7 @@ export const settleX402Post = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof verifySettleSchemaInput>; ctx: AuthContext }) => {
 		const result = await settleX402Payment({
 			apiKeyId: ctx.id,
-			caip2NetworkLimit: ctx.caip2NetworkLimit,
+			caip2NetworkLimit: x402NetworkLimit(ctx),
 			supportedPaymentSourceId: input.supportedPaymentSourceId,
 			paymentPayload: input.paymentPayload as Parameters<typeof settleX402Payment>[0]['paymentPayload'],
 		});
@@ -182,7 +188,7 @@ export const createX402PaymentPost = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof createPaymentSchemaInput>; ctx: AuthContext }) =>
 		createX402Payment({
 			apiKeyId: ctx.id,
-			caip2NetworkLimit: ctx.caip2NetworkLimit,
+			caip2NetworkLimit: x402NetworkLimit(ctx),
 			evmWalletId: input.evmWalletId,
 			paymentRequired: input.paymentRequired as Parameters<typeof createX402Payment>[0]['paymentRequired'],
 			preferredNetwork: input.preferredNetwork,
@@ -203,6 +209,7 @@ export const listX402WalletsGet = payAuthenticatedEndpointFactory.build({
 			type: input.type,
 			networkId: input.networkId,
 			ownerScope: x402OwnerScope(ctx),
+			caip2NetworkLimit: x402NetworkLimit(ctx),
 		}),
 	}),
 });
@@ -218,6 +225,7 @@ export const createX402WalletPost = payAuthenticatedEndpointFactory.build({
 			type: input.type,
 			note: input.note,
 			privateKey: input.privateKey,
+			caip2NetworkLimit: x402NetworkLimit(ctx),
 		}),
 });
 
@@ -226,7 +234,7 @@ export const getX402WalletGet = payAuthenticatedEndpointFactory.build({
 	input: walletDetailSchemaInput,
 	output: walletSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof walletDetailSchemaInput>; ctx: AuthContext }) =>
-		getX402ManagedWallet(input.id, x402OwnerScope(ctx)),
+		getX402ManagedWallet(input.id, x402OwnerScope(ctx), x402NetworkLimit(ctx)),
 });
 
 export const updateX402WalletPost = payAuthenticatedEndpointFactory.build({
@@ -234,7 +242,12 @@ export const updateX402WalletPost = payAuthenticatedEndpointFactory.build({
 	input: updateWalletSchemaInput,
 	output: walletSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof updateWalletSchemaInput>; ctx: AuthContext }) =>
-		updateX402ManagedWallet({ id: input.id, note: input.note, ownerScope: x402OwnerScope(ctx) }),
+		updateX402ManagedWallet({
+			id: input.id,
+			note: input.note,
+			ownerScope: x402OwnerScope(ctx),
+			caip2NetworkLimit: x402NetworkLimit(ctx),
+		}),
 });
 
 export const x402WalletBalanceGet = payAuthenticatedEndpointFactory.build({
@@ -242,7 +255,12 @@ export const x402WalletBalanceGet = payAuthenticatedEndpointFactory.build({
 	input: walletBalanceSchemaInput,
 	output: walletBalanceSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof walletBalanceSchemaInput>; ctx: AuthContext }) =>
-		getX402WalletBalances({ evmWalletId: input.id, caip2Network: input.caip2Network, ownerScope: x402OwnerScope(ctx) }),
+		getX402WalletBalances({
+			evmWalletId: input.id,
+			caip2Network: input.caip2Network,
+			ownerScope: x402OwnerScope(ctx),
+			caip2NetworkLimit: x402NetworkLimit(ctx),
+		}),
 });
 
 export const x402WalletsCountGet = payAuthenticatedEndpointFactory.build({
@@ -250,7 +268,11 @@ export const x402WalletsCountGet = payAuthenticatedEndpointFactory.build({
 	input: walletsCountSchemaInput,
 	output: countSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof walletsCountSchemaInput>; ctx: AuthContext }) => ({
-		total: await countX402ManagedWallets({ type: input.type, ownerScope: x402OwnerScope(ctx) }),
+		total: await countX402ManagedWallets({
+			type: input.type,
+			ownerScope: x402OwnerScope(ctx),
+			caip2NetworkLimit: x402NetworkLimit(ctx),
+		}),
 	}),
 });
 
@@ -259,7 +281,19 @@ export const deleteX402WalletPost = payAuthenticatedEndpointFactory.build({
 	input: deleteWalletSchemaInput,
 	output: deleteWalletSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof deleteWalletSchemaInput>; ctx: AuthContext }) =>
-		deleteX402ManagedWallet(input.id, x402OwnerScope(ctx)),
+		deleteX402ManagedWallet(input.id, x402OwnerScope(ctx), x402NetworkLimit(ctx)),
+});
+
+export const listAvailableX402NetworksGet = payAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: listNetworksSchemaInput,
+	output: listAvailableNetworksSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof listNetworksSchemaInput>; ctx: AuthContext }) => ({
+		Networks: await listAvailableX402Networks({
+			isTestnet: input.isTestnet,
+			caip2NetworkLimit: x402NetworkLimit(ctx),
+		}),
+	}),
 });
 
 export const listX402NetworksGet = adminAuthenticatedEndpointFactory.build({
@@ -315,10 +349,12 @@ export const reconcileX402PaymentPost = adminAuthenticatedEndpointFactory.build(
 		const result = await reconcileX402PaymentAttempt(input);
 		// Emit the settlement/failure webhook the interrupted settle never fired (it threw before
 		// the settle route could emit). Fire-and-forget: delivery must not block the response.
-		void webhookEventsService.triggerX402Payment(result.webhook.success, {
-			...result.webhook,
-			settledAt: new Date().toISOString(),
-		});
+		if (result.webhook != null) {
+			void webhookEventsService.triggerX402Payment(result.webhook.success, {
+				...result.webhook,
+				settledAt: new Date().toISOString(),
+			});
+		}
 		return result;
 	},
 });

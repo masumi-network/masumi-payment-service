@@ -390,6 +390,9 @@ model X402WalletSecret {
   id                  String          @id @default(cuid())
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
+  // Public key identity for the encrypted private key. The unique constraint makes
+  // concurrent imports of one EVM key converge on one secret across every network.
+  address             String          @unique
   encryptedPrivateKey String
   // One secret backs N wallet rows — the same EVM keypair reused across chains.
   Wallets             X402EvmWallet[]
@@ -494,6 +497,9 @@ model X402PaymentAttempt {
   // Own managed wallet, when the node holds one: outbound → purchasing wallet; inbound with
   // a self-hosted facilitator → the facilitator wallet; inbound with a remote facilitator → null.
   evmWalletId              String?
+  // Immutable facilitator-mode snapshot for inbound settles. Null is deliberate for legacy
+  // rows whose historical mode cannot be reconstructed truthfully from today's network config.
+  facilitatorMode          X402FacilitatorMode?
   // Counterparty (other side) of the transfer: outbound → the payee (payTo); inbound → the
   // payer (buyer), linked after settle once the facilitator reports the address.
   counterpartyWalletId     String?
@@ -1006,6 +1012,11 @@ enum X402CounterpartyRole {
   Payee
   // The counterparty sends funds (attempt's payer/buyer). Set for inbound settlements.
   Payer
+}
+
+enum X402FacilitatorMode {
+  SelfHosted
+  Remote
 }
 
 enum X402PaymentStatus {
