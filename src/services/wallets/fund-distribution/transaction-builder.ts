@@ -2,7 +2,8 @@ import { Network } from '@/generated/prisma/client';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { Transaction } from '@/services/shared';
-import { SLOT_CONFIG_NETWORK, resolveTxHash, unixTimeToEnclosingSlot } from '@meshsdk/core';
+import { createTxWindow } from '@/services/shared/tx-window';
+import { resolveTxHash } from '@meshsdk/core';
 
 /**
  * Fund distribution builds a PURE VALUE TRANSFER (fund wallet → hot wallet
@@ -68,8 +69,11 @@ export async function buildAndSignFundDistributionTx(params: {
 		unsignedTx.sendLovelace(output.address, output.lovelace.toString());
 	}
 
-	const invalidBefore = unixTimeToEnclosingSlot(Date.now() - 150000, SLOT_CONFIG_NETWORK[meshNetwork]) - 1;
-	const invalidHereafterSlot = unixTimeToEnclosingSlot(Date.now() + 150000, SLOT_CONFIG_NETWORK[meshNetwork]) + 5;
+	// Use the shared window helper rather than hand-rolled slot math: it sources
+	// its buffers from SERVICE_CONSTANTS.TRANSACTION so every builder in the
+	// service agrees on validity bounds. There is no on-chain deadline to
+	// constrain against here — a plain payment has no contract check to satisfy.
+	const { invalidBefore, invalidAfter: invalidHereafterSlot } = createTxWindow(meshNetwork);
 
 	unsignedTx.setNetwork(meshNetwork);
 	unsignedTx.txBuilder.invalidBefore(invalidBefore);

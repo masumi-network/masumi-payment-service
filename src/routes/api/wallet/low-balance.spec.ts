@@ -39,6 +39,18 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONSTANTS: {
 		MIN_TX_FEE_BUFFER_LOVELACE: 2000000n,
 	},
+	// Needed because the route pulls in the fund-distribution tx builder, which
+	// sources its validity window from SERVICE_CONSTANTS via shared/tx-window.
+	// A partial mock of this module must enumerate every symbol the transitively
+	// loaded graph imports, or the ESM loader fails the whole suite.
+	SERVICE_CONSTANTS: {
+		TRANSACTION: {
+			timeBufferMs: 300000,
+			blockTimeBufferMs: 60000,
+			validitySlotBuffer: 30,
+			resultTimeSlotBuffer: 18,
+		},
+	},
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
