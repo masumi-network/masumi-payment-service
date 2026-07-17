@@ -1,6 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { RefreshCw, ExternalLink } from 'lucide-react';
+import { RefreshCw, ExternalLink, ArrowUpRight } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { getWalletTransferFunds } from '@/lib/api/generated';
 import type { WalletFundTransfer } from '@/lib/api/generated';
@@ -8,6 +7,8 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { extractApiPayload } from '@/lib/api-response';
 import { shortenAddress, getExplorerUrl } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
+import { FundTransferStatusBadge } from '@/components/wallets/FundTransferStatusBadge';
+import { formatAda, formatAssetAmount } from '@/components/wallets/fund-transfer-format';
 
 const PAGE_SIZE = 10;
 const TERMINAL_STATUSES: WalletFundTransfer['status'][] = [
@@ -16,12 +17,6 @@ const TERMINAL_STATUSES: WalletFundTransfer['status'][] = [
   'FailedViaManualReset',
   'RolledBack',
 ];
-
-function statusBadgeVariant(status: WalletFundTransfer['status']) {
-  if (status === 'Confirmed') return 'default' as const;
-  if (status === 'Pending') return 'secondary' as const;
-  return 'destructive' as const;
-}
 
 /**
  * Fund-transfer history for one wallet: outgoing transfers queued through the
@@ -60,7 +55,7 @@ export function FundTransfersSection({
   if (transfers.length === 0) return null;
 
   return (
-    <div className="bg-muted rounded-lg p-4 space-y-2">
+    <div className="bg-muted rounded-lg p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium">Fund Transfers</div>
         <Button
@@ -76,21 +71,27 @@ export function FundTransfersSection({
       </div>
       <div className="space-y-2">
         {transfers.map((transfer) => (
-          <div key={transfer.id} className="rounded-md border bg-background/50 p-3 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">
-                {Number(transfer.lovelaceAmount) / 1e6} ADA
-                {transfer.assets && transfer.assets.length > 0 && (
-                  <span className="text-xs text-muted-foreground">
-                    {' '}
-                    + {transfer.assets.length} token{transfer.assets.length > 1 ? 's' : ''}
-                  </span>
-                )}
-              </span>
-              <Badge variant={statusBadgeVariant(transfer.status)}>{transfer.status}</Badge>
+          <div
+            key={transfer.id}
+            className="dark:border-muted-foreground/20 rounded-lg border p-3 space-y-1.5"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 space-y-0.5">
+                <div className="text-sm font-medium tabular-nums">
+                  {formatAda(transfer.lovelaceAmount)} ADA
+                </div>
+                {transfer.assets?.map((asset) => (
+                  <div key={asset.unit} className="text-xs text-muted-foreground tabular-nums">
+                    {formatAssetAmount(asset, network)}
+                  </div>
+                ))}
+              </div>
+              <FundTransferStatusBadge status={transfer.status} />
             </div>
-            <div className="text-xs text-muted-foreground">
-              to {shortenAddress(transfer.toAddress)} · {formatDateTime(transfer.createdAt)}
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <ArrowUpRight className="h-3 w-3 shrink-0" />
+              <span className="truncate">{shortenAddress(transfer.toAddress)}</span>
+              <span className="shrink-0">· {formatDateTime(transfer.createdAt)}</span>
             </div>
             {transfer.txHash && (
               <a

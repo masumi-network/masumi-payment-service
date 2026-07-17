@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -16,9 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { USDM_CONFIG, PREPROD_USDM_CONFIG, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
 import { Spinner } from '@/components/ui/spinner';
-import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Plus, Trash2, ExternalLink } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -28,6 +26,13 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { extractApiPayload } from '@/lib/api-response';
 import { validateCardanoAddress, shortenAddress, getExplorerUrl } from '@/lib/utils';
+import {
+  getStablecoinRuleMeta,
+  getRuleAssetMetaFromPreset,
+  parseDecimalToRawAmount,
+} from '@/components/wallets/wallet-details-utils';
+import { FundTransferStatusBadge } from '@/components/wallets/FundTransferStatusBadge';
+import { formatAda, formatAssetAmount } from '@/components/wallets/fund-transfer-format';
 import { toast } from 'react-toastify';
 
 interface TransferFundsDialogProps {
@@ -38,47 +43,19 @@ interface TransferFundsDialogProps {
   onSuccess?: () => void;
 }
 
-/** How the operator is editing one native-asset row before submit. */
-type AssetFormRow = { preset: string; customUnit: string; amount: string };
-/** The shape the API stores: unit + smallest-unit integer quantity. */
+// The operator picks the network stablecoin (tUSDM on preprod, USDCx on
+// mainnet) by name, or a custom token by hex unit. This mirrors the low-balance
+// rule asset model exactly, so the same units and decimals are used everywhere.
+type AssetPreset = 'stablecoin' | 'custom';
+type AssetFormRow = { preset: AssetPreset; customUnit: string; amount: string };
 type AssetPayload = { unit: string; quantity: string };
 
-// A well-known asset the operator can pick by name instead of pasting a hex
-// unit. Sourced from the same defaultWallets config the rest of the app uses.
-type KnownAsset = { key: string; label: string; unit: string; decimals: number };
-const CUSTOM_PRESET = 'custom';
-
-/**
- * Known assets available on a given network. USDM is a stablecoin on both
- * (tUSDM on preprod); USDCx exists only on mainnet.
- */
-function knownAssetsForNetwork(network: 'Preprod' | 'Mainnet'): KnownAsset[] {
-  if (network === 'Preprod') {
-    return [
-      {
-        key: 'usdm',
-        label: 'USDM (tUSDM)',
-        unit: PREPROD_USDM_CONFIG.policyId + PREPROD_USDM_CONFIG.assetName,
-        decimals: 6,
-      },
-    ];
-  }
-  return [
-    { key: 'usdm', label: 'USDM', unit: USDM_CONFIG.policyId + USDM_CONFIG.assetName, decimals: 6 },
-    {
-      key: 'usdcx',
-      label: 'USDCx',
-      unit: USDCX_CONFIG.policyId + USDCX_CONFIG.assetName,
-      decimals: 6,
-    },
-  ];
-}
-
-// Mirror of the API's postWalletFundSchemaInput. Keeping the same limits client
-// side turns an async FailedViaManualReset into an inline error the operator
-// sees before submitting.
+// Client-side mirror of the API's postWalletFundSchemaInput, so a bad input is
+// an inline error before submit rather than an async FailedViaManualReset.
 const MIN_ADA = 2;
+const MIN_LOVELACE = BigInt(MIN_ADA) * BigInt(1_000_000);
 const ASSET_UNIT_PATTERN = /^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{2})*$/;
+const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
 const TERMINAL_STATUSES: WalletFundTransfer['status'][] = [
   'Confirmed',
   'FailedViaTimeout',
@@ -86,33 +63,7 @@ const TERMINAL_STATUSES: WalletFundTransfer['status'][] = [
   'RolledBack',
 ];
 
-// BigInt literals need ES2020; the frontend targets lower, so build the
-// constant with the BigInt() call form instead.
-const LOVELACE_PER_ADA = BigInt(1_000_000);
-
-/**
- * Display amount → smallest-unit integer string. `decimals` is the asset's
- * decimal places (6 for ADA/USDM/USDCx). A custom token has unknown decimals,
- * so it is passed 0 and the field is treated as a raw base-unit integer.
- * Returns null on malformed or non-positive input.
- */
-function toBaseUnits(amount: string, decimals: number): string | null {
-  const trimmed = amount.trim();
-  if (decimals === 0) return /^[1-9][0-9]*$/.test(trimmed) ? trimmed : null;
-  if (!new RegExp(`^\\d+(\\.\\d{1,${decimals}})?$`).test(trimmed)) return null;
-  const [whole, fraction = ''] = trimmed.split('.');
-  const base =
-    BigInt(whole) * BigInt(Math.pow(10, decimals)) + BigInt(fraction.padEnd(decimals, '0'));
-  return base > BigInt(0) ? base.toString() : null;
-}
-
-function statusBadgeVariant(status: WalletFundTransfer['status']) {
-  if (status === 'Confirmed') return 'default' as const;
-  if (status === 'Pending') return 'secondary' as const;
-  return 'destructive' as const;
-}
-
-function TransferStatusCard({
+function TransferSummaryCard({
   transfer,
   network,
 }: {
@@ -120,20 +71,24 @@ function TransferStatusCard({
   network: 'Preprod' | 'Mainnet';
 }) {
   return (
-    <div className="rounded-md border p-3 space-y-2 text-sm">
-      <div className="flex items-center justify-between">
-        <span className="font-medium">{Number(transfer.lovelaceAmount) / 1e6} ADA</span>
-        <Badge variant={statusBadgeVariant(transfer.status)}>{transfer.status}</Badge>
+    <div className="rounded-lg border p-3 space-y-1.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 space-y-0.5">
+          <div className="text-sm font-medium tabular-nums">
+            {formatAda(transfer.lovelaceAmount)} ADA
+          </div>
+          {transfer.assets?.map((asset) => (
+            <div key={asset.unit} className="text-xs text-muted-foreground tabular-nums">
+              {formatAssetAmount(asset, network)}
+            </div>
+          ))}
+        </div>
+        <FundTransferStatusBadge status={transfer.status} />
       </div>
       <div className="flex items-center gap-1 text-xs text-muted-foreground">
-        <span>to {shortenAddress(transfer.toAddress)}</span>
+        <span className="truncate">to {shortenAddress(transfer.toAddress)}</span>
         <CopyButton value={transfer.toAddress} />
       </div>
-      {transfer.assets && transfer.assets.length > 0 && (
-        <div className="text-xs text-muted-foreground">
-          + {transfer.assets.length} native asset{transfer.assets.length > 1 ? 's' : ''}
-        </div>
-      )}
       {transfer.txHash && (
         <a
           href={getExplorerUrl(transfer.txHash, network, 'transaction')}
@@ -157,8 +112,7 @@ export function TransferFundsDialog({
   onSuccess,
 }: TransferFundsDialogProps) {
   const { apiClient } = useAppContext();
-
-  const knownAssets = useMemo(() => knownAssetsForNetwork(network), [network]);
+  const stablecoinLabel = getStablecoinRuleMeta(network).label;
 
   const [toAddress, setToAddress] = useState('');
   const [adaAmount, setAdaAmount] = useState('');
@@ -182,8 +136,8 @@ export function TransferFundsDialog({
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Poll the just-created transfer until it reaches a terminal state so the
-  // operator watches Pending → Confirmed / Failed without refreshing.
-  const { data: createdTransfer } = useQuery({
+  // operator watches Pending → Confirmed / Failed without leaving the dialog.
+  const { data: liveTransfer } = useQuery({
     queryKey: ['fundTransfer', createdTransferId],
     enabled: isOpen && createdTransferId != null,
     refetchInterval: (query) => {
@@ -195,22 +149,7 @@ export function TransferFundsDialog({
         client: apiClient,
         query: { id: createdTransferId ?? undefined },
       });
-      const payload = extractApiPayload(res);
-      return payload?.transfers?.[0] ?? null;
-    },
-  });
-
-  // Recent transfers for this wallet, refreshed while the dialog is open.
-  const { data: history } = useQuery({
-    queryKey: ['fundTransfers', walletAddress, createdTransferId],
-    enabled: isOpen && walletAddress !== '',
-    refetchInterval: 6000,
-    queryFn: async () => {
-      const res = await getWalletTransferFunds({
-        client: apiClient,
-        query: { walletAddress, limit: 5 },
-      });
-      return extractApiPayload(res)?.transfers ?? [];
+      return extractApiPayload(res)?.transfers?.[0] ?? null;
     },
   });
 
@@ -225,10 +164,7 @@ export function TransferFundsDialog({
   });
 
   const addAssetRow = () =>
-    setAssets((rows) => [
-      ...rows,
-      { preset: knownAssets[0]?.key ?? CUSTOM_PRESET, customUnit: '', amount: '' },
-    ]);
+    setAssets((rows) => [...rows, { preset: 'stablecoin', customUnit: '', amount: '' }]);
   const updateAssetRow = (index: number, patch: Partial<AssetFormRow>) =>
     setAssets((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   const removeAssetRow = (index: number) => setAssets((rows) => rows.filter((_, i) => i !== index));
@@ -239,18 +175,15 @@ export function TransferFundsDialog({
       return { error: addressCheck.error ?? 'Destination address is not valid for this network' };
     }
 
-    const lovelace = toBaseUnits(adaAmount, 6);
+    const lovelace = parseDecimalToRawAmount(adaAmount.trim(), 6);
     if (lovelace == null) return { error: 'Enter a valid ADA amount (up to 6 decimals)' };
-    if (BigInt(lovelace) < BigInt(MIN_ADA) * LOVELACE_PER_ADA) {
-      return { error: `Amount must be at least ${MIN_ADA} ADA` };
-    }
+    if (BigInt(lovelace) < MIN_LOVELACE) return { error: `Amount must be at least ${MIN_ADA} ADA` };
 
     const cleaned: AssetPayload[] = [];
     const seen = new Set<string>();
     for (const row of assets) {
-      const known = knownAssets.find((asset) => asset.key === row.preset);
-      const unit = known ? known.unit : row.customUnit.trim();
-      const decimals = known ? known.decimals : 0;
+      const meta = getRuleAssetMetaFromPreset(row.preset, network, row.customUnit);
+      const unit = meta.assetUnit.trim();
 
       if (!ASSET_UNIT_PATTERN.test(unit)) {
         return { error: `"${unit || '(empty)'}" is not a valid asset unit (policy id + hex name)` };
@@ -259,11 +192,18 @@ export function TransferFundsDialog({
       if (seen.has(unit)) return { error: 'The same asset is listed twice' };
       seen.add(unit);
 
-      const quantity = toBaseUnits(row.amount, decimals);
+      const amount = row.amount.trim();
+      let quantity: string | null;
+      if (meta.decimals == null) {
+        quantity = POSITIVE_INTEGER_PATTERN.test(amount) ? amount : null;
+      } else {
+        const raw = parseDecimalToRawAmount(amount, meta.decimals);
+        quantity = raw != null && BigInt(raw) > BigInt(0) ? raw : null;
+      }
       if (quantity == null) {
-        return known
-          ? { error: `Enter a valid ${known.label} amount (up to ${decimals} decimals)` }
-          : { error: 'Asset quantity must be a positive whole number' };
+        return meta.decimals == null
+          ? { error: `Enter a whole-number amount for ${meta.label}` }
+          : { error: `Enter a valid ${meta.label} amount (up to ${meta.decimals} decimals)` };
       }
       cleaned.push({ unit, quantity });
     }
@@ -297,14 +237,9 @@ export function TransferFundsDialog({
     }
   };
 
-  const liveTransfer = createdTransfer ?? null;
   const isSubmitting = createTransfer.isPending;
-  const submittedId = createdTransferId != null;
-
-  const recentTransfers = useMemo(
-    () => (history ?? []).filter((t) => t.id !== createdTransferId),
-    [history, createdTransferId],
-  );
+  const submitted = createdTransferId != null;
+  const locked = isSubmitting || submitted;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -312,8 +247,8 @@ export function TransferFundsDialog({
         <DialogHeader>
           <DialogTitle>Transfer funds</DialogTitle>
           <DialogDescription>
-            Send ADA (and optional native tokens) from this wallet to any {network} address. The
-            transfer is queued and broadcast by the background processor.
+            Send ADA and optional native tokens from this wallet to any {network} address. The
+            transfer is queued, then broadcast by the background processor.
           </DialogDescription>
         </DialogHeader>
 
@@ -333,8 +268,9 @@ export function TransferFundsDialog({
               placeholder={network === 'Mainnet' ? 'addr1...' : 'addr_test1...'}
               value={toAddress}
               onChange={(e) => setToAddress(e.target.value)}
-              disabled={isSubmitting || submittedId}
+              disabled={locked}
               autoComplete="off"
+              spellCheck={false}
             />
           </div>
 
@@ -346,7 +282,7 @@ export function TransferFundsDialog({
               placeholder="e.g. 5"
               value={adaAmount}
               onChange={(e) => setAdaAmount(e.target.value)}
-              disabled={isSubmitting || submittedId}
+              disabled={locked}
             />
             <p className="text-xs text-muted-foreground">Minimum {MIN_ADA} ADA.</p>
           </div>
@@ -355,34 +291,34 @@ export function TransferFundsDialog({
             <div className="space-y-3">
               <Label className="text-xs text-muted-foreground">Native assets</Label>
               {assets.map((row, index) => {
-                const isCustom = row.preset === CUSTOM_PRESET;
+                const isCustom = row.preset === 'custom';
+                const meta = getRuleAssetMetaFromPreset(row.preset, network, row.customUnit);
                 return (
-                  <div key={index} className="space-y-2 rounded-md border p-2">
+                  <div key={index} className="space-y-2 rounded-lg border p-2">
                     <div className="flex items-center gap-2">
                       <Select
                         value={row.preset}
-                        onValueChange={(preset) => updateAssetRow(index, { preset })}
-                        disabled={isSubmitting || submittedId}
+                        onValueChange={(preset) =>
+                          updateAssetRow(index, { preset: preset as AssetPreset })
+                        }
+                        disabled={locked}
                       >
                         <SelectTrigger className="h-8 flex-1">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {knownAssets.map((asset) => (
-                            <SelectItem key={asset.key} value={asset.key}>
-                              {asset.label}
-                            </SelectItem>
-                          ))}
-                          <SelectItem value={CUSTOM_PRESET}>Custom token</SelectItem>
+                          <SelectItem value="stablecoin">{stablecoinLabel}</SelectItem>
+                          <SelectItem value="custom">Custom token</SelectItem>
                         </SelectContent>
                       </Select>
                       <Input
                         className="w-28"
                         inputMode="decimal"
-                        placeholder="amount"
+                        aria-label={`Amount (${meta.label})`}
+                        placeholder={isCustom ? '5000000' : '5.0'}
                         value={row.amount}
                         onChange={(e) => updateAssetRow(index, { amount: e.target.value })}
-                        disabled={isSubmitting || submittedId}
+                        disabled={locked}
                       />
                       <Button
                         type="button"
@@ -390,7 +326,7 @@ export function TransferFundsDialog({
                         size="icon"
                         className="h-8 w-8 shrink-0 text-destructive"
                         onClick={() => removeAssetRow(index)}
-                        disabled={isSubmitting || submittedId}
+                        disabled={locked}
                         aria-label="Remove asset"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -399,23 +335,25 @@ export function TransferFundsDialog({
                     {isCustom && (
                       <Input
                         className="font-mono text-xs"
+                        aria-label="Custom asset unit"
                         placeholder="policyId + hex asset name"
                         value={row.customUnit}
                         onChange={(e) => updateAssetRow(index, { customUnit: e.target.value })}
-                        disabled={isSubmitting || submittedId}
+                        disabled={locked}
+                        spellCheck={false}
                       />
                     )}
                   </div>
                 );
               })}
               <p className="text-xs text-muted-foreground">
-                A token output also carries ~2 ADA to satisfy min-UTxO. Custom amounts are in the
+                Each token output carries ~2 ADA to satisfy min-UTxO. Custom amounts are in the
                 token&apos;s smallest unit.
               </p>
             </div>
           )}
 
-          {!submittedId && (
+          {!submitted && (
             <Button
               type="button"
               variant="outline"
@@ -429,30 +367,19 @@ export function TransferFundsDialog({
 
           {formError && <p className="text-xs text-destructive">{formError}</p>}
 
-          {submittedId && liveTransfer && (
+          {submitted && liveTransfer && (
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">This transfer</Label>
-              <TransferStatusCard transfer={liveTransfer} network={network} />
-            </div>
-          )}
-
-          {recentTransfers.length > 0 && (
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Recent transfers</Label>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {recentTransfers.map((transfer) => (
-                  <TransferStatusCard key={transfer.id} transfer={transfer} network={network} />
-                ))}
-              </div>
+              <TransferSummaryCard transfer={liveTransfer} network={network} />
             </div>
           )}
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onClose}>
-            {submittedId ? 'Close' : 'Cancel'}
+            {submitted ? 'Close' : 'Cancel'}
           </Button>
-          {!submittedId && (
+          {!submitted && (
             <Button onClick={handleSubmit} disabled={isSubmitting}>
               {isSubmitting ? <Spinner size={16} /> : 'Queue transfer'}
             </Button>
