@@ -330,6 +330,8 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 			select: {
 				id: true,
 				walletAddress: true,
+				lockedAt: true,
+				pendingTransactionId: true,
 				PaymentSource: {
 					select: { network: true, PaymentSourceConfig: { select: { rpcProviderApiKey: true } } },
 				},
@@ -340,37 +342,58 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 			throw createHttpError(404, 'Fund wallet not found');
 		}
 
-		// Refuse to strand funds. Every read path filters `deletedAt: null`, so
-		// once soft-deleted the mnemonic is unreachable through the API and the
-		// balance is recoverable only with DB access plus the ENCRYPTION_KEY.
-		// `force` exists for the case where the operator knows the funds are gone
-		// or accepts the loss — but it must be a deliberate act, not the default.
+		// Both guards are skippable only via an explicit `force`. `force` is for the
+		// operator who knows the funds are gone or accepts the loss — never a
+		// default, and never something a misconfiguration selects for them.
 		if (!input.force) {
+			// Deleting mid-batch marks Submitted rows Failed while their tx may
+			// already be on chain (targets funded, DB says Failed, no webhook), and
+			// strands lockedAt/pendingTransactionId on a row every reaper skips
+			// because they all filter `deletedAt: null`.
+			if (wallet.lockedAt != null || wallet.pendingTransactionId != null) {
+				throw createHttpError(
+					409,
+					'Fund wallet has a distribution in flight. Wait for it to settle, or pass force=true to delete anyway.',
+				);
+			}
+
+			// Refuse to strand funds. Every read path filters `deletedAt: null`, so
+			// once soft-deleted the mnemonic is unreachable through the API and the
+			// balance is recoverable only with DB access plus the ENCRYPTION_KEY.
 			const rpcProviderApiKey = wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
-			if (rpcProviderApiKey) {
-				try {
-					const balanceMap = await fetchAddressBalanceMap({
-						network: wallet.PaymentSource.network,
-						rpcProviderApiKey,
-						address: wallet.walletAddress,
-					});
-					const lovelace = balanceMap.get('lovelace') ?? 0n;
-					if (lovelace > 0n) {
-						throw createHttpError(
-							409,
-							`Fund wallet still holds ${lovelace.toString()} lovelace. Withdraw it first — after deletion the ` +
-								'mnemonic can no longer be exported through the API. Pass force=true to delete anyway.',
-						);
-					}
-				} catch (error) {
-					if (createHttpError.isHttpError(error)) throw error;
-					// Balance unknown (indexer down). Deleting blind could strand funds,
-					// so make the operator choose rather than guessing for them.
-					throw createHttpError(
-						503,
-						'Could not check the fund wallet balance before deleting. Retry, or pass force=true to delete without the check.',
-					);
-				}
+			// A missing/blank key means we CANNOT check — which is a reason to stop,
+			// not to proceed. Skipping the check here would silently delete a funded
+			// wallet, the exact outcome this guard exists to prevent.
+			if (!rpcProviderApiKey) {
+				throw createHttpError(
+					503,
+					'No RPC provider key configured for this payment source, so the fund wallet balance cannot be checked. Pass force=true to delete without the check.',
+				);
+			}
+
+			let lovelace: bigint;
+			try {
+				const balanceMap = await fetchAddressBalanceMap({
+					network: wallet.PaymentSource.network,
+					rpcProviderApiKey,
+					address: wallet.walletAddress,
+				});
+				lovelace = balanceMap.get('lovelace') ?? 0n;
+			} catch {
+				// Balance unknown (indexer down). Deleting blind could strand funds,
+				// so make the operator choose rather than guessing for them.
+				throw createHttpError(
+					503,
+					'Could not check the fund wallet balance before deleting. Retry, or pass force=true to delete without the check.',
+				);
+			}
+
+			if (lovelace > 0n) {
+				throw createHttpError(
+					409,
+					`Fund wallet still holds ${lovelace.toString()} lovelace. Withdraw it first — after deletion the ` +
+						'mnemonic can no longer be exported through the API. Pass force=true to delete anyway.',
+				);
 			}
 		}
 

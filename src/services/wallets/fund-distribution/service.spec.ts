@@ -14,9 +14,42 @@ const mockRequestUpdateMany = jest.fn() as AnyMock;
 const mockHotWalletFindMany = jest.fn() as AnyMock;
 const mockHotWalletFindUnique = jest.fn() as AnyMock;
 const mockHotWalletUpdateMany = jest.fn() as AnyMock;
-const mockFetchTxInfo = jest.fn() as AnyMock;
+const mockLookupChainTx = jest.fn() as AnyMock;
 const mockTriggerConfirmed = jest.fn() as AnyMock;
 const mockTriggerFailed = jest.fn() as AnyMock;
+
+/**
+ * Rows each cycle phase should see, keyed by phase.
+ *
+ * A router, not ad-hoc branching in each test. The previous version matched on
+ * one narrow predicate and returned [] for everything else, which silently made
+ * three of the five phases unreachable in EVERY test — they passed while
+ * proving nothing. Routing on each query's distinguishing predicate means a
+ * phase that stops being reachable shows up as an unrouted-query throw rather
+ * than a green run.
+ */
+type Phase = 'in-flight' | 'critical' | 'expired' | 'submitted';
+const phaseRows: Record<Phase, unknown[]> = {
+	'in-flight': [],
+	critical: [],
+	expired: [],
+	submitted: [],
+};
+
+function routeFindMany(args: {
+	where?: {
+		status?: string;
+		priority?: string;
+		transactionId?: unknown;
+	};
+}): Phase {
+	const where = args?.where ?? {};
+	if (where.status === FundDistributionStatus.Submitted) return 'submitted';
+	if (where.transactionId !== null && where.transactionId !== undefined) return 'in-flight';
+	if (where.priority === FundDistributionPriority.Critical) return 'critical';
+	if (where.priority === FundDistributionPriority.Warning) return 'expired';
+	throw new Error(`Unrouted fundDistributionRequest.findMany: ${JSON.stringify(args?.where)}`);
+}
 
 const FundDistributionPriority = { Warning: 'Warning', Critical: 'Critical' } as const;
 const FundDistributionStatus = {
@@ -62,11 +95,12 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	},
 }));
 
-jest.unstable_mockModule('@/services/shared/provider-factory', () => ({
-	createMeshProvider: async () => ({ fetchTxInfo: mockFetchTxInfo }),
+jest.unstable_mockModule('@/services/shared/chain-tx-lookup', () => ({
+	lookupChainTx: mockLookupChainTx,
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/config', () => ({
+	CONFIG: { WALLET_LOCK_TIMEOUT_INTERVAL: 300_000 },
 	CONSTANTS: {
 		FUND_DISTRIBUTION_TX_CONFIRMATION_TIMEOUT_MS: 1_800_000,
 		FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS: 300_000,
@@ -124,18 +158,24 @@ const fundWallet = {
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	for (const key of Object.keys(phaseRows) as Phase[]) phaseRows[key] = [];
+
 	mockGetFundWalletForPaymentSource.mockResolvedValue(fundWallet);
 	mockLoadFundWalletContext.mockResolvedValue(fundWallet);
 	mockRequestFindFirst.mockResolvedValue(null);
 	mockRequestCreate.mockResolvedValue({ id: 'req-1' });
-	mockRequestFindMany.mockResolvedValue([]);
+	mockRequestFindMany.mockImplementation(async (args: any) => phaseRows[routeFindMany(args)]);
 	mockRequestUpdateMany.mockResolvedValue({ count: 0 });
-	mockHotWalletFindMany.mockResolvedValue([]);
+	// The funded-source lookup (type: Funding) vs the low-balance scan.
+	mockHotWalletFindMany.mockImplementation(async (args: any) =>
+		args?.where?.type === HotWalletType.Funding ? [{ paymentSourceId: 'ps-1' }] : [],
+	);
 	// MUST be stubbed. Left returning undefined, `if (!targetWallet) return;`
 	// short-circuits the critical dispatch path and every test below passes
 	// while proving nothing about it.
 	mockHotWalletFindUnique.mockResolvedValue({ walletAddress: 'addr_target' });
 	mockHotWalletUpdateMany.mockResolvedValue({ count: 1 });
+	mockLookupChainTx.mockResolvedValue('found');
 });
 
 describe('requestTopup', () => {
@@ -165,8 +205,11 @@ describe('requestTopup', () => {
 		mockRequestFindFirst
 			// dedupe check inside the create transaction: nothing in flight
 			.mockResolvedValueOnce(null)
-			// the just-created row, re-read for immediate dispatch
-			.mockResolvedValueOnce({ id: 'req-1', amount: 20_000_000n });
+			// the just-created row, re-read for immediate dispatch. The amount is
+			// DELIBERATELY different from config.topupAmount (20 ADA): the dispatch
+			// must send what the row says, not re-derive it from config. Identical
+			// fixtures would let that confusion pass.
+			.mockResolvedValueOnce({ id: 'req-1', amount: 7_000_000n });
 		mockHotWalletFindUnique.mockResolvedValue({ walletAddress: 'addr_target_w1' });
 
 		await new FundDistributionService().requestTopup({
@@ -178,7 +221,7 @@ describe('requestTopup', () => {
 		// Critical means "send now", not "wait for the batch window". Asserts the
 		// routing too: right recipient, right amount.
 		expect(mockProcessRequests).toHaveBeenCalledWith(fundWallet, [
-			{ id: 'req-1', targetWalletId: 'w1', targetAddress: 'addr_target_w1', amount: 20_000_000n },
+			{ id: 'req-1', targetWalletId: 'w1', targetAddress: 'addr_target_w1', amount: 7_000_000n },
 		]);
 	});
 
@@ -217,7 +260,7 @@ describe('requestTopup', () => {
 		);
 	});
 
-	it('does not queue a second request while one is in flight', async () => {
+	it('does not queue OR dispatch a second request while one is in flight', async () => {
 		mockRequestFindFirst.mockResolvedValue({ id: 'existing' });
 
 		await new FundDistributionService().requestTopup({
@@ -226,6 +269,11 @@ describe('requestTopup', () => {
 			paymentSourceId: 'ps-1',
 		});
 
+		// Asserting only "didn't create" is not enough: without the `if (!created)
+		// return`, execution falls through to the critical dispatch and re-sends a
+		// topup that is already in flight — a treasury double-spend that a
+		// create-only assertion sails straight past.
+		expect(mockProcessRequests).not.toHaveBeenCalled();
 		expect(mockRequestCreate).not.toHaveBeenCalled();
 	});
 
@@ -260,88 +308,184 @@ describe('processDistributionCycle', () => {
 });
 
 describe('reconcileInFlightRequests', () => {
-	const inFlight = (overrides: Record<string, unknown>) => ({
+	const inFlight = (transaction: Record<string, unknown>, overrides: Record<string, unknown> = {}) => ({
 		id: 'req-1',
 		batchId: 'batch-1',
 		transactionId: 'tx-1',
+		Transaction: {
+			txHash: null,
+			intendedTxHash: 'intended-1',
+			status: TransactionStatus.Pending,
+			createdAt: new Date(),
+			...transaction,
+		},
 		...overrides,
-	});
-
-	beforeEach(() => {
-		// The cycle issues two hotWallet.findMany queries: the funded-source
-		// lookup (type: Funding) and the low-balance scan (type: not Funding).
-		// Branch on the type clause so the scan gets rows of the right shape.
-		mockHotWalletFindMany.mockImplementation(async (args: any) => {
-			if (args?.where?.type === HotWalletType.Funding) return [{ paymentSourceId: 'ps-1' }];
-			return [];
-		});
 	});
 
 	it('adopts a reconciliation-promoted batch as Submitted', async () => {
 		// reconcileOne promoted intendedTxHash -> txHash, meaning the tx IS on
 		// chain. Re-sending would double-spend; the batch must move to Submitted
 		// so the confirm phase picks it up.
-		mockRequestFindMany.mockImplementation(async (args: any) => {
-			if (args?.where?.transactionId?.not === null) {
-				return [inFlight({ Transaction: { txHash: 'abc', status: TransactionStatus.Pending } })];
-			}
-			return [];
-		});
+		phaseRows['in-flight'] = [inFlight({ txHash: 'abc' })];
 
 		await new FundDistributionService().processDistributionCycle();
 
-		expect(mockRequestUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({
-				data: { status: FundDistributionStatus.Submitted, txHash: 'abc' },
-			}),
-		);
+		expect(mockRequestUpdateMany).toHaveBeenCalledWith({
+			where: { id: { in: ['req-1'] }, status: FundDistributionStatus.Pending },
+			data: { status: FundDistributionStatus.Submitted, txHash: 'abc' },
+		});
 	});
 
 	it('releases a rolled-back batch so it can be rebuilt', async () => {
-		// TTL provably elapsed and reconcileOne freed the wallet: the body can
-		// never land, so a fresh build with new inputs is safe.
-		mockRequestFindMany.mockImplementation(async (args: any) => {
-			if (args?.where?.transactionId?.not === null) {
-				return [inFlight({ Transaction: { txHash: null, status: TransactionStatus.RolledBack } })];
-			}
-			return [];
+		// TTL provably elapsed: the body can never land, so a fresh build with new
+		// inputs is safe.
+		phaseRows['in-flight'] = [inFlight({ status: TransactionStatus.RolledBack })];
+
+		await new FundDistributionService().processDistributionCycle();
+
+		expect(mockRequestUpdateMany).toHaveBeenCalledWith({
+			where: { id: { in: ['req-1'] }, status: FundDistributionStatus.Pending },
+			data: { transactionId: null, batchId: null },
 		});
+	});
+
+	it('releases a RolledBack batch even when it still carries a txHash', async () => {
+		// tx-sync marks a Transaction RolledBack BY txHash and leaves the hash set.
+		// Checking txHash first would promote a batch the chain already discarded,
+		// stranding it until the 30min confirm timeout for no reason.
+		phaseRows['in-flight'] = [inFlight({ txHash: 'abc', status: TransactionStatus.RolledBack })];
 
 		await new FundDistributionService().processDistributionCycle();
 
 		expect(mockRequestUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({ data: { transactionId: null, batchId: null } }),
 		);
+		expect(mockRequestUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: FundDistributionStatus.Submitted }) }),
+		);
 	});
 
-	it('leaves a still-in-flight batch alone', async () => {
-		mockRequestFindMany.mockImplementation(async (args: any) => {
-			if (args?.where?.transactionId?.not === null) {
-				return [inFlight({ Transaction: { txHash: null, status: TransactionStatus.Pending } })];
-			}
-			return [];
-		});
+	it('releases a never-broadcast orphan so its target is not stranded forever', async () => {
+		// Crash between creating the Transaction and recording intendedTxHash:
+		// nothing was signed, so nothing can be on chain. No other worker recovers
+		// this — reconciliation only considers rows WITH an intendedTxHash. Left
+		// linked, the row is excluded from rebuild AND counted as "already queued"
+		// by the scan, so the target would never be topped up again.
+		phaseRows['in-flight'] = [
+			inFlight({ txHash: null, intendedTxHash: null, createdAt: new Date(Date.now() - 3_600_000) }),
+		];
 
 		await new FundDistributionService().processDistributionCycle();
 
-		const touchedIds = mockRequestUpdateMany.mock.calls.map((call: any) => call[0]?.where?.id);
-		expect(touchedIds).not.toContainEqual({ in: ['req-1'] });
+		expect(mockRequestUpdateMany).toHaveBeenCalledWith({
+			where: { id: { in: ['req-1'] }, status: FundDistributionStatus.Pending },
+			data: { transactionId: null, batchId: null },
+		});
 	});
 
-	it('only ever touches Pending rows, so a concurrently-resolved row is not resurrected', async () => {
-		mockRequestFindMany.mockImplementation(async (args: any) => {
-			if (args?.where?.transactionId?.not === null) {
-				return [inFlight({ Transaction: { txHash: 'abc', status: TransactionStatus.Pending } })];
-			}
-			return [];
-		});
+	it('leaves a fresh never-broadcast row alone until the lock timeout passes', async () => {
+		// It may simply still be mid build/sign.
+		phaseRows['in-flight'] = [inFlight({ txHash: null, intendedTxHash: null, createdAt: new Date() })];
 
 		await new FundDistributionService().processDistributionCycle();
 
-		// The where-clause is the guard, so assert it rather than only `data`.
-		expect(mockRequestUpdateMany).toHaveBeenCalledWith(
+		expect(mockRequestUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('leaves a signed, in-flight batch alone', async () => {
+		phaseRows['in-flight'] = [inFlight({ txHash: null, intendedTxHash: 'intended-1' })];
+
+		await new FundDistributionService().processDistributionCycle();
+
+		expect(mockRequestUpdateMany).not.toHaveBeenCalled();
+	});
+});
+
+describe('processCriticalRequests', () => {
+	it('builds a batch for critical rows, routed to the right addresses', async () => {
+		phaseRows.critical = [
+			{
+				id: 'req-1',
+				fundWalletId: 'fund-1',
+				targetWalletId: 'w1',
+				amount: 20_000_000n,
+				TargetWallet: { walletAddress: 'addr_w1' },
+			},
+			{
+				id: 'req-2',
+				fundWalletId: 'fund-1',
+				targetWalletId: 'w2',
+				amount: 30_000_000n,
+				TargetWallet: { walletAddress: 'addr_w2' },
+			},
+		];
+
+		await new FundDistributionService().processDistributionCycle();
+
+		// Batching is the feature's whole point: both rows must reach ONE call.
+		expect(mockProcessRequests).toHaveBeenCalledWith(fundWallet, [
+			{ id: 'req-1', targetWalletId: 'w1', targetAddress: 'addr_w1', amount: 20_000_000n },
+			{ id: 'req-2', targetWalletId: 'w2', targetAddress: 'addr_w2', amount: 30_000_000n },
+		]);
+	});
+
+	it('never rebuilds a row that is already linked to an in-flight transaction', async () => {
+		await new FundDistributionService().processDistributionCycle();
+
+		// The lock is not the only thing standing between an in-flight batch and a
+		// second send — wallet-timeouts can free it with no coordination — so the
+		// query itself must exclude linked rows.
+		expect(mockRequestFindMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: { in: ['req-1'] }, status: FundDistributionStatus.Pending },
+				where: expect.objectContaining({
+					priority: FundDistributionPriority.Critical,
+					status: FundDistributionStatus.Pending,
+					transactionId: null,
+				}),
+			}),
+		);
+	});
+});
+
+describe('processExpiredBatchRequests', () => {
+	const warning = (createdAt: Date) => ({
+		id: 'req-1',
+		fundWalletId: 'fund-1',
+		targetWalletId: 'w1',
+		amount: 20_000_000n,
+		createdAt,
+		TargetWallet: { walletAddress: 'addr_w1' },
+		FundWallet: { FundDistributionConfig: { batchWindowMs: 300_000 } },
+	});
+
+	it('sends a warning batch once its window has expired', async () => {
+		phaseRows.expired = [warning(new Date(Date.now() - 600_000))];
+
+		await new FundDistributionService().processDistributionCycle();
+
+		expect(mockProcessRequests).toHaveBeenCalledWith(fundWallet, [
+			{ id: 'req-1', targetWalletId: 'w1', targetAddress: 'addr_w1', amount: 20_000_000n },
+		]);
+	});
+
+	it('holds a warning batch inside its window so more topups can join it', async () => {
+		phaseRows.expired = [warning(new Date())];
+
+		await new FundDistributionService().processDistributionCycle();
+
+		expect(mockProcessRequests).not.toHaveBeenCalled();
+	});
+
+	it('never rebuilds a row that is already linked to an in-flight transaction', async () => {
+		await new FundDistributionService().processDistributionCycle();
+
+		expect(mockRequestFindMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					priority: FundDistributionPriority.Warning,
+					status: FundDistributionStatus.Pending,
+					transactionId: null,
+				}),
 			}),
 		);
 	});
@@ -368,49 +512,55 @@ describe('confirmSubmittedRequests', () => {
 		...overrides,
 	});
 
-	const withSubmitted = (rows: unknown[]) => {
-		mockHotWalletFindMany.mockImplementation(async (args: any) =>
-			args?.where?.type === HotWalletType.Funding ? [{ paymentSourceId: 'ps-1' }] : [],
-		);
-		mockRequestFindMany.mockImplementation(async (args: any) => {
-			if (args?.where?.status === FundDistributionStatus.Submitted) return rows;
-			return [];
-		});
-	};
-
-	it('confirms a batch found on chain and reports it', async () => {
-		withSubmitted([submitted()]);
-		mockFetchTxInfo.mockResolvedValue({ hash: 'tx-hash-1' });
+	it('only looks at rows old enough for the indexer to have seen', async () => {
+		phaseRows.submitted = [submitted()];
 
 		await new FundDistributionService().processDistributionCycle();
 
-		expect(mockRequestUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({ data: { status: FundDistributionStatus.Confirmed, error: null } }),
+		// Without the age filter a tx submitted this cycle looks not-found and is
+		// marked Failed.
+		expect(mockRequestFindMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					status: FundDistributionStatus.Submitted,
+					txHash: { not: null },
+					updatedAt: { lt: expect.any(Date) },
+				}),
+			}),
 		);
+	});
+
+	it('confirms a batch found on chain, touching only its own rows', async () => {
+		phaseRows.submitted = [submitted()];
+		mockLookupChainTx.mockResolvedValue('found');
+
+		await new FundDistributionService().processDistributionCycle();
+
+		// Assert the WHERE, not just the data: an unscoped update would mark every
+		// distribution in the table Confirmed and a data-only assertion would pass.
+		expect(mockRequestUpdateMany).toHaveBeenCalledWith({
+			where: { id: { in: ['req-1'] }, status: FundDistributionStatus.Submitted },
+			data: { status: FundDistributionStatus.Confirmed, error: null },
+		});
 		expect(mockTriggerConfirmed).toHaveBeenCalledWith(expect.objectContaining({ txHash: 'tx-hash-1' }));
 	});
 
-	it('fails a batch that is still absent from chain past the timeout, and reports it', async () => {
-		// Blockfrost signals not-found by THROWING a 404, not by returning null.
-		// If this branch is ever gated on a falsy return it becomes unreachable:
-		// the batch never fails, the FAILED webhook never fires, and the wallet
-		// stays locked forever.
-		withSubmitted([submitted({ updatedAt: new Date(Date.now() - 3_600_000) })]);
-		mockFetchTxInfo.mockRejectedValue(new Error('Request failed with status code 404'));
+	it('fails a batch absent from chain past the timeout, touching only its own rows', async () => {
+		phaseRows.submitted = [submitted({ updatedAt: new Date(Date.now() - 3_600_000) })];
+		mockLookupChainTx.mockResolvedValue('not-found');
 
 		await new FundDistributionService().processDistributionCycle();
 
-		expect(mockRequestUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({
-				data: expect.objectContaining({ status: FundDistributionStatus.Failed }),
-			}),
-		);
+		expect(mockRequestUpdateMany).toHaveBeenCalledWith({
+			where: { id: { in: ['req-1'] }, status: FundDistributionStatus.Submitted },
+			data: { status: FundDistributionStatus.Failed, error: 'Transaction not found on-chain after timeout' },
+		});
 		expect(mockTriggerFailed).toHaveBeenCalledWith(expect.objectContaining({ txHash: 'tx-hash-1' }));
 	});
 
 	it('keeps a not-yet-indexed batch Submitted and the wallet locked', async () => {
-		withSubmitted([submitted({ updatedAt: new Date(Date.now() - 600_000) })]);
-		mockFetchTxInfo.mockRejectedValue(new Error('Request failed with status code 404'));
+		phaseRows.submitted = [submitted({ updatedAt: new Date(Date.now() - 600_000) })];
+		mockLookupChainTx.mockResolvedValue('not-found');
 
 		await new FundDistributionService().processDistributionCycle();
 
@@ -419,32 +569,44 @@ describe('confirmSubmittedRequests', () => {
 		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
 	});
 
-	it('does not fail a batch when the indexer is unhealthy', async () => {
-		withSubmitted([submitted({ updatedAt: new Date(Date.now() - 3_600_000) })]);
-		mockFetchTxInfo.mockRejectedValue(new Error('Request failed with status code 502'));
+	it('does not fail or unlock a batch when the indexer is unhealthy', async () => {
+		phaseRows.submitted = [submitted({ updatedAt: new Date(Date.now() - 3_600_000) })];
+		mockLookupChainTx.mockResolvedValue('transient-error');
 
 		await new FundDistributionService().processDistributionCycle();
 
-		// Inferring "not on chain" from a 5xx is how a landed tx gets marked
-		// Failed and re-sent. Even past the timeout, a 502 must not fail it.
-		expect(mockRequestUpdateMany).not.toHaveBeenCalledWith(
-			expect.objectContaining({ data: expect.objectContaining({ status: FundDistributionStatus.Failed }) }),
-		);
+		// Inferring "not on chain" from a 5xx is how a landed tx gets marked Failed
+		// and re-sent. Even past the timeout, a transient error must not fail it.
+		expect(mockRequestUpdateMany).not.toHaveBeenCalled();
 		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
 	});
 
-	it('releases only its own lock, guarded on the batch transaction', async () => {
-		withSubmitted([submitted()]);
-		mockFetchTxInfo.mockResolvedValue({ hash: 'tx-hash-1' });
+	it('releases only the lock held by the batch it resolved', async () => {
+		phaseRows.submitted = [submitted()];
+		mockLookupChainTx.mockResolvedValue('found');
 
 		await new FundDistributionService().processDistributionCycle();
 
-		// An unguarded unlock can clear a NEWER batch's lock, letting the next
-		// cycle rebuild rows whose tx is still in flight.
+		// Clearing a lock we do not own lets the next cycle rebuild rows whose tx
+		// is still in flight.
+		expect(mockHotWalletUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'fund-1', deletedAt: null, pendingTransactionId: { in: ['tx-1'] } },
+			data: { lockedAt: null, pendingTransactionId: null },
+		});
+	});
+
+	it('still releases the lock when a wallet holds rows from two batches', async () => {
+		// Reachable when wallet-timeouts frees the lock early and a second batch
+		// takes it. Declining to unlock here would leave the wallet wedged until
+		// another service happened to clean it up.
+		phaseRows.submitted = [submitted(), submitted({ id: 'req-2', txHash: 'tx-hash-2', transactionId: 'tx-2' })];
+		mockLookupChainTx.mockResolvedValue('found');
+
+		await new FundDistributionService().processDistributionCycle();
+
 		expect(mockHotWalletUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: 'fund-1', deletedAt: null, pendingTransactionId: 'tx-1' },
-				data: { lockedAt: null, pendingTransactionId: null },
+				where: expect.objectContaining({ pendingTransactionId: { in: ['tx-1', 'tx-2'] } }),
 			}),
 		);
 	});

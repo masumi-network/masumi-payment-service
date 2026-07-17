@@ -7,11 +7,11 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
-import { CONSTANTS } from '@masumi/payment-core/config';
+import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
-import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { Mutex } from 'async-mutex';
 import { withJobLock } from '@/services/shared/job-runner';
+import { lookupChainTx } from '@/services/shared/chain-tx-lookup';
 import { webhookEventsService } from '@/services/webhooks';
 import { getFundWalletForPaymentSource, loadFundWalletContext } from './context';
 import { processRequestsForFundWallet } from './batch-executor';
@@ -150,24 +150,34 @@ export class FundDistributionService {
 			if (fundWallets.length === 0) return;
 			const fundedPaymentSourceIds = fundWallets.map((wallet) => wallet.paymentSourceId);
 
-			// Phase A: Adopt outcomes that funding-reconciliation decided for
-			// ambiguously-submitted batches. Runs FIRST so a promoted batch is
-			// marked Submitted (and a rolled-back one released) before the
-			// scan below considers those targets un-serviced.
-			await this.reconcileInFlightRequests();
-
-			// Phase B: Scan for Low-status wallets with no pending/submitted distribution request
-			await this.scanAndCreateMissingRequests(fundedPaymentSourceIds);
-
-			// Phase C: Process critical pending requests immediately
-			await this.processCriticalRequests();
-
-			// Phase D: Process warning requests whose batch window has expired
-			await this.processExpiredBatchRequests();
-
-			// Phase E: Confirm submitted transactions
-			await this.confirmSubmittedRequests();
+			// Phases are run independently: a throw in one must not starve the
+			// others. In particular the send phases take a Serializable lock that
+			// can lose to a concurrent writer (P2034), and letting that escape would
+			// skip the confirm phase — so an unrelated conflict would leave settled
+			// batches unconfirmed and their wallets locked.
+			await this.runPhase(
+				'reconcile-in-flight',
+				// Runs FIRST so a promoted batch is marked Submitted (and a rolled-back
+				// one released) before the scan considers those targets un-serviced.
+				() => this.reconcileInFlightRequests(),
+			);
+			await this.runPhase('scan', () => this.scanAndCreateMissingRequests(fundedPaymentSourceIds));
+			await this.runPhase('critical', () => this.processCriticalRequests());
+			await this.runPhase('expired-batch', () => this.processExpiredBatchRequests());
+			await this.runPhase('confirm', () => this.confirmSubmittedRequests());
 		});
+	}
+
+	private async runPhase(phase: string, run: () => Promise<void>): Promise<void> {
+		try {
+			await run();
+		} catch (error) {
+			logger.error('Fund distribution phase failed; continuing with the rest of the cycle', {
+				component: 'fund_distribution',
+				phase,
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
 	}
 
 	/**
@@ -182,14 +192,16 @@ export class FundDistributionService {
 	 * forever: the requests stay Pending, `confirmSubmittedRequests` only looks
 	 * at Submitted, and the wallet never unlocks.
 	 *
-	 *   - Transaction promoted (txHash set)  → the tx IS on chain. Advance the
+	 *   - Transaction RolledBack   → the ledger provably never took the body and
+	 *     the wallet is already free. Release the link so the rows rebuild with
+	 *     fresh inputs. Checked FIRST: a RolledBack row can still carry a txHash.
+	 *   - Transaction promoted (txHash set) → the tx IS on chain. Advance the
 	 *     requests to Submitted so the normal confirmation phase adopts them.
 	 *     Re-sending here would double-spend the float.
-	 *   - Transaction RolledBack             → the ledger provably never took
-	 *     the body (TTL elapsed) and reconcileOne already freed the wallet.
-	 *     Release the link and leave the requests Pending for a fresh build
-	 *     with different inputs.
-	 *   - Otherwise                          → still in flight; leave alone.
+	 *   - Never broadcast (no intendedTxHash, past the lock timeout) → a crash
+	 *     between creating the Transaction and signing. Nothing else recovers
+	 *     these; release them.
+	 *   - Otherwise                → signed and in flight; leave alone.
 	 */
 	private async reconcileInFlightRequests(): Promise<void> {
 		const inFlight = await prisma.fundDistributionRequest.findMany({
@@ -201,26 +213,47 @@ export class FundDistributionService {
 				id: true,
 				batchId: true,
 				transactionId: true,
-				Transaction: { select: { txHash: true, status: true } },
+				Transaction: {
+					select: { txHash: true, intendedTxHash: true, status: true, createdAt: true },
+				},
 			},
 		});
 
 		if (inFlight.length === 0) return;
 
 		const promotedByTxHash = new Map<string, string[]>();
-		const rolledBackIds: string[] = [];
+		const releasedIds: string[] = [];
+
+		// Anything older than the lock timeout that was never signed has provably
+		// been abandoned; see the never-broadcast branch below.
+		const abandonedBefore = new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL);
 
 		for (const request of inFlight) {
 			const tx = request.Transaction;
 			if (tx == null) continue;
 
-			if (tx.txHash != null) {
+			// RolledBack FIRST. tx-sync marks a Transaction RolledBack by txHash
+			// while LEAVING txHash set, so checking txHash first would promote a
+			// batch the chain has already discarded — correct in the end (it fails
+			// 30min later and rebuilds) but 30 minutes late for no reason.
+			if (tx.status === TransactionStatus.RolledBack) {
+				releasedIds.push(request.id);
+			} else if (tx.txHash != null) {
 				const group = promotedByTxHash.get(tx.txHash) ?? [];
 				group.push(request.id);
 				promotedByTxHash.set(tx.txHash, group);
-			} else if (tx.status === TransactionStatus.RolledBack) {
-				rolledBackIds.push(request.id);
+			} else if (tx.intendedTxHash == null && tx.createdAt < abandonedBefore) {
+				// Never-broadcast orphan: the process died between creating the
+				// Transaction and recording intendedTxHash, so nothing was signed and
+				// nothing can be on chain. No other worker recovers this — the
+				// reconciliation cron only considers rows WITH an intendedTxHash, and
+				// wallet-timeouts frees the wallet without touching these rows. Left
+				// here they are excluded from a rebuild by the `transactionId: null`
+				// filter AND counted as "already queued" by the scan, so the target
+				// wallet would never be topped up again. Release them.
+				releasedIds.push(request.id);
 			}
+			// Otherwise: signed and in flight. Leave it for reconciliation.
 		}
 
 		for (const [txHash, ids] of promotedByTxHash) {
@@ -235,14 +268,14 @@ export class FundDistributionService {
 			});
 		}
 
-		if (rolledBackIds.length > 0) {
+		if (releasedIds.length > 0) {
 			await prisma.fundDistributionRequest.updateMany({
-				where: { id: { in: rolledBackIds }, status: FundDistributionStatus.Pending },
+				where: { id: { in: releasedIds }, status: FundDistributionStatus.Pending },
 				data: { transactionId: null, batchId: null },
 			});
-			logger.warn('Released fund distribution requests after reconciliation rollback; will rebuild', {
+			logger.warn('Released fund distribution requests for rebuild (rolled back or never broadcast)', {
 				component: 'fund_distribution',
-				request_count: rolledBackIds.length,
+				request_count: releasedIds.length,
 			});
 		}
 	}
@@ -454,10 +487,8 @@ export class FundDistributionService {
 
 		for (const [fundWalletId, requests] of byFundWallet) {
 			const rpcKey = requests[0]?.FundWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
-			if (!rpcKey) continue;
-
-			const { createMeshProvider } = await import('@/services/shared/provider-factory');
-			const provider = await createMeshProvider(rpcKey);
+			const network = requests[0]?.FundWallet.PaymentSource.network;
+			if (!rpcKey || !network) continue;
 
 			// Deduplicate by txHash — batched requests share one hash, so one Blockfrost call covers all
 			const byTxHash = new Map<string, typeof requests>();
@@ -468,18 +499,17 @@ export class FundDistributionService {
 				byTxHash.set(req.txHash, group);
 			}
 
-			// Track whether any tx is still pending indexing — if so, keep the wallet locked
-			let hasUnresolved = false;
-
-			// The lock we are entitled to release. All rows in this group belong to
-			// the same fund wallet; the ones we are confirming carry the Transaction
-			// that took its lock. If they disagree (a wallet somehow holding rows
-			// from two batches), release nothing rather than guess — an unguarded
-			// unlock is how a live batch's lock gets cleared.
-			const transactionIds = new Set(requests.map((r) => r.transactionId).filter((id): id is string => id != null));
-			const confirmedTransactionId = transactionIds.size === 1 ? [...transactionIds][0] : null;
+			// Transactions we drove to a terminal state in this pass, and are
+			// therefore entitled to release the lock for. Tracked per transaction
+			// rather than as one flag over the whole wallet: `hasUnresolved` was too
+			// coarse (an unrelated in-flight batch would block a legitimate unlock)
+			// and requiring exactly one transaction id was worse — it silently
+			// declined to unlock at all whenever a wallet held rows from two
+			// batches, leaving the lock to be cleaned up by another service.
+			const resolvedTransactionIds = new Set<string>();
 
 			for (const [txHash, txRequests] of byTxHash) {
+				const transactionId = txRequests[0]?.transactionId ?? null;
 				// Every request under this txHash shares one batch, so one payload
 				// describes the whole outcome.
 				const outcomePayload = {
@@ -495,19 +525,18 @@ export class FundDistributionService {
 					})),
 				};
 
-				// A not-found tx MUST be distinguished from an unreachable indexer.
-				// `provider.fetchTxInfo` cannot do that: BlockfrostProvider throws on
-				// 404 rather than returning null, so an `if (txInfo) {} else {}` makes
-				// the not-found arm unreachable — the timeout never fires, the batch
-				// never fails, and the wallet stays locked forever on a dropped tx.
-				const chainResult = await fetchTxChainResult(provider, txHash);
+				// Classified on the structured HTTP status, never on error text: a
+				// 404 must fail the batch and a 5xx must not, and the two are
+				// indistinguishable by message (see `lookupChainTx`).
+				const chainResult = await lookupChainTx({ network, rpcProviderApiKey: rpcKey, txHash });
 
 				if (chainResult === 'found') {
 					await prisma.fundDistributionRequest.updateMany({
-						where: { id: { in: txRequests.map((r) => r.id) } },
+						where: { id: { in: txRequests.map((r) => r.id) }, status: FundDistributionStatus.Submitted },
 						data: { status: FundDistributionStatus.Confirmed, error: null },
 					});
 					await webhookEventsService.triggerFundDistributionConfirmed({ ...outcomePayload, txHash });
+					if (transactionId) resolvedTransactionIds.add(transactionId);
 				} else if (chainResult === 'not-found') {
 					// Only mark as Failed after the confirmation timeout has elapsed.
 					// Within the window the requests stay Submitted and will be retried next cycle
@@ -518,7 +547,7 @@ export class FundDistributionService {
 					if (timedOut) {
 						const error = 'Transaction not found on-chain after timeout';
 						await prisma.fundDistributionRequest.updateMany({
-							where: { id: { in: txRequests.map((r) => r.id) } },
+							where: { id: { in: txRequests.map((r) => r.id) }, status: FundDistributionStatus.Submitted },
 							data: {
 								status: FundDistributionStatus.Failed,
 								error,
@@ -528,37 +557,38 @@ export class FundDistributionService {
 						// operator's last signal was FUND_DISTRIBUTION_SENT and they
 						// would believe the wallets were topped up.
 						await webhookEventsService.triggerFundDistributionFailed({ ...outcomePayload, txHash, error });
+						if (transactionId) resolvedTransactionIds.add(transactionId);
 					} else {
 						logger.debug('Fund distribution tx not yet indexed, will retry next cycle', {
 							component: 'fund_distribution',
 							tx_hash: txHash,
 						});
-						hasUnresolved = true;
 					}
 				} else {
 					// Indexer unhealthy. Do NOT infer "not on chain" from a 5xx — that is
-					// how a healthy tx gets marked Failed and re-sent.
+					// how a healthy tx gets marked Failed and re-sent. Leaving it out of
+					// resolvedTransactionIds keeps its lock held.
 					logger.warn('Failed to confirm fund distribution tx', {
 						component: 'fund_distribution',
 						tx_hash: txHash,
 						request_ids: txRequests.map((r) => r.id),
 					});
-					hasUnresolved = true;
 				}
 			}
 
-			// Only unlock the fund wallet when all submitted txes have reached a terminal state.
-			// If any tx is still pending indexing, keep the lock to prevent duplicate distributions.
+			// Release the lock only if the transaction currently HOLDING it is one we
+			// just drove terminal.
 			//
-			// Guarded on the batch's own pendingTransactionId: `hasUnresolved` is
-			// computed only over rows older than the confirmation delay, so a NEWER
-			// batch's lock is invisible here. An unguarded update would clear it and
-			// let the next cycle rebuild rows whose tx is still in flight — a treasury
-			// double-spend. Same predicate discipline as funding-reconciliation and
-			// wallet-timeouts.
-			if (!hasUnresolved && confirmedTransactionId != null) {
+			// The `in` predicate does the discriminating: a transaction still in
+			// flight is absent from the set, so its lock survives; a wallet holding
+			// rows from two batches releases whichever one it is actually locked on
+			// instead of declining to unlock at all. And matching on
+			// pendingTransactionId means we can never clear a lock we do not own —
+			// an unguarded clear lets the next cycle rebuild rows whose tx is still
+			// in flight, which spends the treasury twice.
+			if (resolvedTransactionIds.size > 0) {
 				const { count } = await prisma.hotWallet.updateMany({
-					where: { id: fundWalletId, deletedAt: null, pendingTransactionId: confirmedTransactionId },
+					where: { id: fundWalletId, deletedAt: null, pendingTransactionId: { in: [...resolvedTransactionIds] } },
 					data: {
 						lockedAt: null,
 						pendingTransactionId: null,
@@ -566,12 +596,12 @@ export class FundDistributionService {
 				});
 
 				if (count === 0) {
-					// The wallet moved on to another batch (or was already freed by
-					// wallet-timeouts). Benign — leave that batch's lock alone.
-					logger.debug('Fund wallet lock already moved on; skipping unlock', {
+					// The lock is held by a batch we did not resolve (or was already
+					// freed elsewhere). Benign — leave it alone.
+					logger.debug('Fund wallet lock is held by an unresolved batch; leaving it', {
 						component: 'fund_distribution',
 						fund_wallet_id: fundWalletId,
-						expected_transaction_id: confirmedTransactionId,
+						resolved_transaction_ids: [...resolvedTransactionIds],
 					});
 				} else {
 					logger.info('Fund wallet unlocked after distribution confirmation', {
@@ -579,50 +609,13 @@ export class FundDistributionService {
 						fund_wallet_id: fundWalletId,
 					});
 				}
-			} else if (hasUnresolved) {
-				logger.debug('Fund wallet kept locked — unresolved txes still pending confirmation', {
+			} else {
+				logger.debug('Fund wallet kept locked — no batch reached a terminal state this pass', {
 					component: 'fund_distribution',
 					fund_wallet_id: fundWalletId,
 				});
 			}
 		}
-	}
-}
-
-type ChainResult = 'found' | 'not-found' | 'transient-error';
-
-/**
- * Classify a tx hash against the chain.
- *
- * `BlockfrostProvider.fetchTxInfo` rejects on 404 rather than returning null, so
- * a caller that only branches on truthiness can never observe "not found" — the
- * throw lands in its catch and is indistinguishable from an indexer outage.
- * Distinguishing them matters in both directions: treating a 5xx as not-found
- * marks a landed tx Failed (and re-sends it), while treating a 404 as an outage
- * keeps the fund wallet locked forever on a dropped tx.
- *
- * Mirrors `safeFetchTx` in `@/services/transactions/funding-reconciliation`.
- */
-async function fetchTxChainResult(
-	provider: { fetchTxInfo: (hash: string) => Promise<unknown> },
-	txHash: string,
-): Promise<ChainResult> {
-	try {
-		const txInfo = await provider.fetchTxInfo(txHash);
-		// Defensive: a provider that returns null instead of throwing is also
-		// telling us the tx is not on chain.
-		return txInfo ? 'found' : 'not-found';
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		if (/404|not.?found/i.test(message)) {
-			return 'not-found';
-		}
-		logger.warn('Fund distribution chain query failed; treating as transient', {
-			component: 'fund_distribution',
-			tx_hash: txHash,
-			error: interpretBlockchainError(error),
-		});
-		return 'transient-error';
 	}
 }
 
