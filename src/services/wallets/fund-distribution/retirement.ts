@@ -2,6 +2,24 @@ import { FundDistributionStatus, HotWalletType } from '@/generated/prisma/client
 import type { Prisma } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 
+/**
+ * Refuse to retire target wallets that have a distribution in flight, and
+ * cancel the ones that are merely queued.
+ *
+ * The caller MUST soft-delete the wallets in this same Serializable
+ * transaction. That is what makes the check meaningful: a batch claim either
+ * wins first (and this throws 409) or sees inactive targets. Run as two
+ * statements on the base client the steps race, and a top-up can be signed and
+ * broadcast to a wallet between the check passing and the delete landing.
+ *
+ * The `tx` type CANNOT enforce this. `Prisma.TransactionClient` is
+ * `Omit<PrismaClient, '$connect'|'$disconnect'|'$on'|'$use'|'$extends'>` — it
+ * keeps `$transaction`, so the base client is structurally identical here and
+ * `prepareTargetWalletRemoval(prisma, ...)` type-checks. (Branding on the
+ * absence of `$transaction` does not work either: the intersection collapses to
+ * `never` and every call errors.) So this is a review-time invariant — check the
+ * call site, not the signature.
+ */
 export async function prepareTargetWalletRemoval(
 	tx: Prisma.TransactionClient,
 	params: { paymentSourceId: string; walletIds: string[] },
