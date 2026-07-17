@@ -23,7 +23,11 @@ const TransactionStatus = {
 // Lock timeout used to decide a never-broadcast orphan is abandoned.
 const WALLET_LOCK_TIMEOUT_INTERVAL = 300_000;
 
-jest.unstable_mockModule('@/generated/prisma/client', () => ({ TransactionStatus, Prisma: {}, Network: { Preprod: 'Preprod', Mainnet: 'Mainnet' } }));
+jest.unstable_mockModule('@/generated/prisma/client', () => ({
+	TransactionStatus,
+	Prisma: {},
+	Network: { Preprod: 'Preprod', Mainnet: 'Mainnet' },
+}));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -181,9 +185,7 @@ describe('checkFundTransferConfirmations', () => {
 
 	it('recovers a never-broadcast orphan only once past the lock timeout', async () => {
 		const abandoned = new Date(Date.now() - WALLET_LOCK_TIMEOUT_INTERVAL - 1000);
-		mockTransferFindMany.mockResolvedValue([
-			inFlight({ txHash: null, intendedTxHash: null, createdAt: abandoned }),
-		]);
+		mockTransferFindMany.mockResolvedValue([inFlight({ txHash: null, intendedTxHash: null, createdAt: abandoned })]);
 		await checkFundTransferConfirmations();
 		expect(mockLookupChainTx).not.toHaveBeenCalled();
 		expect(transferStatusWrite(TransactionStatus.FailedViaTimeout)).toBeTruthy();
@@ -191,9 +193,7 @@ describe('checkFundTransferConfirmations', () => {
 	});
 
 	it('leaves a fresh never-broadcast row alone (still inside the build/sign window)', async () => {
-		mockTransferFindMany.mockResolvedValue([
-			inFlight({ txHash: null, intendedTxHash: null, createdAt: new Date() }),
-		]);
+		mockTransferFindMany.mockResolvedValue([inFlight({ txHash: null, intendedTxHash: null, createdAt: new Date() })]);
 		await checkFundTransferConfirmations();
 		expect(mockLookupChainTx).not.toHaveBeenCalled();
 		expect(transferStatusWrite(TransactionStatus.FailedViaTimeout)).toBeFalsy();
