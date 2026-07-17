@@ -918,16 +918,43 @@ model PaymentSourceConfig {
 }
 
 model FundDistributionConfig {
-  id                String    @id @default(cuid())
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  hotWalletId       String    @unique
-  HotWallet         HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
-  enabled           Boolean   @default(true)
-  warningThreshold  BigInt
-  criticalThreshold BigInt
-  topupAmount       BigInt
-  batchWindowMs     Int       @default(300000)
+  id            String                        @id @default(cuid())
+  createdAt     DateTime                      @default(now())
+  updatedAt     DateTime                      @updatedAt
+  hotWalletId   String                        @unique
+  HotWallet     HotWallet                     @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+  enabled       Boolean                       @default(true)
+  batchWindowMs Int                           @default(300000)
+  /// Thresholds and top-up sizes live per asset, not here. A single scalar
+  /// triple cannot describe more than one asset: "below 20" means 20 ADA for
+  /// lovelace and 20 USDM for a stablecoin, and the two are unrelated
+  /// quantities. `enabled` and `batchWindowMs` stay wallet-level because they
+  /// describe the distribution cycle itself, not any one asset.
+  AssetConfigs  FundDistributionAssetConfig[]
+}
+
+/// Per-asset distribution policy for one fund wallet.
+///
+/// Mirrors `HotWalletLowBalanceRule`, which is already keyed per asset — that is
+/// what makes a USDM/USDCX low-balance rule expressible, and therefore what a
+/// top-up has to be able to answer. `assetUnit` uses the same convention:
+/// 'lovelace' for ADA, otherwise policyId + hex asset name.
+model FundDistributionAssetConfig {
+  id                     String                 @id @default(cuid())
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  fundDistributionConfigId String
+  FundDistributionConfig FundDistributionConfig @relation(fields: [fundDistributionConfigId], references: [id], onDelete: Cascade)
+  assetUnit              String
+  /// Below this, the top-up is batched into the next window.
+  warningThreshold       BigInt
+  /// Below this, the top-up is sent immediately.
+  criticalThreshold      BigInt
+  /// Amount of this asset sent per top-up, in the asset's own smallest unit.
+  topupAmount            BigInt
+
+  @@unique([fundDistributionConfigId, assetUnit])
+  @@index([assetUnit])
 }
 
 model FundDistributionRequest {
@@ -939,6 +966,12 @@ model FundDistributionRequest {
   targetWalletId String
   TargetWallet   HotWallet                @relation("FundDistributionTarget", fields: [targetWalletId], references: [id])
   priority       FundDistributionPriority
+  /// Which asset this top-up moves. 'lovelace' for ADA, otherwise
+  /// policyId + hex asset name — same convention as HotWalletLowBalanceRule.
+  assetUnit      String                   @default("lovelace")
+  /// Amount in the asset's own smallest unit. For a native token this is the
+  /// token quantity; the ADA that must ride along to satisfy min-UTxO is
+  /// computed at build time, not stored here.
   amount         BigInt
   status         FundDistributionStatus   @default(Pending)
   txHash         String?
@@ -957,7 +990,9 @@ model FundDistributionRequest {
 
   @@index([fundWalletId, status])
   @@index([status, priority, createdAt])
-  @@index([fundWalletId, targetWalletId, status])
+  // Dedupe is per (target, asset): an in-flight ADA top-up must not suppress a
+  // USDM one to the same wallet — they are independent shortages.
+  @@index([fundWalletId, targetWalletId, assetUnit, status])
   @@index([status, updatedAt])
   @@index([transactionId])
 }

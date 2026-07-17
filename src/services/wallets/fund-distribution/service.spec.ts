@@ -163,21 +163,45 @@ beforeAll(async () => {
 	({ FundDistributionService } = await import('./service'));
 });
 
+/** A realistic non-ADA unit: policy id + hex asset name, as low-balance rules store it. */
+const USDM_UNIT = `${'c48cbb'.repeat(9)}dd0014df105553444d`;
+
 const fundWallet = {
 	id: 'fund-1',
 	walletAddress: 'addr_fund',
 	walletVkey: 'vkey',
-	lowBalanceRule: { id: 'rule-1', lastAlertedAt: null as Date | null },
+	lowBalanceRules: new Map<string, { id: string; lastAlertedAt: Date | null }>([
+		['lovelace', { id: 'rule-1', lastAlertedAt: null }],
+	]),
 	paymentSourceId: 'ps-1',
 	paymentSourceType: 'Web3CardanoV1',
 	network: 'Preprod',
 	rpcProviderApiKey: 'key',
 	encryptedMnemonic: 'enc',
 	config: {
-		warningThreshold: 10_000_000n,
-		criticalThreshold: 5_000_000n,
-		topupAmount: 20_000_000n,
 		batchWindowMs: 300_000,
+		assets: new Map([
+			[
+				'lovelace',
+				{
+					assetUnit: 'lovelace',
+					warningThreshold: 10_000_000n,
+					criticalThreshold: 5_000_000n,
+					topupAmount: 20_000_000n,
+				},
+			],
+			[
+				USDM_UNIT,
+				{
+					assetUnit: USDM_UNIT,
+					// Deliberately unrelated to the lovelace numbers: a USDM threshold
+					// judged against an ADA threshold would pass by accident.
+					warningThreshold: 100_000_000n,
+					criticalThreshold: 40_000_000n,
+					topupAmount: 250_000_000n,
+				},
+			],
+		]),
 	},
 };
 
@@ -367,33 +391,79 @@ describe('processDistributionCycle', () => {
 		expect(mockProcessRequests).not.toHaveBeenCalled();
 	});
 
-	it('uses the fund warning threshold even when the monitoring rule is healthy', async () => {
+	const scanReturns = (rules: Array<{ assetUnit: string; lastKnownAmount: bigint }>) =>
 		mockHotWalletFindMany.mockImplementation(async (args: any) =>
 			args?.where?.type === HotWalletType.Funding
 				? [{ paymentSourceId: 'ps-1' }]
-				: [
-						{
-							id: 'w1',
-							paymentSourceId: 'ps-1',
-							LowBalanceRules: [{ lastKnownAmount: 8_000_000n }],
-						},
-					],
+				: [{ id: 'w1', paymentSourceId: 'ps-1', LowBalanceRules: rules }],
 		);
+
+	it('uses the fund warning threshold even when the monitoring rule is healthy', async () => {
+		scanReturns([{ assetUnit: 'lovelace', lastKnownAmount: 8_000_000n }]);
 
 		await new FundDistributionService().processDistributionCycle();
 
 		expect(mockRequestCreate).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ priority: FundDistributionPriority.Warning }) }),
 		);
-		expect(mockHotWalletFindMany).toHaveBeenCalledWith(
+	});
+
+	it('scans every monitored asset, not just ADA', async () => {
+		scanReturns([{ assetUnit: USDM_UNIT, lastKnownAmount: 10_000_000n }]);
+
+		await new FundDistributionService().processDistributionCycle();
+
+		// Low-balance rules are keyed per asset, so an operator can already watch
+		// USDM. Filtering the scan to 'lovelace' meant those alerts fired into a
+		// top-up path that silently ignored them.
+		expect(mockRequestCreate).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: expect.objectContaining({
-					LowBalanceRules: {
-						some: { enabled: true, assetUnit: 'lovelace', lastKnownAmount: { not: null } },
-					},
-				}),
+				data: expect.objectContaining({ assetUnit: USDM_UNIT, amount: 250_000_000n }),
 			}),
 		);
+	});
+
+	it('judges each asset against its own thresholds', async () => {
+		// 50 USDM: healthy by the ADA numbers (>10M), critical by USDM's (<40M).
+		// Sharing one threshold across assets would classify this Warning.
+		scanReturns([{ assetUnit: USDM_UNIT, lastKnownAmount: 30_000_000n }]);
+
+		await new FundDistributionService().processDistributionCycle();
+
+		expect(mockRequestCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ assetUnit: USDM_UNIT, priority: FundDistributionPriority.Critical }),
+			}),
+		);
+	});
+
+	it('ignores a monitored asset the fund wallet has no policy for', async () => {
+		scanReturns([{ assetUnit: 'some-unconfigured-token', lastKnownAmount: 0n }]);
+
+		await new FundDistributionService().processDistributionCycle();
+
+		// A rule the operator watches but did not ask us to top up.
+		expect(mockRequestCreate).not.toHaveBeenCalled();
+	});
+
+	it('does not let an in-flight ADA topup hide a token shortage on the same wallet', async () => {
+		scanReturns([
+			{ assetUnit: 'lovelace', lastKnownAmount: 1_000_000n },
+			{ assetUnit: USDM_UNIT, lastKnownAmount: 1_000_000n },
+		]);
+
+		await new FundDistributionService().processDistributionCycle();
+
+		// The scan must not be gated on FundDistributionsReceived: that predicate
+		// is asset-blind, so one in-flight top-up would suppress every other
+		// asset's. Dedupe is scoped to (target, asset) in requestTopup instead.
+		const scanWhere = mockHotWalletFindMany.mock.calls
+			.map((call: any) => call[0]?.where)
+			.find((where: any) => where?.type?.not === HotWalletType.Funding);
+		expect(scanWhere).not.toHaveProperty('FundDistributionsReceived');
+
+		const createdAssets = mockRequestCreate.mock.calls.map((call: any) => call[0]?.data?.assetUnit);
+		expect(createdAssets).toEqual(['lovelace', USDM_UNIT]);
 	});
 
 	it('does not log a spurious "already running" when its own scan raises a critical topup', async () => {

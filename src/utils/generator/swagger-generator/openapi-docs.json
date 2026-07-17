@@ -4893,30 +4893,50 @@
                                 "type": "boolean",
                                 "description": "Whether automatic distribution is enabled"
                             },
-                            "warningThreshold": {
-                                "type": "string",
-                                "description": "Balance below this triggers a batched topup (lovelace)"
-                            },
-                            "criticalThreshold": {
-                                "type": "string",
-                                "description": "Balance below this triggers an immediate topup (lovelace)"
-                            },
-                            "topupAmount": {
-                                "type": "string",
-                                "description": "Amount to send per topup (lovelace)"
-                            },
                             "batchWindowMs": {
                                 "type": "integer",
                                 "description": "Milliseconds to wait before sending batched warning topups"
+                            },
+                            "Assets": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "assetUnit": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 250,
+                                            "pattern": "^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$",
+                                            "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
+                                        },
+                                        "warningThreshold": {
+                                            "type": "string",
+                                            "description": "Balance below this triggers a batched topup, in the asset's smallest unit"
+                                        },
+                                        "criticalThreshold": {
+                                            "type": "string",
+                                            "description": "Balance below this triggers an immediate topup, in the asset's smallest unit"
+                                        },
+                                        "topupAmount": {
+                                            "type": "string",
+                                            "description": "Amount to send per topup, in the asset's smallest unit"
+                                        }
+                                    },
+                                    "required": [
+                                        "assetUnit",
+                                        "warningThreshold",
+                                        "criticalThreshold",
+                                        "topupAmount"
+                                    ]
+                                },
+                                "description": "Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry"
                             }
                         },
                         "required": [
                             "id",
                             "enabled",
-                            "warningThreshold",
-                            "criticalThreshold",
-                            "topupAmount",
-                            "batchWindowMs"
+                            "batchWindowMs",
+                            "Assets"
                         ],
                         "description": "Distribution configuration"
                     },
@@ -4967,30 +4987,50 @@
                                 "type": "boolean",
                                 "description": "Whether automatic distribution is enabled"
                             },
-                            "warningThreshold": {
-                                "type": "string",
-                                "description": "Balance below this triggers a batched topup (lovelace)"
-                            },
-                            "criticalThreshold": {
-                                "type": "string",
-                                "description": "Balance below this triggers an immediate topup (lovelace)"
-                            },
-                            "topupAmount": {
-                                "type": "string",
-                                "description": "Amount to send per topup (lovelace)"
-                            },
                             "batchWindowMs": {
                                 "type": "integer",
                                 "description": "Milliseconds to wait before sending batched warning topups"
+                            },
+                            "Assets": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "assetUnit": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 250,
+                                            "pattern": "^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$",
+                                            "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
+                                        },
+                                        "warningThreshold": {
+                                            "type": "string",
+                                            "description": "Balance below this triggers a batched topup, in the asset's smallest unit"
+                                        },
+                                        "criticalThreshold": {
+                                            "type": "string",
+                                            "description": "Balance below this triggers an immediate topup, in the asset's smallest unit"
+                                        },
+                                        "topupAmount": {
+                                            "type": "string",
+                                            "description": "Amount to send per topup, in the asset's smallest unit"
+                                        }
+                                    },
+                                    "required": [
+                                        "assetUnit",
+                                        "warningThreshold",
+                                        "criticalThreshold",
+                                        "topupAmount"
+                                    ]
+                                },
+                                "description": "Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry"
                             }
                         },
                         "required": [
                             "id",
                             "enabled",
-                            "warningThreshold",
-                            "criticalThreshold",
-                            "topupAmount",
-                            "batchWindowMs"
+                            "batchWindowMs",
+                            "Assets"
                         ],
                         "description": "Created distribution config"
                     }
@@ -5021,30 +5061,50 @@
                                 "type": "boolean",
                                 "description": "Whether automatic distribution is enabled"
                             },
-                            "warningThreshold": {
-                                "type": "string",
-                                "description": "Balance below this triggers a batched topup (lovelace)"
-                            },
-                            "criticalThreshold": {
-                                "type": "string",
-                                "description": "Balance below this triggers an immediate topup (lovelace)"
-                            },
-                            "topupAmount": {
-                                "type": "string",
-                                "description": "Amount to send per topup (lovelace)"
-                            },
                             "batchWindowMs": {
                                 "type": "integer",
                                 "description": "Milliseconds to wait before sending batched warning topups"
+                            },
+                            "Assets": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "assetUnit": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 250,
+                                            "pattern": "^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$",
+                                            "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
+                                        },
+                                        "warningThreshold": {
+                                            "type": "string",
+                                            "description": "Balance below this triggers a batched topup, in the asset's smallest unit"
+                                        },
+                                        "criticalThreshold": {
+                                            "type": "string",
+                                            "description": "Balance below this triggers an immediate topup, in the asset's smallest unit"
+                                        },
+                                        "topupAmount": {
+                                            "type": "string",
+                                            "description": "Amount to send per topup, in the asset's smallest unit"
+                                        }
+                                    },
+                                    "required": [
+                                        "assetUnit",
+                                        "warningThreshold",
+                                        "criticalThreshold",
+                                        "topupAmount"
+                                    ]
+                                },
+                                "description": "Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry"
                             }
                         },
                         "required": [
                             "id",
                             "enabled",
-                            "warningThreshold",
-                            "criticalThreshold",
-                            "topupAmount",
-                            "batchWindowMs"
+                            "batchWindowMs",
+                            "Assets"
                         ],
                         "description": "Updated distribution config"
                     }
@@ -28047,20 +28107,43 @@
                                         "maxLength": 1500,
                                         "description": "24-word mnemonic phrase for the fund wallet"
                                     },
-                                    "warningThreshold": {
-                                        "type": "string",
-                                        "pattern": "^\\d{1,18}$",
-                                        "description": "Warning balance threshold in lovelace"
-                                    },
-                                    "criticalThreshold": {
-                                        "type": "string",
-                                        "pattern": "^\\d{1,18}$",
-                                        "description": "Critical balance threshold in lovelace"
-                                    },
-                                    "topupAmount": {
-                                        "type": "string",
-                                        "pattern": "^\\d{1,18}$",
-                                        "description": "Amount to send per topup in lovelace"
+                                    "Assets": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "assetUnit": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 250,
+                                                    "pattern": "^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$",
+                                                    "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
+                                                },
+                                                "warningThreshold": {
+                                                    "type": "string",
+                                                    "pattern": "^\\d{1,18}$",
+                                                    "description": "Warning threshold in the asset's smallest unit"
+                                                },
+                                                "criticalThreshold": {
+                                                    "type": "string",
+                                                    "pattern": "^\\d{1,18}$",
+                                                    "description": "Critical threshold in the asset's smallest unit"
+                                                },
+                                                "topupAmount": {
+                                                    "type": "string",
+                                                    "pattern": "^\\d{1,18}$",
+                                                    "description": "Amount sent per topup, in the asset's smallest unit"
+                                                }
+                                            },
+                                            "required": [
+                                                "assetUnit",
+                                                "warningThreshold",
+                                                "criticalThreshold",
+                                                "topupAmount"
+                                            ]
+                                        },
+                                        "minItems": 1,
+                                        "description": "Per-asset distribution policy, one entry per asset this wallet should top up. Use assetUnit \"lovelace\" for ADA. The fund wallet must itself hold each asset it distributes, and a token top-up also sends ADA to satisfy the min-UTxO of its output"
                                     },
                                     "batchWindowMs": {
                                         "type": "integer",
@@ -28078,9 +28161,7 @@
                                 "required": [
                                     "paymentSourceId",
                                     "walletMnemonic",
-                                    "warningThreshold",
-                                    "criticalThreshold",
-                                    "topupAmount"
+                                    "Assets"
                                 ],
                                 "example": {
                                     "paymentSourceId": "cuid_v2_auto_generated",
@@ -28180,20 +28261,42 @@
                                         "type": "boolean",
                                         "description": "Enable or disable automatic distribution"
                                     },
-                                    "warningThreshold": {
-                                        "type": "string",
-                                        "pattern": "^\\d{1,18}$",
-                                        "description": "New warning threshold in lovelace"
-                                    },
-                                    "criticalThreshold": {
-                                        "type": "string",
-                                        "pattern": "^\\d{1,18}$",
-                                        "description": "New critical threshold in lovelace"
-                                    },
-                                    "topupAmount": {
-                                        "type": "string",
-                                        "pattern": "^\\d{1,18}$",
-                                        "description": "New topup amount in lovelace"
+                                    "Assets": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "assetUnit": {
+                                                    "type": "string",
+                                                    "minLength": 1,
+                                                    "maxLength": 250,
+                                                    "pattern": "^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$",
+                                                    "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
+                                                },
+                                                "warningThreshold": {
+                                                    "type": "string",
+                                                    "pattern": "^\\d{1,18}$",
+                                                    "description": "Warning threshold in the asset's smallest unit"
+                                                },
+                                                "criticalThreshold": {
+                                                    "type": "string",
+                                                    "pattern": "^\\d{1,18}$",
+                                                    "description": "Critical threshold in the asset's smallest unit"
+                                                },
+                                                "topupAmount": {
+                                                    "type": "string",
+                                                    "pattern": "^\\d{1,18}$",
+                                                    "description": "Amount sent per topup, in the asset's smallest unit"
+                                                }
+                                            },
+                                            "required": [
+                                                "assetUnit",
+                                                "warningThreshold",
+                                                "criticalThreshold",
+                                                "topupAmount"
+                                            ]
+                                        },
+                                        "description": "Replaces the per-asset policy wholesale. Assets omitted from this list stop being topped up; omit the field entirely to leave the policy untouched"
                                     },
                                     "batchWindowMs": {
                                         "type": "integer",

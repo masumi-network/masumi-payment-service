@@ -4904,30 +4904,50 @@ export const FundWalletSchema = {
                     type: 'boolean',
                     description: 'Whether automatic distribution is enabled'
                 },
-                warningThreshold: {
-                    type: 'string',
-                    description: 'Balance below this triggers a batched topup (lovelace)'
-                },
-                criticalThreshold: {
-                    type: 'string',
-                    description: 'Balance below this triggers an immediate topup (lovelace)'
-                },
-                topupAmount: {
-                    type: 'string',
-                    description: 'Amount to send per topup (lovelace)'
-                },
                 batchWindowMs: {
                     type: 'integer',
                     description: 'Milliseconds to wait before sending batched warning topups'
+                },
+                Assets: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            assetUnit: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 250,
+                                pattern: '^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$',
+                                description: '"lovelace" for ADA, otherwise policy id + hex asset name'
+                            },
+                            warningThreshold: {
+                                type: 'string',
+                                description: 'Balance below this triggers a batched topup, in the asset\'s smallest unit'
+                            },
+                            criticalThreshold: {
+                                type: 'string',
+                                description: 'Balance below this triggers an immediate topup, in the asset\'s smallest unit'
+                            },
+                            topupAmount: {
+                                type: 'string',
+                                description: 'Amount to send per topup, in the asset\'s smallest unit'
+                            }
+                        },
+                        required: [
+                            'assetUnit',
+                            'warningThreshold',
+                            'criticalThreshold',
+                            'topupAmount'
+                        ]
+                    },
+                    description: 'Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry'
                 }
             },
             required: [
                 'id',
                 'enabled',
-                'warningThreshold',
-                'criticalThreshold',
-                'topupAmount',
-                'batchWindowMs'
+                'batchWindowMs',
+                'Assets'
             ],
             description: 'Distribution configuration'
         },
@@ -4979,30 +4999,50 @@ export const FundWalletCreatedSchema = {
                     type: 'boolean',
                     description: 'Whether automatic distribution is enabled'
                 },
-                warningThreshold: {
-                    type: 'string',
-                    description: 'Balance below this triggers a batched topup (lovelace)'
-                },
-                criticalThreshold: {
-                    type: 'string',
-                    description: 'Balance below this triggers an immediate topup (lovelace)'
-                },
-                topupAmount: {
-                    type: 'string',
-                    description: 'Amount to send per topup (lovelace)'
-                },
                 batchWindowMs: {
                     type: 'integer',
                     description: 'Milliseconds to wait before sending batched warning topups'
+                },
+                Assets: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            assetUnit: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 250,
+                                pattern: '^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$',
+                                description: '"lovelace" for ADA, otherwise policy id + hex asset name'
+                            },
+                            warningThreshold: {
+                                type: 'string',
+                                description: 'Balance below this triggers a batched topup, in the asset\'s smallest unit'
+                            },
+                            criticalThreshold: {
+                                type: 'string',
+                                description: 'Balance below this triggers an immediate topup, in the asset\'s smallest unit'
+                            },
+                            topupAmount: {
+                                type: 'string',
+                                description: 'Amount to send per topup, in the asset\'s smallest unit'
+                            }
+                        },
+                        required: [
+                            'assetUnit',
+                            'warningThreshold',
+                            'criticalThreshold',
+                            'topupAmount'
+                        ]
+                    },
+                    description: 'Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry'
                 }
             },
             required: [
                 'id',
                 'enabled',
-                'warningThreshold',
-                'criticalThreshold',
-                'topupAmount',
-                'batchWindowMs'
+                'batchWindowMs',
+                'Assets'
             ],
             description: 'Created distribution config'
         }
@@ -5034,30 +5074,50 @@ export const FundWalletUpdatedSchema = {
                     type: 'boolean',
                     description: 'Whether automatic distribution is enabled'
                 },
-                warningThreshold: {
-                    type: 'string',
-                    description: 'Balance below this triggers a batched topup (lovelace)'
-                },
-                criticalThreshold: {
-                    type: 'string',
-                    description: 'Balance below this triggers an immediate topup (lovelace)'
-                },
-                topupAmount: {
-                    type: 'string',
-                    description: 'Amount to send per topup (lovelace)'
-                },
                 batchWindowMs: {
                     type: 'integer',
                     description: 'Milliseconds to wait before sending batched warning topups'
+                },
+                Assets: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            assetUnit: {
+                                type: 'string',
+                                minLength: 1,
+                                maxLength: 250,
+                                pattern: '^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$',
+                                description: '"lovelace" for ADA, otherwise policy id + hex asset name'
+                            },
+                            warningThreshold: {
+                                type: 'string',
+                                description: 'Balance below this triggers a batched topup, in the asset\'s smallest unit'
+                            },
+                            criticalThreshold: {
+                                type: 'string',
+                                description: 'Balance below this triggers an immediate topup, in the asset\'s smallest unit'
+                            },
+                            topupAmount: {
+                                type: 'string',
+                                description: 'Amount to send per topup, in the asset\'s smallest unit'
+                            }
+                        },
+                        required: [
+                            'assetUnit',
+                            'warningThreshold',
+                            'criticalThreshold',
+                            'topupAmount'
+                        ]
+                    },
+                    description: 'Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry'
                 }
             },
             required: [
                 'id',
                 'enabled',
-                'warningThreshold',
-                'criticalThreshold',
-                'topupAmount',
-                'batchWindowMs'
+                'batchWindowMs',
+                'Assets'
             ],
             description: 'Updated distribution config'
         }

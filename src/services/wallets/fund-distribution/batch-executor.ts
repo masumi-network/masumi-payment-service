@@ -15,8 +15,66 @@ export type FundDistributionBatchRequest = {
 	id: string;
 	targetWalletId: string;
 	targetAddress: string;
+	/** 'lovelace' for ADA, otherwise policyId + hex asset name. */
+	assetUnit: string;
+	/** Amount in the asset's own smallest unit. */
 	amount: bigint;
 };
+
+/** One tx output: everything owed to a single target, in one place. */
+type TargetOutput = {
+	targetWalletId: string;
+	address: string;
+	requestIds: string[];
+	/** assetUnit -> amount. Includes 'lovelace' once resolved. */
+	assets: Map<string, bigint>;
+};
+
+/**
+ * Collapse a batch into one output per target.
+ *
+ * Per TARGET, not per request: two outputs to the same address would each need
+ * their own min-UTxO ADA, so a wallet owed both ADA and USDM would be charged
+ * the floor twice and receive two UTxOs where one would do.
+ */
+function groupRequestsByTarget(requests: FundDistributionBatchRequest[]): TargetOutput[] {
+	const byTarget = new Map<string, TargetOutput>();
+
+	for (const request of requests) {
+		const existing = byTarget.get(request.targetWalletId);
+		const output =
+			existing ??
+			({
+				targetWalletId: request.targetWalletId,
+				address: request.targetAddress,
+				requestIds: [],
+				assets: new Map<string, bigint>(),
+			} satisfies TargetOutput);
+
+		output.requestIds.push(request.id);
+		output.assets.set(request.assetUnit, (output.assets.get(request.assetUnit) ?? 0n) + request.amount);
+		byTarget.set(request.targetWalletId, output);
+	}
+
+	return [...byTarget.values()];
+}
+
+/**
+ * Lovelace this output must carry.
+ *
+ * A native-token output cannot exist without ADA, so a token-only top-up still
+ * moves lovelace. Where the target is also owed ADA, the larger wins rather
+ * than the two being added — the requested top-up already satisfies the floor.
+ */
+function resolveOutputLovelace(assets: Map<string, bigint>): bigint {
+	const requestedLovelace = assets.get('lovelace') ?? 0n;
+	const carriesTokens = [...assets.keys()].some((unit) => unit !== 'lovelace');
+
+	if (!carriesTokens) return requestedLovelace;
+	return requestedLovelace > CONSTANTS.FUND_DISTRIBUTION_TOKEN_OUTPUT_LOVELACE
+		? requestedLovelace
+		: CONSTANTS.FUND_DISTRIBUTION_TOKEN_OUTPUT_LOVELACE;
+}
 
 type ClaimErrorCode = 'WALLET_UNAVAILABLE' | 'REQUESTS_ALREADY_CLAIMED' | 'BATCH_OWNERSHIP_LOST';
 
@@ -34,8 +92,15 @@ function claimError(code: ClaimErrorCode): Error & { code: ClaimErrorCode } {
  * unthrottled alert re-fired per cycle. The guarded updateMany is also the
  * cross-replica claim — whichever worker advances `lastAlertedAt` sends.
  */
-async function alertFundWalletUnderfunded(fundWallet: FundWalletContext, fundWalletBalance: bigint): Promise<void> {
-	const rule = fundWallet.lowBalanceRule;
+async function alertFundWalletUnderfunded(
+	fundWallet: FundWalletContext,
+	assetUnit: string,
+	fundWalletBalance: bigint,
+): Promise<void> {
+	// Alert against the treasury's own rule for THIS asset. A wallet flush with
+	// ADA but out of USDM is underfunded for USDM only, and an alert that says
+	// "lovelace" would send the operator to top up the wrong thing.
+	const rule = fundWallet.lowBalanceRules.get(assetUnit);
 	if (rule == null) return;
 
 	const cooldownStart = new Date(Date.now() - CONSTANTS.FUND_DISTRIBUTION_UNDERFUNDED_ALERT_COOLDOWN_MS);
@@ -59,7 +124,7 @@ async function alertFundWalletUnderfunded(fundWallet: FundWalletContext, fundWal
 		paymentSourceId: fundWallet.paymentSourceId,
 		paymentSourceType: fundWallet.paymentSourceType,
 		network: fundWallet.network,
-		assetUnit: 'lovelace',
+		assetUnit,
 		thresholdAmount: '0',
 		currentAmount: fundWalletBalance.toString(),
 		checkedAt: new Date().toISOString(),
@@ -87,15 +152,18 @@ export async function processRequestsForFundWallet(
 	// Read the balance straight from the address. Deliberately does NOT go via
 	// `generateWalletExtended` — that decrypts the treasury mnemonic, and a
 	// read-only affordability check has no business holding key material.
-	let fundWalletBalance: bigint;
+	// The map carries every unit the address holds, so the same read answers
+	// affordability for ADA and for each token.
+	let balanceMap: Map<string, bigint>;
 	try {
-		const balanceMap = await fetchAddressBalanceMap({
+		balanceMap = await fetchAddressBalanceMap({
 			network: fundWallet.network,
 			rpcProviderApiKey: fundWallet.rpcProviderApiKey,
 			address: fundWallet.walletAddress,
 		});
-		fundWalletBalance = balanceMap.get('lovelace') ?? 0n;
 	} catch (error) {
+		// Could not read: that is NOT "the balance is zero". Returning here keeps
+		// us from raising a false underfunded alarm over an indexer outage.
 		logger.error('Failed to fetch fund wallet balance', {
 			component: 'fund_distribution',
 			fund_wallet_id: fundWallet.id,
@@ -104,42 +172,71 @@ export async function processRequestsForFundWallet(
 		return;
 	}
 
-	// Determine which requests we can actually fulfill given balance constraints
+	const fundWalletBalance = balanceMap.get('lovelace') ?? 0n;
 	const feeBuffer = CONSTANTS.MIN_TX_FEE_BUFFER_LOVELACE;
-	let remainingBalance = fundWalletBalance - feeBuffer;
 
-	if (remainingBalance <= 0n) {
+	if (fundWalletBalance <= feeBuffer) {
 		logger.warn('Fund wallet has insufficient balance for any distributions', {
 			component: 'fund_distribution',
 			fund_wallet_id: fundWallet.id,
 			balance: fundWalletBalance.toString(),
 		});
-		await alertFundWalletUnderfunded(fundWallet, fundWalletBalance);
+		await alertFundWalletUnderfunded(fundWallet, 'lovelace', fundWalletBalance);
 		return;
 	}
 
-	const affordableRequests: FundDistributionBatchRequest[] = [];
-	for (const req of requests) {
-		if (affordableRequests.length >= CONSTANTS.FUND_DISTRIBUTION_MAX_OUTPUTS_PER_TX) break;
-		if (req.amount <= remainingBalance) {
-			remainingBalance -= req.amount;
-			affordableRequests.push(req);
+	// Affordability is per asset, and the assets are coupled: a token output also
+	// consumes lovelace for its min-UTxO. So walk whole targets — an output is
+	// all-or-nothing — and keep a running remainder for every unit at once.
+	const remaining = new Map<string, bigint>(balanceMap);
+	remaining.set('lovelace', fundWalletBalance - feeBuffer);
+
+	const affordableOutputs: TargetOutput[] = [];
+	const shortAssets = new Set<string>();
+
+	for (const output of groupRequestsByTarget(requests)) {
+		if (affordableOutputs.length >= CONSTANTS.FUND_DISTRIBUTION_MAX_OUTPUTS_PER_TX) break;
+
+		const outputLovelace = resolveOutputLovelace(output.assets);
+		const cost = new Map(output.assets);
+		cost.set('lovelace', outputLovelace);
+
+		const unaffordable = [...cost.entries()].filter(([unit, amount]) => (remaining.get(unit) ?? 0n) < amount);
+		if (unaffordable.length > 0) {
+			for (const [unit] of unaffordable) shortAssets.add(unit);
+			continue;
 		}
+
+		for (const [unit, amount] of cost) remaining.set(unit, (remaining.get(unit) ?? 0n) - amount);
+		affordableOutputs.push({ ...output, assets: cost });
 	}
 
-	if (affordableRequests.length === 0) {
+	if (affordableOutputs.length === 0) {
 		logger.warn('Fund wallet cannot afford any pending distributions', {
 			component: 'fund_distribution',
 			fund_wallet_id: fundWallet.id,
-			balance: fundWalletBalance.toString(),
-			first_request_amount: requests[0]?.amount.toString(),
+			short_assets: [...shortAssets],
+			lovelace_balance: fundWalletBalance.toString(),
 		});
-		await alertFundWalletUnderfunded(fundWallet, fundWalletBalance);
+		// Name the asset that is actually short. "Top up the treasury" is useless
+		// advice when the treasury has plenty of ADA and no USDM.
+		for (const unit of shortAssets) {
+			await alertFundWalletUnderfunded(fundWallet, unit, balanceMap.get(unit) ?? 0n);
+		}
 		return;
 	}
 
+	const affordableRequests: FundDistributionBatchRequest[] = requests.filter((request) =>
+		affordableOutputs.some((output) => output.requestIds.includes(request.id)),
+	);
+
 	const batchId = createId();
-	const outputs = affordableRequests.map((req) => ({ address: req.targetAddress, lovelace: req.amount }));
+	// One output per target, already carrying its resolved lovelace (a token
+	// output's min-UTxO floor is applied in resolveOutputLovelace).
+	const outputs = affordableOutputs.map((output) => ({
+		address: output.address,
+		assets: [...output.assets.entries()].map(([unit, quantity]) => ({ unit, quantity })),
+	}));
 	const batchRequestIds = affordableRequests.map((r) => r.id);
 
 	// Atomically check the wallet is still unlocked, create the Transaction record, lock the

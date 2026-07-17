@@ -22,7 +22,12 @@ import { resolveTxHash } from '@meshsdk/core';
 
 export type FundDistributionOutput = {
 	address: string;
-	lovelace: bigint;
+	/**
+	 * Everything this target receives, in one output. Must include a 'lovelace'
+	 * entry: a native-token output cannot exist without ADA to satisfy min-UTxO,
+	 * and the caller has already resolved that floor.
+	 */
+	assets: Array<{ unit: string; quantity: bigint }>;
 };
 
 export type FundDistributionSignedTx = {
@@ -66,7 +71,13 @@ export async function buildAndSignFundDistributionTx(params: {
 	});
 
 	for (const output of outputs) {
-		unsignedTx.sendLovelace(output.address, output.lovelace.toString());
+		// sendAssets rather than sendLovelace: one output per target carrying ADA
+		// and any native tokens together. Quantities are passed as strings —
+		// lovelace and token amounts both exceed Number's safe range.
+		unsignedTx.sendAssets(
+			output.address,
+			output.assets.map((asset) => ({ unit: asset.unit, quantity: asset.quantity.toString() })),
+		);
 	}
 
 	// Use the shared window helper rather than hand-rolled slot math: it sources

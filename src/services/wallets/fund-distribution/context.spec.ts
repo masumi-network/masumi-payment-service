@@ -20,7 +20,7 @@ const completeRow = () => ({
 	walletAddress: 'addr_fund',
 	walletVkey: 'vkey_fund',
 	paymentSourceId: 'ps-1',
-	LowBalanceRules: [{ id: 'rule-1', lastAlertedAt: null }],
+	LowBalanceRules: [{ id: 'rule-1', assetUnit: 'lovelace', lastAlertedAt: null }],
 	Secret: { encryptedMnemonic: 'enc' },
 	PaymentSource: {
 		network: 'Preprod',
@@ -29,10 +29,15 @@ const completeRow = () => ({
 	},
 	FundDistributionConfig: {
 		enabled: true,
-		warningThreshold: 10_000_000n,
-		criticalThreshold: 5_000_000n,
-		topupAmount: 20_000_000n,
 		batchWindowMs: 300_000,
+		AssetConfigs: [
+			{
+				assetUnit: 'lovelace',
+				warningThreshold: 10_000_000n,
+				criticalThreshold: 5_000_000n,
+				topupAmount: 20_000_000n,
+			},
+		],
 	},
 });
 
@@ -75,17 +80,25 @@ describe('fund wallet context', () => {
 			id: 'fund-1',
 			walletAddress: 'addr_fund',
 			walletVkey: 'vkey_fund',
-			lowBalanceRule: { id: 'rule-1', lastAlertedAt: null },
+			lowBalanceRules: new Map([['lovelace', { id: 'rule-1', assetUnit: 'lovelace', lastAlertedAt: null }]]),
 			paymentSourceId: 'ps-1',
 			paymentSourceType: 'Web3CardanoV1',
 			network: 'Preprod',
 			rpcProviderApiKey: 'rpc-key',
 			encryptedMnemonic: 'enc',
 			config: {
-				warningThreshold: 10_000_000n,
-				criticalThreshold: 5_000_000n,
-				topupAmount: 20_000_000n,
 				batchWindowMs: 300_000,
+				assets: new Map([
+					[
+						'lovelace',
+						{
+							assetUnit: 'lovelace',
+							warningThreshold: 10_000_000n,
+							criticalThreshold: 5_000_000n,
+							topupAmount: 20_000_000n,
+						},
+					],
+				]),
 			},
 		});
 	});
@@ -118,11 +131,45 @@ describe('fund wallet context', () => {
 		await expect(getFundWalletForPaymentSource('ps-1')).resolves.toBeNull();
 	});
 
-	it('reports a missing low-balance rule as null rather than a dangling id', async () => {
+	it('reports a missing low-balance rule as absent rather than a dangling id', async () => {
 		mockFindFirst.mockResolvedValue({ ...completeRow(), LowBalanceRules: [] });
 
 		const context = await getFundWalletForPaymentSource('ps-1');
 
-		expect(context?.lowBalanceRule).toBeNull();
+		expect(context?.lowBalanceRules.get('lovelace')).toBeUndefined();
+	});
+
+	it('keys low-balance rules by asset so an alert can name the asset that is short', async () => {
+		mockFindFirst.mockResolvedValue({
+			...completeRow(),
+			LowBalanceRules: [
+				{ id: 'rule-ada', assetUnit: 'lovelace', lastAlertedAt: null },
+				{ id: 'rule-usdm', assetUnit: 'usdm-unit', lastAlertedAt: null },
+			],
+		});
+
+		const context = await getFundWalletForPaymentSource('ps-1');
+
+		expect(context?.lowBalanceRules.get('usdm-unit')?.id).toBe('rule-usdm');
+	});
+
+	it('exposes per-asset policy keyed by assetUnit', async () => {
+		mockFindFirst.mockResolvedValue({
+			...completeRow(),
+			FundDistributionConfig: {
+				enabled: true,
+				batchWindowMs: 300_000,
+				AssetConfigs: [
+					{ assetUnit: 'lovelace', warningThreshold: 10n, criticalThreshold: 5n, topupAmount: 20n },
+					{ assetUnit: 'usdm-unit', warningThreshold: 100n, criticalThreshold: 50n, topupAmount: 200n },
+				],
+			},
+		});
+
+		const context = await getFundWalletForPaymentSource('ps-1');
+
+		// A USDM threshold is not a lovelace threshold; each asset carries its own.
+		expect(context?.config.assets.get('usdm-unit')?.topupAmount).toBe(200n);
+		expect(context?.config.assets.get('lovelace')?.topupAmount).toBe(20n);
 	});
 });

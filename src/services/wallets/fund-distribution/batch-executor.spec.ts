@@ -57,6 +57,7 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 		MIN_TX_FEE_BUFFER_LOVELACE: 2_000_000n,
 		FUND_DISTRIBUTION_MAX_OUTPUTS_PER_TX: 2,
 		FUND_DISTRIBUTION_UNDERFUNDED_ALERT_COOLDOWN_MS: 900_000,
+		FUND_DISTRIBUTION_TOKEN_OUTPUT_LOVELACE: 2_000_000n,
 	},
 }));
 
@@ -104,24 +105,35 @@ const fundWallet = {
 	id: 'fund-1',
 	walletAddress: 'addr_fund',
 	walletVkey: 'vkey_fund',
-	lowBalanceRule: { id: 'rule-1', lastAlertedAt: null as Date | null },
+	lowBalanceRules: new Map<string, { id: string; lastAlertedAt: Date | null }>([
+		['lovelace', { id: 'rule-1', lastAlertedAt: null }],
+	]),
 	paymentSourceId: 'ps-1',
 	paymentSourceType: 'Web3CardanoV1' as const,
 	network: 'Preprod' as const,
 	rpcProviderApiKey: 'key',
 	encryptedMnemonic: 'enc',
 	config: {
-		warningThreshold: 10_000_000n,
-		criticalThreshold: 5_000_000n,
-		topupAmount: 20_000_000n,
 		batchWindowMs: 300_000,
+		assets: new Map([
+			[
+				'lovelace',
+				{
+					assetUnit: 'lovelace',
+					warningThreshold: 10_000_000n,
+					criticalThreshold: 5_000_000n,
+					topupAmount: 20_000_000n,
+				},
+			],
+		]),
 	},
 };
 
-const request = (id: string, amount: bigint) => ({
+const request = (id: string, amount: bigint, assetUnit = 'lovelace') => ({
 	id,
 	targetWalletId: `target-${id}`,
 	targetAddress: `addr_${id}`,
+	assetUnit,
 	amount,
 });
 
@@ -354,8 +366,8 @@ describe('processRequestsForFundWallet', () => {
 		expect(mockBuildAndSign).toHaveBeenCalledWith(
 			expect.objectContaining({
 				outputs: [
-					{ address: 'addr_r1', lovelace: 20_000_000n },
-					{ address: 'addr_r2', lovelace: 20_000_000n },
+					{ address: 'addr_r1', assets: [{ unit: 'lovelace', quantity: 20_000_000n }] },
+					{ address: 'addr_r2', assets: [{ unit: 'lovelace', quantity: 20_000_000n }] },
 				],
 			}),
 		);
@@ -379,7 +391,9 @@ describe('processRequestsForFundWallet', () => {
 		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n), request('r2', 20_000_000n)]);
 
 		expect(mockBuildAndSign).toHaveBeenCalledWith(
-			expect.objectContaining({ outputs: [{ address: 'addr_r1', lovelace: 20_000_000n }] }),
+			expect.objectContaining({
+				outputs: [{ address: 'addr_r1', assets: [{ unit: 'lovelace', quantity: 20_000_000n }] }],
+			}),
 		);
 	});
 
@@ -414,14 +428,15 @@ describe('processRequestsForFundWallet', () => {
 		mockFetchAddressBalanceMap.mockResolvedValue(new Map([['lovelace', 1_000_000n]]));
 
 		// Alerted moments ago → throttled before any DB write.
-		await processRequestsForFundWallet({ ...fundWallet, lowBalanceRule: { id: 'rule-1', lastAlertedAt: new Date() } }, [
-			request('r1', 20_000_000n),
-		]);
+		await processRequestsForFundWallet(
+			{ ...fundWallet, lowBalanceRules: new Map([['lovelace', { id: 'rule-1', lastAlertedAt: new Date() }]]) },
+			[request('r1', 20_000_000n)],
+		);
 		expect(mockLowBalanceRuleUpdateMany).not.toHaveBeenCalled();
 		expect(mockTriggerLowBalance).not.toHaveBeenCalled();
 
 		// No rule → no webhook with a dangling ruleId.
-		await processRequestsForFundWallet({ ...fundWallet, lowBalanceRule: null }, [request('r1', 20_000_000n)]);
+		await processRequestsForFundWallet({ ...fundWallet, lowBalanceRules: new Map() }, [request('r1', 20_000_000n)]);
 		expect(mockTriggerLowBalance).not.toHaveBeenCalled();
 
 		// Another replica won the claim between our read and the write → it sends.
@@ -462,8 +477,105 @@ describe('processRequestsForFundWallet', () => {
 		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
 
 		expect(mockBuildAndSign).toHaveBeenCalledWith(
-			expect.objectContaining({ outputs: [{ address: 'addr_r1', lovelace: 20_000_000n }] }),
+			expect.objectContaining({
+				outputs: [{ address: 'addr_r1', assets: [{ unit: 'lovelace', quantity: 20_000_000n }] }],
+			}),
 		);
+	});
+
+	describe('native tokens', () => {
+		const USDM = `${'c48cbb'.repeat(9)}dd0014df105553444d`;
+
+		const withBalance = (lovelace: bigint, usdm: bigint) =>
+			mockFetchAddressBalanceMap.mockResolvedValue(
+				new Map([
+					['lovelace', lovelace],
+					[USDM, usdm],
+				]),
+			);
+
+		it('attaches min-UTxO ADA to a token-only topup', async () => {
+			withBalance(100_000_000n, 500_000_000n);
+
+			await processRequestsForFundWallet(fundWallet, [request('r1', 250_000_000n, USDM)]);
+
+			// A token output cannot exist without ADA. The operator asked for USDM
+			// only; the lovelace floor is added at build time.
+			expect(mockBuildAndSign).toHaveBeenCalledWith(
+				expect.objectContaining({
+					outputs: [
+						{
+							address: 'addr_r1',
+							assets: [
+								{ unit: USDM, quantity: 250_000_000n },
+								{ unit: 'lovelace', quantity: 2_000_000n },
+							],
+						},
+					],
+				}),
+			);
+		});
+
+		it('combines ADA and token for the same target into ONE output', async () => {
+			withBalance(100_000_000n, 500_000_000n);
+
+			await processRequestsForFundWallet(fundWallet, [
+				{ id: 'r1', targetWalletId: 'w1', targetAddress: 'addr_w1', assetUnit: 'lovelace', amount: 20_000_000n },
+				{ id: 'r2', targetWalletId: 'w1', targetAddress: 'addr_w1', assetUnit: USDM, amount: 250_000_000n },
+			]);
+
+			// Two outputs to one address would each need their own min-UTxO ADA and
+			// hand the wallet two UTxOs. The requested 20 ADA already clears the
+			// floor, so it is NOT added to — 22 ADA here would be a bug.
+			expect(mockBuildAndSign).toHaveBeenCalledWith(
+				expect.objectContaining({
+					outputs: [
+						{
+							address: 'addr_w1',
+							assets: [
+								{ unit: 'lovelace', quantity: 20_000_000n },
+								{ unit: USDM, quantity: 250_000_000n },
+							],
+						},
+					],
+				}),
+			);
+		});
+
+		it('will not send a token the treasury does not hold, even with ADA to spare', async () => {
+			withBalance(100_000_000n, 10_000_000n);
+
+			await processRequestsForFundWallet(fundWallet, [request('r1', 250_000_000n, USDM)]);
+
+			expect(mockBuildAndSign).not.toHaveBeenCalled();
+		});
+
+		it('names the short asset in the underfunded alert', async () => {
+			withBalance(100_000_000n, 10_000_000n);
+			const walletWithUsdmRule = {
+				...fundWallet,
+				lowBalanceRules: new Map([
+					['lovelace', { id: 'rule-ada', lastAlertedAt: null }],
+					[USDM, { id: 'rule-usdm', lastAlertedAt: null }],
+				]),
+			};
+
+			await processRequestsForFundWallet(walletWithUsdmRule, [request('r1', 250_000_000n, USDM)]);
+
+			// "Top up the treasury" is useless advice when the treasury is flush with
+			// ADA and out of USDM. The alert has to say which.
+			expect(mockTriggerLowBalance).toHaveBeenCalledWith(expect.objectContaining({ assetUnit: USDM }));
+		});
+
+		it('will not send a token when ADA cannot cover its min-UTxO', async () => {
+			// 2.5 ADA - 2 ADA fee buffer = 0.5 ADA spendable: below the token
+			// output's floor, so the USDM cannot ride out even though it is held.
+			withBalance(2_500_000n, 500_000_000n);
+
+			await processRequestsForFundWallet(fundWallet, [request('r1', 250_000_000n, USDM)]);
+
+			expect(mockBuildAndSign).not.toHaveBeenCalled();
+		});
 	});
 
 	it('sends nothing and raises no false alarm when the balance cannot be read', async () => {

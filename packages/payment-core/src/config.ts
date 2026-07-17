@@ -340,11 +340,25 @@ export const CONSTANTS = {
 	// distribution cycle runs every 30s and pending requests stay Pending while
 	// the treasury is empty, so without a cooldown the alert fired per cycle.
 	FUND_DISTRIBUTION_UNDERFUNDED_ALERT_COOLDOWN_MS: 15 * 60 * 1000, // 15 minutes
-	// Floor for a single topup. Each distribution is one tx output, so anything
-	// below Cardano's min-UTxO can never build. Set at the collateral amount
-	// (5 ADA) rather than the bare ~1 ADA minimum: a topup smaller than that is
-	// not a useful top-up for a wallet that needs to pay fees and collateral.
+	// Floor for a single lovelace topup. Each distribution is one tx output, so
+	// anything below Cardano's min-UTxO can never build. Set at the collateral
+	// amount (5 ADA) rather than the bare ~1 ADA minimum: a topup smaller than
+	// that is not a useful top-up for a wallet that needs to pay fees and
+	// collateral.
 	MIN_TOPUP_LOVELACE: 5_000_000n,
+	// ADA attached to an output that carries native tokens but no ADA top-up of
+	// its own. A token output cannot exist without lovelace: the ledger's
+	// min-UTxO for a plain output holding a couple of assets is ~1.2-1.4 ADA.
+	//
+	// A deliberately conservative flat floor rather than a computed min-UTxO.
+	// `calculateMinUtxo` is not usable here — it takes a datum and its buffers
+	// are contract-output-specific, so it would badly overestimate a plain
+	// payment. Hand-rolling the ledger formula would be a precision bug waiting
+	// to happen, and the downside of overshooting is nil: the recipient is a hot
+	// wallet that needs ADA for fees regardless. If this were ever too small the
+	// tx fails at build() -- pre-broadcast, where reverting is safe -- rather
+	// than being rejected on chain.
+	FUND_DISTRIBUTION_TOKEN_OUTPUT_LOVELACE: 2_000_000n,
 	MAX_DEFAULT_SMART_CONTRACT_HISTORY_LEVELS: 10,
 
 	FALLBACK_COINS_PER_UTXO_SIZE: 4310,

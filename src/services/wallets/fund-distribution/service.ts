@@ -27,20 +27,26 @@ export class FundDistributionService {
 		targetWalletId: string;
 		currentBalance: bigint;
 		paymentSourceId: string;
+		/** Which asset is short. Defaults to ADA for callers that predate tokens. */
+		assetUnit?: string;
 	}): Promise<void> {
-		const { targetWalletId, currentBalance, paymentSourceId } = params;
+		const { targetWalletId, currentBalance, paymentSourceId, assetUnit = 'lovelace' } = params;
 
 		const fundWallet = await getFundWalletForPaymentSource(paymentSourceId);
 		if (fundWallet == null) return;
 
 		// Guard: fund wallet must not fund itself
 		if (fundWallet.id === targetWalletId) return;
-		if (currentBalance >= fundWallet.config.warningThreshold) return;
+
+		// Thresholds are per asset: 20 USDM and 20 ADA are unrelated quantities,
+		// so a shortage can only be judged against its own asset's policy. No
+		// policy for this asset means the operator has not asked us to top it up.
+		const policy = fundWallet.config.assets.get(assetUnit);
+		if (policy == null) return;
+		if (currentBalance >= policy.warningThreshold) return;
 
 		const priority =
-			currentBalance < fundWallet.config.criticalThreshold
-				? FundDistributionPriority.Critical
-				: FundDistributionPriority.Warning;
+			currentBalance < policy.criticalThreshold ? FundDistributionPriority.Critical : FundDistributionPriority.Warning;
 
 		// Use a serializable transaction to atomically check for an existing pending/submitted
 		// request and create a new one. This prevents duplicate requests from concurrent calls
@@ -83,6 +89,10 @@ export class FundDistributionService {
 						where: {
 							fundWalletId: fundWallet.id,
 							targetWalletId,
+							// Scoped to the asset: an in-flight ADA top-up says nothing about
+							// a USDM shortage on the same wallet, and suppressing one because
+							// of the other would leave the wallet short indefinitely.
+							assetUnit,
 							OR: [
 								{ status: { in: [FundDistributionStatus.Pending, FundDistributionStatus.Submitted] } },
 								// A recent failure blocks re-creation for the cooldown. Retrying
@@ -101,7 +111,8 @@ export class FundDistributionService {
 							fundWalletId: fundWallet.id,
 							targetWalletId,
 							priority,
-							amount: fundWallet.config.topupAmount,
+							assetUnit,
+							amount: policy.topupAmount,
 							status: FundDistributionStatus.Pending,
 						},
 					});
@@ -128,7 +139,8 @@ export class FundDistributionService {
 			fund_wallet_id: fundWallet.id,
 			target_wallet_id: targetWalletId,
 			priority,
-			amount: fundWallet.config.topupAmount.toString(),
+			asset_unit: assetUnit,
+			amount: policy.topupAmount.toString(),
 		});
 
 		if (priority === FundDistributionPriority.Critical) {
@@ -156,15 +168,22 @@ export class FundDistributionService {
 					where: {
 						fundWalletId: fundWallet.id,
 						targetWalletId,
+						assetUnit,
 						status: FundDistributionStatus.Pending,
 						priority: FundDistributionPriority.Critical,
 					},
-					select: { id: true, amount: true },
+					select: { id: true, amount: true, assetUnit: true },
 				});
 				if (!request) return;
 
 				await processRequestsForFundWallet(fundWallet, [
-					{ id: request.id, targetWalletId, targetAddress: targetWallet.walletAddress, amount: request.amount },
+					{
+						id: request.id,
+						targetWalletId,
+						targetAddress: targetWallet.walletAddress,
+						assetUnit: request.assetUnit,
+						amount: request.amount,
+					},
 				]);
 			});
 		}
@@ -380,12 +399,20 @@ export class FundDistributionService {
 	}
 
 	private async scanAndCreateMissingRequests(fundedPaymentSourceIds: string[]): Promise<void> {
-		// Find monitored wallets that have no pending/submitted
-		// distribution request. Scoped to payment sources that actually have an
-		// enabled fund wallet: without that filter, every low wallet on an
-		// unfunded source triggered a getFundWalletForPaymentSource lookup that
-		// could only ever return null -- N wasted queries per wallet, per cycle.
-		const lowBalanceWallets = await prisma.hotWallet.findMany({
+		// Every monitored asset on every monitored wallet, not just lovelace.
+		// Low-balance rules are keyed per asset, so an operator can already watch
+		// USDM or USDCX; scanning only 'lovelace' meant those alerts fired into a
+		// top-up path that ignored them.
+		//
+		// Scoped to payment sources that actually have an enabled fund wallet:
+		// without that filter, every low wallet on an unfunded source triggered a
+		// getFundWalletForPaymentSource lookup that could only ever return null.
+		//
+		// Deliberately NOT filtered on `FundDistributionsReceived: { none: ... }`.
+		// That predicate is asset-blind: an in-flight ADA top-up would hide a USDM
+		// shortage on the same wallet. Dedupe belongs in requestTopup, which scopes
+		// it to (target, asset) inside its Serializable transaction.
+		const monitoredWallets = await prisma.hotWallet.findMany({
 			where: {
 				deletedAt: null,
 				type: { not: HotWalletType.Funding },
@@ -394,13 +421,7 @@ export class FundDistributionService {
 				LowBalanceRules: {
 					some: {
 						enabled: true,
-						assetUnit: 'lovelace',
 						lastKnownAmount: { not: null },
-					},
-				},
-				FundDistributionsReceived: {
-					none: {
-						status: { in: [FundDistributionStatus.Pending, FundDistributionStatus.Submitted] },
 					},
 				},
 			},
@@ -408,20 +429,24 @@ export class FundDistributionService {
 				id: true,
 				paymentSourceId: true,
 				LowBalanceRules: {
-					where: { enabled: true, assetUnit: 'lovelace', lastKnownAmount: { not: null } },
-					select: { lastKnownAmount: true },
+					where: { enabled: true, lastKnownAmount: { not: null } },
+					select: { assetUnit: true, lastKnownAmount: true },
 				},
 			},
 		});
 
-		for (const wallet of lowBalanceWallets) {
-			const lastKnownAmount = wallet.LowBalanceRules[0]?.lastKnownAmount;
-			if (lastKnownAmount == null) continue;
-			await this.requestTopup({
-				targetWalletId: wallet.id,
-				currentBalance: lastKnownAmount,
-				paymentSourceId: wallet.paymentSourceId,
-			});
+		for (const wallet of monitoredWallets) {
+			for (const rule of wallet.LowBalanceRules) {
+				if (rule.lastKnownAmount == null) continue;
+				// requestTopup decides: it returns early unless this asset has a
+				// configured policy and the balance is under its warning threshold.
+				await this.requestTopup({
+					targetWalletId: wallet.id,
+					currentBalance: rule.lastKnownAmount,
+					paymentSourceId: wallet.paymentSourceId,
+					assetUnit: rule.assetUnit,
+				});
+			}
 		}
 	}
 
@@ -449,6 +474,7 @@ export class FundDistributionService {
 				id: true,
 				fundWalletId: true,
 				targetWalletId: true,
+				assetUnit: true,
 				amount: true,
 				TargetWallet: { select: { walletAddress: true } },
 			},
@@ -473,6 +499,7 @@ export class FundDistributionService {
 				id: r.id,
 				targetWalletId: r.targetWalletId,
 				targetAddress: r.TargetWallet.walletAddress,
+				assetUnit: r.assetUnit,
 				amount: r.amount,
 			}));
 
@@ -500,6 +527,7 @@ export class FundDistributionService {
 				id: true,
 				fundWalletId: true,
 				targetWalletId: true,
+				assetUnit: true,
 				amount: true,
 				createdAt: true,
 				TargetWallet: { select: { walletAddress: true } },
@@ -540,6 +568,7 @@ export class FundDistributionService {
 					id: r.id,
 					targetWalletId: r.targetWalletId,
 					targetAddress: r.TargetWallet.walletAddress,
+					assetUnit: r.assetUnit,
 					amount: r.amount,
 				})),
 			);

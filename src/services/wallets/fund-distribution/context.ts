@@ -9,26 +9,35 @@ import { prisma } from '@masumi/payment-core/db';
  * is threaded into Blockfrost lookups and the tx builder, and a stringly-typed
  * network here previously forced `as` casts at every call site.
  */
+/** Distribution policy for one asset. Amounts are in that asset's own unit. */
+export type FundAssetPolicy = {
+	assetUnit: string;
+	warningThreshold: bigint;
+	criticalThreshold: bigint;
+	topupAmount: bigint;
+};
+
 export type FundWalletContext = {
 	id: string;
 	walletAddress: string;
 	walletVkey: string;
 	/**
-	 * The fund wallet's own lovelace low-balance rule, if the operator created
-	 * one. Null means "no rule": the underfunded alert is then skipped rather
-	 * than emitted with a dangling empty ruleId.
+	 * The fund wallet's own low-balance rules, keyed by assetUnit. Keyed rather
+	 * than a single rule because the treasury can be short of one asset while
+	 * flush with another, and the alert has to name which. A missing key means
+	 * "no rule for that asset": the alert is skipped rather than emitted with a
+	 * dangling empty ruleId.
 	 */
-	lowBalanceRule: { id: string; lastAlertedAt: Date | null } | null;
+	lowBalanceRules: Map<string, { id: string; lastAlertedAt: Date | null }>;
 	paymentSourceId: string;
 	paymentSourceType: PaymentSourceType;
 	network: Network;
 	rpcProviderApiKey: string;
 	encryptedMnemonic: string;
 	config: {
-		warningThreshold: bigint;
-		criticalThreshold: bigint;
-		topupAmount: bigint;
 		batchWindowMs: number;
+		/** Per-asset policy, keyed by assetUnit. Empty means nothing to distribute. */
+		assets: Map<string, FundAssetPolicy>;
 	};
 };
 
@@ -38,9 +47,8 @@ const FUND_WALLET_SELECT = {
 	walletVkey: true,
 	paymentSourceId: true,
 	LowBalanceRules: {
-		where: { assetUnit: 'lovelace', enabled: true },
-		select: { id: true, lastAlertedAt: true },
-		take: 1,
+		where: { enabled: true },
+		select: { id: true, assetUnit: true, lastAlertedAt: true },
 	},
 	Secret: { select: { encryptedMnemonic: true } },
 	PaymentSource: {
@@ -53,10 +61,15 @@ const FUND_WALLET_SELECT = {
 	FundDistributionConfig: {
 		select: {
 			enabled: true,
-			warningThreshold: true,
-			criticalThreshold: true,
-			topupAmount: true,
 			batchWindowMs: true,
+			AssetConfigs: {
+				select: {
+					assetUnit: true,
+					warningThreshold: true,
+					criticalThreshold: true,
+					topupAmount: true,
+				},
+			},
 		},
 	},
 } satisfies Prisma.HotWalletSelect;
@@ -76,17 +89,15 @@ function toContext(wallet: FundWalletRow | null): FundWalletContext | null {
 		id: wallet.id,
 		walletAddress: wallet.walletAddress,
 		walletVkey: wallet.walletVkey,
-		lowBalanceRule: wallet.LowBalanceRules[0] ?? null,
+		lowBalanceRules: new Map(wallet.LowBalanceRules.map((rule) => [rule.assetUnit, rule])),
 		paymentSourceId: wallet.paymentSourceId,
 		paymentSourceType: wallet.PaymentSource.paymentSourceType,
 		network: wallet.PaymentSource.network,
 		rpcProviderApiKey: wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
 		encryptedMnemonic: wallet.Secret.encryptedMnemonic,
 		config: {
-			warningThreshold: wallet.FundDistributionConfig.warningThreshold,
-			criticalThreshold: wallet.FundDistributionConfig.criticalThreshold,
-			topupAmount: wallet.FundDistributionConfig.topupAmount,
 			batchWindowMs: wallet.FundDistributionConfig.batchWindowMs,
+			assets: new Map(wallet.FundDistributionConfig.AssetConfigs.map((asset) => [asset.assetUnit, asset])),
 		},
 	};
 }

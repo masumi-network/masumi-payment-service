@@ -158,7 +158,11 @@ export function FundWalletDialog({
             </Button>
           </div>
         ) : !fundWallet ? (
-          <FundWalletSetupForm onSubmit={handleCreate} isSubmitting={createFundWallet.isPending} />
+          <FundWalletSetupForm
+            onSubmit={handleCreate}
+            isSubmitting={createFundWallet.isPending}
+            network={network}
+          />
         ) : (
           <div className="space-y-4">
             <div className="rounded-md border p-3">
@@ -197,6 +201,7 @@ export function FundWalletDialog({
                     config={fundWallet.FundDistributionConfig}
                     onSubmit={handleUpdate}
                     isSubmitting={updateFundWallet.isPending}
+                    network={network}
                   />
                 ) : (
                   <p className="py-6 text-center text-sm text-muted-foreground">

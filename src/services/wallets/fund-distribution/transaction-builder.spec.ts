@@ -8,7 +8,7 @@ const mockConvertNetwork = jest.fn() as AnyMock;
 const mockCreateTxWindow = jest.fn() as AnyMock;
 const mockResolveTxHash = jest.fn() as AnyMock;
 
-const mockSendLovelace = jest.fn() as AnyMock;
+const mockSendAssets = jest.fn() as AnyMock;
 const mockSetMetadata = jest.fn() as AnyMock;
 const mockSetNetwork = jest.fn() as AnyMock;
 const mockInvalidBefore = jest.fn() as AnyMock;
@@ -46,8 +46,8 @@ class FakeTransaction {
 		return this;
 	}
 
-	sendLovelace(...args: unknown[]): this {
-		mockSendLovelace(...args);
+	sendAssets(...args: unknown[]): this {
+		mockSendAssets(...args);
 		return this;
 	}
 
@@ -113,8 +113,8 @@ const baseParams = {
 	network: 'Preprod' as never,
 	rpcProviderApiKey: 'rpc-key',
 	outputs: [
-		{ address: 'addr_target_1', lovelace: 20_000_000n },
-		{ address: 'addr_target_2', lovelace: HUGE_LOVELACE },
+		{ address: 'addr_target_1', assets: [{ unit: 'lovelace', quantity: 20_000_000n }] },
+		{ address: 'addr_target_2', assets: [{ unit: 'lovelace', quantity: HUGE_LOVELACE }] },
 	],
 };
 
@@ -141,12 +141,39 @@ describe('buildAndSignFundDistributionTx', () => {
 		expect(mockSetMetadata).toHaveBeenCalledWith(674, { msg: ['Masumi', 'FundDistribution'] });
 	});
 
-	it('adds one exact-string lovelace output per request, surviving amounts beyond Number precision', async () => {
+	it('adds one exact-string output per target, surviving amounts beyond Number precision', async () => {
 		await buildAndSignFundDistributionTx(baseParams);
 
-		expect(mockSendLovelace.mock.calls).toEqual([
-			['addr_target_1', '20000000'],
-			['addr_target_2', '9007199254740993'],
+		expect(mockSendAssets.mock.calls).toEqual([
+			['addr_target_1', [{ unit: 'lovelace', quantity: '20000000' }]],
+			['addr_target_2', [{ unit: 'lovelace', quantity: '9007199254740993' }]],
+		]);
+	});
+
+	it('sends a token and its min-UTxO ADA as ONE output', async () => {
+		await buildAndSignFundDistributionTx({
+			...baseParams,
+			outputs: [
+				{
+					address: 'addr_target_1',
+					assets: [
+						{ unit: 'lovelace', quantity: 2_000_000n },
+						{ unit: `${'a'.repeat(56)}0014df105553444d`, quantity: 25_000_000n },
+					],
+				},
+			],
+		});
+
+		// One sendAssets call, not two: a second output to the same address would
+		// need its own min-UTxO ADA and hand the target two UTxOs.
+		expect(mockSendAssets.mock.calls).toEqual([
+			[
+				'addr_target_1',
+				[
+					{ unit: 'lovelace', quantity: '2000000' },
+					{ unit: `${'a'.repeat(56)}0014df105553444d`, quantity: '25000000' },
+				],
+			],
 		]);
 	});
 

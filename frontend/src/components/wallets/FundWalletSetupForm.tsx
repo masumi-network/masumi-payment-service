@@ -7,51 +7,46 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Spinner } from '@/components/ui/spinner';
-import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
-import { MIN_TOPUP_ADA } from '@/lib/fund-wallet';
+import {
+  FundWalletAssetRows,
+  makeAssetRow,
+  type AssetRow,
+} from '@/components/wallets/FundWalletAssetRows';
+import { buildAssetPolicyPayload, type AssetPolicyPayload } from '@/lib/fund-wallet-assets';
 
-const adaAmount = (label: string) =>
-  z
-    .string()
-    .min(1, `${label} is required`)
-    .refine((value) => /^\d+(\.\d{1,6})?$/.test(value) && Number(value) > 0, {
-      message: `${label} must be a positive ADA amount (max 6 decimals)`,
-    });
-
-const setupSchema = z
-  .object({
-    mnemonic: z.string().min(1, 'Mnemonic phrase is required'),
-    warningThreshold: adaAmount('Warning threshold'),
-    criticalThreshold: adaAmount('Critical threshold'),
-    topupAmount: adaAmount('Top-up amount').refine((value) => Number(value) >= MIN_TOPUP_ADA, {
-      message: `Top-up amount must be at least ${MIN_TOPUP_ADA} ADA`,
-    }),
-    note: z.string().max(250).optional(),
-  })
-  // Mirrors the server rule. Checked here too so the operator sees it against
-  // the offending field instead of as a 400 toast after submitting a mnemonic.
-  .refine((values) => Number(values.criticalThreshold) < Number(values.warningThreshold), {
-    message: 'Critical threshold must be below the warning threshold',
-    path: ['criticalThreshold'],
-  });
+const setupSchema = z.object({
+  mnemonic: z.string().min(1, 'Mnemonic phrase is required'),
+  note: z.string().max(250).optional(),
+});
 
 export type FundWalletSetupValues = z.infer<typeof setupSchema>;
 
 export type FundWalletSetupSubmit = {
   walletMnemonic: string;
-  warningThreshold: string;
-  criticalThreshold: string;
-  topupAmount: string;
+  Assets: AssetPolicyPayload[];
   note?: string;
 };
 
 export function FundWalletSetupForm({
   onSubmit,
   isSubmitting,
+  network,
 }: {
   onSubmit: (values: FundWalletSetupSubmit) => Promise<void>;
   isSubmitting: boolean;
+  network: 'Preprod' | 'Mainnet';
 }) {
+  // Thresholds are per asset, so they live outside react-hook-form: the row
+  // count is dynamic and each row's valid range depends on its asset.
+  const [assetRows, setAssetRows] = useState<AssetRow[]>([
+    {
+      ...makeAssetRow('lovelace'),
+      warningThreshold: '50',
+      criticalThreshold: '20',
+      topupAmount: '100',
+    },
+  ]);
+  const [assetError, setAssetError] = useState<string | null>(null);
   // The mnemonic is masked by default so a pasted seed phrase isn't exposed to
   // over-shoulder readers, screen shares or screenshots. `<textarea>` has no
   // native password type, hence the inline text-security style.
@@ -63,23 +58,23 @@ export function FundWalletSetupForm({
     formState: { errors },
   } = useForm<FundWalletSetupValues>({
     resolver: zodResolver(setupSchema),
-    defaultValues: {
-      mnemonic: '',
-      warningThreshold: '50',
-      criticalThreshold: '20',
-      topupAmount: '100',
-      note: '',
-    },
+    defaultValues: { mnemonic: '', note: '' },
   });
 
   const submit = handleSubmit(async (values) => {
+    // Amounts are entered in display units (ADA, USDM) and converted to each
+    // asset's smallest unit here — operators think in ADA, the API stores
+    // lovelace.
+    const policy = buildAssetPolicyPayload(assetRows, network);
+    if ('error' in policy) {
+      setAssetError(policy.error);
+      return;
+    }
+    setAssetError(null);
+
     await onSubmit({
       walletMnemonic: values.mnemonic.trim(),
-      // The API takes lovelace; the form takes ADA because that's what
-      // operators think in.
-      warningThreshold: convertDecimalToBaseUnits(values.warningThreshold),
-      criticalThreshold: convertDecimalToBaseUnits(values.criticalThreshold),
-      topupAmount: convertDecimalToBaseUnits(values.topupAmount),
+      Assets: policy.assets,
       note: values.note?.trim() || undefined,
     });
   });
@@ -130,40 +125,19 @@ export function FundWalletSetupForm({
         {errors.mnemonic && <p className="text-xs text-destructive">{errors.mnemonic.message}</p>}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="fund-wallet-warning">
-            Warning threshold (ADA)
-          </label>
-          <Input id="fund-wallet-warning" {...register('warningThreshold')} />
-          <p className="text-xs text-muted-foreground">Below this, top-ups are batched.</p>
-          {errors.warningThreshold && (
-            <p className="text-xs text-destructive">{errors.warningThreshold.message}</p>
-          )}
-        </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="fund-wallet-critical">
-            Critical threshold (ADA)
-          </label>
-          <Input id="fund-wallet-critical" {...register('criticalThreshold')} />
-          <p className="text-xs text-muted-foreground">Below this, top-ups are sent immediately.</p>
-          {errors.criticalThreshold && (
-            <p className="text-xs text-destructive">{errors.criticalThreshold.message}</p>
-          )}
-        </div>
-      </div>
-
       <div className="space-y-2">
-        <label className="text-sm font-medium" htmlFor="fund-wallet-topup">
-          Top-up amount (ADA)
-        </label>
-        <Input id="fund-wallet-topup" {...register('topupAmount')} />
+        <label className="text-sm font-medium">Assets to distribute</label>
         <p className="text-xs text-muted-foreground">
-          Sent to each wallet that falls below a threshold.
+          One entry per asset this wallet should top up. Low-balance rules are per asset, so a
+          wallet can run low on USDM while its ADA is healthy — each asset needs its own thresholds.
         </p>
-        {errors.topupAmount && (
-          <p className="text-xs text-destructive">{errors.topupAmount.message}</p>
-        )}
+        <FundWalletAssetRows
+          rows={assetRows}
+          onChange={setAssetRows}
+          network={network}
+          disabled={isSubmitting}
+        />
+        {assetError && <p className="text-xs text-destructive">{assetError}</p>}
       </div>
 
       <div className="space-y-2">

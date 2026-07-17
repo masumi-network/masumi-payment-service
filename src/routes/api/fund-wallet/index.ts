@@ -32,39 +32,76 @@ export {
 	deleteFundWalletSchemaOutput,
 };
 
+type AssetConfigInput = {
+	assetUnit: string;
+	warningThreshold: string;
+	criticalThreshold: string;
+	topupAmount: string;
+};
+
 /**
- * Reject a topup that could never produce a valid output.
+ * Validate one asset's policy.
  *
- * Every distribution becomes one tx output, so a topupAmount below Cardano's
- * min-UTxO makes `build()` throw every time: the batch fails, the requests are
- * re-created next cycle, and it loops every 30s with a FAILED webhook each
- * round. Cheap to catch here; impossible to recover from downstream.
+ * The min-UTxO floor applies to LOVELACE ONLY. It exists because an ADA output
+ * below min-UTxO can never build — but a token quantity has no such bound, and
+ * applying an ADA floor to it would reject a perfectly sensible 1 USDM top-up.
+ * The ADA a token output needs is added at build time, not configured here.
  */
-function assertTopupAboveMinUtxo(topupAmount: bigint) {
-	if (topupAmount < CONSTANTS.MIN_TOPUP_LOVELACE) {
+function parseAssetConfig(asset: AssetConfigInput) {
+	const warningThreshold = BigInt(asset.warningThreshold);
+	const criticalThreshold = BigInt(asset.criticalThreshold);
+	const topupAmount = BigInt(asset.topupAmount);
+
+	if (criticalThreshold >= warningThreshold) {
+		throw createHttpError(400, `criticalThreshold must be less than warningThreshold for ${asset.assetUnit}`);
+	}
+	if (topupAmount <= 0n) {
+		throw createHttpError(400, `topupAmount must be greater than zero for ${asset.assetUnit}`);
+	}
+	if (asset.assetUnit === 'lovelace' && topupAmount < CONSTANTS.MIN_TOPUP_LOVELACE) {
 		throw createHttpError(
 			400,
 			`topupAmount must be at least ${CONSTANTS.MIN_TOPUP_LOVELACE.toString()} lovelace; ` +
 				'a smaller output cannot satisfy the Cardano min-UTxO requirement',
 		);
 	}
+
+	return { assetUnit: asset.assetUnit, warningThreshold, criticalThreshold, topupAmount };
+}
+
+/** Validate the whole policy, rejecting a duplicated asset rather than silently keeping one. */
+function parseAssetConfigs(assets: AssetConfigInput[]) {
+	const seen = new Set<string>();
+	for (const asset of assets) {
+		if (seen.has(asset.assetUnit)) {
+			throw createHttpError(400, `Duplicate assetUnit in Assets: ${asset.assetUnit}`);
+		}
+		seen.add(asset.assetUnit);
+	}
+	return assets.map(parseAssetConfig);
 }
 
 function serializeConfig(config: {
 	id: string;
 	enabled: boolean;
-	warningThreshold: bigint;
-	criticalThreshold: bigint;
-	topupAmount: bigint;
 	batchWindowMs: number;
+	AssetConfigs: Array<{
+		assetUnit: string;
+		warningThreshold: bigint;
+		criticalThreshold: bigint;
+		topupAmount: bigint;
+	}>;
 }) {
 	return {
 		id: config.id,
 		enabled: config.enabled,
-		warningThreshold: config.warningThreshold.toString(),
-		criticalThreshold: config.criticalThreshold.toString(),
-		topupAmount: config.topupAmount.toString(),
 		batchWindowMs: config.batchWindowMs,
+		Assets: config.AssetConfigs.map((asset) => ({
+			assetUnit: asset.assetUnit,
+			warningThreshold: asset.warningThreshold.toString(),
+			criticalThreshold: asset.criticalThreshold.toString(),
+			topupAmount: asset.topupAmount.toString(),
+		})),
 	};
 }
 
@@ -108,10 +145,16 @@ export const getFundWalletEndpointGet = adminAuthenticatedEndpointFactory.build(
 					select: {
 						id: true,
 						enabled: true,
-						warningThreshold: true,
-						criticalThreshold: true,
-						topupAmount: true,
 						batchWindowMs: true,
+						AssetConfigs: {
+							select: {
+								assetUnit: true,
+								warningThreshold: true,
+								criticalThreshold: true,
+								topupAmount: true,
+							},
+							orderBy: { assetUnit: 'asc' },
+						},
 					},
 				},
 				_count: {
@@ -169,14 +212,7 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 			throw createHttpError(409, 'A fund wallet already exists for this payment source');
 		}
 
-		const warningThreshold = BigInt(input.warningThreshold);
-		const criticalThreshold = BigInt(input.criticalThreshold);
-		const topupAmount = BigInt(input.topupAmount);
-
-		if (criticalThreshold >= warningThreshold) {
-			throw createHttpError(400, 'criticalThreshold must be less than warningThreshold');
-		}
-		assertTopupAboveMinUtxo(topupAmount);
+		const assetConfigs = parseAssetConfigs(input.Assets);
 
 		// A typo'd or truncated phrase is ordinary user input, not an exception:
 		// MeshWallet throws a bare bip39 Error, which would otherwise surface as a
@@ -235,10 +271,22 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 								data: {
 									hotWalletId: hotWallet.id,
 									enabled: true,
-									warningThreshold,
-									criticalThreshold,
-									topupAmount,
 									batchWindowMs: input.batchWindowMs ?? CONSTANTS.FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS,
+									AssetConfigs: { create: assetConfigs },
+								},
+								select: {
+									id: true,
+									enabled: true,
+									batchWindowMs: true,
+									AssetConfigs: {
+										select: {
+											assetUnit: true,
+											warningThreshold: true,
+											criticalThreshold: true,
+											topupAmount: true,
+										},
+										orderBy: { assetUnit: 'asc' },
+									},
 								},
 							});
 
@@ -307,51 +355,66 @@ export const patchFundWalletEndpointPatch = adminAuthenticatedEndpointFactory.bu
 	handler: async ({ input }) => {
 		const wallet = await prisma.hotWallet.findUnique({
 			where: { id: input.id, type: HotWalletType.Funding, deletedAt: null },
-			select: {
-				id: true,
-				FundDistributionConfig: { select: { id: true, warningThreshold: true, criticalThreshold: true } },
-			},
+			select: { id: true, FundDistributionConfig: { select: { id: true } } },
 		});
 
 		if (!wallet) {
 			throw createHttpError(404, 'Fund wallet not found');
 		}
 
-		if (!wallet.FundDistributionConfig) {
+		const configId = wallet.FundDistributionConfig?.id;
+		if (configId == null) {
 			throw createHttpError(404, 'Fund wallet has no distribution config');
 		}
 
-		const newWarning =
-			input.warningThreshold != null ? BigInt(input.warningThreshold) : wallet.FundDistributionConfig.warningThreshold;
-		const newCritical =
-			input.criticalThreshold != null
-				? BigInt(input.criticalThreshold)
-				: wallet.FundDistributionConfig.criticalThreshold;
+		// Validate before opening the transaction: the min-UTxO floor is enforced
+		// on update too, or it is trivially bypassed by creating a valid wallet and
+		// editing the amount down afterwards.
+		const assetConfigs = input.Assets != null ? parseAssetConfigs(input.Assets) : null;
 
-		if (newCritical >= newWarning) {
-			throw createHttpError(400, 'criticalThreshold must be less than warningThreshold');
-		}
-		// Enforced on update too, or the floor is trivially bypassed by creating a
-		// valid wallet and editing the amount down afterwards.
-		if (input.topupAmount != null) {
-			assertTopupAboveMinUtxo(BigInt(input.topupAmount));
-		}
+		const updated = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						// Replace the policy wholesale rather than patching rows: each asset
+						// row is then written as a validated (warning, critical, topup)
+						// triple. Patching columns individually let two concurrent updates
+						// (warning down, critical up) each validate against stale data and
+						// interleave into critical >= warning — after which every low balance
+						// classified Critical and bypassed the batch window.
+						if (assetConfigs != null) {
+							await tx.fundDistributionAssetConfig.deleteMany({ where: { fundDistributionConfigId: configId } });
+							await tx.fundDistributionAssetConfig.createMany({
+								data: assetConfigs.map((asset) => ({ ...asset, fundDistributionConfigId: configId })),
+							});
+						}
 
-		const updated = await prisma.fundDistributionConfig.update({
-			where: { id: wallet.FundDistributionConfig.id },
-			data: {
-				...(input.enabled != null ? { enabled: input.enabled } : {}),
-				// Always persist the thresholds as the validated PAIR, not just the
-				// provided field. Writing only one column let two concurrent patches
-				// (warning down, critical up) each validate against stale data and
-				// interleave into critical >= warning — after which every low balance
-				// classified Critical and bypassed the batch window.
-				warningThreshold: newWarning,
-				criticalThreshold: newCritical,
-				...(input.topupAmount != null ? { topupAmount: BigInt(input.topupAmount) } : {}),
-				...(input.batchWindowMs != null ? { batchWindowMs: input.batchWindowMs } : {}),
-			},
-		});
+						return tx.fundDistributionConfig.update({
+							where: { id: configId },
+							data: {
+								...(input.enabled != null ? { enabled: input.enabled } : {}),
+								...(input.batchWindowMs != null ? { batchWindowMs: input.batchWindowMs } : {}),
+							},
+							select: {
+								id: true,
+								enabled: true,
+								batchWindowMs: true,
+								AssetConfigs: {
+									select: {
+										assetUnit: true,
+										warningThreshold: true,
+										criticalThreshold: true,
+										topupAmount: true,
+									},
+									orderBy: { assetUnit: 'asc' },
+								},
+							},
+						});
+					},
+					{ isolationLevel: 'Serializable' },
+				),
+			{ label: 'fund-wallet-patch' },
+		);
 
 		return {
 			id: wallet.id,

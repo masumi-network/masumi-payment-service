@@ -2630,21 +2630,30 @@ export type FundWallet = {
          */
         enabled: boolean;
         /**
-         * Balance below this triggers a batched topup (lovelace)
-         */
-        warningThreshold: string;
-        /**
-         * Balance below this triggers an immediate topup (lovelace)
-         */
-        criticalThreshold: string;
-        /**
-         * Amount to send per topup (lovelace)
-         */
-        topupAmount: string;
-        /**
          * Milliseconds to wait before sending batched warning topups
          */
         batchWindowMs: number;
+        /**
+         * Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry
+         */
+        Assets: Array<{
+            /**
+             * "lovelace" for ADA, otherwise policy id + hex asset name
+             */
+            assetUnit: string;
+            /**
+             * Balance below this triggers a batched topup, in the asset's smallest unit
+             */
+            warningThreshold: string;
+            /**
+             * Balance below this triggers an immediate topup, in the asset's smallest unit
+             */
+            criticalThreshold: string;
+            /**
+             * Amount to send per topup, in the asset's smallest unit
+             */
+            topupAmount: string;
+        }>;
     } | null;
     /**
      * Number of pending distribution requests
@@ -2682,21 +2691,30 @@ export type FundWalletCreated = {
          */
         enabled: boolean;
         /**
-         * Balance below this triggers a batched topup (lovelace)
-         */
-        warningThreshold: string;
-        /**
-         * Balance below this triggers an immediate topup (lovelace)
-         */
-        criticalThreshold: string;
-        /**
-         * Amount to send per topup (lovelace)
-         */
-        topupAmount: string;
-        /**
          * Milliseconds to wait before sending batched warning topups
          */
         batchWindowMs: number;
+        /**
+         * Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry
+         */
+        Assets: Array<{
+            /**
+             * "lovelace" for ADA, otherwise policy id + hex asset name
+             */
+            assetUnit: string;
+            /**
+             * Balance below this triggers a batched topup, in the asset's smallest unit
+             */
+            warningThreshold: string;
+            /**
+             * Balance below this triggers an immediate topup, in the asset's smallest unit
+             */
+            criticalThreshold: string;
+            /**
+             * Amount to send per topup, in the asset's smallest unit
+             */
+            topupAmount: string;
+        }>;
     };
 };
 
@@ -2718,21 +2736,30 @@ export type FundWalletUpdated = {
          */
         enabled: boolean;
         /**
-         * Balance below this triggers a batched topup (lovelace)
-         */
-        warningThreshold: string;
-        /**
-         * Balance below this triggers an immediate topup (lovelace)
-         */
-        criticalThreshold: string;
-        /**
-         * Amount to send per topup (lovelace)
-         */
-        topupAmount: string;
-        /**
          * Milliseconds to wait before sending batched warning topups
          */
         batchWindowMs: number;
+        /**
+         * Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry
+         */
+        Assets: Array<{
+            /**
+             * "lovelace" for ADA, otherwise policy id + hex asset name
+             */
+            assetUnit: string;
+            /**
+             * Balance below this triggers a batched topup, in the asset's smallest unit
+             */
+            warningThreshold: string;
+            /**
+             * Balance below this triggers an immediate topup, in the asset's smallest unit
+             */
+            criticalThreshold: string;
+            /**
+             * Amount to send per topup, in the asset's smallest unit
+             */
+            topupAmount: string;
+        }>;
     };
 };
 
@@ -11958,17 +11985,26 @@ export type PatchFundWalletData = {
          */
         enabled?: boolean;
         /**
-         * New warning threshold in lovelace
+         * Replaces the per-asset policy wholesale. Assets omitted from this list stop being topped up; omit the field entirely to leave the policy untouched
          */
-        warningThreshold?: string;
-        /**
-         * New critical threshold in lovelace
-         */
-        criticalThreshold?: string;
-        /**
-         * New topup amount in lovelace
-         */
-        topupAmount?: string;
+        Assets?: Array<{
+            /**
+             * "lovelace" for ADA, otherwise policy id + hex asset name
+             */
+            assetUnit: string;
+            /**
+             * Warning threshold in the asset's smallest unit
+             */
+            warningThreshold: string;
+            /**
+             * Critical threshold in the asset's smallest unit
+             */
+            criticalThreshold: string;
+            /**
+             * Amount sent per topup, in the asset's smallest unit
+             */
+            topupAmount: string;
+        }>;
         /**
          * New batch window in milliseconds (max 24 h)
          */
@@ -12020,17 +12056,26 @@ export type PostFundWalletData = {
          */
         walletMnemonic: string;
         /**
-         * Warning balance threshold in lovelace
+         * Per-asset distribution policy, one entry per asset this wallet should top up. Use assetUnit "lovelace" for ADA. The fund wallet must itself hold each asset it distributes, and a token top-up also sends ADA to satisfy the min-UTxO of its output
          */
-        warningThreshold: string;
-        /**
-         * Critical balance threshold in lovelace
-         */
-        criticalThreshold: string;
-        /**
-         * Amount to send per topup in lovelace
-         */
-        topupAmount: string;
+        Assets: Array<{
+            /**
+             * "lovelace" for ADA, otherwise policy id + hex asset name
+             */
+            assetUnit: string;
+            /**
+             * Warning threshold in the asset's smallest unit
+             */
+            warningThreshold: string;
+            /**
+             * Critical threshold in the asset's smallest unit
+             */
+            criticalThreshold: string;
+            /**
+             * Amount sent per topup, in the asset's smallest unit
+             */
+            topupAmount: string;
+        }>;
         /**
          * Batch window in milliseconds (default 5 min, max 24 h)
          */
