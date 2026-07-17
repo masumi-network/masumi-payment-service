@@ -17,6 +17,7 @@ const mockHotWalletFindUnique = jest.fn() as AnyMock;
 const mockHotWalletUpdateMany = jest.fn() as AnyMock;
 const mockTransactionUpdateMany = jest.fn() as AnyMock;
 const mockLookupChainTx = jest.fn() as AnyMock;
+const mockLoggerInfo = jest.fn() as AnyMock;
 const mockQueueSent = jest.fn() as AnyMock;
 const mockQueueConfirmed = jest.fn() as AnyMock;
 const mockQueueFailed = jest.fn() as AnyMock;
@@ -132,7 +133,7 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+	logger: { info: mockLoggerInfo, warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/blockchain-error-interpreter', () => ({
@@ -393,6 +394,31 @@ describe('processDistributionCycle', () => {
 				}),
 			}),
 		);
+	});
+
+	it('does not log a spurious "already running" when its own scan raises a critical topup', async () => {
+		// The scan calls requestTopup while the cycle already holds the mutex, so
+		// the critical fast-path would try to re-acquire it. tryAcquire is not
+		// reentrant, so without the isLocked() guard withJobLock declines and logs
+		// "already running, skipping cycle" on EVERY critical topup — pointing an
+		// operator at a phantom contention problem.
+		//
+		// This asserts only what the guard actually changes: the log. Dispatch is
+		// unaffected either way (withJobLock declines regardless) and the cycle's
+		// own critical phase sends the request moments later. Claiming more would
+		// be a lie.
+		mockHotWalletFindMany.mockImplementation(async (args: any) =>
+			args?.where?.type === HotWalletType.Funding
+				? [{ paymentSourceId: 'ps-1' }]
+				: [{ id: 'w1', paymentSourceId: 'ps-1', LowBalanceRules: [{ lastKnownAmount: 1_000_000n }] }],
+		);
+
+		await new FundDistributionService().processDistributionCycle();
+
+		expect(mockRequestCreate).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ priority: FundDistributionPriority.Critical }) }),
+		);
+		expect(mockLoggerInfo).not.toHaveBeenCalledWith(expect.stringContaining('already running'), expect.anything());
 	});
 
 	it('does not discover fund wallets under a deleted payment source', async () => {

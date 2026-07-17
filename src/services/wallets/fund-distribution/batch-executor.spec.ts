@@ -438,6 +438,46 @@ describe('processRequestsForFundWallet', () => {
 		);
 	});
 
+	it('takes every claim at Serializable isolation', async () => {
+		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
+
+		// The whole claim model rests on this: the wallet claim, the request claim
+		// and the ownership re-check are only atomic against a concurrent replica
+		// under Serializable. A weaker level silently reintroduces the double-send
+		// this design exists to prevent, and nothing else would notice.
+		const isolationLevels = mockPrismaTransaction.mock.calls
+			.filter((call: any[]) => typeof call[0] === 'function')
+			.map((call: any[]) => call[1]?.isolationLevel);
+
+		expect(isolationLevels.length).toBeGreaterThan(0);
+		expect(isolationLevels.every((level: unknown) => level === 'Serializable')).toBe(true);
+	});
+
+	it('spends a balance that exactly covers a request', async () => {
+		// 22 ADA - 2 ADA fee buffer = exactly 20 ADA spendable, for a 20 ADA
+		// request. The boundary is the whole point: `<` instead of `<=` silently
+		// refuses an affordable top-up and the wallet stays low forever.
+		mockFetchAddressBalanceMap.mockResolvedValue(new Map([['lovelace', 22_000_000n]]));
+
+		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
+
+		expect(mockBuildAndSign).toHaveBeenCalledWith(
+			expect.objectContaining({ outputs: [{ address: 'addr_r1', lovelace: 20_000_000n }] }),
+		);
+	});
+
+	it('sends nothing and raises no false alarm when the balance cannot be read', async () => {
+		mockFetchAddressBalanceMap.mockRejectedValue(new Error('blockfrost unreachable'));
+
+		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
+
+		expect(mockBuildAndSign).not.toHaveBeenCalled();
+		// "Could not read the balance" is not "the balance is zero". Continuing
+		// with 0n would fire the underfunded alert at an operator whose treasury is
+		// fine, and page them for an indexer outage.
+		expect(mockTriggerLowBalance).not.toHaveBeenCalled();
+	});
+
 	it('does nothing when given no requests', async () => {
 		await processRequestsForFundWallet(fundWallet, []);
 
