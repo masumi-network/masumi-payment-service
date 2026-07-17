@@ -244,23 +244,22 @@ async function validateAndBuildItem(
 	}
 	const { utxo, decodedContract } = matchResult;
 
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
+		// Branch A (submit_result_time) while the deadline is ahead, else branch B
+		// (external_dispute_unlock_time) for dispute-window result rotation. See
+		// resolveSubmitResultConstrainAfterMs.
+		constrainAfterMs: resolveSubmitResultConstrainAfterMs(decodedContract, Date.now()),
+		constrainBeforeMs: decodedContract.sellerCooldownTime,
+	});
 	const datum = createDatumFromDecodedContractV2({
 		decodedContract,
 		buyerAddress: decodedContract.buyerAddress,
 		sellerAddress: decodedContract.sellerAddress,
 		blockchainIdentifier: request.blockchainIdentifier,
 		resultHash: request.NextAction.resultHash,
-		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime)),
+		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime), invalidAfterMs),
 		newCooldownTimeBuyer: BigInt(0),
 		state: determineNewContractState(decodedContract.state),
-	});
-
-	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		// Branch A (submit_result_time) while the deadline is ahead, else branch B
-		// (external_dispute_unlock_time) for dispute-window result rotation. See
-		// resolveSubmitResultConstrainAfterMs.
-		constrainAfterMs: resolveSubmitResultConstrainAfterMs(decodedContract, Date.now()),
-		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
 
 	return {
@@ -366,23 +365,22 @@ async function processSinglePaymentRequest(
 
 	const { utxo, decodedContract } = matchResult;
 
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
+		// Branch A (submit_result_time) while the deadline is ahead, else branch B
+		// (external_dispute_unlock_time) for dispute-window result rotation. See
+		// resolveSubmitResultConstrainAfterMs.
+		constrainAfterMs: resolveSubmitResultConstrainAfterMs(decodedContract, Date.now()),
+		constrainBeforeMs: decodedContract.sellerCooldownTime,
+	});
 	const datum = createDatumFromDecodedContractV2({
 		decodedContract,
 		buyerAddress: decodedContract.buyerAddress,
 		sellerAddress: decodedContract.sellerAddress,
 		blockchainIdentifier: request.blockchainIdentifier,
 		resultHash: request.NextAction.resultHash,
-		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime)),
+		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime), invalidAfterMs),
 		newCooldownTimeBuyer: BigInt(0),
 		state: determineNewContractState(decodedContract.state),
-	});
-
-	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		// Branch A (submit_result_time) while the deadline is ahead, else branch B
-		// (external_dispute_unlock_time) for dispute-window result rotation. See
-		// resolveSubmitResultConstrainAfterMs.
-		constrainAfterMs: resolveSubmitResultConstrainAfterMs(decodedContract, Date.now()),
-		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
 
 	const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
@@ -575,17 +573,6 @@ async function processL2SubmitResult(
 	}
 	const { utxo, decodedContract } = matchResult;
 
-	const datum = createDatumFromDecodedContractV2({
-		decodedContract,
-		buyerAddress: decodedContract.buyerAddress,
-		sellerAddress: decodedContract.sellerAddress,
-		blockchainIdentifier: request.blockchainIdentifier,
-		resultHash: request.NextAction.resultHash,
-		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime)),
-		newCooldownTimeBuyer: BigInt(0),
-		state: determineNewContractState(decodedContract.state),
-	});
-
 	// L2 (in-head) txs are checked against the HEAD's slot timeline AND the
 	// head's own (lagging) clock. Anchor the window to the head: env devnet
 	// override (own slot config) or the live head Tick/SyncedStatusReport time
@@ -598,10 +585,20 @@ async function processL2SubmitResult(
 			`${LOOKUP_DEFERRED_PREFIX} head clock is ${Math.ceil(headBehindMs / 1000)}s behind the seller cooldown; retry next tick`,
 		);
 	}
-	const { invalidBefore, invalidAfter } = createTxWindow(network, {
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
 		constrainAfterMs: resolveSubmitResultConstrainAfterMs(decodedContract, l2WindowOptions.nowMs ?? Date.now()),
 		constrainBeforeMs: decodedContract.sellerCooldownTime,
 		...l2WindowOptions,
+	});
+	const datum = createDatumFromDecodedContractV2({
+		decodedContract,
+		buyerAddress: decodedContract.buyerAddress,
+		sellerAddress: decodedContract.sellerAddress,
+		blockchainIdentifier: request.blockchainIdentifier,
+		resultHash: request.NextAction.resultHash,
+		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime), invalidAfterMs),
+		newCooldownTimeBuyer: BigInt(0),
+		state: determineNewContractState(decodedContract.state),
 	});
 
 	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);

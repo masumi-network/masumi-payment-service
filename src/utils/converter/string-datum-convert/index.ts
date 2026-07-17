@@ -362,11 +362,20 @@ export function decodeV2ContractDatum(
 
 const DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS = BigInt(1000 * 60 * 10);
 
-export function newCooldownTime(cooldownTime: bigint) {
-	// Add a blocktime buffer on top of the contract cooldown to avoid validity
-	// issues from L1 block-production jitter. On a Hydra head txs confirm in
-	// ~1s, so test harnesses may shrink the buffer via env; production L1 paths
-	// keep the 10-min default.
+export function newCooldownTime(cooldownTime: bigint, windowUpperMs?: number | bigint) {
+	// The vested_pay validator checks the continuation datum's cooldown against
+	// the tx validity UPPER bound (`cooldown_time = tx_latest_time +
+	// cooldown_period`), not against wall-clock. When the caller knows its
+	// window, compute from it exactly (+1s for slot-boundary rounding) — this
+	// stays valid regardless of head-clock drift or window-buffer settings.
+	if (windowUpperMs != null) {
+		return BigInt(windowUpperMs) + cooldownTime + BigInt(1000);
+	}
+	// Legacy wall-clock path (V1/L1 callers that build the datum before the
+	// window): the buffer must cover the window upper bound's max reach past
+	// `Date.now()` (default window: +5min afterBuffer +30s slot buffer). The
+	// 10-min default does; shrinking via env below ~6min risks the validator
+	// check failing whenever drift is small.
 	const rawBuffer = process.env.COOLDOWN_BLOCKTIME_BUFFER_MS;
 	let bufferMs = DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS;
 	if (rawBuffer != null && /^\d+$/.test(rawBuffer)) {

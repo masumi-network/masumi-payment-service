@@ -114,11 +114,22 @@ export function resolveHydraL2WindowOptions(provider: {
 			validitySlotBuffer: envCtx.validitySlotBuffer,
 		};
 	}
+	// In-head txs confirm in ~1s, so the L1-minded +5min after-buffer only
+	// pushes the window upper bound (and every upper-bound-derived datum
+	// cooldown) needlessly far out. Test harnesses may shrink it via env;
+	// unset keeps the L1 default. Applied on BOTH branches below: a fresh
+	// websocket often hasn't received a Tick yet (one every ~20s), and a wide
+	// wall-clock window built in that gap bakes a far-future cooldown into the
+	// datum that stalls the NEXT step (seen 2026-07-16: submit-result datum at
+	// Date.now()+361s → collection OutsideValidityIntervalUTxO).
+	const afterBufferRaw = process.env.HYDRA_L2_AFTER_BUFFER_MS;
+	const afterBufferMs = afterBufferRaw != null && /^\d+$/.test(afterBufferRaw) ? Number(afterBufferRaw) : undefined;
+	const afterBufferOverride = afterBufferMs != null ? { afterBufferMs } : {};
 	const headClock = provider.getHeadClock();
 	if (headClock) {
-		return { nowMs: headClock.chainTimeMs };
+		return { nowMs: headClock.chainTimeMs, ...afterBufferOverride };
 	}
-	return {};
+	return { ...afterBufferOverride };
 }
 
 /**

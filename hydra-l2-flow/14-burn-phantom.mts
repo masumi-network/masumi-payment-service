@@ -1,9 +1,13 @@
 /**
- * 14-burn-phantom — neutralize the Hydra 2.2.0 deposit re-apply phantom before Close.
+ * 14-burn-phantom — neutralize a Hydra deposit re-apply phantom before Close.
  *
- * Each node restart re-applies the head's deposit to the L2 ledger (upstream
- * idempotency bug, unfixed as of 2.2.0/master 2026-07-06), inflating the L2
- * UTxO total above the L1 head output's real capacity
+ * Root cause #1 (restart): a node restart re-applies the head's deposit to the
+ * L2 ledger because rotation replay drops pendingDeposits tracking (upstream
+ * checkpoint bug, cardano-scaling/hydra#2642, fixed by #2758 / released in
+ * 2.3.0). Root cause #2 (no restart needed): a separate, still-open bug where
+ * the deposit UTxO is usable on L2 before its L1 increment is observed
+ * (reported to the Hydra team 2026-07-14/15, no upstream issue number yet).
+ * Either one inflates the L2 UTxO total above the L1 head output's real capacity
  * (headLovelace − storedHeadAdaOverhead). Close then fails H65
  * (ChangedHeadAdaOverhead) because the off-chain builder re-computes the
  * overhead from the inflated snapshot.

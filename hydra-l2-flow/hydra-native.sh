@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# hydra-native.sh — run Hydra 2.2.0 hydra-nodes NATIVELY on Apple Silicon.
+# hydra-native.sh — run Hydra hydra-nodes NATIVELY on Apple Silicon (pinned to
+# HYDRA_VERSION, default 2.3.0).
 #
 # WHY: Hydra 2.2.0 added a Rust BLS accumulator (Partial Fanout). The published
 # linux/amd64 docker images run under Docker Desktop's Rosetta emulation on
@@ -30,14 +31,14 @@
 #   ./hydra-native.sh wait-sync # block until node drift < DRIFT_TARGET (default 60s)
 #   ./hydra-native.sh drift [n] # print node n's current drift in seconds (default node 1)
 #   ./hydra-native.sh status    # show node/bridge/API state
-#   ./hydra-native.sh publish   # (re)publish 2.2.0 reference scripts natively -> $DEMO/.env
+#   ./hydra-native.sh publish   # (re)publish HYDRA_VERSION reference scripts natively -> $DEMO/.env
 #   ./hydra-native.sh bin       # ensure native binary is present (download if missing)
 #
-# Testing an unreleased fix (e.g. master, ahead of the 2.2.0 tag) without
-# disturbing the pinned binary:
+# Testing an unreleased fix (e.g. master, ahead of the pinned HYDRA_VERSION
+# tag) without disturbing the pinned binary:
 #   HYDRA_BIN_TAG=master-6e2754c \
 #   HYDRA_BIN_RUN_ID=28878987397 \
-#   HYDRA_BIN_ARTIFACT=hydra-aarch64-darwin-2.2.0-46-g6e2754c5a \
+#   HYDRA_BIN_ARTIFACT=hydra-aarch64-darwin-2.3.0-46-g6e2754c5a \
 #     ./hydra-native.sh bin
 #   # then pass the same three env vars to `up`/`restart`/etc. to run against it.
 #
@@ -49,15 +50,16 @@ DEMO="${DEMO:-${HYDRA_DEMO_DIR:-$( \
     [ -d "$d" ] && { (cd "$d" && pwd); break; }; \
   done )}}"
 
-HYDRA_VERSION="${HYDRA_VERSION:-2.2.0}"
-# CI run that produced the native binaries for this release (no GitHub release
-# assets exist; the binaries are published as workflow artifacts).
+HYDRA_VERSION="${HYDRA_VERSION:-2.3.0}"
+# Only used for the HYDRA_BIN_TAG path below (testing an unreleased commit):
+# hydra-node CI publishes those as workflow artifacts, not release assets.
 HYDRA_BIN_RUN_ID="${HYDRA_BIN_RUN_ID:-27418396480}"
 HYDRA_BIN_ARTIFACT="${HYDRA_BIN_ARTIFACT:-hydra-aarch64-darwin-${HYDRA_VERSION}}"
 # Optional channel tag (e.g. "master-6e2754c") to test an unreleased fix
-# without disturbing the pinned 2.2.0 binary at .bin/hydra-node. Set alongside
-# HYDRA_BIN_RUN_ID/HYDRA_BIN_ARTIFACT to point at a specific CI artifact; the
-# binary lands at .bin/hydra-node-<tag> and is left in place for reuse/rollback.
+# without disturbing the pinned HYDRA_VERSION binary at .bin/hydra-node. Set
+# alongside HYDRA_BIN_RUN_ID/HYDRA_BIN_ARTIFACT to point at a specific CI
+# artifact; the binary lands at .bin/hydra-node-<tag> and is left in place for
+# reuse/rollback.
 HYDRA_BIN_TAG="${HYDRA_BIN_TAG:-}"
 
 NETWORK="${NETWORK:-devnet}"   # devnet | preprod
@@ -96,11 +98,20 @@ ensure_bin(){
     repair_dylibs
     return 0
   fi
-  command -v gh >/dev/null 2>&1 || { c_red "missing: gh (needed to download the native binary artifact)"; exit 1; }
-  c_blu "Downloading native $HYDRA_BIN_ARTIFACT (CI artifact, ~176 MiB)…"
+  command -v gh >/dev/null 2>&1 || { c_red "missing: gh (needed to download the native binary)"; exit 1; }
   local tmp; tmp="$(mktemp -d)"
-  gh run download "$HYDRA_BIN_RUN_ID" --repo cardano-scaling/hydra \
-    --name "$HYDRA_BIN_ARTIFACT" --dir "$tmp" || { c_red "download failed"; exit 1; }
+  if [ -n "$HYDRA_BIN_TAG" ]; then
+    c_blu "Downloading native $HYDRA_BIN_ARTIFACT (CI artifact, ~176 MiB)…"
+    gh run download "$HYDRA_BIN_RUN_ID" --repo cardano-scaling/hydra \
+      --name "$HYDRA_BIN_ARTIFACT" --dir "$tmp" || { c_red "download failed"; exit 1; }
+  else
+    # Tagged releases from 2.3.0 onward publish aarch64-darwin binaries as a
+    # release zip (2.2.0 and earlier had no release assets at all).
+    c_blu "Downloading native hydra-aarch64-darwin-${HYDRA_VERSION}.zip (release asset, ~176 MiB)…"
+    gh release download "$HYDRA_VERSION" --repo cardano-scaling/hydra \
+      --pattern "hydra-aarch64-darwin-${HYDRA_VERSION}.zip" --dir "$tmp" || { c_red "download failed"; exit 1; }
+    (cd "$tmp" && unzip -oq "hydra-aarch64-darwin-${HYDRA_VERSION}.zip") || { c_red "unzip failed"; exit 1; }
+  fi
   [ -f "$tmp/hydra-node" ] || { c_red "artifact missing hydra-node"; exit 1; }
   install -m 0755 "$tmp/hydra-node" "$NATIVE_BIN"
   [ -f "$tmp/hydra-tui" ] && install -m 0755 "$tmp/hydra-tui" "$BIN_DIR/hydra-tui"
@@ -232,6 +243,13 @@ start_node_preprod(){
   local other=$(( idx == 1 ? 2 : 1 ))
   local persist="$PREPROD_DIR/$PERSIST_SUBDIR/$party"
   mkdir -p "$persist"
+  # hydra-node re-extracts its embedded etcd to bin/etcd on EVERY boot by
+  # rewriting the file in place (same inode). On Apple Silicon, exec-ing a
+  # rewritten Mach-O while the previous etcd process is still winding down gets
+  # SIGKILLed by the kernel's code-signature cache (etcd "ExitFailure (-9)" at
+  # startup, observed 2026-07-16 on a drift-guard restart). Deleting first makes
+  # the extraction create a FRESH inode, which sidesteps the race entirely.
+  rm -f "$persist/bin/etcd"
   local other_vk; other_vk="$([ "$idx" = 1 ] && echo selling-hydra.vk || echo purchasing-hydra.vk)"
   local other_cvk; other_cvk="$([ "$idx" = 1 ] && echo selling-cardano.vk || echo purchasing-cardano.vk)"
   ( "$NATIVE_BIN" \
@@ -274,8 +292,11 @@ nodes_up(){
          && curl -s "http://127.0.0.1:4002/protocol-parameters" >/dev/null 2>&1; then ok=1; break; fi
       sleep 1
     done
-    [ "$ok" = 1 ] && c_grn "  both node APIs up (4001/4002)" || { c_red "  node APIs did not come up — see $STATE/node1.log / node2.log"; exit 1; }
-    return
+    # return (not exit): nodes_restart's retry loop must be able to catch this
+    # and try again — an exit here killed the whole restart on 2026-07-16 and
+    # left a dead node1 behind for wait-sync to poll blindly.
+    [ "$ok" = 1 ] && c_grn "  both node APIs up (4001/4002)" || { c_red "  node APIs did not come up — see $STATE/node1.log / node2.log"; return 1; }
+    return 0
   fi
 
   [ -f "$DEMO/.env" ] || publish
@@ -323,7 +344,8 @@ nodes_down(){
 }
 
 # ── drift / wait-sync / restart (preprod, blockfrost) ────────────────────────
-# Hydra 2.2.0's Blockfrost chain-follower has two modes (Hydra/Chain/Blockfrost.hs):
+# Hydra's Blockfrost chain-follower has two modes (Hydra/Chain/Blockfrost.hs;
+# still true as of 2.3.0, tracked upstream as cardano-scaling/hydra#2753):
 # a startup CATCH-UP loop that fetches blocks back-to-back at full API speed, and
 # a steady-state POLL loop that sleeps one block-time (~20s on preprod) and then
 # processes exactly ONE block. The poll loop therefore loses the per-block API
@@ -380,6 +402,12 @@ wait_sync(){
   while :; do
     local worst=0 i d
     for i in 1 2; do
+      # A dead node's log freezes, so its "drift" just tracks wall-clock — bail
+      # out immediately instead of blind-polling for the full timeout.
+      if ! { [ -f "$STATE/node$i.pid" ] && kill -0 "$(cat "$STATE/node$i.pid" 2>/dev/null)" 2>/dev/null; }; then
+        c_red "  node$i is NOT RUNNING — wait-sync aborted (see $STATE/node$i.log)"
+        return 1
+      fi
       d="$(node_drift "$STATE/node$i.log")"
       [ "$d" -gt "$worst" ] && worst="$d"
     done
@@ -390,10 +418,39 @@ wait_sync(){
   done
 }
 
+# Block (bounded) until neither node has a snapshot round in flight. Killing
+# both nodes mid-round can strand it forever: the etcd network layer persists
+# last-known-revision BEFORE the head logic durably processes a message
+# (Hydra/Network/Etcd.hs waitMessages, at-most-once across restarts), so a
+# ReqSn/AckSn lost in that window is never re-delivered and the protocol has
+# no retry — every later tx then fails TxInvalid (observed 2026-07-16,
+# recovered via POST /snapshot side-load). "In flight" = /snapshot/last-seen
+# reports anything but LastSeenSnapshot/NoSeenSnapshot.
+wait_no_inflight(){
+  [ "$NETWORK" = preprod ] || return 0
+  local waited=0 timeout="${INFLIGHT_TIMEOUT:-120}" busy port tag
+  while [ "$waited" -lt "$timeout" ]; do
+    busy=""
+    for port in 4001 4002; do
+      tag="$(curl -s --max-time 5 "http://127.0.0.1:$port/snapshot/last-seen" 2>/dev/null | grep -o '"tag":"[^"]*"')"
+      case "$tag" in
+        '"tag":"LastSeenSnapshot"'|'"tag":"NoSeenSnapshot"'|"") ;; # idle or unreachable
+        *) busy="$port:$tag" ;;
+      esac
+    done
+    [ -z "$busy" ] && return 0
+    [ "$waited" = 0 ] && c_blu "  snapshot round in flight ($busy) — delaying restart up to ${timeout}s…"
+    sleep 5; waited=$((waited+5))
+  done
+  c_red "  restart proceeding with round STILL in flight ($busy) — may need POST /snapshot side-load recovery"
+  return 0
+}
+
 # Restart the nodes in place (persistence intact → the open head survives; the
 # restarted follower re-runs its catch-up burst).
 nodes_restart(){
   local try
+  wait_no_inflight
   for try in 1 2 3; do
     nodes_down
     # Wait for the old processes to actually die and their ports (api/etcd) to

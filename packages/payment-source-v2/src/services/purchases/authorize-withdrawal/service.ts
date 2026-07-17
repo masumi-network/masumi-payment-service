@@ -141,6 +141,7 @@ function createAuthorizeWithdrawalDatum(params: {
 	sellerAddress: string;
 	blockchainIdentifier: string;
 	cooldownTime: bigint;
+	windowUpperMs: number;
 }) {
 	return createDatumFromDecodedContractV2({
 		decodedContract: params.decodedContract,
@@ -149,7 +150,7 @@ function createAuthorizeWithdrawalDatum(params: {
 		blockchainIdentifier: params.blockchainIdentifier,
 		resultHash: params.decodedContract.resultHash,
 		newCooldownTimeSeller: BigInt(0),
-		newCooldownTimeBuyer: newCooldownTime(params.cooldownTime),
+		newCooldownTimeBuyer: newCooldownTime(params.cooldownTime, params.windowUpperMs),
 		state: SmartContractState.WithdrawAuthorized,
 	});
 }
@@ -180,20 +181,21 @@ async function validateAndBuildItem(
 	// Aiken `AuthorizeWithdrawal` strictly compares new_datum.buyer/seller
 	// against the input's buyer/seller. Trust the decoded chain values so
 	// any DB drift cannot brick the tx with a silent field mismatch.
+	// Aiken `AuthorizeWithdrawal` requires `must_start_after(validity_range,
+	// buyer_cooldown_time)`. The default tx-window's `invalidBefore` is
+	// `now - 2.5min`, which is BEFORE any buyer cooldown set seconds ago.
+	// Bind the lower bound to the on-chain cooldown so the validator's
+	// start-after check is always satisfied.
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
+		constrainBeforeMs: decodedContract.buyerCooldownTime,
+	});
 	const datum = createAuthorizeWithdrawalDatum({
 		decodedContract,
 		buyerAddress: decodedContract.buyerAddress,
 		sellerAddress: decodedContract.sellerAddress,
 		blockchainIdentifier: request.blockchainIdentifier,
 		cooldownTime: BigInt(paymentContract.cooldownTime),
-	});
-	// Aiken `AuthorizeWithdrawal` requires `must_start_after(validity_range,
-	// buyer_cooldown_time)`. The default tx-window's `invalidBefore` is
-	// `now - 2.5min`, which is BEFORE any buyer cooldown set seconds ago.
-	// Bind the lower bound to the on-chain cooldown so the validator's
-	// start-after check is always satisfied.
-	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainBeforeMs: decodedContract.buyerCooldownTime,
+		windowUpperMs: invalidAfterMs,
 	});
 	return {
 		request,
@@ -265,15 +267,16 @@ async function processSinglePurchaseRequest(
 	if (decodedContract == null) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Invalid datum`);
 	}
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
+		constrainBeforeMs: decodedContract.buyerCooldownTime,
+	});
 	const datum = createAuthorizeWithdrawalDatum({
 		decodedContract,
 		buyerAddress: decodedContract.buyerAddress,
 		sellerAddress: decodedContract.sellerAddress,
 		blockchainIdentifier: request.blockchainIdentifier,
 		cooldownTime: BigInt(paymentContract.cooldownTime),
-	});
-	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainBeforeMs: decodedContract.buyerCooldownTime,
+		windowUpperMs: invalidAfterMs,
 	});
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
 	// Collateral must cover the pinned 3 ADA total_collateral. limitedFilteredUtxos
@@ -1052,13 +1055,6 @@ async function processL2AuthorizeWithdrawal(
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 invalid datum`);
 	}
 
-	const datum = createAuthorizeWithdrawalDatum({
-		decodedContract,
-		buyerAddress: decodedContract.buyerAddress,
-		sellerAddress: decodedContract.sellerAddress,
-		blockchainIdentifier: request.blockchainIdentifier,
-		cooldownTime: BigInt(paymentContract.cooldownTime),
-	});
 	// L2: anchor the validity window to the head's clock (env devnet override or
 	// live head Tick/SyncedStatusReport); the head's ledger clock can lag L1
 	// wall-clock by more than the default window buffers.
@@ -1069,9 +1065,17 @@ async function processL2AuthorizeWithdrawal(
 			`${LOOKUP_DEFERRED_PREFIX} head clock is ${Math.ceil(headBehindMs / 1000)}s behind the cooldown expiry; retry next tick`,
 		);
 	}
-	const { invalidBefore, invalidAfter } = createTxWindow(network, {
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
 		constrainBeforeMs: decodedContract.buyerCooldownTime,
 		...l2WindowOptions,
+	});
+	const datum = createAuthorizeWithdrawalDatum({
+		decodedContract,
+		buyerAddress: decodedContract.buyerAddress,
+		sellerAddress: decodedContract.sellerAddress,
+		blockchainIdentifier: request.blockchainIdentifier,
+		cooldownTime: BigInt(paymentContract.cooldownTime),
+		windowUpperMs: invalidAfterMs,
 	});
 
 	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);

@@ -48,7 +48,7 @@ export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:testpass@localhost:54
 NODE1="${NODE1:-http://127.0.0.1:4001}"
 CARDANO_CONTAINER="${CARDANO_CONTAINER:-demo-cardano-node-1}"
 HYDRA_NODE_CONTAINER="${HYDRA_NODE_CONTAINER:-demo-hydra-node-1-1}"
-HYDRA_IMAGE="${HYDRA_IMAGE:-ghcr.io/cardano-scaling/hydra-node:2.2.0}"
+HYDRA_IMAGE="${HYDRA_IMAGE:-ghcr.io/cardano-scaling/hydra-node:2.3.0}"
 TSX="${TSX:-$REPO/node_modules/.bin/tsx}"
 
 # Hydra 2.2.0 added a Rust BLS accumulator (Partial Fanout). The published
@@ -63,12 +63,22 @@ NETWORK="${NETWORK:-devnet}"
 export NETWORK
 export HYDRA_FLOW_NETWORK="$NETWORK"
 # Shrink newCooldownTime's blocktime buffer (default 10 min, sized for L1 block
-# jitter) for in-head runs where txs confirm in ~1s. With the seeded 60s
-# cooldownTime this cuts each cooldown wait from ~11 min to ~2 min. Test
-# harness only — production keeps the 10-min default.
+# jitter) for in-head runs where txs confirm in ~1s. Only the legacy
+# wall-clock path (V1) reads this; V2 datum cooldowns are now derived from the
+# tx window's upper bound (vested_pay compares against tx_latest_time, not
+# wall-clock — the old wall-clock formula only validated when head-clock drift
+# happened to be large, 2026-07-16).
 export COOLDOWN_BLOCKTIME_BUFFER_MS="${COOLDOWN_BLOCKTIME_BUFFER_MS:-60000}"
-# Countdown seconds ≈ cooldownTime(60s) + buffer(60s) + submit/observe margin.
-COOLDOWN_COUNTDOWN="${COOLDOWN_COUNTDOWN:-150}"
+# Shrink the L2 window's after-buffer (default +5min, L1-minded) so the
+# window-upper-derived V2 cooldowns stay short in-head: upper ≈ head_now +
+# 60s + 30 slot-buffer → cooldown ≈ head_now + 150s (with the seeded 60s
+# cooldownTime). Test harness only — production keeps the L1 default.
+export HYDRA_L2_AFTER_BUFFER_MS="${HYDRA_L2_AFTER_BUFFER_MS:-60000}"
+# Countdown seconds ≈ window-after-buffer(60s) + slot-buffer(30s) +
+# cooldownTime(60s) + submit/observe + drift margin. Drift grows ~8.5s/min
+# while waiting and the head clock only advances on new blocks, so 240s left
+# a ~24-slot shortfall on 2026-07-16; 360s absorbs it.
+COOLDOWN_COUNTDOWN="${COOLDOWN_COUNTDOWN:-360}"
 NATIVE_SH="$REPO/hydra-l2-flow/hydra-native.sh"
 NATIVE_STATE="$REPO/hydra-l2-flow/.native-state"
 NATIVE_LOG="$NATIVE_STATE/node1.log"
@@ -97,6 +107,15 @@ c_blu(){ printf '\033[36m%s\033[0m\n' "$*"; }
 # Fail fast with actionable guidance if the environment isn't ready.
 preflight(){
   local ok=1
+  # NETWORK trap: with live native preprod nodes, an invocation that forgot
+  # NETWORK=preprod silently takes devnet branches (tiny settle timeouts, no
+  # drift restart) — 2026-07-16 this killed 13-settle mid-Close. Fail loudly.
+  if [ "$NETWORK" != preprod ] && [ -f "$NATIVE_STATE/node1.pid" ] \
+     && kill -0 "$(cat "$NATIVE_STATE/node1.pid" 2>/dev/null)" 2>/dev/null; then
+    c_red "NETWORK=$NETWORK but native preprod hydra-nodes are running — did you forget NETWORK=preprod?"
+    c_red "  re-run as:  NETWORK=preprod $0 $*"
+    exit 1
+  fi
   command -v docker >/dev/null 2>&1 || { c_red "missing: docker (is Docker running?)"; ok=0; }
   command -v pnpm   >/dev/null 2>&1 || { c_red "missing: pnpm"; ok=0; }
   command -v node   >/dev/null 2>&1 || { c_red "missing: node"; ok=0; }
@@ -150,6 +169,14 @@ slotenv(){
 # No tx-sync runs in the harness → unlock hot wallets between manual steps.
 unlock(){ docker exec "$DB_CONTAINER" psql -U postgres -d masumi_hydra_test \
   -c 'UPDATE "HotWallet" SET "lockedAt"=NULL, "pendingTransactionId"=NULL;' >/dev/null 2>&1; }
+
+# How many in-head UTxOs does <address> own right now? (0 on any error)
+inhead_utxo_count(){
+  curl -s --max-time 10 "$NODE1/snapshot/utxo" | node -e "
+    let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
+      let n=0;try{const u=JSON.parse(d);for(const k of Object.keys(u))if(u[k].address==='$1')n++}catch{}
+      console.log(n)})" 2>/dev/null || echo 0
+}
 
 # Run a tsx flow script with a timeout (these scripts can leave an open handle
 # on exit). Forwards any extra args ("$@") to the script. In VERBOSE=1 mode the
@@ -287,15 +314,30 @@ cmd_up_preprod(){
   BUYER="$(grep -oE 'addr_test1q[a-z0-9]+' "$wout" | head -1)"; rm -f "$wout"
   [ -n "$BUYER" ] || { c_red "  could not derive buyer address"; exit 1; }
   echo "  buyer = ${BUYER:0:24}…"
-  RUN_TIMEOUT=90 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$BUYER" 40000000
+  # For ~3 min after the commit deposit shows in /snapshot/utxo the head can
+  # still reject every L2 tx ("Transaction is invalid" — increment not fully
+  # settled node-side; observed 2026-07-17). 02-fund-in-head gives up after
+  # 120s, so retry across that window and VERIFY the buyer's UTxO landed —
+  # a silent miss here kills the first flow's lock much later.
+  local fa
+  for fa in 1 2 3; do
+    RUN_TIMEOUT=150 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$BUYER" 40000000
+    [ "$(inhead_utxo_count "$BUYER")" -ge 1 ] && break
+    c_blu "  buyer UTxO not in head yet (attempt $fa/3) — retrying…"
+  done
+  if [ "$(inhead_utxo_count "$BUYER")" -lt 1 ]; then
+    c_red "  buyer has NO in-head UTxO after 3 funding attempts."
+    exit 1
+  fi
+  c_grn "  buyer funded ($(inhead_utxo_count "$BUYER") in-head UTxO)"
 
   c_blu "[5/5] Give the seller a base address + fund seller (20 ADA in head)…"
   RUN_TIMEOUT=40 run_tsx hydra-l2-flow/04-fix-seller.mts
   SELLER="$(node -e "console.log(require('$REPO/hydra-l2-flow/.seller.json').address)")"
   echo "  seller = ${SELLER:0:24}…"
-  RUN_TIMEOUT=90 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$SELLER" 20000000
+  RUN_TIMEOUT=150 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$SELLER" 20000000
 
-  local sutxo; sutxo=$(curl -s "$NODE1/snapshot/utxo" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const u=JSON.parse(d);let n=0;for(const k of Object.keys(u))if(u[k].address==='$SELLER')n++;console.log(n);})" 2>/dev/null)
+  local sutxo; sutxo="$(inhead_utxo_count "$SELLER")"
   if [ "${sutxo:-0}" -lt 1 ]; then
     c_red "  seller has NO in-head UTxO — funding failed (not enough ADA committed?)."
     exit 1
@@ -419,13 +461,13 @@ cmd_up(){
   BUYER="$(grep -oE 'addr_test1[qpvz][a-z0-9]+' "$wout" | head -1)"; rm -f "$wout"
   [ -n "$BUYER" ] || { c_red "  could not derive buyer address"; exit 1; }
   echo "  buyer = ${BUYER:0:24}…"
-  RUN_TIMEOUT=90 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$BUYER" 40000000
+  RUN_TIMEOUT=150 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$BUYER" 40000000
 
   c_blu "[5/5] Give the seller a base address + fund seller (20 ADA in head)…"
   RUN_TIMEOUT=40 run_tsx hydra-l2-flow/04-fix-seller.mts
   SELLER="$(node -e "console.log(require('$REPO/hydra-l2-flow/.seller.json').address)")"
   echo "  seller = ${SELLER:0:24}…"
-  RUN_TIMEOUT=90 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$SELLER" 20000000
+  RUN_TIMEOUT=150 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$SELLER" 20000000
 
   # Guard: the seller MUST hold an in-head UTxO or flow1/flow3 (seller-side
   # submit-result) will silently defer. Fail loudly here instead.
@@ -455,12 +497,17 @@ cmd_fund(){
   local wp=$!; for i in $(seq 1 40); do kill -0 $wp 2>/dev/null || break; sleep 1; done; kill $wp 2>/dev/null
   BUYER="$(grep -oE 'addr_test1q[a-z0-9]+' "$wout" | head -1)"; rm -f "$wout"
   SELLER="$(node -e "console.log(require('$REPO/hydra-l2-flow/.seller.json').address)" 2>/dev/null)"
-  c_blu "topping up buyer…"; RUN_TIMEOUT=90 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$BUYER" "${1:-10000000}"
-  [ -n "$SELLER" ] && { c_blu "topping up seller…"; RUN_TIMEOUT=90 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$SELLER" "${2:-5000000}"; }
+  # Defaults raised 10M/5M -> 30M/15M (2026-07-16): a single LOCK_LOVELACE=10M
+  # top-up left the buyer short by 7M on the very next flow's lock (fees +
+  # min-UTxO overhead across successive locks eat into a bare top-up faster
+  # than it looks on paper) — give real margin instead of exactly covering one lock.
+  c_blu "topping up buyer…"; RUN_TIMEOUT=150 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$BUYER" "${1:-30000000}"
+  [ -n "$SELLER" ] && { c_blu "topping up seller…"; RUN_TIMEOUT=150 run_tsx "hydra-l2-flow/02-fund-in-head.mts" "$SELLER" "${2:-15000000}"; }
 }
 
-# Preprod: hydra 2.2.0's Blockfrost follower loses ~17s/min (its poll loop sleeps
-# one block-time then applies ONE block) and once drift exceeds --unsynced-period
+# Preprod: hydra's Blockfrost follower loses ~17s/min (its poll loop sleeps
+# one block-time then applies ONE block — still open upstream as
+# cardano-scaling/hydra#2753 as of 2.3.0) and once drift exceeds --unsynced-period
 # (600s) the node rejects ALL client inputs (RejectedInputBecauseUnsynced) — with
 # no way to recover except a restart, which re-runs the startup catch-up burst.
 # Guard each step: when drift crosses DRIFT_GUARD (default 400s), restart the
@@ -472,7 +519,8 @@ drift_guard(){
   case "$d" in (*[!0-9]*|'') d=999999 ;; esac
   [ "$d" -lt "$limit" ] && return 0
   c_blu "   drift ${d}s ≥ ${limit}s — restarting hydra-nodes to trigger catch-up burst…"
-  NETWORK=preprod "$NATIVE_SH" restart
+  NETWORK=preprod "$NATIVE_SH" restart \
+    || { c_red "   restart FAILED — aborting run (head persistence intact; fix nodes and re-run)"; exit 1; }
   NETWORK=preprod "$NATIVE_SH" wait-sync || c_red "   wait-sync timed out — proceeding anyway"
   unlock
 }
@@ -506,10 +554,11 @@ wait_chain_past(){
 step(){ # step <label> <script> [extra env already exported]
   unlock; drift_guard; slotenv
   c_blu "── $1 (slot $HYDRA_L2_CURRENT_SLOT)"
-  local before hash attempt stepstart
+  local before hash attempt stepstart elog_before
   stepstart="$(date +%s)"
-  for attempt in 1 2; do
+  for attempt in 1 2 3 4; do
     before="$(nlog_len)"   # mark the log so verdict sees ONLY this step
+    elog_before="$(wc -l < /tmp/hydra-e2e.log 2>/dev/null || echo 0)"
     run_tsx "$2"
     hash="$(head_tx_since "$before")"
     [ -n "$hash" ] && break
@@ -522,6 +571,32 @@ step(){ # step <label> <script> [extra env already exported]
     if [ "$attempt" = 1 ] && verdict_since "$before" | grep -q OutsideValidityIntervalUTxO; then
       c_blu "   OutsideValidityIntervalUTxO — head clock behind tx window; waiting for head to catch up…"
       wait_chain_past "$stepstart" 3600 || c_red "   head still behind after 3600s — retrying anyway"
+      unlock; slotenv
+      c_blu "── $1 retry (slot $HYDRA_L2_CURRENT_SLOT)"
+      continue
+    fi
+    # V2_BATCH_LOOKUP_DEFERRED (packages/payment-source-v2/.../lookup-defer.ts):
+    # the service explicitly asks for "retry next tick", not a real failure —
+    # a production cron gets that next tick for free, but this one-shot script
+    # doesn't, so the harness has to supply it (observed 2026-07-16: authorize-
+    # refund deferred right after a mid-flow drift-guard restart).
+    if [ "$attempt" -lt 4 ] && tail -n +"$((elog_before + 1))" /tmp/hydra-e2e.log 2>/dev/null | grep -q "LOOKUP_DEFERRED"; then
+      c_blu "   LOOKUP_DEFERRED — service asked to retry next tick; waiting 20s…"
+      sleep 20
+      unlock; slotenv
+      c_blu "── $1 retry (slot $HYDRA_L2_CURRENT_SLOT)"
+      continue
+    fi
+    # "All inputs are spent. Transaction has probably already been included" —
+    # the same fresh-snapshot-ahead-of-the-ledger race documented for deposits
+    # (see 14-burn-phantom.mts) can also hit an ordinary in-head UTxO the
+    # instant a prior step's change lands: the service's snapshot already lists
+    # it, but the node's mempool-applicable ledger state hasn't caught up yet
+    # (observed 2026-07-16 in the production lock builder itself, not just this
+    # harness). Re-fetching a snapshot a few seconds later resolves it.
+    if [ "$attempt" -lt 4 ] && verdict_since "$before" | grep -q "TxInvalid"; then
+      c_blu "   TxInvalid (possible snapshot/ledger race) — waiting 10s and re-fetching…"
+      sleep 10
       unlock; slotenv
       c_blu "── $1 retry (slot $HYDRA_L2_CURRENT_SLOT)"
       continue
@@ -544,6 +619,11 @@ step(){ # step <label> <script> [extra env already exported]
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$1" "${hash:-NONE}" "${db:-NONE}" "$match" "${HYDRA_L2_CURRENT_SLOT:-?}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     >> "$EVIDENCE_TSV"
+  # Callers (cmd_flow1/2/3) must check this — without it a failed step (no head
+  # tx) was silently followed by a "=== FLOWn done ===" banner (observed
+  # 2026-07-16: flow3's lock failed on insufficient funds, every subsequent
+  # step then no-opped, and the harness still printed FLOW3 done).
+  [ -n "$hash" ]
 }
 
 # ── flow1 : happy path (seller paid) ─────────────────────────────────────────
@@ -551,8 +631,8 @@ cmd_flow1(){
   # past unlock so collection is reachable; future submit window.
   export LOCK_LOVELACE=10000000 SUBMIT_RESULT_OFFSET_MS=360000 UNLOCK_OFFSET_MS=-1200000 \
          DISPUTE_OFFSET_MS=1800000 PAYBY_OFFSET_MS=120000
-  step "lock"           hydra-l2-flow/03-lock.mts
-  step "submit-result"  hydra-l2-flow/06-submit-result.mts
+  step "lock"           hydra-l2-flow/03-lock.mts          || { c_red "=== FLOW1 FAILED at lock ==="; return 1; }
+  step "submit-result"  hydra-l2-flow/06-submit-result.mts || { c_red "=== FLOW1 FAILED at submit-result ==="; return 1; }
   # Restart for drift at cooldown START (node has the full wait to re-sync and
   # settle), never right before the validity-bounded step — that ordering is
   # what produced the 2026-07-06 authorize-withdrawal OutsideValidityIntervalUTxO.
@@ -560,7 +640,7 @@ cmd_flow1(){
   c_blu "── collection waits the contract seller-cooldown (~$((COOLDOWN_COUNTDOWN / 60)) min)…"
   countdown "$COOLDOWN_COUNTDOWN" "seller-cooldown"
   wait_chain_past "$(date +%s)" 3600
-  step "collection"     hydra-l2-flow/07-collection.mts
+  step "collection"     hydra-l2-flow/07-collection.mts    || { c_red "=== FLOW1 FAILED at collection ==="; return 1; }
   c_grn "=== FLOW1 done (lock → submit-result → collection) ==="
 }
 
@@ -568,10 +648,10 @@ cmd_flow1(){
 cmd_flow2(){
   unset SUBMIT_RESULT_OFFSET_MS UNLOCK_OFFSET_MS DISPUTE_OFFSET_MS PAYBY_OFFSET_MS REQUEST_REFUND_FROM_STATE
   export LOCK_LOVELACE=10000000
-  step "lock"             hydra-l2-flow/03-lock.mts
-  step "request-refund"   hydra-l2-flow/08-request-refund.mts
-  step "authorize-refund" hydra-l2-flow/09-authorize-refund.mts
-  step "collect-refund"   hydra-l2-flow/10-collect-refund.mts
+  step "lock"             hydra-l2-flow/03-lock.mts             || { c_red "=== FLOW2 FAILED at lock ==="; return 1; }
+  step "request-refund"   hydra-l2-flow/08-request-refund.mts   || { c_red "=== FLOW2 FAILED at request-refund ==="; return 1; }
+  step "authorize-refund" hydra-l2-flow/09-authorize-refund.mts || { c_red "=== FLOW2 FAILED at authorize-refund ==="; return 1; }
+  step "collect-refund"   hydra-l2-flow/10-collect-refund.mts   || { c_red "=== FLOW2 FAILED at collect-refund ==="; return 1; }
   c_grn "=== FLOW2 done (lock → request → authorize → collect-refund) ==="
 }
 
@@ -579,17 +659,19 @@ cmd_flow2(){
 cmd_flow3(){
   unset SUBMIT_RESULT_OFFSET_MS UNLOCK_OFFSET_MS DISPUTE_OFFSET_MS PAYBY_OFFSET_MS
   export LOCK_LOVELACE=10000000
-  step "lock"            hydra-l2-flow/03-lock.mts
-  step "submit-result"   hydra-l2-flow/06-submit-result.mts
+  step "lock"            hydra-l2-flow/03-lock.mts          || { c_red "=== FLOW3 FAILED at lock ==="; return 1; }
+  step "submit-result"   hydra-l2-flow/06-submit-result.mts || { c_red "=== FLOW3 FAILED at submit-result ==="; return 1; }
   export REQUEST_REFUND_FROM_STATE=ResultSubmitted
-  step "request-refund→Disputed" hydra-l2-flow/08-request-refund.mts
+  step "request-refund→Disputed" hydra-l2-flow/08-request-refund.mts \
+    || { c_red "=== FLOW3 FAILED at request-refund ==="; unset REQUEST_REFUND_FROM_STATE; return 1; }
   unset REQUEST_REFUND_FROM_STATE
   # Drift restart at cooldown START — see cmd_flow1 for rationale.
   DRIFT_GUARD="${DRIFT_GUARD:-250}" drift_guard
   c_blu "── authorize-withdrawal waits the contract buyer-cooldown (~$((COOLDOWN_COUNTDOWN / 60)) min)…"
   countdown "$COOLDOWN_COUNTDOWN" "buyer-cooldown"
   wait_chain_past "$(date +%s)" 3600
-  step "authorize-withdrawal" hydra-l2-flow/11-authorize-withdrawal.mts
+  step "authorize-withdrawal" hydra-l2-flow/11-authorize-withdrawal.mts \
+    || { c_red "=== FLOW3 FAILED at authorize-withdrawal ==="; return 1; }
   c_grn "=== FLOW3 done (lock → submit → request(→Disputed) → authorize-withdrawal) ==="
 }
 
@@ -597,11 +679,11 @@ cmd_flow3(){
 cmd_all(){
   cmd_up
   cmd_evidence_reset   # clean ledger so this run's EVIDENCE.md is coherent
-  c_blu "═══ FLOW 2 (refund path, no waits) ═══"; cmd_flow2
+  c_blu "═══ FLOW 2 (refund path, no waits) ═══"; cmd_flow2 || exit 1
   cmd_fund
-  c_blu "═══ FLOW 1 (happy path, ~13 min cooldown) ═══"; cmd_flow1
+  c_blu "═══ FLOW 1 (happy path, ~13 min cooldown) ═══"; cmd_flow1 || exit 1
   cmd_fund
-  c_blu "═══ FLOW 3 (dispute path, ~16 min cooldown) ═══"; cmd_flow3
+  c_blu "═══ FLOW 3 (dispute path, ~16 min cooldown) ═══"; cmd_flow3 || exit 1
   c_blu "═══ SETTLEMENT (Close → Fanout, back to L1) ═══"; cmd_settle
   c_grn "=== ALL FLOWS DONE — run '$0 verify' for the final head state ==="
 }
@@ -686,13 +768,18 @@ settle_target_lovelace(){
   echo $(( lovelace - ${HEAD_ADA_OVERHEAD:-2517040} ))
 }
 
-# Neutralize the hydra 2.2.0 deposit re-apply phantom before Close: every node
-# restart re-applies the head's deposit into the L2 ledger (upstream idempotency
-# bug, unfixed on master as of 2026-07-06), so by settle time
-# L2_total > headLovelace − storedOverhead and Close fails H65
-# (ChangedHeadAdaOverhead). In-head tx fees destroy L2 value, so burning exactly
-# the surplus as an L2 fee restores consistency. Proven on-chain 2026-07-02
-# (close 94f7d95f…). No-op when there is no phantom (e.g. restart-free runs).
+# Neutralize a deposit re-apply phantom before Close: a node restart could
+# re-apply the head's deposit into the L2 ledger (upstream checkpoint bug,
+# cardano-scaling/hydra#2642 — dropped pendingDeposits on rotation replay, fixed
+# by #2758 and released in 2.3.0), so by settle time L2_total >
+# headLovelace − storedOverhead and Close fails H65 (ChangedHeadAdaOverhead). A
+# SEPARATE, still-open bug can also produce this phantom with NO restart
+# involved (deposit UTxO usable on L2 before its L1 increment is observed —
+# reported to the Hydra team 2026-07-14/15, no upstream issue number yet), so
+# this guard stays even on 2.3.0. In-head tx fees destroy L2 value, so burning
+# exactly the surplus as an L2 fee restores consistency. Proven on-chain
+# 2026-07-02 (close 94f7d95f…). No-op when there is no phantom (e.g.
+# restart-free runs with neither bug triggered).
 settle_burn_phantom(){
   [ "$NETWORK" = preprod ] || return 0
   local target="${HEAD_TARGET_LOVELACE:-$(settle_target_lovelace)}"
@@ -721,7 +808,8 @@ cmd_settle(){
     fanout_wait_ms="${FANOUT_WAIT_MS:-900000}"
     settle_timeout="${SETTLE_TIMEOUT:-2000}"
   elif [ "$NETWORK" = preprod ]; then
-    # The 2.2.0 Blockfrost poll loop loses ~17s/min and only the STARTUP
+    # The Blockfrost poll loop loses ~17s/min (still open upstream as
+    # cardano-scaling/hydra#2753 as of 2.3.0) and only the STARTUP
     # catch-up burst can close the gap (see BLOCKFROST-PLAN.md). By settle time
     # a full run has accumulated 600s+ of drift, so the unsynced gate would
     # reject the Close input outright. Restart both nodes (persistence keeps
@@ -735,8 +823,13 @@ cmd_settle(){
     # Close observation + 220s contestation period + fanout posting, all while
     # drift regrows at ~17s/min from ~0. settle_timeout covers both
     # FANOUT_WAIT_MS budgets (ReadyToFanout wait + fanout retry loop) + Close.
+    # 1400s measured too tight on 2026-07-16: Close 07:08→07:12 (4m) + contestation
+    # wait to ReadyToFanout 07:12→07:21 (9m) + fanout retry-to-confirm 07:21→07:34
+    # (13m) = ~26m — the watchdog killed run_tsx at ~23.3m, ~2 minutes before the
+    # fanout tx (already posted and valid on-chain) was actually observed and
+    # logged. Settlement itself was NOT the failure — the reporting was.
     fanout_wait_ms=600000
-    settle_timeout=1400
+    settle_timeout=2200
   else
     fanout_wait_ms=30000
     settle_timeout=150
@@ -749,6 +842,110 @@ cmd_settle(){
     RUN_TIMEOUT="$settle_timeout" run_tsx hydra-l2-flow/13-settle.mts
   # Fold the settlement into the combined evidence report (best-effort).
   [ -s "$EVIDENCE_TSV" ] && cmd_evidence || true
+}
+
+# ── precheck : verify + auto-heal everything a smooth full run needs ─────────
+# One idempotent command to run BEFORE `all` (or any flow). Covers every
+# failure class from the 2026-07-16 marathon: dead Docker daemon, stopped test
+# DB, dead hydra-nodes, a wedged snapshot round, unbounded Blockfrost drift,
+# and underfunded in-head wallets. Safe to re-run any time.
+cmd_precheck(){
+  # 1. Docker daemon (session teardown can quit Docker Desktop with it).
+  if ! docker info >/dev/null 2>&1; then
+    c_blu "precheck: docker daemon down — launching Docker Desktop…"
+    open -a Docker 2>/dev/null
+    local w=0; until docker info >/dev/null 2>&1 || [ $w -ge 90 ]; do sleep 3; w=$((w+3)); done
+    docker info >/dev/null 2>&1 || { c_red "  ✗ docker daemon did not come up"; return 1; }
+  fi
+  c_grn "  ✓ docker daemon"
+
+  # 2. Test DB container + schema (Prisma ECONNREFUSED / missing HydraHead otherwise).
+  if ! docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
+    docker start "$DB_CONTAINER" >/dev/null 2>&1 \
+      || { c_red "  ✗ test DB container '$DB_CONTAINER' missing — run '$0 up' once to create+seed it"; return 1; }
+  fi
+  local w=0; until docker exec "$DB_CONTAINER" pg_isready -U postgres >/dev/null 2>&1 || [ $w -ge 30 ]; do sleep 1; w=$((w+1)); done
+  local heads; heads="$(docker exec "$DB_CONTAINER" psql -U postgres -d masumi_hydra_test -t -c 'SELECT count(*) FROM "HydraHead";' 2>/dev/null | tr -d ' \n')"
+  [ -n "$heads" ] && [ "$heads" -ge 1 ] 2>/dev/null \
+    || { c_red "  ✗ test DB has no HydraHead row — run '$0 up' to seed"; return 1; }
+  c_grn "  ✓ test DB up + seeded ($heads head)"
+
+  # 3. hydra-nodes alive + APIs up. Started detached so they survive the
+  #    calling shell/session (2026-07-16: session teardown killed them).
+  if ! { curl -s --max-time 5 "$NODE1/protocol-parameters" >/dev/null 2>&1 \
+      && curl -s --max-time 5 "http://127.0.0.1:4002/protocol-parameters" >/dev/null 2>&1; }; then
+    c_blu "precheck: hydra-nodes down — starting detached…"
+    nohup bash -c "NETWORK=preprod '$NATIVE_SH' up" >/dev/null 2>&1 & disown
+    local w=0
+    until { curl -s --max-time 5 "$NODE1/protocol-parameters" >/dev/null 2>&1 \
+        && curl -s --max-time 5 "http://127.0.0.1:4002/protocol-parameters" >/dev/null 2>&1; } || [ $w -ge 180 ]; do
+      sleep 5; w=$((w+5))
+    done
+    curl -s --max-time 5 "$NODE1/protocol-parameters" >/dev/null 2>&1 \
+      || { c_red "  ✗ node APIs did not come up — see $NATIVE_STATE/node*.log"; return 1; }
+  fi
+  c_grn "  ✓ both hydra-node APIs up"
+
+  # 4. Snapshot pipeline not wedged (stranded round: one node SeenSnapshot,
+  #    peer LastSeenSnapshot — etcd ack-before-process loss). Auto-recover via
+  #    POST /snapshot side-load of the confirmed snapshot on BOTH nodes.
+  local wedged=0 port tag
+  for port in 4001 4002; do
+    tag="$(curl -s --max-time 5 "http://127.0.0.1:$port/snapshot/last-seen" 2>/dev/null | grep -o '"tag":"[^"]*"')"
+    case "$tag" in '"tag":"LastSeenSnapshot"'|'"tag":"NoSeenSnapshot"') ;; *) wedged=1 ;; esac
+  done
+  if [ "$wedged" = 1 ]; then
+    c_blu "precheck: snapshot round in flight/stranded — waiting 30s then side-loading if still stuck…"
+    sleep 30
+    tag="$(curl -s --max-time 5 "$NODE1/snapshot/last-seen" 2>/dev/null | grep -o '"tag":"[^"]*"')"
+    if [ "$tag" != '"tag":"LastSeenSnapshot"' ] && [ "$tag" != '"tag":"NoSeenSnapshot"' ]; then
+      curl -s --max-time 10 "$NODE1/snapshot" > /tmp/precheck-confirmed-snapshot.json
+      for port in 4001 4002; do
+        curl -s --max-time 90 -X POST -H 'Content-Type: application/json' \
+          --data @/tmp/precheck-confirmed-snapshot.json "http://127.0.0.1:$port/snapshot" >/dev/null
+      done
+      tag="$(curl -s --max-time 5 "$NODE1/snapshot/last-seen" 2>/dev/null | grep -o '"tag":"[^"]*"')"
+      [ "$tag" = '"tag":"LastSeenSnapshot"' ] \
+        || { c_red "  ✗ side-load did not un-wedge the head — investigate /snapshot/last-seen on both nodes"; return 1; }
+      c_grn "  ✓ stranded snapshot round recovered via side-load"
+    else
+      c_grn "  ✓ in-flight round completed on its own"
+    fi
+  else
+    c_grn "  ✓ snapshot pipeline idle on both nodes"
+  fi
+
+  # 5. Drift < 300s. Plain restarts' catch-up burst can stall on big backlogs
+  #    (observed plateau ~900-1080s), so heal with a TIP-ANCHORED restart:
+  #    --start-chain-from at the live Blockfrost tip collapses drift instantly.
+  local d1 d2 worst
+  d1="$(NETWORK=preprod "$NATIVE_SH" drift 1)"; d2="$(NETWORK=preprod "$NATIVE_SH" drift 2)"
+  worst=$(( d1 > d2 ? d1 : d2 ))
+  if [ "$worst" -ge 300 ] 2>/dev/null; then
+    c_blu "precheck: drift ${worst}s — tip-anchored restart…"
+    local key tip
+    key="$(tr -d ' \n' < "$REPO/hydra-l2-flow/preprod/blockfrost.txt")"
+    tip="$(curl -s -H "project_id: $key" https://cardano-preprod.blockfrost.io/api/v0/blocks/latest \
+      | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const b=JSON.parse(d);console.log(b.slot+'.'+b.hash)})")"
+    [ -n "$tip" ] || { c_red "  ✗ could not fetch Blockfrost tip"; return 1; }
+    NETWORK=preprod START_CHAIN_FROM="$tip" "$NATIVE_SH" restart \
+      || { c_red "  ✗ tip-anchored restart failed"; return 1; }
+    NETWORK=preprod WAIT_SYNC_TIMEOUT=300 "$NATIVE_SH" wait-sync \
+      || { c_red "  ✗ nodes not in sync after tip-anchor"; return 1; }
+    d1="$(NETWORK=preprod "$NATIVE_SH" drift 1)"; d2="$(NETWORK=preprod "$NATIVE_SH" drift 2)"
+  fi
+  c_grn "  ✓ drift OK (node1 ${d1}s, node2 ${d2}s)"
+
+  # 6. In-head wallet balances — cmd_fund is idempotent (skips when the target
+  #    UTxO already exists) and is the same mechanism the flows use.
+  cmd_fund || { c_red "  ✗ wallet top-up failed"; return 1; }
+  c_grn "  ✓ buyer/seller in-head funding topped up"
+
+  # 7. Non-blocking hygiene warnings.
+  local logsz; logsz="$(stat -f%z "$NATIVE_STATE/node1.log" 2>/dev/null || echo 0)"
+  [ "$logsz" -gt 209715200 ] && c_red "  ⚠ node1.log >200MB — build-evidence.cjs may OOM (report only; settlement unaffected)"
+
+  c_grn "=== PRECHECK PASSED — ready for: NETWORK=preprod $0 all (or flow2/flow1/flow3/settle) ==="
 }
 
 cmd_down(){
@@ -767,6 +964,7 @@ case "${1:-}" in
   flow3)  preflight "$@"; cmd_flow3 ;;
   fund)   preflight "$@"; cmd_fund "${2:-}" "${3:-}" ;;
   op)     preflight "$@"; step "${2:?usage: op <label> <script>}" "${3:?usage: op <label> <script>}" ;;
+  precheck) preflight "$@"; cmd_precheck ;;
   verify) cmd_verify ;;
   settle) preflight "$@"; cmd_settle ;;
   evidence)       cmd_evidence ;;

@@ -134,6 +134,7 @@ function createRequestRefundDatum(params: {
 	decodedContract: DecodedV1ContractDatum;
 	blockchainIdentifier: string;
 	cooldownTime: bigint;
+	windowUpperMs: number;
 }) {
 	// Aiken SetRefundRequested requires every field of the continuation datum
 	// (including buyer/seller addresses AND return addresses) to equal the
@@ -148,7 +149,7 @@ function createRequestRefundDatum(params: {
 		blockchainIdentifier: params.blockchainIdentifier,
 		resultHash: params.decodedContract.resultHash,
 		newCooldownTimeSeller: BigInt(0),
-		newCooldownTimeBuyer: newCooldownTime(params.cooldownTime),
+		newCooldownTimeBuyer: newCooldownTime(params.cooldownTime, params.windowUpperMs),
 		state:
 			params.decodedContract.resultHash == null || params.decodedContract.resultHash === ''
 				? SmartContractState.RefundRequested
@@ -179,14 +180,15 @@ async function validateAndBuildItem(
 	if (decodedContract == null) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Invalid datum`);
 	}
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
+		constrainAfterMs: decodedContract.unlockTime,
+		constrainBeforeMs: decodedContract.buyerCooldownTime,
+	});
 	const datum = createRequestRefundDatum({
 		decodedContract,
 		blockchainIdentifier: request.blockchainIdentifier,
 		cooldownTime: BigInt(paymentContract.cooldownTime),
-	});
-	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainAfterMs: decodedContract.unlockTime,
-		constrainBeforeMs: decodedContract.buyerCooldownTime,
+		windowUpperMs: invalidAfterMs,
 	});
 	return {
 		request,
@@ -272,14 +274,15 @@ async function processSinglePurchaseRequest(
 	if (decodedContract == null) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Invalid datum`);
 	}
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
+		constrainAfterMs: decodedContract.unlockTime,
+		constrainBeforeMs: decodedContract.buyerCooldownTime,
+	});
 	const datum = createRequestRefundDatum({
 		decodedContract,
 		blockchainIdentifier: request.blockchainIdentifier,
 		cooldownTime: BigInt(paymentContract.cooldownTime),
-	});
-	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainAfterMs: decodedContract.unlockTime,
-		constrainBeforeMs: decodedContract.buyerCooldownTime,
+		windowUpperMs: invalidAfterMs,
 	});
 
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
@@ -1079,11 +1082,6 @@ async function processL2RequestRefund(
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 invalid datum`);
 	}
 
-	const datum = createRequestRefundDatum({
-		decodedContract,
-		blockchainIdentifier: request.blockchainIdentifier,
-		cooldownTime: BigInt(paymentContract.cooldownTime),
-	});
 	// L2: anchor the validity window to the head's clock (env devnet override or
 	// live head Tick/SyncedStatusReport); the head's ledger clock can lag L1
 	// wall-clock by more than the default window buffers.
@@ -1094,10 +1092,16 @@ async function processL2RequestRefund(
 			`${LOOKUP_DEFERRED_PREFIX} head clock is ${Math.ceil(headBehindMs / 1000)}s behind the buyer cooldown; retry next tick`,
 		);
 	}
-	const { invalidBefore, invalidAfter } = createTxWindow(network, {
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
 		constrainAfterMs: decodedContract.unlockTime,
 		constrainBeforeMs: decodedContract.buyerCooldownTime,
 		...l2WindowOptions,
+	});
+	const datum = createRequestRefundDatum({
+		decodedContract,
+		blockchainIdentifier: request.blockchainIdentifier,
+		cooldownTime: BigInt(paymentContract.cooldownTime),
+		windowUpperMs: invalidAfterMs,
 	});
 
 	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);

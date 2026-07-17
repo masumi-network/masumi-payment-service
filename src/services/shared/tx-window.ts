@@ -4,6 +4,13 @@ import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 export type TxWindow = {
 	invalidBefore: number;
 	invalidAfter: number;
+	// Unix-ms of the END of the `invalidAfter` slot — the `tx_latest_time` the
+	// on-chain validator sees. Datum fields derived from the validity upper
+	// bound (vested_pay: `new cooldown >= tx_latest_time + cooldown_period`)
+	// must be computed from THIS, not from `Date.now()`, or the check fails
+	// whenever the window is not anchored to the caller's wall clock (Hydra
+	// head-clock windows, shrunk buffers).
+	invalidAfterMs: number;
 };
 
 type SupportedMeshNetwork = 'mainnet' | 'preprod' | 'testnet' | 'preview';
@@ -57,6 +64,8 @@ export function createTxWindow(
 				? Number(options.constrainAfterMs)
 				: options.constrainAfterMs;
 
+	const slotEndMs = (slot: number) => (slot + 1 - slotConfig.zeroSlot) * slotConfig.slotLength + slotConfig.zeroTime;
+
 	const defaultInvalidBefore = unixTimeToEnclosingSlot(nowMs - beforeBufferMs, slotConfig) - 1;
 	const invalidBefore =
 		constrainBeforeMsNum == null
@@ -74,9 +83,11 @@ export function createTxWindow(
 		// bound, so widening it is always safe: keep at least the default
 		// buffer's width above `invalidBefore`.
 		const minWindowSlots = validitySlotBuffer + Math.ceil((beforeBufferMs + afterBufferMs) / 1000);
+		const wideInvalidAfter = Math.max(defaultInvalidAfter, invalidBefore + minWindowSlots);
 		return {
 			invalidBefore,
-			invalidAfter: Math.max(defaultInvalidAfter, invalidBefore + minWindowSlots),
+			invalidAfter: wideInvalidAfter,
+			invalidAfterMs: slotEndMs(wideInvalidAfter),
 		};
 	}
 
@@ -113,5 +124,6 @@ export function createTxWindow(
 	return {
 		invalidBefore,
 		invalidAfter,
+		invalidAfterMs: slotEndMs(invalidAfter),
 	};
 }

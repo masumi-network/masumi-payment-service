@@ -70,34 +70,31 @@ function signWithCardanoCli(cborHex: string, credKeyPath: string): string {
 	}
 }
 
-async function main() {
-	if (!MASUMI_ADDR) throw new Error('usage: 02-fund-in-head.mts <masumi_addr> [amount]');
-	const node = new HydraNode({ httpUrl: 'http://127.0.0.1:4001' });
-	node.connect();
-	await new Promise((r) => setTimeout(r, 1500));
+// A freshly-observed deposit can appear in /snapshot/utxo before hydra-node has
+// actually incorporated its Increment into the confirmed L2 ledger — spending it
+// too early fails with ConwayMempoolFailure "All inputs are spent" (the deposit's
+// original L1 UTxO isn't a real spendable input yet). No restart or drift needed
+// to trigger this; retry with a fresh snapshot fetch until the increment lands.
+const FUND_RETRY_DEADLINE_MS = 120_000;
+const FUND_RETRY_DELAY_MS = 8_000;
 
-	const provider = new HydraProvider({ node });
-	await new Promise((r) => setTimeout(r, 600));
-
+async function attemptFund(node: HydraNode, provider: HydraProvider, aliceFundsAddr: string): Promise<boolean> {
 	const utxos = await node.snapshotUTxO();
-	log(`in-head UTxOs: ${utxos.length}`);
-	for (const u of utxos) {
-		const ada = u.output.amount.find((a) => a.unit === 'lovelace')?.quantity;
-		log(`  ${u.input.txHash.slice(0, 12)}…#${u.input.outputIndex} ${u.output.address.slice(0, 22)}… ${ada}`);
-	}
 	// Pick the largest pure-ADA UTxO owned by alice-funds (devnet) or purchasing (preprod) as the funding source.
 	// Exclude datum-bearing (script) outputs — they can't be key-signed.
-	const ALICE_FUNDS_ADDR = NETWORK === 'preprod' ? derivePurchasingAddr() : 'addr_test1vp5cxztpc6hep9ds7fjgmle3l225tk8ske3rmwr9adu0m6qchmx5z';
 	const source = [...utxos]
 		.filter(
 			(u) =>
 				!u.output.plutusData &&
-				u.output.address === ALICE_FUNDS_ADDR &&
+				u.output.address === aliceFundsAddr &&
 				u.output.amount.length === 1 &&
 				u.output.amount[0].unit === 'lovelace',
 		)
 		.sort((a, b) => Number(BigInt(b.output.amount[0].quantity) - BigInt(a.output.amount[0].quantity)))[0];
-	if (!source) throw new Error('no pure-ADA in-head UTxO to fund from');
+	if (!source) {
+		log('no pure-ADA in-head UTxO to fund from yet');
+		return false;
+	}
 	log(
 		`funding source: ${source.input.txHash.slice(0, 12)}…#${source.input.outputIndex} (${source.output.amount[0].quantity}) owner=${source.output.address.slice(0, 22)}…`,
 	);
@@ -124,6 +121,51 @@ async function main() {
 		new Promise<boolean>((r) => setTimeout(() => r(false), 15000)),
 	]);
 	log(`confirmed in snapshot: ${confirmed}`);
+	return confirmed;
+}
+
+async function main() {
+	if (!MASUMI_ADDR) throw new Error('usage: 02-fund-in-head.mts <masumi_addr> [amount]');
+	const node = new HydraNode({ httpUrl: 'http://127.0.0.1:4001' });
+	node.connect();
+	await new Promise((r) => setTimeout(r, 1500));
+
+	const provider = new HydraProvider({ node });
+	await new Promise((r) => setTimeout(r, 600));
+
+	const ALICE_FUNDS_ADDR = NETWORK === 'preprod' ? derivePurchasingAddr() : 'addr_test1vp5cxztpc6hep9ds7fjgmle3l225tk8ske3rmwr9adu0m6qchmx5z';
+
+	const start = Date.now();
+	let confirmed = false;
+	let attempt = 0;
+	while (!confirmed && Date.now() - start < FUND_RETRY_DEADLINE_MS) {
+		attempt += 1;
+		log(`attempt ${attempt}…`);
+		// Already-landed check first: a prior attempt's tx may confirm after its own
+		// 15s wait timed out, or a retry can catch up on an earlier partial success.
+		const already = (await node.snapshotUTxO()).filter(
+			(u) => u.output.address === MASUMI_ADDR && u.output.amount.some((a) => a.unit === 'lovelace' && BigInt(a.quantity) >= BigInt(AMOUNT)),
+		);
+		if (already.length > 0) {
+			confirmed = true;
+			break;
+		}
+		try {
+			confirmed = await attemptFund(node, provider, ALICE_FUNDS_ADDR);
+		} catch (e) {
+			// The race can throw synchronously too — e.g. Mesh's submitTx rejecting
+			// with "Transaction is invalid" when the deposit UTxO isn't a real
+			// spendable input yet. A throw here used to escape straight to the
+			// outer catch and exit after one attempt (observed 2026-07-16); treat
+			// it exactly like a non-confirmation so the retry loop keeps going.
+			log(`attempt threw (${e instanceof Error ? e.message : String(e)}) — treating as not confirmed`);
+			confirmed = false;
+		}
+		if (!confirmed && Date.now() - start < FUND_RETRY_DEADLINE_MS) {
+			log(`not confirmed — retrying in ${FUND_RETRY_DELAY_MS / 1000}s (deposit/increment may not have landed yet)`);
+			await new Promise((r) => setTimeout(r, FUND_RETRY_DELAY_MS));
+		}
+	}
 
 	const after = await node.snapshotUTxO();
 	const masumiUtxos = after.filter((u) => u.output.address === MASUMI_ADDR);
@@ -131,6 +173,11 @@ async function main() {
 	for (const u of masumiUtxos) {
 		const ada = u.output.amount.find((a) => a.unit === 'lovelace')?.quantity;
 		log(`  ${u.input.txHash.slice(0, 16)}…#${u.input.outputIndex} ${ada} lovelace`);
+	}
+
+	if (!confirmed) {
+		console.error(`[fund-in-head] FATAL: funding tx never confirmed after ${FUND_RETRY_DEADLINE_MS / 1000}s`);
+		process.exit(1);
 	}
 	process.exit(0);
 }
