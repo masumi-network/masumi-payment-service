@@ -1188,7 +1188,6 @@ export async function updateWalletTransactionHash() {
 				deletedAt: null,
 				PendingTransaction: null,
 				PendingSwapTransaction: null,
-				PendingFundTransfer: null,
 			},
 			include: {
 				PaymentSource: { include: { PaymentSourceConfig: true } },

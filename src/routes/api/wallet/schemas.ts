@@ -102,21 +102,70 @@ export const patchWalletSchemaInput = z.object({
 
 export const patchWalletSchemaOutput = getWalletSchemaOutput;
 
+/**
+ * A native asset unit: 56 hex chars of policy id, then an optional hex asset
+ * name (asset names are bytes, so an odd number of hex chars cannot exist).
+ *
+ * `lovelace` is deliberately NOT accepted — ADA is carried by `lovelaceAmount`.
+ * Accepting it here silently loses funds: mesh's `toValue` picks lovelace with
+ * `assets.find(...)` (first match wins, no summing), and the service prepends
+ * its own validated `lovelaceAmount` entry ahead of this list, so a caller's
+ * lovelace entry is dropped on the floor with no error.
+ */
+const ASSET_UNIT_PATTERN = /^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{2})*$/;
+
+/** Positive integer, no leading zeros. Rejects '0', '-5', 'abc', '1e9', '1.5'. */
+const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
+
+/**
+ * 20 digits of lovelace is ~10^20, four orders of magnitude above the 45e15
+ * lovelace total supply. This bounds the string handed to BigInt() rather than
+ * capping the transfer: the wallet balance is the real limit.
+ */
+const MAX_LOVELACE_DIGITS = 20;
+
+/**
+ * min-UTxO grows with the serialized size of the output's value, and this route
+ * enforces a flat 2 ADA floor. Roughly 0.2-0.3 ADA per distinct policy means
+ * 2 ADA stops covering the output somewhere past a handful of assets, at which
+ * point `build()` fails inside the scheduler rather than at the API. Cap the
+ * bundle so that failure mode stays out of reach; a larger payout can raise
+ * `lovelaceAmount` or split across transfers.
+ */
+const MAX_FUND_TRANSFER_ASSETS = 10;
+
 export const postWalletFundSchemaInput = z.object({
 	fromWalletAddress: z.string().min(1).max(250).describe('The Cardano address of the hot wallet to send funds from'),
 	toAddress: z.string().min(1).max(250).describe('The Cardano address to send funds to'),
 	lovelaceAmount: z
 		.string()
-		.min(1)
+		.regex(POSITIVE_INTEGER_PATTERN, 'lovelaceAmount must be a positive integer in lovelace')
+		.max(MAX_LOVELACE_DIGITS, 'lovelaceAmount is implausibly large')
 		.describe('Amount of lovelace to transfer (minimum 2000000 = 2 ADA)')
+		// Guarded by the regex above: BigInt() throws a SyntaxError on bad input,
+		// and zod does not catch throws inside .transform() — they escape
+		// safeParse and surface as a 500 on what is a plain client input error.
 		.transform((s) => BigInt(s)),
 	assets: z
 		.array(
 			z.object({
-				unit: z.string().min(1).describe('Asset unit (policy id + hex asset name, or "lovelace")'),
-				quantity: z.string().min(1).describe('Amount of the asset to transfer'),
+				unit: z
+					.string()
+					.regex(ASSET_UNIT_PATTERN, 'unit must be a policy id (56 hex chars) followed by the hex asset name')
+					.describe('Asset unit: policy id (56 hex chars) followed by the hex asset name. Not "lovelace".'),
+				quantity: z
+					.string()
+					.regex(POSITIVE_INTEGER_PATTERN, 'quantity must be a positive integer')
+					.describe('Amount of the asset to transfer, in its smallest unit'),
 			}),
 		)
+		.max(MAX_FUND_TRANSFER_ASSETS)
+		// Duplicates are silently wrong rather than rejected downstream: mesh's
+		// `toValue` builds the multiasset map with `Map.set`, so a repeated unit
+		// is last-wins, not summed.
+		.refine((assets) => new Set(assets.map((asset) => asset.unit)).size === assets.length, {
+			message: 'assets contains the same unit more than once',
+		})
 		.optional()
 		.describe('Additional native assets to transfer alongside lovelace'),
 });
@@ -152,10 +201,17 @@ export const getWalletFundSchemaInput = z
 			.optional()
 			.describe('Query all fund transfers for a wallet by its Cardano address'),
 		cursorId: z.string().min(1).max(250).optional().describe('Cursor for pagination'),
-		limit: z
-			.string()
-			.default('20')
-			.transform((s) => Math.min(Math.max(Number(s), 1), 100))
+		// z.coerce, matching getWalletListSchemaInput.take. The hand-rolled
+		// `Math.min(Math.max(Number(s), 1), 100)` this replaces looked like a
+		// clamp but laundered a non-numeric string into NaN (every comparison
+		// with NaN is false, so both bounds pass it through), which then reached
+		// Prisma as `take: NaN` and threw — a 500 on a bad query string.
+		limit: z.coerce
+			.number()
+			.int()
+			.min(1)
+			.max(100)
+			.default(20)
 			.describe('Number of results to return (1-100, default 20)'),
 	})
 	.refine((data) => data.id != null || data.hotWalletId != null || data.walletAddress != null, {

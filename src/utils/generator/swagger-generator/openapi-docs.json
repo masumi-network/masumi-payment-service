@@ -7556,7 +7556,8 @@
                                     },
                                     "lovelaceAmount": {
                                         "type": "string",
-                                        "minLength": 1,
+                                        "maxLength": 20,
+                                        "pattern": "^[1-9][0-9]*$",
                                         "description": "Amount of lovelace to transfer (minimum 2000000 = 2 ADA)"
                                     },
                                     "assets": {
@@ -7566,13 +7567,13 @@
                                             "properties": {
                                                 "unit": {
                                                     "type": "string",
-                                                    "minLength": 1,
-                                                    "description": "Asset unit (policy id + hex asset name, or \"lovelace\")"
+                                                    "pattern": "^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{2})*$",
+                                                    "description": "Asset unit: policy id (56 hex chars) followed by the hex asset name. Not \"lovelace\"."
                                                 },
                                                 "quantity": {
                                                     "type": "string",
-                                                    "minLength": 1,
-                                                    "description": "Amount of the asset to transfer"
+                                                    "pattern": "^[1-9][0-9]*$",
+                                                    "description": "Amount of the asset to transfer, in its smallest unit"
                                                 }
                                             },
                                             "required": [
@@ -7580,6 +7581,7 @@
                                                 "quantity"
                                             ]
                                         },
+                                        "maxItems": 10,
                                         "description": "Additional native assets to transfer alongside lovelace"
                                     }
                                 },
@@ -7708,8 +7710,10 @@
                     },
                     {
                         "schema": {
-                            "type": "string",
-                            "default": "20",
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20,
                             "description": "Number of results to return (1-100, default 20)"
                         },
                         "required": false,
