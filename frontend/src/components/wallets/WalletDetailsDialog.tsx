@@ -55,6 +55,7 @@ import {
 } from '@/components/wallets/sections/SwapTransactionsSection';
 import { WalletExportSection } from '@/components/wallets/sections/WalletExportSection';
 import { CollectionAddressSection } from '@/components/wallets/sections/CollectionAddressSection';
+import { FundTransfersSection } from '@/components/wallets/sections/FundTransfersSection';
 
 // Re-exported for the many call sites that import these types from this module.
 export type { TokenBalance, WalletWithBalance } from '@/components/wallets/wallet-details-utils';
@@ -629,6 +630,8 @@ export function WalletDetailsDialog({
                 onStartPollingConfirm={startPollingConfirm}
               />
             )}
+
+            <FundTransfersSection walletAddress={wallet.walletAddress} network={network} />
 
             {wallet.type !== 'Collection' && (
               <div className="flex items-center gap-2">

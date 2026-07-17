@@ -3876,7 +3876,7 @@ export type GetWalletTransferFundsData = {
         /**
          * Number of results to return (1-100, default 20)
          */
-        limit?: string;
+        limit?: number;
     };
     url: '/wallet/transfer-funds';
 };
@@ -3922,11 +3922,11 @@ export type PostWalletTransferFundsData = {
          */
         assets?: Array<{
             /**
-             * Asset unit (policy id + hex asset name, or "lovelace")
+             * Asset unit: policy id (56 hex chars) followed by the hex asset name. Not "lovelace".
              */
             unit: string;
             /**
-             * Amount of the asset to transfer
+             * Amount of the asset to transfer, in its smallest unit
              */
             quantity: string;
         }>;
