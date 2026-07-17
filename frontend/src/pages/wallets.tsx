@@ -363,14 +363,14 @@ export default function WalletsPage() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                                 <DropdownMenuItem
-                                  className="cursor-pointer"
+                                  className="cursor-pointer gap-2"
                                   onSelect={() => setSelectedWalletForTopup(wallet)}
                                 >
                                   <PlusCircle className="h-4 w-4" />
                                   Top up
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
-                                  className="cursor-pointer"
+                                  className="cursor-pointer gap-2"
                                   onSelect={() => setSelectedWalletForTransfer(wallet)}
                                 >
                                   <Send className="h-4 w-4" />
@@ -378,7 +378,7 @@ export default function WalletsPage() {
                                 </DropdownMenuItem>
                                 {wallet.network === 'Mainnet' && (
                                   <DropdownMenuItem
-                                    className="cursor-pointer"
+                                    className="cursor-pointer gap-2"
                                     onSelect={() => setSelectedWalletForSwap(wallet)}
                                   >
                                     <ArrowLeftRight className="h-4 w-4" />
