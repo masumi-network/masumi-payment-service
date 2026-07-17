@@ -11880,7 +11880,7 @@ export type DeleteFundWalletErrors = {
      */
     404: unknown;
     /**
-     * Fund wallet still holds funds; withdraw them or pass force=true
+     * Fund wallet has a distribution in flight, or still holds funds. In-flight transactions must settle; balance-only conflicts can be bypassed with force=true
      */
     409: unknown;
     /**
@@ -11970,7 +11970,7 @@ export type PatchFundWalletData = {
          */
         topupAmount?: string;
         /**
-         * New batch window in milliseconds
+         * New batch window in milliseconds (max 24 h)
          */
         batchWindowMs?: number;
     };
@@ -11981,7 +11981,7 @@ export type PatchFundWalletData = {
 
 export type PatchFundWalletErrors = {
     /**
-     * criticalThreshold is not below warningThreshold
+     * criticalThreshold is not below warningThreshold, or topupAmount is below the minimum topup floor
      */
     400: unknown;
     /**
@@ -12032,7 +12032,7 @@ export type PostFundWalletData = {
          */
         topupAmount: string;
         /**
-         * Batch window in milliseconds (default 5 min)
+         * Batch window in milliseconds (default 5 min, max 24 h)
          */
         batchWindowMs?: number;
         /**

@@ -83,7 +83,11 @@ model HotWallet {
   id                                      String                          @id @default(cuid())
   createdAt                               DateTime                        @default(now())
   updatedAt                               DateTime                        @updatedAt
-  walletVkey                              String                          @unique
+  /// Unique among ACTIVE wallets only, via the partial database index in
+  /// 20260717000001_scope_wallet_vkey_uniqueness_to_active (Prisma cannot
+  /// express predicated indexes). A global unique made a soft-deleted fund
+  /// wallet's mnemonic permanently unregisterable.
+  walletVkey                              String
   walletAddress                           String
   type                                    HotWalletType
   secretId                                String
@@ -113,6 +117,10 @@ model HotWallet {
   FundDistributionConfig                  FundDistributionConfig?
   FundDistributionsSent                   FundDistributionRequest[]       @relation("FundDistributionSource")
   FundDistributionsReceived               FundDistributionRequest[]       @relation("FundDistributionTarget")
+
+  // Active Funding wallets are unique per paymentSourceId via the partial
+  // database index in 20260717000000_enforce_active_fund_wallet_uniqueness.
+  // Prisma cannot express indexes with enum/deletedAt predicates.
 }
 
 model HotWalletLowBalanceRule {
@@ -938,7 +946,7 @@ model FundDistributionRequest {
   batchId        String?
   /// The Transaction row this request was batched into, set atomically with the
   /// fund-wallet lock BEFORE the tx is signed or broadcast. This link is what
-  /// lets `reconcileReconciledRequests` observe the outcome that
+  /// lets `reconcileInFlightRequests` observe the outcome that
   /// funding-reconciliation wrote: on promote (chain found the intended hash)
   /// the requests are advanced to Submitted; on RolledBack (TTL provably
   /// elapsed) they are released back to Pending for a fresh build. Without it

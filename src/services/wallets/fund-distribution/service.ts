@@ -2,7 +2,6 @@ import {
 	FundDistributionPriority,
 	FundDistributionStatus,
 	HotWalletType,
-	LowBalanceStatus,
 	Network,
 	TransactionStatus,
 } from '@/generated/prisma/client';
@@ -15,6 +14,7 @@ import { lookupChainTx } from '@/services/shared/chain-tx-lookup';
 import { webhookEventsService } from '@/services/webhooks';
 import { getFundWalletForPaymentSource, loadFundWalletContext } from './context';
 import { processRequestsForFundWallet } from './batch-executor';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 
 const mutex = new Mutex();
 
@@ -35,6 +35,7 @@ export class FundDistributionService {
 
 		// Guard: fund wallet must not fund itself
 		if (fundWallet.id === targetWalletId) return;
+		if (currentBalance >= fundWallet.config.warningThreshold) return;
 
 		const priority =
 			currentBalance < fundWallet.config.criticalThreshold
@@ -48,15 +49,52 @@ export class FundDistributionService {
 		try {
 			await prisma.$transaction(
 				async (tx) => {
-					const alreadyPending = await tx.fundDistributionRequest.findFirst({
+					// The context above is intentionally loaded before opening the
+					// transaction, but the source/config/target can be retired while
+					// balance monitoring is in flight. Re-read lifecycle state here so
+					// an obsolete scan cannot create a new Pending request afterward.
+					const activeFundWallet = await tx.hotWallet.findFirst({
 						where: {
-							fundWalletId: fundWallet.id,
-							targetWalletId,
-							status: { in: [FundDistributionStatus.Pending, FundDistributionStatus.Submitted] },
+							id: fundWallet.id,
+							paymentSourceId,
+							type: HotWalletType.Funding,
+							deletedAt: null,
+							PaymentSource: { deletedAt: null },
+							FundDistributionConfig: { enabled: true },
 						},
 						select: { id: true },
 					});
-					if (alreadyPending) return;
+					if (activeFundWallet == null) return;
+
+					const activeTargetWallet = await tx.hotWallet.findFirst({
+						where: {
+							id: targetWalletId,
+							paymentSourceId,
+							type: { not: HotWalletType.Funding },
+							deletedAt: null,
+							PaymentSource: { deletedAt: null },
+						},
+						select: { id: true },
+					});
+					if (activeTargetWallet == null) return;
+
+					const failureCooldownStart = new Date(Date.now() - CONSTANTS.FUND_DISTRIBUTION_FAILURE_RETRY_COOLDOWN_MS);
+					const alreadyHandled = await tx.fundDistributionRequest.findFirst({
+						where: {
+							fundWalletId: fundWallet.id,
+							targetWalletId,
+							OR: [
+								{ status: { in: [FundDistributionStatus.Pending, FundDistributionStatus.Submitted] } },
+								// A recent failure blocks re-creation for the cooldown. Retrying
+								// is correct — the target is still low — but without this a
+								// persistent build/sign error re-created the request and re-fired
+								// FUND_DISTRIBUTION_FAILED every 30s cycle.
+								{ status: FundDistributionStatus.Failed, updatedAt: { gt: failureCooldownStart } },
+							],
+						},
+						select: { id: true },
+					});
+					if (alreadyHandled) return;
 
 					await tx.fundDistributionRequest.create({
 						data: {
@@ -134,6 +172,10 @@ export class FundDistributionService {
 
 	async processDistributionCycle(): Promise<void> {
 		await withJobLock(mutex, 'fund_distribution_cycle', async () => {
+			// Reconciliation is unconditional. A disabled/deleted fund wallet may
+			// still own a transaction that was broadcast before it was disabled.
+			await this.runPhase('reconcile-in-flight', () => this.reconcileInFlightRequests());
+
 			// Fund distribution is opt-in: it does nothing until an operator creates
 			// a Funding wallet for a payment source. Resolve the funded sources once
 			// up front and bail when there are none, so the common (unconfigured)
@@ -143,27 +185,23 @@ export class FundDistributionService {
 				where: {
 					type: HotWalletType.Funding,
 					deletedAt: null,
+					PaymentSource: { deletedAt: null },
 					FundDistributionConfig: { enabled: true },
 				},
 				select: { paymentSourceId: true },
 			});
-			if (fundWallets.length === 0) return;
-			const fundedPaymentSourceIds = fundWallets.map((wallet) => wallet.paymentSourceId);
+			if (fundWallets.length > 0) {
+				const fundedPaymentSourceIds = fundWallets.map((wallet) => wallet.paymentSourceId);
 
-			// Phases are run independently: a throw in one must not starve the
-			// others. In particular the send phases take a Serializable lock that
-			// can lose to a concurrent writer (P2034), and letting that escape would
-			// skip the confirm phase — so an unrelated conflict would leave settled
-			// batches unconfirmed and their wallets locked.
-			await this.runPhase(
-				'reconcile-in-flight',
-				// Runs FIRST so a promoted batch is marked Submitted (and a rolled-back
-				// one released) before the scan considers those targets un-serviced.
-				() => this.reconcileInFlightRequests(),
-			);
-			await this.runPhase('scan', () => this.scanAndCreateMissingRequests(fundedPaymentSourceIds));
-			await this.runPhase('critical', () => this.processCriticalRequests());
-			await this.runPhase('expired-batch', () => this.processExpiredBatchRequests());
+				// Send phases are independent so a conflict in one cannot starve the rest.
+				await this.runPhase('scan', () => this.scanAndCreateMissingRequests(fundedPaymentSourceIds));
+				await this.runPhase('critical', () => this.processCriticalRequests());
+				await this.runPhase('expired-batch', () => this.processExpiredBatchRequests());
+			}
+
+			// Confirmation stays after scanning. Otherwise a just-confirmed request
+			// disappears from the scan's exclusion set before balance monitoring has
+			// observed the top-up, and stale low-balance data can queue it again.
 			await this.runPhase('confirm', () => this.confirmSubmittedRequests());
 		});
 	}
@@ -212,7 +250,19 @@ export class FundDistributionService {
 			select: {
 				id: true,
 				batchId: true,
+				amount: true,
+				targetWalletId: true,
 				transactionId: true,
+				TargetWallet: { select: { walletAddress: true, deletedAt: true } },
+				FundWallet: {
+					select: {
+						id: true,
+						walletAddress: true,
+						paymentSourceId: true,
+						deletedAt: true,
+						PaymentSource: { select: { network: true, deletedAt: true } },
+					},
+				},
 				Transaction: {
 					select: { txHash: true, intendedTxHash: true, status: true, createdAt: true },
 				},
@@ -221,8 +271,9 @@ export class FundDistributionService {
 
 		if (inFlight.length === 0) return;
 
-		const promotedByTxHash = new Map<string, string[]>();
+		const promotedByTxHash = new Map<string, typeof inFlight>();
 		const releasedIds: string[] = [];
+		const cancelledIds: string[] = [];
 
 		// Anything older than the lock timeout that was never signed has provably
 		// been abandoned; see the never-broadcast branch below.
@@ -231,16 +282,20 @@ export class FundDistributionService {
 		for (const request of inFlight) {
 			const tx = request.Transaction;
 			if (tx == null) continue;
+			const canRetry =
+				request.FundWallet.deletedAt == null &&
+				request.FundWallet.PaymentSource.deletedAt == null &&
+				request.TargetWallet.deletedAt == null;
 
 			// RolledBack FIRST. tx-sync marks a Transaction RolledBack by txHash
 			// while LEAVING txHash set, so checking txHash first would promote a
 			// batch the chain has already discarded — correct in the end (it fails
 			// 30min later and rebuilds) but 30 minutes late for no reason.
 			if (tx.status === TransactionStatus.RolledBack) {
-				releasedIds.push(request.id);
+				(canRetry ? releasedIds : cancelledIds).push(request.id);
 			} else if (tx.txHash != null) {
 				const group = promotedByTxHash.get(tx.txHash) ?? [];
-				group.push(request.id);
+				group.push(request);
 				promotedByTxHash.set(tx.txHash, group);
 			} else if (tx.intendedTxHash == null && tx.createdAt < abandonedBefore) {
 				// Never-broadcast orphan: the process died between creating the
@@ -251,20 +306,64 @@ export class FundDistributionService {
 				// here they are excluded from a rebuild by the `transactionId: null`
 				// filter AND counted as "already queued" by the scan, so the target
 				// wallet would never be topped up again. Release them.
-				releasedIds.push(request.id);
+				(canRetry ? releasedIds : cancelledIds).push(request.id);
 			}
 			// Otherwise: signed and in flight. Leave it for reconciliation.
 		}
 
-		for (const [txHash, ids] of promotedByTxHash) {
-			await prisma.fundDistributionRequest.updateMany({
-				where: { id: { in: ids }, status: FundDistributionStatus.Pending },
-				data: { status: FundDistributionStatus.Submitted, txHash },
-			});
+		for (const [txHash, requests] of promotedByTxHash) {
+			const first = requests[0];
+			if (first == null) continue;
+			const ids = requests.map((request) => request.id);
+			const didPromote = await retryOnSerializationConflict(
+				() =>
+					prisma.$transaction(
+						async (tx) => {
+							const promoted = await tx.fundDistributionRequest.updateMany({
+								where: { id: { in: ids }, status: FundDistributionStatus.Pending },
+								data: { status: FundDistributionStatus.Submitted, txHash },
+							});
+							if (promoted.count !== ids.length) return false;
+
+							await webhookEventsService.queueFundDistributionSent(
+								tx,
+								{
+									batchId: first.batchId ?? first.transactionId ?? txHash,
+									fundWalletId: first.FundWallet.id,
+									fundWalletAddress: first.FundWallet.walletAddress,
+									network: first.FundWallet.PaymentSource.network,
+									txHash,
+									distributions: requests.map((request) => ({
+										requestId: request.id,
+										targetWalletId: request.targetWalletId,
+										targetWalletAddress: request.TargetWallet.walletAddress,
+										amount: request.amount.toString(),
+									})),
+								},
+								first.FundWallet.paymentSourceId,
+							);
+							return true;
+						},
+						{ isolationLevel: 'Serializable' },
+					),
+				{ label: 'fund-distribution-adopt-promoted' },
+			);
+			if (!didPromote) continue;
 			logger.info('Adopted reconciliation-promoted fund distribution batch', {
 				component: 'fund_distribution',
 				tx_hash: txHash,
 				request_count: ids.length,
+			});
+		}
+
+		if (cancelledIds.length > 0) {
+			await prisma.fundDistributionRequest.updateMany({
+				where: { id: { in: cancelledIds }, status: FundDistributionStatus.Pending },
+				data: {
+					status: FundDistributionStatus.Failed,
+					error: 'Distribution cancelled because its payment source or wallet is inactive',
+					transactionId: null,
+				},
 			});
 		}
 
@@ -281,7 +380,7 @@ export class FundDistributionService {
 	}
 
 	private async scanAndCreateMissingRequests(fundedPaymentSourceIds: string[]): Promise<void> {
-		// Find wallets with Low balance rules that have no pending/submitted
+		// Find monitored wallets that have no pending/submitted
 		// distribution request. Scoped to payment sources that actually have an
 		// enabled fund wallet: without that filter, every low wallet on an
 		// unfunded source triggered a getFundWalletForPaymentSource lookup that
@@ -291,11 +390,12 @@ export class FundDistributionService {
 				deletedAt: null,
 				type: { not: HotWalletType.Funding },
 				paymentSourceId: { in: fundedPaymentSourceIds },
+				PaymentSource: { deletedAt: null },
 				LowBalanceRules: {
 					some: {
-						status: LowBalanceStatus.Low,
 						enabled: true,
 						assetUnit: 'lovelace',
+						lastKnownAmount: { not: null },
 					},
 				},
 				FundDistributionsReceived: {
@@ -308,17 +408,15 @@ export class FundDistributionService {
 				id: true,
 				paymentSourceId: true,
 				LowBalanceRules: {
-					where: { status: LowBalanceStatus.Low, enabled: true, assetUnit: 'lovelace' },
+					where: { enabled: true, assetUnit: 'lovelace', lastKnownAmount: { not: null } },
 					select: { lastKnownAmount: true },
 				},
 			},
 		});
 
 		for (const wallet of lowBalanceWallets) {
-			// Use lastKnownAmount for priority classification. If null (rule never evaluated),
-			// default to 0n so the request is treated as Critical — the safe assumption
-			// when we have no balance data.
-			const lastKnownAmount = wallet.LowBalanceRules[0]?.lastKnownAmount ?? 0n;
+			const lastKnownAmount = wallet.LowBalanceRules[0]?.lastKnownAmount;
+			if (lastKnownAmount == null) continue;
 			await this.requestTopup({
 				targetWalletId: wallet.id,
 				currentBalance: lastKnownAmount,
@@ -332,6 +430,12 @@ export class FundDistributionService {
 			where: {
 				priority: FundDistributionPriority.Critical,
 				status: FundDistributionStatus.Pending,
+				TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
+				FundWallet: {
+					deletedAt: null,
+					PaymentSource: { deletedAt: null },
+					FundDistributionConfig: { enabled: true },
+				},
 				// Never rebuild a row that is already linked to an in-flight
 				// Transaction (an ambiguous submit awaiting reconciliation). Without
 				// this the fund-wallet lock is the ONLY thing preventing a second send
@@ -382,6 +486,12 @@ export class FundDistributionService {
 			where: {
 				priority: FundDistributionPriority.Warning,
 				status: FundDistributionStatus.Pending,
+				TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
+				FundWallet: {
+					deletedAt: null,
+					PaymentSource: { deletedAt: null },
+					FundDistributionConfig: { enabled: true },
+				},
 				// See processCriticalRequests: rows with a live Transaction belong to
 				// Phase A, not to a fresh build.
 				transactionId: null,
@@ -468,6 +578,7 @@ export class FundDistributionService {
 						pendingTransactionId: true,
 						PaymentSource: {
 							select: {
+								id: true,
 								PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
 								network: true,
 							},
@@ -499,17 +610,16 @@ export class FundDistributionService {
 				byTxHash.set(req.txHash, group);
 			}
 
-			// Transactions we drove to a terminal state in this pass, and are
-			// therefore entitled to release the lock for. Tracked per transaction
-			// rather than as one flag over the whole wallet: `hasUnresolved` was too
-			// coarse (an unrelated in-flight batch would block a legitimate unlock)
-			// and requiring exactly one transaction id was worse — it silently
-			// declined to unlock at all whenever a wallet held rows from two
-			// batches, leaving the lock to be cleaned up by another service.
-			const resolvedTransactionIds = new Set<string>();
-
 			for (const [txHash, txRequests] of byTxHash) {
-				const transactionId = txRequests[0]?.transactionId ?? null;
+				const transactionIds = [
+					...new Set(
+						txRequests
+							.map((request) => request.transactionId)
+							.filter((transactionId): transactionId is string => transactionId != null),
+					),
+				];
+				const requestIds = txRequests.map((request) => request.id);
+				const paymentSourceId = txRequests[0]?.FundWallet.PaymentSource.id;
 				// Every request under this txHash shares one batch, so one payload
 				// describes the whole outcome.
 				const outcomePayload = {
@@ -529,14 +639,68 @@ export class FundDistributionService {
 				// 404 must fail the batch and a 5xx must not, and the two are
 				// indistinguishable by message (see `lookupChainTx`).
 				const chainResult = await lookupChainTx({ network, rpcProviderApiKey: rpcKey, txHash });
+				const transitionBatch = async (params: {
+					requestStatus: FundDistributionStatus;
+					transactionStatus: TransactionStatus;
+					error: string | null;
+				}): Promise<boolean> =>
+					retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (tx) => {
+									// This status predicate is the cross-replica claim. Only one
+									// worker can move every row out of Submitted, so only that
+									// worker emits the terminal webhook.
+									const transitioned = await tx.fundDistributionRequest.updateMany({
+										where: { id: { in: requestIds }, status: FundDistributionStatus.Submitted },
+										data: { status: params.requestStatus, error: params.error },
+									});
+									if (transitioned.count !== requestIds.length) return false;
+
+									if (transactionIds.length > 0) {
+										await tx.transaction.updateMany({
+											where: { id: { in: transactionIds }, status: TransactionStatus.Pending },
+											data: { status: params.transactionStatus, lastCheckedAt: new Date() },
+										});
+										await tx.hotWallet.updateMany({
+											where: { id: fundWalletId, pendingTransactionId: { in: transactionIds } },
+											data: { lockedAt: null, pendingTransactionId: null },
+										});
+									}
+
+									if (paymentSourceId) {
+										if (params.requestStatus === FundDistributionStatus.Confirmed) {
+											await webhookEventsService.queueFundDistributionConfirmed(
+												tx,
+												{ ...outcomePayload, txHash },
+												paymentSourceId,
+											);
+										} else {
+											await webhookEventsService.queueFundDistributionFailed(
+												tx,
+												{
+													...outcomePayload,
+													txHash,
+													error: params.error ?? 'Fund distribution failed',
+												},
+												paymentSourceId,
+											);
+										}
+									}
+
+									return true;
+								},
+								{ isolationLevel: 'Serializable' },
+							),
+						{ label: 'fund-distribution-terminal-transition' },
+					);
 
 				if (chainResult === 'found') {
-					await prisma.fundDistributionRequest.updateMany({
-						where: { id: { in: txRequests.map((r) => r.id) }, status: FundDistributionStatus.Submitted },
-						data: { status: FundDistributionStatus.Confirmed, error: null },
+					await transitionBatch({
+						requestStatus: FundDistributionStatus.Confirmed,
+						transactionStatus: TransactionStatus.Confirmed,
+						error: null,
 					});
-					await webhookEventsService.triggerFundDistributionConfirmed({ ...outcomePayload, txHash });
-					if (transactionId) resolvedTransactionIds.add(transactionId);
 				} else if (chainResult === 'not-found') {
 					// Only mark as Failed after the confirmation timeout has elapsed.
 					// Within the window the requests stay Submitted and will be retried next cycle
@@ -546,18 +710,11 @@ export class FundDistributionService {
 
 					if (timedOut) {
 						const error = 'Transaction not found on-chain after timeout';
-						await prisma.fundDistributionRequest.updateMany({
-							where: { id: { in: txRequests.map((r) => r.id) }, status: FundDistributionStatus.Submitted },
-							data: {
-								status: FundDistributionStatus.Failed,
-								error,
-							},
+						await transitionBatch({
+							requestStatus: FundDistributionStatus.Failed,
+							transactionStatus: TransactionStatus.FailedViaTimeout,
+							error,
 						});
-						// The batch was submitted but never landed. Without this the
-						// operator's last signal was FUND_DISTRIBUTION_SENT and they
-						// would believe the wallets were topped up.
-						await webhookEventsService.triggerFundDistributionFailed({ ...outcomePayload, txHash, error });
-						if (transactionId) resolvedTransactionIds.add(transactionId);
 					} else {
 						logger.debug('Fund distribution tx not yet indexed, will retry next cycle', {
 							component: 'fund_distribution',
@@ -566,54 +723,14 @@ export class FundDistributionService {
 					}
 				} else {
 					// Indexer unhealthy. Do NOT infer "not on chain" from a 5xx — that is
-					// how a healthy tx gets marked Failed and re-sent. Leaving it out of
-					// resolvedTransactionIds keeps its lock held.
+					// how a healthy tx gets marked Failed and re-sent. Leaving it
+					// Submitted keeps its lock held.
 					logger.warn('Failed to confirm fund distribution tx', {
 						component: 'fund_distribution',
 						tx_hash: txHash,
 						request_ids: txRequests.map((r) => r.id),
 					});
 				}
-			}
-
-			// Release the lock only if the transaction currently HOLDING it is one we
-			// just drove terminal.
-			//
-			// The `in` predicate does the discriminating: a transaction still in
-			// flight is absent from the set, so its lock survives; a wallet holding
-			// rows from two batches releases whichever one it is actually locked on
-			// instead of declining to unlock at all. And matching on
-			// pendingTransactionId means we can never clear a lock we do not own —
-			// an unguarded clear lets the next cycle rebuild rows whose tx is still
-			// in flight, which spends the treasury twice.
-			if (resolvedTransactionIds.size > 0) {
-				const { count } = await prisma.hotWallet.updateMany({
-					where: { id: fundWalletId, deletedAt: null, pendingTransactionId: { in: [...resolvedTransactionIds] } },
-					data: {
-						lockedAt: null,
-						pendingTransactionId: null,
-					},
-				});
-
-				if (count === 0) {
-					// The lock is held by a batch we did not resolve (or was already
-					// freed elsewhere). Benign — leave it alone.
-					logger.debug('Fund wallet lock is held by an unresolved batch; leaving it', {
-						component: 'fund_distribution',
-						fund_wallet_id: fundWalletId,
-						resolved_transaction_ids: [...resolvedTransactionIds],
-					});
-				} else {
-					logger.info('Fund wallet unlocked after distribution confirmation', {
-						component: 'fund_distribution',
-						fund_wallet_id: fundWalletId,
-					});
-				}
-			} else {
-				logger.debug('Fund wallet kept locked — no batch reached a terminal state this pass', {
-					component: 'fund_distribution',
-					fund_wallet_id: fundWalletId,
-				});
 			}
 		}
 	}

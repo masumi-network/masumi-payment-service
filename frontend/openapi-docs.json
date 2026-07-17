@@ -28018,7 +28018,7 @@
                 }
             },
             "post": {
-                "description": "Creates a fund wallet for a payment source from an existing mnemonic and enables automatic distribution. The wallet tops up the Selling and Purchasing wallets of that same payment source when they fall below the configured thresholds: below warningThreshold the topup is batched, below criticalThreshold it is sent immediately. Fund the returned address before distribution can do anything. A payment source can have only one fund wallet, and because wallet key hashes are globally unique a mnemonic can only ever back one wallet — so each payment source needs its own.",
+                "description": "Creates a fund wallet for a payment source from an existing mnemonic and enables automatic distribution. The wallet tops up the Selling and Purchasing wallets of that same payment source when they fall below the configured thresholds: below warningThreshold the topup is batched, below criticalThreshold it is sent immediately. Fund the returned address before distribution can do anything. A payment source can have only one fund wallet, and because wallet key hashes are unique among active wallets a mnemonic can only back one live wallet at a time — so each payment source needs its own. Deleting a fund wallet frees its mnemonic for re-registration.",
                 "summary": "Create a fund wallet for a payment source. (admin access required)",
                 "tags": [
                     "fund-wallet"
@@ -28049,24 +28049,25 @@
                                     },
                                     "warningThreshold": {
                                         "type": "string",
-                                        "pattern": "^\\d+$",
+                                        "pattern": "^\\d{1,18}$",
                                         "description": "Warning balance threshold in lovelace"
                                     },
                                     "criticalThreshold": {
                                         "type": "string",
-                                        "pattern": "^\\d+$",
+                                        "pattern": "^\\d{1,18}$",
                                         "description": "Critical balance threshold in lovelace"
                                     },
                                     "topupAmount": {
                                         "type": "string",
-                                        "pattern": "^\\d+$",
+                                        "pattern": "^\\d{1,18}$",
                                         "description": "Amount to send per topup in lovelace"
                                     },
                                     "batchWindowMs": {
                                         "type": "integer",
                                         "minimum": 1000,
+                                        "maximum": 86400000,
                                         "default": 300000,
-                                        "description": "Batch window in milliseconds (default 5 min)"
+                                        "description": "Batch window in milliseconds (default 5 min, max 24 h)"
                                     },
                                     "note": {
                                         "type": "string",
@@ -28181,23 +28182,24 @@
                                     },
                                     "warningThreshold": {
                                         "type": "string",
-                                        "pattern": "^\\d+$",
+                                        "pattern": "^\\d{1,18}$",
                                         "description": "New warning threshold in lovelace"
                                     },
                                     "criticalThreshold": {
                                         "type": "string",
-                                        "pattern": "^\\d+$",
+                                        "pattern": "^\\d{1,18}$",
                                         "description": "New critical threshold in lovelace"
                                     },
                                     "topupAmount": {
                                         "type": "string",
-                                        "pattern": "^\\d+$",
+                                        "pattern": "^\\d{1,18}$",
                                         "description": "New topup amount in lovelace"
                                     },
                                     "batchWindowMs": {
                                         "type": "integer",
                                         "minimum": 1000,
-                                        "description": "New batch window in milliseconds"
+                                        "maximum": 86400000,
+                                        "description": "New batch window in milliseconds (max 24 h)"
                                     }
                                 },
                                 "required": [
@@ -28256,7 +28258,7 @@
                         }
                     },
                     "400": {
-                        "description": "criticalThreshold is not below warningThreshold"
+                        "description": "criticalThreshold is not below warningThreshold, or topupAmount is below the minimum topup floor"
                     },
                     "401": {
                         "description": "Unauthorized"
@@ -28267,7 +28269,7 @@
                 }
             },
             "delete": {
-                "description": "Soft-deletes a fund wallet, disables its distribution config and cancels any outstanding distribution requests. Does NOT move funds. Refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true to delete regardless, accepting that any remaining balance is recoverable only with direct database access.",
+                "description": "Soft-deletes a fund wallet, disables its distribution config and cancels unclaimed pending distribution requests. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.",
                 "summary": "Delete a fund wallet. (admin access required)",
                 "tags": [
                     "fund-wallet"
@@ -28345,7 +28347,7 @@
                         "description": "Fund wallet not found"
                     },
                     "409": {
-                        "description": "Fund wallet still holds funds; withdraw them or pass force=true"
+                        "description": "Fund wallet has a distribution in flight, or still holds funds. In-flight transactions must settle; balance-only conflicts can be bypassed with force=true"
                     },
                     "503": {
                         "description": "Balance could not be checked; retry or pass force=true"

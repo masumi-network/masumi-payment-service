@@ -17,6 +17,11 @@ import { DEFAULTS } from '@masumi/payment-core/config';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { logger } from '@masumi/payment-core/logger';
 import { walletLowBalanceMonitorService } from '@/services/wallets';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
+import {
+	prepareTargetWalletRemoval,
+	retirePaymentSourceFundDistributions,
+} from '@/services/wallets/fund-distribution/retirement';
 import {
 	paymentSourceExtendedCreateSchemaInput,
 	paymentSourceExtendedCreateSchemaOutput,
@@ -380,6 +385,11 @@ export const paymentSourceExtendedEndpointPatch = adminAuthenticatedEndpointFact
 				);
 
 				if (walletIdsToRemove.length > 0) {
+					await prepareTargetWalletRemoval(prisma, {
+						paymentSourceId: input.id,
+						walletIds: walletIdsToRemove,
+					});
+
 					await prisma.paymentSource.update({
 						where: { id: input.id },
 						data: {
@@ -470,11 +480,22 @@ export const paymentSourceExtendedEndpointDelete = adminAuthenticatedEndpointFac
 			throw createHttpError(404, 'Payment source not found');
 		}
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, existing.network);
-		const paymentSource = await prisma.paymentSource.update({
-			where: { id: existing.id },
-			data: { deletedAt: new Date() },
-			include: paymentSourceExtendedInclude,
-		});
+		const paymentSource = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						await retirePaymentSourceFundDistributions(tx, existing.id);
+
+						return tx.paymentSource.update({
+							where: { id: existing.id, deletedAt: null },
+							data: { deletedAt: new Date() },
+							include: paymentSourceExtendedInclude,
+						});
+					},
+					{ isolationLevel: 'Serializable' },
+				),
+			{ label: 'payment-source-delete' },
+		);
 		const walletCounts = await getWalletCountsByPaymentSource([paymentSource.id], ctx.walletScopeIds);
 		return serializePaymentSourceExtendedEntry(paymentSource, walletCounts.get(paymentSource.id));
 	},

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Spinner } from '@/components/ui/spinner';
 import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
+import { MIN_TOPUP_ADA } from '@/lib/fund-wallet';
 
 const adaAmount = (label: string) =>
   z
@@ -22,7 +23,9 @@ const setupSchema = z
     mnemonic: z.string().min(1, 'Mnemonic phrase is required'),
     warningThreshold: adaAmount('Warning threshold'),
     criticalThreshold: adaAmount('Critical threshold'),
-    topupAmount: adaAmount('Top-up amount'),
+    topupAmount: adaAmount('Top-up amount').refine((value) => Number(value) >= MIN_TOPUP_ADA, {
+      message: `Top-up amount must be at least ${MIN_TOPUP_ADA} ADA`,
+    }),
     note: z.string().max(250).optional(),
   })
   // Mirrors the server rule. Checked here too so the operator sees it against
@@ -109,6 +112,14 @@ export function FundWalletSetupForm({
           id="fund-wallet-mnemonic"
           rows={3}
           placeholder="word1 word2 word3 ... word24"
+          // The visual masking below does not stop browser text services from
+          // READING the field: enhanced spellcheck ships field contents to
+          // third-party servers ("spell-jacking"), and autocomplete would offer
+          // to store the phrase. This is a treasury seed — opt out of all of it.
+          spellCheck={false}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
           style={
             showMnemonic
               ? undefined

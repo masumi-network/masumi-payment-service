@@ -12,11 +12,14 @@ const mockRequestFindMany = jest.fn() as AnyMock;
 const mockRequestCreate = jest.fn() as AnyMock;
 const mockRequestUpdateMany = jest.fn() as AnyMock;
 const mockHotWalletFindMany = jest.fn() as AnyMock;
+const mockHotWalletFindFirst = jest.fn() as AnyMock;
 const mockHotWalletFindUnique = jest.fn() as AnyMock;
 const mockHotWalletUpdateMany = jest.fn() as AnyMock;
+const mockTransactionUpdateMany = jest.fn() as AnyMock;
 const mockLookupChainTx = jest.fn() as AnyMock;
-const mockTriggerConfirmed = jest.fn() as AnyMock;
-const mockTriggerFailed = jest.fn() as AnyMock;
+const mockQueueSent = jest.fn() as AnyMock;
+const mockQueueConfirmed = jest.fn() as AnyMock;
+const mockQueueFailed = jest.fn() as AnyMock;
 
 /**
  * Rows each cycle phase should see, keyed by phase.
@@ -58,7 +61,12 @@ const FundDistributionStatus = {
 	Confirmed: 'Confirmed',
 	Failed: 'Failed',
 } as const;
-const TransactionStatus = { Pending: 'Pending', Confirmed: 'Confirmed', RolledBack: 'RolledBack' } as const;
+const TransactionStatus = {
+	Pending: 'Pending',
+	Confirmed: 'Confirmed',
+	FailedViaTimeout: 'FailedViaTimeout',
+	RolledBack: 'RolledBack',
+} as const;
 const HotWalletType = { Purchasing: 'Purchasing', Selling: 'Selling', Funding: 'Funding' } as const;
 
 jest.unstable_mockModule('@/generated/prisma/client', () => ({
@@ -75,13 +83,23 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		$transaction: async (arg: unknown) => {
 			if (typeof arg === 'function') {
 				return (arg as (tx: unknown) => Promise<unknown>)({
-					fundDistributionRequest: { findFirst: mockRequestFindFirst, create: mockRequestCreate },
+					fundDistributionRequest: {
+						findFirst: mockRequestFindFirst,
+						create: mockRequestCreate,
+						updateMany: mockRequestUpdateMany,
+					},
+					transaction: { updateMany: mockTransactionUpdateMany },
+					hotWallet: {
+						findFirst: mockHotWalletFindFirst,
+						updateMany: mockHotWalletUpdateMany,
+					},
 				});
 			}
 			return Promise.all(arg as Promise<unknown>[]);
 		},
 		hotWallet: {
 			findMany: mockHotWalletFindMany,
+			findFirst: mockHotWalletFindFirst,
 			findUnique: mockHotWalletFindUnique,
 			update: jest.fn(),
 			updateMany: mockHotWalletUpdateMany,
@@ -95,6 +113,10 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	},
 }));
 
+jest.unstable_mockModule('@masumi/payment-core/db-retry', () => ({
+	retryOnSerializationConflict: async (fn: () => Promise<unknown>) => fn(),
+}));
+
 jest.unstable_mockModule('@/services/shared/chain-tx-lookup', () => ({
 	lookupChainTx: mockLookupChainTx,
 }));
@@ -105,6 +127,7 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 		FUND_DISTRIBUTION_TX_CONFIRMATION_TIMEOUT_MS: 1_800_000,
 		FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS: 300_000,
 		FUND_DISTRIBUTION_CONFIRMATION_DELAY_MS: 300_000,
+		FUND_DISTRIBUTION_FAILURE_RETRY_COOLDOWN_MS: 900_000,
 	},
 }));
 
@@ -118,8 +141,9 @@ jest.unstable_mockModule('@masumi/payment-core/blockchain-error-interpreter', ()
 
 jest.unstable_mockModule('@/services/webhooks', () => ({
 	webhookEventsService: {
-		triggerFundDistributionConfirmed: mockTriggerConfirmed,
-		triggerFundDistributionFailed: mockTriggerFailed,
+		queueFundDistributionSent: mockQueueSent,
+		queueFundDistributionConfirmed: mockQueueConfirmed,
+		queueFundDistributionFailed: mockQueueFailed,
 	},
 }));
 
@@ -142,7 +166,7 @@ const fundWallet = {
 	id: 'fund-1',
 	walletAddress: 'addr_fund',
 	walletVkey: 'vkey',
-	lowBalanceRuleId: 'rule-1',
+	lowBalanceRule: { id: 'rule-1', lastAlertedAt: null as Date | null },
 	paymentSourceId: 'ps-1',
 	paymentSourceType: 'Web3CardanoV1',
 	network: 'Preprod',
@@ -165,11 +189,13 @@ beforeEach(() => {
 	mockRequestFindFirst.mockResolvedValue(null);
 	mockRequestCreate.mockResolvedValue({ id: 'req-1' });
 	mockRequestFindMany.mockImplementation(async (args: any) => phaseRows[routeFindMany(args)]);
-	mockRequestUpdateMany.mockResolvedValue({ count: 0 });
+	mockRequestUpdateMany.mockImplementation(async (args: any) => ({ count: args?.where?.id?.in?.length ?? 0 }));
+	mockTransactionUpdateMany.mockResolvedValue({ count: 1 });
 	// The funded-source lookup (type: Funding) vs the low-balance scan.
 	mockHotWalletFindMany.mockImplementation(async (args: any) =>
 		args?.where?.type === HotWalletType.Funding ? [{ paymentSourceId: 'ps-1' }] : [],
 	);
+	mockHotWalletFindFirst.mockResolvedValue({ id: 'active' });
 	// MUST be stubbed. Left returning undefined, `if (!targetWallet) return;`
 	// short-circuits the critical dispatch path and every test below passes
 	// while proving nothing about it.
@@ -199,6 +225,42 @@ describe('requestTopup', () => {
 		});
 
 		expect(mockRequestCreate).not.toHaveBeenCalled();
+	});
+
+	it('does not queue a topup at or above the configured warning threshold', async () => {
+		await new FundDistributionService().requestTopup({
+			targetWalletId: 'w1',
+			currentBalance: 10_000_000n,
+			paymentSourceId: 'ps-1',
+		});
+
+		expect(mockRequestCreate).not.toHaveBeenCalled();
+	});
+
+	it('does not queue a topup when the fund wallet became inactive before creation', async () => {
+		mockHotWalletFindFirst.mockResolvedValueOnce(null);
+
+		await new FundDistributionService().requestTopup({
+			targetWalletId: 'w1',
+			currentBalance: 4_000_000n,
+			paymentSourceId: 'ps-1',
+		});
+
+		expect(mockRequestCreate).not.toHaveBeenCalled();
+		expect(mockProcessRequests).not.toHaveBeenCalled();
+	});
+
+	it('does not queue a topup when the target wallet became inactive before creation', async () => {
+		mockHotWalletFindFirst.mockResolvedValueOnce({ id: 'fund-1' }).mockResolvedValueOnce(null);
+
+		await new FundDistributionService().requestTopup({
+			targetWalletId: 'w1',
+			currentBalance: 4_000_000n,
+			paymentSourceId: 'ps-1',
+		});
+
+		expect(mockRequestCreate).not.toHaveBeenCalled();
+		expect(mockProcessRequests).not.toHaveBeenCalled();
 	});
 
 	it('dispatches a critical topup immediately, to the right address and amount', async () => {
@@ -295,15 +357,55 @@ describe('requestTopup', () => {
 });
 
 describe('processDistributionCycle', () => {
-	it('bails immediately when no fund wallet is configured', async () => {
+	it('still runs lifecycle phases when no enabled fund wallet is configured', async () => {
 		mockHotWalletFindMany.mockResolvedValue([]);
 
 		await new FundDistributionService().processDistributionCycle();
 
-		// The feature is opt-in; an unconfigured deployment must not pay for a
-		// low-balance scan every cycle, forever.
-		expect(mockRequestFindMany).not.toHaveBeenCalled();
+		expect(mockRequestFindMany).toHaveBeenCalledTimes(2);
 		expect(mockProcessRequests).not.toHaveBeenCalled();
+	});
+
+	it('uses the fund warning threshold even when the monitoring rule is healthy', async () => {
+		mockHotWalletFindMany.mockImplementation(async (args: any) =>
+			args?.where?.type === HotWalletType.Funding
+				? [{ paymentSourceId: 'ps-1' }]
+				: [
+						{
+							id: 'w1',
+							paymentSourceId: 'ps-1',
+							LowBalanceRules: [{ lastKnownAmount: 8_000_000n }],
+						},
+					],
+		);
+
+		await new FundDistributionService().processDistributionCycle();
+
+		expect(mockRequestCreate).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ priority: FundDistributionPriority.Warning }) }),
+		);
+		expect(mockHotWalletFindMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					LowBalanceRules: {
+						some: { enabled: true, assetUnit: 'lovelace', lastKnownAmount: { not: null } },
+					},
+				}),
+			}),
+		);
+	});
+
+	it('does not discover fund wallets under a deleted payment source', async () => {
+		await new FundDistributionService().processDistributionCycle();
+
+		expect(mockHotWalletFindMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					type: HotWalletType.Funding,
+					PaymentSource: { deletedAt: null },
+				}),
+			}),
+		);
 	});
 });
 
@@ -311,7 +413,18 @@ describe('reconcileInFlightRequests', () => {
 	const inFlight = (transaction: Record<string, unknown>, overrides: Record<string, unknown> = {}) => ({
 		id: 'req-1',
 		batchId: 'batch-1',
+		amount: 20_000_000n,
+		targetWalletId: 'w1',
 		transactionId: 'tx-1',
+		TargetWallet: { walletAddress: 'addr_target_w1', deletedAt: null },
+		FundWallet: {
+			id: 'fund-1',
+			walletAddress: 'addr_fund',
+			paymentSourceId: 'ps-1',
+			deletedAt: null,
+			FundDistributionConfig: { enabled: true },
+			PaymentSource: { network: 'Preprod', deletedAt: null },
+		},
 		Transaction: {
 			txHash: null,
 			intendedTxHash: 'intended-1',
@@ -334,6 +447,11 @@ describe('reconcileInFlightRequests', () => {
 			where: { id: { in: ['req-1'] }, status: FundDistributionStatus.Pending },
 			data: { status: FundDistributionStatus.Submitted, txHash: 'abc' },
 		});
+		expect(mockQueueSent).toHaveBeenCalledWith(
+			expect.any(Object),
+			expect.objectContaining({ txHash: 'abc', batchId: 'batch-1' }),
+			'ps-1',
+		);
 	});
 
 	it('releases a rolled-back batch so it can be rebuilt', async () => {
@@ -346,6 +464,26 @@ describe('reconcileInFlightRequests', () => {
 		expect(mockRequestUpdateMany).toHaveBeenCalledWith({
 			where: { id: { in: ['req-1'] }, status: FundDistributionStatus.Pending },
 			data: { transactionId: null, batchId: null },
+		});
+	});
+
+	it('fails a rolled-back batch instead of rebuilding toward an inactive target', async () => {
+		phaseRows['in-flight'] = [
+			inFlight(
+				{ status: TransactionStatus.RolledBack },
+				{ TargetWallet: { walletAddress: 'addr_target_w1', deletedAt: new Date() } },
+			),
+		];
+
+		await new FundDistributionService().processDistributionCycle();
+
+		expect(mockRequestUpdateMany).toHaveBeenCalledWith({
+			where: { id: { in: ['req-1'] }, status: FundDistributionStatus.Pending },
+			data: {
+				status: FundDistributionStatus.Failed,
+				error: 'Distribution cancelled because its payment source or wallet is inactive',
+				transactionId: null,
+			},
 		});
 	});
 
@@ -441,6 +579,11 @@ describe('processCriticalRequests', () => {
 					priority: FundDistributionPriority.Critical,
 					status: FundDistributionStatus.Pending,
 					transactionId: null,
+					TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
+					FundWallet: expect.objectContaining({
+						PaymentSource: { deletedAt: null },
+						FundDistributionConfig: { enabled: true },
+					}),
 				}),
 			}),
 		);
@@ -485,6 +628,7 @@ describe('processExpiredBatchRequests', () => {
 					priority: FundDistributionPriority.Warning,
 					status: FundDistributionStatus.Pending,
 					transactionId: null,
+					TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
 				}),
 			}),
 		);
@@ -507,7 +651,7 @@ describe('confirmSubmittedRequests', () => {
 			walletAddress: 'addr_fund',
 			lockedAt: new Date(),
 			pendingTransactionId: 'tx-1',
-			PaymentSource: { PaymentSourceConfig: { rpcProviderApiKey: 'key' }, network: 'Preprod' },
+			PaymentSource: { id: 'ps-1', PaymentSourceConfig: { rpcProviderApiKey: 'key' }, network: 'Preprod' },
 		},
 		...overrides,
 	});
@@ -530,6 +674,20 @@ describe('confirmSubmittedRequests', () => {
 		);
 	});
 
+	it('confirms an in-flight batch after the last fund wallet is disabled', async () => {
+		phaseRows.submitted = [submitted()];
+		mockHotWalletFindMany.mockResolvedValue([]);
+		mockLookupChainTx.mockResolvedValue('found');
+
+		await new FundDistributionService().processDistributionCycle();
+
+		expect(mockQueueConfirmed).toHaveBeenCalledWith(
+			expect.any(Object),
+			expect.objectContaining({ txHash: 'tx-hash-1' }),
+			'ps-1',
+		);
+	});
+
 	it('confirms a batch found on chain, touching only its own rows', async () => {
 		phaseRows.submitted = [submitted()];
 		mockLookupChainTx.mockResolvedValue('found');
@@ -542,7 +700,11 @@ describe('confirmSubmittedRequests', () => {
 			where: { id: { in: ['req-1'] }, status: FundDistributionStatus.Submitted },
 			data: { status: FundDistributionStatus.Confirmed, error: null },
 		});
-		expect(mockTriggerConfirmed).toHaveBeenCalledWith(expect.objectContaining({ txHash: 'tx-hash-1' }));
+		expect(mockQueueConfirmed).toHaveBeenCalledWith(
+			expect.any(Object),
+			expect.objectContaining({ txHash: 'tx-hash-1' }),
+			'ps-1',
+		);
 	});
 
 	it('fails a batch absent from chain past the timeout, touching only its own rows', async () => {
@@ -555,7 +717,11 @@ describe('confirmSubmittedRequests', () => {
 			where: { id: { in: ['req-1'] }, status: FundDistributionStatus.Submitted },
 			data: { status: FundDistributionStatus.Failed, error: 'Transaction not found on-chain after timeout' },
 		});
-		expect(mockTriggerFailed).toHaveBeenCalledWith(expect.objectContaining({ txHash: 'tx-hash-1' }));
+		expect(mockQueueFailed).toHaveBeenCalledWith(
+			expect.any(Object),
+			expect.objectContaining({ txHash: 'tx-hash-1' }),
+			'ps-1',
+		);
 	});
 
 	it('keeps a not-yet-indexed batch Submitted and the wallet locked', async () => {
@@ -565,7 +731,7 @@ describe('confirmSubmittedRequests', () => {
 		await new FundDistributionService().processDistributionCycle();
 
 		// Within the confirmation timeout a 404 just means Blockfrost lags.
-		expect(mockTriggerFailed).not.toHaveBeenCalled();
+		expect(mockQueueFailed).not.toHaveBeenCalled();
 		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
 	});
 
@@ -590,24 +756,23 @@ describe('confirmSubmittedRequests', () => {
 		// Clearing a lock we do not own lets the next cycle rebuild rows whose tx
 		// is still in flight.
 		expect(mockHotWalletUpdateMany).toHaveBeenCalledWith({
-			where: { id: 'fund-1', deletedAt: null, pendingTransactionId: { in: ['tx-1'] } },
+			where: { id: 'fund-1', pendingTransactionId: { in: ['tx-1'] } },
 			data: { lockedAt: null, pendingTransactionId: null },
+		});
+		expect(mockTransactionUpdateMany).toHaveBeenCalledWith({
+			where: { id: { in: ['tx-1'] }, status: TransactionStatus.Pending },
+			data: { status: TransactionStatus.Confirmed, lastCheckedAt: expect.any(Date) },
 		});
 	});
 
-	it('still releases the lock when a wallet holds rows from two batches', async () => {
-		// Reachable when wallet-timeouts frees the lock early and a second batch
-		// takes it. Declining to unlock here would leave the wallet wedged until
-		// another service happened to clean it up.
-		phaseRows.submitted = [submitted(), submitted({ id: 'req-2', txHash: 'tx-hash-2', transactionId: 'tx-2' })];
+	it('does not emit or unlock when another replica won the terminal transition', async () => {
+		phaseRows.submitted = [submitted()];
 		mockLookupChainTx.mockResolvedValue('found');
+		mockRequestUpdateMany.mockResolvedValue({ count: 0 });
 
 		await new FundDistributionService().processDistributionCycle();
 
-		expect(mockHotWalletUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: expect.objectContaining({ pendingTransactionId: { in: ['tx-1', 'tx-2'] } }),
-			}),
-		);
+		expect(mockQueueConfirmed).not.toHaveBeenCalled();
+		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
 	});
 });

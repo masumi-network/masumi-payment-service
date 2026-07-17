@@ -62,7 +62,7 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 		method: 'post',
 		path: '/fund-wallet',
 		description:
-			'Creates a fund wallet for a payment source from an existing mnemonic and enables automatic distribution. The wallet tops up the Selling and Purchasing wallets of that same payment source when they fall below the configured thresholds: below warningThreshold the topup is batched, below criticalThreshold it is sent immediately. Fund the returned address before distribution can do anything. A payment source can have only one fund wallet, and because wallet key hashes are globally unique a mnemonic can only ever back one wallet — so each payment source needs its own.',
+			'Creates a fund wallet for a payment source from an existing mnemonic and enables automatic distribution. The wallet tops up the Selling and Purchasing wallets of that same payment source when they fall below the configured thresholds: below warningThreshold the topup is batched, below criticalThreshold it is sent immediately. Fund the returned address before distribution can do anything. A payment source can have only one fund wallet, and because wallet key hashes are unique among active wallets a mnemonic can only back one live wallet at a time — so each payment source needs its own. Deleting a fund wallet frees its mnemonic for re-registration.',
 		summary: 'Create a fund wallet for a payment source. (admin access required)',
 		tags: ['fund-wallet'],
 		security: secured,
@@ -136,7 +136,9 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 				id: 'cuid_v2_auto_generated',
 				FundDistributionConfig: fundDistributionConfigExample,
 			}),
-			400: { description: 'criticalThreshold is not below warningThreshold' },
+			400: {
+				description: 'criticalThreshold is not below warningThreshold, or topupAmount is below the minimum topup floor',
+			},
 			401: { description: 'Unauthorized' },
 			404: { description: 'Fund wallet not found, or it has no distribution config' },
 		},
@@ -146,7 +148,7 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 		method: 'delete',
 		path: '/fund-wallet',
 		description:
-			'Soft-deletes a fund wallet, disables its distribution config and cancels any outstanding distribution requests. Does NOT move funds. Refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true to delete regardless, accepting that any remaining balance is recoverable only with direct database access.',
+			'Soft-deletes a fund wallet, disables its distribution config and cancels unclaimed pending distribution requests. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.',
 		summary: 'Delete a fund wallet. (admin access required)',
 		tags: ['fund-wallet'],
 		security: secured,
@@ -164,7 +166,10 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 			200: successResponse('Fund wallet deleted', deleteFundWalletSchemaOutput, { id: 'cuid_v2_auto_generated' }),
 			401: { description: 'Unauthorized' },
 			404: { description: 'Fund wallet not found' },
-			409: { description: 'Fund wallet still holds funds; withdraw them or pass force=true' },
+			409: {
+				description:
+					'Fund wallet has a distribution in flight, or still holds funds. In-flight transactions must settle; balance-only conflicts can be bypassed with force=true',
+			},
 			503: { description: 'Balance could not be checked; retry or pass force=true' },
 		},
 	});

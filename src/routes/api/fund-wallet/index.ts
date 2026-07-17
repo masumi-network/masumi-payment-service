@@ -3,12 +3,13 @@ import { logger } from '@masumi/payment-core/logger';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { CONSTANTS } from '@masumi/payment-core/config';
-import { HotWalletType, FundDistributionStatus, Prisma } from '@/generated/prisma/client';
+import { HotWalletType, FundDistributionStatus } from '@/generated/prisma/client';
 import { encrypt } from '@/utils/security/encryption';
 import { resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { fetchAddressBalanceMap } from '@/services/shared/address-balance';
 import { walletLowBalanceMonitorService, serializeLowBalanceSummary } from '@/services/wallets';
+import { isUniqueConstraintError, retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import {
 	deleteFundWalletSchemaInput,
 	deleteFundWalletSchemaOutput,
@@ -180,9 +181,10 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 		// A typo'd or truncated phrase is ordinary user input, not an exception:
 		// MeshWallet throws a bare bip39 Error, which would otherwise surface as a
 		// 500 plus an error-level log and a business-error metric.
+		const normalizedMnemonic = input.walletMnemonic.trim().split(/\s+/).join(' ');
 		let address: string | undefined;
 		try {
-			const mnemonicWords = input.walletMnemonic.trim().split(/\s+/);
+			const mnemonicWords = normalizedMnemonic.split(' ');
 			const offlineWallet = generateOfflineWallet(paymentSource.network, mnemonicWords);
 			const unusedAddresses = await offlineWallet.getUnusedAddresses();
 			address = unusedAddresses[0];
@@ -194,46 +196,79 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 			throw createHttpError(400, 'Could not derive address from provided mnemonic');
 		}
 		const vKey = resolvePaymentKeyHash(address);
-		const encryptedMnemonic = encrypt(input.walletMnemonic);
+		const encryptedMnemonic = encrypt(normalizedMnemonic);
 
 		let result;
 		try {
-			result = await prisma.$transaction(async (tx) => {
-				const secret = await tx.walletSecret.create({
-					data: { encryptedMnemonic },
-				});
+			result = await retryOnSerializationConflict(
+				() =>
+					prisma.$transaction(
+						async (tx) => {
+							// The source was loaded before mnemonic derivation. It may
+							// have been deleted while that async work ran, so claim its
+							// active lifecycle in the same serializable transaction as
+							// the treasury insert.
+							const activePaymentSource = await tx.paymentSource.findUnique({
+								where: { id: input.paymentSourceId, deletedAt: null },
+								select: { id: true },
+							});
+							if (activePaymentSource == null) {
+								throw createHttpError(409, 'Payment source is no longer active');
+							}
 
-				const hotWallet = await tx.hotWallet.create({
-					data: {
-						walletAddress: address,
-						walletVkey: vKey,
-						type: HotWalletType.Funding,
-						secretId: secret.id,
-						paymentSourceId: input.paymentSourceId,
-						note: input.note ?? null,
-					},
-				});
+							const secret = await tx.walletSecret.create({
+								data: { encryptedMnemonic },
+							});
 
-				const config = await tx.fundDistributionConfig.create({
-					data: {
-						hotWalletId: hotWallet.id,
-						enabled: true,
-						warningThreshold,
-						criticalThreshold,
-						topupAmount,
-						batchWindowMs: input.batchWindowMs ?? CONSTANTS.FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS,
-					},
-				});
+							const hotWallet = await tx.hotWallet.create({
+								data: {
+									walletAddress: address,
+									walletVkey: vKey,
+									type: HotWalletType.Funding,
+									secretId: secret.id,
+									paymentSourceId: input.paymentSourceId,
+									note: input.note ?? null,
+								},
+							});
 
-				return { hotWallet, config };
-			});
+							const config = await tx.fundDistributionConfig.create({
+								data: {
+									hotWalletId: hotWallet.id,
+									enabled: true,
+									warningThreshold,
+									criticalThreshold,
+									topupAmount,
+									batchWindowMs: input.batchWindowMs ?? CONSTANTS.FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS,
+								},
+							});
+
+							return { hotWallet, config };
+						},
+						{ isolationLevel: 'Serializable' },
+					),
+				{ label: 'fund-wallet-create' },
+			);
 		} catch (error) {
 			// HotWallet.walletVkey is globally unique, not per payment source, so the
 			// same mnemonic cannot back two wallets anywhere in the system. The
 			// natural operator move -- reuse one treasury mnemonic for the V1 and the
 			// V2 source -- lands here. Without this it surfaced as a raw Prisma error
 			// and a 500, which reads as a bug rather than a constraint.
-			if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+			if (isUniqueConstraintError(error)) {
+				// The database constraint is the authoritative race-safe check. If
+				// another request won creation for this source, report that conflict;
+				// otherwise the globally unique walletVkey/mnemonic was reused.
+				const activeFundWallet = await prisma.hotWallet.findFirst({
+					where: {
+						paymentSourceId: input.paymentSourceId,
+						type: HotWalletType.Funding,
+						deletedAt: null,
+					},
+					select: { id: true },
+				});
+				if (activeFundWallet) {
+					throw createHttpError(409, 'A fund wallet already exists for this payment source');
+				}
 				throw createHttpError(
 					409,
 					'This wallet is already registered. A wallet mnemonic can only back one wallet, so each payment source needs its own fund wallet with its own mnemonic.',
@@ -306,8 +341,13 @@ export const patchFundWalletEndpointPatch = adminAuthenticatedEndpointFactory.bu
 			where: { id: wallet.FundDistributionConfig.id },
 			data: {
 				...(input.enabled != null ? { enabled: input.enabled } : {}),
-				...(input.warningThreshold != null ? { warningThreshold: BigInt(input.warningThreshold) } : {}),
-				...(input.criticalThreshold != null ? { criticalThreshold: BigInt(input.criticalThreshold) } : {}),
+				// Always persist the thresholds as the validated PAIR, not just the
+				// provided field. Writing only one column let two concurrent patches
+				// (warning down, critical up) each validate against stale data and
+				// interleave into critical >= warning — after which every low balance
+				// classified Critical and bypassed the batch window.
+				warningThreshold: newWarning,
+				criticalThreshold: newCritical,
 				...(input.topupAmount != null ? { topupAmount: BigInt(input.topupAmount) } : {}),
 				...(input.batchWindowMs != null ? { batchWindowMs: input.batchWindowMs } : {}),
 			},
@@ -332,6 +372,16 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 				walletAddress: true,
 				lockedAt: true,
 				pendingTransactionId: true,
+				FundDistributionsSent: {
+					where: {
+						OR: [
+							{ status: FundDistributionStatus.Submitted },
+							{ status: FundDistributionStatus.Pending, transactionId: { not: null } },
+						],
+					},
+					select: { id: true },
+					take: 1,
+				},
 				PaymentSource: {
 					select: { network: true, PaymentSourceConfig: { select: { rpcProviderApiKey: true } } },
 				},
@@ -342,21 +392,14 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 			throw createHttpError(404, 'Fund wallet not found');
 		}
 
-		// Both guards are skippable only via an explicit `force`. `force` is for the
-		// operator who knows the funds are gone or accepts the loss — never a
-		// default, and never something a misconfiguration selects for them.
-		if (!input.force) {
-			// Deleting mid-batch marks Submitted rows Failed while their tx may
-			// already be on chain (targets funded, DB says Failed, no webhook), and
-			// strands lockedAt/pendingTransactionId on a row every reaper skips
-			// because they all filter `deletedAt: null`.
-			if (wallet.lockedAt != null || wallet.pendingTransactionId != null) {
-				throw createHttpError(
-					409,
-					'Fund wallet has a distribution in flight. Wait for it to settle, or pass force=true to delete anyway.',
-				);
-			}
+		// A broadcast or ambiguous batch cannot be cancelled by deleting its DB
+		// row. This guard is never bypassed by `force`; force only skips the balance
+		// check below.
+		if (wallet.lockedAt != null || wallet.pendingTransactionId != null || wallet.FundDistributionsSent.length > 0) {
+			throw createHttpError(409, 'Fund wallet has a distribution in flight. Wait for it to settle before deleting.');
+		}
 
+		if (!input.force) {
 			// Refuse to strand funds. Every read path filters `deletedAt: null`, so
 			// once soft-deleted the mnemonic is unreachable through the API and the
 			// balance is recoverable only with DB access plus the ENCRYPTION_KEY.
@@ -397,29 +440,62 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 			}
 		}
 
-		await prisma.$transaction(async (tx) => {
-			await tx.fundDistributionConfig.updateMany({
-				where: { hotWalletId: input.id },
-				data: { enabled: false },
-			});
+		const didDelete = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						// Re-check and claim deletion atomically with the same fields the
+						// batch executor uses for its wallet claim. Whichever transaction
+						// wins makes the other's conditional update affect zero rows.
+						const deleted = await tx.hotWallet.updateMany({
+							where: {
+								id: input.id,
+								type: HotWalletType.Funding,
+								deletedAt: null,
+								lockedAt: null,
+								pendingTransactionId: null,
+								FundDistributionsSent: {
+									none: {
+										OR: [
+											{ status: FundDistributionStatus.Submitted },
+											{ status: FundDistributionStatus.Pending, transactionId: { not: null } },
+										],
+									},
+								},
+							},
+							data: { deletedAt: new Date() },
+						});
+						if (deleted.count !== 1) return false;
 
-			// Cancel any outstanding distribution requests so the scheduler stops picking them up
-			await tx.fundDistributionRequest.updateMany({
-				where: {
-					fundWalletId: input.id,
-					status: { in: [FundDistributionStatus.Pending, FundDistributionStatus.Submitted] },
-				},
-				data: {
-					status: FundDistributionStatus.Failed,
-					error: 'Fund wallet was deleted',
-				},
-			});
+						await tx.fundDistributionConfig.updateMany({
+							where: { hotWalletId: input.id },
+							data: { enabled: false },
+						});
 
-			await tx.hotWallet.update({
-				where: { id: input.id },
-				data: { deletedAt: new Date() },
-			});
-		});
+						// Only unclaimed Pending requests are cancellable. Submitted requests
+						// are protected by the guarded delete because broadcast cannot be undone.
+						await tx.fundDistributionRequest.updateMany({
+							where: {
+								fundWalletId: input.id,
+								status: FundDistributionStatus.Pending,
+								transactionId: null,
+							},
+							data: {
+								status: FundDistributionStatus.Failed,
+								error: 'Fund wallet was deleted',
+							},
+						});
+
+						return true;
+					},
+					{ isolationLevel: 'Serializable' },
+				),
+			{ label: 'fund-wallet-delete' },
+		);
+
+		if (!didDelete) {
+			throw createHttpError(409, 'Fund wallet has a distribution in flight. Wait for it to settle before deleting.');
+		}
 
 		return { id: input.id };
 	},

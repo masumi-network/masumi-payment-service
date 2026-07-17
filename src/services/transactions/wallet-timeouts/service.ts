@@ -772,13 +772,30 @@ export async function updateWalletTransactionHash() {
 						// for a duplicate send. Fund distribution originally had that bug
 						// (MAS-392); it now records pre-submit like V1/V2 batch-payments.
 						// Any new flow that locks a HotWallet must do the same.
-						await prisma.hotWallet.update({
-							where: { id: wallet.id, deletedAt: null },
+						//
+						// The predicate re-checks what the sweep read: a slow build can
+						// record intendedTxHash (or the hash itself) on this same row
+						// between our read and this write, and an unguarded disconnect
+						// would then free the wallet with a signed tx in flight.
+						const disconnected = await prisma.hotWallet.updateMany({
+							where: {
+								id: wallet.id,
+								deletedAt: null,
+								pendingTransactionId: wallet.PendingTransaction.id,
+								PendingTransaction: { intendedTxHash: null, txHash: null },
+							},
 							data: {
-								PendingTransaction: { disconnect: true },
+								pendingTransactionId: null,
 								lockedAt: null,
 							},
 						});
+						if (disconnected.count !== 1) {
+							logger.info('wallet-timeouts: orphan lock advanced before disconnect; leaving it', {
+								walletId: wallet.id,
+								transactionId: wallet.PendingTransaction.id,
+							});
+							return;
+						}
 						tallyUnlockedWallet(wallet);
 						markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 						return;

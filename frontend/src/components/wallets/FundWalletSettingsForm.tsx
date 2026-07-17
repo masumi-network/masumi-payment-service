@@ -10,6 +10,7 @@ import {
   convertBaseUnitsToDecimal,
   convertDecimalToBaseUnits,
 } from '@/lib/convertDecimalToBaseUnits';
+import { MIN_TOPUP_ADA } from '@/lib/fund-wallet';
 
 const adaAmount = (label: string) =>
   z
@@ -24,7 +25,11 @@ const settingsSchema = z
     enabled: z.boolean(),
     warningThreshold: adaAmount('Warning threshold'),
     criticalThreshold: adaAmount('Critical threshold'),
-    topupAmount: adaAmount('Top-up amount'),
+    // Mirrors the server's PATCH-side floor check, which exists so the floor
+    // cannot be bypassed by editing a valid config down afterwards.
+    topupAmount: adaAmount('Top-up amount').refine((value) => Number(value) >= MIN_TOPUP_ADA, {
+      message: `Top-up amount must be at least ${MIN_TOPUP_ADA} ADA`,
+    }),
   })
   .refine((values) => Number(values.criticalThreshold) < Number(values.warningThreshold), {
     message: 'Critical threshold must be below the warning threshold',

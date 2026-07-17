@@ -1,6 +1,5 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
-import { HotWalletType } from '@/generated/prisma/client';
 import { logger } from '@masumi/payment-core/logger';
 import { fundDistributionService } from '@/services/wallets';
 import {
@@ -24,31 +23,12 @@ export const getFundDistributionEndpointGet = adminAuthenticatedEndpointFactory.
 	handler: async ({ input }) => {
 		const take = input.take ?? 20;
 
-		// If filtering by paymentSourceId, first resolve the fund wallet id
-		let resolvedFundWalletId = input.fundWalletId;
-		if (input.paymentSourceId && !resolvedFundWalletId) {
-			const fundWallet = await prisma.hotWallet.findFirst({
-				where: {
-					paymentSourceId: input.paymentSourceId,
-					type: HotWalletType.Funding,
-					deletedAt: null,
-				},
-				select: { id: true },
-			});
-
-			if (fundWallet == null) {
-				// The source has no fund wallet, so it has no distributions. Returning
-				// early matters: falling through would leave the filter unset and the
-				// query would answer a scoped request with every distribution in the
-				// system, silently.
-				return { FundDistributions: [] };
-			}
-			resolvedFundWalletId = fundWallet.id;
-		}
-
 		const requests = await prisma.fundDistributionRequest.findMany({
 			where: {
-				...(resolvedFundWalletId ? { fundWalletId: resolvedFundWalletId } : {}),
+				...(input.fundWalletId ? { fundWalletId: input.fundWalletId } : {}),
+				// Resolve through the relation so a payment-source query includes old,
+				// soft-deleted/replaced fund wallets and both filters stay effective.
+				...(input.paymentSourceId ? { FundWallet: { paymentSourceId: input.paymentSourceId } } : {}),
 				...(input.status ? { status: input.status } : {}),
 			},
 			orderBy: { createdAt: 'desc' },

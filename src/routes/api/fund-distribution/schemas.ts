@@ -19,7 +19,16 @@ export const getFundDistributionSchemaInput = z.object({
 	paymentSourceId: z.string().min(1).max(250).optional().describe('Filter by payment source'),
 	fundWalletId: z.string().min(1).max(250).optional().describe('Filter by fund wallet'),
 	status: z.nativeEnum(FundDistributionStatus).optional().describe('Filter by status'),
-	take: z.number().int().min(1).max(100).default(20).optional().describe('Number of results (max 100, default 20)'),
+	// z.coerce: GET inputs arrive as query-string values, which are always
+	// strings; plain z.number() rejects every request that supplies the param.
+	take: z.coerce
+		.number()
+		.int()
+		.min(1)
+		.max(100)
+		.default(20)
+		.optional()
+		.describe('Number of results (max 100, default 20)'),
 	cursorId: z.string().min(1).max(250).optional().describe('Cursor id for pagination'),
 });
 

@@ -3,7 +3,6 @@ import { getFundDistribution, getFundWallet } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { getOwnValue, isObject } from '@/lib/object-properties';
-import { handleApiCall } from '@/lib/utils';
 
 /**
  * HTTP status of a failed generated-client call.
@@ -69,26 +68,32 @@ export function useFundWallet() {
 /** Recent distribution requests for a fund wallet, newest first. */
 export function useFundDistributions(
   fundWalletId: string | null | undefined,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; refetchInterval?: number },
 ) {
   const { apiClient } = useAppContext();
 
   const query = useQuery({
     queryKey: ['fund-distributions', fundWalletId],
     enabled: Boolean(fundWalletId) && options?.enabled !== false,
+    refetchInterval: options?.refetchInterval,
     queryFn: async () => {
       if (!fundWalletId) return [];
 
-      const response = await handleApiCall(
-        () =>
-          getFundDistribution({
-            client: apiClient,
-            query: { fundWalletId, take: 20 },
-          }),
-        { errorMessage: 'Failed to load fund distributions' },
-      );
+      // Errors must PROPAGATE, mirroring useFundWallet above. Swallowing them
+      // (toast + empty array) marked the query successful, so a transient
+      // failure rendered an authoritative "No top-ups yet" that never retried —
+      // hiding Failed rows the operator needed to see.
+      const response = await getFundDistribution({
+        client: apiClient,
+        query: { fundWalletId, take: 20 },
+      });
+      if (response.error) {
+        throw new Error(
+          extractApiErrorMessage(response.error, 'Failed to load fund distributions'),
+        );
+      }
 
-      return response?.data?.data?.FundDistributions ?? [];
+      return response.data?.data?.FundDistributions ?? [];
     },
   });
 
@@ -96,6 +101,7 @@ export function useFundDistributions(
     distributions: query.data ?? [],
     isLoading: query.isLoading,
     isFetching: query.isFetching,
+    error: query.error,
     refetch: query.refetch,
   };
 }

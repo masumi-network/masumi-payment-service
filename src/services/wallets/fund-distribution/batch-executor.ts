@@ -18,6 +18,54 @@ export type FundDistributionBatchRequest = {
 	amount: bigint;
 };
 
+type ClaimErrorCode = 'WALLET_UNAVAILABLE' | 'REQUESTS_ALREADY_CLAIMED' | 'BATCH_OWNERSHIP_LOST';
+
+function claimError(code: ClaimErrorCode): Error & { code: ClaimErrorCode } {
+	return Object.assign(new Error(code), { code });
+}
+
+/**
+ * Tell operators the treasury itself cannot afford any top-up.
+ *
+ * The alert is keyed to the fund wallet's own low-balance rule so consumers
+ * get a resolvable ruleId; without a rule, only the log line above fires. The
+ * `lastAlertedAt` claim throttles the alert: the distribution cycle runs every
+ * 30s and the pending requests stay Pending while the treasury is empty, so an
+ * unthrottled alert re-fired per cycle. The guarded updateMany is also the
+ * cross-replica claim — whichever worker advances `lastAlertedAt` sends.
+ */
+async function alertFundWalletUnderfunded(fundWallet: FundWalletContext, fundWalletBalance: bigint): Promise<void> {
+	const rule = fundWallet.lowBalanceRule;
+	if (rule == null) return;
+
+	const cooldownStart = new Date(Date.now() - CONSTANTS.FUND_DISTRIBUTION_UNDERFUNDED_ALERT_COOLDOWN_MS);
+	if (rule.lastAlertedAt != null && rule.lastAlertedAt > cooldownStart) return;
+
+	const claimed = await prisma.hotWalletLowBalanceRule.updateMany({
+		where: {
+			id: rule.id,
+			OR: [{ lastAlertedAt: null }, { lastAlertedAt: { lte: cooldownStart } }],
+		},
+		data: { lastAlertedAt: new Date() },
+	});
+	if (claimed.count !== 1) return;
+
+	await webhookEventsService.triggerWalletLowBalance({
+		ruleId: rule.id,
+		walletId: fundWallet.id,
+		walletAddress: fundWallet.walletAddress,
+		walletVkey: fundWallet.walletVkey,
+		walletType: HotWalletType.Funding,
+		paymentSourceId: fundWallet.paymentSourceId,
+		paymentSourceType: fundWallet.paymentSourceType,
+		network: fundWallet.network,
+		assetUnit: 'lovelace',
+		thresholdAmount: '0',
+		currentAmount: fundWalletBalance.toString(),
+		checkedAt: new Date().toISOString(),
+	});
+}
+
 /**
  * Executes one distribution batch for a single fund wallet: affordability
  * check, wallet lock, build/sign, pre-submit hash recording, broadcast, and
@@ -66,30 +114,18 @@ export async function processRequestsForFundWallet(
 			fund_wallet_id: fundWallet.id,
 			balance: fundWalletBalance.toString(),
 		});
-		await webhookEventsService.triggerWalletLowBalance({
-			ruleId: fundWallet.lowBalanceRuleId,
-			walletId: fundWallet.id,
-			walletAddress: fundWallet.walletAddress,
-			walletVkey: fundWallet.walletVkey,
-			walletType: HotWalletType.Funding,
-			paymentSourceId: fundWallet.paymentSourceId,
-			paymentSourceType: fundWallet.paymentSourceType,
-			network: fundWallet.network,
-			assetUnit: 'lovelace',
-			thresholdAmount: '0',
-			currentAmount: fundWalletBalance.toString(),
-			checkedAt: new Date().toISOString(),
-		});
+		await alertFundWalletUnderfunded(fundWallet, fundWalletBalance);
 		return;
 	}
 
-	const affordableRequests = requests.filter((req) => {
+	const affordableRequests: FundDistributionBatchRequest[] = [];
+	for (const req of requests) {
+		if (affordableRequests.length >= CONSTANTS.FUND_DISTRIBUTION_MAX_OUTPUTS_PER_TX) break;
 		if (req.amount <= remainingBalance) {
 			remainingBalance -= req.amount;
-			return true;
+			affordableRequests.push(req);
 		}
-		return false;
-	});
+	}
 
 	if (affordableRequests.length === 0) {
 		logger.warn('Fund wallet cannot afford any pending distributions', {
@@ -98,6 +134,7 @@ export async function processRequestsForFundWallet(
 			balance: fundWalletBalance.toString(),
 			first_request_amount: requests[0]?.amount.toString(),
 		});
+		await alertFundWalletUnderfunded(fundWallet, fundWalletBalance);
 		return;
 	}
 
@@ -111,50 +148,71 @@ export async function processRequestsForFundWallet(
 	// in-flight without a resolvable link back to the Transaction reconciliation will act on.
 	let transaction: { id: string };
 	try {
-		transaction = await prisma.$transaction(async (tx) => {
-			const currentWallet = await tx.hotWallet.findUnique({
-				where: { id: fundWallet.id },
-				select: { lockedAt: true, pendingTransactionId: true },
-			});
+		transaction = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						const newTx = await tx.transaction.create({
+							data: {
+								txHash: null,
+								status: TransactionStatus.Pending,
+							},
+						});
 
-			if (currentWallet == null) {
-				throw Object.assign(new Error('WALLET_NOT_FOUND'), { code: 'WALLET_NOT_FOUND' });
-			}
-			if (currentWallet.lockedAt != null || currentWallet.pendingTransactionId != null) {
-				throw Object.assign(new Error('WALLET_LOCKED'), { code: 'WALLET_LOCKED' });
-			}
+						// The predicate is the lock acquisition. Two replicas may both read
+						// the wallet as free, but only one can change this row from free to
+						// owned by its transaction.
+						const walletClaim = await tx.hotWallet.updateMany({
+							where: {
+								id: fundWallet.id,
+								deletedAt: null,
+								lockedAt: null,
+								pendingTransactionId: null,
+								FundDistributionConfig: { enabled: true },
+								PaymentSource: { deletedAt: null },
+							},
+							data: {
+								lockedAt: new Date(),
+								pendingTransactionId: newTx.id,
+							},
+						});
+						if (walletClaim.count !== 1) throw claimError('WALLET_UNAVAILABLE');
 
-			const newTx = await tx.transaction.create({
-				data: {
-					txHash: null,
-					status: TransactionStatus.Pending,
-				},
-			});
+						const requestClaim = await tx.fundDistributionRequest.updateMany({
+							where: {
+								id: { in: batchRequestIds },
+								fundWalletId: fundWallet.id,
+								status: FundDistributionStatus.Pending,
+								transactionId: null,
+								TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
+							},
+							data: { transactionId: newTx.id, batchId },
+						});
+						if (requestClaim.count !== batchRequestIds.length) {
+							throw claimError('REQUESTS_ALREADY_CLAIMED');
+						}
 
-			await tx.hotWallet.update({
-				where: { id: fundWallet.id, deletedAt: null },
-				data: {
-					lockedAt: new Date(),
-					pendingTransactionId: newTx.id,
-				},
-			});
-
-			await tx.fundDistributionRequest.updateMany({
-				where: { id: { in: batchRequestIds } },
-				data: { transactionId: newTx.id, batchId },
-			});
-
-			return newTx;
-		});
+						return newTx;
+					},
+					{ isolationLevel: 'Serializable' },
+				),
+			{ label: 'fund-distribution-claim' },
+		);
 	} catch (error) {
-		if (error instanceof Error && (error as { code?: string }).code === 'WALLET_LOCKED') {
+		const code = error instanceof Error ? (error as { code?: string }).code : undefined;
+		if (code === 'WALLET_UNAVAILABLE') {
 			logger.info('Fund wallet is locked, skipping distribution cycle', {
 				component: 'fund_distribution',
 				fund_wallet_id: fundWallet.id,
 			});
 			return;
 		}
-		if (error instanceof Error && (error as { code?: string }).code === 'WALLET_NOT_FOUND') {
+		if (code === 'REQUESTS_ALREADY_CLAIMED') {
+			logger.info('Fund distribution requests were claimed by another worker', {
+				component: 'fund_distribution',
+				fund_wallet_id: fundWallet.id,
+				request_ids: batchRequestIds,
+			});
 			return;
 		}
 		throw error;
@@ -178,24 +236,63 @@ export async function processRequestsForFundWallet(
 	// Revert = unlock the wallet, drop the orphaned Transaction row, fail the
 	// requests. ONLY safe when the tx body provably never reached the chain.
 	const revertNeverBroadcast = async (errorMsg: string) => {
-		await prisma.$transaction([
-			prisma.hotWallet.update({
-				where: { id: fundWallet.id, deletedAt: null },
-				data: { lockedAt: null, pendingTransactionId: null },
-			}),
-			prisma.transaction.delete({ where: { id: transaction.id } }),
-		]);
-		await prisma.fundDistributionRequest.updateMany({
-			where: { id: { in: requestIds } },
-			data: { status: FundDistributionStatus.Failed, error: errorMsg, batchId },
-		});
-		// Tell operators the top-up did not happen. These wallets are still low
-		// and no funds moved, so this is the actionable signal.
-		await webhookEventsService.triggerFundDistributionFailed({
-			...batchPayload,
-			txHash: null,
-			error: errorMsg,
-		});
+		const failedCount = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						// Only release this batch's lock. If a timeout/recovery path has
+						// already given the wallet to a newer transaction, leave it alone.
+						await tx.hotWallet.updateMany({
+							where: { id: fundWallet.id, pendingTransactionId: transaction.id },
+							data: { lockedAt: null, pendingTransactionId: null },
+						});
+
+						const failed = await tx.fundDistributionRequest.updateMany({
+							where: {
+								id: { in: requestIds },
+								fundWalletId: fundWallet.id,
+								status: FundDistributionStatus.Pending,
+								transactionId: transaction.id,
+							},
+							data: {
+								status: FundDistributionStatus.Failed,
+								error: errorMsg,
+								batchId,
+								transactionId: null,
+							},
+						});
+
+						if (failed.count !== requestIds.length) return failed.count;
+
+						await tx.transaction.deleteMany({
+							where: { id: transaction.id, status: TransactionStatus.Pending },
+						});
+						await webhookEventsService.queueFundDistributionFailed(
+							tx,
+							{
+								...batchPayload,
+								txHash: null,
+								error: errorMsg,
+							},
+							fundWallet.paymentSourceId,
+						);
+						return failed.count;
+					},
+					{ isolationLevel: 'Serializable' },
+				),
+			{ label: 'fund-distribution-revert-never-broadcast' },
+		);
+
+		if (failedCount !== requestIds.length) {
+			logger.warn('Fund distribution pre-broadcast rollback lost ownership of some requests', {
+				component: 'fund_distribution',
+				fund_wallet_id: fundWallet.id,
+				batch_id: batchId,
+				expected_request_count: requestIds.length,
+				failed_request_count: failedCount,
+			});
+			return;
+		}
 	};
 
 	// Build and sign WITHOUT broadcasting, so the deterministic hash can be
@@ -228,14 +325,52 @@ export async function processRequestsForFundWallet(
 	try {
 		await retryOnSerializationConflict(
 			() =>
-				prisma.transaction.update({
-					where: { id: transaction.id },
-					data: {
-						intendedTxHash: signed.intendedTxHash,
-						invalidHereafterSlot: BigInt(signed.invalidHereafterSlot),
-						lastCheckedAt: new Date(),
+				prisma.$transaction(
+					async (tx) => {
+						// Renew and fence the lease. If timeout recovery, source deletion,
+						// or configuration disablement won while build/sign was awaiting
+						// network I/O, discard the signed body instead of reviving a stale
+						// worker that may race a replacement batch.
+						const walletLease = await tx.hotWallet.updateMany({
+							where: {
+								id: fundWallet.id,
+								deletedAt: null,
+								pendingTransactionId: transaction.id,
+								FundDistributionConfig: { enabled: true },
+								PaymentSource: { deletedAt: null },
+							},
+							data: { lockedAt: new Date() },
+						});
+						if (walletLease.count !== 1) throw claimError('BATCH_OWNERSHIP_LOST');
+
+						const ownedRequests = await tx.fundDistributionRequest.count({
+							where: {
+								id: { in: requestIds },
+								fundWalletId: fundWallet.id,
+								status: FundDistributionStatus.Pending,
+								transactionId: transaction.id,
+								TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
+							},
+						});
+						if (ownedRequests !== requestIds.length) throw claimError('BATCH_OWNERSHIP_LOST');
+
+						const recorded = await tx.transaction.updateMany({
+							where: {
+								id: transaction.id,
+								status: TransactionStatus.Pending,
+								txHash: null,
+								intendedTxHash: null,
+							},
+							data: {
+								intendedTxHash: signed.intendedTxHash,
+								invalidHereafterSlot: BigInt(signed.invalidHereafterSlot),
+								lastCheckedAt: new Date(),
+							},
+						});
+						if (recorded.count !== 1) throw claimError('BATCH_OWNERSHIP_LOST');
 					},
-				}),
+					{ isolationLevel: 'Serializable' },
+				),
 			{ label: 'fund-distribution-record-intended' },
 		);
 	} catch (error) {
@@ -301,17 +436,52 @@ export async function processRequestsForFundWallet(
 		return;
 	}
 
-	// Update transaction with hash
-	await prisma.transaction.update({
-		where: { id: transaction.id },
-		data: { txHash },
-	});
+	// Record the broadcast and advance only the rows this batch owns. Keeping
+	// both writes atomic prevents reconciliation from observing txHash while the
+	// request rows are still unsubmitted.
+	const submittedCount = await retryOnSerializationConflict(
+		() =>
+			prisma.$transaction(
+				async (tx) => {
+					const recorded = await tx.transaction.updateMany({
+						where: { id: transaction.id, status: TransactionStatus.Pending },
+						data: { txHash },
+					});
+					if (recorded.count !== 1) return 0;
 
-	// Mark requests as submitted
-	await prisma.fundDistributionRequest.updateMany({
-		where: { id: { in: requestIds } },
-		data: { status: FundDistributionStatus.Submitted, txHash, batchId },
-	});
+					const submitted = await tx.fundDistributionRequest.updateMany({
+						where: {
+							id: { in: requestIds },
+							fundWalletId: fundWallet.id,
+							status: FundDistributionStatus.Pending,
+							transactionId: transaction.id,
+						},
+						data: { status: FundDistributionStatus.Submitted, txHash, batchId },
+					});
+					if (submitted.count !== requestIds.length) throw claimError('BATCH_OWNERSHIP_LOST');
+					await webhookEventsService.queueFundDistributionSent(
+						tx,
+						{ ...batchPayload, txHash },
+						fundWallet.paymentSourceId,
+					);
+					return submitted.count;
+				},
+				{ isolationLevel: 'Serializable' },
+			),
+		{ label: 'fund-distribution-record-submission' },
+	);
+
+	if (submittedCount !== requestIds.length) {
+		logger.error('Fund distribution broadcast recorded without owning every request', {
+			component: 'fund_distribution',
+			fund_wallet_id: fundWallet.id,
+			batch_id: batchId,
+			tx_hash: txHash,
+			expected_request_count: requestIds.length,
+			submitted_request_count: submittedCount,
+		});
+		return;
+	}
 
 	logger.info('Fund distribution transaction submitted', {
 		component: 'fund_distribution',
@@ -320,9 +490,4 @@ export async function processRequestsForFundWallet(
 		batch_id: batchId,
 		recipient_count: affordableRequests.length,
 	});
-
-	// Submission only. The confirm phase emits CONFIRMED or FAILED once the
-	// chain has spoken — an operator who saw only this event would never learn
-	// whether the top-up actually landed.
-	await webhookEventsService.triggerFundDistributionSent({ ...batchPayload, txHash });
 }

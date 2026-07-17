@@ -319,10 +319,27 @@ export const CONSTANTS = {
 	FUND_DISTRIBUTION_TX_CONFIRMATION_TIMEOUT_MS: 30 * 60 * 1000, // 30 minutes
 	FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS: 5 * 60 * 1000, // 5 minutes
 	FUND_DISTRIBUTION_CHECK_INTERVAL_S: 30, // seconds between distribution cycles
+	// Keep one transaction comfortably below Cardano's max transaction size.
+	// Requests beyond this cap remain Pending and are picked up by a later batch.
+	FUND_DISTRIBUTION_MAX_OUTPUTS_PER_TX: 100,
 	// Grace before a submitted distribution is even checked for confirmation.
 	// Blockfrost has not indexed a tx submitted in the current cycle, and a
 	// not-found there would otherwise look like a failure.
 	FUND_DISTRIBUTION_CONFIRMATION_DELAY_MS: 5 * 60 * 1000, // 5 minutes
+	// Upper bound for the configurable batch window. Also keeps the value
+	// inside Postgres' Int (i32) range — an unbounded input overflowed the
+	// column and surfaced as a 500.
+	FUND_DISTRIBUTION_MAX_BATCH_WINDOW_MS: 24 * 60 * 60 * 1000, // 24 hours
+	// After a distribution attempt fails pre-broadcast, wait this long before
+	// re-creating a request for the same target. Retrying is correct (the
+	// wallets are still low), but without a cooldown a persistent failure
+	// (bad Blockfrost key, malformed address) re-fired FUND_DISTRIBUTION_FAILED
+	// every 30s cycle.
+	FUND_DISTRIBUTION_FAILURE_RETRY_COOLDOWN_MS: 5 * 60 * 1000, // 5 minutes
+	// Minimum gap between "fund wallet itself is underfunded" alerts. The
+	// distribution cycle runs every 30s and pending requests stay Pending while
+	// the treasury is empty, so without a cooldown the alert fired per cycle.
+	FUND_DISTRIBUTION_UNDERFUNDED_ALERT_COOLDOWN_MS: 15 * 60 * 1000, // 15 minutes
 	// Floor for a single topup. Each distribution is one tx output, so anything
 	// below Cardano's min-UTxO can never build. Set at the collateral amount
 	// (5 ADA) rather than the bare ~1 ADA minimum: a topup smaller than that is

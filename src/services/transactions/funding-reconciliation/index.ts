@@ -375,7 +375,7 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 					// fund distribution. FundDistributionRequest needs no reset here:
 					// its rows stay Pending for the whole in-flight window, so the
 					// wallet unlock below is enough for the next distribution cycle to
-					// rebuild them with fresh inputs. `reconcileReconciledRequests` in
+					// rebuild them with fresh inputs. `reconcileInFlightRequests` in
 					// the fund-distribution service observes this RolledBack row via
 					// FundDistributionRequest.transactionId and releases the link.
 					//

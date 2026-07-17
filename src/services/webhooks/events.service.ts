@@ -2,6 +2,7 @@ import { webhookQueueService } from './queue.service';
 import { logger } from '@masumi/payment-core/logger';
 import { prisma } from '@masumi/payment-core/db';
 import { WebhookEventType } from '@/generated/prisma/client';
+import type { Prisma } from '@/generated/prisma/client';
 import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 
@@ -206,11 +207,6 @@ class WebhookEventsService {
 	}
 
 	/**
-	 * Queue one of the three fund-distribution lifecycle events. A throw here is
-	 * swallowed by design: webhook delivery must never fail the distribution
-	 * flow that triggered it, least of all after funds have moved.
-	 */
-	/**
 	 * Shared logging + swallow for the fund-distribution lifecycle events. Takes
 	 * a thunk rather than an (event, payload) pair because
 	 * `WebhookPayloadDataByEvent` is a deferred conditional type: threading it
@@ -236,7 +232,10 @@ class WebhookEventsService {
 		}
 	}
 
-	async triggerFundDistributionSent(payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_SENT'>): Promise<void> {
+	async triggerFundDistributionSent(
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_SENT'>,
+		paymentSourceId: string,
+	): Promise<void> {
 		await this.triggerFundDistribution(
 			WebhookEventType.FUND_DISTRIBUTION_SENT,
 			{ fundWalletId: payload.fundWalletId, batchId: payload.batchId, txHash: payload.txHash },
@@ -245,13 +244,14 @@ class WebhookEventsService {
 					WebhookEventType.FUND_DISTRIBUTION_SENT,
 					payload,
 					payload.fundWalletId,
-					undefined,
+					paymentSourceId,
 				),
 		);
 	}
 
 	async triggerFundDistributionConfirmed(
 		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_CONFIRMED'>,
+		paymentSourceId: string,
 	): Promise<void> {
 		await this.triggerFundDistribution(
 			WebhookEventType.FUND_DISTRIBUTION_CONFIRMED,
@@ -261,12 +261,15 @@ class WebhookEventsService {
 					WebhookEventType.FUND_DISTRIBUTION_CONFIRMED,
 					payload,
 					payload.fundWalletId,
-					undefined,
+					paymentSourceId,
 				),
 		);
 	}
 
-	async triggerFundDistributionFailed(payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_FAILED'>): Promise<void> {
+	async triggerFundDistributionFailed(
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_FAILED'>,
+		paymentSourceId: string,
+	): Promise<void> {
 		await this.triggerFundDistribution(
 			WebhookEventType.FUND_DISTRIBUTION_FAILED,
 			{ fundWalletId: payload.fundWalletId, batchId: payload.batchId, txHash: payload.txHash },
@@ -275,8 +278,50 @@ class WebhookEventsService {
 					WebhookEventType.FUND_DISTRIBUTION_FAILED,
 					payload,
 					payload.fundWalletId,
-					undefined,
+					paymentSourceId,
 				),
+		);
+	}
+
+	async queueFundDistributionSent(
+		tx: Prisma.TransactionClient,
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_SENT'>,
+		paymentSourceId: string,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.FUND_DISTRIBUTION_SENT,
+			payload,
+			payload.fundWalletId,
+			paymentSourceId,
+		);
+	}
+
+	async queueFundDistributionConfirmed(
+		tx: Prisma.TransactionClient,
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_CONFIRMED'>,
+		paymentSourceId: string,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.FUND_DISTRIBUTION_CONFIRMED,
+			payload,
+			payload.fundWalletId,
+			paymentSourceId,
+		);
+	}
+
+	async queueFundDistributionFailed(
+		tx: Prisma.TransactionClient,
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_FAILED'>,
+		paymentSourceId: string,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.FUND_DISTRIBUTION_FAILED,
+			payload,
+			payload.fundWalletId,
+			paymentSourceId,
 		);
 	}
 

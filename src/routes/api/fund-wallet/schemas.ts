@@ -2,6 +2,11 @@ import { z } from '@masumi/payment-core/zod';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { lowBalanceSummarySchema } from '@/routes/api/wallet/low-balance.schemas';
 
+// 18 digits keeps any accepted value below Postgres' BigInt (i64) maximum
+// (~9.2e18) — an unbounded digit string overflowed the column and surfaced as
+// a 500 — while still allowing far more than the total lovelace supply.
+const lovelaceAmountString = z.string().regex(/^\d{1,18}$/);
+
 const fundDistributionConfigSchema = z.object({
 	id: z.string().describe('Config id'),
 	enabled: z.boolean().describe('Whether automatic distribution is enabled'),
@@ -33,16 +38,17 @@ export const getFundWalletSchemaOutput = z
 export const postFundWalletSchemaInput = z.object({
 	paymentSourceId: z.string().min(1).max(250).describe('Payment source to associate the fund wallet with'),
 	walletMnemonic: z.string().min(1).max(1500).describe('24-word mnemonic phrase for the fund wallet'),
-	warningThreshold: z.string().regex(/^\d+$/).describe('Warning balance threshold in lovelace'),
-	criticalThreshold: z.string().regex(/^\d+$/).describe('Critical balance threshold in lovelace'),
-	topupAmount: z.string().regex(/^\d+$/).describe('Amount to send per topup in lovelace'),
+	warningThreshold: lovelaceAmountString.describe('Warning balance threshold in lovelace'),
+	criticalThreshold: lovelaceAmountString.describe('Critical balance threshold in lovelace'),
+	topupAmount: lovelaceAmountString.describe('Amount to send per topup in lovelace'),
 	batchWindowMs: z
 		.number()
 		.int()
 		.min(1000)
+		.max(CONSTANTS.FUND_DISTRIBUTION_MAX_BATCH_WINDOW_MS)
 		.default(CONSTANTS.FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS)
 		.optional()
-		.describe('Batch window in milliseconds (default 5 min)'),
+		.describe('Batch window in milliseconds (default 5 min, max 24 h)'),
 	note: z.string().max(250).optional().describe('Optional note for this fund wallet'),
 });
 
@@ -59,10 +65,16 @@ export const postFundWalletSchemaOutput = z
 export const patchFundWalletSchemaInput = z.object({
 	id: z.string().min(1).max(250).describe('Fund wallet id to update'),
 	enabled: z.boolean().optional().describe('Enable or disable automatic distribution'),
-	warningThreshold: z.string().regex(/^\d+$/).optional().describe('New warning threshold in lovelace'),
-	criticalThreshold: z.string().regex(/^\d+$/).optional().describe('New critical threshold in lovelace'),
-	topupAmount: z.string().regex(/^\d+$/).optional().describe('New topup amount in lovelace'),
-	batchWindowMs: z.number().int().min(1000).optional().describe('New batch window in milliseconds'),
+	warningThreshold: lovelaceAmountString.optional().describe('New warning threshold in lovelace'),
+	criticalThreshold: lovelaceAmountString.optional().describe('New critical threshold in lovelace'),
+	topupAmount: lovelaceAmountString.optional().describe('New topup amount in lovelace'),
+	batchWindowMs: z
+		.number()
+		.int()
+		.min(1000)
+		.max(CONSTANTS.FUND_DISTRIBUTION_MAX_BATCH_WINDOW_MS)
+		.optional()
+		.describe('New batch window in milliseconds (max 24 h)'),
 });
 
 export const patchFundWalletSchemaOutput = z

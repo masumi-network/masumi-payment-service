@@ -1628,7 +1628,7 @@ export const postX402Analytics = <ThrowOnError extends boolean = false>(options?
 /**
  * Delete a fund wallet. (admin access required)
  *
- * Soft-deletes a fund wallet, disables its distribution config and cancels any outstanding distribution requests. Does NOT move funds. Refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true to delete regardless, accepting that any remaining balance is recoverable only with direct database access.
+ * Soft-deletes a fund wallet, disables its distribution config and cancels unclaimed pending distribution requests. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.
  */
 export const deleteFundWallet = <ThrowOnError extends boolean = false>(options?: Options<DeleteFundWalletData, ThrowOnError>): RequestResult<DeleteFundWalletResponses, DeleteFundWalletErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteFundWalletResponses, DeleteFundWalletErrors, ThrowOnError>({
     responseType: 'json',
@@ -1673,7 +1673,7 @@ export const patchFundWallet = <ThrowOnError extends boolean = false>(options?: 
 /**
  * Create a fund wallet for a payment source. (admin access required)
  *
- * Creates a fund wallet for a payment source from an existing mnemonic and enables automatic distribution. The wallet tops up the Selling and Purchasing wallets of that same payment source when they fall below the configured thresholds: below warningThreshold the topup is batched, below criticalThreshold it is sent immediately. Fund the returned address before distribution can do anything. A payment source can have only one fund wallet, and because wallet key hashes are globally unique a mnemonic can only ever back one wallet — so each payment source needs its own.
+ * Creates a fund wallet for a payment source from an existing mnemonic and enables automatic distribution. The wallet tops up the Selling and Purchasing wallets of that same payment source when they fall below the configured thresholds: below warningThreshold the topup is batched, below criticalThreshold it is sent immediately. Fund the returned address before distribution can do anything. A payment source can have only one fund wallet, and because wallet key hashes are unique among active wallets a mnemonic can only back one live wallet at a time — so each payment source needs its own. Deleting a fund wallet frees its mnemonic for re-registration.
  */
 export const postFundWallet = <ThrowOnError extends boolean = false>(options?: Options<PostFundWalletData, ThrowOnError>): RequestResult<PostFundWalletResponses, PostFundWalletErrors, ThrowOnError> => (options?.client ?? client).post<PostFundWalletResponses, PostFundWalletErrors, ThrowOnError>({
     responseType: 'json',

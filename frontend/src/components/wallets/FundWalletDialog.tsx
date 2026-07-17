@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import {
   Dialog,
@@ -47,12 +47,26 @@ export function FundWalletDialog({
   const [activeTab, setActiveTab] = useState('Settings');
 
   const { fundWallet, isLoading, error, refetch } = useFundWallet();
-  const { distributions, isLoading: isLoadingDistributions } = useFundDistributions(
-    fundWallet?.id,
-    {
-      enabled: open && activeTab === 'Activity',
-    },
-  );
+  const {
+    distributions,
+    isLoading: isLoadingDistributions,
+    error: distributionsError,
+    refetch: refetchDistributions,
+  } = useFundDistributions(fundWallet?.id, {
+    enabled: open && activeTab === 'Activity',
+    // The list is a live view of an async pipeline: "Run cycle now" returns
+    // before any row exists, and Pending→Confirmed advances minutes later.
+    // Without polling (global refetchOnWindowFocus is off) the panel froze at
+    // whatever the first fetch saw.
+    refetchInterval: 10_000,
+  });
+
+  // The dialog stays mounted on the wallets page, so without this the fund
+  // wallet reflects the page-load state forever — hours-stale by the time the
+  // dialog reopens, offering the setup form for an already-configured source.
+  useEffect(() => {
+    if (open) void refetch();
+  }, [open, refetch]);
   const { createFundWallet, updateFundWallet, removeFundWallet, triggerDistribution } =
     useFundWalletMutations(selectedPaymentSourceId);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -110,7 +124,7 @@ export function FundWalletDialog({
       toast.success(
         alreadyRunning
           ? 'A distribution cycle is already running'
-          : 'Distribution cycle triggered. Top-ups appear here once submitted.',
+          : 'Distribution cycle triggered for all fund wallets. Top-ups appear here once submitted.',
       );
     } catch {
       /* surfaced by useApiMutation's error toast */
@@ -215,15 +229,31 @@ export function FundWalletDialog({
                     size="sm"
                     onClick={handleTrigger}
                     disabled={triggerDistribution.isPending}
+                    // The endpoint is global by design — one scheduler cycle
+                    // covers every fund wallet; money only moves where
+                    // thresholds are breached. Say so instead of implying a
+                    // per-source action.
+                    title="Runs a distribution cycle across all fund wallets"
                   >
                     {triggerDistribution.isPending ? <Spinner size={14} /> : 'Run cycle now'}
                   </Button>
                 </div>
-                <FundDistributionList
-                  distributions={distributions}
-                  isLoading={isLoadingDistributions}
-                  network={network}
-                />
+                {distributionsError ? (
+                  <div className="space-y-3 py-6 text-center">
+                    <p className="text-sm text-muted-foreground">
+                      Could not load fund distribution activity.
+                    </p>
+                    <Button variant="outline" size="sm" onClick={() => void refetchDistributions()}>
+                      Retry
+                    </Button>
+                  </div>
+                ) : (
+                  <FundDistributionList
+                    distributions={distributions}
+                    isLoading={isLoadingDistributions}
+                    network={network}
+                  />
+                )}
               </div>
             )}
           </div>

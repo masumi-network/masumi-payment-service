@@ -9,14 +9,16 @@ const mockFetchAddressBalanceMap = jest.fn() as AnyMock;
 const mockIsDefinitiveNodeRejection = jest.fn() as AnyMock;
 
 const mockTxCreate = jest.fn() as AnyMock;
-const mockTxUpdate = jest.fn() as AnyMock;
-const mockTxDelete = jest.fn() as AnyMock;
-const mockHotWalletFindUnique = jest.fn() as AnyMock;
-const mockHotWalletUpdate = jest.fn() as AnyMock;
+const mockTxUpdateMany = jest.fn() as AnyMock;
+const mockTxDeleteMany = jest.fn() as AnyMock;
+const mockHotWalletUpdateMany = jest.fn() as AnyMock;
+const mockLowBalanceRuleUpdateMany = jest.fn() as AnyMock;
 const mockRequestUpdateMany = jest.fn() as AnyMock;
+const mockRequestCount = jest.fn() as AnyMock;
+const mockPrismaTransaction = jest.fn() as AnyMock;
 
-const mockTriggerSent = jest.fn() as AnyMock;
-const mockTriggerFailed = jest.fn() as AnyMock;
+const mockQueueSent = jest.fn() as AnyMock;
+const mockQueueFailed = jest.fn() as AnyMock;
 const mockTriggerLowBalance = jest.fn() as AnyMock;
 
 // Records the order in which the intended-hash write and the broadcast happen.
@@ -44,24 +46,18 @@ jest.unstable_mockModule('@/generated/prisma/client', () => ({
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
-		$transaction: async (arg: unknown) => {
-			if (typeof arg === 'function') {
-				return (arg as (tx: unknown) => Promise<unknown>)({
-					hotWallet: { findUnique: mockHotWalletFindUnique, update: mockHotWalletUpdate },
-					transaction: { create: mockTxCreate },
-					fundDistributionRequest: { updateMany: mockRequestUpdateMany },
-				});
-			}
-			return Promise.all(arg as Promise<unknown>[]);
-		},
-		hotWallet: { update: mockHotWalletUpdate },
-		transaction: { update: mockTxUpdate, delete: mockTxDelete },
+		$transaction: mockPrismaTransaction,
 		fundDistributionRequest: { updateMany: mockRequestUpdateMany },
+		hotWalletLowBalanceRule: { updateMany: mockLowBalanceRuleUpdateMany },
 	},
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/config', () => ({
-	CONSTANTS: { MIN_TX_FEE_BUFFER_LOVELACE: 2_000_000n },
+	CONSTANTS: {
+		MIN_TX_FEE_BUFFER_LOVELACE: 2_000_000n,
+		FUND_DISTRIBUTION_MAX_OUTPUTS_PER_TX: 2,
+		FUND_DISTRIBUTION_UNDERFUNDED_ALERT_COOLDOWN_MS: 900_000,
+	},
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
@@ -86,8 +82,8 @@ jest.unstable_mockModule('@/services/shared/address-balance', () => ({
 
 jest.unstable_mockModule('@/services/webhooks', () => ({
 	webhookEventsService: {
-		triggerFundDistributionSent: mockTriggerSent,
-		triggerFundDistributionFailed: mockTriggerFailed,
+		queueFundDistributionSent: mockQueueSent,
+		queueFundDistributionFailed: mockQueueFailed,
 		triggerWalletLowBalance: mockTriggerLowBalance,
 	},
 }));
@@ -108,7 +104,7 @@ const fundWallet = {
 	id: 'fund-1',
 	walletAddress: 'addr_fund',
 	walletVkey: 'vkey_fund',
-	lowBalanceRuleId: 'rule-1',
+	lowBalanceRule: { id: 'rule-1', lastAlertedAt: null as Date | null },
 	paymentSourceId: 'ps-1',
 	paymentSourceType: 'Web3CardanoV1' as const,
 	network: 'Preprod' as const,
@@ -134,18 +130,29 @@ beforeEach(() => {
 	callOrder.length = 0;
 
 	mockFetchAddressBalanceMap.mockResolvedValue(new Map([['lovelace', 100_000_000n]]));
-	mockHotWalletFindUnique.mockResolvedValue({ lockedAt: null, pendingTransactionId: null });
 	mockTxCreate.mockResolvedValue({ id: 'tx-1' });
-	mockHotWalletUpdate.mockResolvedValue({});
-	mockRequestUpdateMany.mockResolvedValue({ count: 1 });
-	mockTxDelete.mockResolvedValue({});
-	mockIsDefinitiveNodeRejection.mockReturnValue(false);
-
-	mockTxUpdate.mockImplementation(async (args: any) => {
+	mockHotWalletUpdateMany.mockResolvedValue({ count: 1 });
+	mockLowBalanceRuleUpdateMany.mockResolvedValue({ count: 1 });
+	mockRequestUpdateMany.mockImplementation(async (args: any) => ({ count: args?.where?.id?.in?.length ?? 1 }));
+	mockRequestCount.mockImplementation(async (args: any) => args?.where?.id?.in?.length ?? 0);
+	mockTxUpdateMany.mockImplementation(async (args: any) => {
 		if (args?.data?.intendedTxHash) callOrder.push('record-intended');
 		if (args?.data?.txHash) callOrder.push('record-txhash');
-		return {};
+		return { count: 1 };
 	});
+	mockTxDeleteMany.mockResolvedValue({ count: 1 });
+	mockPrismaTransaction.mockImplementation(async (arg: unknown) => {
+		if (typeof arg === 'function') {
+			return (arg as (tx: unknown) => Promise<unknown>)({
+				hotWallet: { updateMany: mockHotWalletUpdateMany },
+				transaction: { create: mockTxCreate, updateMany: mockTxUpdateMany, deleteMany: mockTxDeleteMany },
+				fundDistributionRequest: { updateMany: mockRequestUpdateMany, count: mockRequestCount },
+			});
+		}
+		return Promise.all(arg as Promise<unknown>[]);
+	});
+	mockIsDefinitiveNodeRejection.mockReturnValue(false);
+
 	mockSubmit.mockImplementation(async () => {
 		callOrder.push('submit');
 		return INTENDED_HASH;
@@ -163,9 +170,9 @@ describe('processRequestsForFundWallet', () => {
 		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
 
 		expect(callOrder).toEqual(['record-intended', 'submit', 'record-txhash']);
-		expect(mockTxUpdate).toHaveBeenCalledWith(
+		expect(mockTxUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: 'tx-1' },
+				where: expect.objectContaining({ id: 'tx-1', intendedTxHash: null }),
 				data: expect.objectContaining({ intendedTxHash: INTENDED_HASH, invalidHereafterSlot: 12345n }),
 			}),
 		);
@@ -176,11 +183,15 @@ describe('processRequestsForFundWallet', () => {
 
 		expect(mockRequestUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: { in: ['r1'] } },
+				where: expect.objectContaining({ id: { in: ['r1'] } }),
 				data: expect.objectContaining({ status: FundDistributionStatus.Submitted, txHash: INTENDED_HASH }),
 			}),
 		);
-		expect(mockTriggerSent).toHaveBeenCalledWith(expect.objectContaining({ txHash: INTENDED_HASH }));
+		expect(mockQueueSent).toHaveBeenCalledWith(
+			expect.any(Object),
+			expect.objectContaining({ txHash: INTENDED_HASH }),
+			'ps-1',
+		);
 	});
 
 	it('links the batch to its Transaction atomically with the lock', async () => {
@@ -214,8 +225,8 @@ describe('processRequestsForFundWallet', () => {
 		it('does not unlock the wallet or delete the Transaction', async () => {
 			await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
 
-			expect(mockTxDelete).not.toHaveBeenCalled();
-			expect(mockHotWalletUpdate).not.toHaveBeenCalledWith(
+			expect(mockTxDeleteMany).not.toHaveBeenCalled();
+			expect(mockHotWalletUpdateMany).not.toHaveBeenCalledWith(
 				expect.objectContaining({ data: expect.objectContaining({ lockedAt: null }) }),
 			);
 		});
@@ -224,8 +235,8 @@ describe('processRequestsForFundWallet', () => {
 			await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
 
 			// Still in flight: reconciliation decides, and the cycle reports then.
-			expect(mockTriggerFailed).not.toHaveBeenCalled();
-			expect(mockTriggerSent).not.toHaveBeenCalled();
+			expect(mockQueueFailed).not.toHaveBeenCalled();
+			expect(mockQueueSent).not.toHaveBeenCalled();
 		});
 	});
 
@@ -236,11 +247,13 @@ describe('processRequestsForFundWallet', () => {
 		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
 
 		// Definitively rejected means it cannot land, so reverting is safe.
-		expect(mockTxDelete).toHaveBeenCalledWith({ where: { id: 'tx-1' } });
+		expect(mockTxDeleteMany).toHaveBeenCalledWith({
+			where: { id: 'tx-1', status: TransactionStatus.Pending },
+		});
 		expect(mockRequestUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ status: FundDistributionStatus.Failed }) }),
 		);
-		expect(mockTriggerFailed).toHaveBeenCalledWith(expect.objectContaining({ txHash: null }));
+		expect(mockQueueFailed).toHaveBeenCalledWith(expect.any(Object), expect.objectContaining({ txHash: null }), 'ps-1');
 	});
 
 	it('reverts when build/sign fails, without ever broadcasting', async () => {
@@ -249,21 +262,26 @@ describe('processRequestsForFundWallet', () => {
 		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
 
 		expect(mockSubmit).not.toHaveBeenCalled();
-		expect(mockTxDelete).toHaveBeenCalled();
-		expect(mockTriggerFailed).toHaveBeenCalledWith(
+		expect(mockTxDeleteMany).toHaveBeenCalled();
+		expect(mockQueueFailed).toHaveBeenCalledWith(
+			expect.any(Object),
 			expect.objectContaining({ txHash: null, error: 'insufficient balance' }),
+			'ps-1',
 		);
 	});
 
 	it('aborts without broadcasting if the intended hash cannot be persisted', async () => {
-		mockTxUpdate.mockRejectedValue(new Error('db down'));
+		mockTxUpdateMany.mockImplementation(async (args: any) => {
+			if (args?.data?.intendedTxHash) throw new Error('db down');
+			return { count: 1 };
+		});
 
 		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
 
 		// Broadcasting without a recorded hash would make an ambiguous outcome
 		// unrecoverable, so we must not send.
 		expect(mockSubmit).not.toHaveBeenCalled();
-		expect(mockTxDelete).toHaveBeenCalled();
+		expect(mockTxDeleteMany).toHaveBeenCalled();
 	});
 
 	it('defers to reconciliation when the node returns a different hash', async () => {
@@ -272,7 +290,7 @@ describe('processRequestsForFundWallet', () => {
 		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
 
 		// Trust neither hash: do not record a txHash, do not mark Submitted.
-		expect(mockTxUpdate).not.toHaveBeenCalledWith(
+		expect(mockTxUpdateMany).not.toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ txHash: expect.any(String) }) }),
 		);
 		const statuses = mockRequestUpdateMany.mock.calls.map((call: any) => call[0]?.data?.status);
@@ -280,11 +298,78 @@ describe('processRequestsForFundWallet', () => {
 	});
 
 	it('skips when the fund wallet is already locked', async () => {
-		mockHotWalletFindUnique.mockResolvedValue({ lockedAt: new Date(), pendingTransactionId: 'tx-old' });
+		mockHotWalletUpdateMany.mockResolvedValue({ count: 0 });
 
 		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
 
 		expect(mockBuildAndSign).not.toHaveBeenCalled();
+	});
+
+	it('abandons the batch when another worker already claimed one of its requests', async () => {
+		mockRequestUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
+
+		expect(mockBuildAndSign).not.toHaveBeenCalled();
+	});
+
+	it('discards a signed body when timeout recovery has taken the wallet lease', async () => {
+		mockHotWalletUpdateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+
+		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
+
+		expect(mockSubmit).not.toHaveBeenCalled();
+		expect(mockTxUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ intendedTxHash: INTENDED_HASH }) }),
+		);
+	});
+
+	it('claims only enabled active sources and active target wallets', async () => {
+		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
+
+		expect(mockHotWalletUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					FundDistributionConfig: { enabled: true },
+					PaymentSource: { deletedAt: null },
+				}),
+			}),
+		);
+		expect(mockRequestUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
+				}),
+			}),
+		);
+	});
+
+	it('caps recipients and leaves overflow requests for a later transaction', async () => {
+		await processRequestsForFundWallet(fundWallet, [
+			request('r1', 20_000_000n),
+			request('r2', 20_000_000n),
+			request('r3', 20_000_000n),
+		]);
+
+		expect(mockBuildAndSign).toHaveBeenCalledWith(
+			expect.objectContaining({
+				outputs: [
+					{ address: 'addr_r1', lovelace: 20_000_000n },
+					{ address: 'addr_r2', lovelace: 20_000_000n },
+				],
+			}),
+		);
+	});
+
+	it('only clears the lock owned by a pre-broadcast rollback', async () => {
+		mockBuildAndSign.mockRejectedValue(new Error('build failed'));
+
+		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
+
+		expect(mockHotWalletUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'fund-1', pendingTransactionId: 'tx-1' },
+			data: { lockedAt: null, pendingTransactionId: null },
+		});
 	});
 
 	it('sends only the requests the balance covers', async () => {
@@ -305,8 +390,44 @@ describe('processRequestsForFundWallet', () => {
 
 		expect(mockBuildAndSign).not.toHaveBeenCalled();
 		expect(mockTriggerLowBalance).toHaveBeenCalledWith(
-			expect.objectContaining({ walletId: 'fund-1', walletType: HotWalletType.Funding }),
+			expect.objectContaining({ walletId: 'fund-1', walletType: HotWalletType.Funding, ruleId: 'rule-1' }),
 		);
+		// The lastAlertedAt claim is what throttles the per-cycle re-fire and
+		// dedupes across replicas — the alert must ride on a won claim only.
+		expect(mockLowBalanceRuleUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ where: expect.objectContaining({ id: 'rule-1' }) }),
+		);
+	});
+
+	it('reports low balance when the fee buffer is covered but no request is affordable', async () => {
+		mockFetchAddressBalanceMap.mockResolvedValue(new Map([['lovelace', 10_000_000n]]));
+
+		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
+
+		expect(mockBuildAndSign).not.toHaveBeenCalled();
+		expect(mockTriggerLowBalance).toHaveBeenCalledWith(
+			expect.objectContaining({ walletId: 'fund-1', walletType: HotWalletType.Funding, ruleId: 'rule-1' }),
+		);
+	});
+
+	it('skips the underfunded alert while the cooldown holds or without a rule', async () => {
+		mockFetchAddressBalanceMap.mockResolvedValue(new Map([['lovelace', 1_000_000n]]));
+
+		// Alerted moments ago → throttled before any DB write.
+		await processRequestsForFundWallet({ ...fundWallet, lowBalanceRule: { id: 'rule-1', lastAlertedAt: new Date() } }, [
+			request('r1', 20_000_000n),
+		]);
+		expect(mockLowBalanceRuleUpdateMany).not.toHaveBeenCalled();
+		expect(mockTriggerLowBalance).not.toHaveBeenCalled();
+
+		// No rule → no webhook with a dangling ruleId.
+		await processRequestsForFundWallet({ ...fundWallet, lowBalanceRule: null }, [request('r1', 20_000_000n)]);
+		expect(mockTriggerLowBalance).not.toHaveBeenCalled();
+
+		// Another replica won the claim between our read and the write → it sends.
+		mockLowBalanceRuleUpdateMany.mockResolvedValue({ count: 0 });
+		await processRequestsForFundWallet(fundWallet, [request('r1', 20_000_000n)]);
+		expect(mockTriggerLowBalance).not.toHaveBeenCalled();
 	});
 
 	it('reads the balance without decrypting the treasury mnemonic', async () => {

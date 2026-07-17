@@ -1,4 +1,5 @@
 import { WebhookDeliveryStatus, WebhookEventType } from '@/generated/prisma/client';
+import type { Prisma } from '@/generated/prisma/client';
 import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
 import { prisma } from '@masumi/payment-core/db';
 import { toPrismaInputJsonValue } from '@/utils/json-value';
@@ -14,6 +15,32 @@ class WebhookQueueService {
 		entityId?: string,
 		paymentSourceId?: string,
 	): Promise<void> {
+		await this.queueWebhookWithClient(prisma, eventType, payload, entityId, paymentSourceId, false);
+	}
+
+	/**
+	 * Persist delivery rows on the caller's transaction. Unlike the best-effort
+	 * public queue path, one failed insert rejects the transaction so the domain
+	 * state remains retryable instead of committing without its lifecycle event.
+	 */
+	async queueWebhookInTransaction<TEventType extends WebhookEventType>(
+		tx: Prisma.TransactionClient,
+		eventType: TEventType,
+		payload: WebhookPayloadDataByEvent<TEventType>,
+		entityId?: string,
+		paymentSourceId?: string,
+	): Promise<void> {
+		await this.queueWebhookWithClient(tx, eventType, payload, entityId, paymentSourceId, true);
+	}
+
+	private async queueWebhookWithClient<TEventType extends WebhookEventType>(
+		db: Prisma.TransactionClient | typeof prisma,
+		eventType: TEventType,
+		payload: WebhookPayloadDataByEvent<TEventType>,
+		entityId: string | undefined,
+		paymentSourceId: string | undefined,
+		isStrict: boolean,
+	): Promise<void> {
 		const webhookPayload = buildWebhookPayload(eventType, payload, undefined, CONFIG.OTEL_SERVICE_NAME);
 
 		const batchSize = 20;
@@ -23,7 +50,7 @@ class WebhookQueueService {
 		let queuedEndpoints: Array<{ id: string }> = [];
 
 		while (hasMore) {
-			const webhookEndpoints: Array<{ id: string }> = await prisma.webhookEndpoint.findMany({
+			const webhookEndpoints: Array<{ id: string }> = await db.webhookEndpoint.findMany({
 				where: {
 					isActive: true,
 					disabledAt: null,
@@ -61,7 +88,7 @@ class WebhookQueueService {
 				const endpointPayload = buildEndpointWebhookPayload(webhookPayload, endpoint.id);
 
 				try {
-					await prisma.webhookDelivery.create({
+					await db.webhookDelivery.create({
 						data: {
 							webhookEndpointId: endpoint.id,
 							eventType,
@@ -84,10 +111,15 @@ class WebhookQueueService {
 						entity_id: entityId,
 						error: error instanceof Error ? error.message : 'Unknown error',
 					});
+					if (isStrict) throw error;
 				}
 			});
 
-			await Promise.allSettled(deliveries);
+			if (isStrict) {
+				await Promise.all(deliveries);
+			} else {
+				await Promise.allSettled(deliveries);
+			}
 
 			if (webhookEndpoints.length < batchSize) {
 				hasMore = false;

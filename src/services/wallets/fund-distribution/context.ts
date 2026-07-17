@@ -13,7 +13,12 @@ export type FundWalletContext = {
 	id: string;
 	walletAddress: string;
 	walletVkey: string;
-	lowBalanceRuleId: string;
+	/**
+	 * The fund wallet's own lovelace low-balance rule, if the operator created
+	 * one. Null means "no rule": the underfunded alert is then skipped rather
+	 * than emitted with a dangling empty ruleId.
+	 */
+	lowBalanceRule: { id: string; lastAlertedAt: Date | null } | null;
 	paymentSourceId: string;
 	paymentSourceType: PaymentSourceType;
 	network: Network;
@@ -34,7 +39,7 @@ const FUND_WALLET_SELECT = {
 	paymentSourceId: true,
 	LowBalanceRules: {
 		where: { assetUnit: 'lovelace', enabled: true },
-		select: { id: true },
+		select: { id: true, lastAlertedAt: true },
 		take: 1,
 	},
 	Secret: { select: { encryptedMnemonic: true } },
@@ -71,7 +76,7 @@ function toContext(wallet: FundWalletRow | null): FundWalletContext | null {
 		id: wallet.id,
 		walletAddress: wallet.walletAddress,
 		walletVkey: wallet.walletVkey,
-		lowBalanceRuleId: wallet.LowBalanceRules[0]?.id ?? '',
+		lowBalanceRule: wallet.LowBalanceRules[0] ?? null,
 		paymentSourceId: wallet.paymentSourceId,
 		paymentSourceType: wallet.PaymentSource.paymentSourceType,
 		network: wallet.PaymentSource.network,
@@ -93,8 +98,8 @@ function toContext(wallet: FundWalletRow | null): FundWalletContext | null {
  * paymentSourceId, and the source carries the network — so a fund wallet can
  * only ever pay addresses on its own chain. A V1 and a V2 source each get
  * their own fund wallet and their own float; distribution never crosses
- * sources. Note `HotWallet.walletVkey` is globally unique, so the same
- * mnemonic cannot back two fund wallets.
+ * sources. Note `HotWallet.walletVkey` is unique among active wallets, so the
+ * same mnemonic cannot back two live fund wallets.
  */
 export async function getFundWalletForPaymentSource(paymentSourceId: string): Promise<FundWalletContext | null> {
 	const fundWallet = await prisma.hotWallet.findFirst({
@@ -102,6 +107,7 @@ export async function getFundWalletForPaymentSource(paymentSourceId: string): Pr
 			paymentSourceId,
 			type: HotWalletType.Funding,
 			deletedAt: null,
+			PaymentSource: { deletedAt: null },
 			FundDistributionConfig: { enabled: true },
 		},
 		select: FUND_WALLET_SELECT,
@@ -113,7 +119,12 @@ export async function getFundWalletForPaymentSource(paymentSourceId: string): Pr
 /** Resolve a fund wallet by its own id. Returns null if disabled or deleted. */
 export async function loadFundWalletContext(fundWalletId: string): Promise<FundWalletContext | null> {
 	const wallet = await prisma.hotWallet.findFirst({
-		where: { id: fundWalletId, type: HotWalletType.Funding, deletedAt: null },
+		where: {
+			id: fundWalletId,
+			type: HotWalletType.Funding,
+			deletedAt: null,
+			PaymentSource: { deletedAt: null },
+		},
 		select: FUND_WALLET_SELECT,
 	});
 
