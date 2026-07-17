@@ -13,7 +13,7 @@ import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/strin
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
 import { findMatchingPaymentUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';

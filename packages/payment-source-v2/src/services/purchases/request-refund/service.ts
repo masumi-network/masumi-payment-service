@@ -19,7 +19,7 @@ import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/strin
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 import { makeHotWalletUnlocker, makePurchaseRequestFailureMarker } from '../../request-failure';
 import { findMatchingPurchaseUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';

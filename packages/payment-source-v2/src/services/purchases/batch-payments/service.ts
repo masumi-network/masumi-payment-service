@@ -30,7 +30,7 @@ import {
 	createTxWindow,
 } from '@/services/shared';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 import { isTransientPreSubmitError } from './pre-submit-error';
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
