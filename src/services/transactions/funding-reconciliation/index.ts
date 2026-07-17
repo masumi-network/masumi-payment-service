@@ -2,6 +2,7 @@ import { PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { getChainErrorStatus } from '@/services/shared/chain-tx-lookup';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
@@ -463,7 +464,14 @@ async function safeFetchTx(blockfrost: ReturnType<typeof getBlockfrostInstance>,
 		return { status: 'found' };
 	} catch (error) {
 		const msg = error instanceof Error ? error.message : String(error);
-		if (/404|not.?found/i.test(msg)) {
+		// Keyed on the structured status, NOT the message. `BlockfrostServerError`
+		// sets `.message` to the API's message field, and a real 404 reads "The
+		// requested component has not been found." — which contains neither "404"
+		// nor a `not.?found` match ("not BEEN found"). The previous regex therefore
+		// classified every genuine 404 as a transient error, so this worker could
+		// never reach its revert path: an ambiguous funding tx that never landed
+		// stayed Pending forever and its wallet stayed locked forever.
+		if (getChainErrorStatus(error) === 404) {
 			return { status: 'not-found' };
 		}
 		return { status: 'transient-error', error: msg };
