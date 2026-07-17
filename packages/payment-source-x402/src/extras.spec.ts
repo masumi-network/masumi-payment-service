@@ -61,9 +61,27 @@ describe('getX402Analytics', () => {
 	it('splits inbound settled (income) from outbound (spend) and sums by network/asset', async () => {
 		const day = new Date('2026-06-01T10:00:00.000Z');
 		mockPaymentAttemptFindMany.mockResolvedValue([
-			{ createdAt: day, direction: 'InboundSettle', caip2Network: 'eip155:8453', asset: '0xusdc', amount: 1000n },
-			{ createdAt: day, direction: 'InboundSettle', caip2Network: 'eip155:8453', asset: '0xusdc', amount: 500n },
-			{ createdAt: day, direction: 'OutboundPayment', caip2Network: 'eip155:8453', asset: '0xusdc', amount: 200n },
+			{
+				createdAt: day,
+				direction: 'InboundSettle',
+				Network: { caip2Id: 'eip155:8453' },
+				asset: '0xusdc',
+				amount: 1000n,
+			},
+			{
+				createdAt: day,
+				direction: 'InboundSettle',
+				Network: { caip2Id: 'eip155:8453' },
+				asset: '0xusdc',
+				amount: 500n,
+			},
+			{
+				createdAt: day,
+				direction: 'OutboundPayment',
+				Network: { caip2Id: 'eip155:8453' },
+				asset: '0xusdc',
+				amount: 200n,
+			},
 		]);
 
 		const result = await getX402Analytics({ timeZone: 'Etc/UTC' });

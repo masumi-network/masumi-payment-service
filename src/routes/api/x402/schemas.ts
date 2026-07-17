@@ -148,6 +148,8 @@ export const walletNoteSchema = z.string().max(250).describe('Optional human-rea
 export const walletSchemaOutput = z
 	.object({
 		id: z.string().describe('Unique identifier of the managed EVM wallet'),
+		networkId: z.string().describe('Id of the x402 network (payment source) this wallet is bound to'),
+		caip2Network: caip2Eip155Schema.describe('CAIP-2 chain id of the network this wallet is bound to'),
 		address: evmAddressSchema.describe('The EVM address derived from the wallet private key'),
 		type: z
 			.nativeEnum(X402EvmWalletType)
@@ -160,6 +162,7 @@ export const walletSchemaOutput = z
 	.openapi('X402Wallet');
 
 export const createWalletSchemaInput = z.object({
+	networkId: z.string().describe('Id of the x402 network (payment source) to bind this wallet to'),
 	type: z
 		.nativeEnum(X402EvmWalletType)
 		.describe('Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators'),
@@ -180,6 +183,11 @@ export const listWalletsSchemaInput = z.object({
 	take: z.coerce.number().min(1).max(100).default(20).describe('Number of managed wallets to return'),
 	cursorId: z.string().max(550).optional().describe('Pagination cursor (provide the id of the last returned wallet)'),
 	type: z.nativeEnum(X402EvmWalletType).optional().describe('Filter wallets by direction (Purchasing or Selling)'),
+	networkId: z.string().optional().describe('Filter wallets by the bound x402 network id'),
+});
+
+export const walletDetailSchemaInput = z.object({
+	id: z.string().describe('Id of the managed EVM wallet to fetch'),
 });
 
 export const countSchemaOutput = z.object({ total: z.number().describe('Total number of matching records') });
@@ -187,7 +195,13 @@ export const countSchemaOutput = z.object({ total: z.number().describe('Total nu
 export const paymentAttemptsCountSchemaInput = z.object({
 	status: z.nativeEnum(X402PaymentStatus).optional(),
 	direction: z.nativeEnum(X402PaymentDirection).optional(),
+	side: z.enum(['buy', 'sell']).optional().describe('Coarse side filter: buy = outbound, sell = inbound'),
 	caip2Network: caip2Eip155Schema.optional(),
+	filterNeedsManualAction: booleanQuerySchema
+		.optional()
+		.describe(
+			'When true, only counts attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.',
+		),
 });
 
 export const settlementsCountSchemaInput = z.object({
@@ -201,7 +215,9 @@ export const walletsCountSchemaInput = z.object({
 
 export const walletBalanceSchemaInput = z.object({
 	id: z.string().describe('Id of the managed EVM wallet to read balances for'),
-	caip2Network: caip2Eip155Schema.optional().describe('Restrict to a single chain; defaults to all enabled chains'),
+	caip2Network: caip2Eip155Schema
+		.optional()
+		.describe("Optional CAIP-2 chain id; must be the wallet's bound network (any other chain returns no balances)"),
 });
 
 export const walletBalanceSchemaOutput = z.object({
@@ -345,25 +361,67 @@ export const x402NetworkSchema = z
 		facilitatorWalletId: z
 			.string()
 			.nullable()
-			.describe('Id of the managed EVM wallet used to settle payments on this chain'),
+			.describe('Id of the managed EVM wallet used to settle payments on this chain (self-hosted facilitator)'),
 		facilitatorWalletAddress: z
 			.string()
 			.nullable()
-			.describe('Resolved address of the facilitator wallet. Null when no facilitator is set.'),
+			.describe('Resolved address of the facilitator wallet. Null when no self-hosted facilitator is set.'),
+		facilitatorUrl: z
+			.string()
+			.nullable()
+			.describe(
+				'HTTPS URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)',
+			),
 		createdById: z.string().nullable().describe('Id of the API key that created this chain configuration'),
 		createdAt: z.date(),
 		updatedAt: z.date(),
 	})
 	.openapi('X402Network');
 
+export const x402AvailableNetworkSchema = z
+	.object({
+		id: z.string().describe('Opaque x402 network id accepted by managed-wallet endpoints'),
+		caip2Id: caip2Eip155Schema.describe('CAIP-2 EVM chain id, for example eip155:8453'),
+		displayName: z.string().describe('Human readable chain name'),
+		isTestnet: z.boolean().describe('Whether this chain belongs to the testnet environment'),
+		isEnabled: z.boolean().describe('Whether this chain may currently be used for x402 payments'),
+		defaultAsset: evmAddressSchema.nullable().describe('Default settlement asset (token contract) for this chain'),
+	})
+	.openapi('X402AvailableNetwork');
+
 export const upsertNetworkSchemaInput = z.object({
 	caip2Id: caip2Eip155Schema,
 	displayName: z.string().min(1).max(120),
-	rpcUrl: z.string().url(),
+	rpcUrl: z
+		.string()
+		.url()
+		.regex(/^https?:\/\//, 'RPC URL must use HTTP or HTTPS'),
 	isTestnet: z.boolean().optional(),
 	isEnabled: z.boolean().optional(),
 	defaultAsset: evmAddressSchema.nullable().optional(),
-	facilitatorWalletId: z.string().nullable().optional(),
+	// Configure the facilitator in exactly one mode: an owned Selling wallet (self-hosted) or a
+	// remote facilitator URL. Supplying both is rejected by the service. Every field is tri-state
+	// on update: omit to keep the stored value, send a string to set it, or send explicit null to
+	// clear it. Sending both selectors as null detaches the facilitator entirely.
+	facilitatorWalletId: z
+		.string()
+		.nullable()
+		.optional()
+		.describe('Self-hosted facilitator: owned Selling wallet id (null clears it)'),
+	facilitatorUrl: z
+		.string()
+		.url()
+		.regex(/^https:\/\//, 'Remote facilitator URL must use HTTPS')
+		.nullable()
+		.optional()
+		.describe('Remote facilitator: HTTPS endpoint (null clears it)'),
+	facilitatorAuth: z
+		.string()
+		.nullable()
+		.optional()
+		.describe(
+			'Authorization header value for the remote facilitator, stored encrypted at rest. Omit to preserve it only when the URL origin is unchanged; changing origin clears it. Send a string to set/rotate it, or null to clear it. Requires a remote facilitator URL (existing or set in the same request).',
+		),
 });
 
 export const listNetworksSchemaInput = z.object({
@@ -374,6 +432,10 @@ export const listNetworksSchemaInput = z.object({
 
 export const listNetworksSchemaOutput = z.object({
 	Networks: z.array(x402NetworkSchema),
+});
+
+export const listAvailableNetworksSchemaOutput = z.object({
+	Networks: z.array(x402AvailableNetworkSchema),
 });
 
 export const budgetSchema = z
@@ -431,12 +493,27 @@ export const x402PaymentAttemptSchema = z
 		caip2Network: z.string(),
 		asset: z.string(),
 		amount: z.string().describe('Payment amount in token base units'),
-		payTo: z.string(),
+		payTo: z
+			.string()
+			.nullable()
+			.describe('Immutable payee-address snapshot. Null only for legacy transition rows without a snapshot.'),
 		payer: z.string().nullable(),
 		resource: z.string().nullable(),
 		paymentIdentifier: z.string().nullable(),
 		errorReason: z.string().nullable(),
 		errorMessage: z.string().nullable(),
+		facilitator: z
+			.object({
+				mode: z
+					.enum(['self_hosted', 'remote', 'unknown'])
+					.describe('Whether an owned wallet, a remote URL, or an unknown legacy facilitator settled'),
+				address: z
+					.string()
+					.nullable()
+					.describe('Self-hosted facilitator wallet address; null for remote or unknown legacy mode'),
+			})
+			.nullable()
+			.describe('The facilitator that settled this inbound payment; null for outbound payments and verifies.'),
 		Settlement: x402SettlementSummarySchema.nullable(),
 	})
 	.openapi('X402PaymentAttempt');
@@ -446,11 +523,47 @@ export const listPaymentAttemptsSchemaInput = z.object({
 	cursorId: z.string().max(550).optional().describe('Pagination cursor (provide the id of the last returned attempt)'),
 	status: z.nativeEnum(X402PaymentStatus).optional().describe('Filter by payment status'),
 	direction: z.nativeEnum(X402PaymentDirection).optional().describe('Filter by payment direction'),
+	side: z
+		.enum(['buy', 'sell'])
+		.optional()
+		.describe('Coarse side filter: buy = outbound payments, sell = inbound (verify + settle). A direction wins.'),
 	caip2Network: caip2Eip155Schema.optional().describe('Filter by CAIP-2 chain id'),
+	filterNeedsManualAction: booleanQuerySchema
+		.optional()
+		.describe(
+			'When true, only returns attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.',
+		),
 });
 
 export const listPaymentAttemptsSchemaOutput = z.object({
 	PaymentAttempts: z.array(x402PaymentAttemptSchema),
+});
+
+const reconcileAttemptIdSchema = z.string().describe('Id of the InboundSettle attempt awaiting reconciliation');
+const reconcileTxHashSchema = z
+	.string()
+	.regex(/^0x[a-fA-F0-9]{64}$/, 'txHash must be a 0x-prefixed 32-byte hex transaction hash')
+	.describe('On-chain settlement transaction hash');
+
+export const reconcilePaymentSchemaInput = z.discriminatedUnion('resolution', [
+	z
+		.object({
+			attemptId: reconcileAttemptIdSchema,
+			resolution: z.literal('settled').describe('Funds moved on-chain'),
+			txHash: reconcileTxHashSchema,
+		})
+		.strict(),
+	z
+		.object({
+			attemptId: reconcileAttemptIdSchema,
+			resolution: z.literal('failed').describe('Funds did not move on-chain and the payment is safe to retry'),
+		})
+		.strict(),
+]);
+
+export const reconcilePaymentSchemaOutput = z.object({
+	attemptId: z.string(),
+	status: z.nativeEnum(X402PaymentStatus),
 });
 
 export const x402SettlementSchema = z

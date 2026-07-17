@@ -414,7 +414,7 @@ export default function AIAgentsPage() {
               <p className="text-sm text-muted-foreground">
                 Manage your AI agents and their configurations.{' '}
                 <a
-                  href="https://docs.masumi.network/core-concepts/agentic-service"
+                  href="https://www.masumi.network/dev/masumi/core-concepts/agentic-service"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-primary hover:underline"

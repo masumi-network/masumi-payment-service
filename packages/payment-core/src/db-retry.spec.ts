@@ -1,4 +1,4 @@
-import { retryOnSerializationConflict, type RetryOptions } from './db-retry';
+import { isUniqueConstraintError, retryOnSerializationConflict, type RetryOptions } from './db-retry';
 
 // Cast the silent logger via `as unknown as RetryOptions['logger']` because
 // the real winston logger returns itself from each method (for chaining) and
@@ -141,5 +141,23 @@ describe('retryOnSerializationConflict', () => {
 		).rejects.toBe(err);
 		// maxRetries: 2 means attempts 0, 1, 2 — three total tries before rethrow.
 		expect(calls).toBe(3);
+	});
+});
+
+describe('isUniqueConstraintError', () => {
+	it.each([
+		['Prisma P2002', { code: 'P2002' }],
+		['raw PostgreSQL code', { code: '23505' }],
+		['driver-adapter cause', { name: 'DriverAdapterError', cause: { code: '23505' } }],
+		[
+			'Prisma driver-adapter metadata',
+			{ code: 'P2028', meta: { driverAdapterError: { cause: { originalCode: '23505' } } } },
+		],
+	])('recognizes %s unique violations', (_label, error) => {
+		expect(isUniqueConstraintError(error)).toBe(true);
+	});
+
+	it('rejects non-unique database errors', () => {
+		expect(isUniqueConstraintError({ name: 'DriverAdapterError', cause: { code: '40P01' } })).toBe(false);
 	});
 });

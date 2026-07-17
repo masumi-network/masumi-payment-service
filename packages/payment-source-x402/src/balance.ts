@@ -9,6 +9,7 @@ import {
 	normalizeAddress,
 	safeHttpTransport,
 } from './internal';
+import type { X402OwnerScope } from './internal';
 import { getX402ManagedWallet } from './wallets';
 
 // Minimal ERC-20 read surface — balance plus display metadata.
@@ -96,12 +97,21 @@ async function readErc20Balance(
 export async function getX402WalletBalances(input: {
 	evmWalletId: string;
 	caip2Network?: string;
+	ownerScope?: X402OwnerScope;
+	caip2NetworkLimit?: string[] | null;
 }): Promise<{ evmWalletId: string; address: string; Balances: X402NetworkBalance[] }> {
-	const wallet = await getX402ManagedWallet(input.evmWalletId);
+	const wallet = await getX402ManagedWallet(
+		input.evmWalletId,
+		input.ownerScope ?? null,
+		input.caip2NetworkLimit ?? null,
+	);
 	const owner = wallet.address as HexAddress;
 
+	// A managed wallet is bound to exactly one payment source, so its balance is read on that
+	// network only. The optional caip2Network arg can further pin it (returns empty if it does
+	// not match the wallet's own network).
 	const networks = await prisma.x402Network.findMany({
-		where: { isEnabled: true, caip2Id: input.caip2Network },
+		where: { isEnabled: true, id: wallet.networkId, caip2Id: input.caip2Network },
 		orderBy: { caip2Id: 'asc' },
 		select: { caip2Id: true, rpcUrl: true, displayName: true, defaultAsset: true },
 	});

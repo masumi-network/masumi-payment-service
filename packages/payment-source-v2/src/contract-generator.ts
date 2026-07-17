@@ -117,10 +117,23 @@ export function getRegistryScriptV2(network: Network) {
 	return Promise.resolve({ script, policyId, smartContractAddress });
 }
 
-function getPubKeyBaseAddressDatum(address: string, fieldName: string) {
+function getPubKeyAddressDatum(address: string, fieldName: string) {
 	const parsedAddress = deserializeAddress(address);
-	if (parsedAddress.getType() !== AddressType.BasePaymentKeyStakeKey) {
-		throw new Error(`${fieldName} must be a Cardano base address with payment and stake key credentials`);
+	const addressType = parsedAddress.getType();
+	// The vested_pay validator only reads the payment credential of datum
+	// addresses (`address_to_verification_key`); payouts compare the full
+	// address, stake part included, exactly as encoded here. Enterprise
+	// (stake-less) pubkey addresses are therefore spendable — mesh encodes the
+	// omitted stake credential as Plutus `None` (`Constr 1 []`), which the
+	// decoder in src/utils/converter/string-datum-convert already handles.
+	// Script payment credentials stay rejected: every spending redeemer does
+	// `expect Some(vk) = address_to_verification_key(...)`, so a script
+	// participant would permanently brick the escrow.
+	if (addressType === AddressType.EnterpriseKey) {
+		return mPubKeyAddress(resolvePaymentKeyHash(address));
+	}
+	if (addressType !== AddressType.BasePaymentKeyStakeKey) {
+		throw new Error(`${fieldName} must be a Cardano base or enterprise address with a payment key credential`);
 	}
 
 	return mPubKeyAddress(resolvePaymentKeyHash(address), resolveStakeKeyHash(address));
@@ -136,7 +149,7 @@ function getOptionalPubKeyAddressDatum(address: string | null | undefined, field
 
 	return {
 		alternative: 0,
-		fields: [getPubKeyBaseAddressDatum(address, fieldName)],
+		fields: [getPubKeyAddressDatum(address, fieldName)],
 	};
 }
 
@@ -265,9 +278,9 @@ export function getDatumV2({
 		value: {
 			alternative: 0,
 			fields: [
-				getPubKeyBaseAddressDatum(buyerAddress, 'buyerAddress'),
+				getPubKeyAddressDatum(buyerAddress, 'buyerAddress'),
 				getOptionalPubKeyAddressDatum(buyerReturnAddress, 'buyerReturnAddress'),
-				getPubKeyBaseAddressDatum(sellerAddress, 'sellerAddress'),
+				getPubKeyAddressDatum(sellerAddress, 'sellerAddress'),
 				getOptionalPubKeyAddressDatum(sellerReturnAddress, 'sellerReturnAddress'),
 				referenceKey,
 				referenceSignature,

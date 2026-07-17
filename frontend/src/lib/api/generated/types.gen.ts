@@ -2088,6 +2088,17 @@ export type UtxoAmount = {
     quantity: number | null;
 };
 
+export type BalanceAmount = {
+    /**
+     * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+     */
+    unit: string;
+    /**
+     * The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)
+     */
+    quantity: number | null;
+};
+
 export type RpcProviderKey = {
     /**
      * Unique identifier for the RPC provider key
@@ -2387,6 +2398,33 @@ export type StoppedMonitoring = {
     stopped: boolean;
 };
 
+export type X402AvailableNetwork = {
+    /**
+     * Opaque x402 network id accepted by managed-wallet endpoints
+     */
+    id: string;
+    /**
+     * CAIP-2 EVM chain id, for example eip155:8453
+     */
+    caip2Id: string;
+    /**
+     * Human readable chain name
+     */
+    displayName: string;
+    /**
+     * Whether this chain belongs to the testnet environment
+     */
+    isTestnet: boolean;
+    /**
+     * Whether this chain may currently be used for x402 payments
+     */
+    isEnabled: boolean;
+    /**
+     * Default settlement asset (token contract) for this chain
+     */
+    defaultAsset: string | null;
+};
+
 export type X402Network = {
     id: string;
     /**
@@ -2414,13 +2452,17 @@ export type X402Network = {
      */
     defaultAsset: string | null;
     /**
-     * Id of the managed EVM wallet used to settle payments on this chain
+     * Id of the managed EVM wallet used to settle payments on this chain (self-hosted facilitator)
      */
     facilitatorWalletId: string | null;
     /**
-     * Resolved address of the facilitator wallet. Null when no facilitator is set.
+     * Resolved address of the facilitator wallet. Null when no self-hosted facilitator is set.
      */
     facilitatorWalletAddress: string | null;
+    /**
+     * HTTPS URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)
+     */
+    facilitatorUrl: string | null;
     /**
      * Id of the API key that created this chain configuration
      */
@@ -2434,6 +2476,14 @@ export type X402Wallet = {
      * Unique identifier of the managed EVM wallet
      */
     id: string;
+    /**
+     * Id of the x402 network (payment source) this wallet is bound to
+     */
+    networkId: string;
+    /**
+     * CAIP-2 chain id of the network this wallet is bound to
+     */
+    caip2Network: string;
     /**
      * The EVM address derived from the wallet private key
      */
@@ -2512,12 +2562,28 @@ export type X402PaymentAttempt = {
      * Payment amount in token base units
      */
     amount: string;
-    payTo: string;
+    /**
+     * Immutable payee-address snapshot. Null only for legacy transition rows without a snapshot.
+     */
+    payTo: string | null;
     payer: string | null;
     resource: string | null;
     paymentIdentifier: string | null;
     errorReason: string | null;
     errorMessage: string | null;
+    /**
+     * The facilitator that settled this inbound payment; null for outbound payments and verifies.
+     */
+    facilitator: {
+        /**
+         * Whether an owned wallet, a remote URL, or an unknown legacy facilitator settled
+         */
+        mode: 'self_hosted' | 'remote' | 'unknown';
+        /**
+         * Self-hosted facilitator wallet address; null for remote or unknown legacy mode
+         */
+        address: string | null;
+    } | null;
     Settlement: {
         id: string;
         success: boolean;
@@ -3988,6 +4054,10 @@ export type GetPaymentData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
+         * When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
+        /**
          * Search query to filter by ID, hash, agent name, state, network, wallet address, or amount
          */
         searchQuery?: string;
@@ -4526,6 +4596,10 @@ export type GetPaymentCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
+         * When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
+        /**
          * The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
@@ -4562,6 +4636,10 @@ export type GetPurchaseCountData = {
          * The network the purchases were made on
          */
         network: 'Preprod' | 'Mainnet';
+        /**
+         * When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
         /**
          * The smart contract address of the payment source. When omitted with no explicit payment source type, purchase count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
@@ -6678,6 +6756,10 @@ export type GetPurchaseData = {
          * Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
         /**
          * Search query to filter by ID, hash, agent name, state, network, wallet address, or amount
          */
@@ -9410,6 +9492,39 @@ export type GetUtxosResponses = {
 
 export type GetUtxosResponse = GetUtxosResponses[keyof GetUtxosResponses];
 
+export type GetBalanceData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The address to get the confirmed balance for
+         */
+        address: string;
+        /**
+         * The Cardano network
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    url: '/balance';
+};
+
+export type GetBalanceResponses = {
+    /**
+     * Complete confirmed address balance
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * Complete confirmed address balance aggregated across all UTXOs
+             */
+            Balance: Array<BalanceAmount>;
+        };
+    };
+};
+
+export type GetBalanceResponse = GetBalanceResponses[keyof GetBalanceResponses];
+
 export type GetRpcApiKeysData = {
     body?: never;
     path?: never;
@@ -10637,6 +10752,32 @@ export type PostMonitoringStopResponses = {
 
 export type PostMonitoringStopResponse = PostMonitoringStopResponses[keyof PostMonitoringStopResponses];
 
+export type GetX402NetworksAvailableData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter chains by environment: true for testnet (Preprod), false for mainnet
+         */
+        isTestnet?: 'true' | 'false';
+    };
+    url: '/x402/networks/available';
+};
+
+export type GetX402NetworksAvailableResponses = {
+    /**
+     * Accessible x402 EVM chains
+     */
+    200: {
+        status: 'success';
+        data: {
+            Networks: Array<X402AvailableNetwork>;
+        };
+    };
+};
+
+export type GetX402NetworksAvailableResponse = GetX402NetworksAvailableResponses[keyof GetX402NetworksAvailableResponses];
+
 export type GetX402NetworksData = {
     body?: never;
     path?: never;
@@ -10674,7 +10815,18 @@ export type PostX402NetworksData = {
         isTestnet?: boolean;
         isEnabled?: boolean;
         defaultAsset?: string | null;
+        /**
+         * Self-hosted facilitator: owned Selling wallet id (null clears it)
+         */
         facilitatorWalletId?: string | null;
+        /**
+         * Remote facilitator: HTTPS endpoint (null clears it)
+         */
+        facilitatorUrl?: string | null;
+        /**
+         * Authorization header value for the remote facilitator, stored encrypted at rest. Omit to preserve it only when the URL origin is unchanged; changing origin clears it. Send a string to set/rotate it, or null to clear it. Requires a remote facilitator URL (existing or set in the same request).
+         */
+        facilitatorAuth?: string | null;
     };
     path?: never;
     query?: never;
@@ -10709,6 +10861,10 @@ export type GetX402WalletsData = {
          * Filter wallets by direction (Purchasing or Selling)
          */
         type?: 'Purchasing' | 'Selling';
+        /**
+         * Filter wallets by the bound x402 network id
+         */
+        networkId?: string;
     };
     url: '/x402/wallets';
 };
@@ -10732,6 +10888,10 @@ export type PostX402WalletsData = {
      * Optional private key to import
      */
     body?: {
+        /**
+         * Id of the x402 network (payment source) to bind this wallet to
+         */
+        networkId: string;
         /**
          * Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators
          */
@@ -10761,6 +10921,30 @@ export type PostX402WalletsResponses = {
 };
 
 export type PostX402WalletsResponse = PostX402WalletsResponses[keyof PostX402WalletsResponses];
+
+export type GetX402WalletsDetailData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Id of the managed EVM wallet to fetch
+         */
+        id: string;
+    };
+    url: '/x402/wallets/detail';
+};
+
+export type GetX402WalletsDetailResponses = {
+    /**
+     * Managed x402 EVM wallet
+     */
+    200: {
+        status: 'success';
+        data: X402Wallet;
+    };
+};
+
+export type GetX402WalletsDetailResponse = GetX402WalletsDetailResponses[keyof GetX402WalletsDetailResponses];
 
 export type PostX402WalletsDeleteData = {
     /**
@@ -11084,9 +11268,17 @@ export type GetX402PaymentsData = {
          */
         direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
         /**
+         * Coarse side filter: buy = outbound payments, sell = inbound (verify + settle). A direction wins.
+         */
+        side?: 'buy' | 'sell';
+        /**
          * Filter by CAIP-2 chain id
          */
         caip2Network?: string;
+        /**
+         * When true, only returns attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.
+         */
+        filterNeedsManualAction?: 'true' | 'false';
     };
     url: '/x402/payments';
 };
@@ -11104,6 +11296,53 @@ export type GetX402PaymentsResponses = {
 };
 
 export type GetX402PaymentsResponse = GetX402PaymentsResponses[keyof GetX402PaymentsResponses];
+
+export type PostX402PaymentsReconcileData = {
+    /**
+     * The attempt to reconcile and the operator-confirmed outcome
+     */
+    body?: {
+        /**
+         * Id of the InboundSettle attempt awaiting reconciliation
+         */
+        attemptId: string;
+        /**
+         * Funds moved on-chain
+         */
+        resolution: 'settled';
+        /**
+         * On-chain settlement transaction hash
+         */
+        txHash: string;
+    } | {
+        /**
+         * Id of the InboundSettle attempt awaiting reconciliation
+         */
+        attemptId: string;
+        /**
+         * Funds did not move on-chain and the payment is safe to retry
+         */
+        resolution: 'failed';
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/payments/reconcile';
+};
+
+export type PostX402PaymentsReconcileResponses = {
+    /**
+     * Reconciliation result
+     */
+    200: {
+        status: 'success';
+        data: {
+            attemptId: string;
+            status: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
+        };
+    };
+};
+
+export type PostX402PaymentsReconcileResponse = PostX402PaymentsReconcileResponses[keyof PostX402PaymentsReconcileResponses];
 
 export type GetX402SettlementsData = {
     body?: never;
@@ -11179,7 +11418,7 @@ export type GetX402WalletsBalanceData = {
          */
         id: string;
         /**
-         * Restrict to a single chain; defaults to all enabled chains
+         * Optional CAIP-2 chain id; must be the wallet's bound network (any other chain returns no balances)
          */
         caip2Network?: string;
     };
@@ -11379,7 +11618,15 @@ export type GetX402PaymentsCountData = {
     query?: {
         status?: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
         direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
+        /**
+         * Coarse side filter: buy = outbound, sell = inbound
+         */
+        side?: 'buy' | 'sell';
         caip2Network?: string;
+        /**
+         * When true, only counts attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.
+         */
+        filterNeedsManualAction?: 'true' | 'false';
     };
     url: '/x402/payments/count';
 };

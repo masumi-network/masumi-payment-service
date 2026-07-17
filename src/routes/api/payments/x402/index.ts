@@ -15,7 +15,7 @@ import { PaymentSourceType } from '@/generated/prisma/client';
 import { assertNever } from '@/utils/assert-never';
 import { createAuthenticatedRateLimitMiddleware } from '@/utils/middleware/rate-limit';
 import { buildX402TxSchemaInput, buildX402TxSchemaOutput } from './schemas';
-import { isCardanoPubKeyBaseAddressForNetwork } from '@/types/payment-source';
+import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
 
 export { buildX402TxSchemaInput, buildX402TxSchemaOutput };
 
@@ -87,34 +87,36 @@ export const buildX402TxPost = x402BuildEndpointFactory.build({
 		// — no `Withdraw`, no `WithdrawRefund`, no `WithdrawDisputed`. Reject
 		// at the API boundary before broadcasting the lock tx. (The same
 		// restriction is enforced in V1 for symmetry; V1's principal-vkey
-		// dereference is structurally similar.)
-		if (!isCardanoPubKeyBaseAddressForNetwork(input.buyerAddress, input.network)) {
+		// dereference is structurally similar.) Base and enterprise pubkey
+		// addresses are both fine — the validator never reads the stake part.
+		if (!isCardanoPubKeyAddressForNetwork(input.buyerAddress, input.network)) {
 			throw createHttpError(
 				400,
-				'buyerAddress must be a Cardano base address with a verification-key payment credential. Script-credential addresses (smart wallets, multisig wrappers) cannot interact with the escrow contract; locked funds would be permanently unspendable.',
+				'buyerAddress must be a Cardano base or enterprise address with a verification-key payment credential. Script-credential addresses (smart wallets, multisig wrappers) cannot interact with the escrow contract; locked funds would be permanently unspendable.',
 			);
 		}
 
 		// Re-validate the STORED sellerReturnAddress before it flows into the
 		// V2 funds-locking tx. The create-payment handler (payments/index.ts)
-		// only enforces pubkey-base for rows it creates; `payment.sellerReturnAddress`
-		// here is read back from the DB and may predate that check (legacy row),
-		// have been written by another path, or — the original bug — have passed
-		// the looser create-time schema refine (isCardanoAddressForNetwork, which
-		// accepts enterprise/script addresses) and been returned via the
-		// idempotency-replay branch without re-validation. The V2 contract can
-		// only pay out to a pubkey base address; locking against an
-		// enterprise/script address strands the funds at an address the contract
-		// cannot resolve. Fail closed (V2 only — V1 has no such datum requirement).
+		// only enforces pubkey credentials for rows it creates;
+		// `payment.sellerReturnAddress` here is read back from the DB and may
+		// predate that check (legacy row), have been written by another path,
+		// or — the original bug — have passed the looser create-time schema
+		// refine (isCardanoAddressForNetwork, which accepts script addresses)
+		// and been returned via the idempotency-replay branch without
+		// re-validation. The datum builder only encodes pubkey base/enterprise
+		// addresses; a script-credential address would strand payouts at an
+		// address the contract cannot resolve. Fail closed (V2 only — V1 has
+		// no such datum requirement).
 		const isV2Payment = payment.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2;
 		if (
 			isV2Payment &&
 			payment.sellerReturnAddress != null &&
-			!isCardanoPubKeyBaseAddressForNetwork(payment.sellerReturnAddress, input.network)
+			!isCardanoPubKeyAddressForNetwork(payment.sellerReturnAddress, input.network)
 		) {
 			throw createHttpError(
 				409,
-				'Stored sellerReturnAddress is not a Cardano base address with a stake credential; this payment cannot be locked on the V2 contract. Recreate the payment with a valid base address.',
+				'Stored sellerReturnAddress is not a Cardano base or enterprise address with a payment key credential; this payment cannot be locked on the V2 contract. Recreate the payment with a valid address.',
 			);
 		}
 

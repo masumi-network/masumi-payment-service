@@ -29,6 +29,7 @@ const PRISMA_RETRYABLE_CODES = new Set(['P2034', 'P2028']);
 //   next attempt typically picks a fresh connection from the pool and
 //   succeeds — so it is retryable.
 const POSTGRES_RETRYABLE_SQLSTATES = new Set(['40001', '40P01', '25001']);
+const UNIQUE_CONSTRAINT_CODES = new Set(['P2002', '23505']);
 
 type Logger = Pick<typeof logger, 'debug' | 'info' | 'warn'>;
 
@@ -71,6 +72,34 @@ function readSqlstate(value: unknown): string | undefined {
 	return readStringField(value, 'originalCode') ?? readStringField(value, 'code');
 }
 
+function hasErrorCode(value: unknown, codes: ReadonlySet<string>): boolean {
+	const code = readStringField(value, 'code');
+	const originalCode = readStringField(value, 'originalCode');
+	return (code != null && codes.has(code)) || (originalCode != null && codes.has(originalCode));
+}
+
+function readMetaDriverCause(error: unknown): unknown {
+	if (asObject(error) == null) return undefined;
+	const meta = asObject((error as ErrorWithMeta).meta);
+	const metaDriverError = meta == null ? undefined : (meta as DriverAdapterShape).driverAdapterError;
+	const metaDriverErrorObj = asObject(metaDriverError);
+	return metaDriverErrorObj == null ? undefined : (metaDriverErrorObj as DriverAdapterCauseShape).cause;
+}
+
+/**
+ * Detect a database unique-constraint violation across both Prisma's translated
+ * `P2002` shape and raw PostgreSQL `23505` errors emitted by driver adapters.
+ */
+export function isUniqueConstraintError(error: unknown): boolean {
+	if (asObject(error) == null) return false;
+	if (hasErrorCode(error, UNIQUE_CONSTRAINT_CODES)) return true;
+
+	const cause = (error as ErrorWithCause).cause;
+	if (hasErrorCode(cause, UNIQUE_CONSTRAINT_CODES)) return true;
+
+	return hasErrorCode(readMetaDriverCause(error), UNIQUE_CONSTRAINT_CODES);
+}
+
 function isSerializationConflict(error: unknown): boolean {
 	if (asObject(error) == null) return false;
 
@@ -98,10 +127,7 @@ function isSerializationConflict(error: unknown): boolean {
 	// Some PrismaClientKnownRequestError variants stash the driver-adapter
 	// details under `meta.driverAdapterError.cause.{code,originalCode}` —
 	// observed when Prisma rewraps a Postgres 40001 from the pg-adapter.
-	const meta = asObject((error as ErrorWithMeta).meta);
-	const metaDriverError = meta == null ? undefined : (meta as DriverAdapterShape).driverAdapterError;
-	const metaDriverErrorObj = asObject(metaDriverError);
-	const metaCause = metaDriverErrorObj == null ? undefined : (metaDriverErrorObj as DriverAdapterCauseShape).cause;
+	const metaCause = readMetaDriverCause(error);
 	const metaSqlstate = readSqlstate(metaCause);
 	if (metaSqlstate != null && POSTGRES_RETRYABLE_SQLSTATES.has(metaSqlstate)) {
 		return true;

@@ -6,10 +6,12 @@ import {
   getX402Budgets,
   getX402LowBalance,
   getX402Networks,
+  getX402NetworksAvailable,
   getX402Payments,
   getX402Wallets,
   X402Budget,
   X402LowBalanceRule,
+  X402AvailableNetwork,
   X402Network,
   X402PaymentAttempt,
   X402Wallet,
@@ -71,6 +73,46 @@ export function useX402Networks(options?: {
   };
 }
 
+export function useAvailableX402Networks(options?: {
+  silentErrors?: boolean;
+  network?: NetworkType;
+  allEnvironments?: boolean;
+}) {
+  const { apiClient, authorized, network: activeNetwork } = useAppContext();
+  const silentErrors = options?.silentErrors ?? false;
+  const network = options?.network ?? activeNetwork;
+  const isTestnet = isTestnetEnv(network);
+  const allEnvironments = options?.allEnvironments ?? false;
+
+  const query = useQuery({
+    // Keep this under the shared x402-networks prefix so chain mutations invalidate
+    // both the admin projection and this pay-authenticated safe projection.
+    queryKey: ['x402-networks', 'available', silentErrors, allEnvironments ? 'all' : isTestnet],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          getX402NetworksAvailable({
+            client: apiClient,
+            query: allEnvironments ? {} : { isTestnet: isTestnet ? 'true' : 'false' },
+          }),
+        silentErrors ? { onError: () => {} } : { errorMessage: 'Failed to fetch available chains' },
+      );
+      return response?.data?.data?.Networks ?? [];
+    },
+    enabled: !!apiClient && authorized,
+    staleTime: 30000,
+  });
+
+  return {
+    networks: (query.data ?? []) as X402AvailableNetwork[],
+    isLoading: query.isLoading,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+}
+
 /**
  * Eagerly loads every managed EVM wallet (paging through /x402/wallets). Used by
  * the chain/budget pickers and setup flows that need the full set to choose
@@ -78,11 +120,11 @@ export function useX402Networks(options?: {
  * fetch only Purchasing (budget) or Selling (facilitator) wallets. Read-only
  * labels should use the denormalized address on the network/budget instead.
  */
-export function useX402Wallets(enabled = true, type?: X402Wallet['type']) {
+export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networkId?: string) {
   const { apiClient, authorized } = useAppContext();
 
   const query = useQuery({
-    queryKey: ['x402-wallets', 'all', type ?? 'any'],
+    queryKey: ['x402-wallets', 'all', type ?? 'any', networkId ?? 'any'],
     queryFn: async () => {
       let items: X402Wallet[] = [];
       let cursor: string | undefined;
@@ -91,7 +133,7 @@ export function useX402Wallets(enabled = true, type?: X402Wallet['type']) {
           () =>
             getX402Wallets({
               client: apiClient,
-              query: { take: PAGE_SIZE, cursorId: cursor, type },
+              query: { take: PAGE_SIZE, cursorId: cursor, type, networkId },
             }),
           { errorMessage: 'Failed to fetch wallets' },
         );
@@ -234,8 +276,11 @@ export function useX402LowBalanceRules(includeDisabled = true) {
 
 export type X402PaymentFilters = {
   status?: X402PaymentAttempt['status'];
-  direction?: X402PaymentAttempt['direction'];
+  /** Coarse side switch: buy = outbound payments, sell = inbound (verify + settle). */
+  side?: 'buy' | 'sell';
   caip2Network?: string;
+  /** Stale ambiguous inbound settles awaiting operator reconciliation. */
+  needsManualAction?: boolean;
 };
 
 export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
@@ -245,8 +290,9 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
     queryKey: [
       'x402-payments',
       filters.status ?? null,
-      filters.direction ?? null,
+      filters.side ?? null,
       filters.caip2Network ?? null,
+      filters.needsManualAction ?? false,
     ],
     queryFn: async ({ pageParam }) => {
       const response = await handleApiCall(
@@ -257,8 +303,9 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
               take: PAGE_SIZE,
               cursorId: pageParam ?? undefined,
               status: filters.status,
-              direction: filters.direction,
+              side: filters.side,
               caip2Network: filters.caip2Network,
+              filterNeedsManualAction: filters.needsManualAction ? ('true' as const) : undefined,
             },
           }),
         { errorMessage: 'Failed to fetch x402 payments' },
