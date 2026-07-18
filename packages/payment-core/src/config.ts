@@ -231,6 +231,13 @@ const lowBalanceCheckInterval = parseNumberEnv(
 	5,
 );
 
+const checkFundTransferInterval = Number(process.env.CHECK_FUND_TRANSFER_INTERVAL ?? '15');
+if (checkFundTransferInterval < 5) throw new Error('CHECK_FUND_TRANSFER_INTERVAL must be at least 5 seconds');
+
+const checkFundTransferConfirmationInterval = Number(process.env.CHECK_FUND_TRANSFER_CONFIRMATION_INTERVAL ?? '20');
+if (checkFundTransferConfirmationInterval < 5)
+	throw new Error('CHECK_FUND_TRANSFER_CONFIRMATION_INTERVAL must be at least 5 seconds');
+
 const lowBalanceDefaultRulesMainnet = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_MAINNET');
 const lowBalanceDefaultRulesPreprod = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_PREPROD');
 
@@ -272,6 +279,8 @@ export const CONFIG = {
 	IS_COINGECKO_DEMO: process.env.IS_COINGECKO_DEMO?.toLowerCase() === 'true',
 	LOW_BALANCE_DEFAULT_RULES_MAINNET: lowBalanceDefaultRulesMainnet,
 	LOW_BALANCE_DEFAULT_RULES_PREPROD: lowBalanceDefaultRulesPreprod,
+	CHECK_FUND_TRANSFER_INTERVAL: checkFundTransferInterval,
+	CHECK_FUND_TRANSFER_CONFIRMATION_INTERVAL: checkFundTransferConfirmationInterval,
 	// Prisma span filtering: only export outlier (slow) queries and cap volume
 	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: parseNumberEnv(
 		'OTEL_PRISMA_OUTLIER_THRESHOLD_MS',

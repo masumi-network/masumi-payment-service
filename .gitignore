@@ -19,6 +19,9 @@ src/services/.DS_Store
 # Claude local settings (user-specific)
 .claude/
 
+# Claude Code session memory (local only)
+.remember/
+
 /certs/
 
 frontend/.env
@@ -41,3 +44,11 @@ scripts/example-invoice.html
 
 # Prisma Generated Files
 src/generated/
+
+# Hydra L2 devnet/preprod local state (contains private keys - never commit)
+hydra-l2-flow/
+
+# Local vector-db/agent-memory tool artifacts
+ruvector.db
+agentdb.rvf
+agentdb.rvf.lock

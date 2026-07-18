@@ -80,6 +80,9 @@ if ! pnpm run prisma:generate; then
     exit 5
 fi
 
+# Remove session memory temp files that ESLint's projectService rejects
+rm -f .remember/tmp/last-ndc.ts
+
 # Run backend ESLint
 echo "${BLUE}🔍 Running backend ESLint...${NC}"
 if ! pnpm run lint:backend; then

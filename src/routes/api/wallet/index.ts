@@ -4,7 +4,7 @@ import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
-import { HotWalletType } from '@/generated/prisma/client';
+import { HotWalletType, Prisma, WalletFundTransfer } from '@/generated/prisma/client';
 import { isCardanoAddressForNetwork } from '@masumi/payment-core/payment-source';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
@@ -19,6 +19,10 @@ import {
 	patchWalletSchemaOutput,
 	postWalletSchemaInput,
 	postWalletSchemaOutput,
+	postWalletFundSchemaInput,
+	postWalletFundSchemaOutput,
+	getWalletFundSchemaInput,
+	getWalletFundSchemaOutput,
 } from './schemas';
 import { serializeLowBalanceRecord, serializeLowBalanceSummary } from '@/services/wallets';
 import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
@@ -32,6 +36,10 @@ export {
 	patchWalletSchemaOutput,
 	postWalletSchemaInput,
 	postWalletSchemaOutput,
+	postWalletFundSchemaInput,
+	postWalletFundSchemaOutput,
+	getWalletFundSchemaInput,
+	getWalletFundSchemaOutput,
 };
 
 export const queryWalletListEndpointGet = adminAuthenticatedEndpointFactory.build({
@@ -330,6 +338,131 @@ export const postWalletEndpointPost = adminAuthenticatedEndpointFactory.build({
 			});
 			throw error;
 		}
+	},
+});
+
+/**
+ * Shape a WalletFundTransfer row for the wire.
+ *
+ * BigInt becomes a string because JSON cannot serialize BigInt. `assets` is a
+ * Prisma Json column: postWalletFundEndpointPost is its only writer and zod
+ * validated the shape on the way in, so the cast holds today — a second writer
+ * (a backfill, an admin script) would need a parse here instead.
+ */
+function serializeFundTransfer(transfer: WalletFundTransfer) {
+	return {
+		id: transfer.id,
+		status: transfer.status,
+		txHash: transfer.txHash,
+		toAddress: transfer.toAddress,
+		lovelaceAmount: transfer.lovelaceAmount.toString(),
+		assets: (transfer.assets as Array<{ unit: string; quantity: string }> | null) ?? null,
+		createdAt: transfer.createdAt,
+		updatedAt: transfer.updatedAt,
+		lastCheckedAt: transfer.lastCheckedAt,
+		errorNote: transfer.errorNote,
+	};
+}
+
+export const postWalletFundEndpointPost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: postWalletFundSchemaInput,
+	output: postWalletFundSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof postWalletFundSchemaInput>; ctx: AuthContext }) => {
+		if (input.lovelaceAmount < 2_000_000n) {
+			throw createHttpError(400, 'lovelaceAmount must be at least 2000000 (2 ADA)');
+		}
+
+		const wallet = await prisma.hotWallet.findFirst({
+			where: {
+				walletAddress: input.fromWalletAddress,
+				deletedAt: null,
+				// Both of these are provable no-ops for an admin key today:
+				// auth-middleware grants every canAdmin key all Cardano networks and
+				// a null wallet scope, and this factory admits only canAdmin keys. So
+				// they are NOT a security control — they are here so the handler stays
+				// correct if the endpoint is ever moved to a narrower factory, which
+				// is the point at which their absence would become exploitable.
+				PaymentSource: { network: { in: ctx.networkLimit }, deletedAt: null },
+				...buildHotWalletScopeFilter(ctx.walletScopeIds),
+			},
+			include: { PaymentSource: { select: { network: true } } },
+		});
+
+		if (wallet == null) {
+			throw createHttpError(404, 'Wallet not found');
+		}
+
+		// Validate the destination against the sending wallet's network, exactly as
+		// patchWalletEndpointPatch does for newCollectionAddress below. Without it a
+		// wrong-network or truncated address is accepted here, queued, and only
+		// rejected by `build()` inside the scheduler seconds later — surfacing to
+		// the operator as an async failed transfer instead of a synchronous 400.
+		if (!isCardanoAddressForNetwork(input.toAddress, wallet.PaymentSource.network)) {
+			throw createHttpError(400, 'toAddress is not a valid Cardano address for this wallet network');
+		}
+
+		const transfer = await prisma.walletFundTransfer.create({
+			data: {
+				hotWalletId: wallet.id,
+				toAddress: input.toAddress,
+				lovelaceAmount: input.lovelaceAmount,
+				// DbNull (SQL NULL), not JsonNull ('null'::jsonb): "no assets" should
+				// be absent, not a stored JSON null that `WHERE assets IS NULL` misses.
+				assets: input.assets ?? Prisma.DbNull,
+			},
+		});
+
+		return serializeFundTransfer(transfer);
+	},
+});
+
+export const getWalletFundEndpointGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: getWalletFundSchemaInput,
+	output: getWalletFundSchemaOutput,
+	handler: async ({ input, ctx }: { input: z.infer<typeof getWalletFundSchemaInput>; ctx: AuthContext }) => {
+		// Reach every transfer through its HotWallet, so a lookup by transfer id
+		// obeys the same visibility rules as a lookup by wallet id or address.
+		// The `id` branch previously used findUnique with no wallet filter at all.
+		const hotWalletScope = {
+			deletedAt: null,
+			PaymentSource: { network: { in: ctx.networkLimit }, deletedAt: null },
+			...buildHotWalletScopeFilter(ctx.walletScopeIds),
+		};
+
+		if (input.id !== undefined) {
+			const transfer = await prisma.walletFundTransfer.findFirst({
+				where: { id: input.id, HotWallet: hotWalletScope },
+			});
+			if (transfer == null) {
+				throw createHttpError(404, 'Fund transfer not found');
+			}
+			return { transfers: [serializeFundTransfer(transfer)] };
+		}
+
+		let resolvedHotWalletId = input.hotWalletId;
+		if (resolvedHotWalletId == null && input.walletAddress != null) {
+			const wallet = await prisma.hotWallet.findFirst({
+				where: { walletAddress: input.walletAddress, ...hotWalletScope },
+				select: { id: true },
+			});
+			if (wallet == null) {
+				throw createHttpError(404, 'Wallet not found');
+			}
+			resolvedHotWalletId = wallet.id;
+		}
+
+		const transfers = await prisma.walletFundTransfer.findMany({
+			where: { hotWalletId: resolvedHotWalletId, HotWallet: hotWalletScope },
+			orderBy: { createdAt: 'desc' },
+			// Inclusive cursor, matching every other list endpoint. The hand-rolled
+			// `id: { lt: cursorId }` this replaces was exclusive, so clients would
+			// have had to special-case this one route.
+			...cursorPaginationArgs(input.cursorId, input.limit),
+		});
+
+		return { transfers: transfers.map(serializeFundTransfer) };
 	},
 });
 

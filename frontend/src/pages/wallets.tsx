@@ -1,12 +1,26 @@
 import { Button } from '@/components/ui/button';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { Plus, ArrowLeftRight, PlusCircle, AlertTriangle } from 'lucide-react';
+import {
+  Plus,
+  ArrowLeftRight,
+  PlusCircle,
+  AlertTriangle,
+  Send,
+  MoreHorizontal,
+} from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
+import { TransferFundsDialog } from '@/components/wallets/TransferFundsDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
 
@@ -73,6 +87,8 @@ export default function WalletsPage() {
   const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
     null,
   );
+  const [selectedWalletForTransfer, setSelectedWalletForTransfer] =
+    useState<WalletWithBalance | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
@@ -332,32 +348,45 @@ export default function WalletsPage() {
                           </div>
                         </td>
                         <td className="p-4 pr-8">
-                          <div className="flex items-center gap-2">
-                            {wallet.network === 'Mainnet' && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                aria-label="Swap tokens"
-                                className="h-8 w-8"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedWalletForSwap(wallet);
-                                }}
-                              >
-                                <ArrowLeftRight className="h-4 w-4" />
-                              </Button>
-                            )}
-                            <Button
-                              className="h-8"
-                              variant="muted"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedWalletForTopup(wallet);
-                              }}
-                            >
-                              <PlusCircle className="h-3.5 w-3.5" />
-                              Top Up
-                            </Button>
+                          <div className="flex justify-end">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label="Wallet actions"
+                                  className="h-8 w-8"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenuItem
+                                  className="cursor-pointer gap-2"
+                                  onSelect={() => setSelectedWalletForTopup(wallet)}
+                                >
+                                  <PlusCircle className="h-4 w-4" />
+                                  Top up
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="cursor-pointer gap-2"
+                                  onSelect={() => setSelectedWalletForTransfer(wallet)}
+                                >
+                                  <Send className="h-4 w-4" />
+                                  Transfer funds
+                                </DropdownMenuItem>
+                                {wallet.network === 'Mainnet' && (
+                                  <DropdownMenuItem
+                                    className="cursor-pointer gap-2"
+                                    onSelect={() => setSelectedWalletForSwap(wallet)}
+                                  >
+                                    <ArrowLeftRight className="h-4 w-4" />
+                                    Swap tokens
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </td>
                       </tr>
@@ -390,6 +419,14 @@ export default function WalletsPage() {
           walletAddress={selectedWalletForSwap?.walletAddress || ''}
           walletVkey={selectedWalletForSwap?.walletVkey || ''}
           network={network}
+        />
+
+        <TransferFundsDialog
+          isOpen={!!selectedWalletForTransfer}
+          onClose={() => setSelectedWalletForTransfer(null)}
+          walletAddress={selectedWalletForTransfer?.walletAddress || ''}
+          network={network}
+          onSuccess={refetchWallets}
         />
 
         <TransakWidget
