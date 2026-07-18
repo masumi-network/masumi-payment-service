@@ -102,6 +102,7 @@ model HotWallet {
   PendingTransaction                      Transaction?                    @relation(fields: [pendingTransactionId], references: [id])
   PendingSwapTransaction                  SwapTransaction?                @relation(fields: [pendingSwapTransactionId], references: [id])
   SwapTransactionHistory                  SwapTransaction[]               @relation("SwapTransactionHistory")
+  FundTransferHistory                     WalletFundTransfer[]            @relation("FundTransferHistory")
   Secret                                  WalletSecret                    @relation(fields: [secretId], references: [id])
   PaymentRequest                          PaymentRequest[]
   PurchaseRequest                         PurchaseRequest[]
@@ -180,6 +181,7 @@ model Transaction {
   RegistryRequest               RegistryRequest[]
   InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
   FundDistributionRequests      FundDistributionRequest[]       @relation("FundDistributionTransaction")
+  FundTransfer                  WalletFundTransfer?             @relation("FundTransferTransaction")
   // History is many-to-many because a V2 batch can move one shared Transaction
   // row through multiple request histories after it leaves CurrentTransaction.
   PaymentRequestHistory         PaymentRequest[]                @relation("PaymentTransactionHistory")
@@ -221,6 +223,41 @@ model SwapTransaction {
   hotWalletId      String?
   BlocksWallet     HotWallet?
   HotWallet        HotWallet?        @relation("SwapTransactionHistory", fields: [hotWalletId], references: [id])
+}
+
+/// Operator-initiated transfer of funds out of a hot wallet to an arbitrary
+/// address. This row is the operator-facing REQUEST and audit record; the
+/// on-chain lifecycle lives on the linked Transaction, exactly as
+/// FundDistributionRequest does. Reusing Transaction (rather than a private
+/// txHash + a pendingFundTransferId lock column) is what makes a fund transfer
+/// visible to the shared machinery every other hot-wallet flow already relies
+/// on: the stale-lock reaper, funding-reconciliation, and tx-sync rollback all
+/// key off Transaction / HotWallet.pendingTransactionId and knew nothing about
+/// the parallel columns this model used to own.
+model WalletFundTransfer {
+  id             String            @id @default(cuid())
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  hotWalletId    String
+  toAddress      String
+  lovelaceAmount BigInt
+  assets         Json?
+  /// Denormalized copy of Transaction.txHash, set at submit for cheap display
+  /// and history queries. Transaction is the source of truth for the lifecycle.
+  txHash         String?
+  status         TransactionStatus @default(Pending)
+  lastCheckedAt  DateTime?
+  errorNote      String?
+  /// The Transaction row carrying this transfer's on-chain lifecycle, set
+  /// atomically with the hot-wallet lock (HotWallet.pendingTransactionId)
+  /// BEFORE the tx is signed or broadcast. One transfer maps to one tx, so this
+  /// is unique. onDelete: SetNull keeps the audit row if the tx is ever pruned.
+  transactionId  String?           @unique
+  Transaction    Transaction?      @relation("FundTransferTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
+  HotWallet      HotWallet         @relation("FundTransferHistory", fields: [hotWalletId], references: [id])
+
+  @@index([hotWalletId])
+  @@index([status, txHash])
 }
 
 model WalletSecret {

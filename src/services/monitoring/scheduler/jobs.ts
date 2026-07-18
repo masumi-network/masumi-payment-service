@@ -7,7 +7,12 @@ import {
 	unlockStaleOrphanWalletLocks,
 	updateWalletTransactionHash,
 } from '@/services/transactions';
-import { walletLowBalanceMonitorService, fundDistributionService } from '@/services/wallets';
+import {
+	walletLowBalanceMonitorService,
+	fundDistributionService,
+	processFundTransfers,
+	checkFundTransferConfirmations,
+} from '@/services/wallets';
 import { webhookQueueService } from '@/services/webhooks';
 import { runX402LowBalanceMonitoringCycle } from '@/services/x402/low-balance-monitor';
 import type { JobDefinition } from '@/services/shared';
@@ -305,5 +310,19 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting orphan action-data cleanup',
 		finishMessage: 'Finished orphan action-data cleanup',
 		run: cleanupOrphanActionData,
+	},
+	{
+		initialDelayMs: 55000,
+		intervalMs: CONFIG.CHECK_FUND_TRANSFER_INTERVAL * 1000,
+		startMessage: 'Starting fund transfer processor',
+		finishMessage: 'Finished fund transfer processor',
+		run: processFundTransfers,
+	},
+	{
+		initialDelayMs: 60000,
+		intervalMs: CONFIG.CHECK_FUND_TRANSFER_CONFIRMATION_INTERVAL * 1000,
+		startMessage: 'Starting fund transfer confirmation checker',
+		finishMessage: 'Finished fund transfer confirmation checker',
+		run: checkFundTransferConfirmations,
 	},
 ];

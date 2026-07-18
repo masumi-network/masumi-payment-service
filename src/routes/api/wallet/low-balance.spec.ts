@@ -44,12 +44,15 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	// A partial mock of this module must enumerate every symbol the transitively
 	// loaded graph imports, or the ESM loader fails the whole suite.
 	SERVICE_CONSTANTS: {
-		TRANSACTION: {
-			timeBufferMs: 300000,
-			blockTimeBufferMs: 60000,
-			validitySlotBuffer: 30,
-			resultTimeSlotBuffer: 18,
+		RETRY: { maxRetries: 5, backoffMultiplier: 5, initialDelayMs: 500, maxDelayMs: 7500 },
+		TRANSACTION: { timeBufferMs: 150000, blockTimeBufferMs: 60000, validitySlotBuffer: 5, resultTimeSlotBuffer: 3 },
+		SMART_CONTRACT: {
+			collateralAmount: '5000000',
+			mintQuantity: '1',
+			defaultExUnits: { mem: 7000000, steps: 3000000000 },
 		},
+		METADATA: { nftLabel: 721, masumiLabel: 674 },
+		CARDANO: { NATIVE_TOKEN: 'lovelace' },
 	},
 }));
 
