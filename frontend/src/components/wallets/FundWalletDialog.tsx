@@ -39,7 +39,9 @@ export function FundWalletDialog({
   onSuccess?: () => void;
 }) {
   const { selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
-  const { fundWallets, isLoading, error, refetch } = useFundWallet();
+  // Gated on `open` so the wallets page doesn't fetch fund wallets on every
+  // visit while this dialog stays closed (mirrors useFundDistributions below).
+  const { fundWallets, isLoading, error, refetch } = useFundWallet({ enabled: open });
   const { createFundWallet, updateFundWallet, removeFundWallet, triggerDistribution } =
     useFundWalletMutations(selectedPaymentSourceId);
   const [isAdding, setIsAdding] = useState(false);
@@ -124,7 +126,17 @@ export function FundWalletDialog({
   const hasWallets = fundWallets.length > 0;
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) {
+          // Collapse the add-form so it doesn't stay expanded on reopen or
+          // carry over to another payment source's fund wallets.
+          setIsAdding(false);
+          onClose();
+        }
+      }}
+    >
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Fund wallets</DialogTitle>
@@ -164,8 +176,12 @@ export function FundWalletDialog({
                 fundWallet={fundWallet}
                 onUpdate={handleUpdate}
                 onDelete={handleDelete}
-                isUpdating={updateFundWallet.isPending}
-                isDeleting={removeFundWallet.isPending}
+                isUpdating={
+                  updateFundWallet.isPending && updateFundWallet.variables?.id === fundWallet.id
+                }
+                isDeleting={
+                  removeFundWallet.isPending && removeFundWallet.variables?.id === fundWallet.id
+                }
               />
             ))}
 

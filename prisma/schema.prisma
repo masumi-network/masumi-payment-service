@@ -1372,6 +1372,8 @@ enum WebhookEventType {
   X402_WALLET_LOW_BALANCE
 }
 
+// Critical is retained for historical rows only: the dispatcher creates
+// every request as Warning (single batched tier).
 enum FundDistributionPriority {
   Warning
   Critical

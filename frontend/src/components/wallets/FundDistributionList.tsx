@@ -1,9 +1,9 @@
 import { ArrowUpRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
-import { convertBaseUnitsToDecimal } from '@/lib/convertDecimalToBaseUnits';
 import { formatDate } from '@/lib/format-date';
 import { getExplorerUrl, shortenAddress } from '@/lib/utils';
+import { formatRuleAmount, getRuleAssetMeta } from '@/components/wallets/wallet-details-utils';
 
 type FundDistribution = {
   id: string;
@@ -31,12 +31,18 @@ function statusVariant(status: FundDistribution['status']) {
   }
 }
 
-function formatDistributionAmount(distribution: FundDistribution) {
-  if (distribution.assetUnit === 'lovelace') {
-    return `${convertBaseUnitsToDecimal(distribution.amount)} ADA`;
+function formatDistributionAmount(distribution: FundDistribution, network: 'Preprod' | 'Mainnet') {
+  const assetMeta = getRuleAssetMeta(distribution.assetUnit, network);
+
+  if (assetMeta.decimals != null) {
+    // Same decimal-aware formatting the low-balance rules UI uses, so the two
+    // surfaces never disagree by a factor of 10^decimals.
+    return formatRuleAmount(distribution.amount, distribution.assetUnit, network);
   }
 
-  return `${distribution.amount} ${shortenAddress(distribution.assetUnit, 8)}`;
+  // Unknown asset: no decimal metadata, so keep raw on-chain units but label
+  // them with the decoded asset name (or shortened unit) instead of raw hex.
+  return `${distribution.amount} ${assetMeta.label}`;
 }
 
 export function FundDistributionList({
@@ -46,7 +52,7 @@ export function FundDistributionList({
 }: {
   distributions: FundDistribution[];
   isLoading: boolean;
-  network: string;
+  network: 'Preprod' | 'Mainnet';
 }) {
   if (isLoading) {
     return (
@@ -69,7 +75,7 @@ export function FundDistributionList({
       {distributions.map((distribution) => (
         <div key={distribution.id} className="rounded-md border p-3 text-sm">
           <div className="flex items-center justify-between gap-2">
-            <span className="font-medium">{formatDistributionAmount(distribution)}</span>
+            <span className="font-medium">{formatDistributionAmount(distribution, network)}</span>
             <div className="flex items-center gap-2">
               {distribution.fundWalletId == null && distribution.status === 'Pending' && (
                 <Badge variant="outline" className="text-xs">

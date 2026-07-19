@@ -30,12 +30,12 @@ function getResponseStatus(value: unknown): number | undefined {
  * "couldn't tell" look identical to the caller otherwise, and they lead to
  * opposite UI (the create form invites the operator to paste a seed phrase).
  */
-export function useFundWallet() {
+export function useFundWallet(options?: { enabled?: boolean }) {
   const { apiClient, selectedPaymentSourceId } = useAppContext();
 
   const query = useQuery({
     queryKey: ['fund-wallet', selectedPaymentSourceId],
-    enabled: Boolean(selectedPaymentSourceId),
+    enabled: Boolean(selectedPaymentSourceId) && options?.enabled !== false,
     queryFn: async () => {
       if (!selectedPaymentSourceId) return [];
 

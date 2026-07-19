@@ -7,6 +7,7 @@ import { formatAssetAmount, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { AlertTriangle } from 'lucide-react';
 import { type WalletAlertNotification } from '@/lib/hooks/useWalletAlertNotifications';
+import { getWalletTypeRowLabel } from '@/lib/wallet-type';
 
 interface NotificationsDialogProps {
   open: boolean;
@@ -83,11 +84,7 @@ export function NotificationsDialog({
                         Low balance alert
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {wallet.type === 'Purchasing'
-                          ? 'Buying wallet'
-                          : wallet.type === 'Funding'
-                            ? 'Funding wallet'
-                            : 'Selling wallet'}
+                        {getWalletTypeRowLabel(wallet.type)}
                         {wallet.note ? ` • ${wallet.note}` : ''}
                       </p>
                       <p className="text-xs text-muted-foreground">

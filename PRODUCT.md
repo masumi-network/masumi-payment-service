@@ -1,9 +1,5 @@
 # Product
 
-## Register
-
-product
-
 ## Users
 
 Technical operators who configure and monitor Masumi payment infrastructure. The product is optimized for speed and clarity: operators need to understand wallet purpose, funding state, and automated behavior quickly while managing live Cardano payment sources.

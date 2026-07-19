@@ -238,17 +238,34 @@ export async function processRequestsForFundWallet(
 		return;
 	}
 
+	const treasuryTokens = [...balanceMap.entries()]
+		.filter(([unit]) => unit !== 'lovelace')
+		.map(([unit, quantity]) => ({ unit, quantity }));
+	const protocolParameters =
+		treasuryTokens.length > 0 || requests.some((request) => request.assetUnit !== 'lovelace')
+			? await getDistributionProtocolParameters(fundWallet.rpcProviderApiKey)
+			: {
+					coinsPerUtxoSize: CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
+					maxValueSize: CONSTANTS.FALLBACK_MAX_VALUE_SIZE,
+				};
+	// The change output must be able to carry every treasury token the batch
+	// does not spend. Reserving its min-UTxO up front (worst case: the full
+	// token bundle comes back as change) keeps a near-exhausting batch from
+	// failing in build() — which would fail the requests, re-create them, and
+	// re-fail them every cooldown until the balance happens to move.
+	const changeReserve =
+		treasuryTokens.length > 0
+			? calculateDistributionMinLovelace({
+					address: fundWallet.walletAddress,
+					assets: treasuryTokens,
+					coinsPerUtxoSize: protocolParameters.coinsPerUtxoSize,
+				})
+			: 0n;
 	// Affordability is per asset, and the assets are coupled: a token output also
 	// consumes lovelace for its min-UTxO. So walk whole targets — an output is
 	// all-or-nothing — and keep a running remainder for every unit at once.
 	const remaining = new Map<string, bigint>(balanceMap);
-	remaining.set('lovelace', fundWalletBalance - feeBuffer);
-	const protocolParameters = requests.some((request) => request.assetUnit !== 'lovelace')
-		? await getDistributionProtocolParameters(fundWallet.rpcProviderApiKey)
-		: {
-				coinsPerUtxoSize: CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
-				maxValueSize: CONSTANTS.FALLBACK_MAX_VALUE_SIZE,
-			};
+	remaining.set('lovelace', fundWalletBalance - feeBuffer - changeReserve);
 	const { outputs: groupedOutputs, oversizedRequestIds } = groupRequestsByTarget(
 		requests,
 		protocolParameters.coinsPerUtxoSize,
@@ -442,11 +459,16 @@ export async function processRequestsForFundWallet(
 							},
 						});
 
-						if (failed.count !== requestIds.length) return failed.count;
-
+						// Drop the orphaned Transaction row even when some requests were
+						// claimed away — it belongs to this never-broadcast attempt alone,
+						// and left Pending no reconciler ever resolves it (no txHash, the
+						// requests' transactionId link is gone).
 						await tx.transaction.deleteMany({
 							where: { id: transaction.id, status: TransactionStatus.Pending },
 						});
+
+						if (failed.count !== requestIds.length) return failed.count;
+
 						await webhookEventsService.queueFundDistributionFailed(
 							tx,
 							{

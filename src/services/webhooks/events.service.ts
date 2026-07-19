@@ -206,82 +206,10 @@ class WebhookEventsService {
 		await this.triggerGenericWebhook(WebhookEventType.PAYMENT_ON_ERROR, paymentId, 'payment');
 	}
 
-	/**
-	 * Shared logging + swallow for the fund-distribution lifecycle events. Takes
-	 * a thunk rather than an (event, payload) pair because
-	 * `WebhookPayloadDataByEvent` is a deferred conditional type: threading it
-	 * through a generic here defeats the per-event payload checking that makes
-	 * the discriminated union worth having. The callers below keep it exact.
-	 *
-	 * Swallowing is deliberate: webhook delivery must never fail the
-	 * distribution flow, least of all after funds have already moved.
-	 */
-	private async triggerFundDistribution(
-		event: WebhookEventType,
-		meta: { fundWalletId: string; batchId: string; txHash: string | null },
-		queue: () => Promise<void>,
-	): Promise<void> {
-		try {
-			await queue();
-			logger.info(`${event} webhook triggered`, meta);
-		} catch (error) {
-			logger.error(`Failed to trigger ${event} webhook`, {
-				...meta,
-				error: error instanceof Error ? error.message : 'Unknown error',
-			});
-		}
-	}
-
-	async triggerFundDistributionSent(
-		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_SENT'>,
-		paymentSourceId: string,
-	): Promise<void> {
-		await this.triggerFundDistribution(
-			WebhookEventType.FUND_DISTRIBUTION_SENT,
-			{ fundWalletId: payload.fundWalletId, batchId: payload.batchId, txHash: payload.txHash },
-			() =>
-				webhookQueueService.queueWebhook(
-					WebhookEventType.FUND_DISTRIBUTION_SENT,
-					payload,
-					payload.fundWalletId,
-					paymentSourceId,
-				),
-		);
-	}
-
-	async triggerFundDistributionConfirmed(
-		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_CONFIRMED'>,
-		paymentSourceId: string,
-	): Promise<void> {
-		await this.triggerFundDistribution(
-			WebhookEventType.FUND_DISTRIBUTION_CONFIRMED,
-			{ fundWalletId: payload.fundWalletId, batchId: payload.batchId, txHash: payload.txHash },
-			() =>
-				webhookQueueService.queueWebhook(
-					WebhookEventType.FUND_DISTRIBUTION_CONFIRMED,
-					payload,
-					payload.fundWalletId,
-					paymentSourceId,
-				),
-		);
-	}
-
-	async triggerFundDistributionFailed(
-		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_FAILED'>,
-		paymentSourceId: string,
-	): Promise<void> {
-		await this.triggerFundDistribution(
-			WebhookEventType.FUND_DISTRIBUTION_FAILED,
-			{ fundWalletId: payload.fundWalletId, batchId: payload.batchId, txHash: payload.txHash },
-			() =>
-				webhookQueueService.queueWebhook(
-					WebhookEventType.FUND_DISTRIBUTION_FAILED,
-					payload,
-					payload.fundWalletId,
-					paymentSourceId,
-				),
-		);
-	}
+	// Fund-distribution lifecycle events are queued exclusively through the
+	// strict in-transaction variants below: the webhook row must commit (or
+	// roll back) with the domain transition it describes. There is no
+	// best-effort post-commit trigger path on purpose.
 
 	async queueFundDistributionSent(
 		tx: Prisma.TransactionClient,

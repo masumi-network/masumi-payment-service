@@ -84,7 +84,7 @@ class WebhookQueueService {
 			cursorId = nextCursorId;
 			totalQueued += newEndpoints.length;
 
-			const deliveries = newEndpoints.map(async (endpoint) => {
+			const queueDelivery = async (endpoint: { id: string }) => {
 				const endpointPayload = buildEndpointWebhookPayload(webhookPayload, endpoint.id);
 
 				try {
@@ -113,12 +113,18 @@ class WebhookQueueService {
 					});
 					if (isStrict) throw error;
 				}
-			});
+			};
 
 			if (isStrict) {
-				await Promise.all(deliveries);
+				// The strict path writes through the caller's interactive-transaction
+				// client, which does not support concurrent operations — queue one at
+				// a time so a mid-batch failure rolls back cleanly instead of racing
+				// in-flight siblings against the rollback.
+				for (const endpoint of newEndpoints) {
+					await queueDelivery(endpoint);
+				}
 			} else {
-				await Promise.allSettled(deliveries);
+				await Promise.allSettled(newEndpoints.map(queueDelivery));
 			}
 
 			if (webhookEndpoints.length < batchSize) {

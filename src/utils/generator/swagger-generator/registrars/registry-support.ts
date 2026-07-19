@@ -761,6 +761,10 @@ export function registerRegistrySupportPaths({ registry, apiKeyAuth }: SwaggerRe
 					},
 				},
 			},
+			400: {
+				description:
+					'A wallet listed for removal is a fund wallet, which must be deleted via the fund wallet endpoint instead',
+			},
 		},
 	});
 

@@ -11,6 +11,7 @@ import { handleApiCall } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { isHotWalletType } from '@/lib/wallet-type';
 import {
+  CARDANO_NATIVE_ASSET_UNIT_PATTERN,
   EMPTY_LOW_BALANCE_SUMMARY,
   getRuleAssetMeta,
   getRuleAssetMetaFromPreset,
@@ -294,6 +295,15 @@ export function useLowBalanceRules({
 
     if (!assetUnit) {
       toast.error('Asset unit is required.');
+      return;
+    }
+
+    // Validate custom asset units even for plain monitoring rules; the
+    // topup validation below only runs this check when auto top-up is on.
+    if (newRuleAssetPreset === 'custom' && !CARDANO_NATIVE_ASSET_UNIT_PATTERN.test(assetUnit)) {
+      toast.error(
+        'Asset unit must be a valid Cardano asset unit: policy id followed by an asset name of at most 32 bytes.',
+      );
       return;
     }
 

@@ -40,7 +40,7 @@ export const getFundWalletSchemaOutput = z
 
 export const postFundWalletSchemaInput = z.object({
 	paymentSourceId: z.string().min(1).max(250).describe('Payment source to associate the fund wallet with'),
-	walletMnemonic: z.string().min(1).max(1500).describe('24-word mnemonic phrase for the fund wallet'),
+	walletMnemonic: z.string().min(1).max(1500).describe('BIP-39 mnemonic phrase for the fund wallet (12-24 words)'),
 	batchWindowMs: z
 		.number()
 		.int()
