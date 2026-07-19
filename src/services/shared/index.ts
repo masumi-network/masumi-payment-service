@@ -36,6 +36,7 @@ export type { WalletSession } from './wallet-session';
 export { loadHotWalletSession } from './wallet-session';
 export type { TxWindow } from './tx-window';
 export { createTxWindow } from './tx-window';
+export { runSubmitResultSubmissionLifecycle, type SubmitResultSubmissionOutcome } from './submit-result-lifecycle';
 export {
 	connectExistingNextPaymentAction,
 	connectExistingNextPurchaseAction,

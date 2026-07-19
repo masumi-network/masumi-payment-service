@@ -288,8 +288,8 @@ export async function registerInboxAgentV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking V2 inbox registrations', { error: e });
+	} catch {
+		logger.info('registry_inbox_register_v2 is already running, skipping cycle');
 		return;
 	}
 

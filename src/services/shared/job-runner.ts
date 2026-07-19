@@ -17,8 +17,8 @@ export async function withJobLock<T>(
 	let release: (() => void) | undefined;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (error) {
-		logger.info(`${jobName} is already running, skipping cycle`, { error });
+	} catch {
+		logger.info(`${jobName} is already running, skipping cycle`);
 		return undefined;
 	}
 

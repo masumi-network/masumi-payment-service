@@ -477,7 +477,9 @@ async function processSinglePaymentRequest(
 				where: { id: request.id },
 				data: {
 					...connectPreviousAction(request.nextActionId),
-					...createNextPaymentAction(PaymentAction.SubmitResultInitiated),
+					...createNextPaymentAction(PaymentAction.SubmitResultInitiated, {
+						resultHash: request.NextAction.resultHash,
+					}),
 					...createPendingTransaction(request.SmartContractWallet!.id, newTxHash),
 					TransactionHistory: {
 						connect: {
@@ -863,7 +865,10 @@ async function processWalletBatch(
 							// isn't directly returned; we need it to safely clean up orphans on
 							// rollback (see #6 audit-trail leak design).
 							const initiated = await tx.paymentActionData.create({
-								data: { requestedAction: PaymentAction.SubmitResultInitiated },
+								data: {
+									requestedAction: PaymentAction.SubmitResultInitiated,
+									resultHash: v.request.NextAction.resultHash,
+								},
 							});
 							await tx.paymentRequest.update({
 								where: { id: v.request.id },
@@ -1165,8 +1170,8 @@ export async function submitResultV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('submit_result_v2 is already running, skipping cycle');
 		return;
 	}
 

@@ -981,8 +981,8 @@ export async function authorizeWithdrawalsV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('authorize_withdrawal_v2 is already running, skipping cycle');
 		return;
 	}
 

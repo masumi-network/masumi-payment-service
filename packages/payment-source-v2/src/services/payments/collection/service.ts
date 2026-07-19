@@ -1040,8 +1040,8 @@ export async function collectOutstandingPaymentsV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('payment_collection_v2 is already running, skipping cycle');
 		return;
 	}
 

@@ -95,7 +95,8 @@ export default function Transactions() {
   // Multi-row selection is only offered on the Needs Action tab, where every row
   // is in an error state that can be bulk-cleared. Keyed by transaction id.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const { clearErrors, isClearing } = useBulkClearTransactionErrors();
+  const { recoverErrors, isRecovering } = useBulkClearTransactionErrors();
+  const [bulkRecoveryMode, setBulkRecoveryMode] = useState<'clear' | 'retry' | null>(null);
   const isLoadingMore = isFetchingNextPage;
   const isInitialLoading = isLoading && !transactions.length;
 
@@ -233,24 +234,38 @@ export default function Transactions() {
     });
   }, []);
 
-  const handleBulkClearErrors = useCallback(async () => {
-    const selected = visibleTransactions.filter((tx) => tx.id && selectedIds.has(tx.id));
-    if (selected.length === 0) return;
+  const handleBulkRecoverErrors = useCallback(
+    async (retryPreviousAction: boolean) => {
+      const selected = visibleTransactions.filter((tx) => tx.id && selectedIds.has(tx.id));
+      if (selected.length === 0) return;
 
-    const { succeeded, failed, failedIds } = await clearErrors(selected);
-    if (succeeded > 0) {
-      toast.success(
-        `Cleared error state for ${succeeded} transaction${succeeded === 1 ? '' : 's'}`,
-      );
-    }
-    if (failed > 0) {
-      toast.error(`Failed to clear ${failed} transaction${failed === 1 ? '' : 's'}`);
-    }
+      setBulkRecoveryMode(retryPreviousAction ? 'retry' : 'clear');
+      try {
+        const { succeeded, failed, failedIds } = await recoverErrors(selected, retryPreviousAction);
+        if (succeeded > 0) {
+          toast.success(
+            retryPreviousAction
+              ? `Queued ${succeeded} failed action${succeeded === 1 ? '' : 's'} for retry`
+              : `Cleared error state for ${succeeded} transaction${succeeded === 1 ? '' : 's'}`,
+          );
+        }
+        if (failed > 0) {
+          toast.error(
+            retryPreviousAction
+              ? `Failed to retry ${failed} transaction${failed === 1 ? '' : 's'}`
+              : `Failed to clear ${failed} transaction${failed === 1 ? '' : 's'}`,
+          );
+        }
 
-    // Keep only the failed rows selected so the user can retry them.
-    setSelectedIds(new Set(failedIds));
-    refreshTransactions();
-  }, [visibleTransactions, selectedIds, clearErrors, refreshTransactions]);
+        // Keep only the failed rows selected so the user can retry them.
+        setSelectedIds(new Set(failedIds));
+        refreshTransactions();
+      } finally {
+        setBulkRecoveryMode(null);
+      }
+    },
+    [visibleTransactions, selectedIds, recoverErrors, refreshTransactions],
+  );
 
   // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
   const markAllAsReadRef = useRef(markAllAsRead);
@@ -462,19 +477,28 @@ export default function Transactions() {
                   variant="ghost"
                   size="sm"
                   onClick={() => setSelectedIds(new Set())}
-                  disabled={isClearing}
+                  disabled={isRecovering}
                 >
                   Cancel
                 </Button>
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={handleBulkClearErrors}
-                  disabled={isClearing}
+                  onClick={() => handleBulkRecoverErrors(false)}
+                  disabled={isRecovering}
                 >
-                  {isClearing
+                  {bulkRecoveryMode === 'clear'
                     ? 'Clearing error states...'
                     : `Clear error state (${selectedIds.size})`}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => handleBulkRecoverErrors(true)}
+                  disabled={isRecovering}
+                >
+                  {bulkRecoveryMode === 'retry'
+                    ? 'Queueing retries...'
+                    : `Retry failed action (${selectedIds.size})`}
                 </Button>
               </div>
             </div>
