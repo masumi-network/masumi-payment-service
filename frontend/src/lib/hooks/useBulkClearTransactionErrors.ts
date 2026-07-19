@@ -25,11 +25,11 @@ const toRecoveryNetwork = (network: string | null | undefined): 'Preprod' | 'Mai
  */
 export function useBulkClearTransactionErrors() {
   const { apiClient, network: contextNetwork } = useAppContext();
-  const [isClearing, setIsClearing] = useState(false);
+  const [isRecovering, setIsRecovering] = useState(false);
 
-  const clearErrors = useCallback(
-    async (transactions: Transaction[]): Promise<BulkClearResult> => {
-      setIsClearing(true);
+  const recoverErrors = useCallback(
+    async (transactions: Transaction[], retryPreviousAction: boolean): Promise<BulkClearResult> => {
+      setIsRecovering(true);
       const failedIds: string[] = [];
       let succeeded = 0;
 
@@ -53,6 +53,7 @@ export function useBulkClearTransactionErrors() {
               blockchainIdentifier: transaction.blockchainIdentifier,
               updatedAt: new Date(transaction.updatedAt),
               network: recoveryNetwork,
+              retryPreviousAction,
             };
             const response =
               transaction.type === 'purchase'
@@ -69,7 +70,7 @@ export function useBulkClearTransactionErrors() {
           }
         }
       } finally {
-        setIsClearing(false);
+        setIsRecovering(false);
       }
 
       return { succeeded, failed: failedIds.length, failedIds };
@@ -77,5 +78,5 @@ export function useBulkClearTransactionErrors() {
     [apiClient, contextNetwork],
   );
 
-  return { clearErrors, isClearing };
+  return { recoverErrors, isRecovering };
 }

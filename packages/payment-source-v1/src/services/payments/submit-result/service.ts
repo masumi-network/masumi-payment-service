@@ -247,7 +247,9 @@ async function processSinglePaymentRequest(
 		where: { id: request.id },
 		data: {
 			...connectPreviousAction(request.nextActionId),
-			...createNextPaymentAction(PaymentAction.SubmitResultInitiated),
+			...createNextPaymentAction(PaymentAction.SubmitResultInitiated, {
+				resultHash: request.NextAction.resultHash,
+			}),
 			...createPendingTransaction(request.SmartContractWallet!.id),
 			TransactionHistory: {
 				connect: {
@@ -299,8 +301,8 @@ export async function submitResultV1() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('submit_result_v1 is already running, skipping cycle');
 		return;
 	}
 
