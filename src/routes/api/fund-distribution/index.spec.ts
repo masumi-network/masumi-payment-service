@@ -63,7 +63,12 @@ describe('getFundDistributionEndpointGet', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindDistributions).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { TargetWallet: { paymentSourceId: 'ps-1' } },
+				where: expect.objectContaining({
+					TargetWallet: expect.objectContaining({
+						paymentSourceId: 'ps-1',
+						PaymentSource: { network: { in: expect.arrayContaining(['Mainnet', 'Preprod']) } },
+					}),
+				}),
 			}),
 		);
 	});
@@ -81,10 +86,10 @@ describe('getFundDistributionEndpointGet', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindDistributions).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: {
+				where: expect.objectContaining({
 					fundWalletId: 'fund-old',
-					TargetWallet: { paymentSourceId: 'ps-1' },
-				},
+					TargetWallet: expect.objectContaining({ paymentSourceId: 'ps-1' }),
+				}),
 			}),
 		);
 	});

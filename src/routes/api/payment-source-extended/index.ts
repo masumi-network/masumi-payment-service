@@ -338,120 +338,133 @@ export const paymentSourceExtendedEndpointPatch = adminAuthenticatedEndpointFact
 				collectionAddress: purchasingWallet.collectionAddress,
 			};
 		});
-		const result = await prisma.$transaction(
-			async (prisma) => {
-				const sellingWallets =
-					sellingWalletsMesh != null
-						? await Promise.all(
-								sellingWalletsMesh.map(async (sw) => {
-									return {
-										walletAddress: (await sw.wallet.getUnusedAddresses())[0],
-										walletVkey: resolvePaymentKeyHash((await sw.wallet.getUnusedAddresses())[0]),
-										secretId: (
-											await prisma.walletSecret.create({
-												data: { encryptedMnemonic: sw.mnemonicEncrypted },
-											})
-										).id,
-										note: sw.note,
-										type: HotWalletType.Selling,
-										collectionAddress: sw.collectionAddress,
-									};
-								}),
-							)
-						: [];
+		const result = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (prisma) => {
+						const sellingWallets =
+							sellingWalletsMesh != null
+								? await Promise.all(
+										sellingWalletsMesh.map(async (sw) => {
+											return {
+												walletAddress: (await sw.wallet.getUnusedAddresses())[0],
+												walletVkey: resolvePaymentKeyHash((await sw.wallet.getUnusedAddresses())[0]),
+												secretId: (
+													await prisma.walletSecret.create({
+														data: { encryptedMnemonic: sw.mnemonicEncrypted },
+													})
+												).id,
+												note: sw.note,
+												type: HotWalletType.Selling,
+												collectionAddress: sw.collectionAddress,
+											};
+										}),
+									)
+								: [];
 
-				const purchasingWallets =
-					purchasingWalletsMesh != null
-						? await Promise.all(
-								purchasingWalletsMesh.map(async (pw) => {
-									return {
-										walletAddress: (await pw.wallet.getUnusedAddresses())[0],
-										walletVkey: resolvePaymentKeyHash((await pw.wallet.getUnusedAddresses())[0]),
-										secretId: (
-											await prisma.walletSecret.create({
-												data: { encryptedMnemonic: pw.mnemonicEncrypted },
-											})
-										).id,
-										note: pw.note,
-										type: HotWalletType.Purchasing,
-										collectionAddress: pw.collectionAddress,
-									};
-								}),
-							)
-						: [];
+						const purchasingWallets =
+							purchasingWalletsMesh != null
+								? await Promise.all(
+										purchasingWalletsMesh.map(async (pw) => {
+											return {
+												walletAddress: (await pw.wallet.getUnusedAddresses())[0],
+												walletVkey: resolvePaymentKeyHash((await pw.wallet.getUnusedAddresses())[0]),
+												secretId: (
+													await prisma.walletSecret.create({
+														data: { encryptedMnemonic: pw.mnemonicEncrypted },
+													})
+												).id,
+												note: pw.note,
+												type: HotWalletType.Purchasing,
+												collectionAddress: pw.collectionAddress,
+											};
+										}),
+									)
+								: [];
 
-				const walletIdsToRemove = [...(input.RemoveSellingWallets ?? []), ...(input.RemovePurchasingWallets ?? [])].map(
-					(rw) => rw.id,
-				);
+						const walletIdsToRemove = [
+							...(input.RemoveSellingWallets ?? []),
+							...(input.RemovePurchasingWallets ?? []),
+						].map((rw) => rw.id);
 
-				if (walletIdsToRemove.length > 0) {
-					// The in-flight check and the soft-delete MUST commit together, at
-					// Serializable — `prepareTargetWalletRemoval` is written on that
-					// promise ("the caller soft-deletes the wallets in this same
-					// Serializable transaction, so a batch claim either wins first and
-					// blocks removal, or sees inactive targets"). Run as two statements
-					// on the base client and the promise is false: the distribution cycle
-					// runs every 30s and can claim, lock, sign and broadcast a top-up to
-					// these wallets between the check passing and the delete landing —
-					// exactly what the 409 exists to prevent. Mirrors the DELETE path.
-					await retryOnSerializationConflict(
-						() =>
-							prisma.$transaction(
-								async (tx) => {
-									await prepareTargetWalletRemoval(tx, {
-										paymentSourceId: input.id,
-										walletIds: walletIdsToRemove,
-									});
+						if (walletIdsToRemove.length > 0) {
+							// The in-flight check and the soft-delete MUST commit together, at
+							// Serializable — `prepareTargetWalletRemoval` is written on that
+							// promise ("the caller soft-deletes the wallets in this same
+							// Serializable transaction, so a batch claim either wins first and
+							// blocks removal, or sees inactive targets"). This outer transaction
+							// IS that Serializable transaction. Nesting another $transaction here
+							// would delegate to the base client and commit the removal on its
+							// own, independent of the rest of the PATCH. Mirrors the DELETE path.
+							const removalWallets = await prisma.hotWallet.findMany({
+								where: { id: { in: walletIdsToRemove }, paymentSourceId: input.id, deletedAt: null },
+								select: { id: true, type: true },
+							});
+							if (removalWallets.some((wallet) => wallet.type === HotWalletType.Funding)) {
+								// Fund wallets carry treasury funds and distribution state; the
+								// dedicated DELETE endpoint checks the balance, in-flight batches,
+								// and retires their distribution config. This path checks none of
+								// that, so it must not be a side door.
+								throw createHttpError(
+									400,
+									'Fund wallets cannot be removed via the payment source. Use the fund wallet DELETE endpoint.',
+								);
+							}
 
-									await tx.paymentSource.update({
-										where: { id: input.id },
-										data: {
-											HotWallets: {
-												updateMany: {
-													where: { id: { in: walletIdsToRemove } },
-													data: { deletedAt: new Date() },
-												},
+							await prepareTargetWalletRemoval(prisma, {
+								paymentSourceId: input.id,
+								walletIds: walletIdsToRemove,
+							});
+
+							await prisma.paymentSource.update({
+								where: { id: input.id },
+								data: {
+									HotWallets: {
+										updateMany: {
+											where: {
+												id: { in: walletIdsToRemove },
+												type: { in: [HotWalletType.Selling, HotWalletType.Purchasing] },
 											},
+											data: { deletedAt: new Date() },
 										},
-									});
+									},
 								},
-								{ isolationLevel: 'Serializable' },
-							),
-						{ label: 'payment-source-remove-wallets' },
-					);
-				}
+							});
+						}
 
-				const updatedPaymentSource = await prisma.paymentSource.update({
-					where: { id: input.id },
-					data: {
-						lastIdentifierChecked: input.lastIdentifierChecked,
-						PaymentSourceConfig:
-							input.PaymentSourceConfig != null
-								? {
-										update: {
-											rpcProviderApiKey: input.PaymentSourceConfig.rpcProviderApiKey,
-										},
-									}
-								: undefined,
-						HotWallets: {
-							createMany: {
-								data: [...purchasingWallets, ...sellingWallets],
+						const updatedPaymentSource = await prisma.paymentSource.update({
+							where: { id: input.id },
+							data: {
+								lastIdentifierChecked: input.lastIdentifierChecked,
+								PaymentSourceConfig:
+									input.PaymentSourceConfig != null
+										? {
+												update: {
+													rpcProviderApiKey: input.PaymentSourceConfig.rpcProviderApiKey,
+												},
+											}
+										: undefined,
+								HotWallets: {
+									createMany: {
+										data: [...purchasingWallets, ...sellingWallets],
+									},
+								},
 							},
-						},
-					},
-					include: {
-						HotWallets: {
-							where: { deletedAt: null },
-							select: {
-								id: true,
+							include: {
+								HotWallets: {
+									where: { deletedAt: null },
+									select: {
+										id: true,
+									},
+								},
 							},
-						},
-					},
-				});
+						});
 
-				return updatedPaymentSource;
-			},
-			{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+						return updatedPaymentSource;
+					},
+					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+				),
+			{ label: 'payment-source-update' },
 		);
 
 		const existingWalletIds = new Set(paymentSource.HotWallets.map((wallet) => wallet.id));
@@ -498,22 +511,34 @@ export const paymentSourceExtendedEndpointDelete = adminAuthenticatedEndpointFac
 			throw createHttpError(404, 'Payment source not found');
 		}
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, existing.network);
-		const paymentSource = await retryOnSerializationConflict(
-			() =>
-				prisma.$transaction(
-					async (tx) => {
-						await retirePaymentSourceFundDistributions(tx, existing.id);
+		let paymentSource;
+		try {
+			paymentSource = await retryOnSerializationConflict(
+				() =>
+					prisma.$transaction(
+						async (tx) => {
+							await retirePaymentSourceFundDistributions(tx, existing.id);
 
-						return tx.paymentSource.update({
-							where: { id: existing.id, deletedAt: null },
-							data: { deletedAt: new Date() },
-							include: paymentSourceExtendedInclude,
-						});
-					},
-					{ isolationLevel: 'Serializable' },
-				),
-			{ label: 'payment-source-delete' },
-		);
+							return tx.paymentSource.update({
+								where: { id: existing.id, deletedAt: null },
+								data: { deletedAt: new Date() },
+								include: paymentSourceExtendedInclude,
+							});
+						},
+						{ isolationLevel: 'Serializable' },
+					),
+				{ label: 'payment-source-delete' },
+			);
+		} catch (error) {
+			// A concurrent delete can remove the row between the pre-check above
+			// and this update; the guarded update then throws P2025, which is a
+			// missing row, not a server fault. Structural check, matching the
+			// registry delete path.
+			if ((error as { code?: string }).code === 'P2025') {
+				throw createHttpError(404, 'Payment source not found');
+			}
+			throw error;
+		}
 		const walletCounts = await getWalletCountsByPaymentSource([paymentSource.id], ctx.walletScopeIds);
 		return serializePaymentSourceExtendedEntry(paymentSource, walletCounts.get(paymentSource.id));
 	},

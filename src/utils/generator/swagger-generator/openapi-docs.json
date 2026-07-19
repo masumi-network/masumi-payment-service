@@ -6251,6 +6251,9 @@
                             }
                         }
                     },
+                    "400": {
+                        "description": "Invalid asset unit or auto top-up configuration"
+                    },
                     "404": {
                         "description": "Wallet not found"
                     },
@@ -6465,6 +6468,9 @@
                                 }
                             }
                         }
+                    },
+                    "400": {
+                        "description": "No changes were requested, or the auto top-up configuration is invalid"
                     },
                     "404": {
                         "description": "Low-balance rule not found"
@@ -21262,6 +21268,9 @@
                                 }
                             }
                         }
+                    },
+                    "400": {
+                        "description": "A wallet listed for removal is a fund wallet, which must be deleted via the fund wallet endpoint instead"
                     }
                 }
             },
@@ -28444,7 +28453,7 @@
                                         "type": "string",
                                         "minLength": 1,
                                         "maxLength": 1500,
-                                        "description": "24-word mnemonic phrase for the fund wallet"
+                                        "description": "BIP-39 mnemonic phrase for the fund wallet (12-24 words)"
                                     },
                                     "batchWindowMs": {
                                         "type": "integer",
@@ -28612,7 +28621,7 @@
                         }
                     },
                     "400": {
-                        "description": "The batch window is outside its allowed range"
+                        "description": "No changes were requested, or the batch window is outside its allowed range"
                     },
                     "401": {
                         "description": "Unauthorized"

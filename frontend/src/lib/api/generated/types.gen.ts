@@ -3204,6 +3204,10 @@ export type PatchWalletLowBalanceData = {
 
 export type PatchWalletLowBalanceErrors = {
     /**
+     * No changes were requested, or the auto top-up configuration is invalid
+     */
+    400: unknown;
+    /**
      * Low-balance rule not found
      */
     404: unknown;
@@ -3322,6 +3326,10 @@ export type PostWalletLowBalanceData = {
 };
 
 export type PostWalletLowBalanceErrors = {
+    /**
+     * Invalid asset unit or auto top-up configuration
+     */
+    400: unknown;
     /**
      * Wallet not found
      */
@@ -9584,6 +9592,13 @@ export type PatchPaymentSourceExtendedData = {
     url: '/payment-source-extended';
 };
 
+export type PatchPaymentSourceExtendedErrors = {
+    /**
+     * A wallet listed for removal is a fund wallet, which must be deleted via the fund wallet endpoint instead
+     */
+    400: unknown;
+};
+
 export type PatchPaymentSourceExtendedResponses = {
     /**
      * Payment contract updated
@@ -12147,7 +12162,7 @@ export type PatchFundWalletData = {
 
 export type PatchFundWalletErrors = {
     /**
-     * The batch window is outside its allowed range
+     * No changes were requested, or the batch window is outside its allowed range
      */
     400: unknown;
     /**
@@ -12182,7 +12197,7 @@ export type PostFundWalletData = {
          */
         paymentSourceId: string;
         /**
-         * 24-word mnemonic phrase for the fund wallet
+         * BIP-39 mnemonic phrase for the fund wallet (12-24 words)
          */
         walletMnemonic: string;
         /**

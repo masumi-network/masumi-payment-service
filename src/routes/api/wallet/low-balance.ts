@@ -174,6 +174,16 @@ export const postWalletLowBalanceRuleEndpointPost = adminAuthenticatedEndpointFa
 			throw createHttpError(404, 'Wallet not found');
 		}
 
+		// A rule for a unit that matches no on-chain asset reads as balance 0 and
+		// alerts "Low" forever — reject it up front for plain monitoring rules
+		// too, not just when auto top-up is on.
+		if (input.assetUnit !== 'lovelace' && !isCardanoNativeAssetUnit(input.assetUnit)) {
+			throw createHttpError(
+				400,
+				'assetUnit must be lovelace or a 56-character policy id followed by an asset name of at most 32 bytes',
+			);
+		}
+
 		const existingRule = await prisma.hotWalletLowBalanceRule.findUnique({
 			where: {
 				hotWalletId_assetUnit: {
@@ -187,7 +197,10 @@ export const postWalletLowBalanceRuleEndpointPost = adminAuthenticatedEndpointFa
 			throw createHttpError(409, 'Low balance rule for this wallet and asset already exists');
 		}
 
-		const topupAmount = input.topupAmount != null ? BigInt(input.topupAmount) : null;
+		// Store topupAmount only alongside an enabled top-up: the output schema
+		// documents it as null while auto top-up is off, and enabling later
+		// re-validates whatever is submitted then.
+		const topupAmount = input.topupEnabled && input.topupAmount != null ? BigInt(input.topupAmount) : null;
 		assertBuildableTopupConfig({
 			assetUnit: input.assetUnit,
 			walletType: wallet.type,

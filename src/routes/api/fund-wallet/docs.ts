@@ -127,7 +127,7 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 				id: 'cuid_v2_auto_generated',
 				FundDistributionConfig: fundDistributionConfigExample,
 			}),
-			400: { description: 'The batch window is outside its allowed range' },
+			400: { description: 'No changes were requested, or the batch window is outside its allowed range' },
 			401: { description: 'Unauthorized' },
 			404: { description: 'Fund wallet not found, or it has no distribution config' },
 		},

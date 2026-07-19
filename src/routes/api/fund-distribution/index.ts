@@ -1,4 +1,5 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { fundDistributionService } from '@/services/wallets';
@@ -20,16 +21,23 @@ export const getFundDistributionEndpointGet = adminAuthenticatedEndpointFactory.
 	method: 'get',
 	input: getFundDistributionSchemaInput,
 	output: getFundDistributionSchemaOutput,
-	handler: async ({ input }) => {
+	handler: async ({ input, ctx }) => {
 		const take = input.take ?? 20;
 
 		const requests = await prisma.fundDistributionRequest.findMany({
 			where: {
 				...(input.fundWalletId ? { fundWalletId: input.fundWalletId } : {}),
-				// Requests are unassigned until dispatch, so the target wallet is the
-				// authoritative source relation for both queued and claimed rows.
-				...(input.paymentSourceId ? { TargetWallet: { paymentSourceId: input.paymentSourceId } } : {}),
 				...(input.status ? { status: input.status } : {}),
+				// Requests are unassigned until dispatch, so the target wallet is the
+				// authoritative source relation for both queued and claimed rows. The
+				// network and wallet-scope filters are defense-in-depth, matching the
+				// sibling wallet endpoints in case this ever moves to a narrower
+				// factory.
+				TargetWallet: {
+					AND: [buildHotWalletScopeFilter(ctx.walletScopeIds)],
+					...(input.paymentSourceId ? { paymentSourceId: input.paymentSourceId } : {}),
+					PaymentSource: { network: { in: ctx.networkLimit } },
+				},
 			},
 			orderBy: { createdAt: 'desc' },
 			take,

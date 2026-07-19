@@ -1,4 +1,5 @@
-import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { adminAuthenticatedEndpointFactory, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
+import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { logger } from '@masumi/payment-core/logger';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
@@ -48,17 +49,21 @@ export const getFundWalletEndpointGet = adminAuthenticatedEndpointFactory.build(
 	method: 'get',
 	input: getFundWalletSchemaInput,
 	output: getFundWalletSchemaOutput,
-	handler: async ({ input }) => {
+	handler: async ({ input, ctx }) => {
 		if (!input.id && !input.paymentSourceId) {
 			throw createHttpError(400, 'Either id or paymentSourceId must be provided');
 		}
 
 		const wallets = await prisma.hotWallet.findMany({
 			where: {
-				...(input.id ? { id: input.id } : {}),
+				// Admin keys currently carry every network and no wallet scope, so
+				// these filters are defense-in-depth, matching the sibling wallet
+				// endpoints in case this ever moves to a narrower factory.
+				AND: [buildHotWalletScopeFilter(ctx.walletScopeIds), ...(input.id ? [{ id: input.id }] : [])],
 				...(input.paymentSourceId ? { paymentSourceId: input.paymentSourceId } : {}),
 				type: HotWalletType.Funding,
 				deletedAt: null,
+				PaymentSource: { deletedAt: null, network: { in: ctx.networkLimit } },
 			},
 			orderBy: { createdAt: 'asc' },
 			select: {
@@ -116,7 +121,7 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 	method: 'post',
 	input: postFundWalletSchemaInput,
 	output: postFundWalletSchemaOutput,
-	handler: async ({ input }) => {
+	handler: async ({ input, ctx }) => {
 		const paymentSource = await prisma.paymentSource.findUnique({
 			where: { id: input.paymentSourceId, deletedAt: null },
 			select: { id: true, network: true },
@@ -125,6 +130,7 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 		if (!paymentSource) {
 			throw createHttpError(404, 'Payment source not found');
 		}
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, paymentSource.network);
 
 		// A payment source may have several fund wallets (redundancy / capacity):
 		// any of them can fund any shortage, so a second one is allowed. The only
@@ -247,9 +253,18 @@ export const patchFundWalletEndpointPatch = adminAuthenticatedEndpointFactory.bu
 	method: 'patch',
 	input: patchFundWalletSchemaInput,
 	output: patchFundWalletSchemaOutput,
-	handler: async ({ input }) => {
-		const wallet = await prisma.hotWallet.findUnique({
-			where: { id: input.id, type: HotWalletType.Funding, deletedAt: null },
+	handler: async ({ input, ctx }) => {
+		if (input.enabled == null && input.batchWindowMs == null) {
+			throw createHttpError(400, 'No fund wallet changes requested');
+		}
+
+		const wallet = await prisma.hotWallet.findFirst({
+			where: {
+				AND: [buildHotWalletScopeFilter(ctx.walletScopeIds), { id: input.id }],
+				type: HotWalletType.Funding,
+				deletedAt: null,
+				PaymentSource: { deletedAt: null, network: { in: ctx.networkLimit } },
+			},
 			select: { id: true, FundDistributionConfig: { select: { id: true } } },
 		});
 
@@ -293,9 +308,14 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 	method: 'delete',
 	input: deleteFundWalletSchemaInput,
 	output: deleteFundWalletSchemaOutput,
-	handler: async ({ input }) => {
-		const wallet = await prisma.hotWallet.findUnique({
-			where: { id: input.id, type: HotWalletType.Funding, deletedAt: null },
+	handler: async ({ input, ctx }) => {
+		const wallet = await prisma.hotWallet.findFirst({
+			where: {
+				AND: [buildHotWalletScopeFilter(ctx.walletScopeIds), { id: input.id }],
+				type: HotWalletType.Funding,
+				deletedAt: null,
+				PaymentSource: { deletedAt: null, network: { in: ctx.networkLimit } },
+			},
 			select: {
 				id: true,
 				paymentSourceId: true,
@@ -409,6 +429,17 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 		);
 
 		if (!didDelete) {
+			// The guarded updateMany claims zero rows for two distinct reasons:
+			// a concurrent request already soft-deleted the wallet (missing row),
+			// or a distribution claimed the wallet between the pre-check and here
+			// (a real conflict). Report the one that actually happened.
+			const current = await prisma.hotWallet.findUnique({
+				where: { id: input.id },
+				select: { deletedAt: true },
+			});
+			if (current == null || current.deletedAt != null) {
+				throw createHttpError(404, 'Fund wallet not found');
+			}
 			throw createHttpError(409, 'Fund wallet has a distribution in flight. Wait for it to settle before deleting.');
 		}
 

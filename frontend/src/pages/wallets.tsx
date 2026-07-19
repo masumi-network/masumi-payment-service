@@ -70,7 +70,7 @@ export default function WalletsPage() {
 
   // The type tab is applied server-side so each tab paginates independently.
   // 'All' (and any unknown tab) means no filter.
-  const walletTypeFilter = WALLET_TYPE_TABS.includes(activeTab as HotWalletType)
+  const activeWalletType = WALLET_TYPE_TABS.includes(activeTab as HotWalletType)
     ? (activeTab as HotWalletType)
     : undefined;
 
@@ -83,7 +83,7 @@ export default function WalletsPage() {
     hasMore,
     loadMore,
     refetch: refetchWalletsQuery,
-  } = usePaginatedWallets(walletTypeFilter);
+  } = usePaginatedWallets(activeWalletType);
 
   // State-based previous value tracking for router query initialization
   // (React-recommended pattern: https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes)
@@ -177,9 +177,6 @@ export default function WalletsPage() {
     setSelectedWalletForDetails(wallet);
   };
 
-  const activeWalletType = WALLET_TYPE_TABS.includes(activeTab as HotWalletType)
-    ? (activeTab as HotWalletType)
-    : undefined;
   const addWalletLabel = activeWalletType
     ? `Add ${getWalletTypeLabel(activeWalletType).toLowerCase()} wallet`
     : 'Add wallet';

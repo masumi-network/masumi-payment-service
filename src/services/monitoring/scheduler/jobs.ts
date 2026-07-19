@@ -279,7 +279,10 @@ export const scheduledJobs: JobDefinition[] = [
 		run: () => walletLowBalanceMonitorService.runScheduledMonitoringCycle(),
 	},
 	{
-		initialDelayMs: 55000,
+		// 57500 keeps the staggered startup on its own scheduler slot — 55000
+		// and 60000 are taken by the fund-transfer processor and confirmation
+		// checker, which also lock hot wallets and call Blockfrost at startup.
+		initialDelayMs: 57500,
 		intervalMs: CONSTANTS.FUND_DISTRIBUTION_CHECK_INTERVAL_S * 1000,
 		startMessage: 'Starting fund distribution processing',
 		finishMessage: 'Finished fund distribution processing',

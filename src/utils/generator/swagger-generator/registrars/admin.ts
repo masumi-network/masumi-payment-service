@@ -245,6 +245,9 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				postWalletLowBalanceRuleSchemaOutput,
 				walletLowBalanceRuleExample,
 			),
+			400: {
+				description: 'Invalid asset unit or auto top-up configuration',
+			},
 			404: {
 				description: 'Wallet not found',
 			},
@@ -278,6 +281,9 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 				...walletLowBalanceRuleExample,
 				thresholdAmount: '7000000',
 			}),
+			400: {
+				description: 'No changes were requested, or the auto top-up configuration is invalid',
+			},
 			404: {
 				description: 'Low-balance rule not found',
 			},
