@@ -5650,6 +5650,10 @@ export type PostPaymentErrorStateRecoveryData = {
          * The time of the last update, to ensure you clear the correct error state
          */
         updatedAt: Date | Date;
+        /**
+         * When true, retry the failed action. When false or omitted, only clear the error state.
+         */
+        retryPreviousAction?: boolean;
     };
     path?: never;
     query?: never;
@@ -5983,6 +5987,10 @@ export type PostPurchaseErrorStateRecoveryData = {
          * The time of the last update, to ensure you clear the correct error state
          */
         updatedAt: Date | Date;
+        /**
+         * When true, retry the failed action. When false or omitted, only clear the error state.
+         */
+        retryPreviousAction?: boolean;
     };
     path?: never;
     query?: never;

@@ -86,8 +86,8 @@ export async function cancelRefundsV1() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('cancel_refund_v1 is already running, skipping cycle');
 		return;
 	}
 

@@ -10,6 +10,7 @@ import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { selectCollateralUtxo } from '@/utils/utxo';
 import { writePaymentErrorTransition } from '@/services/shared/error-transition';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -21,7 +22,7 @@ import {
 	createPendingTransaction,
 	createTxWindow,
 	loadHotWalletSession,
-	updateCurrentTransactionHash,
+	runSubmitResultSubmissionLifecycle,
 } from '@/services/shared';
 import { createDatumFromDecodedContractV1, getPaymentScriptFromPaymentSourceV1 } from '@masumi/payment-source-v1';
 
@@ -243,64 +244,101 @@ async function processSinglePaymentRequest(
 
 	const signedTx = await wallet.signTx(unsignedTx);
 
-	await prisma.paymentRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPaymentAction(PaymentAction.SubmitResultInitiated),
-			...createPendingTransaction(request.SmartContractWallet!.id),
-			TransactionHistory: {
-				connect: {
-					id: request.CurrentTransaction!.id,
-				},
-			},
+	// Submit before replacing CurrentTransaction. If submission is rejected,
+	// the confirmed funding transaction must remain current so the next attempt
+	// can locate the contract UTxO. The previous ordering installed a txHash-less
+	// Pending row before submit and did not restore the confirmed transaction in
+	// the catch path, making every retry start from invalid local state.
+	const submissionOutcome = await runSubmitResultSubmissionLifecycle({
+		submit: () => wallet.submitTx(signedTx),
+		requeueRejected: async (error) => {
+			logger.error('V1 submit-result transaction rejected', {
+				requestId: request.id,
+				error: interpretBlockchainError(error),
+			});
+			await retryOnSerializationConflict(
+				() =>
+					prisma.paymentRequest.update({
+						where: { id: request.id },
+						data: {
+							...connectPreviousAction(request.nextActionId),
+							...createNextPaymentAction(PaymentAction.SubmitResultRequested, {
+								errorType: null,
+								errorNote: null,
+								resultHash: request.NextAction.resultHash,
+							}),
+							SmartContractWallet: {
+								update: {
+									lockedAt: null,
+								},
+							},
+						},
+					}),
+				{ label: 'v1-submit-result-requeue-after-rejection' },
+			);
+		},
+		evaluateProjectedBalance: () => walletSession.evaluateProjectedBalance(unsignedTx, utxos),
+		recordSubmitted: async (newTxHash) => {
+			await retryOnSerializationConflict(
+				() =>
+					prisma.paymentRequest.update({
+						where: { id: request.id },
+						data: {
+							...connectPreviousAction(request.nextActionId),
+							...createNextPaymentAction(PaymentAction.SubmitResultInitiated, {
+								resultHash: request.NextAction.resultHash,
+							}),
+							...createPendingTransaction(request.SmartContractWallet!.id, newTxHash),
+							TransactionHistory: {
+								connect: {
+									id: request.CurrentTransaction!.id,
+								},
+							},
+						},
+					}),
+				{ label: 'v1-submit-result-post-submit' },
+			);
+		},
+		onBalanceCheckFailure: (error, newTxHash) => {
+			logger.warn('V1 submit-result projected-balance check failed post-submit (non-fatal)', {
+				requestId: request.id,
+				txHash: newTxHash,
+				error: interpretBlockchainError(error),
+			});
+		},
+		onRecordFailure: (error, newTxHash) => {
+			logger.error('V1 submit-result was accepted but its database transition could not be recorded', {
+				requestId: request.id,
+				txHash: newTxHash,
+				error: interpretBlockchainError(error),
+			});
 		},
 	});
-	try {
-		const newTxHash = await wallet.submitTx(signedTx);
-		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
-		await prisma.paymentRequest.update({
-			where: { id: request.id },
-			data: updateCurrentTransactionHash(newTxHash),
-		});
+	if (submissionOutcome.status === 'rejected') {
+		return false;
+	}
+	const newTxHash = submissionOutcome.txHash;
+	if (!submissionOutcome.isRecorded) {
+		return true;
+	}
 
-		logger.debug(`Created submit result transaction:
-                  Tx ID: ${txHash}
+	logger.debug(`Created submit result transaction:
+                  Tx ID: ${newTxHash}
                   View (after a bit) on https://${
 										network === 'preprod' ? 'preprod.' : ''
-									}cardanoscan.io/transaction/${txHash}
+									}cardanoscan.io/transaction/${newTxHash}
                   Smart Contract Address: ${smartContractAddress}
               `);
 
-		return true;
-	} catch (error) {
-		logger.error(`Error submitting result`, { error: error });
-		await prisma.paymentRequest.update({
-			where: { id: request.id },
-			data: {
-				...connectPreviousAction(request.nextActionId),
-				...createNextPaymentAction(PaymentAction.SubmitResultRequested, {
-					errorType: null,
-					errorNote: null,
-					resultHash: request.NextAction.resultHash,
-				}),
-				SmartContractWallet: {
-					update: {
-						lockedAt: null,
-					},
-				},
-			},
-		});
-		return false;
-	}
+	return true;
 }
 
 export async function submitResultV1() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('submit_result_v1 is already running, skipping cycle');
 		return;
 	}
 
