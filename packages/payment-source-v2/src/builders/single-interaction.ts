@@ -55,13 +55,6 @@ function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	}
 }
 
-function getSpendableWalletUtxos(walletUtxos: UTxO[], collateralUtxo: UTxO): UTxO[] {
-	return walletUtxos.filter(
-		(utxo) =>
-			utxo.input.txHash !== collateralUtxo.input.txHash || utxo.input.outputIndex !== collateralUtxo.input.outputIndex,
-	);
-}
-
 export async function generateMasumiSmartContractInteractionTransactionAutomaticFees(
 	type: V2SingleInteractionType,
 	blockchainProvider: BlockfrostProvider,
@@ -268,9 +261,10 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
-	// Keep collateral dedicated and let Mesh add only the wallet inputs needed
-	// after balancing the script continuation, splitter, fee, and change.
-	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
+	// Keep every wallet UTxO available to Mesh's final balancing pass. The
+	// declared collateral may also be the input Mesh needs to cover the script
+	// continuation, splitter, fee, and change.
+	txBuilder.selectUtxosFrom(walletUtxos);
 
 	return await txBuilder
 		.changeAddress(walletAddress)
@@ -470,7 +464,7 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
-	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
+	txBuilder.selectUtxosFrom(walletUtxos);
 
 	return await txBuilder
 		.changeAddress(walletAddress)

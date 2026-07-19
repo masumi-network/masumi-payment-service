@@ -43,6 +43,7 @@ import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
+	getWalletUtxosForSelection,
 	intersectTxWindows,
 	pickBatchCollateral,
 	shrinkBatchToFit,
@@ -469,10 +470,10 @@ async function processWalletBatch(
 
 	// Cardano allows a VKey wallet UTxO to appear in both `inputs` and
 	// `collateral_inputs`; only script-locked UTxOs are invalid collateral.
-	// The current V2 builders still maintain a separate collateral reserve for
-	// predictable next-tick readiness. If the wallet has collapsed to a single
-	// UTxO, submit a self-send prep tx to restore that service invariant and
-	// defer the batch to the next tick. ensureCollateralReady leaves
+	// The readiness helper still keeps an additional confirmed UTxO for
+	// predictable next-tick readiness, while Mesh may use the declared
+	// collateral for regular funding. If the wallet has collapsed to a single
+	// UTxO, submit a self-send prep tx and defer the batch. ensureCollateralReady leaves
 	// the wallet locked (via its shared Tx row) when it returns
 	// 'deferred' or 'failed'; wallet-timeouts / tx-sync will release the
 	// lock once the prep tx confirms or times out.
@@ -571,16 +572,10 @@ async function processWalletBatch(
 		return;
 	}
 
-	const spendingUtxoKeys = new Set(
-		validated.map((v) => `${v.smartContractUtxo.input.txHash}#${v.smartContractUtxo.input.outputIndex}`),
+	const walletUtxos = getWalletUtxosForSelection(
+		utxos,
+		validated.map((v) => v.smartContractUtxo.input),
 	);
-	const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
-	const walletUtxos = utxos.filter((utxo) => {
-		const key = `${utxo.input.txHash}#${utxo.input.outputIndex}`;
-		if (key === collateralKey) return false;
-		if (spendingUtxoKeys.has(key)) return false;
-		return true;
-	});
 	const shrinkResult = shrinkBatchToFit(validated, (subset) => {
 		const window = intersectTxWindows(subset.map((v) => v.window));
 		if (window == null) return { ok: false, reason: 'window' };

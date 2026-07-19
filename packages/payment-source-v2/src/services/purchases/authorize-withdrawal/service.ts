@@ -43,6 +43,7 @@ import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
+	getWalletUtxosForSelection,
 	intersectTxWindows,
 	pickBatchCollateral,
 	shrinkBatchToFit,
@@ -462,8 +463,9 @@ async function processWalletBatch(
 	}
 
 	// See ensureCollateralReady module note: Cardano allows VKey wallet
-	// collateral/input overlap, but the current V2 builders maintain a
-	// separate collateral reserve for predictable next-tick readiness. If the
+	// collateral/input overlap. The readiness helper retains an additional
+	// confirmed UTxO for predictable next-tick readiness, while Mesh may use
+	// the declared collateral for regular funding. If the
 	// wallet has collapsed to a single UTxO, the helper submits a self-send
 	// prep tx and returns 'deferred'; we leave items queued for the next tick (the
 	// wallet stays locked until tx-sync / wallet-timeouts releases it).
@@ -560,16 +562,10 @@ async function processWalletBatch(
 		return;
 	}
 
-	const spendingUtxoKeys = new Set(
-		validated.map((v) => `${v.smartContractUtxo.input.txHash}#${v.smartContractUtxo.input.outputIndex}`),
+	const walletUtxos = getWalletUtxosForSelection(
+		utxos,
+		validated.map((v) => v.smartContractUtxo.input),
 	);
-	const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
-	const walletUtxos = utxos.filter((utxo) => {
-		const key = `${utxo.input.txHash}#${utxo.input.outputIndex}`;
-		if (key === collateralKey) return false;
-		if (spendingUtxoKeys.has(key)) return false;
-		return true;
-	});
 	const shrinkResult = shrinkBatchToFit(validated, (subset) => {
 		const window = intersectTxWindows(subset.map((v) => v.window));
 		if (window == null) return { ok: false, reason: 'window' };

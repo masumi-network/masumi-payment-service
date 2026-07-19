@@ -39,6 +39,7 @@ import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 }
 import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
+	getWalletUtxosForSelection,
 	intersectTxWindows,
 	pickBatchCollateral,
 	shrinkBatchToFit,
@@ -702,16 +703,10 @@ async function processWalletBatch(
 		return;
 	}
 
-	const spendingUtxoKeys = new Set(
-		validated.map((v) => `${v.smartContractUtxo.input.txHash}#${v.smartContractUtxo.input.outputIndex}`),
+	const walletUtxos = getWalletUtxosForSelection(
+		utxos,
+		validated.map((v) => v.smartContractUtxo.input),
 	);
-	const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
-	const walletUtxos = utxos.filter((utxo) => {
-		const key = `${utxo.input.txHash}#${utxo.input.outputIndex}`;
-		if (key === collateralKey) return false;
-		if (spendingUtxoKeys.has(key)) return false;
-		return true;
-	});
 	// Constraints applied progressively: validity-window intersection then
 	// no-collateral-overlap. tx-size is checked after the build pass.
 	const shrinkResult = shrinkBatchToFit(validated, (subset) => {

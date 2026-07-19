@@ -3,6 +3,7 @@ import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
 	computeCollateralFromExUnits,
+	getWalletUtxosForSelection,
 	intersectTxWindows,
 	isTxSizeWithinLimit,
 	MAX_SAFE_TX_BYTES,
@@ -184,6 +185,19 @@ describe('pickBatchCollateral', () => {
 		];
 		const picked = pickBatchCollateral(utxos, []);
 		expect(picked?.input.txHash).toBe('empty-unit');
+	});
+});
+
+describe('getWalletUtxosForSelection', () => {
+	it('keeps collateral available while excluding script spending inputs', () => {
+		const collateral = makeUtxo({ txHash: 'collateral', lovelace: '8000000' });
+		const scriptInput = makeUtxo({ txHash: 'script', lovelace: '7000000' });
+		const funding = makeUtxo({ txHash: 'funding', lovelace: '6000000' });
+
+		expect(getWalletUtxosForSelection([collateral, scriptInput, funding], [scriptInput.input])).toEqual([
+			collateral,
+			funding,
+		]);
 	});
 });
 

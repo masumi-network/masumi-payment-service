@@ -91,7 +91,7 @@ describe('V2 single-item smart-contract input selection', () => {
 		builders.length = 0;
 	});
 
-	it('offers all non-collateral UTxOs to Mesh in both fee passes', async () => {
+	it('offers every wallet UTxO to Mesh in both fee passes, including collateral', async () => {
 		const collateralUtxo = createUtxo('collateral', '8281874');
 		const smallUtxo = createUtxo('small', '3336392');
 		const largeUtxo = createUtxo('large', '485435616');
@@ -127,7 +127,7 @@ describe('V2 single-item smart-contract input selection', () => {
 		expect(builders).toHaveLength(2);
 		for (const builder of builders) {
 			expect(builder.txInCollateral).toHaveBeenCalledWith('collateral', 0);
-			expect(builder.selectUtxosFrom).toHaveBeenCalledWith([smallUtxo, largeUtxo]);
+			expect(builder.selectUtxosFrom).toHaveBeenCalledWith([collateralUtxo, smallUtxo, largeUtxo]);
 			expect(builder.txIn).toHaveBeenCalledTimes(1);
 		}
 	});

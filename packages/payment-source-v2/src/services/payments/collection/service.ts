@@ -40,6 +40,7 @@ import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
+	getWalletUtxosForSelection,
 	intersectTxWindows,
 	pickBatchCollateral,
 	shrinkBatchToFit,
@@ -620,16 +621,10 @@ async function processWalletBatch(
 		return;
 	}
 
-	const spendingUtxoKeys = new Set(
-		validated.map((v) => `${v.smartContractUtxo.input.txHash}#${v.smartContractUtxo.input.outputIndex}`),
+	const walletUtxos = getWalletUtxosForSelection(
+		utxos,
+		validated.map((v) => v.smartContractUtxo.input),
 	);
-	const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
-	const walletUtxos = utxos.filter((utxo) => {
-		const key = `${utxo.input.txHash}#${utxo.input.outputIndex}`;
-		if (key === collateralKey) return false;
-		if (spendingUtxoKeys.has(key)) return false;
-		return true;
-	});
 	const shrinkResult = shrinkBatchToFit(validated, (subset) => {
 		const window = intersectTxWindows(subset.map((v) => v.window));
 		if (window == null) return { ok: false, reason: 'window' };

@@ -16,7 +16,6 @@ import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, calculateTopUpAmount } from '@/utils/min-utxo';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
-import { isSameUtxo } from '@/utils/utxo';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	switch (network) {
@@ -27,10 +26,6 @@ function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 		default:
 			throw new Error(`Unsupported network: ${network}`);
 	}
-}
-
-function getSpendableWalletUtxos(walletUtxos: UTxO[], collateralUtxo: UTxO): UTxO[] {
-	return walletUtxos.filter((utxo) => !isSameUtxo(utxo, collateralUtxo));
 }
 
 export async function generateMasumiSmartContractInteractionTransactionAutomaticFees(
@@ -235,10 +230,11 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		.txOut(smartContractAddress, outputAmount)
 		.txOutInlineDatumValue(newInlineDatum);
 
-	// Give Mesh every spendable candidate so it can select additional inputs
-	// after accounting for fees, outputs, and minimum change. Keep collateral
-	// dedicated: a collateral input may not also be a regular spending input.
-	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
+	// Keep every wallet UTxO available to Mesh's final balancing pass. Declaring
+	// one UTxO as collateral does not require removing it from regular input
+	// selection, and doing so can hide the only input large enough to fund the
+	// outputs, fees, and minimum change.
+	txBuilder.selectUtxosFrom(walletUtxos);
 
 	// Optional self-send splitter for V2 single-item callers. See docstring
 	// on the public AutomaticFees entry point. Emitted BEFORE
@@ -495,7 +491,7 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
-	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
+	txBuilder.selectUtxosFrom(walletUtxos);
 
 	return await txBuilder
 		.changeAddress(walletAddress)

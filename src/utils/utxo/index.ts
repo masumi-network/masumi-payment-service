@@ -16,12 +16,8 @@ export function getLovelaceFromUtxo(utxo: UTxO): bigint {
 	return BigInt(utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')?.quantity ?? '0');
 }
 
-export function isSameUtxo(left: UTxO, right: UTxO): boolean {
-	return left.input.txHash === right.input.txHash && left.input.outputIndex === right.input.outputIndex;
-}
-
 /**
- * Selects a dedicated collateral input.
+ * Selects a collateral input.
  *
  * Prefer the smallest qualifying pure-ADA UTxO so native tokens do not need
  * a collateral-return output. If none exists, fall back to the smallest
