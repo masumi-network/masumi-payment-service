@@ -229,6 +229,7 @@ export async function getRegistryEntriesForQuery(
 					paymentSourceType: true,
 					address: true,
 					scheme: true,
+					pricingType: true,
 					asset: true,
 					amount: true,
 					decimals: true,

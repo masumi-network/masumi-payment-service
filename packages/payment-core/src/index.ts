@@ -9,6 +9,7 @@ export { PaymentSourceType };
 export {
 	MAX_SUPPORTED_PAYMENT_SOURCES,
 	SupportedPaymentSourceChain,
+	X402_NATIVE_ASSET,
 	isCardanoAddressForNetwork,
 	isCardanoPubKeyAddressForNetwork,
 	parseSupportedPaymentSourcesFromMetadata,

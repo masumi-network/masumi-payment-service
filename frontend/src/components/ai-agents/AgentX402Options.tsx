@@ -24,6 +24,12 @@ export function AgentX402Options({
 
   const chainLabel = (caip2: string) =>
     networks.find((network) => network.caip2Id === caip2)?.displayName ?? caip2;
+  const assetLabel = (asset: string | undefined) =>
+    asset === 'native'
+      ? 'Native currency'
+      : asset
+        ? shortenAddress(asset, 6)
+        : 'Any supported asset';
 
   return (
     <Card>
@@ -34,14 +40,19 @@ export function AgentX402Options({
         <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
           {evmSources.map((source, index, arr) => (
             <div
-              key={`${source.network}-${source.asset}-${source.payTo}`}
+              key={`${source.network}-${source.pricingType}-${
+                source.pricingType === 'Free' ? 'none' : (source.asset ?? 'any')
+              }-${source.payTo}`}
               className={cn('flex flex-col gap-1 py-2', index < arr.length - 1 && 'border-b')}
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">{chainLabel(source.network)}</span>
                 <span className="font-medium font-mono">
-                  {formatX402Amount(source.amount, source.decimals)} ·{' '}
-                  {shortenAddress(source.asset, 6)}
+                  {source.pricingType === 'Fixed'
+                    ? `${formatX402Amount(source.amount, source.decimals)} · ${assetLabel(source.asset)}`
+                    : source.pricingType === 'Dynamic'
+                      ? `Dynamic · ${assetLabel(source.asset)}`
+                      : 'Free'}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground">

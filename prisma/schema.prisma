@@ -392,6 +392,10 @@ model SupportedPaymentSource {
   paymentSourceType PaymentSourceType?
   address           String
   scheme            X402PaymentScheme?
+  /// Pricing advertised by this payment source. Cardano rows leave this null
+  /// because their pricing lives on AgentPricing; EVM rows use Fixed, Dynamic,
+  /// or Free directly.
+  pricingType       PricingType?
   asset             String?
   amount            BigInt?
   decimals          Int?

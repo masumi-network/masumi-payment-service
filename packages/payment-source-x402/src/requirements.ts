@@ -1,12 +1,14 @@
 import canonicalStringify from 'canonical-json';
 import createHttpError from 'http-errors';
 import type { Network, PaymentPayload, PaymentRequirements } from '@x402/core/types';
-import { Prisma, X402PaymentScheme, prisma } from '@masumi/payment-core/db';
+import { PricingType, Prisma, X402PaymentScheme, prisma } from '@masumi/payment-core/db';
 import { normalizeAddress } from './internal';
 
 export const EXACT_SCHEME = 'exact';
+const NATIVE_ASSET = 'native';
 const DEFAULT_X402_TIMEOUT_SECONDS = 300;
 const PERMIT2_EXTRA = { assetTransferMethod: 'permit2' };
+const NATIVE_EXTRA = { assetTransferMethod: 'native' };
 
 export type X402SourceRecord = NonNullable<Awaited<ReturnType<typeof getX402SupportedPaymentSourceOrThrow>>>;
 
@@ -29,25 +31,81 @@ function toRequirementExtra(value: unknown): X402RequirementExtra {
 	return {};
 }
 
-export function sourceToRequirements(source: X402SourceRecord): PaymentRequirements {
+function assertValidAsset(asset: string): void {
+	if (asset !== NATIVE_ASSET && !/^0x[a-fA-F0-9]{40}$/.test(asset)) {
+		throw createHttpError(400, 'x402 asset must be an EVM token contract or native');
+	}
+}
+
+function parseDecimals(value: unknown): number {
+	const decimals = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+	if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+		throw createHttpError(400, 'x402 payment requirements must include valid asset decimals');
+	}
+	return decimals;
+}
+
+function assertPositiveAmount(amount: string): void {
+	if (!/^\d+$/.test(amount) || BigInt(amount) <= 0n) {
+		throw createHttpError(400, 'x402 payment amount must be a positive unsigned integer');
+	}
+}
+
+export function sourceToRequirements(
+	source: X402SourceRecord,
+	presentedRequirements?: PaymentRequirements,
+): PaymentRequirements {
 	if (source.scheme !== X402PaymentScheme.Exact) {
 		throw createHttpError(400, 'Only x402 exact payment sources are supported');
 	}
-	if (source.asset == null || source.amount == null || source.payTo == null || source.decimals == null) {
+	if (source.payTo == null || source.pricingType == null) {
 		throw createHttpError(400, 'x402 supported payment source is incomplete');
 	}
+
+	if (source.pricingType === PricingType.Free) {
+		throw createHttpError(400, 'Free x402 sources do not require payment verification or settlement');
+	}
+
+	let asset: string;
+	let amount: string;
+	let decimals: number;
+
+	if (source.pricingType === PricingType.Fixed) {
+		if (source.asset == null || source.amount == null || source.decimals == null) {
+			throw createHttpError(400, 'Fixed x402 supported payment source is incomplete');
+		}
+		asset = source.asset;
+		amount = source.amount.toString();
+		decimals = source.decimals;
+	} else if (source.pricingType === PricingType.Dynamic) {
+		if (presentedRequirements == null) {
+			throw createHttpError(400, 'Dynamic x402 sources require runtime payment requirements');
+		}
+		asset = presentedRequirements.asset;
+		amount = presentedRequirements.amount;
+		decimals = source.decimals ?? parseDecimals(toRequirementExtra(presentedRequirements.extra).decimals);
+		if (source.asset != null && normalizeAddress(source.asset) !== normalizeAddress(asset)) {
+			throw createHttpError(400, 'x402 payment asset is not accepted by this registered resource');
+		}
+	} else {
+		throw createHttpError(400, 'Unsupported x402 pricing type');
+	}
+
+	assertValidAsset(asset);
+	assertPositiveAmount(amount);
+	const transferExtra = asset === NATIVE_ASSET ? NATIVE_EXTRA : PERMIT2_EXTRA;
 
 	return {
 		scheme: EXACT_SCHEME,
 		network: source.network as Network,
-		asset: source.asset,
-		amount: source.amount.toString(),
+		asset,
+		amount,
 		payTo: source.payTo,
 		maxTimeoutSeconds: DEFAULT_X402_TIMEOUT_SECONDS,
 		extra: {
 			...toJsonObject(source.extra),
-			...PERMIT2_EXTRA,
-			decimals: source.decimals,
+			...transferExtra,
+			decimals,
 		},
 	};
 }
@@ -117,7 +175,7 @@ function assertRequirementsMatchRegisteredSource(requirements: PaymentRequiremen
 		// Pin maxTimeoutSeconds too, mirroring requirementsMatch, so the signing window
 		// cannot drift from the registered policy.
 		requirements.maxTimeoutSeconds !== expected.maxTimeoutSeconds ||
-		requirementsExtra.assetTransferMethod !== PERMIT2_EXTRA.assetTransferMethod ||
+		requirementsExtra.assetTransferMethod !== expectedExtra.assetTransferMethod ||
 		// decimals arrives untyped from the wire (may be number or string); compare
 		// by canonical string form so 6 and "6" are treated as equal.
 		String(requirementsExtra.decimals) !== String(expectedExtra.decimals)

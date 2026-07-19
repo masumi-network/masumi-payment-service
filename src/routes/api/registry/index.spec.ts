@@ -447,6 +447,115 @@ describe('registerAgentPost', () => {
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.metadataVersion).toBe(2);
 	});
 
+	it('persists dynamic, fixed native, and free x402 pricing models', async () => {
+		const dynamicPayTo = `0x${'1'.repeat(40)}`;
+		const fixedPayTo = `0x${'2'.repeat(40)}`;
+		const freePayTo = `0x${'3'.repeat(40)}`;
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					name: 'V2 x402 Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: {
+						name: 'demo',
+						version: '1.0.0',
+					},
+					AgentPricing: {
+						pricingType: PricingType.Dynamic,
+					},
+					Author: {
+						name: 'Author',
+					},
+					supportedPaymentSources: [
+						{
+							chain: 'EVM',
+							network: 'eip155:84532',
+							scheme: 'Exact',
+							pricingType: PricingType.Dynamic,
+							payTo: dynamicPayTo,
+						},
+						{
+							chain: 'EVM',
+							network: 'eip155:84532',
+							scheme: 'Exact',
+							pricingType: PricingType.Fixed,
+							asset: 'native',
+							amount: '1000',
+							decimals: 18,
+							payTo: fixedPayTo,
+						},
+						{
+							chain: 'EVM',
+							network: 'eip155:84532',
+							scheme: 'Exact',
+							pricingType: PricingType.Free,
+							payTo: freePayTo,
+						},
+					],
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.SupportedPaymentSources).toEqual({
+			createMany: {
+				data: [
+					{
+						chain: 'EVM',
+						network: 'eip155:84532',
+						paymentSourceType: undefined,
+						address: dynamicPayTo,
+						scheme: 'Exact',
+						pricingType: PricingType.Dynamic,
+						asset: null,
+						amount: null,
+						decimals: null,
+						payTo: dynamicPayTo,
+						resource: undefined,
+						extra: undefined,
+					},
+					{
+						chain: 'EVM',
+						network: 'eip155:84532',
+						paymentSourceType: undefined,
+						address: fixedPayTo,
+						scheme: 'Exact',
+						pricingType: PricingType.Fixed,
+						asset: 'native',
+						amount: BigInt(1000),
+						decimals: 18,
+						payTo: fixedPayTo,
+						resource: undefined,
+						extra: undefined,
+					},
+					{
+						chain: 'EVM',
+						network: 'eip155:84532',
+						paymentSourceType: undefined,
+						address: freePayTo,
+						scheme: 'Exact',
+						pricingType: PricingType.Free,
+						asset: null,
+						amount: null,
+						decimals: null,
+						payTo: freePayTo,
+						resource: undefined,
+						extra: undefined,
+					},
+				],
+			},
+		});
+	});
+
 	it('stores a managed recipient wallet override when provided', async () => {
 		mockFindRecipientWallet.mockResolvedValue({
 			id: 'recipient-wallet-id',

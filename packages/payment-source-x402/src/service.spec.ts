@@ -103,6 +103,11 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	X402PaymentScheme: {
 		Exact: 'Exact',
 	},
+	PricingType: {
+		Fixed: 'Fixed',
+		Dynamic: 'Dynamic',
+		Free: 'Free',
+	},
 	X402PaymentStatus: {
 		PaymentRequired: 'PaymentRequired',
 		Verified: 'Verified',
@@ -247,6 +252,8 @@ jest.unstable_mockModule('viem/accounts', () => ({
 }));
 
 const service = await import('./service');
+const requirementsService = await import('./requirements');
+const internalService = await import('./internal');
 
 const source = {
 	id: 'source-1',
@@ -254,6 +261,7 @@ const source = {
 	chain: 'EVM',
 	network: 'eip155:84532',
 	scheme: 'Exact',
+	pricingType: 'Fixed',
 	asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
 	amount: 10_000n,
 	decimals: 6,
@@ -496,6 +504,90 @@ describe('x402 service helpers', () => {
 		};
 
 		expect(service.hashX402PaymentPayload(first)).toBe(service.hashX402PaymentPayload(second));
+	});
+
+	it('labels native currencies from their selected chain without assuming ETH', () => {
+		expect(internalService.nativeCurrencyForCaip2('eip155:137').symbol).toBe('POL');
+		expect(internalService.nativeCurrencyForCaip2('eip155:56').symbol).toBe('BNB');
+		expect(internalService.nativeCurrencyForCaip2('eip155:43114').symbol).toBe('AVAX');
+		expect(internalService.nativeCurrencyForCaip2('eip155:999999').symbol).toBe('Native');
+	});
+
+	it('uses the runtime exact amount and asset for asset-agnostic dynamic pricing', () => {
+		const dynamicRequirements = requirementsService.sourceToRequirements(
+			{
+				...source,
+				pricingType: 'Dynamic',
+				asset: null,
+				amount: null,
+				decimals: null,
+			} as never,
+			{
+				...requirements,
+				amount: '25000',
+			} as never,
+		);
+
+		expect(dynamicRequirements).toMatchObject({
+			asset: source.asset,
+			amount: '25000',
+			extra: {
+				assetTransferMethod: 'permit2',
+				decimals: source.decimals,
+			},
+		});
+	});
+
+	it('supports a chain-native dynamic asset allowlist', () => {
+		const dynamicRequirements = requirementsService.sourceToRequirements(
+			{
+				...source,
+				pricingType: 'Dynamic',
+				asset: 'native',
+				amount: null,
+				decimals: 18,
+			} as never,
+			{
+				...requirements,
+				asset: 'native',
+				amount: '1000000000000000',
+				extra: { assetTransferMethod: 'native', decimals: 18 },
+			} as never,
+		);
+
+		expect(dynamicRequirements).toMatchObject({
+			asset: 'native',
+			amount: '1000000000000000',
+			extra: {
+				assetTransferMethod: 'native',
+				decimals: 18,
+			},
+		});
+	});
+
+	it('rejects non-positive dynamic amounts and payment calls for free sources', () => {
+		expect(() =>
+			requirementsService.sourceToRequirements(
+				{
+					...source,
+					pricingType: 'Dynamic',
+					asset: null,
+					amount: null,
+					decimals: null,
+				} as never,
+				{ ...requirements, amount: '0' } as never,
+			),
+		).toThrow('x402 payment amount must be a positive unsigned integer');
+
+		expect(() =>
+			requirementsService.sourceToRequirements({
+				...source,
+				pricingType: 'Free',
+				asset: null,
+				amount: null,
+				decimals: null,
+			} as never),
+		).toThrow('Free x402 sources do not require payment verification or settlement');
 	});
 
 	it('rejects settle when the API key is not allowed on the registered chain', async () => {

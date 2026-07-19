@@ -76,6 +76,7 @@ type RegistrySupportedPaymentSourceMetadataRow = {
 	paymentSourceType: PaymentSourceType | null;
 	address: string;
 	scheme?: X402PaymentScheme | null;
+	pricingType?: PricingType | null;
 	asset?: string | null;
 	amount?: bigint | string | null;
 	decimals?: number | null;
@@ -232,15 +233,28 @@ export function buildAgentMetadata(
 		supported_payment_sources:
 			request.metadataVersion >= DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION
 				? supportedPaymentSources.map((source) => {
-						if (
-							source.chain === SupportedPaymentSourceChain.EVM &&
-							(source.amount == null || source.decimals == null || source.asset == null || source.payTo == null)
-						) {
-							// Never mint an incomplete x402 source on-chain as the literal strings
-							// "null"/"undefined"; fail the registration so the bad row is surfaced.
-							throw new Error('Cannot register agent: x402 supported payment source is incomplete');
-						}
 						if (source.chain === SupportedPaymentSourceChain.EVM) {
+							if (source.pricingType == null || source.payTo == null) {
+								throw new Error('Cannot register agent: x402 supported payment source is incomplete');
+							}
+							if (
+								source.pricingType === PricingType.Fixed &&
+								(source.amount == null || source.decimals == null || source.asset == null)
+							) {
+								throw new Error('Cannot register agent: fixed x402 pricing is incomplete');
+							}
+							if (
+								source.pricingType === PricingType.Dynamic &&
+								((source.asset == null) !== (source.decimals == null) || source.amount != null)
+							) {
+								throw new Error('Cannot register agent: dynamic x402 pricing is incomplete');
+							}
+							if (
+								source.pricingType === PricingType.Free &&
+								(source.asset != null || source.amount != null || source.decimals != null)
+							) {
+								throw new Error('Cannot register agent: free x402 pricing must not include an asset or amount');
+							}
 							return {
 								chain: stringToMetadata(source.chain),
 								network: stringToMetadata(String(source.network)),
@@ -251,14 +265,28 @@ export function buildAgentMetadata(
 									extra: source.extra,
 								},
 								pricing: {
-									pricingType: PricingType.Fixed,
-									fixed: [
-										{
-											asset: stringToMetadata(source.asset, false),
-											amount: String(source.amount),
-											decimals: String(source.decimals),
-										},
-									],
+									pricingType: source.pricingType,
+									...(source.pricingType === PricingType.Fixed
+										? {
+												fixed: [
+													{
+														asset: stringToMetadata(source.asset, false),
+														amount: String(source.amount),
+														decimals: String(source.decimals),
+													},
+												],
+											}
+										: {}),
+									...(source.pricingType === PricingType.Dynamic && source.asset != null
+										? {
+												dynamic: [
+													{
+														asset: stringToMetadata(source.asset, false),
+														decimals: String(source.decimals),
+													},
+												],
+											}
+										: {}),
 								},
 							};
 						}

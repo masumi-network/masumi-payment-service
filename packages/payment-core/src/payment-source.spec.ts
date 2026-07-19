@@ -1,7 +1,8 @@
-import { Network, PaymentSourceType } from '@prisma/client';
+import { Network, PaymentSourceType, PricingType } from '@prisma/client';
 import {
 	isCardanoAddressForNetwork,
 	isCardanoPubKeyAddressForNetwork,
+	parseSupportedPaymentSourcesFromMetadata,
 	supportedPaymentSourceSchema,
 	validateSupportedPaymentSourcesOrThrow,
 } from './payment-source';
@@ -32,6 +33,7 @@ describe('payment-source address validation', () => {
 			chain: 'EVM',
 			network: 'eip155:84532',
 			scheme: 'Exact',
+			pricingType: PricingType.Fixed,
 			asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
 			amount: '10000',
 			decimals: 6,
@@ -50,6 +52,7 @@ describe('payment-source address validation', () => {
 				network: 'eip155:84532',
 				address: '0x2222222222222222222222222222222222222222',
 				scheme: 'Exact',
+				pricingType: PricingType.Fixed,
 				asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
 				amount: '10000',
 				decimals: 6,
@@ -64,6 +67,7 @@ describe('payment-source address validation', () => {
 				chain: 'EVM',
 				network: 'eip155:84532',
 				scheme: 'Exact',
+				pricingType: PricingType.Fixed,
 				asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
 				amount: '10000',
 				decimals: 6,
@@ -78,6 +82,7 @@ describe('payment-source address validation', () => {
 			chain: 'EVM',
 			network: 'eip155:84532',
 			scheme: 'Exact',
+			pricingType: PricingType.Fixed,
 			asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
 			amount: '10000',
 			decimals: 6,
@@ -87,5 +92,89 @@ describe('payment-source address validation', () => {
 		expect(() =>
 			validateSupportedPaymentSourcesOrThrow([parsed], Network.Preprod, PaymentSourceType.Web3CardanoV1),
 		).toThrow('x402 payment sources may only be advertised by V2 registry entries.');
+	});
+
+	it('accepts asset-agnostic and native-asset dynamic x402 pricing', () => {
+		expect(
+			supportedPaymentSourceSchema.parse({
+				chain: 'EVM',
+				network: 'eip155:8453',
+				scheme: 'Exact',
+				pricingType: PricingType.Dynamic,
+				payTo: '0x1111111111111111111111111111111111111111',
+			}),
+		).toMatchObject({ pricingType: PricingType.Dynamic });
+
+		expect(
+			supportedPaymentSourceSchema.parse({
+				chain: 'EVM',
+				network: 'eip155:8453',
+				scheme: 'Exact',
+				pricingType: PricingType.Dynamic,
+				asset: 'native',
+				decimals: 18,
+				payTo: '0x1111111111111111111111111111111111111111',
+			}),
+		).toMatchObject({ asset: 'native', decimals: 18 });
+	});
+
+	it('requires a dynamic asset allowlist to include its decimals', () => {
+		expect(() =>
+			supportedPaymentSourceSchema.parse({
+				chain: 'EVM',
+				network: 'eip155:8453',
+				scheme: 'Exact',
+				pricingType: PricingType.Dynamic,
+				asset: 'native',
+				payTo: '0x1111111111111111111111111111111111111111',
+			}),
+		).toThrow('Dynamic x402 asset and decimals must be provided together');
+	});
+
+	it('accepts free x402 pricing without an asset or amount', () => {
+		expect(
+			supportedPaymentSourceSchema.parse({
+				chain: 'EVM',
+				network: 'eip155:8453',
+				scheme: 'Exact',
+				pricingType: PricingType.Free,
+				payTo: '0x1111111111111111111111111111111111111111',
+			}),
+		).toMatchObject({ pricingType: PricingType.Free });
+	});
+
+	it('parses dynamic and free x402 pricing from registry metadata', () => {
+		expect(
+			parseSupportedPaymentSourcesFromMetadata([
+				{
+					chain: 'EVM',
+					network: 'eip155:8453',
+					settlement: {
+						scheme: 'Exact',
+						payTo: '0x1111111111111111111111111111111111111111',
+					},
+					pricing: {
+						pricingType: PricingType.Dynamic,
+						dynamic: [{ asset: 'native', decimals: '18' }],
+					},
+				},
+				{
+					chain: 'EVM',
+					network: 'eip155:8453',
+					settlement: {
+						scheme: 'Exact',
+						payTo: '0x2222222222222222222222222222222222222222',
+					},
+					pricing: { pricingType: PricingType.Free },
+				},
+			]),
+		).toEqual([
+			expect.objectContaining({
+				pricingType: PricingType.Dynamic,
+				asset: 'native',
+				decimals: 18,
+			}),
+			expect.objectContaining({ pricingType: PricingType.Free }),
+		]);
 	});
 });

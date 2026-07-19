@@ -147,7 +147,7 @@ export async function verifyX402Payment({
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);
-	const requirements = sourceToRequirements(source);
+	const requirements = sourceToRequirements(source, paymentPayload.accepted);
 	if (!isAllowedCaip2Network(caip2NetworkLimit, requirements.network)) {
 		throw createHttpError(401, 'Unauthorized network');
 	}
@@ -224,7 +224,7 @@ export async function settleX402Payment({
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);
-	const requirements = sourceToRequirements(source);
+	const requirements = sourceToRequirements(source, paymentPayload.accepted);
 	if (!isAllowedCaip2Network(caip2NetworkLimit, requirements.network)) {
 		throw createHttpError(401, 'Unauthorized network');
 	}

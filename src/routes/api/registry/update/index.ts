@@ -351,9 +351,10 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 												...(source.chain === 'EVM'
 													? {
 															scheme: source.scheme,
-															asset: source.asset,
-															amount: BigInt(source.amount),
-															decimals: source.decimals,
+															pricingType: source.pricingType,
+															asset: source.pricingType === PricingType.Free ? null : (source.asset ?? null),
+															amount: source.pricingType === PricingType.Fixed ? BigInt(source.amount) : null,
+															decimals: source.pricingType === PricingType.Free ? null : (source.decimals ?? null),
 															payTo: source.payTo,
 															resource: source.resource,
 															extra: source.extra as Prisma.InputJsonValue | undefined,
@@ -400,6 +401,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 								paymentSourceType: true,
 								address: true,
 								scheme: true,
+								pricingType: true,
 								asset: true,
 								amount: true,
 								decimals: true,

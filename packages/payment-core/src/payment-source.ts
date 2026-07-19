@@ -6,7 +6,7 @@
 // rather than depending on this V1-aligned version. Do not bump. See
 // docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
 import { AddressType, deserializeAddress, resolvePaymentKeyHash, resolveStakeKeyHash } from '@meshsdk/core-cst';
-import { Network, PaymentSourceType } from '@prisma/client';
+import { Network, PaymentSourceType, PricingType } from '@prisma/client';
 import { z } from './zod';
 import { isAllowedCaip2Network } from './network';
 
@@ -18,6 +18,10 @@ export const SupportedPaymentSourceChain = {
 export const paymentSourceTypeSchema = z.nativeEnum(PaymentSourceType).describe('The configured payment source type');
 
 const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Expected an EVM address');
+export const X402_NATIVE_ASSET = 'native';
+const x402AssetSchema = evmAddressSchema
+	.or(z.literal(X402_NATIVE_ASSET))
+	.describe('ERC-20 token contract address, or "native" for the chain native currency');
 
 const cardanoSupportedPaymentSourceSchema = z.object({
 	chain: z.literal(SupportedPaymentSourceChain.Cardano).describe('The blockchain this payment source is available on'),
@@ -26,37 +30,70 @@ const cardanoSupportedPaymentSourceSchema = z.object({
 	address: z.string().max(250).describe('The escrow smart contract address for this payment source'),
 });
 
-const x402SupportedPaymentSourceSchema = z
-	.object({
-		chain: z.literal(SupportedPaymentSourceChain.EVM).describe('The chain family used by standard x402'),
-		network: z
-			.string()
-			.regex(/^eip155:\d+$/, 'x402 EVM network must be a CAIP-2 eip155 chain id')
-			.describe('CAIP-2 EVM network id, for example eip155:8453'),
-		paymentSourceType: paymentSourceTypeSchema.nullable().optional(),
-		address: evmAddressSchema.optional().describe('Alias for payTo, kept for existing payment-source shape'),
-		scheme: z.literal('Exact').describe('x402 payment scheme'),
-		asset: evmAddressSchema.describe('ERC-20 token contract address'),
-		amount: z.string().regex(/^\d+$/).describe('Atomic token amount'),
-		decimals: z.number().int().min(0).max(255).describe('ERC-20 token decimals'),
-		payTo: evmAddressSchema.describe('EVM address receiving the x402 payment'),
-		resource: z.string().url().max(500).optional().describe('Optional absolute resource URL this x402 option protects'),
-		extra: z.record(z.string(), z.unknown()).optional().describe('Additional x402 metadata'),
-	})
+const x402SupportedPaymentSourceBaseSchema = z.object({
+	chain: z.literal(SupportedPaymentSourceChain.EVM).describe('The chain family used by standard x402'),
+	network: z
+		.string()
+		.regex(/^eip155:\d+$/, 'x402 EVM network must be a CAIP-2 eip155 chain id')
+		.describe('CAIP-2 EVM network id, for example eip155:8453'),
+	paymentSourceType: paymentSourceTypeSchema.nullable().optional(),
+	address: evmAddressSchema.optional().describe('Alias for payTo, kept for existing payment-source shape'),
+	scheme: z.literal('Exact').describe('x402 payment scheme'),
+	payTo: evmAddressSchema.describe('EVM address receiving the x402 payment'),
+	resource: z.string().url().max(500).optional().describe('Optional absolute resource URL this x402 option protects'),
+	extra: z.record(z.string(), z.unknown()).optional().describe('Additional x402 metadata'),
+});
+
+const x402FixedPaymentSourceSchema = x402SupportedPaymentSourceBaseSchema.extend({
+	pricingType: z.literal(PricingType.Fixed).describe('A fixed amount is advertised in the registry'),
+	asset: x402AssetSchema,
+	amount: z.string().regex(/^\d+$/).describe('Atomic token amount'),
+	decimals: z.number().int().min(0).max(255).describe('Token decimals'),
+});
+
+const x402DynamicPaymentSourceSchema = x402SupportedPaymentSourceBaseSchema.extend({
+	pricingType: z
+		.literal(PricingType.Dynamic)
+		.describe('The exact positive amount is supplied dynamically in each x402 payment requirement'),
+	asset: x402AssetSchema.optional().describe('Optional asset allowlist for dynamic payment requirements'),
+	decimals: z.number().int().min(0).max(255).optional().describe('Decimals for the optional dynamic asset'),
+});
+
+const x402FreePaymentSourceSchema = x402SupportedPaymentSourceBaseSchema.extend({
+	pricingType: z.literal(PricingType.Free).describe('This resource does not require an x402 payment'),
+});
+
+export const supportedPaymentSourceSchema = z
+	.union([
+		cardanoSupportedPaymentSourceSchema,
+		x402FixedPaymentSourceSchema,
+		x402DynamicPaymentSourceSchema,
+		x402FreePaymentSourceSchema,
+	])
 	.superRefine((source, ctx) => {
-		if (source.address != null && source.address.toLowerCase() !== source.payTo.toLowerCase()) {
+		if (
+			source.chain === SupportedPaymentSourceChain.EVM &&
+			source.address != null &&
+			source.address.toLowerCase() !== source.payTo.toLowerCase()
+		) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ['address'],
 				message: 'x402 address alias must match payTo',
 			});
 		}
+		if (
+			source.chain === SupportedPaymentSourceChain.EVM &&
+			source.pricingType === PricingType.Dynamic &&
+			(source.asset == null) !== (source.decimals == null)
+		) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: source.asset == null ? ['asset'] : ['decimals'],
+				message: 'Dynamic x402 asset and decimals must be provided together',
+			});
+		}
 	});
-
-export const supportedPaymentSourceSchema = z.discriminatedUnion('chain', [
-	cardanoSupportedPaymentSourceSchema,
-	x402SupportedPaymentSourceSchema,
-]);
 
 // Hard cap on advertised payment sources, enforced both on parse and when
 // emitting on-chain metadata. v2 auto-injects a Cardano source, so the emitted
@@ -92,21 +129,24 @@ function metadataToString(value: string | string[] | undefined) {
 	return value.join('');
 }
 
-// One asset/amount line inside a `pricing.fixed` array. `asset` is the rail's
-// currency id: `''` (lovelace) or `policyId+assetName` hex for Cardano, the
-// ERC-20 contract `0x…` for x402/EVM. `decimals` is display-only and present
-// for EVM (escrow settles in atomic units, so Cardano may omit it).
-const supportedPaymentSourceMetadataAmountSchema = z.object({
+// One asset descriptor inside a rail's pricing block. `asset` is the rail's
+// currency id: `''` (lovelace) or `policyId+assetName` hex for Cardano, an
+// ERC-20 contract `0x…`, or `native` for an EVM chain's native currency.
+const supportedPaymentSourceMetadataAssetSchema = z.object({
 	asset: metadataStringSchema,
-	amount: metadataStringSchema,
 	decimals: metadataStringSchema.optional(),
 });
 
-// Shared pricing sub-object, identical across rails. `pricingType` is
-// Fixed/Free/Dynamic; `fixed` is present only for Fixed.
+const supportedPaymentSourceMetadataAmountSchema = supportedPaymentSourceMetadataAssetSchema.extend({
+	amount: metadataStringSchema,
+});
+
+// Shared pricing sub-object, identical across rails. `fixed` carries priced
+// assets; `dynamic` carries accepted assets whose amount is chosen per request.
 const supportedPaymentSourceMetadataPricingSchema = z.object({
 	pricingType: metadataStringSchema,
 	fixed: z.array(supportedPaymentSourceMetadataAmountSchema).optional(),
+	dynamic: z.array(supportedPaymentSourceMetadataAssetSchema).optional(),
 });
 
 // Superset of both rails' settlement fields; the parser reads only the keys
@@ -218,7 +258,7 @@ export function validateSupportedPaymentSourcesOrThrow(
 			if (registeringPaymentSourceType !== PaymentSourceType.Web3CardanoV2) {
 				throw new Error('x402 payment sources may only be advertised by V2 registry entries.');
 			}
-			if (BigInt(supportedPaymentSource.amount) <= 0n) {
+			if (supportedPaymentSource.pricingType === PricingType.Fixed && BigInt(supportedPaymentSource.amount) <= 0n) {
 				throw new Error('x402 payment source amount must be greater than zero');
 			}
 			if (
@@ -261,24 +301,38 @@ export function parseSupportedPaymentSourcesFromMetadata(value: unknown): Suppor
 		parsed.data.map((source) => {
 			const chain = metadataToString(source.chain);
 			const settlement = source.settlement ?? {};
-			// x402/EVM money lives in `pricing.fixed` (single entry); Cardano price
-			// is folded in for on-chain self-description but is read internally from
-			// the top-level `agentPricing`, so it is dropped on the way back to the
-			// flat domain shape.
+			const pricingType = metadataToString(source.pricing?.pricingType);
 			const fixed = source.pricing?.fixed?.[0];
+			const dynamic = source.pricing?.dynamic?.[0];
 			if (chain === SupportedPaymentSourceChain.EVM) {
-				const decimals = metadataToString(fixed?.decimals);
-				return {
+				const base = {
 					chain,
 					network: metadataToString(source.network),
 					scheme: metadataToString(settlement.scheme),
-					asset: metadataToString(fixed?.asset),
-					amount: metadataToString(fixed?.amount),
-					decimals: decimals != null ? Number(decimals) : undefined,
 					payTo: metadataToString(settlement.payTo),
 					resource: metadataToString(settlement.resource),
 					extra: settlement.extra,
 				};
+				if (pricingType === PricingType.Fixed) {
+					const decimals = metadataToString(fixed?.decimals);
+					return {
+						...base,
+						pricingType,
+						asset: metadataToString(fixed?.asset),
+						amount: metadataToString(fixed?.amount),
+						decimals: decimals != null ? Number(decimals) : undefined,
+					};
+				}
+				if (pricingType === PricingType.Dynamic) {
+					const decimals = metadataToString(dynamic?.decimals);
+					return {
+						...base,
+						pricingType,
+						asset: metadataToString(dynamic?.asset),
+						decimals: decimals != null ? Number(decimals) : undefined,
+					};
+				}
+				return { ...base, pricingType };
 			}
 			return {
 				chain,

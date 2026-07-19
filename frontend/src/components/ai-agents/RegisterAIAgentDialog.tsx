@@ -5,6 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -15,7 +16,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { postRegistry, postRegistryUpdate, RegistryEntry } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { shortenAddress, formatFundUnit } from '@/lib/utils';
-import { Trash2, ChevronDown } from 'lucide-react';
+import { Trash2, ChevronDown, Plus } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -31,14 +32,16 @@ import {
 } from '@/lib/convertDecimalToBaseUnits';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
-import { useX402Networks } from '@/lib/hooks/useX402';
+import { useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
+import { X402OptionFields } from './X402OptionsSection';
 import {
-  X402OptionsSection,
+  defaultX402Option,
   normalizeX402Amount,
   validateX402Options,
   newX402OptionId,
+  x402AmountFromBaseUnits,
   type X402OptionDraft,
-} from './X402OptionsSection';
+} from '@/lib/x402-registration';
 import {
   VerificationsSection,
   validateVerifications,
@@ -232,10 +235,45 @@ const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
 
 type AgentFormValues = z.infer<ReturnType<typeof createAgentSchema>>;
 
+function createAgentDefaultValues(
+  defaultPriceUnit: 'lovelace' | 'USDCx' | 'tUSDM',
+): AgentFormValues {
+  return {
+    apiUrl: '',
+    name: '',
+    description: '',
+    selectedWallet: '',
+    recipientWalletAddress: '',
+    sendFundingAda: '',
+    prices: [{ unit: defaultPriceUnit, amount: '' }],
+    tags: [],
+    pricingType: 'Fixed',
+    authorName: '',
+    authorEmail: '',
+    organization: '',
+    contactOther: '',
+    termsOfUseUrl: '',
+    privacyPolicyUrl: '',
+    otherUrl: '',
+    capabilityName: '',
+    capabilityVersion: '',
+    exampleOutputs: [],
+  };
+}
+
 type EvmSupportedSource = Extract<
   NonNullable<RegistryEntry['supportedPaymentSources']>[number],
   { chain: 'EVM' }
 >;
+
+type PaymentConfigurationType = 'Masumi' | 'x402';
+type PaymentOptionRow = {
+  id: string;
+  type: PaymentConfigurationType;
+};
+
+const MASUMI_PAYMENT_OPTION_ID = 'masumi-payment-option';
+const MAX_X402_OPTIONS = 24;
 
 export function RegisterAIAgentDialog({
   open,
@@ -261,8 +299,12 @@ export function RegisterAIAgentDialog({
   >([]);
 
   const { wallets, isLoading: isLoadingWallets, isError: isWalletsError } = useWallets();
-  const { apiClient, network, selectedPaymentSource } = useAppContext();
+  const { apiClient, network, selectedPaymentSource, selectedX402ChainId } = useAppContext();
   const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
+  // V2 treats every advertised payment source as a peer. Start fixed pricing
+  // with the network stablecoin instead of implying that ADA is mandatory.
+  const defaultPriceUnit =
+    selectedPaymentSource && isV2PaymentSource(selectedPaymentSource) ? stablecoinUnit : 'lovelace';
 
   const {
     register,
@@ -274,33 +316,14 @@ export function RegisterAIAgentDialog({
     watch,
   } = useForm<AgentFormValues>({
     resolver: zodResolver(createAgentSchema(network)),
-    defaultValues: {
-      apiUrl: '',
-      name: '',
-      description: '',
-      selectedWallet: '',
-      recipientWalletAddress: '',
-      sendFundingAda: '',
-      prices: [{ unit: 'lovelace', amount: '' }],
-      tags: [],
-      pricingType: 'Fixed',
-      authorName: '',
-      authorEmail: '',
-      organization: '',
-      contactOther: '',
-      termsOfUseUrl: '',
-      privacyPolicyUrl: '',
-      otherUrl: '',
-      capabilityName: '',
-      capabilityVersion: '',
-      exampleOutputs: [],
-    },
+    defaultValues: createAgentDefaultValues(defaultPriceUnit),
   });
 
   const {
     fields: priceFields,
     append: appendPrice,
     remove: removePrice,
+    replace: replacePrices,
   } = useFieldArray({
     control,
     name: 'prices',
@@ -391,7 +414,7 @@ export function RegisterAIAgentDialog({
                 unit: mapPricingUnitToOption(p.unit),
                 amount: mapAmount(p.amount),
               }))
-            : [{ unit: 'lovelace' as const, amount: '' }],
+            : [],
         tags: editingAgent.Tags ?? [],
         pricingType: editingAgent.AgentPricing.pricingType,
         authorName: editingAgent.Author.name,
@@ -409,30 +432,39 @@ export function RegisterAIAgentDialog({
           mimeType: e.mimeType,
         })),
       });
-      setX402Options(
-        (editingAgent.supportedPaymentSources ?? [])
-          .filter((source): source is EvmSupportedSource => source.chain === 'EVM')
-          .map((source) => ({
-            id: newX402OptionId(),
-            caip2Network: source.network,
-            asset: source.asset,
-            amount: source.amount,
-            decimals: String(source.decimals),
-            payTo: source.payTo,
-            resource: source.resource ?? '',
-          })),
-      );
+      const prefilledX402Options = (editingAgent.supportedPaymentSources ?? [])
+        .filter((source): source is EvmSupportedSource => source.chain === 'EVM')
+        .map((source) => ({
+          id: newX402OptionId(),
+          pricingType: source.pricingType,
+          caip2Network: source.network,
+          asset: source.pricingType === 'Free' ? '' : (source.asset ?? ''),
+          amount:
+            source.pricingType === 'Fixed'
+              ? x402AmountFromBaseUnits(source.amount, source.decimals)
+              : '',
+          decimals:
+            source.pricingType === 'Free' || source.decimals == null ? '' : String(source.decimals),
+          payTo: source.payTo,
+          resource: source.resource ?? '',
+        }));
+      setX402Options(prefilledX402Options);
+      setPaymentOptionRows([
+        { id: MASUMI_PAYMENT_OPTION_ID, type: 'Masumi' },
+        ...prefilledX402Options.map((option) => ({ id: option.id, type: 'x402' as const })),
+      ]);
       setX402Error(null);
       setVerifications(verificationsFromApi(editingAgent.verifications));
       setVerificationsError(null);
       return;
     }
-    reset();
+    reset(createAgentDefaultValues(defaultPriceUnit));
+    setPaymentOptionRows([{ id: MASUMI_PAYMENT_OPTION_ID, type: 'Masumi' }]);
     setX402Options([]);
     setX402Error(null);
     setVerifications([]);
     setVerificationsError(null);
-  }, [open, reset, sourceAgent, network, stablecoinUnit]);
+  }, [defaultPriceUnit, open, reset, sourceAgent, network, stablecoinUnit]);
 
   const selectedWallet = useMemo(
     () => sellingWallets.find((wallet) => wallet.wallet.walletVkey === selectedWalletVkey),
@@ -449,15 +481,105 @@ export function RegisterAIAgentDialog({
     [wallets, selectedWallet],
   );
 
-  const { networks: x402Networks } = useX402Networks({ silentErrors: true });
   const [x402Options, setX402Options] = useState<X402OptionDraft[]>([]);
   const [x402Error, setX402Error] = useState<string | null>(null);
+  const [paymentOptionRows, setPaymentOptionRows] = useState<PaymentOptionRow[]>([
+    { id: MASUMI_PAYMENT_OPTION_ID, type: 'Masumi' },
+  ]);
   const [verifications, setVerifications] = useState<VerificationDraft[]>([]);
   const [verificationsError, setVerificationsError] = useState<string | null>(null);
   // x402 supported payment sources are a V2-only capability; update always targets V2.
   const isV2Target = isUpdateMode
     ? true
     : !!selectedPaymentSource && isV2PaymentSource(selectedPaymentSource);
+  const { networks: x402Networks } = useX402Networks({ silentErrors: true });
+  const { wallets: x402Wallets, isLoading: isLoadingX402Wallets } = useX402Wallets(open, 'Selling');
+  const hasMasumiPaymentOption = paymentOptionRows.some((option) => option.type === 'Masumi');
+
+  useEffect(() => {
+    if (x402Networks.length === 0) return;
+
+    setX402Options((currentOptions) => {
+      let hasChanges = false;
+      const nextOptions = currentOptions.map((option) => {
+        if (option.caip2Network && (option.payTo || isLoadingX402Wallets)) return option;
+
+        const defaults = defaultX402Option(x402Networks, x402Wallets, selectedX402ChainId);
+        const nextOption = {
+          ...option,
+          caip2Network: option.caip2Network || defaults.caip2Network,
+          asset: option.asset || (option.pricingType === 'Fixed' ? defaults.asset : ''),
+          decimals:
+            option.asset || option.pricingType !== 'Fixed' ? option.decimals : defaults.decimals,
+          payTo: option.payTo || defaults.payTo,
+        };
+        hasChanges =
+          hasChanges ||
+          nextOption.caip2Network !== option.caip2Network ||
+          nextOption.asset !== option.asset ||
+          nextOption.decimals !== option.decimals ||
+          nextOption.payTo !== option.payTo;
+        return nextOption;
+      });
+      return hasChanges ? nextOptions : currentOptions;
+    });
+  }, [isLoadingX402Wallets, selectedX402ChainId, x402Networks, x402Wallets]);
+
+  const addPaymentOption = () => {
+    if (x402Options.length >= MAX_X402_OPTIONS) return;
+    const option = defaultX402Option(x402Networks, x402Wallets, selectedX402ChainId);
+    setX402Options((currentOptions) => [...currentOptions, option]);
+    setPaymentOptionRows((currentRows) => [...currentRows, { id: option.id, type: 'x402' }]);
+    setX402Error(null);
+  };
+
+  const changePaymentOptionType = (
+    optionRow: PaymentOptionRow,
+    nextType: PaymentConfigurationType,
+  ) => {
+    if (optionRow.type === nextType) return;
+
+    if (nextType === 'Masumi') {
+      if (hasMasumiPaymentOption) return;
+      setX402Options((currentOptions) =>
+        currentOptions.filter((option) => option.id !== optionRow.id),
+      );
+      setPaymentOptionRows((currentRows) =>
+        currentRows.map((row) =>
+          row.id === optionRow.id ? { id: MASUMI_PAYMENT_OPTION_ID, type: 'Masumi' } : row,
+        ),
+      );
+      setValue('pricingType', 'Fixed');
+      replacePrices([{ unit: defaultPriceUnit, amount: '' }]);
+      setX402Error(null);
+      return;
+    }
+
+    const option = defaultX402Option(x402Networks, x402Wallets, selectedX402ChainId);
+    setX402Options((currentOptions) => [...currentOptions, option]);
+    setPaymentOptionRows((currentRows) =>
+      currentRows.map((row) => (row.id === optionRow.id ? { id: option.id, type: 'x402' } : row)),
+    );
+    setValue('pricingType', 'Dynamic');
+    replacePrices([]);
+    setX402Error(null);
+  };
+
+  const removePaymentOption = (optionRow: PaymentOptionRow) => {
+    if (paymentOptionRows.length === 1) return;
+
+    setPaymentOptionRows((currentRows) => currentRows.filter((row) => row.id !== optionRow.id));
+    if (optionRow.type === 'x402') {
+      setX402Options((currentOptions) =>
+        currentOptions.filter((option) => option.id !== optionRow.id),
+      );
+      setX402Error(null);
+      return;
+    }
+
+    setValue('pricingType', 'Dynamic');
+    replacePrices([]);
+  };
 
   useEffect(() => {
     // Wallets drive recipientWalletOptions; while the wallets query is still
@@ -579,17 +701,45 @@ export function RegisterAIAgentDialog({
             ? convertDecimalToBaseUnits(data.sendFundingAda)
             : undefined;
 
-        const evmSupportedSources = x402Options.map((option) => ({
-          chain: 'EVM' as const,
-          network: option.caip2Network,
-          scheme: 'Exact' as const,
-          asset: option.asset,
-          amount: normalizeX402Amount(option.amount),
-          decimals: Number(option.decimals),
-          payTo: option.payTo,
-          resource: option.resource ? option.resource : undefined,
-        }));
-        if (isV2Target && x402Options.length > 0) {
+        const evmSupportedSources = x402Options.map((option) => {
+          const common = {
+            chain: 'EVM' as const,
+            network: option.caip2Network,
+            scheme: 'Exact' as const,
+            pricingType: option.pricingType,
+            payTo: option.payTo,
+            resource: option.resource ? option.resource : undefined,
+          };
+          if (option.pricingType === 'Fixed') {
+            return {
+              ...common,
+              pricingType: 'Fixed' as const,
+              asset: option.asset,
+              amount: normalizeX402Amount(option.amount, option.decimals),
+              decimals: Number(option.decimals),
+            };
+          }
+          if (option.pricingType === 'Dynamic' && option.asset) {
+            return {
+              ...common,
+              pricingType: 'Dynamic' as const,
+              asset: option.asset,
+              decimals: Number(option.decimals),
+            };
+          }
+          return {
+            ...common,
+            pricingType: option.pricingType,
+          };
+        });
+        if (!isV2Target && x402Options.length > 0) {
+          const unavailableMessage =
+            'x402 payment options require an active Web3 Cardano V2 payment source';
+          setX402Error(unavailableMessage);
+          toast.error(unavailableMessage);
+          return;
+        }
+        if (x402Options.length > 0) {
           const x402ValidationError = validateX402Options(x402Options);
           if (x402ValidationError) {
             setX402Error(x402ValidationError);
@@ -828,6 +978,54 @@ export function RegisterAIAgentDialog({
             )}
           </div>
 
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Tags <span className="text-destructive">*</span>
+            </label>
+            <div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add a tag"
+                  value={tagInput}
+                  maxLength={REGISTRY_LIMITS.tag}
+                  onChange={(event) => setTagInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      handleAddTag();
+                    }
+                  }}
+                  className={errors.tags ? 'border-destructive' : ''}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={tags.length >= REGISTRY_LIMITS.tagCount}
+                  onClick={handleAddTag}
+                >
+                  Add
+                </Button>
+              </div>
+              {errors.tags ? (
+                <p className="text-sm text-destructive">{errors.tags.message}</p>
+              ) : null}
+              {tags.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {tags.map((tag: string) => (
+                    <Badge
+                      key={tag}
+                      variant="secondary"
+                      className="cursor-pointer"
+                      onClick={() => handleRemoveTag(tag)}
+                    >
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
           {isUpdateMode ? (
             <div className="space-y-2">
               <label className="text-sm font-medium">Minting wallet</label>
@@ -959,184 +1157,280 @@ export function RegisterAIAgentDialog({
             )}
           </div>
 
-          {/* Pricing Type */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Pricing Type <span className="text-destructive">*</span>
-            </label>
-            <Controller
-              control={control}
-              name="pricingType"
-              render={({ field }) => (
-                <Select
-                  value={field.value}
-                  onValueChange={(val) => {
-                    field.onChange(val);
-                    if (val !== 'Fixed') {
-                      setValue('prices', [{ unit: 'lovelace', amount: '0.00' }]);
-                    }
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select pricing type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Fixed">Fixed - Price per Agent</SelectItem>
-                    <SelectItem value="Dynamic">Dynamic - Price set per payment</SelectItem>
-                    <SelectItem value="Free">Free - No cost for interactions</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            {watch('pricingType') === 'Dynamic' && (
-              <p className="text-xs text-muted-foreground">
-                The price will be determined per payment/purchase request by the agent.
+          <div className="flex items-center gap-4 pt-2">
+            <Separator className="flex-1" />
+            <h3 className="whitespace-nowrap text-sm font-medium text-muted-foreground">
+              Payment configuration
+            </h3>
+            <Separator className="flex-1" />
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-1">
+              <h3 className="text-sm font-medium">Payment options</h3>
+              <p className="max-w-[65ch] text-xs text-muted-foreground">
+                Choose the settlement type for each option. x402 settings appear as soon as x402 is
+                selected.
               </p>
-            )}
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">
-                Prices <span className="text-destructive">*</span>
-              </label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={
-                  watch('pricingType') !== 'Fixed' ||
-                  priceFields.length >= REGISTRY_LIMITS.pricingOptionCount
-                }
-                onClick={() => appendPrice({ unit: 'lovelace', amount: '' })}
-              >
-                Add Price
-              </Button>
             </div>
-            {priceFields.map((field, index) => (
-              <div key={field.id} className="flex gap-2 items-start">
-                <div className="flex-1 space-y-2">
-                  <Controller
-                    control={control}
-                    name={`prices.${index}.unit` as const}
-                    render={({ field }) => (
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        disabled={watch('pricingType') !== 'Fixed'}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select token" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="lovelace">
-                            {formatFundUnit('lovelace', network)}
-                          </SelectItem>
-                          <SelectItem value={stablecoinUnit}>{stablecoinUnit}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                </div>
-                <div className="flex-1 space-y-2">
-                  <Input
-                    type="number"
-                    placeholder="0.00"
-                    onWheel={(e) => e.currentTarget.blur()}
-                    disabled={watch('pricingType') !== 'Fixed'}
-                    value={watch(`prices.${index}.amount`) || ''}
-                    {...register(`prices.${index}.amount` as const)}
-                    min="0"
-                    step="0.000001"
-                  />
-                  {errors.prices &&
-                    Array.isArray(errors.prices) &&
-                    errors.prices[index]?.amount && (
-                      <p className="text-xs text-destructive">
-                        {errors.prices[index]?.amount?.message}
-                      </p>
-                    )}
-                </div>
-                {index > 0 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Remove price"
-                    onClick={() => removePrice(index)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            ))}
-            {errors.prices && typeof errors.prices.message === 'string' && (
-              <p className="text-sm text-destructive">{errors.prices.message}</p>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={addPaymentOption}
+              disabled={x402Options.length >= MAX_X402_OPTIONS}
+            >
+              <Plus data-icon="inline-start" />
+              Add payment option
+            </Button>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Tags <span className="text-destructive">*</span>
-            </label>
-            <div>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Add a tag"
-                  value={tagInput}
-                  maxLength={REGISTRY_LIMITS.tag}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddTag();
-                    }
-                  }}
-                  className={errors.tags ? 'border-destructive' : ''}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={tags.length >= REGISTRY_LIMITS.tagCount}
-                  onClick={handleAddTag}
+          {!isV2Target && x402Options.length > 0 ? (
+            <p role="status" className="text-xs text-destructive">
+              x402 options require an active Web3 Cardano V2 payment source.
+            </p>
+          ) : null}
+          {x402Options.length > 0 && x402Networks.length === 0 ? (
+            <p role="status" className="text-xs text-destructive">
+              Configure an EVM chain in x402 setup before registering this agent.
+            </p>
+          ) : null}
+          {x402Options.length >= MAX_X402_OPTIONS ? (
+            <p className="text-xs text-muted-foreground">
+              The on-chain limit allows 24 x402 options alongside the Masumi source.
+            </p>
+          ) : null}
+          {x402Error ? (
+            <p role="alert" className="text-xs text-destructive">
+              {x402Error}
+            </p>
+          ) : null}
+
+          <div className="flex flex-col gap-4">
+            {paymentOptionRows.map((optionRow, optionIndex) => {
+              const x402Option =
+                optionRow.type === 'x402'
+                  ? x402Options.find((option) => option.id === optionRow.id)
+                  : undefined;
+
+              return (
+                <section
+                  key={optionRow.id}
+                  className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4"
+                  aria-labelledby={`payment-option-${optionRow.id}`}
                 >
-                  Add
-                </Button>
-              </div>
-              {errors.tags && <p className="text-sm text-destructive">{errors.tags.message}</p>}
-              {tags.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {tags.map((tag: string) => (
-                    <Badge
-                      key={tag}
-                      variant="secondary"
-                      className="cursor-pointer"
-                      onClick={() => handleRemoveTag(tag)}
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 id={`payment-option-${optionRow.id}`} className="text-sm font-medium">
+                          Payment option {optionIndex + 1}
+                        </h4>
+                        <Badge variant="outline">
+                          {optionRow.type === 'Masumi' ? 'Escrow settlement' : 'Direct settlement'}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {optionRow.type === 'Masumi'
+                          ? 'Disputable payments through the active Masumi contract.'
+                          : x402Option?.pricingType === 'Fixed'
+                            ? 'A fixed exact token payment over x402.'
+                            : x402Option?.pricingType === 'Free'
+                              ? 'A free x402 resource with no required payment.'
+                              : 'The exact positive amount is supplied by each runtime 402.'}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Remove payment option ${optionIndex + 1}`}
+                      disabled={paymentOptionRows.length === 1}
+                      onClick={() => removePaymentOption(optionRow)}
                     >
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+                      <Trash2 />
+                    </Button>
+                  </div>
 
-          {isV2Target && (
-            <div className="flex items-center gap-4 pt-2">
-              <Separator className="flex-1" />
-              <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                Payment options
-              </h3>
-              <Separator className="flex-1" />
-            </div>
-          )}
-          {isV2Target && (
-            <X402OptionsSection
-              options={x402Options}
-              networks={x402Networks}
-              onChange={setX402Options}
-              error={x402Error}
-            />
-          )}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium">Payment type</label>
+                    <Select
+                      value={optionRow.type}
+                      onValueChange={(value) => {
+                        if (value === 'Masumi' || value === 'x402') {
+                          changePaymentOptionType(optionRow, value);
+                        }
+                      }}
+                    >
+                      <SelectTrigger aria-label={`Payment type for option ${optionIndex + 1}`}>
+                        <SelectValue placeholder="Select a payment type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem
+                            value="Masumi"
+                            disabled={hasMasumiPaymentOption && optionRow.type !== 'Masumi'}
+                          >
+                            Disputable (Masumi)
+                          </SelectItem>
+                          <SelectItem value="x402">x402 direct settlement</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {optionRow.type === 'Masumi' ? (
+                    <>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium">
+                          Pricing model <span className="text-destructive">*</span>
+                        </label>
+                        <Controller
+                          control={control}
+                          name="pricingType"
+                          render={({ field }) => (
+                            <Select
+                              value={field.value}
+                              onValueChange={(value) => {
+                                field.onChange(value);
+                                if (value === 'Fixed' && priceFields.length === 0) {
+                                  replacePrices([{ unit: defaultPriceUnit, amount: '' }]);
+                                } else if (value !== 'Fixed') {
+                                  replacePrices([]);
+                                }
+                              }}
+                            >
+                              <SelectTrigger
+                                aria-label={`Pricing model for payment option ${optionIndex + 1}`}
+                              >
+                                <SelectValue placeholder="Select a pricing model" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectGroup>
+                                  <SelectItem value="Fixed">Fixed price</SelectItem>
+                                  <SelectItem value="Dynamic">Dynamic per payment</SelectItem>
+                                  <SelectItem value="Free">Free</SelectItem>
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                        {watch('pricingType') === 'Dynamic' ? (
+                          <p className="text-xs text-muted-foreground">
+                            Your agent sets the amount when it creates each payment request.
+                          </p>
+                        ) : null}
+                        {watch('pricingType') === 'Free' ? (
+                          <p className="text-xs text-muted-foreground">
+                            Interactions do not require a Masumi escrow payment.
+                          </p>
+                        ) : null}
+                      </div>
+
+                      {watch('pricingType') === 'Fixed' ? (
+                        <div className="flex flex-col gap-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <label className="text-xs font-medium">
+                              Coins and prices <span className="text-destructive">*</span>
+                            </label>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={priceFields.length >= REGISTRY_LIMITS.pricingOptionCount}
+                              onClick={() => appendPrice({ unit: defaultPriceUnit, amount: '' })}
+                            >
+                              Add coin
+                            </Button>
+                          </div>
+                          {priceFields.map((priceField, index) => (
+                            <div key={priceField.id} className="flex items-start gap-2">
+                              <div className="flex-1">
+                                <Controller
+                                  control={control}
+                                  name={`prices.${index}.unit` as const}
+                                  render={({ field }) => (
+                                    <Select value={field.value} onValueChange={field.onChange}>
+                                      <SelectTrigger
+                                        aria-label={`Coin for Masumi price ${index + 1}`}
+                                      >
+                                        <SelectValue placeholder="Select a coin" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectGroup>
+                                          <SelectItem value={stablecoinUnit}>
+                                            {stablecoinUnit}
+                                          </SelectItem>
+                                          <SelectItem value="lovelace">
+                                            {formatFundUnit('lovelace', network)}
+                                          </SelectItem>
+                                        </SelectGroup>
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <Input
+                                  type="number"
+                                  inputMode="decimal"
+                                  aria-label={`Amount for Masumi price ${index + 1}`}
+                                  placeholder="0.00"
+                                  onWheel={(event) => event.currentTarget.blur()}
+                                  value={watch(`prices.${index}.amount`) || ''}
+                                  {...register(`prices.${index}.amount` as const)}
+                                  min="0"
+                                  step="0.000001"
+                                />
+                                {errors.prices &&
+                                Array.isArray(errors.prices) &&
+                                errors.prices[index]?.amount ? (
+                                  <p className="mt-1 text-xs text-destructive">
+                                    {errors.prices[index]?.amount?.message}
+                                  </p>
+                                ) : null}
+                              </div>
+                              {index > 0 ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={`Remove Masumi price ${index + 1}`}
+                                  onClick={() => removePrice(index)}
+                                >
+                                  <Trash2 />
+                                </Button>
+                              ) : null}
+                            </div>
+                          ))}
+                          {errors.prices && typeof errors.prices.message === 'string' ? (
+                            <p className="text-sm text-destructive">{errors.prices.message}</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : x402Option ? (
+                    <X402OptionFields
+                      option={x402Option}
+                      optionNumber={optionIndex + 1}
+                      networks={x402Networks}
+                      wallets={x402Wallets}
+                      isLoadingWallets={isLoadingX402Wallets}
+                      onChange={(patch) => {
+                        setX402Options((currentOptions) =>
+                          currentOptions.map((option) =>
+                            option.id === optionRow.id ? { ...option, ...patch } : option,
+                          ),
+                        );
+                        setX402Error(null);
+                      }}
+                    />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Preparing x402 settings…</p>
+                  )}
+                </section>
+              );
+            })}
+          </div>
 
           {isV2Target && (
             <VerificationsSection

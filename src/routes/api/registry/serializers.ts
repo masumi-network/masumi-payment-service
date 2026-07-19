@@ -26,34 +26,72 @@ export function serializeSupportedPaymentSources(
 	// list serializer, so one malformed row must not fail the entire page with a 500.
 	const serialized = sources.flatMap((source): SupportedPaymentSource[] => {
 		if (source.chain === SupportedPaymentSourceChain.EVM) {
-			if (
-				source.scheme !== X402PaymentScheme.Exact ||
-				source.asset == null ||
-				source.amount == null ||
-				source.decimals == null ||
-				source.payTo == null
-			) {
+			if (source.scheme !== X402PaymentScheme.Exact || source.pricingType == null || source.payTo == null) {
 				logger.error('Skipping incomplete persisted x402 supported payment source', {
 					network: source.network,
 					address: source.address,
 				});
 				return [];
 			}
-			return [
-				{
-					chain: SupportedPaymentSourceChain.EVM,
-					network: source.network,
-					paymentSourceType: null,
-					address: source.address,
-					scheme: 'Exact',
-					asset: source.asset,
-					amount: source.amount.toString(),
-					decimals: source.decimals,
-					payTo: source.payTo,
-					resource: source.resource ?? undefined,
-					extra: jsonObjectToRecord(source.extra),
-				},
-			];
+			const base = {
+				chain: SupportedPaymentSourceChain.EVM,
+				network: source.network,
+				paymentSourceType: null,
+				address: source.address,
+				scheme: 'Exact' as const,
+				payTo: source.payTo,
+				resource: source.resource ?? undefined,
+				extra: jsonObjectToRecord(source.extra),
+			};
+			if (source.pricingType === PricingType.Fixed) {
+				if (source.asset == null || source.amount == null || source.decimals == null) {
+					logger.error('Skipping incomplete persisted fixed x402 supported payment source', {
+						network: source.network,
+						address: source.address,
+					});
+					return [];
+				}
+				return [
+					{
+						...base,
+						pricingType: PricingType.Fixed,
+						asset: source.asset,
+						amount: source.amount.toString(),
+						decimals: source.decimals,
+					},
+				];
+			}
+			if (source.pricingType === PricingType.Dynamic) {
+				if ((source.asset == null) !== (source.decimals == null) || source.amount != null) {
+					logger.error('Skipping incomplete persisted dynamic x402 supported payment source', {
+						network: source.network,
+						address: source.address,
+					});
+					return [];
+				}
+				return [
+					{
+						...base,
+						pricingType: PricingType.Dynamic,
+						...(source.asset != null && source.decimals != null
+							? { asset: source.asset, decimals: source.decimals }
+							: {}),
+					},
+				];
+			}
+			if (
+				source.pricingType === PricingType.Free &&
+				source.asset == null &&
+				source.amount == null &&
+				source.decimals == null
+			) {
+				return [{ ...base, pricingType: PricingType.Free }];
+			}
+			logger.error('Skipping malformed persisted x402 supported payment source pricing', {
+				network: source.network,
+				address: source.address,
+			});
+			return [];
 		}
 
 		if (source.paymentSourceType == null) {

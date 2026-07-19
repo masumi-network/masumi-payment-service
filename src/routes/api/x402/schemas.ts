@@ -11,6 +11,9 @@ export const caip2Eip155Schema = z
 	.regex(/^eip155:\d+$/, 'Network must be a CAIP-2 EVM chain id, for example eip155:8453');
 
 export const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Expected an EVM address');
+export const x402AssetSchema = evmAddressSchema
+	.or(z.literal('native'))
+	.describe('ERC-20 token contract address, or "native" for the chain native currency');
 export const uintStringSchema = z.string().regex(/^\d+$/, 'Expected an unsigned integer string');
 // A boolean carried in a query string. z.coerce.boolean() is WRONG here: Boolean("false")
 // is true, so "false" would read as true. Parse the literal string instead.
@@ -25,7 +28,7 @@ export const paymentIdentifierSchema = z
 export const x402PaymentRequirementsSchema = z.object({
 	scheme: z.string(),
 	network: caip2Eip155Schema,
-	asset: evmAddressSchema,
+	asset: x402AssetSchema,
 	amount: uintStringSchema,
 	payTo: evmAddressSchema,
 	maxTimeoutSeconds: z.number().int().positive(),
@@ -116,7 +119,7 @@ export const createPaymentSchemaInput = z.object({
 	evmWalletId: z.string().describe('Managed EVM wallet to sign the payment with'),
 	paymentRequired: forwardedX402PaymentRequiredSchema.describe('The 402 Payment Required response the buyer received'),
 	preferredNetwork: caip2Eip155Schema.optional().describe('Restrict signing to this CAIP-2 network'),
-	preferredAsset: evmAddressSchema.optional().describe('Restrict signing to this token asset'),
+	preferredAsset: x402AssetSchema.optional().describe('Restrict signing to this token asset'),
 	paymentIdentifier: paymentIdentifierSchema,
 });
 
@@ -124,7 +127,7 @@ export const createPaymentSchemaOutput = z.object({
 	attemptId: z.string(),
 	payer: evmAddressSchema.describe('The managed wallet address that signed the payment'),
 	caip2Network: caip2Eip155Schema,
-	asset: evmAddressSchema,
+	asset: x402AssetSchema,
 	amount: uintStringSchema.describe('Signed payment amount in token base units'),
 	payTo: evmAddressSchema,
 	xPaymentHeader: z

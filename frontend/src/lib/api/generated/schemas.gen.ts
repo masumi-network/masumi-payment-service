@@ -2077,7 +2077,7 @@ export const AgentMetadataSchema = {
                     type: 'array',
                     nullable: true,
                     items: {
-                        oneOf: [
+                        anyOf: [
                             {
                                 type: 'object',
                                 properties: {
@@ -2154,10 +2154,45 @@ export const AgentMetadataSchema = {
                                         ],
                                         description: 'x402 payment scheme'
                                     },
-                                    asset: {
+                                    payTo: {
                                         type: 'string',
                                         pattern: '^0x[a-fA-F0-9]{40}$',
-                                        description: 'ERC-20 token contract address'
+                                        description: 'EVM address receiving the x402 payment'
+                                    },
+                                    resource: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'Optional absolute resource URL this x402 option protects'
+                                    },
+                                    extra: {
+                                        type: 'object',
+                                        additionalProperties: {
+                                            nullable: true
+                                        },
+                                        description: 'Additional x402 metadata'
+                                    },
+                                    pricingType: {
+                                        type: 'string',
+                                        enum: [
+                                            'Fixed'
+                                        ],
+                                        description: 'A fixed amount is advertised in the registry'
+                                    },
+                                    asset: {
+                                        anyOf: [
+                                            {
+                                                type: 'string',
+                                                pattern: '^0x[a-fA-F0-9]{40}$'
+                                            },
+                                            {
+                                                type: 'string',
+                                                enum: [
+                                                    'native'
+                                                ]
+                                            }
+                                        ],
+                                        description: 'ERC-20 token contract address, or "native" for the chain native currency'
                                     },
                                     amount: {
                                         type: 'string',
@@ -2168,7 +2203,56 @@ export const AgentMetadataSchema = {
                                         type: 'integer',
                                         minimum: 0,
                                         maximum: 255,
-                                        description: 'ERC-20 token decimals'
+                                        description: 'Token decimals'
+                                    }
+                                },
+                                required: [
+                                    'chain',
+                                    'network',
+                                    'scheme',
+                                    'payTo',
+                                    'pricingType',
+                                    'asset',
+                                    'amount',
+                                    'decimals'
+                                ]
+                            },
+                            {
+                                type: 'object',
+                                properties: {
+                                    chain: {
+                                        type: 'string',
+                                        enum: [
+                                            'EVM'
+                                        ],
+                                        description: 'The chain family used by standard x402'
+                                    },
+                                    network: {
+                                        type: 'string',
+                                        pattern: '^eip155:\\d+$',
+                                        description: 'CAIP-2 EVM network id, for example eip155:8453'
+                                    },
+                                    paymentSourceType: {
+                                        type: 'string',
+                                        nullable: true,
+                                        enum: [
+                                            'Web3CardanoV1',
+                                            'Web3CardanoV2',
+                                            null
+                                        ],
+                                        description: 'The configured payment source type'
+                                    },
+                                    address: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'Alias for payTo, kept for existing payment-source shape'
+                                    },
+                                    scheme: {
+                                        type: 'string',
+                                        enum: [
+                                            'Exact'
+                                        ],
+                                        description: 'x402 payment scheme'
                                     },
                                     payTo: {
                                         type: 'string',
@@ -2187,16 +2271,113 @@ export const AgentMetadataSchema = {
                                             nullable: true
                                         },
                                         description: 'Additional x402 metadata'
+                                    },
+                                    pricingType: {
+                                        type: 'string',
+                                        enum: [
+                                            'Dynamic'
+                                        ],
+                                        description: 'The exact positive amount is supplied dynamically in each x402 payment requirement'
+                                    },
+                                    asset: {
+                                        anyOf: [
+                                            {
+                                                type: 'string',
+                                                pattern: '^0x[a-fA-F0-9]{40}$'
+                                            },
+                                            {
+                                                type: 'string',
+                                                enum: [
+                                                    'native'
+                                                ]
+                                            }
+                                        ],
+                                        description: 'Optional asset allowlist for dynamic payment requirements'
+                                    },
+                                    decimals: {
+                                        type: 'integer',
+                                        minimum: 0,
+                                        maximum: 255,
+                                        description: 'Decimals for the optional dynamic asset'
                                     }
                                 },
                                 required: [
                                     'chain',
                                     'network',
                                     'scheme',
-                                    'asset',
-                                    'amount',
-                                    'decimals',
-                                    'payTo'
+                                    'payTo',
+                                    'pricingType'
+                                ]
+                            },
+                            {
+                                type: 'object',
+                                properties: {
+                                    chain: {
+                                        type: 'string',
+                                        enum: [
+                                            'EVM'
+                                        ],
+                                        description: 'The chain family used by standard x402'
+                                    },
+                                    network: {
+                                        type: 'string',
+                                        pattern: '^eip155:\\d+$',
+                                        description: 'CAIP-2 EVM network id, for example eip155:8453'
+                                    },
+                                    paymentSourceType: {
+                                        type: 'string',
+                                        nullable: true,
+                                        enum: [
+                                            'Web3CardanoV1',
+                                            'Web3CardanoV2',
+                                            null
+                                        ],
+                                        description: 'The configured payment source type'
+                                    },
+                                    address: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'Alias for payTo, kept for existing payment-source shape'
+                                    },
+                                    scheme: {
+                                        type: 'string',
+                                        enum: [
+                                            'Exact'
+                                        ],
+                                        description: 'x402 payment scheme'
+                                    },
+                                    payTo: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'EVM address receiving the x402 payment'
+                                    },
+                                    resource: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'Optional absolute resource URL this x402 option protects'
+                                    },
+                                    extra: {
+                                        type: 'object',
+                                        additionalProperties: {
+                                            nullable: true
+                                        },
+                                        description: 'Additional x402 metadata'
+                                    },
+                                    pricingType: {
+                                        type: 'string',
+                                        enum: [
+                                            'Free'
+                                        ],
+                                        description: 'This resource does not require an x402 payment'
+                                    }
+                                },
+                                required: [
+                                    'chain',
+                                    'network',
+                                    'scheme',
+                                    'payTo',
+                                    'pricingType'
                                 ]
                             }
                         ]
@@ -2595,7 +2776,7 @@ export const AgentIdentifierMetadataSchema = {
                     type: 'array',
                     nullable: true,
                     items: {
-                        oneOf: [
+                        anyOf: [
                             {
                                 type: 'object',
                                 properties: {
@@ -2672,10 +2853,45 @@ export const AgentIdentifierMetadataSchema = {
                                         ],
                                         description: 'x402 payment scheme'
                                     },
-                                    asset: {
+                                    payTo: {
                                         type: 'string',
                                         pattern: '^0x[a-fA-F0-9]{40}$',
-                                        description: 'ERC-20 token contract address'
+                                        description: 'EVM address receiving the x402 payment'
+                                    },
+                                    resource: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'Optional absolute resource URL this x402 option protects'
+                                    },
+                                    extra: {
+                                        type: 'object',
+                                        additionalProperties: {
+                                            nullable: true
+                                        },
+                                        description: 'Additional x402 metadata'
+                                    },
+                                    pricingType: {
+                                        type: 'string',
+                                        enum: [
+                                            'Fixed'
+                                        ],
+                                        description: 'A fixed amount is advertised in the registry'
+                                    },
+                                    asset: {
+                                        anyOf: [
+                                            {
+                                                type: 'string',
+                                                pattern: '^0x[a-fA-F0-9]{40}$'
+                                            },
+                                            {
+                                                type: 'string',
+                                                enum: [
+                                                    'native'
+                                                ]
+                                            }
+                                        ],
+                                        description: 'ERC-20 token contract address, or "native" for the chain native currency'
                                     },
                                     amount: {
                                         type: 'string',
@@ -2686,7 +2902,56 @@ export const AgentIdentifierMetadataSchema = {
                                         type: 'integer',
                                         minimum: 0,
                                         maximum: 255,
-                                        description: 'ERC-20 token decimals'
+                                        description: 'Token decimals'
+                                    }
+                                },
+                                required: [
+                                    'chain',
+                                    'network',
+                                    'scheme',
+                                    'payTo',
+                                    'pricingType',
+                                    'asset',
+                                    'amount',
+                                    'decimals'
+                                ]
+                            },
+                            {
+                                type: 'object',
+                                properties: {
+                                    chain: {
+                                        type: 'string',
+                                        enum: [
+                                            'EVM'
+                                        ],
+                                        description: 'The chain family used by standard x402'
+                                    },
+                                    network: {
+                                        type: 'string',
+                                        pattern: '^eip155:\\d+$',
+                                        description: 'CAIP-2 EVM network id, for example eip155:8453'
+                                    },
+                                    paymentSourceType: {
+                                        type: 'string',
+                                        nullable: true,
+                                        enum: [
+                                            'Web3CardanoV1',
+                                            'Web3CardanoV2',
+                                            null
+                                        ],
+                                        description: 'The configured payment source type'
+                                    },
+                                    address: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'Alias for payTo, kept for existing payment-source shape'
+                                    },
+                                    scheme: {
+                                        type: 'string',
+                                        enum: [
+                                            'Exact'
+                                        ],
+                                        description: 'x402 payment scheme'
                                     },
                                     payTo: {
                                         type: 'string',
@@ -2705,16 +2970,113 @@ export const AgentIdentifierMetadataSchema = {
                                             nullable: true
                                         },
                                         description: 'Additional x402 metadata'
+                                    },
+                                    pricingType: {
+                                        type: 'string',
+                                        enum: [
+                                            'Dynamic'
+                                        ],
+                                        description: 'The exact positive amount is supplied dynamically in each x402 payment requirement'
+                                    },
+                                    asset: {
+                                        anyOf: [
+                                            {
+                                                type: 'string',
+                                                pattern: '^0x[a-fA-F0-9]{40}$'
+                                            },
+                                            {
+                                                type: 'string',
+                                                enum: [
+                                                    'native'
+                                                ]
+                                            }
+                                        ],
+                                        description: 'Optional asset allowlist for dynamic payment requirements'
+                                    },
+                                    decimals: {
+                                        type: 'integer',
+                                        minimum: 0,
+                                        maximum: 255,
+                                        description: 'Decimals for the optional dynamic asset'
                                     }
                                 },
                                 required: [
                                     'chain',
                                     'network',
                                     'scheme',
-                                    'asset',
-                                    'amount',
-                                    'decimals',
-                                    'payTo'
+                                    'payTo',
+                                    'pricingType'
+                                ]
+                            },
+                            {
+                                type: 'object',
+                                properties: {
+                                    chain: {
+                                        type: 'string',
+                                        enum: [
+                                            'EVM'
+                                        ],
+                                        description: 'The chain family used by standard x402'
+                                    },
+                                    network: {
+                                        type: 'string',
+                                        pattern: '^eip155:\\d+$',
+                                        description: 'CAIP-2 EVM network id, for example eip155:8453'
+                                    },
+                                    paymentSourceType: {
+                                        type: 'string',
+                                        nullable: true,
+                                        enum: [
+                                            'Web3CardanoV1',
+                                            'Web3CardanoV2',
+                                            null
+                                        ],
+                                        description: 'The configured payment source type'
+                                    },
+                                    address: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'Alias for payTo, kept for existing payment-source shape'
+                                    },
+                                    scheme: {
+                                        type: 'string',
+                                        enum: [
+                                            'Exact'
+                                        ],
+                                        description: 'x402 payment scheme'
+                                    },
+                                    payTo: {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'EVM address receiving the x402 payment'
+                                    },
+                                    resource: {
+                                        type: 'string',
+                                        maxLength: 500,
+                                        format: 'uri',
+                                        description: 'Optional absolute resource URL this x402 option protects'
+                                    },
+                                    extra: {
+                                        type: 'object',
+                                        additionalProperties: {
+                                            nullable: true
+                                        },
+                                        description: 'Additional x402 metadata'
+                                    },
+                                    pricingType: {
+                                        type: 'string',
+                                        enum: [
+                                            'Free'
+                                        ],
+                                        description: 'This resource does not require an x402 payment'
+                                    }
+                                },
+                                required: [
+                                    'chain',
+                                    'network',
+                                    'scheme',
+                                    'payTo',
+                                    'pricingType'
                                 ]
                             }
                         ]
@@ -3139,7 +3501,7 @@ export const RegistryEntrySchema = {
             type: 'array',
             nullable: true,
             items: {
-                oneOf: [
+                anyOf: [
                     {
                         type: 'object',
                         properties: {
@@ -3216,10 +3578,45 @@ export const RegistryEntrySchema = {
                                 ],
                                 description: 'x402 payment scheme'
                             },
-                            asset: {
+                            payTo: {
                                 type: 'string',
                                 pattern: '^0x[a-fA-F0-9]{40}$',
-                                description: 'ERC-20 token contract address'
+                                description: 'EVM address receiving the x402 payment'
+                            },
+                            resource: {
+                                type: 'string',
+                                maxLength: 500,
+                                format: 'uri',
+                                description: 'Optional absolute resource URL this x402 option protects'
+                            },
+                            extra: {
+                                type: 'object',
+                                additionalProperties: {
+                                    nullable: true
+                                },
+                                description: 'Additional x402 metadata'
+                            },
+                            pricingType: {
+                                type: 'string',
+                                enum: [
+                                    'Fixed'
+                                ],
+                                description: 'A fixed amount is advertised in the registry'
+                            },
+                            asset: {
+                                anyOf: [
+                                    {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$'
+                                    },
+                                    {
+                                        type: 'string',
+                                        enum: [
+                                            'native'
+                                        ]
+                                    }
+                                ],
+                                description: 'ERC-20 token contract address, or "native" for the chain native currency'
                             },
                             amount: {
                                 type: 'string',
@@ -3230,7 +3627,56 @@ export const RegistryEntrySchema = {
                                 type: 'integer',
                                 minimum: 0,
                                 maximum: 255,
-                                description: 'ERC-20 token decimals'
+                                description: 'Token decimals'
+                            }
+                        },
+                        required: [
+                            'chain',
+                            'network',
+                            'scheme',
+                            'payTo',
+                            'pricingType',
+                            'asset',
+                            'amount',
+                            'decimals'
+                        ]
+                    },
+                    {
+                        type: 'object',
+                        properties: {
+                            chain: {
+                                type: 'string',
+                                enum: [
+                                    'EVM'
+                                ],
+                                description: 'The chain family used by standard x402'
+                            },
+                            network: {
+                                type: 'string',
+                                pattern: '^eip155:\\d+$',
+                                description: 'CAIP-2 EVM network id, for example eip155:8453'
+                            },
+                            paymentSourceType: {
+                                type: 'string',
+                                nullable: true,
+                                enum: [
+                                    'Web3CardanoV1',
+                                    'Web3CardanoV2',
+                                    null
+                                ],
+                                description: 'The configured payment source type'
+                            },
+                            address: {
+                                type: 'string',
+                                pattern: '^0x[a-fA-F0-9]{40}$',
+                                description: 'Alias for payTo, kept for existing payment-source shape'
+                            },
+                            scheme: {
+                                type: 'string',
+                                enum: [
+                                    'Exact'
+                                ],
+                                description: 'x402 payment scheme'
                             },
                             payTo: {
                                 type: 'string',
@@ -3249,16 +3695,113 @@ export const RegistryEntrySchema = {
                                     nullable: true
                                 },
                                 description: 'Additional x402 metadata'
+                            },
+                            pricingType: {
+                                type: 'string',
+                                enum: [
+                                    'Dynamic'
+                                ],
+                                description: 'The exact positive amount is supplied dynamically in each x402 payment requirement'
+                            },
+                            asset: {
+                                anyOf: [
+                                    {
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$'
+                                    },
+                                    {
+                                        type: 'string',
+                                        enum: [
+                                            'native'
+                                        ]
+                                    }
+                                ],
+                                description: 'Optional asset allowlist for dynamic payment requirements'
+                            },
+                            decimals: {
+                                type: 'integer',
+                                minimum: 0,
+                                maximum: 255,
+                                description: 'Decimals for the optional dynamic asset'
                             }
                         },
                         required: [
                             'chain',
                             'network',
                             'scheme',
-                            'asset',
-                            'amount',
-                            'decimals',
-                            'payTo'
+                            'payTo',
+                            'pricingType'
+                        ]
+                    },
+                    {
+                        type: 'object',
+                        properties: {
+                            chain: {
+                                type: 'string',
+                                enum: [
+                                    'EVM'
+                                ],
+                                description: 'The chain family used by standard x402'
+                            },
+                            network: {
+                                type: 'string',
+                                pattern: '^eip155:\\d+$',
+                                description: 'CAIP-2 EVM network id, for example eip155:8453'
+                            },
+                            paymentSourceType: {
+                                type: 'string',
+                                nullable: true,
+                                enum: [
+                                    'Web3CardanoV1',
+                                    'Web3CardanoV2',
+                                    null
+                                ],
+                                description: 'The configured payment source type'
+                            },
+                            address: {
+                                type: 'string',
+                                pattern: '^0x[a-fA-F0-9]{40}$',
+                                description: 'Alias for payTo, kept for existing payment-source shape'
+                            },
+                            scheme: {
+                                type: 'string',
+                                enum: [
+                                    'Exact'
+                                ],
+                                description: 'x402 payment scheme'
+                            },
+                            payTo: {
+                                type: 'string',
+                                pattern: '^0x[a-fA-F0-9]{40}$',
+                                description: 'EVM address receiving the x402 payment'
+                            },
+                            resource: {
+                                type: 'string',
+                                maxLength: 500,
+                                format: 'uri',
+                                description: 'Optional absolute resource URL this x402 option protects'
+                            },
+                            extra: {
+                                type: 'object',
+                                additionalProperties: {
+                                    nullable: true
+                                },
+                                description: 'Additional x402 metadata'
+                            },
+                            pricingType: {
+                                type: 'string',
+                                enum: [
+                                    'Free'
+                                ],
+                                description: 'This resource does not require an x402 payment'
+                            }
+                        },
+                        required: [
+                            'chain',
+                            'network',
+                            'scheme',
+                            'payTo',
+                            'pricingType'
                         ]
                     }
                 ]
