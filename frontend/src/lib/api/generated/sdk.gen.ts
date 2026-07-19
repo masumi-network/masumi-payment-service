@@ -1658,7 +1658,7 @@ export const postX402Analytics = <ThrowOnError extends boolean = false>(options?
 /**
  * Delete a fund wallet. (admin access required)
  *
- * Soft-deletes a fund wallet, disables its distribution config and cancels unclaimed pending distribution requests. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.
+ * Soft-deletes a fund wallet and disables its distribution config. Unclaimed source-level requests continue through another enabled fund wallet, or are cancelled when none remains. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds ADA or native assets, because deletion makes the mnemonic unexportable through the API — withdraw every asset first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.
  */
 export const deleteFundWallet = <ThrowOnError extends boolean = false>(options?: Options<DeleteFundWalletData, ThrowOnError>): RequestResult<DeleteFundWalletResponses, DeleteFundWalletErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteFundWalletResponses, DeleteFundWalletErrors, ThrowOnError>({
     responseType: 'json',
@@ -1672,9 +1672,9 @@ export const deleteFundWallet = <ThrowOnError extends boolean = false>(options?:
 });
 
 /**
- * Get the fund wallet of a payment source. (admin access required)
+ * List fund wallets. (admin access required)
  *
- * Gets the fund wallet for a payment source, with its distribution configuration and low-balance summary. Look it up by its own id or by payment source id — a payment source has at most one fund wallet.
+ * Lists active fund wallets with their distribution configuration and low-balance summary. Filter by payment source id to get every treasury serving that source, or by id for one wallet. An unconfigured source returns an empty FundWallets array.
  */
 export const getFundWallet = <ThrowOnError extends boolean = false>(options?: Options<GetFundWalletData, ThrowOnError>): RequestResult<GetFundWalletResponses, GetFundWalletErrors, ThrowOnError> => (options?.client ?? client).get<GetFundWalletResponses, GetFundWalletErrors, ThrowOnError>({
     responseTransformer: getFundWalletResponseTransformer,
@@ -1703,7 +1703,7 @@ export const patchFundWallet = <ThrowOnError extends boolean = false>(options?: 
 /**
  * Create a fund wallet for a payment source. (admin access required)
  *
- * Creates a fund wallet for a payment source from an existing mnemonic and enables automatic distribution. The wallet tops up the Selling and Purchasing wallets of that same payment source when they fall below the configured thresholds: below warningThreshold the topup is batched, below criticalThreshold it is sent immediately. Fund the returned address before distribution can do anything. A payment source can have only one fund wallet, and because wallet key hashes are unique among active wallets a mnemonic can only back one live wallet at a time — so each payment source needs its own. Deleting a fund wallet frees its mnemonic for re-registration.
+ * Creates an enabled fund wallet for a payment source from an existing mnemonic. A source may have several fund wallets; dispatch uses the first one with enough funds. Auto-top-up thresholds and amounts are configured on each target wallet low-balance rule, not on the treasury. Fund the returned address before distribution can run. A mnemonic can back only one active wallet at a time; deleting that wallet frees it for re-registration.
  */
 export const postFundWallet = <ThrowOnError extends boolean = false>(options?: Options<PostFundWalletData, ThrowOnError>): RequestResult<PostFundWalletResponses, PostFundWalletErrors, ThrowOnError> => (options?.client ?? client).post<PostFundWalletResponses, PostFundWalletErrors, ThrowOnError>({
     responseType: 'json',

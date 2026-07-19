@@ -2,6 +2,67 @@ import { FundDistributionStatus, HotWalletType } from '@/generated/prisma/client
 import type { Prisma } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 
+export function hasPositiveWalletBalance(balanceMap: ReadonlyMap<string, bigint>): boolean {
+	return [...balanceMap.values()].some((amount) => amount > 0n);
+}
+
+/**
+ * Retire a fund wallet's distribution ownership inside the same Serializable
+ * transaction that soft-deletes the wallet.
+ *
+ * Requests already claimed by this wallet but not linked to a transaction are
+ * safe to fail. Source-level requests are deliberately unassigned; keep them
+ * when another enabled treasury can fulfil them, but retire them when deleting
+ * this wallet leaves no enabled treasury on the source.
+ */
+export async function retireFundWalletDistributions(
+	tx: Prisma.TransactionClient,
+	params: { fundWalletId: string; paymentSourceId: string },
+): Promise<void> {
+	const { fundWalletId, paymentSourceId } = params;
+
+	await tx.fundDistributionConfig.updateMany({
+		where: { hotWalletId: fundWalletId },
+		data: { enabled: false },
+	});
+
+	const remainingEnabledFundWalletCount = await tx.hotWallet.count({
+		where: {
+			paymentSourceId,
+			type: HotWalletType.Funding,
+			deletedAt: null,
+			FundDistributionConfig: { enabled: true },
+		},
+	});
+
+	await tx.fundDistributionRequest.updateMany({
+		where: {
+			status: FundDistributionStatus.Pending,
+			transactionId: null,
+			OR: [
+				// Compatibility with requests assigned before the multi-wallet
+				// cutover, plus any pre-broadcast claim released by deletion.
+				{ fundWalletId },
+				...(remainingEnabledFundWalletCount === 0
+					? [
+							{
+								fundWalletId: null,
+								TargetWallet: { paymentSourceId },
+							},
+						]
+					: []),
+			],
+		},
+		data: {
+			status: FundDistributionStatus.Failed,
+			error:
+				remainingEnabledFundWalletCount === 0
+					? 'Distribution cancelled because no enabled fund wallet remains'
+					: 'Distribution cancelled because its fund wallet was deleted',
+		},
+	});
+}
+
 /**
  * Refuse to retire target wallets that have a distribution in flight, and
  * cancel the ones that are merely queued.
@@ -84,7 +145,9 @@ export async function retirePaymentSourceFundDistributions(
 	});
 	await tx.fundDistributionRequest.updateMany({
 		where: {
-			FundWallet: { paymentSourceId },
+			// Unassigned requests have FundWallet = null, so scope through the
+			// required target relation that always carries the source.
+			TargetWallet: { paymentSourceId },
 			status: FundDistributionStatus.Pending,
 			transactionId: null,
 		},

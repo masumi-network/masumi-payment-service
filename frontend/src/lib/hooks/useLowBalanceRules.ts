@@ -16,6 +16,7 @@ import {
   getRuleAssetMetaFromPreset,
   getThresholdInputFromRaw,
   parseThresholdInputToRaw,
+  validateRuleTopupInput,
   type LowBalanceRule,
   type RuleAssetPreset,
   type RuleDraft,
@@ -43,6 +44,8 @@ export function useLowBalanceRules({
   const [newRuleCustomAssetUnit, setNewRuleCustomAssetUnit] = useState('');
   const [newRuleThresholdInput, setNewRuleThresholdInput] = useState('');
   const [newRuleEnabled, setNewRuleEnabled] = useState(true);
+  const [newRuleTopupEnabled, setNewRuleTopupEnabled] = useState(false);
+  const [newRuleTopupAmountInput, setNewRuleTopupAmountInput] = useState('');
   const [mutatingRuleIds, setMutatingRuleIds] = useState<Set<string>>(new Set());
   const [isCreatingRule, setIsCreatingRule] = useState(false);
   const [pendingDeleteRule, setPendingDeleteRule] = useState<LowBalanceRule | null>(null);
@@ -100,6 +103,11 @@ export function useLowBalanceRules({
             ? getThresholdInputFromRaw(currentRule.thresholdAmount, currentRule.assetUnit, network)
             : '',
           enabled: currentRule?.enabled ?? true,
+          topupEnabled: currentRule?.topupEnabled ?? false,
+          topupAmountInput:
+            currentRule?.topupAmount != null
+              ? getThresholdInputFromRaw(currentRule.topupAmount, currentRule.assetUnit, network)
+              : '',
         };
 
         return {
@@ -133,6 +141,11 @@ export function useLowBalanceRules({
           {
             thresholdInput: getThresholdInputFromRaw(rule.thresholdAmount, rule.assetUnit, network),
             enabled: rule.enabled,
+            topupEnabled: rule.topupEnabled,
+            topupAmountInput:
+              rule.topupAmount != null
+                ? getThresholdInputFromRaw(rule.topupAmount, rule.assetUnit, network)
+                : '',
           },
         ]),
       ),
@@ -146,12 +159,19 @@ export function useLowBalanceRules({
     setNewRuleCustomAssetUnit('');
     setNewRuleThresholdInput('');
     setNewRuleEnabled(true);
+    setNewRuleTopupEnabled(false);
+    setNewRuleTopupAmountInput('');
   }, []);
 
   const handleSaveLowBalanceRule = async (rule: LowBalanceRule) => {
     const draft = ruleDrafts[rule.id] ?? {
       thresholdInput: getThresholdInputFromRaw(rule.thresholdAmount, rule.assetUnit, network),
       enabled: rule.enabled,
+      topupEnabled: rule.topupEnabled,
+      topupAmountInput:
+        rule.topupAmount != null
+          ? getThresholdInputFromRaw(rule.topupAmount, rule.assetUnit, network)
+          : '',
     };
     const rawThresholdAmount = parseThresholdInputToRaw(
       draft.thresholdInput,
@@ -169,6 +189,21 @@ export function useLowBalanceRules({
       return;
     }
 
+    // Funding wallets are sources, never targets. Force any legacy invalid
+    // value off when the rule is next saved; the UI does not expose its toggle.
+    const topupEnabled = wallet?.type !== 'Funding' && draft.topupEnabled;
+
+    const topupValidation = validateRuleTopupInput({
+      enabled: topupEnabled,
+      topupAmountInput: draft.topupAmountInput,
+      assetUnit: rule.assetUnit,
+      network,
+    });
+    if (topupValidation.error) {
+      toast.error(topupValidation.error);
+      return;
+    }
+
     setMutatingRuleIds((prev) => new Set(prev).add(rule.id));
     const response = await handleApiCall(
       () =>
@@ -178,6 +213,8 @@ export function useLowBalanceRules({
             ruleId: rule.id,
             thresholdAmount: rawThresholdAmount,
             enabled: draft.enabled,
+            topupEnabled,
+            topupAmount: topupEnabled ? topupValidation.rawTopupAmount : null,
           },
         }),
       {
@@ -269,6 +306,18 @@ export function useLowBalanceRules({
       return;
     }
 
+    const topupEnabled = wallet.type !== 'Funding' && newRuleTopupEnabled;
+    const topupValidation = validateRuleTopupInput({
+      enabled: topupEnabled,
+      topupAmountInput: newRuleTopupAmountInput,
+      assetUnit,
+      network,
+    });
+    if (topupValidation.error) {
+      toast.error(topupValidation.error);
+      return;
+    }
+
     setIsCreatingRule(true);
     const response = await handleApiCall(
       () =>
@@ -279,6 +328,8 @@ export function useLowBalanceRules({
             assetUnit,
             thresholdAmount,
             enabled: newRuleEnabled,
+            topupEnabled,
+            ...(topupEnabled ? { topupAmount: topupValidation.rawTopupAmount ?? undefined } : {}),
           },
         }),
       {
@@ -296,6 +347,8 @@ export function useLowBalanceRules({
       setNewRuleCustomAssetUnit('');
       setNewRuleThresholdInput('');
       setNewRuleEnabled(true);
+      setNewRuleTopupEnabled(false);
+      setNewRuleTopupAmountInput('');
       await refreshWalletDetails();
       await invalidateWalletQueries();
     }
@@ -320,6 +373,10 @@ export function useLowBalanceRules({
     setNewRuleThresholdInput,
     newRuleEnabled,
     setNewRuleEnabled,
+    newRuleTopupEnabled,
+    setNewRuleTopupEnabled,
+    newRuleTopupAmountInput,
+    setNewRuleTopupAmountInput,
     handleSaveLowBalanceRule,
     handleDeleteLowBalanceRule,
     handleConfirmDeleteLowBalanceRule,

@@ -8,6 +8,12 @@ type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindApiKey = jest.fn() as AnyMock;
 const mockFindManyRules = jest.fn() as AnyMock;
+const mockFindWallet = jest.fn() as AnyMock;
+const mockFindRule = jest.fn() as AnyMock;
+const mockFindUniqueRule = jest.fn() as AnyMock;
+const mockCreateRule = jest.fn() as AnyMock;
+const mockUpdateRule = jest.fn() as AnyMock;
+const mockDeleteRule = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -15,12 +21,13 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			findUnique: mockFindApiKey,
 		},
 		hotWallet: {
-			findFirst: jest.fn(),
+			findFirst: mockFindWallet,
 			findMany: jest.fn(),
 		},
 		hotWalletLowBalanceRule: {
 			findMany: mockFindManyRules,
-			findUnique: jest.fn(),
+			findFirst: mockFindRule,
+			findUnique: mockFindUniqueRule,
 			create: jest.fn(),
 			update: jest.fn(),
 			delete: jest.fn(),
@@ -38,6 +45,7 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	},
 	CONSTANTS: {
 		MIN_TX_FEE_BUFFER_LOVELACE: 2000000n,
+		MIN_TOPUP_LOVELACE: 5000000n,
 	},
 	// Needed because the route pulls in the fund-distribution tx builder, which
 	// sources its validity window from SERVICE_CONSTANTS via shared/tx-window.
@@ -83,30 +91,84 @@ jest.unstable_mockModule('@/services/webhooks', () => ({
 	},
 }));
 
+jest.unstable_mockModule('@/services/wallets', () => ({
+	serializeLowBalanceRecord: (rule: {
+		id: string;
+		assetUnit: string;
+		thresholdAmount: bigint;
+		enabled: boolean;
+		topupEnabled: boolean;
+		topupAmount: bigint | null;
+		status: string;
+		lastKnownAmount: bigint | null;
+		lastCheckedAt: Date | null;
+		lastAlertedAt: Date | null;
+	}) => ({
+		...rule,
+		thresholdAmount: rule.thresholdAmount.toString(),
+		topupAmount: rule.topupAmount?.toString() ?? null,
+		lastKnownAmount: rule.lastKnownAmount?.toString() ?? null,
+	}),
+	walletLowBalanceMonitorService: {
+		createRuleForWallet: mockCreateRule,
+		updateRule: mockUpdateRule,
+		deleteRule: mockDeleteRule,
+	},
+}));
+
 jest.unstable_mockModule('@opentelemetry/api', () => ({
 	trace: {
 		getActiveSpan: jest.fn(() => null),
 	},
 }));
 
-const { getWalletLowBalanceRulesEndpointGet } = await import('./low-balance');
+const {
+	deleteWalletLowBalanceRuleEndpointDelete,
+	getWalletLowBalanceRulesEndpointGet,
+	patchWalletLowBalanceRuleEndpointPatch,
+	postWalletLowBalanceRuleEndpointPost,
+} = await import('./low-balance');
+
+const asApiKey = (flags: { canRead: boolean; canPay: boolean; canAdmin: boolean }) => ({
+	id: 'api-key-1',
+	canRead: flags.canRead,
+	canPay: flags.canPay,
+	canAdmin: flags.canAdmin,
+	status: ApiKeyStatus.Active,
+	token: null,
+	tokenHash: null,
+	tokenHashSecure: 'pbkdf2-placeholder',
+	usageLimited: !flags.canAdmin,
+	networkLimit: flags.canAdmin ? [] : [Network.Preprod],
+	walletScopeEnabled: false,
+	WalletScopes: [],
+});
+
+const wallet = {
+	id: 'wallet-1',
+	walletVkey: 'wallet_vkey',
+	walletAddress: 'addr_test1...',
+	type: HotWalletType.Purchasing,
+	PaymentSource: {
+		id: 'payment-source-1',
+		network: Network.Preprod,
+	},
+};
+
+const lowBalanceRule = {
+	id: 'rule-1',
+	assetUnit: 'lovelace',
+	thresholdAmount: 5_000_000n,
+	enabled: true,
+	topupEnabled: true,
+	topupAmount: 10_000_000n,
+	status: LowBalanceStatus.Low,
+	lastKnownAmount: 4_000_000n,
+	lastCheckedAt: new Date('2026-03-10T12:00:00.000Z'),
+	lastAlertedAt: new Date('2026-03-10T11:00:00.000Z'),
+};
 
 describe('getWalletLowBalanceRulesEndpointGet', () => {
-	const asApiKey = (flags: { canRead: boolean; canPay: boolean; canAdmin: boolean }) => ({
-		id: 'api-key-1',
-		canRead: flags.canRead,
-		canPay: flags.canPay,
-		canAdmin: flags.canAdmin,
-		status: ApiKeyStatus.Active,
-		token: null,
-		tokenHash: null,
-		tokenHashSecure: 'pbkdf2-placeholder',
-		usageLimited: !flags.canAdmin,
-		networkLimit: flags.canAdmin ? [] : [Network.Preprod],
-		walletScopeEnabled: false,
-		WalletScopes: [],
-	});
-
 	beforeEach(() => {
 		jest.clearAllMocks();
 	});
@@ -131,24 +193,8 @@ describe('getWalletLowBalanceRulesEndpointGet', () => {
 		mockFindApiKey.mockResolvedValue(asApiKey({ canRead: true, canPay: true, canAdmin: true }));
 		mockFindManyRules.mockResolvedValue([
 			{
-				id: 'rule-1',
-				assetUnit: 'lovelace',
-				thresholdAmount: 5000000n,
-				enabled: true,
-				status: LowBalanceStatus.Low,
-				lastKnownAmount: 4000000n,
-				lastCheckedAt: new Date('2026-03-10T12:00:00.000Z'),
-				lastAlertedAt: new Date('2026-03-10T11:00:00.000Z'),
-				HotWallet: {
-					id: 'wallet-1',
-					walletVkey: 'wallet_vkey',
-					walletAddress: 'addr_test1...',
-					type: HotWalletType.Purchasing,
-					PaymentSource: {
-						id: 'payment-source-1',
-						network: Network.Preprod,
-					},
-				},
+				...lowBalanceRule,
+				HotWallet: wallet,
 			},
 		]);
 
@@ -177,5 +223,144 @@ describe('getWalletLowBalanceRulesEndpointGet', () => {
 				],
 			},
 		});
+	});
+});
+
+describe('low-balance auto top-up validation', () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
+		mockFindApiKey.mockResolvedValue(asApiKey({ canRead: true, canPay: true, canAdmin: true }));
+		mockFindWallet.mockResolvedValue(wallet);
+		mockFindUniqueRule.mockResolvedValue(null);
+		mockFindRule.mockResolvedValue({ ...lowBalanceRule, HotWallet: wallet });
+		mockCreateRule.mockResolvedValue(lowBalanceRule);
+		mockUpdateRule.mockResolvedValue(lowBalanceRule);
+	});
+
+	it('rejects clearing topupAmount while auto top-up remains enabled', async () => {
+		const { responseMock } = await testEndpoint({
+			endpoint: patchWalletLowBalanceRuleEndpointPatch,
+			requestProps: {
+				method: 'PATCH',
+				body: { ruleId: 'rule-1', topupAmount: null },
+				headers: { token: 'valid' },
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(mockUpdateRule).not.toHaveBeenCalled();
+	});
+
+	it('allows disabling auto top-up and clearing its amount together', async () => {
+		mockUpdateRule.mockResolvedValue({
+			...lowBalanceRule,
+			topupEnabled: false,
+			topupAmount: null,
+		});
+
+		const { responseMock } = await testEndpoint({
+			endpoint: patchWalletLowBalanceRuleEndpointPatch,
+			requestProps: {
+				method: 'PATCH',
+				body: { ruleId: 'rule-1', topupEnabled: false, topupAmount: null },
+				headers: { token: 'valid' },
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockUpdateRule).toHaveBeenCalledWith(
+			expect.objectContaining({ ruleId: 'rule-1', topupEnabled: false, topupAmount: null }),
+		);
+	});
+
+	it('rejects an ADA top-up below the buildable minimum', async () => {
+		const { responseMock } = await testEndpoint({
+			endpoint: patchWalletLowBalanceRuleEndpointPatch,
+			requestProps: {
+				method: 'PATCH',
+				body: { ruleId: 'rule-1', topupAmount: '1000000' },
+				headers: { token: 'valid' },
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(mockUpdateRule).not.toHaveBeenCalled();
+	});
+
+	it('rejects an invalid native-asset unit when creating an enabled top-up', async () => {
+		const { responseMock } = await testEndpoint({
+			endpoint: postWalletLowBalanceRuleEndpointPost,
+			requestProps: {
+				method: 'POST',
+				body: {
+					walletId: 'wallet-1',
+					assetUnit: 'not-a-cardano-asset',
+					thresholdAmount: '10',
+					enabled: true,
+					topupEnabled: true,
+					topupAmount: '20',
+				},
+				headers: { token: 'valid' },
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(mockCreateRule).not.toHaveBeenCalled();
+	});
+
+	it('rejects enabling auto top-up on a Funding wallet', async () => {
+		mockFindWallet.mockResolvedValue({ ...wallet, type: HotWalletType.Funding });
+
+		const { responseMock } = await testEndpoint({
+			endpoint: postWalletLowBalanceRuleEndpointPost,
+			requestProps: {
+				method: 'POST',
+				body: {
+					walletId: 'wallet-1',
+					assetUnit: 'lovelace',
+					thresholdAmount: '5000000',
+					enabled: true,
+					topupEnabled: true,
+					topupAmount: '10000000',
+				},
+				headers: { token: 'valid' },
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(mockCreateRule).not.toHaveBeenCalled();
+	});
+
+	it('rejects retaining auto top-up while patching a Funding wallet rule', async () => {
+		mockFindRule.mockResolvedValue({
+			...lowBalanceRule,
+			HotWallet: { ...wallet, type: HotWalletType.Funding },
+		});
+
+		const { responseMock } = await testEndpoint({
+			endpoint: patchWalletLowBalanceRuleEndpointPatch,
+			requestProps: {
+				method: 'PATCH',
+				body: { ruleId: 'rule-1', thresholdAmount: '6000000' },
+				headers: { token: 'valid' },
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(mockUpdateRule).not.toHaveBeenCalled();
+	});
+
+	it('deletes through the service that atomically retires queued top-ups', async () => {
+		const { responseMock } = await testEndpoint({
+			endpoint: deleteWalletLowBalanceRuleEndpointDelete,
+			requestProps: {
+				method: 'DELETE',
+				query: { ruleId: 'rule-1' },
+				headers: { token: 'valid' },
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockDeleteRule).toHaveBeenCalledWith('rule-1');
 	});
 });

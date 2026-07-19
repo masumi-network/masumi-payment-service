@@ -39,6 +39,7 @@ const sentPayload = {
 			requestId: 'req-1',
 			targetWalletId: 'wallet-1',
 			targetWalletAddress: 'addr_target',
+			assetUnit: 'lovelace',
 			amount: '20000000',
 		},
 	],

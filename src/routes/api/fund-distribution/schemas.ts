@@ -5,10 +5,16 @@ const fundDistributionRequestSchema = z.object({
 	id: z.string().describe('Distribution request id'),
 	createdAt: z.date().describe('When the request was created'),
 	updatedAt: z.date().describe('When the request was last updated'),
-	fundWalletId: z.string().describe('Id of the fund wallet sending the funds'),
+	fundWalletId: z
+		.string()
+		.nullable()
+		.describe('Id of the fund wallet sending the funds. Null until a fund wallet claims the request'),
 	targetWalletId: z.string().describe('Id of the wallet receiving the funds'),
-	priority: z.nativeEnum(FundDistributionPriority).describe('Warning = batched, Critical = immediate'),
-	amount: z.string().describe('Amount sent in lovelace'),
+	priority: z
+		.nativeEnum(FundDistributionPriority)
+		.describe('Legacy priority marker. New requests use Warning; both values are dispatched through the batch window'),
+	assetUnit: z.string().describe('"lovelace" for ADA, otherwise policy id + hex asset name'),
+	amount: z.string().describe("Amount sent in the asset's smallest unit"),
 	status: z.nativeEnum(FundDistributionStatus).describe('Current status of the distribution request'),
 	txHash: z.string().nullable().describe('On-chain transaction hash. Null until submitted'),
 	error: z.string().nullable().describe('Error message if the distribution failed'),

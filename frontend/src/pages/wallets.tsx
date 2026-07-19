@@ -5,9 +5,9 @@ import {
   ArrowLeftRight,
   PlusCircle,
   AlertTriangle,
-  Landmark,
   Send,
   MoreHorizontal,
+  Settings2,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -25,7 +25,12 @@ import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransferFundsDialog } from '@/components/wallets/TransferFundsDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { getWalletTypeRowLabel, WALLET_TYPE_TABS, type HotWalletType } from '@/lib/wallet-type';
+import {
+  getWalletTypeLabel,
+  getWalletTypeRowLabel,
+  WALLET_TYPE_TABS,
+  type HotWalletType,
+} from '@/lib/wallet-type';
 
 import { formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
@@ -172,6 +177,13 @@ export default function WalletsPage() {
     setSelectedWalletForDetails(wallet);
   };
 
+  const activeWalletType = WALLET_TYPE_TABS.includes(activeTab as HotWalletType)
+    ? (activeTab as HotWalletType)
+    : undefined;
+  const addWalletLabel = activeWalletType
+    ? `Add ${getWalletTypeLabel(activeWalletType).toLowerCase()} wallet`
+    : 'Add wallet';
+
   return (
     <MainLayout>
       <Head>
@@ -183,7 +195,7 @@ export default function WalletsPage() {
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Wallets</h1>
               <p className="text-sm text-muted-foreground">
-                Manage your buying and selling wallets.{' '}
+                Manage buying, selling, and funding wallets.{' '}
                 <Link
                   href="https://www.masumi.network/dev/masumi/core-concepts/wallets"
                   target="_blank"
@@ -196,20 +208,22 @@ export default function WalletsPage() {
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={refetchWallets} isRefreshing={isFetchingWallets} />
-              <Button
-                variant="outline"
-                className="flex items-center gap-2"
-                onClick={() => setIsFundWalletDialogOpen(true)}
-              >
-                <Landmark className="h-4 w-4" />
-                Fund wallet
-              </Button>
+              {activeTab === 'Funding' && (
+                <Button
+                  variant="outline"
+                  className="flex items-center gap-2"
+                  onClick={() => setIsFundWalletDialogOpen(true)}
+                >
+                  <Settings2 className="h-4 w-4" />
+                  Manage funding
+                </Button>
+              )}
               <Button
                 className="flex items-center gap-2 btn-hover-lift"
                 onClick={() => setIsAddDialogOpen(true)}
               >
                 <Plus className="h-4 w-4" />
-                Add wallet
+                {addWalletLabel}
               </Button>
             </div>
           </div>
@@ -375,6 +389,15 @@ export default function WalletsPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                {wallet.type === 'Funding' && (
+                                  <DropdownMenuItem
+                                    className="cursor-pointer gap-2"
+                                    onSelect={() => setIsFundWalletDialogOpen(true)}
+                                  >
+                                    <Settings2 className="h-4 w-4" />
+                                    Manage funding
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
                                   className="cursor-pointer gap-2"
                                   onSelect={() => setSelectedWalletForTopup(wallet)}
@@ -424,6 +447,7 @@ export default function WalletsPage() {
           open={isAddDialogOpen}
           onClose={() => setIsAddDialogOpen(false)}
           onSuccess={refetchAfterWalletAdded}
+          defaultType={activeWalletType}
         />
 
         <FundWalletDialog

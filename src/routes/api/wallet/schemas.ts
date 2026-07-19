@@ -1,5 +1,6 @@
 import { HotWalletType, Network, TransactionStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
+import { CARDANO_NATIVE_ASSET_UNIT_PATTERN } from '@/utils/cardano/asset-unit';
 import { lowBalanceRuleSchema, lowBalanceSummarySchema } from './low-balance.schemas';
 
 export const walletListItemSchema = z
@@ -117,8 +118,6 @@ export const patchWalletSchemaOutput = getWalletSchemaOutput;
  * its own validated `lovelaceAmount` entry ahead of this list, so a caller's
  * lovelace entry is dropped on the floor with no error.
  */
-const ASSET_UNIT_PATTERN = /^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{2})*$/;
-
 /** Positive integer, no leading zeros. Rejects '0', '-5', 'abc', '1e9', '1.5'. */
 const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
 
@@ -156,7 +155,10 @@ export const postWalletFundSchemaInput = z.object({
 			z.object({
 				unit: z
 					.string()
-					.regex(ASSET_UNIT_PATTERN, 'unit must be a policy id (56 hex chars) followed by the hex asset name')
+					.regex(
+						CARDANO_NATIVE_ASSET_UNIT_PATTERN,
+						'unit must be a policy id (56 hex chars) followed by an asset name of at most 32 bytes',
+					)
 					.describe('Asset unit: policy id (56 hex chars) followed by the hex asset name. Not "lovelace".'),
 				quantity: z
 					.string()

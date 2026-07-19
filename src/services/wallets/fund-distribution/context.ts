@@ -9,14 +9,6 @@ import { prisma } from '@masumi/payment-core/db';
  * is threaded into Blockfrost lookups and the tx builder, and a stringly-typed
  * network here previously forced `as` casts at every call site.
  */
-/** Distribution policy for one asset. Amounts are in that asset's own unit. */
-export type FundAssetPolicy = {
-	assetUnit: string;
-	warningThreshold: bigint;
-	criticalThreshold: bigint;
-	topupAmount: bigint;
-};
-
 export type FundWalletContext = {
 	id: string;
 	walletAddress: string;
@@ -28,7 +20,7 @@ export type FundWalletContext = {
 	 * "no rule for that asset": the alert is skipped rather than emitted with a
 	 * dangling empty ruleId.
 	 */
-	lowBalanceRules: Map<string, { id: string; lastAlertedAt: Date | null }>;
+	lowBalanceRules: Map<string, { id: string; thresholdAmount: bigint; lastAlertedAt: Date | null }>;
 	paymentSourceId: string;
 	paymentSourceType: PaymentSourceType;
 	network: Network;
@@ -36,19 +28,18 @@ export type FundWalletContext = {
 	encryptedMnemonic: string;
 	config: {
 		batchWindowMs: number;
-		/** Per-asset policy, keyed by assetUnit. Empty means nothing to distribute. */
-		assets: Map<string, FundAssetPolicy>;
 	};
 };
 
 const FUND_WALLET_SELECT = {
 	id: true,
+	createdAt: true,
 	walletAddress: true,
 	walletVkey: true,
 	paymentSourceId: true,
 	LowBalanceRules: {
 		where: { enabled: true },
-		select: { id: true, assetUnit: true, lastAlertedAt: true },
+		select: { id: true, assetUnit: true, thresholdAmount: true, lastAlertedAt: true },
 	},
 	Secret: { select: { encryptedMnemonic: true } },
 	PaymentSource: {
@@ -62,14 +53,6 @@ const FUND_WALLET_SELECT = {
 		select: {
 			enabled: true,
 			batchWindowMs: true,
-			AssetConfigs: {
-				select: {
-					assetUnit: true,
-					warningThreshold: true,
-					criticalThreshold: true,
-					topupAmount: true,
-				},
-			},
 		},
 	},
 } satisfies Prisma.HotWalletSelect;
@@ -97,23 +80,20 @@ function toContext(wallet: FundWalletRow | null): FundWalletContext | null {
 		encryptedMnemonic: wallet.Secret.encryptedMnemonic,
 		config: {
 			batchWindowMs: wallet.FundDistributionConfig.batchWindowMs,
-			assets: new Map(wallet.FundDistributionConfig.AssetConfigs.map((asset) => [asset.assetUnit, asset])),
 		},
 	};
 }
 
 /**
- * Resolve the (at most one) enabled fund wallet serving a payment source.
+ * All enabled fund wallets serving a payment source, oldest first.
  *
- * Scoping is per payment source by design: a HotWallet carries a required
- * paymentSourceId, and the source carries the network — so a fund wallet can
- * only ever pay addresses on its own chain. A V1 and a V2 source each get
- * their own fund wallet and their own float; distribution never crosses
- * sources. Note `HotWallet.walletVkey` is unique among active wallets, so the
- * same mnemonic cannot back two live fund wallets.
+ * A source may have several fund wallets (redundancy / capacity): any of them
+ * can fund any shortage. Order is deterministic by `createdAt` so the "source
+ * policy" (the first wallet configuring a given asset) and the "first with
+ * funds" dispatch choice are stable across cycles.
  */
-export async function getFundWalletForPaymentSource(paymentSourceId: string): Promise<FundWalletContext | null> {
-	const fundWallet = await prisma.hotWallet.findFirst({
+export async function getFundWalletsForPaymentSource(paymentSourceId: string): Promise<FundWalletContext[]> {
+	const fundWallets = await prisma.hotWallet.findMany({
 		where: {
 			paymentSourceId,
 			type: HotWalletType.Funding,
@@ -121,10 +101,11 @@ export async function getFundWalletForPaymentSource(paymentSourceId: string): Pr
 			PaymentSource: { deletedAt: null },
 			FundDistributionConfig: { enabled: true },
 		},
+		orderBy: { createdAt: 'asc' },
 		select: FUND_WALLET_SELECT,
 	});
 
-	return toContext(fundWallet);
+	return fundWallets.map(toContext).filter((context): context is FundWalletContext => context != null);
 }
 
 /** Resolve a fund wallet by its own id. Returns null if disabled or deleted. */

@@ -16,9 +16,6 @@ import { successResponse, type SwaggerRegistrarContext } from '@/utils/generator
 const fundDistributionConfigExample = {
 	id: 'cuid_v2_auto_generated',
 	enabled: true,
-	warningThreshold: '50000000',
-	criticalThreshold: '20000000',
-	topupAmount: '100000000',
 	batchWindowMs: 300000,
 };
 
@@ -45,16 +42,17 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 		method: 'get',
 		path: '/fund-wallet',
 		description:
-			'Gets the fund wallet for a payment source, with its distribution configuration and low-balance summary. Look it up by its own id or by payment source id — a payment source has at most one fund wallet.',
-		summary: 'Get the fund wallet of a payment source. (admin access required)',
+			'Lists active fund wallets with their distribution configuration and low-balance summary. Filter by payment source id to get every treasury serving that source, or by id for one wallet. An unconfigured source returns an empty FundWallets array.',
+		summary: 'List fund wallets. (admin access required)',
 		tags: ['fund-wallet'],
 		security: secured,
 		request: { query: getFundWalletSchemaInput.openapi({ example: { paymentSourceId: 'cuid_v2_auto_generated' } }) },
 		responses: {
-			200: successResponse('Fund wallet', getFundWalletSchemaOutput, fundWalletExample),
+			200: successResponse('Fund wallets', getFundWalletSchemaOutput, {
+				FundWallets: [fundWalletExample],
+			}),
 			400: { description: 'Neither id nor paymentSourceId was provided' },
 			401: { description: 'Unauthorized' },
-			404: { description: 'Fund wallet not found' },
 		},
 	});
 
@@ -62,22 +60,19 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 		method: 'post',
 		path: '/fund-wallet',
 		description:
-			'Creates a fund wallet for a payment source from an existing mnemonic and enables automatic distribution. The wallet tops up the Selling and Purchasing wallets of that same payment source when they fall below the configured thresholds: below warningThreshold the topup is batched, below criticalThreshold it is sent immediately. Fund the returned address before distribution can do anything. A payment source can have only one fund wallet, and because wallet key hashes are unique among active wallets a mnemonic can only back one live wallet at a time — so each payment source needs its own. Deleting a fund wallet frees its mnemonic for re-registration.',
+			'Creates an enabled fund wallet for a payment source from an existing mnemonic. A source may have several fund wallets; dispatch uses the first one with enough funds. Auto-top-up thresholds and amounts are configured on each target wallet low-balance rule, not on the treasury. Fund the returned address before distribution can run. A mnemonic can back only one active wallet at a time; deleting that wallet frees it for re-registration.',
 		summary: 'Create a fund wallet for a payment source. (admin access required)',
 		tags: ['fund-wallet'],
 		security: secured,
 		request: {
 			body: {
-				description: 'Fund wallet mnemonic and distribution thresholds',
+				description: 'Fund wallet mnemonic and batch cadence',
 				content: {
 					'application/json': {
 						schema: postFundWalletSchemaInput.openapi({
 							example: {
 								paymentSourceId: 'cuid_v2_auto_generated',
 								walletMnemonic: 'word1 word2 word3 ... word24',
-								warningThreshold: '50000000',
-								criticalThreshold: '20000000',
-								topupAmount: '100000000',
 								batchWindowMs: 300000,
 								note: 'Treasury for preprod V2',
 							},
@@ -94,13 +89,12 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 				paymentSourceId: 'cuid_v2_auto_generated',
 				FundDistributionConfig: fundDistributionConfigExample,
 			}),
-			400: {
-				description:
-					'criticalThreshold is not below warningThreshold, topupAmount is below the min-UTxO floor, or the mnemonic is invalid',
-			},
+			400: { description: 'The mnemonic is invalid or the batch window is outside its allowed range' },
 			401: { description: 'Unauthorized' },
 			404: { description: 'Payment source not found' },
-			409: { description: 'The payment source already has a fund wallet, or this mnemonic already backs a wallet' },
+			409: {
+				description: 'The payment source became inactive, or this mnemonic already backs another active wallet',
+			},
 		},
 	});
 
@@ -121,9 +115,6 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 							example: {
 								id: 'cuid_v2_auto_generated',
 								enabled: true,
-								warningThreshold: '60000000',
-								criticalThreshold: '25000000',
-								topupAmount: '120000000',
 								batchWindowMs: 300000,
 							},
 						}),
@@ -136,9 +127,7 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 				id: 'cuid_v2_auto_generated',
 				FundDistributionConfig: fundDistributionConfigExample,
 			}),
-			400: {
-				description: 'criticalThreshold is not below warningThreshold, or topupAmount is below the minimum topup floor',
-			},
+			400: { description: 'The batch window is outside its allowed range' },
 			401: { description: 'Unauthorized' },
 			404: { description: 'Fund wallet not found, or it has no distribution config' },
 		},
@@ -148,7 +137,7 @@ export function registerFundWalletPaths({ registry, apiKeyAuth }: SwaggerRegistr
 		method: 'delete',
 		path: '/fund-wallet',
 		description:
-			'Soft-deletes a fund wallet, disables its distribution config and cancels unclaimed pending distribution requests. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.',
+			'Soft-deletes a fund wallet and disables its distribution config. Unclaimed source-level requests continue through another enabled fund wallet, or are cancelled when none remains. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds ADA or native assets, because deletion makes the mnemonic unexportable through the API — withdraw every asset first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.',
 		summary: 'Delete a fund wallet. (admin access required)',
 		tags: ['fund-wallet'],
 		security: secured,

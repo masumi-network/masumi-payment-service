@@ -7,6 +7,9 @@ const mockBuildAndSign = jest.fn() as AnyMock;
 const mockSubmit = jest.fn() as AnyMock;
 const mockFetchAddressBalanceMap = jest.fn() as AnyMock;
 const mockIsDefinitiveNodeRejection = jest.fn() as AnyMock;
+const mockCalculateMinLovelace = jest.fn() as AnyMock;
+const mockCalculateValueSize = jest.fn() as AnyMock;
+const mockGetProtocolParameters = jest.fn() as AnyMock;
 
 const mockTxCreate = jest.fn() as AnyMock;
 const mockTxUpdateMany = jest.fn() as AnyMock;
@@ -58,6 +61,8 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 		FUND_DISTRIBUTION_MAX_OUTPUTS_PER_TX: 2,
 		FUND_DISTRIBUTION_UNDERFUNDED_ALERT_COOLDOWN_MS: 900_000,
 		FUND_DISTRIBUTION_TOKEN_OUTPUT_LOVELACE: 2_000_000n,
+		FALLBACK_COINS_PER_UTXO_SIZE: 4310,
+		FALLBACK_MAX_VALUE_SIZE: 5000,
 	},
 }));
 
@@ -93,6 +98,12 @@ jest.unstable_mockModule('./transaction-builder', () => ({
 	buildAndSignFundDistributionTx: mockBuildAndSign,
 }));
 
+jest.unstable_mockModule('./min-utxo', () => ({
+	calculateDistributionMinLovelace: mockCalculateMinLovelace,
+	calculateDistributionValueSize: mockCalculateValueSize,
+	getDistributionProtocolParameters: mockGetProtocolParameters,
+}));
+
 let processRequestsForFundWallet: typeof import('./batch-executor').processRequestsForFundWallet;
 
 beforeAll(async () => {
@@ -105,8 +116,8 @@ const fundWallet = {
 	id: 'fund-1',
 	walletAddress: 'addr_fund',
 	walletVkey: 'vkey_fund',
-	lowBalanceRules: new Map<string, { id: string; lastAlertedAt: Date | null }>([
-		['lovelace', { id: 'rule-1', lastAlertedAt: null }],
+	lowBalanceRules: new Map<string, { id: string; thresholdAmount: bigint; lastAlertedAt: Date | null }>([
+		['lovelace', { id: 'rule-1', thresholdAmount: 10_000_000n, lastAlertedAt: null }],
 	]),
 	paymentSourceId: 'ps-1',
 	paymentSourceType: 'Web3CardanoV1' as const,
@@ -115,17 +126,6 @@ const fundWallet = {
 	encryptedMnemonic: 'enc',
 	config: {
 		batchWindowMs: 300_000,
-		assets: new Map([
-			[
-				'lovelace',
-				{
-					assetUnit: 'lovelace',
-					warningThreshold: 10_000_000n,
-					criticalThreshold: 5_000_000n,
-					topupAmount: 20_000_000n,
-				},
-			],
-		]),
 	},
 };
 
@@ -164,6 +164,9 @@ beforeEach(() => {
 		return Promise.all(arg as Promise<unknown>[]);
 	});
 	mockIsDefinitiveNodeRejection.mockReturnValue(false);
+	mockCalculateMinLovelace.mockReturnValue(1_500_000n);
+	mockCalculateValueSize.mockReturnValue(100);
+	mockGetProtocolParameters.mockResolvedValue({ coinsPerUtxoSize: 4310, maxValueSize: 5000 });
 
 	mockSubmit.mockImplementation(async () => {
 		callOrder.push('submit');
@@ -201,7 +204,10 @@ describe('processRequestsForFundWallet', () => {
 		);
 		expect(mockQueueSent).toHaveBeenCalledWith(
 			expect.any(Object),
-			expect.objectContaining({ txHash: INTENDED_HASH }),
+			expect.objectContaining({
+				txHash: INTENDED_HASH,
+				distributions: [expect.objectContaining({ requestId: 'r1', assetUnit: 'lovelace', amount: '20000000' })],
+			}),
 			'ps-1',
 		);
 	});
@@ -349,9 +355,18 @@ describe('processRequestsForFundWallet', () => {
 		);
 		expect(mockRequestUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
+				// Claims only unassigned rows on this fund wallet's own source, and
+				// assigns the wallet in the same atomic write.
 				where: expect.objectContaining({
-					TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
+					fundWalletId: null,
+					transactionId: null,
+					TargetWallet: {
+						deletedAt: null,
+						paymentSourceId: 'ps-1',
+						PaymentSource: { deletedAt: null },
+					},
 				}),
+				data: expect.objectContaining({ fundWalletId: 'fund-1' }),
 			}),
 		);
 	});
@@ -404,7 +419,12 @@ describe('processRequestsForFundWallet', () => {
 
 		expect(mockBuildAndSign).not.toHaveBeenCalled();
 		expect(mockTriggerLowBalance).toHaveBeenCalledWith(
-			expect.objectContaining({ walletId: 'fund-1', walletType: HotWalletType.Funding, ruleId: 'rule-1' }),
+			expect.objectContaining({
+				walletId: 'fund-1',
+				walletType: HotWalletType.Funding,
+				ruleId: 'rule-1',
+				thresholdAmount: '10000000',
+			}),
 		);
 		// The lastAlertedAt claim is what throttles the per-cycle re-fire and
 		// dedupes across replicas — the alert must ride on a won claim only.
@@ -429,7 +449,12 @@ describe('processRequestsForFundWallet', () => {
 
 		// Alerted moments ago → throttled before any DB write.
 		await processRequestsForFundWallet(
-			{ ...fundWallet, lowBalanceRules: new Map([['lovelace', { id: 'rule-1', lastAlertedAt: new Date() }]]) },
+			{
+				...fundWallet,
+				lowBalanceRules: new Map([
+					['lovelace', { id: 'rule-1', thresholdAmount: 10_000_000n, lastAlertedAt: new Date() }],
+				]),
+			},
 			[request('r1', 20_000_000n)],
 		);
 		expect(mockLowBalanceRuleUpdateMany).not.toHaveBeenCalled();
@@ -542,6 +567,55 @@ describe('processRequestsForFundWallet', () => {
 			);
 		});
 
+		it('splits a large target asset bundle and leaves output overflow pending', async () => {
+			const TOKEN_A = `${'aa'.repeat(28)}01`;
+			const TOKEN_B = `${'bb'.repeat(28)}02`;
+			const TOKEN_C = `${'cc'.repeat(28)}03`;
+			mockFetchAddressBalanceMap.mockResolvedValue(
+				new Map([
+					['lovelace', 100_000_000n],
+					[TOKEN_A, 10n],
+					[TOKEN_B, 10n],
+					[TOKEN_C, 10n],
+				]),
+			);
+			mockCalculateValueSize.mockImplementation((assets: Array<{ unit: string }>) =>
+				assets.filter((asset) => asset.unit !== 'lovelace').length > 1 ? 5001 : 100,
+			);
+
+			await processRequestsForFundWallet(fundWallet, [
+				{ id: 'r1', targetWalletId: 'w1', targetAddress: 'addr_w1', assetUnit: TOKEN_A, amount: 1n },
+				{ id: 'r2', targetWalletId: 'w1', targetAddress: 'addr_w1', assetUnit: TOKEN_B, amount: 1n },
+				{ id: 'r3', targetWalletId: 'w1', targetAddress: 'addr_w1', assetUnit: TOKEN_C, amount: 1n },
+			]);
+
+			expect(mockBuildAndSign).toHaveBeenCalledWith(
+				expect.objectContaining({
+					outputs: [
+						{
+							address: 'addr_w1',
+							assets: [
+								{ unit: TOKEN_A, quantity: 1n },
+								{ unit: 'lovelace', quantity: 2_000_000n },
+							],
+						},
+						{
+							address: 'addr_w1',
+							assets: [
+								{ unit: TOKEN_B, quantity: 1n },
+								{ unit: 'lovelace', quantity: 2_000_000n },
+							],
+						},
+					],
+				}),
+			);
+			expect(mockRequestUpdateMany).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: expect.objectContaining({ id: { in: ['r1', 'r2'] } }),
+				}),
+			);
+		});
+
 		it('will not send a token the treasury does not hold, even with ADA to spare', async () => {
 			withBalance(100_000_000n, 10_000_000n);
 
@@ -555,8 +629,8 @@ describe('processRequestsForFundWallet', () => {
 			const walletWithUsdmRule = {
 				...fundWallet,
 				lowBalanceRules: new Map([
-					['lovelace', { id: 'rule-ada', lastAlertedAt: null }],
-					[USDM, { id: 'rule-usdm', lastAlertedAt: null }],
+					['lovelace', { id: 'rule-ada', thresholdAmount: 10_000_000n, lastAlertedAt: null }],
+					[USDM, { id: 'rule-usdm', thresholdAmount: 100_000_000n, lastAlertedAt: null }],
 				]),
 			};
 
@@ -565,6 +639,23 @@ describe('processRequestsForFundWallet', () => {
 			// "Top up the treasury" is useless advice when the treasury is flush with
 			// ADA and out of USDM. The alert has to say which.
 			expect(mockTriggerLowBalance).toHaveBeenCalledWith(expect.objectContaining({ assetUnit: USDM }));
+		});
+
+		it('uses the computed ledger minimum when it exceeds the operational floor', async () => {
+			withBalance(100_000_000n, 500_000_000n);
+			mockCalculateMinLovelace.mockReturnValue(3_500_000n);
+
+			await processRequestsForFundWallet(fundWallet, [request('r1', 250_000_000n, USDM)]);
+
+			expect(mockBuildAndSign).toHaveBeenCalledWith(
+				expect.objectContaining({
+					outputs: [
+						expect.objectContaining({
+							assets: expect.arrayContaining([{ unit: 'lovelace', quantity: 3_500_000n }]),
+						}),
+					],
+				}),
+			);
 		});
 
 		it('will not send a token when ADA cannot cover its min-UTxO', async () => {

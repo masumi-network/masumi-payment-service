@@ -50,7 +50,7 @@ describe('getFundDistributionEndpointGet', () => {
 		mockFindDistributions.mockResolvedValue([]);
 	});
 
-	it('filters through the source relation so replaced fund-wallet history remains visible', async () => {
+	it('filters through the target source so unassigned requests remain visible', async () => {
 		const { responseMock } = await testEndpoint({
 			endpoint: getFundDistributionEndpointGet,
 			requestProps: {
@@ -63,7 +63,7 @@ describe('getFundDistributionEndpointGet', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindDistributions).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { FundWallet: { paymentSourceId: 'ps-1' } },
+				where: { TargetWallet: { paymentSourceId: 'ps-1' } },
 			}),
 		);
 	});
@@ -83,7 +83,7 @@ describe('getFundDistributionEndpointGet', () => {
 			expect.objectContaining({
 				where: {
 					fundWalletId: 'fund-old',
-					FundWallet: { paymentSourceId: 'ps-1' },
+					TargetWallet: { paymentSourceId: 'ps-1' },
 				},
 			}),
 		);

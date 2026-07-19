@@ -31,6 +31,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 
 jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: { ENCRYPTION_KEY: '12345678901234567890' },
+	CONSTANTS: { MIN_TOPUP_LOVELACE: 5_000_000n },
 	SERVICE_CONSTANTS: { RETRY: { maxRetries: 5, backoffMultiplier: 5, initialDelayMs: 500, maxDelayMs: 7500 } },
 }));
 

@@ -21,13 +21,14 @@ function getResponseStatus(value: unknown): number | undefined {
 }
 
 /**
- * The fund wallet of the selected payment source, or null if none is set up.
+ * The fund wallets of the selected payment source (there may be several, for
+ * redundancy / capacity), or an empty list if none is set up.
  *
- * A 404 is the normal, expected state -- fund distribution is opt-in and most
- * payment sources have no fund wallet -- so it resolves to null rather than
- * surfacing an error toast the way handleApiCall would. Any OTHER error is a
- * real failure and must propagate: "no fund wallet" and "couldn't tell" look
- * identical to the caller otherwise, and they lead to opposite UI.
+ * An empty list is the normal, expected state -- fund distribution is opt-in and
+ * most payment sources have no fund wallet -- so it resolves to [] rather than
+ * surfacing an error toast. Any real error must propagate: "no fund wallet" and
+ * "couldn't tell" look identical to the caller otherwise, and they lead to
+ * opposite UI (the create form invites the operator to paste a seed phrase).
  */
 export function useFundWallet() {
   const { apiClient, selectedPaymentSourceId } = useAppContext();
@@ -36,27 +37,25 @@ export function useFundWallet() {
     queryKey: ['fund-wallet', selectedPaymentSourceId],
     enabled: Boolean(selectedPaymentSourceId),
     queryFn: async () => {
-      if (!selectedPaymentSourceId) return null;
+      if (!selectedPaymentSourceId) return [];
 
       const response = await getFundWallet({
         client: apiClient,
         query: { paymentSourceId: selectedPaymentSourceId },
       });
 
-      // ONLY 404 means "not configured". Swallowing every error would render the
-      // create form for a source that already has a funded treasury whenever the
-      // API hiccups — inviting the operator to paste a seed phrase into a form
-      // that can only 409.
       if (response.error) {
-        if (getResponseStatus(response) === 404) return null;
-        throw new Error(extractApiErrorMessage(response.error, 'Failed to load fund wallet'));
+        // The list endpoint returns [] (200) for an unconfigured source, but keep
+        // the 404 fallback for older responses.
+        if (getResponseStatus(response) === 404) return [];
+        throw new Error(extractApiErrorMessage(response.error, 'Failed to load fund wallets'));
       }
-      return response.data?.data ?? null;
+      return response.data?.data?.FundWallets ?? [];
     },
   });
 
   return {
-    fundWallet: query.data ?? null,
+    fundWallets: query.data ?? [],
     isLoading: query.isLoading,
     isFetching: query.isFetching,
     // Distinguishes "no fund wallet" from "couldn't load it" for the caller.
@@ -65,19 +64,23 @@ export function useFundWallet() {
   };
 }
 
-/** Recent distribution requests for a fund wallet, newest first. */
+/** Recent distribution requests for a fund wallet or payment source, newest first. */
 export function useFundDistributions(
-  fundWalletId: string | null | undefined,
+  filters: {
+    fundWalletId?: string | null;
+    paymentSourceId?: string | null;
+  },
   options?: { enabled?: boolean; refetchInterval?: number },
 ) {
   const { apiClient } = useAppContext();
+  const hasFilter = Boolean(filters.fundWalletId || filters.paymentSourceId);
 
   const query = useQuery({
-    queryKey: ['fund-distributions', fundWalletId],
-    enabled: Boolean(fundWalletId) && options?.enabled !== false,
+    queryKey: ['fund-distributions', filters],
+    enabled: hasFilter && options?.enabled !== false,
     refetchInterval: options?.refetchInterval,
     queryFn: async () => {
-      if (!fundWalletId) return [];
+      if (!hasFilter) return [];
 
       // Errors must PROPAGATE, mirroring useFundWallet above. Swallowing them
       // (toast + empty array) marked the query successful, so a transient
@@ -85,7 +88,11 @@ export function useFundDistributions(
       // hiding Failed rows the operator needed to see.
       const response = await getFundDistribution({
         client: apiClient,
-        query: { fundWalletId, take: 20 },
+        query: {
+          ...(filters.fundWalletId ? { fundWalletId: filters.fundWalletId } : {}),
+          ...(filters.paymentSourceId ? { paymentSourceId: filters.paymentSourceId } : {}),
+          take: 20,
+        },
       });
       if (response.error) {
         throw new Error(

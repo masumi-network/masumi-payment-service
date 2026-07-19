@@ -355,22 +355,18 @@ export const CONSTANTS = {
 	// that is not a useful top-up for a wallet that needs to pay fees and
 	// collateral.
 	MIN_TOPUP_LOVELACE: 5_000_000n,
-	// ADA attached to an output that carries native tokens but no ADA top-up of
-	// its own. A token output cannot exist without lovelace: the ledger's
-	// min-UTxO for a plain output holding a couple of assets is ~1.2-1.4 ADA.
-	//
-	// A deliberately conservative flat floor rather than a computed min-UTxO.
-	// `calculateMinUtxo` is not usable here — it takes a datum and its buffers
-	// are contract-output-specific, so it would badly overestimate a plain
-	// payment. Hand-rolling the ledger formula would be a precision bug waiting
-	// to happen, and the downside of overshooting is nil: the recipient is a hot
-	// wallet that needs ADA for fees regardless. If this were ever too small the
-	// tx fails at build() -- pre-broadcast, where reverting is safe -- rather
-	// than being rejected on chain.
+	// Operational floor for a native-token distribution output. The executor
+	// also calculates the exact ledger min-UTxO from the serialized output and
+	// current coinsPerUtxoSize; the larger value wins. Keeping a 2 ADA floor
+	// gives the receiving hot wallet enough ADA to spend a small token UTxO.
 	FUND_DISTRIBUTION_TOKEN_OUTPUT_LOVELACE: 2_000_000n,
 	MAX_DEFAULT_SMART_CONTRACT_HISTORY_LEVELS: 10,
 
 	FALLBACK_COINS_PER_UTXO_SIZE: 4310,
+	// Current Cardano fallback for the maximum serialized Value size. Fund
+	// distribution loads the live protocol value and uses this only when the
+	// provider is unavailable or returns an invalid parameter.
+	FALLBACK_MAX_VALUE_SIZE: 5000,
 
 	RESULT_HASH_SIZE_BYTES: 65,
 	TRANSACTION_TIMEOUTS: {

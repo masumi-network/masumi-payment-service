@@ -4,12 +4,13 @@ import type { Mock } from 'jest-mock';
 type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockFindFirst = jest.fn() as AnyMock;
+const mockFindMany = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: { hotWallet: { findFirst: mockFindFirst } },
+	prisma: { hotWallet: { findFirst: mockFindFirst, findMany: mockFindMany } },
 }));
 
-const { getFundWalletForPaymentSource, loadFundWalletContext } = await import('./context');
+const { getFundWalletsForPaymentSource, loadFundWalletContext } = await import('./context');
 
 // A row exactly as FUND_WALLET_SELECT shapes it. The null-guard tests knock
 // out one leg each to prove the mapper refuses to hand the executor a wallet
@@ -20,7 +21,7 @@ const completeRow = () => ({
 	walletAddress: 'addr_fund',
 	walletVkey: 'vkey_fund',
 	paymentSourceId: 'ps-1',
-	LowBalanceRules: [{ id: 'rule-1', assetUnit: 'lovelace', lastAlertedAt: null }],
+	LowBalanceRules: [{ id: 'rule-1', assetUnit: 'lovelace', thresholdAmount: 5_000_000n, lastAlertedAt: null }],
 	Secret: { encryptedMnemonic: 'enc' },
 	PaymentSource: {
 		network: 'Preprod',
@@ -30,14 +31,6 @@ const completeRow = () => ({
 	FundDistributionConfig: {
 		enabled: true,
 		batchWindowMs: 300_000,
-		AssetConfigs: [
-			{
-				assetUnit: 'lovelace',
-				warningThreshold: 10_000_000n,
-				criticalThreshold: 5_000_000n,
-				topupAmount: 20_000_000n,
-			},
-		],
 	},
 });
 
@@ -45,12 +38,13 @@ describe('fund wallet context', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
 		mockFindFirst.mockResolvedValue(null);
+		mockFindMany.mockResolvedValue([]);
 	});
 
 	it('does not resolve a fund wallet under a deleted payment source', async () => {
-		await getFundWalletForPaymentSource('ps-1');
+		await getFundWalletsForPaymentSource('ps-1');
 
-		expect(mockFindFirst).toHaveBeenCalledWith(
+		expect(mockFindMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: expect.objectContaining({
 					paymentSourceId: 'ps-1',
@@ -74,46 +68,45 @@ describe('fund wallet context', () => {
 	});
 
 	it('maps a complete row into the executor context', async () => {
-		mockFindFirst.mockResolvedValue(completeRow());
+		mockFindMany.mockResolvedValue([completeRow()]);
 
-		await expect(getFundWalletForPaymentSource('ps-1')).resolves.toEqual({
-			id: 'fund-1',
-			walletAddress: 'addr_fund',
-			walletVkey: 'vkey_fund',
-			lowBalanceRules: new Map([['lovelace', { id: 'rule-1', assetUnit: 'lovelace', lastAlertedAt: null }]]),
-			paymentSourceId: 'ps-1',
-			paymentSourceType: 'Web3CardanoV1',
-			network: 'Preprod',
-			rpcProviderApiKey: 'rpc-key',
-			encryptedMnemonic: 'enc',
-			config: {
-				batchWindowMs: 300_000,
-				assets: new Map([
+		await expect(getFundWalletsForPaymentSource('ps-1')).resolves.toEqual([
+			{
+				id: 'fund-1',
+				walletAddress: 'addr_fund',
+				walletVkey: 'vkey_fund',
+				lowBalanceRules: new Map([
 					[
 						'lovelace',
 						{
+							id: 'rule-1',
 							assetUnit: 'lovelace',
-							warningThreshold: 10_000_000n,
-							criticalThreshold: 5_000_000n,
-							topupAmount: 20_000_000n,
+							thresholdAmount: 5_000_000n,
+							lastAlertedAt: null,
 						},
 					],
 				]),
+				paymentSourceId: 'ps-1',
+				paymentSourceType: 'Web3CardanoV1',
+				network: 'Preprod',
+				rpcProviderApiKey: 'rpc-key',
+				encryptedMnemonic: 'enc',
+				config: { batchWindowMs: 300_000 },
 			},
-		});
+		]);
 	});
 
 	it('returns null when the wallet has no secret', async () => {
-		mockFindFirst.mockResolvedValue({ ...completeRow(), Secret: null });
+		mockFindMany.mockResolvedValue([{ ...completeRow(), Secret: null }]);
 
-		await expect(getFundWalletForPaymentSource('ps-1')).resolves.toBeNull();
+		await expect(getFundWalletsForPaymentSource('ps-1')).resolves.toEqual([]);
 	});
 
 	it('returns null when distribution is disabled or the config is missing', async () => {
 		const disabled = completeRow();
 		disabled.FundDistributionConfig.enabled = false;
-		mockFindFirst.mockResolvedValue(disabled);
-		await expect(getFundWalletForPaymentSource('ps-1')).resolves.toBeNull();
+		mockFindMany.mockResolvedValue([disabled]);
+		await expect(getFundWalletsForPaymentSource('ps-1')).resolves.toEqual([]);
 
 		mockFindFirst.mockResolvedValue({ ...completeRow(), FundDistributionConfig: null });
 		await expect(loadFundWalletContext('fund-1')).resolves.toBeNull();
@@ -122,54 +115,45 @@ describe('fund wallet context', () => {
 	it('returns null when the RPC provider key is missing or blank', async () => {
 		const withoutConfig = completeRow();
 		withoutConfig.PaymentSource.PaymentSourceConfig = null as never;
-		mockFindFirst.mockResolvedValue(withoutConfig);
-		await expect(getFundWalletForPaymentSource('ps-1')).resolves.toBeNull();
+		mockFindMany.mockResolvedValue([withoutConfig]);
+		await expect(getFundWalletsForPaymentSource('ps-1')).resolves.toEqual([]);
 
 		const withBlankKey = completeRow();
 		withBlankKey.PaymentSource.PaymentSourceConfig.rpcProviderApiKey = '';
-		mockFindFirst.mockResolvedValue(withBlankKey);
-		await expect(getFundWalletForPaymentSource('ps-1')).resolves.toBeNull();
+		mockFindMany.mockResolvedValue([withBlankKey]);
+		await expect(getFundWalletsForPaymentSource('ps-1')).resolves.toEqual([]);
 	});
 
 	it('reports a missing low-balance rule as absent rather than a dangling id', async () => {
-		mockFindFirst.mockResolvedValue({ ...completeRow(), LowBalanceRules: [] });
+		mockFindMany.mockResolvedValue([{ ...completeRow(), LowBalanceRules: [] }]);
 
-		const context = await getFundWalletForPaymentSource('ps-1');
+		const [context] = await getFundWalletsForPaymentSource('ps-1');
 
 		expect(context?.lowBalanceRules.get('lovelace')).toBeUndefined();
 	});
 
 	it('keys low-balance rules by asset so an alert can name the asset that is short', async () => {
-		mockFindFirst.mockResolvedValue({
-			...completeRow(),
-			LowBalanceRules: [
-				{ id: 'rule-ada', assetUnit: 'lovelace', lastAlertedAt: null },
-				{ id: 'rule-usdm', assetUnit: 'usdm-unit', lastAlertedAt: null },
-			],
-		});
+		mockFindMany.mockResolvedValue([
+			{
+				...completeRow(),
+				LowBalanceRules: [
+					{ id: 'rule-ada', assetUnit: 'lovelace', thresholdAmount: 5_000_000n, lastAlertedAt: null },
+					{ id: 'rule-usdm', assetUnit: 'usdm-unit', thresholdAmount: 10n, lastAlertedAt: null },
+				],
+			},
+		]);
 
-		const context = await getFundWalletForPaymentSource('ps-1');
+		const [context] = await getFundWalletsForPaymentSource('ps-1');
 
 		expect(context?.lowBalanceRules.get('usdm-unit')?.id).toBe('rule-usdm');
 	});
 
-	it('exposes per-asset policy keyed by assetUnit', async () => {
-		mockFindFirst.mockResolvedValue({
-			...completeRow(),
-			FundDistributionConfig: {
-				enabled: true,
-				batchWindowMs: 300_000,
-				AssetConfigs: [
-					{ assetUnit: 'lovelace', warningThreshold: 10n, criticalThreshold: 5n, topupAmount: 20n },
-					{ assetUnit: 'usdm-unit', warningThreshold: 100n, criticalThreshold: 50n, topupAmount: 200n },
-				],
-			},
-		});
+	it('exposes the batch window; the fund wallet carries no per-asset policy', async () => {
+		mockFindMany.mockResolvedValue([completeRow()]);
 
-		const context = await getFundWalletForPaymentSource('ps-1');
+		const [context] = await getFundWalletsForPaymentSource('ps-1');
 
-		// A USDM threshold is not a lovelace threshold; each asset carries its own.
-		expect(context?.config.assets.get('usdm-unit')?.topupAmount).toBe(200n);
-		expect(context?.config.assets.get('lovelace')?.topupAmount).toBe(20n);
+		// Thresholds/amounts live on the hot wallet's rule now, not here.
+		expect(context?.config).toEqual({ batchWindowMs: 300_000 });
 	});
 });

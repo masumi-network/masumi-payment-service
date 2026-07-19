@@ -89,7 +89,8 @@ const fundDistributionBatchShape = {
 				requestId: z.string().describe('Id of the FundDistributionRequest'),
 				targetWalletId: z.string().describe('Id of the target hot wallet that received funds'),
 				targetWalletAddress: z.string().describe('Address of the target wallet'),
-				amount: z.string().describe('Amount sent in lovelace'),
+				assetUnit: z.string().describe('"lovelace" for ADA, otherwise policy id plus hex asset name'),
+				amount: z.string().describe("Amount sent in the asset's smallest on-chain unit"),
 			}),
 		)
 		.describe('Individual distributions included in this batch transaction'),
@@ -101,7 +102,7 @@ const fundDistributionSentPayloadSchema = createWebhookPayloadSchema(
 		...fundDistributionBatchShape,
 		txHash: z.string().describe('On-chain transaction hash'),
 	}),
-	'Fund distribution sent payload when a fund wallet submits ADA to one or more low-balance wallets. Submission only — see FUND_DISTRIBUTION_CONFIRMED / FUND_DISTRIBUTION_FAILED for the outcome',
+	'Fund distribution sent payload when a fund wallet submits assets to one or more low-balance wallets. Submission only — see FUND_DISTRIBUTION_CONFIRMED / FUND_DISTRIBUTION_FAILED for the outcome',
 );
 
 const fundDistributionConfirmedPayloadSchema = createWebhookPayloadSchema(

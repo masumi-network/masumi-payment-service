@@ -4,7 +4,7 @@ import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
-import { HotWalletType, Prisma, WalletFundTransfer } from '@/generated/prisma/client';
+import { Prisma, WalletFundTransfer } from '@/generated/prisma/client';
 import { isCardanoAddressForNetwork } from '@masumi/payment-core/payment-source';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
@@ -77,6 +77,8 @@ export const queryWalletListEndpointGet = adminAuthenticatedEndpointFactory.buil
 						assetUnit: true,
 						thresholdAmount: true,
 						enabled: true,
+						topupEnabled: true,
+						topupAmount: true,
 						status: true,
 						lastKnownAmount: true,
 						lastCheckedAt: true,
@@ -140,6 +142,8 @@ export const queryWalletEndpointGet = adminAuthenticatedEndpointFactory.build({
 							assetUnit: true,
 							thresholdAmount: true,
 							enabled: true,
+							topupEnabled: true,
+							topupAmount: true,
 							status: true,
 							lastKnownAmount: true,
 							lastCheckedAt: true,
@@ -419,6 +423,8 @@ export const patchWalletEndpointPatch = adminAuthenticatedEndpointFactory.build(
 						assetUnit: true,
 						thresholdAmount: true,
 						enabled: true,
+						topupEnabled: true,
+						topupAmount: true,
 						status: true,
 						lastKnownAmount: true,
 						lastCheckedAt: true,

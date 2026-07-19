@@ -8,8 +8,10 @@ import { getExplorerUrl, shortenAddress } from '@/lib/utils';
 type FundDistribution = {
   id: string;
   createdAt: string | Date;
+  fundWalletId: string | null;
   targetWalletId: string;
   priority: 'Warning' | 'Critical';
+  assetUnit: string;
   amount: string;
   status: 'Pending' | 'Submitted' | 'Confirmed' | 'Failed';
   txHash: string | null;
@@ -27,6 +29,14 @@ function statusVariant(status: FundDistribution['status']) {
     case 'Pending':
       return 'pending' as const;
   }
+}
+
+function formatDistributionAmount(distribution: FundDistribution) {
+  if (distribution.assetUnit === 'lovelace') {
+    return `${convertBaseUnitsToDecimal(distribution.amount)} ADA`;
+  }
+
+  return `${distribution.amount} ${shortenAddress(distribution.assetUnit, 8)}`;
 }
 
 export function FundDistributionList({
@@ -59,10 +69,13 @@ export function FundDistributionList({
       {distributions.map((distribution) => (
         <div key={distribution.id} className="rounded-md border p-3 text-sm">
           <div className="flex items-center justify-between gap-2">
-            <span className="font-medium">
-              {convertBaseUnitsToDecimal(distribution.amount)} ADA
-            </span>
+            <span className="font-medium">{formatDistributionAmount(distribution)}</span>
             <div className="flex items-center gap-2">
+              {distribution.fundWalletId == null && distribution.status === 'Pending' && (
+                <Badge variant="outline" className="text-xs">
+                  Awaiting fund wallet
+                </Badge>
+              )}
               {distribution.priority === 'Critical' && (
                 <Badge variant="outline" className="text-xs">
                   Critical

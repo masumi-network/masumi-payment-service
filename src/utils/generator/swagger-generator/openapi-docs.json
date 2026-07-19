@@ -267,7 +267,16 @@
                                 },
                                 "enabled": {
                                     "type": "boolean",
-                                    "description": "Whether the rule is active"
+                                    "description": "Whether the rule is active (fires the low-balance alert/webhook)"
+                                },
+                                "topupEnabled": {
+                                    "type": "boolean",
+                                    "description": "Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source"
+                                },
+                                "topupAmount": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off"
                                 },
                                 "status": {
                                     "type": "string",
@@ -301,6 +310,8 @@
                                 "assetUnit",
                                 "thresholdAmount",
                                 "enabled",
+                                "topupEnabled",
+                                "topupAmount",
                                 "status",
                                 "lastKnownAmount",
                                 "lastCheckedAt",
@@ -4927,6 +4938,21 @@
                     "updatedAt"
                 ]
             },
+            "FundWalletList": {
+                "type": "object",
+                "properties": {
+                    "FundWallets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FundWallet"
+                        },
+                        "description": "Fund wallets for the payment source"
+                    }
+                },
+                "required": [
+                    "FundWallets"
+                ]
+            },
             "FundWallet": {
                 "type": "object",
                 "properties": {
@@ -4992,52 +5018,17 @@
                             },
                             "enabled": {
                                 "type": "boolean",
-                                "description": "Whether automatic distribution is enabled"
+                                "description": "Whether this wallet is an active funding source"
                             },
                             "batchWindowMs": {
                                 "type": "integer",
-                                "description": "Milliseconds to wait before sending batched warning topups"
-                            },
-                            "Assets": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "assetUnit": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "maxLength": 250,
-                                            "pattern": "^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$",
-                                            "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
-                                        },
-                                        "warningThreshold": {
-                                            "type": "string",
-                                            "description": "Balance below this triggers a batched topup, in the asset's smallest unit"
-                                        },
-                                        "criticalThreshold": {
-                                            "type": "string",
-                                            "description": "Balance below this triggers an immediate topup, in the asset's smallest unit"
-                                        },
-                                        "topupAmount": {
-                                            "type": "string",
-                                            "description": "Amount to send per topup, in the asset's smallest unit"
-                                        }
-                                    },
-                                    "required": [
-                                        "assetUnit",
-                                        "warningThreshold",
-                                        "criticalThreshold",
-                                        "topupAmount"
-                                    ]
-                                },
-                                "description": "Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry"
+                                "description": "Milliseconds to wait before sending batched topups"
                             }
                         },
                         "required": [
                             "id",
                             "enabled",
-                            "batchWindowMs",
-                            "Assets"
+                            "batchWindowMs"
                         ],
                         "description": "Distribution configuration"
                     },
@@ -5086,52 +5077,17 @@
                             },
                             "enabled": {
                                 "type": "boolean",
-                                "description": "Whether automatic distribution is enabled"
+                                "description": "Whether this wallet is an active funding source"
                             },
                             "batchWindowMs": {
                                 "type": "integer",
-                                "description": "Milliseconds to wait before sending batched warning topups"
-                            },
-                            "Assets": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "assetUnit": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "maxLength": 250,
-                                            "pattern": "^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$",
-                                            "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
-                                        },
-                                        "warningThreshold": {
-                                            "type": "string",
-                                            "description": "Balance below this triggers a batched topup, in the asset's smallest unit"
-                                        },
-                                        "criticalThreshold": {
-                                            "type": "string",
-                                            "description": "Balance below this triggers an immediate topup, in the asset's smallest unit"
-                                        },
-                                        "topupAmount": {
-                                            "type": "string",
-                                            "description": "Amount to send per topup, in the asset's smallest unit"
-                                        }
-                                    },
-                                    "required": [
-                                        "assetUnit",
-                                        "warningThreshold",
-                                        "criticalThreshold",
-                                        "topupAmount"
-                                    ]
-                                },
-                                "description": "Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry"
+                                "description": "Milliseconds to wait before sending batched topups"
                             }
                         },
                         "required": [
                             "id",
                             "enabled",
-                            "batchWindowMs",
-                            "Assets"
+                            "batchWindowMs"
                         ],
                         "description": "Created distribution config"
                     }
@@ -5160,52 +5116,17 @@
                             },
                             "enabled": {
                                 "type": "boolean",
-                                "description": "Whether automatic distribution is enabled"
+                                "description": "Whether this wallet is an active funding source"
                             },
                             "batchWindowMs": {
                                 "type": "integer",
-                                "description": "Milliseconds to wait before sending batched warning topups"
-                            },
-                            "Assets": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "assetUnit": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                            "maxLength": 250,
-                                            "pattern": "^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$",
-                                            "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
-                                        },
-                                        "warningThreshold": {
-                                            "type": "string",
-                                            "description": "Balance below this triggers a batched topup, in the asset's smallest unit"
-                                        },
-                                        "criticalThreshold": {
-                                            "type": "string",
-                                            "description": "Balance below this triggers an immediate topup, in the asset's smallest unit"
-                                        },
-                                        "topupAmount": {
-                                            "type": "string",
-                                            "description": "Amount to send per topup, in the asset's smallest unit"
-                                        }
-                                    },
-                                    "required": [
-                                        "assetUnit",
-                                        "warningThreshold",
-                                        "criticalThreshold",
-                                        "topupAmount"
-                                    ]
-                                },
-                                "description": "Per-asset policy. Thresholds cannot be shared across assets — 20 USDM and 20 ADA are unrelated quantities — so each asset the fund wallet should top up needs its own entry"
+                                "description": "Milliseconds to wait before sending batched topups"
                             }
                         },
                         "required": [
                             "id",
                             "enabled",
-                            "batchWindowMs",
-                            "Assets"
+                            "batchWindowMs"
                         ],
                         "description": "Updated distribution config"
                     }
@@ -5251,7 +5172,8 @@
                                 },
                                 "fundWalletId": {
                                     "type": "string",
-                                    "description": "Id of the fund wallet sending the funds"
+                                    "nullable": true,
+                                    "description": "Id of the fund wallet sending the funds. Null until a fund wallet claims the request"
                                 },
                                 "targetWalletId": {
                                     "type": "string",
@@ -5263,11 +5185,15 @@
                                         "Warning",
                                         "Critical"
                                     ],
-                                    "description": "Warning = batched, Critical = immediate"
+                                    "description": "Legacy priority marker. New requests use Warning; both values are dispatched through the batch window"
+                                },
+                                "assetUnit": {
+                                    "type": "string",
+                                    "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
                                 },
                                 "amount": {
                                     "type": "string",
-                                    "description": "Amount sent in lovelace"
+                                    "description": "Amount sent in the asset's smallest unit"
                                 },
                                 "status": {
                                     "type": "string",
@@ -5302,6 +5228,7 @@
                                 "fundWalletId",
                                 "targetWalletId",
                                 "priority",
+                                "assetUnit",
                                 "amount",
                                 "status",
                                 "txHash",
@@ -5542,6 +5469,8 @@
                                                     "assetUnit": "lovelace",
                                                     "thresholdAmount": "5000000",
                                                     "enabled": true,
+                                                    "topupEnabled": true,
+                                                    "topupAmount": "10000000",
                                                     "status": "Low",
                                                     "lastKnownAmount": "4200000",
                                                     "lastCheckedAt": "1970-01-20T20:00:36.260Z",
@@ -5713,6 +5642,8 @@
                                                     "assetUnit": "lovelace",
                                                     "thresholdAmount": "5000000",
                                                     "enabled": true,
+                                                    "topupEnabled": true,
+                                                    "topupAmount": "10000000",
                                                     "status": "Low",
                                                     "lastKnownAmount": "4200000",
                                                     "lastCheckedAt": "1970-01-20T20:00:36.260Z",
@@ -5971,7 +5902,16 @@
                                                             },
                                                             "enabled": {
                                                                 "type": "boolean",
-                                                                "description": "Whether the rule is active"
+                                                                "description": "Whether the rule is active (fires the low-balance alert/webhook)"
+                                                            },
+                                                            "topupEnabled": {
+                                                                "type": "boolean",
+                                                                "description": "Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source"
+                                                            },
+                                                            "topupAmount": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off"
                                                             },
                                                             "status": {
                                                                 "type": "string",
@@ -6038,6 +5978,8 @@
                                                             "assetUnit",
                                                             "thresholdAmount",
                                                             "enabled",
+                                                            "topupEnabled",
+                                                            "topupAmount",
                                                             "status",
                                                             "lastKnownAmount",
                                                             "lastCheckedAt",
@@ -6070,6 +6012,8 @@
                                                     "assetUnit": "lovelace",
                                                     "thresholdAmount": "5000000",
                                                     "enabled": true,
+                                                    "topupEnabled": true,
+                                                    "topupAmount": "10000000",
                                                     "status": "Low",
                                                     "lastKnownAmount": "4200000",
                                                     "lastCheckedAt": "1970-01-20T20:00:36.260Z",
@@ -6129,6 +6073,16 @@
                                         "type": "boolean",
                                         "default": true,
                                         "description": "Whether the rule should start enabled"
+                                    },
+                                    "topupEnabled": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Whether crossing the threshold also auto-tops-up this wallet"
+                                    },
+                                    "topupAmount": {
+                                        "type": "string",
+                                        "pattern": "^[1-9]\\d*$",
+                                        "description": "Amount to top up per trigger, in raw on-chain units. Required when topupEnabled is true; ADA requires at least 5000000 lovelace"
                                     }
                                 },
                                 "required": [
@@ -6177,7 +6131,16 @@
                                                 },
                                                 "enabled": {
                                                     "type": "boolean",
-                                                    "description": "Whether the rule is active"
+                                                    "description": "Whether the rule is active (fires the low-balance alert/webhook)"
+                                                },
+                                                "topupEnabled": {
+                                                    "type": "boolean",
+                                                    "description": "Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source"
+                                                },
+                                                "topupAmount": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off"
                                                 },
                                                 "status": {
                                                     "type": "string",
@@ -6244,6 +6207,8 @@
                                                 "assetUnit",
                                                 "thresholdAmount",
                                                 "enabled",
+                                                "topupEnabled",
+                                                "topupAmount",
                                                 "status",
                                                 "lastKnownAmount",
                                                 "lastCheckedAt",
@@ -6268,6 +6233,8 @@
                                             "assetUnit": "lovelace",
                                             "thresholdAmount": "5000000",
                                             "enabled": true,
+                                            "topupEnabled": true,
+                                            "topupAmount": "10000000",
                                             "status": "Low",
                                             "lastKnownAmount": "4200000",
                                             "lastCheckedAt": "1970-01-20T20:00:36.260Z",
@@ -6324,6 +6291,16 @@
                                     "enabled": {
                                         "type": "boolean",
                                         "description": "Updated enabled state"
+                                    },
+                                    "topupEnabled": {
+                                        "type": "boolean",
+                                        "description": "Enable or disable auto top-up on this rule"
+                                    },
+                                    "topupAmount": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "pattern": "^[1-9]\\d*$",
+                                        "description": "Updated top-up amount in raw on-chain units, or null to clear it while auto top-up is disabled. ADA requires at least 5000000 lovelace"
                                     }
                                 },
                                 "required": [
@@ -6369,7 +6346,16 @@
                                                 },
                                                 "enabled": {
                                                     "type": "boolean",
-                                                    "description": "Whether the rule is active"
+                                                    "description": "Whether the rule is active (fires the low-balance alert/webhook)"
+                                                },
+                                                "topupEnabled": {
+                                                    "type": "boolean",
+                                                    "description": "Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source"
+                                                },
+                                                "topupAmount": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off"
                                                 },
                                                 "status": {
                                                     "type": "string",
@@ -6436,6 +6422,8 @@
                                                 "assetUnit",
                                                 "thresholdAmount",
                                                 "enabled",
+                                                "topupEnabled",
+                                                "topupAmount",
                                                 "status",
                                                 "lastKnownAmount",
                                                 "lastCheckedAt",
@@ -6460,6 +6448,8 @@
                                             "assetUnit": "lovelace",
                                             "thresholdAmount": "7000000",
                                             "enabled": true,
+                                            "topupEnabled": true,
+                                            "topupAmount": "10000000",
                                             "status": "Low",
                                             "lastKnownAmount": "4200000",
                                             "lastCheckedAt": "1970-01-20T20:00:36.260Z",
@@ -8084,7 +8074,7 @@
                                             "properties": {
                                                 "unit": {
                                                     "type": "string",
-                                                    "pattern": "^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{2})*$",
+                                                    "pattern": "^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{2}){0,32}$",
                                                     "description": "Asset unit: policy id (56 hex chars) followed by the hex asset name. Not \"lovelace\"."
                                                 },
                                                 "quantity": {
@@ -28330,8 +28320,8 @@
         },
         "/fund-wallet": {
             "get": {
-                "description": "Gets the fund wallet for a payment source, with its distribution configuration and low-balance summary. Look it up by its own id or by payment source id — a payment source has at most one fund wallet.",
-                "summary": "Get the fund wallet of a payment source. (admin access required)",
+                "description": "Lists active fund wallets with their distribution configuration and low-balance summary. Filter by payment source id to get every treasury serving that source, or by id for one wallet. An unconfigured source returns an empty FundWallets array.",
+                "summary": "List fund wallets. (admin access required)",
                 "tags": [
                     "fund-wallet"
                 ],
@@ -28368,7 +28358,7 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Fund wallet",
+                        "description": "Fund wallets",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -28381,7 +28371,7 @@
                                             ]
                                         },
                                         "data": {
-                                            "$ref": "#/components/schemas/FundWallet"
+                                            "$ref": "#/components/schemas/FundWalletList"
                                         }
                                     },
                                     "required": [
@@ -28391,26 +28381,27 @@
                                     "example": {
                                         "status": "success",
                                         "data": {
-                                            "id": "cuid_v2_auto_generated",
-                                            "walletAddress": "addr_test1...",
-                                            "walletVkey": "a1b2c3d4e5f6...",
-                                            "note": "Treasury for preprod V2",
-                                            "paymentSourceId": "cuid_v2_auto_generated",
-                                            "lockedAt": null,
-                                            "LowBalanceSummary": {
-                                                "isLow": false,
-                                                "lowRuleCount": 0,
-                                                "lastCheckedAt": "2024-01-01T00:00:00.000Z"
-                                            },
-                                            "FundDistributionConfig": {
-                                                "id": "cuid_v2_auto_generated",
-                                                "enabled": true,
-                                                "warningThreshold": "50000000",
-                                                "criticalThreshold": "20000000",
-                                                "topupAmount": "100000000",
-                                                "batchWindowMs": 300000
-                                            },
-                                            "pendingRequestCount": 0
+                                            "FundWallets": [
+                                                {
+                                                    "id": "cuid_v2_auto_generated",
+                                                    "walletAddress": "addr_test1...",
+                                                    "walletVkey": "a1b2c3d4e5f6...",
+                                                    "note": "Treasury for preprod V2",
+                                                    "paymentSourceId": "cuid_v2_auto_generated",
+                                                    "lockedAt": null,
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "2024-01-01T00:00:00.000Z"
+                                                    },
+                                                    "FundDistributionConfig": {
+                                                        "id": "cuid_v2_auto_generated",
+                                                        "enabled": true,
+                                                        "batchWindowMs": 300000
+                                                    },
+                                                    "pendingRequestCount": 0
+                                                }
+                                            ]
                                         }
                                     }
                                 }
@@ -28422,14 +28413,11 @@
                     },
                     "401": {
                         "description": "Unauthorized"
-                    },
-                    "404": {
-                        "description": "Fund wallet not found"
                     }
                 }
             },
             "post": {
-                "description": "Creates a fund wallet for a payment source from an existing mnemonic and enables automatic distribution. The wallet tops up the Selling and Purchasing wallets of that same payment source when they fall below the configured thresholds: below warningThreshold the topup is batched, below criticalThreshold it is sent immediately. Fund the returned address before distribution can do anything. A payment source can have only one fund wallet, and because wallet key hashes are unique among active wallets a mnemonic can only back one live wallet at a time — so each payment source needs its own. Deleting a fund wallet frees its mnemonic for re-registration.",
+                "description": "Creates an enabled fund wallet for a payment source from an existing mnemonic. A source may have several fund wallets; dispatch uses the first one with enough funds. Auto-top-up thresholds and amounts are configured on each target wallet low-balance rule, not on the treasury. Fund the returned address before distribution can run. A mnemonic can back only one active wallet at a time; deleting that wallet frees it for re-registration.",
                 "summary": "Create a fund wallet for a payment source. (admin access required)",
                 "tags": [
                     "fund-wallet"
@@ -28440,7 +28428,7 @@
                     }
                 ],
                 "requestBody": {
-                    "description": "Fund wallet mnemonic and distribution thresholds",
+                    "description": "Fund wallet mnemonic and batch cadence",
                     "content": {
                         "application/json": {
                             "schema": {
@@ -28458,44 +28446,6 @@
                                         "maxLength": 1500,
                                         "description": "24-word mnemonic phrase for the fund wallet"
                                     },
-                                    "Assets": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "assetUnit": {
-                                                    "type": "string",
-                                                    "minLength": 1,
-                                                    "maxLength": 250,
-                                                    "pattern": "^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$",
-                                                    "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
-                                                },
-                                                "warningThreshold": {
-                                                    "type": "string",
-                                                    "pattern": "^\\d{1,18}$",
-                                                    "description": "Warning threshold in the asset's smallest unit"
-                                                },
-                                                "criticalThreshold": {
-                                                    "type": "string",
-                                                    "pattern": "^\\d{1,18}$",
-                                                    "description": "Critical threshold in the asset's smallest unit"
-                                                },
-                                                "topupAmount": {
-                                                    "type": "string",
-                                                    "pattern": "^\\d{1,18}$",
-                                                    "description": "Amount sent per topup, in the asset's smallest unit"
-                                                }
-                                            },
-                                            "required": [
-                                                "assetUnit",
-                                                "warningThreshold",
-                                                "criticalThreshold",
-                                                "topupAmount"
-                                            ]
-                                        },
-                                        "minItems": 1,
-                                        "description": "Per-asset distribution policy, one entry per asset this wallet should top up. Use assetUnit \"lovelace\" for ADA. The fund wallet must itself hold each asset it distributes, and a token top-up also sends ADA to satisfy the min-UTxO of its output"
-                                    },
                                     "batchWindowMs": {
                                         "type": "integer",
                                         "minimum": 1000,
@@ -28511,15 +28461,11 @@
                                 },
                                 "required": [
                                     "paymentSourceId",
-                                    "walletMnemonic",
-                                    "Assets"
+                                    "walletMnemonic"
                                 ],
                                 "example": {
                                     "paymentSourceId": "cuid_v2_auto_generated",
                                     "walletMnemonic": "word1 word2 word3 ... word24",
-                                    "warningThreshold": "50000000",
-                                    "criticalThreshold": "20000000",
-                                    "topupAmount": "100000000",
                                     "batchWindowMs": 300000,
                                     "note": "Treasury for preprod V2"
                                 }
@@ -28559,9 +28505,6 @@
                                             "FundDistributionConfig": {
                                                 "id": "cuid_v2_auto_generated",
                                                 "enabled": true,
-                                                "warningThreshold": "50000000",
-                                                "criticalThreshold": "20000000",
-                                                "topupAmount": "100000000",
                                                 "batchWindowMs": 300000
                                             }
                                         }
@@ -28571,7 +28514,7 @@
                         }
                     },
                     "400": {
-                        "description": "criticalThreshold is not below warningThreshold, topupAmount is below the min-UTxO floor, or the mnemonic is invalid"
+                        "description": "The mnemonic is invalid or the batch window is outside its allowed range"
                     },
                     "401": {
                         "description": "Unauthorized"
@@ -28580,7 +28523,7 @@
                         "description": "Payment source not found"
                     },
                     "409": {
-                        "description": "The payment source already has a fund wallet, or this mnemonic already backs a wallet"
+                        "description": "The payment source became inactive, or this mnemonic already backs another active wallet"
                     }
                 }
             },
@@ -28610,44 +28553,7 @@
                                     },
                                     "enabled": {
                                         "type": "boolean",
-                                        "description": "Enable or disable automatic distribution"
-                                    },
-                                    "Assets": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "assetUnit": {
-                                                    "type": "string",
-                                                    "minLength": 1,
-                                                    "maxLength": 250,
-                                                    "pattern": "^(lovelace|[0-9a-fA-F]{56}[0-9a-fA-F]*)$",
-                                                    "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
-                                                },
-                                                "warningThreshold": {
-                                                    "type": "string",
-                                                    "pattern": "^\\d{1,18}$",
-                                                    "description": "Warning threshold in the asset's smallest unit"
-                                                },
-                                                "criticalThreshold": {
-                                                    "type": "string",
-                                                    "pattern": "^\\d{1,18}$",
-                                                    "description": "Critical threshold in the asset's smallest unit"
-                                                },
-                                                "topupAmount": {
-                                                    "type": "string",
-                                                    "pattern": "^\\d{1,18}$",
-                                                    "description": "Amount sent per topup, in the asset's smallest unit"
-                                                }
-                                            },
-                                            "required": [
-                                                "assetUnit",
-                                                "warningThreshold",
-                                                "criticalThreshold",
-                                                "topupAmount"
-                                            ]
-                                        },
-                                        "description": "Replaces the per-asset policy wholesale. Assets omitted from this list stop being topped up; omit the field entirely to leave the policy untouched"
+                                        "description": "Enable or disable this wallet as a funding source"
                                     },
                                     "batchWindowMs": {
                                         "type": "integer",
@@ -28662,9 +28568,6 @@
                                 "example": {
                                     "id": "cuid_v2_auto_generated",
                                     "enabled": true,
-                                    "warningThreshold": "60000000",
-                                    "criticalThreshold": "25000000",
-                                    "topupAmount": "120000000",
                                     "batchWindowMs": 300000
                                 }
                             }
@@ -28700,9 +28603,6 @@
                                             "FundDistributionConfig": {
                                                 "id": "cuid_v2_auto_generated",
                                                 "enabled": true,
-                                                "warningThreshold": "50000000",
-                                                "criticalThreshold": "20000000",
-                                                "topupAmount": "100000000",
                                                 "batchWindowMs": 300000
                                             }
                                         }
@@ -28712,7 +28612,7 @@
                         }
                     },
                     "400": {
-                        "description": "criticalThreshold is not below warningThreshold, or topupAmount is below the minimum topup floor"
+                        "description": "The batch window is outside its allowed range"
                     },
                     "401": {
                         "description": "Unauthorized"
@@ -28723,7 +28623,7 @@
                 }
             },
             "delete": {
-                "description": "Soft-deletes a fund wallet, disables its distribution config and cancels unclaimed pending distribution requests. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds a balance, because deletion makes the mnemonic unexportable through the API — withdraw first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.",
+                "description": "Soft-deletes a fund wallet and disables its distribution config. Unclaimed source-level requests continue through another enabled fund wallet, or are cancelled when none remains. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds ADA or native assets, because deletion makes the mnemonic unexportable through the API — withdraw every asset first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.",
                 "summary": "Delete a fund wallet. (admin access required)",
                 "tags": [
                     "fund-wallet"
@@ -28920,7 +28820,8 @@
                                                     "updatedAt": "2024-01-01T00:00:00.000Z",
                                                     "fundWalletId": "cuid_v2_auto_generated",
                                                     "targetWalletId": "cuid_v2_auto_generated",
-                                                    "priority": "Critical",
+                                                    "priority": "Warning",
+                                                    "assetUnit": "lovelace",
                                                     "amount": "100000000",
                                                     "status": "Confirmed",
                                                     "txHash": "a1b2c3d4e5f6...",

@@ -678,8 +678,13 @@ const fundWalletSchemaResponseTransformer = (data: any) => {
     return data;
 };
 
+const fundWalletListSchemaResponseTransformer = (data: any) => {
+    data.FundWallets = data.FundWallets.map((item: any) => fundWalletSchemaResponseTransformer(item));
+    return data;
+};
+
 export const getFundWalletResponseTransformer = async (data: any): Promise<GetFundWalletResponse> => {
-    data.data = fundWalletSchemaResponseTransformer(data.data);
+    data.data = fundWalletListSchemaResponseTransformer(data.data);
     return data;
 };
 

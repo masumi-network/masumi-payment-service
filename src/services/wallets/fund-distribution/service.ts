@@ -2,7 +2,6 @@ import {
 	FundDistributionPriority,
 	FundDistributionStatus,
 	HotWalletType,
-	Network,
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
@@ -12,41 +11,65 @@ import { Mutex } from 'async-mutex';
 import { withJobLock } from '@/services/shared/job-runner';
 import { lookupChainTx } from '@/services/shared/chain-tx-lookup';
 import { webhookEventsService } from '@/services/webhooks';
-import { getFundWalletForPaymentSource, loadFundWalletContext } from './context';
+import { getFundWalletsForPaymentSource, type FundWalletContext } from './context';
 import { processRequestsForFundWallet } from './batch-executor';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 
 const mutex = new Mutex();
+const DISPATCHABLE_PRIORITIES = [FundDistributionPriority.Warning, FundDistributionPriority.Critical];
 
-export class FundDistributionService {
+class FundDistributionService {
 	isRunning(): boolean {
 		return mutex.isLocked();
 	}
 
 	async requestTopup(params: {
+		ruleId: string;
 		targetWalletId: string;
 		currentBalance: bigint;
 		paymentSourceId: string;
 		/** Which asset is short. Defaults to ADA for callers that predate tokens. */
 		assetUnit?: string;
+		/** The rule's trigger: top up only when currentBalance is below this. */
+		thresholdAmount: bigint;
+		/** The rule's amount: how much of `assetUnit` to send, in its smallest unit. */
+		topupAmount: bigint;
+		/**
+		 * When currentBalance was observed. A confirmed request newer than this
+		 * observation already handled the shortage and suppresses another send
+		 * until monitoring records a fresh balance.
+		 */
+		balanceCheckedAt?: Date;
 	}): Promise<void> {
-		const { targetWalletId, currentBalance, paymentSourceId, assetUnit = 'lovelace' } = params;
+		const {
+			ruleId,
+			targetWalletId,
+			currentBalance,
+			paymentSourceId,
+			assetUnit = 'lovelace',
+			thresholdAmount,
+			topupAmount,
+			balanceCheckedAt,
+		} = params;
 
-		const fundWallet = await getFundWalletForPaymentSource(paymentSourceId);
-		if (fundWallet == null) return;
+		// The trigger and amount come from the hot wallet's own low-balance rule.
+		// Nothing to do unless the balance is actually below the rule's threshold.
+		if (currentBalance >= thresholdAmount) return;
 
-		// Guard: fund wallet must not fund itself
-		if (fundWallet.id === targetWalletId) return;
+		// A source may have several fund wallets (redundancy): any of them can fund
+		// this shortage, and the request is left unassigned until dispatch picks
+		// the first with funds. Without at least one, the request could never be
+		// fulfilled, so there is no point recording it.
+		const fundWallets = await getFundWalletsForPaymentSource(paymentSourceId);
+		if (fundWallets.length === 0) return;
 
-		// Thresholds are per asset: 20 USDM and 20 ADA are unrelated quantities,
-		// so a shortage can only be judged against its own asset's policy. No
-		// policy for this asset means the operator has not asked us to top it up.
-		const policy = fundWallet.config.assets.get(assetUnit);
-		if (policy == null) return;
-		if (currentBalance >= policy.warningThreshold) return;
+		// Guard: a fund wallet on this source must never be topped up as a target.
+		if (fundWallets.some((wallet) => wallet.id === targetWalletId)) return;
 
-		const priority =
-			currentBalance < policy.criticalThreshold ? FundDistributionPriority.Critical : FundDistributionPriority.Warning;
+		// Single-tier: every top-up is batched into the source's window. The
+		// priority column is retained (Warning) so the dispatch phase and its
+		// double-spend guards are unchanged.
+		const priority = FundDistributionPriority.Warning;
 
 		// Use a serializable transaction to atomically check for an existing pending/submitted
 		// request and create a new one. This prevents duplicate requests from concurrent calls
@@ -59,9 +82,10 @@ export class FundDistributionService {
 					// transaction, but the source/config/target can be retired while
 					// balance monitoring is in flight. Re-read lifecycle state here so
 					// an obsolete scan cannot create a new Pending request afterward.
+					// Any enabled fund wallet on the source can fulfil this, so we only
+					// require that at least one still exists.
 					const activeFundWallet = await tx.hotWallet.findFirst({
 						where: {
-							id: fundWallet.id,
 							paymentSourceId,
 							type: HotWalletType.Funding,
 							deletedAt: null,
@@ -84,10 +108,38 @@ export class FundDistributionService {
 					});
 					if (activeTargetWallet == null) return;
 
+					// The scan that called us may have raced an operator changing or
+					// deleting this rule. Revalidate the exact observed configuration
+					// inside the same Serializable transaction that creates the request.
+					// If the scan commits first, the rule mutation retires this row; if
+					// the mutation commits first, this predicate no longer matches.
+					const activeRule = await tx.hotWalletLowBalanceRule.findFirst({
+						where: {
+							id: ruleId,
+							hotWalletId: targetWalletId,
+							assetUnit,
+							enabled: true,
+							topupEnabled: true,
+							thresholdAmount,
+							topupAmount,
+							...(balanceCheckedAt
+								? {
+										lastCheckedAt: balanceCheckedAt,
+										lastKnownAmount: currentBalance,
+									}
+								: {}),
+						},
+						select: { id: true },
+					});
+					if (activeRule == null) return;
+
 					const failureCooldownStart = new Date(Date.now() - CONSTANTS.FUND_DISTRIBUTION_FAILURE_RETRY_COOLDOWN_MS);
 					const alreadyHandled = await tx.fundDistributionRequest.findFirst({
 						where: {
-							fundWalletId: fundWallet.id,
+							// Dedupe per (target, asset) across ALL fund wallets on the
+							// source: a shortage is funded by exactly one wallet regardless
+							// of which claims it, so an in-flight request from any wallet
+							// suppresses a duplicate.
 							targetWalletId,
 							// Scoped to the asset: an in-flight ADA top-up says nothing about
 							// a USDM shortage on the same wallet, and suppressing one because
@@ -100,6 +152,14 @@ export class FundDistributionService {
 								// persistent build/sign error re-created the request and re-fired
 								// FUND_DISTRIBUTION_FAILED every 30s cycle.
 								{ status: FundDistributionStatus.Failed, updatedAt: { gt: failureCooldownStart } },
+								...(balanceCheckedAt
+									? [
+											{
+												status: FundDistributionStatus.Confirmed,
+												updatedAt: { gte: balanceCheckedAt },
+											},
+										]
+									: []),
 							],
 						},
 						select: { id: true },
@@ -108,11 +168,12 @@ export class FundDistributionService {
 
 					await tx.fundDistributionRequest.create({
 						data: {
-							fundWalletId: fundWallet.id,
+							// Unassigned: dispatch picks the fund wallet (first with funds).
+							fundWalletId: null,
 							targetWalletId,
 							priority,
 							assetUnit,
-							amount: policy.topupAmount,
+							amount: topupAmount,
 							status: FundDistributionStatus.Pending,
 						},
 					});
@@ -136,56 +197,72 @@ export class FundDistributionService {
 
 		logger.info('Fund distribution request created', {
 			component: 'fund_distribution',
-			fund_wallet_id: fundWallet.id,
+			payment_source_id: paymentSourceId,
 			target_wallet_id: targetWalletId,
-			priority,
 			asset_unit: assetUnit,
-			amount: policy.topupAmount.toString(),
+			amount: topupAmount.toString(),
+		});
+	}
+
+	/**
+	 * Load unassigned Pending requests for a source, including legacy Critical
+	 * rows, mapped to the batch-executor's shape. Unassigned = no fund wallet has
+	 * claimed it yet (`fundWalletId` and `transactionId` both null); a row with a
+	 * live Transaction belongs to reconciliation, not a fresh build.
+	 */
+	private async loadUnassignedRequests(
+		paymentSourceId: string,
+	): Promise<Array<{ id: string; targetWalletId: string; targetAddress: string; assetUnit: string; amount: bigint }>> {
+		const requests = await prisma.fundDistributionRequest.findMany({
+			where: {
+				// Critical is retained for upgrade compatibility. New requests are
+				// Warning, but a partially upgraded deployment may still have legacy
+				// Critical rows that must not be stranded.
+				priority: { in: DISPATCHABLE_PRIORITIES },
+				status: FundDistributionStatus.Pending,
+				fundWalletId: null,
+				transactionId: null,
+				TargetWallet: {
+					deletedAt: null,
+					paymentSourceId,
+					PaymentSource: { deletedAt: null },
+				},
+			},
+			select: {
+				id: true,
+				targetWalletId: true,
+				assetUnit: true,
+				amount: true,
+				TargetWallet: { select: { walletAddress: true } },
+			},
+			orderBy: { createdAt: 'asc' },
 		});
 
-		if (priority === FundDistributionPriority.Critical) {
-			// Critical requests skip the batch window and go out immediately -- but
-			// only when we're not already inside a distribution cycle. `scanAndCreate
-			// MissingRequests` calls requestTopup while holding this same mutex, so
-			// attempting to re-acquire it always fails (tryAcquire is not reentrant)
-			// and logged "already running, skipping cycle" on every critical topup.
-			// The cycle's own critical phase picks this request up moments later, so
-			// there is genuinely nothing to do here.
-			//
-			// The check is racy by nature, but benignly: losing it just means
-			// withJobLock declines and the next cycle (<=30s) sends the request --
-			// exactly what happened before, minus the misleading log.
-			if (mutex.isLocked()) return;
+		return requests.map((request) => ({
+			id: request.id,
+			targetWalletId: request.targetWalletId,
+			targetAddress: request.TargetWallet.walletAddress,
+			assetUnit: request.assetUnit,
+			amount: request.amount,
+		}));
+	}
 
-			await withJobLock(mutex, 'fund_distribution_critical', async () => {
-				const targetWallet = await prisma.hotWallet.findUnique({
-					where: { id: targetWalletId },
-					select: { walletAddress: true },
-				});
-				if (!targetWallet) return;
-
-				const request = await prisma.fundDistributionRequest.findFirst({
-					where: {
-						fundWalletId: fundWallet.id,
-						targetWalletId,
-						assetUnit,
-						status: FundDistributionStatus.Pending,
-						priority: FundDistributionPriority.Critical,
-					},
-					select: { id: true, amount: true, assetUnit: true },
-				});
-				if (!request) return;
-
-				await processRequestsForFundWallet(fundWallet, [
-					{
-						id: request.id,
-						targetWalletId,
-						targetAddress: targetWallet.walletAddress,
-						assetUnit: request.assetUnit,
-						amount: request.amount,
-					},
-				]);
-			});
+	/**
+	 * Assign and dispatch the source's unassigned requests across its fund
+	 * wallets, "first with funds": hand the whole pending set to the oldest fund
+	 * wallet, which claims and sends the subset it can afford; the rest fall
+	 * through to the next wallet on the re-query. A wallet claims a request
+	 * atomically (setting fundWalletId + the lock), so no request is ever picked
+	 * by two wallets.
+	 */
+	private async dispatchToWallets(fundWallets: FundWalletContext[], paymentSourceId: string): Promise<void> {
+		for (const fundWallet of fundWallets) {
+			// Re-query each iteration: the previous wallet has already claimed the
+			// subset it could afford (their fundWalletId/transactionId are now set),
+			// so those drop out and only the still-unassigned remainder falls through.
+			const remaining = await this.loadUnassignedRequests(paymentSourceId);
+			if (remaining.length === 0) break;
+			await processRequestsForFundWallet(fundWallet, remaining);
 		}
 	}
 
@@ -213,9 +290,9 @@ export class FundDistributionService {
 				const fundedPaymentSourceIds = fundWallets.map((wallet) => wallet.paymentSourceId);
 
 				// Send phases are independent so a conflict in one cannot starve the rest.
+				// Every top-up is batched (single-tier), so there is one send phase.
 				await this.runPhase('scan', () => this.scanAndCreateMissingRequests(fundedPaymentSourceIds));
-				await this.runPhase('critical', () => this.processCriticalRequests());
-				await this.runPhase('expired-batch', () => this.processExpiredBatchRequests());
+				await this.runPhase('dispatch-batches', () => this.processPendingBatches());
 			}
 
 			// Confirmation stays after scanning. Otherwise a just-confirmed request
@@ -270,6 +347,7 @@ export class FundDistributionService {
 				id: true,
 				batchId: true,
 				amount: true,
+				assetUnit: true,
 				targetWalletId: true,
 				transactionId: true,
 				TargetWallet: { select: { walletAddress: true, deletedAt: true } },
@@ -301,9 +379,14 @@ export class FundDistributionService {
 		for (const request of inFlight) {
 			const tx = request.Transaction;
 			if (tx == null) continue;
+			const fundWallet = request.FundWallet;
+			if (fundWallet == null) {
+				cancelledIds.push(request.id);
+				continue;
+			}
 			const canRetry =
-				request.FundWallet.deletedAt == null &&
-				request.FundWallet.PaymentSource.deletedAt == null &&
+				fundWallet.deletedAt == null &&
+				fundWallet.PaymentSource.deletedAt == null &&
 				request.TargetWallet.deletedAt == null;
 
 			// RolledBack FIRST. tx-sync marks a Transaction RolledBack by txHash
@@ -333,6 +416,8 @@ export class FundDistributionService {
 		for (const [txHash, requests] of promotedByTxHash) {
 			const first = requests[0];
 			if (first == null) continue;
+			const fundWallet = first.FundWallet;
+			if (fundWallet == null) continue;
 			const ids = requests.map((request) => request.id);
 			const didPromote = await retryOnSerializationConflict(
 				() =>
@@ -348,18 +433,19 @@ export class FundDistributionService {
 								tx,
 								{
 									batchId: first.batchId ?? first.transactionId ?? txHash,
-									fundWalletId: first.FundWallet.id,
-									fundWalletAddress: first.FundWallet.walletAddress,
-									network: first.FundWallet.PaymentSource.network,
+									fundWalletId: fundWallet.id,
+									fundWalletAddress: fundWallet.walletAddress,
+									network: fundWallet.PaymentSource.network,
 									txHash,
 									distributions: requests.map((request) => ({
 										requestId: request.id,
 										targetWalletId: request.targetWalletId,
 										targetWalletAddress: request.TargetWallet.walletAddress,
+										assetUnit: request.assetUnit,
 										amount: request.amount.toString(),
 									})),
 								},
-								first.FundWallet.paymentSourceId,
+								fundWallet.paymentSourceId,
 							);
 							return true;
 						},
@@ -389,7 +475,7 @@ export class FundDistributionService {
 		if (releasedIds.length > 0) {
 			await prisma.fundDistributionRequest.updateMany({
 				where: { id: { in: releasedIds }, status: FundDistributionStatus.Pending },
-				data: { transactionId: null, batchId: null },
+				data: { fundWalletId: null, transactionId: null, batchId: null },
 			});
 			logger.warn('Released fund distribution requests for rebuild (rolled back or never broadcast)', {
 				component: 'fund_distribution',
@@ -406,7 +492,7 @@ export class FundDistributionService {
 		//
 		// Scoped to payment sources that actually have an enabled fund wallet:
 		// without that filter, every low wallet on an unfunded source triggered a
-		// getFundWalletForPaymentSource lookup that could only ever return null.
+		// getFundWalletsForPaymentSource lookup that could only ever return empty.
 		//
 		// Deliberately NOT filtered on `FundDistributionsReceived: { none: ... }`.
 		// That predicate is asset-blind: an in-flight ADA top-up would hide a USDM
@@ -418,10 +504,14 @@ export class FundDistributionService {
 				type: { not: HotWalletType.Funding },
 				paymentSourceId: { in: fundedPaymentSourceIds },
 				PaymentSource: { deletedAt: null },
+				// The top-up trigger lives on the rule: only rules with topupEnabled
+				// and a topupAmount ask to be funded.
 				LowBalanceRules: {
 					some: {
 						enabled: true,
+						topupEnabled: true,
 						lastKnownAmount: { not: null },
+						lastCheckedAt: { not: null },
 					},
 				},
 			},
@@ -429,149 +519,83 @@ export class FundDistributionService {
 				id: true,
 				paymentSourceId: true,
 				LowBalanceRules: {
-					where: { enabled: true, lastKnownAmount: { not: null } },
-					select: { assetUnit: true, lastKnownAmount: true },
+					where: {
+						enabled: true,
+						topupEnabled: true,
+						lastKnownAmount: { not: null },
+						lastCheckedAt: { not: null },
+					},
+					select: {
+						id: true,
+						assetUnit: true,
+						thresholdAmount: true,
+						topupAmount: true,
+						lastKnownAmount: true,
+						lastCheckedAt: true,
+					},
 				},
 			},
 		});
 
 		for (const wallet of monitoredWallets) {
 			for (const rule of wallet.LowBalanceRules) {
-				if (rule.lastKnownAmount == null) continue;
-				// requestTopup decides: it returns early unless this asset has a
-				// configured policy and the balance is under its warning threshold.
+				if (rule.lastKnownAmount == null || rule.lastCheckedAt == null || rule.topupAmount == null) continue;
+				// requestTopup returns early unless the balance is below the rule's
+				// threshold; the amount is the rule's own topupAmount.
 				await this.requestTopup({
+					ruleId: rule.id,
 					targetWalletId: wallet.id,
 					currentBalance: rule.lastKnownAmount,
 					paymentSourceId: wallet.paymentSourceId,
 					assetUnit: rule.assetUnit,
+					thresholdAmount: rule.thresholdAmount,
+					topupAmount: rule.topupAmount,
+					balanceCheckedAt: rule.lastCheckedAt,
 				});
 			}
 		}
 	}
 
-	private async processCriticalRequests(): Promise<void> {
-		const criticalRequests = await prisma.fundDistributionRequest.findMany({
+	private async processPendingBatches(): Promise<void> {
+		// Unassigned Pending requests, oldest first, so the first row seen per
+		// source is that source's oldest waiting shortage. Critical is included
+		// only as an upgrade-compatible alias for the single batched tier.
+		const rows = await prisma.fundDistributionRequest.findMany({
 			where: {
-				priority: FundDistributionPriority.Critical,
+				priority: { in: DISPATCHABLE_PRIORITIES },
 				status: FundDistributionStatus.Pending,
-				TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
-				FundWallet: {
-					deletedAt: null,
-					PaymentSource: { deletedAt: null },
-					FundDistributionConfig: { enabled: true },
-				},
-				// Never rebuild a row that is already linked to an in-flight
-				// Transaction (an ambiguous submit awaiting reconciliation). Without
-				// this the fund-wallet lock is the ONLY thing preventing a second send
-				// of the same top-up, and anything that frees that lock early — e.g.
-				// the wallet-timeouts sweep, which shares no coordination with this
-				// service — turns into a treasury double-spend. Phase A owns these
-				// rows and hands them back by clearing transactionId on rollback.
+				fundWalletId: null,
 				transactionId: null,
+				TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
 			},
-			select: {
-				id: true,
-				fundWalletId: true,
-				targetWalletId: true,
-				assetUnit: true,
-				amount: true,
-				TargetWallet: { select: { walletAddress: true } },
-			},
+			select: { createdAt: true, TargetWallet: { select: { paymentSourceId: true } } },
 			orderBy: { createdAt: 'asc' },
 		});
 
-		if (criticalRequests.length === 0) return;
+		if (rows.length === 0) return;
 
-		// Group by fund wallet
-		const byFundWallet = new Map<string, typeof criticalRequests>();
-		for (const req of criticalRequests) {
-			const group = byFundWallet.get(req.fundWalletId) ?? [];
-			group.push(req);
-			byFundWallet.set(req.fundWalletId, group);
-		}
-
-		for (const [fundWalletId, requests] of byFundWallet) {
-			const fundWallet = await loadFundWalletContext(fundWalletId);
-			if (!fundWallet) continue;
-
-			const mappedRequests = requests.map((r) => ({
-				id: r.id,
-				targetWalletId: r.targetWalletId,
-				targetAddress: r.TargetWallet.walletAddress,
-				assetUnit: r.assetUnit,
-				amount: r.amount,
-			}));
-
-			await processRequestsForFundWallet(fundWallet, mappedRequests);
-		}
-	}
-
-	private async processExpiredBatchRequests(): Promise<void> {
-		// Find pending warning requests grouped by fund wallet
-		const warningRequests = await prisma.fundDistributionRequest.findMany({
-			where: {
-				priority: FundDistributionPriority.Warning,
-				status: FundDistributionStatus.Pending,
-				TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
-				FundWallet: {
-					deletedAt: null,
-					PaymentSource: { deletedAt: null },
-					FundDistributionConfig: { enabled: true },
-				},
-				// See processCriticalRequests: rows with a live Transaction belong to
-				// Phase A, not to a fresh build.
-				transactionId: null,
-			},
-			select: {
-				id: true,
-				fundWalletId: true,
-				targetWalletId: true,
-				assetUnit: true,
-				amount: true,
-				createdAt: true,
-				TargetWallet: { select: { walletAddress: true } },
-				FundWallet: {
-					select: {
-						FundDistributionConfig: { select: { batchWindowMs: true } },
-					},
-				},
-			},
-			orderBy: { createdAt: 'asc' },
-		});
-
-		if (warningRequests.length === 0) return;
-
-		// Group by fund wallet, check if oldest request exceeds batch window
-		const byFundWallet = new Map<string, typeof warningRequests>();
-		for (const req of warningRequests) {
-			const group = byFundWallet.get(req.fundWalletId) ?? [];
-			group.push(req);
-			byFundWallet.set(req.fundWalletId, group);
+		const oldestBySource = new Map<string, number>();
+		for (const row of rows) {
+			const sourceId = row.TargetWallet.paymentSourceId;
+			if (!oldestBySource.has(sourceId)) oldestBySource.set(sourceId, row.createdAt.getTime());
 		}
 
 		const now = Date.now();
-		for (const [fundWalletId, requests] of byFundWallet) {
-			const batchWindowMs =
-				requests[0]?.FundWallet.FundDistributionConfig?.batchWindowMs ??
-				CONSTANTS.FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS;
-			const oldestCreatedAt = requests[0]?.createdAt.getTime() ?? now;
+		for (const [paymentSourceId, oldestCreatedAt] of oldestBySource) {
+			const fundWallets = await getFundWalletsForPaymentSource(paymentSourceId);
+			if (fundWallets.length === 0) continue;
 
+			// A source's batch window is the most eager (smallest) of its wallets':
+			// adding a faster-cadence wallet speeds the whole source up rather than
+			// being held back by a slower one.
+			const batchWindowMs = Math.min(
+				...fundWallets.map(
+					(wallet) => wallet.config.batchWindowMs || CONSTANTS.FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS,
+				),
+			);
 			if (now - oldestCreatedAt < batchWindowMs) continue;
 
-			const fundWallet = await loadFundWalletContext(fundWalletId);
-			if (!fundWallet) continue;
-
-			await processRequestsForFundWallet(
-				fundWallet,
-				requests.map((r) => ({
-					id: r.id,
-					targetWalletId: r.targetWalletId,
-					targetAddress: r.TargetWallet.walletAddress,
-					assetUnit: r.assetUnit,
-					amount: r.amount,
-				})),
-			);
+			await this.dispatchToWallets(fundWallets, paymentSourceId);
 		}
 	}
 
@@ -594,6 +618,7 @@ export class FundDistributionService {
 				fundWalletId: true,
 				batchId: true,
 				amount: true,
+				assetUnit: true,
 				targetWalletId: true,
 				// The Transaction this batch owns. The unlock below is guarded on it
 				// so we can only ever release OUR OWN lock, never a newer batch's.
@@ -620,14 +645,16 @@ export class FundDistributionService {
 		// Group by fund wallet so we only unlock once per wallet after all its submitted requests are processed
 		const byFundWallet = new Map<string, typeof submittedRequests>();
 		for (const req of submittedRequests) {
+			if (req.fundWalletId == null || req.FundWallet == null) continue;
 			const group = byFundWallet.get(req.fundWalletId) ?? [];
 			group.push(req);
 			byFundWallet.set(req.fundWalletId, group);
 		}
 
 		for (const [fundWalletId, requests] of byFundWallet) {
-			const rpcKey = requests[0]?.FundWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
-			const network = requests[0]?.FundWallet.PaymentSource.network;
+			const fundWallet = requests[0]?.FundWallet;
+			const rpcKey = fundWallet?.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
+			const network = fundWallet?.PaymentSource.network;
 			if (!rpcKey || !network) continue;
 
 			// Deduplicate by txHash — batched requests share one hash, so one Blockfrost call covers all
@@ -648,18 +675,19 @@ export class FundDistributionService {
 					),
 				];
 				const requestIds = txRequests.map((request) => request.id);
-				const paymentSourceId = txRequests[0]?.FundWallet.PaymentSource.id;
+				const paymentSourceId = fundWallet.PaymentSource.id;
 				// Every request under this txHash shares one batch, so one payload
 				// describes the whole outcome.
 				const outcomePayload = {
 					batchId: txRequests[0]?.batchId ?? '',
 					fundWalletId,
-					fundWalletAddress: txRequests[0]?.FundWallet.walletAddress ?? '',
-					network: txRequests[0]?.FundWallet.PaymentSource.network ?? Network.Preprod,
+					fundWalletAddress: fundWallet.walletAddress,
+					network: fundWallet.PaymentSource.network,
 					distributions: txRequests.map((req) => ({
 						requestId: req.id,
 						targetWalletId: req.targetWalletId,
 						targetWalletAddress: req.TargetWallet.walletAddress,
+						assetUnit: req.assetUnit,
 						amount: req.amount.toString(),
 					})),
 				};

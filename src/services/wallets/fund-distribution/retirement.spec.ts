@@ -1,7 +1,12 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { FundDistributionStatus, HotWalletType } from '@/generated/prisma/client';
-import { prepareTargetWalletRemoval, retirePaymentSourceFundDistributions } from './retirement';
+import {
+	hasPositiveWalletBalance,
+	prepareTargetWalletRemoval,
+	retireFundWalletDistributions,
+	retirePaymentSourceFundDistributions,
+} from './retirement';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -55,6 +60,76 @@ describe('prepareTargetWalletRemoval', () => {
 	});
 });
 
+describe('retireFundWalletDistributions', () => {
+	it('detects native-token balances even when lovelace is zero', () => {
+		expect(
+			hasPositiveWalletBalance(
+				new Map([
+					['lovelace', 0n],
+					['a'.repeat(56), 1n],
+				]),
+			),
+		).toBe(true);
+		expect(hasPositiveWalletBalance(new Map([['lovelace', 0n]]))).toBe(false);
+	});
+
+	it('cancels source-level queued requests when no enabled fund wallet remains', async () => {
+		mockHotWalletCount.mockResolvedValue(0);
+
+		await retireFundWalletDistributions(tx, {
+			fundWalletId: 'fund-1',
+			paymentSourceId: 'ps-1',
+		});
+
+		expect(mockConfigUpdateMany).toHaveBeenCalledWith({
+			where: { hotWalletId: 'fund-1' },
+			data: { enabled: false },
+		});
+		expect(mockRequestUpdateMany).toHaveBeenCalledWith({
+			where: {
+				status: FundDistributionStatus.Pending,
+				transactionId: null,
+				OR: [
+					{ fundWalletId: 'fund-1' },
+					{
+						fundWalletId: null,
+						TargetWallet: { paymentSourceId: 'ps-1' },
+					},
+				],
+			},
+			data: {
+				status: FundDistributionStatus.Failed,
+				error: 'Distribution cancelled because no enabled fund wallet remains',
+			},
+		});
+	});
+
+	it('keeps unassigned source requests when another enabled fund wallet remains', async () => {
+		mockHotWalletCount.mockResolvedValue(1);
+
+		await retireFundWalletDistributions(tx, {
+			fundWalletId: 'fund-1',
+			paymentSourceId: 'ps-1',
+		});
+
+		expect(mockHotWalletCount).toHaveBeenCalledWith({
+			where: {
+				paymentSourceId: 'ps-1',
+				type: HotWalletType.Funding,
+				deletedAt: null,
+				FundDistributionConfig: { enabled: true },
+			},
+		});
+		expect(mockRequestUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: [{ fundWalletId: 'fund-1' }],
+				}),
+			}),
+		);
+	});
+});
+
 describe('retirePaymentSourceFundDistributions', () => {
 	it('rejects deletion while an active fund wallet remains', async () => {
 		mockHotWalletCount.mockResolvedValue(1);
@@ -83,7 +158,7 @@ describe('retirePaymentSourceFundDistributions', () => {
 		expect(mockRequestUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: {
-					FundWallet: { paymentSourceId: 'ps-1' },
+					TargetWallet: { paymentSourceId: 'ps-1' },
 					status: FundDistributionStatus.Pending,
 					transactionId: null,
 				},

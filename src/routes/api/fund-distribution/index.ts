@@ -26,9 +26,9 @@ export const getFundDistributionEndpointGet = adminAuthenticatedEndpointFactory.
 		const requests = await prisma.fundDistributionRequest.findMany({
 			where: {
 				...(input.fundWalletId ? { fundWalletId: input.fundWalletId } : {}),
-				// Resolve through the relation so a payment-source query includes old,
-				// soft-deleted/replaced fund wallets and both filters stay effective.
-				...(input.paymentSourceId ? { FundWallet: { paymentSourceId: input.paymentSourceId } } : {}),
+				// Requests are unassigned until dispatch, so the target wallet is the
+				// authoritative source relation for both queued and claimed rows.
+				...(input.paymentSourceId ? { TargetWallet: { paymentSourceId: input.paymentSourceId } } : {}),
 				...(input.status ? { status: input.status } : {}),
 			},
 			orderBy: { createdAt: 'desc' },
@@ -44,6 +44,7 @@ export const getFundDistributionEndpointGet = adminAuthenticatedEndpointFactory.
 				fundWalletId: true,
 				targetWalletId: true,
 				priority: true,
+				assetUnit: true,
 				amount: true,
 				status: true,
 				txHash: true,

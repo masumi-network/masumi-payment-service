@@ -118,10 +118,6 @@ model HotWallet {
   FundDistributionConfig                  FundDistributionConfig?
   FundDistributionsSent                   FundDistributionRequest[]       @relation("FundDistributionSource")
   FundDistributionsReceived               FundDistributionRequest[]       @relation("FundDistributionTarget")
-
-  // Active Funding wallets are unique per paymentSourceId via the partial
-  // database index in 20260717000000_enforce_active_fund_wallet_uniqueness.
-  // Prisma cannot express indexes with enum/deletedAt predicates.
 }
 
 model HotWalletLowBalanceRule {
@@ -132,6 +128,13 @@ model HotWalletLowBalanceRule {
   assetUnit       String
   thresholdAmount BigInt
   enabled         Boolean          @default(true)
+  /// When the balance falls below `thresholdAmount`, this rule always fires the
+  /// low-balance alert/webhook. If `topupEnabled` is also set, a fund wallet on
+  /// the same source additionally tops the wallet up by `topupAmount` (in the
+  /// asset's own smallest unit). The trigger and the amount live here, on the
+  /// wallet that runs low, rather than on the treasury.
+  topupEnabled    Boolean          @default(false)
+  topupAmount     BigInt?
   status          LowBalanceStatus @default(Unknown)
   lastKnownAmount BigInt?
   lastCheckedAt   DateTime?
@@ -955,51 +958,35 @@ model PaymentSourceConfig {
 }
 
 model FundDistributionConfig {
-  id            String                        @id @default(cuid())
-  createdAt     DateTime                      @default(now())
-  updatedAt     DateTime                      @updatedAt
-  hotWalletId   String                        @unique
-  HotWallet     HotWallet                     @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
-  enabled       Boolean                       @default(true)
-  batchWindowMs Int                           @default(300000)
-  /// Thresholds and top-up sizes live per asset, not here. A single scalar
-  /// triple cannot describe more than one asset: "below 20" means 20 ADA for
-  /// lovelace and 20 USDM for a stablecoin, and the two are unrelated
-  /// quantities. `enabled` and `batchWindowMs` stay wallet-level because they
-  /// describe the distribution cycle itself, not any one asset.
-  AssetConfigs  FundDistributionAssetConfig[]
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  hotWalletId   String    @unique
+  HotWallet     HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+  enabled       Boolean   @default(true)
+  batchWindowMs Int       @default(300000)
+  /// A fund wallet is now purely a funding source: it holds no per-asset
+  /// thresholds or top-up sizes. Those live on each hot wallet's
+  /// HotWalletLowBalanceRule (the wallet that runs low decides when and how
+  /// much). `enabled` toggles this wallet as a funding source; `batchWindowMs`
+  /// is its distribution-cycle cadence.
 }
 
-/// Per-asset distribution policy for one fund wallet.
+/// One top-up requested by a target wallet's per-asset low-balance rule.
 ///
-/// Mirrors `HotWalletLowBalanceRule`, which is already keyed per asset — that is
-/// what makes a USDM/USDCX low-balance rule expressible, and therefore what a
-/// top-up has to be able to answer. `assetUnit` uses the same convention:
-/// 'lovelace' for ADA, otherwise policyId + hex asset name.
-model FundDistributionAssetConfig {
-  id                     String                 @id @default(cuid())
-  createdAt              DateTime               @default(now())
-  updatedAt              DateTime               @updatedAt
-  fundDistributionConfigId String
-  FundDistributionConfig FundDistributionConfig @relation(fields: [fundDistributionConfigId], references: [id], onDelete: Cascade)
-  assetUnit              String
-  /// Below this, the top-up is batched into the next window.
-  warningThreshold       BigInt
-  /// Below this, the top-up is sent immediately.
-  criticalThreshold      BigInt
-  /// Amount of this asset sent per top-up, in the asset's own smallest unit.
-  topupAmount            BigInt
-
-  @@unique([fundDistributionConfigId, assetUnit])
-  @@index([assetUnit])
-}
-
+/// The request remains unassigned until any enabled fund wallet on the same
+/// payment source claims it. `assetUnit` uses the rule convention: 'lovelace'
+/// for ADA, otherwise policyId + hex asset name.
 model FundDistributionRequest {
   id             String                   @id @default(cuid())
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
-  fundWalletId   String
-  FundWallet     HotWallet                @relation("FundDistributionSource", fields: [fundWalletId], references: [id])
+  /// The fund wallet that will pay this top-up. Null while unassigned: a
+  /// shortage is recorded per (target, asset) and any fund wallet on the source
+  /// can fulfil it, so the wallet is chosen at dispatch (first with funds) and
+  /// set atomically with the fund-wallet lock.
+  fundWalletId   String?
+  FundWallet     HotWallet?               @relation("FundDistributionSource", fields: [fundWalletId], references: [id])
   targetWalletId String
   TargetWallet   HotWallet                @relation("FundDistributionTarget", fields: [targetWalletId], references: [id])
   priority       FundDistributionPriority
@@ -1027,9 +1014,11 @@ model FundDistributionRequest {
 
   @@index([fundWalletId, status])
   @@index([status, priority, createdAt])
-  // Dedupe is per (target, asset): an in-flight ADA top-up must not suppress a
-  // USDM one to the same wallet — they are independent shortages.
-  @@index([fundWalletId, targetWalletId, assetUnit, status])
+  // Dedupe is per (target, asset) across ALL fund wallets on the source: a
+  // shortage is funded by exactly one wallet regardless of which. An in-flight
+  // ADA top-up must not suppress a USDM one to the same wallet — independent
+  // shortages.
+  @@index([targetWalletId, assetUnit, status])
   @@index([status, updatedAt])
   @@index([transactionId])
 }

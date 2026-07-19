@@ -12,7 +12,9 @@ const mockHotWalletFindFirst = jest.fn() as AnyMock;
 const mockHotWalletFindMany = jest.fn() as AnyMock;
 const mockCreateLowBalanceRule = jest.fn() as AnyMock;
 const mockUpdateLowBalanceRule = jest.fn() as AnyMock;
+const mockDeleteLowBalanceRule = jest.fn() as AnyMock;
 const mockFindUniqueLowBalanceRule = jest.fn() as AnyMock;
+const mockDistributionUpdateMany = jest.fn() as AnyMock;
 const mockFetchAddressBalanceMap = jest.fn() as AnyMock;
 const mockLoggerInfo = jest.fn() as AnyMock;
 const mockLoggerWarn = jest.fn() as AnyMock;
@@ -21,10 +23,6 @@ const mockLoggerError = jest.fn() as AnyMock;
 const HotWalletType = {
 	Purchasing: 'Purchasing',
 	Selling: 'Selling',
-	// Must be present: the alert path guards on `type !== HotWalletType.Funding`
-	// before requesting a topup. Omitting it makes that compare against
-	// undefined, so the guard passes for every wallet and the test proves
-	// nothing about it.
 	Funding: 'Funding',
 } as const;
 
@@ -60,12 +58,22 @@ jest.unstable_mockModule('@/generated/prisma/enums', () => ({
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		$transaction: async (
-			callback: (tx: { hotWalletLowBalanceRule: { updateMany: typeof mockUpdateMany } }) => Promise<unknown>,
+			callback: (tx: {
+				hotWalletLowBalanceRule: {
+					updateMany: typeof mockUpdateMany;
+					update: typeof mockUpdateLowBalanceRule;
+					delete: typeof mockDeleteLowBalanceRule;
+				};
+				fundDistributionRequest: { updateMany: typeof mockDistributionUpdateMany };
+			}) => Promise<unknown>,
 		) =>
 			callback({
 				hotWalletLowBalanceRule: {
 					updateMany: mockUpdateMany,
+					update: mockUpdateLowBalanceRule,
+					delete: mockDeleteLowBalanceRule,
 				},
+				fundDistributionRequest: { updateMany: mockDistributionUpdateMany },
 			}),
 		hotWallet: {
 			findFirst: mockHotWalletFindFirst,
@@ -74,6 +82,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		hotWalletLowBalanceRule: {
 			create: mockCreateLowBalanceRule,
 			update: mockUpdateLowBalanceRule,
+			delete: mockDeleteLowBalanceRule,
 			findUnique: mockFindUniqueLowBalanceRule,
 			createMany: jest.fn(),
 		},
@@ -172,11 +181,14 @@ describe('WalletLowBalanceMonitorService', () => {
 		service = new WalletLowBalanceMonitorService();
 	});
 
-	const createWallet = (status: (typeof LowBalanceStatus)[keyof typeof LowBalanceStatus]) => ({
+	const createWallet = (
+		status: (typeof LowBalanceStatus)[keyof typeof LowBalanceStatus],
+		type: (typeof HotWalletType)[keyof typeof HotWalletType] = HotWalletType.Purchasing,
+	) => ({
 		id: 'wallet-1',
 		walletVkey: 'wallet_vkey',
 		walletAddress: 'addr_test1...',
-		type: HotWalletType.Purchasing,
+		type,
 		PaymentSource: {
 			id: 'payment-source-1',
 			network: Network.Preprod,
@@ -188,6 +200,8 @@ describe('WalletLowBalanceMonitorService', () => {
 				assetUnit: 'lovelace',
 				thresholdAmount: 5000000n,
 				enabled: true,
+				topupEnabled: false,
+				topupAmount: null,
 				status,
 				lastKnownAmount: null,
 				lastCheckedAt: null,
@@ -203,6 +217,8 @@ describe('WalletLowBalanceMonitorService', () => {
 		assetUnit: 'lovelace',
 		thresholdAmount: 5000000n,
 		enabled,
+		topupEnabled: false,
+		topupAmount: null,
 		status,
 		lastKnownAmount: null,
 		lastCheckedAt: null,
@@ -227,8 +243,10 @@ describe('WalletLowBalanceMonitorService', () => {
 		mockHotWalletFindMany.mockReset();
 		mockCreateLowBalanceRule.mockReset();
 		mockUpdateLowBalanceRule.mockReset();
+		mockDeleteLowBalanceRule.mockReset();
 		mockFindUniqueLowBalanceRule.mockReset();
 		mockFetchAddressBalanceMap.mockReset();
+		mockDistributionUpdateMany.mockResolvedValue({ count: 1 });
 	});
 
 	it('does not warn on Unknown -> Low', async () => {
@@ -293,6 +311,30 @@ describe('WalletLowBalanceMonitorService', () => {
 			network: Network.Preprod,
 			asset_unit: 'lovelace',
 			wallet_type: HotWalletType.Purchasing,
+			check_source: 'interval_check',
+			payment_source_type: PaymentSourceType.Web3CardanoV1,
+		});
+	});
+
+	it('emits low-balance alerts and webhooks for Funding wallets', async () => {
+		await service.evaluateWalletContext(
+			createWallet(LowBalanceStatus.Healthy, HotWalletType.Funding),
+			balanceMap(4000000n),
+			'interval_check',
+		);
+
+		expect(mockTriggerWalletLowBalance).toHaveBeenCalledWith(
+			expect.objectContaining({
+				walletId: 'wallet-1',
+				walletType: HotWalletType.Funding,
+				paymentSourceId: 'payment-source-1',
+				assetUnit: 'lovelace',
+			}),
+		);
+		expect(mockRecordWalletLowBalanceAlert).toHaveBeenCalledWith({
+			network: Network.Preprod,
+			asset_unit: 'lovelace',
+			wallet_type: HotWalletType.Funding,
 			check_source: 'interval_check',
 			payment_source_type: PaymentSourceType.Web3CardanoV1,
 		});
@@ -493,6 +535,61 @@ describe('WalletLowBalanceMonitorService', () => {
 		expect(mockHotWalletFindFirst).not.toHaveBeenCalled();
 		expect(updatedRule.enabled).toBe(false);
 		expect(updatedRule.status).toBe(LowBalanceStatus.Unknown);
+	});
+
+	it('retires an unclaimed top-up atomically when a rule changes', async () => {
+		mockUpdateLowBalanceRule.mockResolvedValue(createRuleRecord(LowBalanceStatus.Unknown, false));
+		mockFindUniqueLowBalanceRule.mockResolvedValue(createRuleRecord(LowBalanceStatus.Unknown, false));
+
+		await service.updateRule({
+			ruleId: 'rule-1',
+			enabled: false,
+		});
+
+		expect(mockDistributionUpdateMany).toHaveBeenCalledWith({
+			where: {
+				targetWalletId: 'wallet-1',
+				assetUnit: 'lovelace',
+				status: 'Pending',
+				fundWalletId: null,
+				transactionId: null,
+			},
+			data: {
+				status: 'Failed',
+				error: 'Distribution cancelled because its low-balance rule changed',
+			},
+		});
+	});
+
+	it('deletes a rule and retires its unclaimed top-up in one transaction', async () => {
+		mockDeleteLowBalanceRule.mockResolvedValue({
+			hotWalletId: 'wallet-1',
+			assetUnit: 'lovelace',
+		});
+
+		await service.deleteRule('rule-1');
+
+		expect(mockDeleteLowBalanceRule).toHaveBeenCalledWith({
+			where: { id: 'rule-1' },
+			select: {
+				hotWalletId: true,
+				assetUnit: true,
+			},
+		});
+		expect(mockDistributionUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					targetWalletId: 'wallet-1',
+					assetUnit: 'lovelace',
+					fundWalletId: null,
+					transactionId: null,
+				}),
+				data: expect.objectContaining({
+					status: 'Failed',
+					error: 'Distribution cancelled because its low-balance rule was deleted',
+				}),
+			}),
+		);
 	});
 
 	it('re-enables a rule and silently seeds low state without alerting', async () => {

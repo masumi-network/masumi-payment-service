@@ -9,6 +9,10 @@ import { resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
 import { fetchAddressBalanceMap } from '@/services/shared/address-balance';
 import { walletLowBalanceMonitorService, serializeLowBalanceSummary } from '@/services/wallets';
+import {
+	hasPositiveWalletBalance,
+	retireFundWalletDistributions,
+} from '@/services/wallets/fund-distribution/retirement';
 import { isUniqueConstraintError, retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import {
 	deleteFundWalletSchemaInput,
@@ -32,76 +36,11 @@ export {
 	deleteFundWalletSchemaOutput,
 };
 
-type AssetConfigInput = {
-	assetUnit: string;
-	warningThreshold: string;
-	criticalThreshold: string;
-	topupAmount: string;
-};
-
-/**
- * Validate one asset's policy.
- *
- * The min-UTxO floor applies to LOVELACE ONLY. It exists because an ADA output
- * below min-UTxO can never build — but a token quantity has no such bound, and
- * applying an ADA floor to it would reject a perfectly sensible 1 USDM top-up.
- * The ADA a token output needs is added at build time, not configured here.
- */
-function parseAssetConfig(asset: AssetConfigInput) {
-	const warningThreshold = BigInt(asset.warningThreshold);
-	const criticalThreshold = BigInt(asset.criticalThreshold);
-	const topupAmount = BigInt(asset.topupAmount);
-
-	if (criticalThreshold >= warningThreshold) {
-		throw createHttpError(400, `criticalThreshold must be less than warningThreshold for ${asset.assetUnit}`);
-	}
-	if (topupAmount <= 0n) {
-		throw createHttpError(400, `topupAmount must be greater than zero for ${asset.assetUnit}`);
-	}
-	if (asset.assetUnit === 'lovelace' && topupAmount < CONSTANTS.MIN_TOPUP_LOVELACE) {
-		throw createHttpError(
-			400,
-			`topupAmount must be at least ${CONSTANTS.MIN_TOPUP_LOVELACE.toString()} lovelace; ` +
-				'a smaller output cannot satisfy the Cardano min-UTxO requirement',
-		);
-	}
-
-	return { assetUnit: asset.assetUnit, warningThreshold, criticalThreshold, topupAmount };
-}
-
-/** Validate the whole policy, rejecting a duplicated asset rather than silently keeping one. */
-function parseAssetConfigs(assets: AssetConfigInput[]) {
-	const seen = new Set<string>();
-	for (const asset of assets) {
-		if (seen.has(asset.assetUnit)) {
-			throw createHttpError(400, `Duplicate assetUnit in Assets: ${asset.assetUnit}`);
-		}
-		seen.add(asset.assetUnit);
-	}
-	return assets.map(parseAssetConfig);
-}
-
-function serializeConfig(config: {
-	id: string;
-	enabled: boolean;
-	batchWindowMs: number;
-	AssetConfigs: Array<{
-		assetUnit: string;
-		warningThreshold: bigint;
-		criticalThreshold: bigint;
-		topupAmount: bigint;
-	}>;
-}) {
+function serializeConfig(config: { id: string; enabled: boolean; batchWindowMs: number }) {
 	return {
 		id: config.id,
 		enabled: config.enabled,
 		batchWindowMs: config.batchWindowMs,
-		Assets: config.AssetConfigs.map((asset) => ({
-			assetUnit: asset.assetUnit,
-			warningThreshold: asset.warningThreshold.toString(),
-			criticalThreshold: asset.criticalThreshold.toString(),
-			topupAmount: asset.topupAmount.toString(),
-		})),
 	};
 }
 
@@ -114,13 +53,14 @@ export const getFundWalletEndpointGet = adminAuthenticatedEndpointFactory.build(
 			throw createHttpError(400, 'Either id or paymentSourceId must be provided');
 		}
 
-		const wallet = await prisma.hotWallet.findFirst({
+		const wallets = await prisma.hotWallet.findMany({
 			where: {
 				...(input.id ? { id: input.id } : {}),
 				...(input.paymentSourceId ? { paymentSourceId: input.paymentSourceId } : {}),
 				type: HotWalletType.Funding,
 				deletedAt: null,
 			},
+			orderBy: { createdAt: 'asc' },
 			select: {
 				id: true,
 				walletAddress: true,
@@ -135,6 +75,8 @@ export const getFundWalletEndpointGet = adminAuthenticatedEndpointFactory.build(
 						assetUnit: true,
 						thresholdAmount: true,
 						enabled: true,
+						topupEnabled: true,
+						topupAmount: true,
 						status: true,
 						lastKnownAmount: true,
 						lastCheckedAt: true,
@@ -142,20 +84,7 @@ export const getFundWalletEndpointGet = adminAuthenticatedEndpointFactory.build(
 					},
 				},
 				FundDistributionConfig: {
-					select: {
-						id: true,
-						enabled: true,
-						batchWindowMs: true,
-						AssetConfigs: {
-							select: {
-								assetUnit: true,
-								warningThreshold: true,
-								criticalThreshold: true,
-								topupAmount: true,
-							},
-							orderBy: { assetUnit: 'asc' },
-						},
-					},
+					select: { id: true, enabled: true, batchWindowMs: true },
 				},
 				_count: {
 					select: {
@@ -167,20 +96,18 @@ export const getFundWalletEndpointGet = adminAuthenticatedEndpointFactory.build(
 			},
 		});
 
-		if (!wallet) {
-			throw createHttpError(404, 'Fund wallet not found');
-		}
-
 		return {
-			id: wallet.id,
-			walletAddress: wallet.walletAddress,
-			walletVkey: wallet.walletVkey,
-			note: wallet.note ?? null,
-			paymentSourceId: wallet.paymentSourceId,
-			lockedAt: wallet.lockedAt ?? null,
-			LowBalanceSummary: serializeLowBalanceSummary(wallet.LowBalanceRules),
-			FundDistributionConfig: wallet.FundDistributionConfig ? serializeConfig(wallet.FundDistributionConfig) : null,
-			pendingRequestCount: wallet._count.FundDistributionsSent,
+			FundWallets: wallets.map((wallet) => ({
+				id: wallet.id,
+				walletAddress: wallet.walletAddress,
+				walletVkey: wallet.walletVkey,
+				note: wallet.note ?? null,
+				paymentSourceId: wallet.paymentSourceId,
+				lockedAt: wallet.lockedAt ?? null,
+				LowBalanceSummary: serializeLowBalanceSummary(wallet.LowBalanceRules),
+				FundDistributionConfig: wallet.FundDistributionConfig ? serializeConfig(wallet.FundDistributionConfig) : null,
+				pendingRequestCount: wallet._count.FundDistributionsSent,
+			})),
 		};
 	},
 });
@@ -199,20 +126,12 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 			throw createHttpError(404, 'Payment source not found');
 		}
 
-		const existingFundWallet = await prisma.hotWallet.findFirst({
-			where: {
-				paymentSourceId: input.paymentSourceId,
-				type: HotWalletType.Funding,
-				deletedAt: null,
-			},
-			select: { id: true },
-		});
-
-		if (existingFundWallet) {
-			throw createHttpError(409, 'A fund wallet already exists for this payment source');
-		}
-
-		const assetConfigs = parseAssetConfigs(input.Assets);
+		// A payment source may have several fund wallets (redundancy / capacity):
+		// any of them can fund any shortage, so a second one is allowed. The only
+		// hard constraint left is walletVkey uniqueness among active wallets, so
+		// the same mnemonic cannot back two live fund wallets. A fund wallet holds
+		// no per-asset policy anymore: the top-up trigger and amount live on each
+		// hot wallet's low-balance rule.
 
 		// A typo'd or truncated phrase is ordinary user input, not an exception:
 		// MeshWallet throws a bare bip39 Error, which would otherwise surface as a
@@ -272,22 +191,8 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 									hotWalletId: hotWallet.id,
 									enabled: true,
 									batchWindowMs: input.batchWindowMs ?? CONSTANTS.FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS,
-									AssetConfigs: { create: assetConfigs },
 								},
-								select: {
-									id: true,
-									enabled: true,
-									batchWindowMs: true,
-									AssetConfigs: {
-										select: {
-											assetUnit: true,
-											warningThreshold: true,
-											criticalThreshold: true,
-											topupAmount: true,
-										},
-										orderBy: { assetUnit: 'asc' },
-									},
-								},
+								select: { id: true, enabled: true, batchWindowMs: true },
 							});
 
 							return { hotWallet, config };
@@ -303,23 +208,13 @@ export const postFundWalletEndpointPost = adminAuthenticatedEndpointFactory.buil
 			// V2 source -- lands here. Without this it surfaced as a raw Prisma error
 			// and a 500, which reads as a bug rather than a constraint.
 			if (isUniqueConstraintError(error)) {
-				// The database constraint is the authoritative race-safe check. If
-				// another request won creation for this source, report that conflict;
-				// otherwise the globally unique walletVkey/mnemonic was reused.
-				const activeFundWallet = await prisma.hotWallet.findFirst({
-					where: {
-						paymentSourceId: input.paymentSourceId,
-						type: HotWalletType.Funding,
-						deletedAt: null,
-					},
-					select: { id: true },
-				});
-				if (activeFundWallet) {
-					throw createHttpError(409, 'A fund wallet already exists for this payment source');
-				}
+				// The only remaining uniqueness constraint is walletVkey among active
+				// wallets: the same mnemonic cannot back two live wallets anywhere in
+				// the system. Multiple fund wallets per source are allowed, but each
+				// needs its own mnemonic.
 				throw createHttpError(
 					409,
-					'This wallet is already registered. A wallet mnemonic can only back one wallet, so each payment source needs its own fund wallet with its own mnemonic.',
+					'This wallet is already registered. A wallet mnemonic can only back one wallet, so each fund wallet needs its own mnemonic.',
 				);
 			}
 			throw error;
@@ -367,48 +262,19 @@ export const patchFundWalletEndpointPatch = adminAuthenticatedEndpointFactory.bu
 			throw createHttpError(404, 'Fund wallet has no distribution config');
 		}
 
-		// Validate before opening the transaction: the min-UTxO floor is enforced
-		// on update too, or it is trivially bypassed by creating a valid wallet and
-		// editing the amount down afterwards.
-		const assetConfigs = input.Assets != null ? parseAssetConfigs(input.Assets) : null;
-
 		const updated = await retryOnSerializationConflict(
 			() =>
 				prisma.$transaction(
 					async (tx) => {
-						// Replace the policy wholesale rather than patching rows: each asset
-						// row is then written as a validated (warning, critical, topup)
-						// triple. Patching columns individually let two concurrent updates
-						// (warning down, critical up) each validate against stale data and
-						// interleave into critical >= warning — after which every low balance
-						// classified Critical and bypassed the batch window.
-						if (assetConfigs != null) {
-							await tx.fundDistributionAssetConfig.deleteMany({ where: { fundDistributionConfigId: configId } });
-							await tx.fundDistributionAssetConfig.createMany({
-								data: assetConfigs.map((asset) => ({ ...asset, fundDistributionConfigId: configId })),
-							});
-						}
-
+						// A fund wallet holds no per-asset policy anymore: patching it only
+						// toggles it as a funding source and adjusts its batch cadence.
 						return tx.fundDistributionConfig.update({
 							where: { id: configId },
 							data: {
 								...(input.enabled != null ? { enabled: input.enabled } : {}),
 								...(input.batchWindowMs != null ? { batchWindowMs: input.batchWindowMs } : {}),
 							},
-							select: {
-								id: true,
-								enabled: true,
-								batchWindowMs: true,
-								AssetConfigs: {
-									select: {
-										assetUnit: true,
-										warningThreshold: true,
-										criticalThreshold: true,
-										topupAmount: true,
-									},
-									orderBy: { assetUnit: 'asc' },
-								},
-							},
+							select: { id: true, enabled: true, batchWindowMs: true },
 						});
 					},
 					{ isolationLevel: 'Serializable' },
@@ -432,6 +298,7 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 			where: { id: input.id, type: HotWalletType.Funding, deletedAt: null },
 			select: {
 				id: true,
+				paymentSourceId: true,
 				walletAddress: true,
 				lockedAt: true,
 				pendingTransactionId: true,
@@ -477,14 +344,13 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 				);
 			}
 
-			let lovelace: bigint;
+			let balanceMap: Map<string, bigint>;
 			try {
-				const balanceMap = await fetchAddressBalanceMap({
+				balanceMap = await fetchAddressBalanceMap({
 					network: wallet.PaymentSource.network,
 					rpcProviderApiKey,
 					address: wallet.walletAddress,
 				});
-				lovelace = balanceMap.get('lovelace') ?? 0n;
 			} catch {
 				// Balance unknown (indexer down). Deleting blind could strand funds,
 				// so make the operator choose rather than guessing for them.
@@ -494,10 +360,10 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 				);
 			}
 
-			if (lovelace > 0n) {
+			if (hasPositiveWalletBalance(balanceMap)) {
 				throw createHttpError(
 					409,
-					`Fund wallet still holds ${lovelace.toString()} lovelace. Withdraw it first — after deletion the ` +
+					'Fund wallet still holds ADA or native assets. Withdraw every asset first — after deletion the ' +
 						'mnemonic can no longer be exported through the API. Pass force=true to delete anyway.',
 				);
 			}
@@ -530,23 +396,9 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 						});
 						if (deleted.count !== 1) return false;
 
-						await tx.fundDistributionConfig.updateMany({
-							where: { hotWalletId: input.id },
-							data: { enabled: false },
-						});
-
-						// Only unclaimed Pending requests are cancellable. Submitted requests
-						// are protected by the guarded delete because broadcast cannot be undone.
-						await tx.fundDistributionRequest.updateMany({
-							where: {
-								fundWalletId: input.id,
-								status: FundDistributionStatus.Pending,
-								transactionId: null,
-							},
-							data: {
-								status: FundDistributionStatus.Failed,
-								error: 'Fund wallet was deleted',
-							},
+						await retireFundWalletDistributions(tx, {
+							fundWalletId: input.id,
+							paymentSourceId: wallet.paymentSourceId,
 						});
 
 						return true;

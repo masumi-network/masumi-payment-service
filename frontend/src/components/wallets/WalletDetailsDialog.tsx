@@ -46,6 +46,7 @@ import {
   getRuleAssetLabel,
   getRuleAssetMetaFromPreset,
   parseThresholdInputToRaw,
+  validateRuleTopupInput,
   type WalletWithBalance,
 } from '@/components/wallets/wallet-details-utils';
 import { TokenBalanceSection } from '@/components/wallets/sections/TokenBalanceSection';
@@ -500,7 +501,16 @@ export function WalletDetailsDialog({
     addRuleAssetMeta.assetUnit,
     network,
   );
-  const canCreateNewRule = addRuleAssetMeta.assetUnit.trim() !== '' && newRuleRawThreshold != null;
+  const newRuleTopupValidation = validateRuleTopupInput({
+    enabled: rules.newRuleTopupEnabled,
+    topupAmountInput: rules.newRuleTopupAmountInput,
+    assetUnit: addRuleAssetMeta.assetUnit,
+    network,
+  });
+  const canCreateNewRule =
+    addRuleAssetMeta.assetUnit.trim() !== '' &&
+    newRuleRawThreshold != null &&
+    newRuleTopupValidation.error == null;
 
   return (
     <>
@@ -583,6 +593,7 @@ export function WalletDetailsDialog({
                 lowRules={lowRules}
                 enabledRuleCount={enabledRuleCount}
                 network={network}
+                supportsAutoTopup={wallet.type !== 'Funding'}
                 isWalletDetailsLoading={rules.isWalletDetailsLoading}
                 ruleDrafts={rules.ruleDrafts}
                 mutatingRuleIds={rules.mutatingRuleIds}
@@ -597,9 +608,15 @@ export function WalletDetailsDialog({
                 setNewRuleCustomAssetUnit={rules.setNewRuleCustomAssetUnit}
                 newRuleEnabled={rules.newRuleEnabled}
                 setNewRuleEnabled={rules.setNewRuleEnabled}
+                newRuleTopupEnabled={rules.newRuleTopupEnabled}
+                setNewRuleTopupEnabled={rules.setNewRuleTopupEnabled}
+                newRuleTopupAmountInput={rules.newRuleTopupAmountInput}
+                setNewRuleTopupAmountInput={rules.setNewRuleTopupAmountInput}
                 addRuleAssetMeta={addRuleAssetMeta}
                 newRuleAssetBreakdown={newRuleAssetBreakdown}
                 newRuleRawThreshold={newRuleRawThreshold}
+                newRuleRawTopup={newRuleTopupValidation.rawTopupAmount}
+                newRuleTopupError={newRuleTopupValidation.error}
                 canCreateNewRule={canCreateNewRule}
                 onCreateRule={rules.handleCreateLowBalanceRule}
                 isCreatingRule={rules.isCreatingRule}

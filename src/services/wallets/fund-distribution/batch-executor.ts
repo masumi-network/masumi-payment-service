@@ -9,6 +9,11 @@ import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-cla
 import { fetchAddressBalanceMap } from '@/services/shared/address-balance';
 import { webhookEventsService } from '@/services/webhooks';
 import { buildAndSignFundDistributionTx } from './transaction-builder';
+import {
+	calculateDistributionMinLovelace,
+	calculateDistributionValueSize,
+	getDistributionProtocolParameters,
+} from './min-utxo';
 import type { FundWalletContext } from './context';
 
 export type FundDistributionBatchRequest = {
@@ -31,49 +36,97 @@ type TargetOutput = {
 };
 
 /**
- * Collapse a batch into one output per target.
- *
- * Per TARGET, not per request: two outputs to the same address would each need
- * their own min-UTxO ADA, so a wallet owed both ADA and USDM would be charged
- * the floor twice and receive two UTxOs where one would do.
- */
-function groupRequestsByTarget(requests: FundDistributionBatchRequest[]): TargetOutput[] {
-	const byTarget = new Map<string, TargetOutput>();
-
-	for (const request of requests) {
-		const existing = byTarget.get(request.targetWalletId);
-		const output =
-			existing ??
-			({
-				targetWalletId: request.targetWalletId,
-				address: request.targetAddress,
-				requestIds: [],
-				assets: new Map<string, bigint>(),
-			} satisfies TargetOutput);
-
-		output.requestIds.push(request.id);
-		output.assets.set(request.assetUnit, (output.assets.get(request.assetUnit) ?? 0n) + request.amount);
-		byTarget.set(request.targetWalletId, output);
-	}
-
-	return [...byTarget.values()];
-}
-
-/**
  * Lovelace this output must carry.
  *
  * A native-token output cannot exist without ADA, so a token-only top-up still
  * moves lovelace. Where the target is also owed ADA, the larger wins rather
  * than the two being added — the requested top-up already satisfies the floor.
  */
-function resolveOutputLovelace(assets: Map<string, bigint>): bigint {
+function resolveOutputLovelace(address: string, assets: Map<string, bigint>, coinsPerUtxoSize: number): bigint {
 	const requestedLovelace = assets.get('lovelace') ?? 0n;
 	const carriesTokens = [...assets.keys()].some((unit) => unit !== 'lovelace');
 
 	if (!carriesTokens) return requestedLovelace;
-	return requestedLovelace > CONSTANTS.FUND_DISTRIBUTION_TOKEN_OUTPUT_LOVELACE
-		? requestedLovelace
-		: CONSTANTS.FUND_DISTRIBUTION_TOKEN_OUTPUT_LOVELACE;
+	const ledgerMinimum = calculateDistributionMinLovelace({
+		address,
+		assets: [...assets.entries()].map(([unit, quantity]) => ({ unit, quantity })),
+		coinsPerUtxoSize,
+	});
+	const tokenOutputFloor =
+		ledgerMinimum > CONSTANTS.FUND_DISTRIBUTION_TOKEN_OUTPUT_LOVELACE
+			? ledgerMinimum
+			: CONSTANTS.FUND_DISTRIBUTION_TOKEN_OUTPUT_LOVELACE;
+	return requestedLovelace > tokenOutputFloor ? requestedLovelace : tokenOutputFloor;
+}
+
+function appendRequestToOutput(output: TargetOutput, request: FundDistributionBatchRequest): TargetOutput {
+	const assets = new Map(output.assets);
+	assets.set(request.assetUnit, (assets.get(request.assetUnit) ?? 0n) + request.amount);
+	return {
+		...output,
+		requestIds: [...output.requestIds, request.id],
+		assets,
+	};
+}
+
+function outputFitsValueLimit(output: TargetOutput, coinsPerUtxoSize: number, maxValueSize: number): boolean {
+	const assets = new Map(output.assets);
+	assets.set('lovelace', resolveOutputLovelace(output.address, assets, coinsPerUtxoSize));
+	return (
+		calculateDistributionValueSize([...assets.entries()].map(([unit, quantity]) => ({ unit, quantity }))) <=
+		maxValueSize
+	);
+}
+
+/**
+ * Collapse requests by target while keeping each serialized Cardano Value
+ * within the live protocol limit. Most targets still get one output. A target
+ * with a large native-asset bundle is split into several outputs; the global
+ * output cap then leaves any remainder unclaimed for the next transaction.
+ */
+function groupRequestsByTarget(
+	requests: FundDistributionBatchRequest[],
+	coinsPerUtxoSize: number,
+	maxValueSize: number,
+): { outputs: TargetOutput[]; oversizedRequestIds: string[] } {
+	const byTarget = new Map<string, TargetOutput[]>();
+	const oversizedRequestIds: string[] = [];
+
+	for (const request of requests) {
+		const targetOutputs = byTarget.get(request.targetWalletId) ?? [];
+		const currentOutput = targetOutputs[targetOutputs.length - 1];
+		const emptyOutput = {
+			targetWalletId: request.targetWalletId,
+			address: request.targetAddress,
+			requestIds: [],
+			assets: new Map<string, bigint>(),
+		} satisfies TargetOutput;
+		const candidate = appendRequestToOutput(currentOutput ?? emptyOutput, request);
+
+		if (outputFitsValueLimit(candidate, coinsPerUtxoSize, maxValueSize)) {
+			if (currentOutput == null) {
+				targetOutputs.push(candidate);
+			} else {
+				targetOutputs[targetOutputs.length - 1] = candidate;
+			}
+			byTarget.set(request.targetWalletId, targetOutputs);
+			continue;
+		}
+
+		const singleRequestOutput = appendRequestToOutput(emptyOutput, request);
+		if (!outputFitsValueLimit(singleRequestOutput, coinsPerUtxoSize, maxValueSize)) {
+			oversizedRequestIds.push(request.id);
+			continue;
+		}
+
+		targetOutputs.push(singleRequestOutput);
+		byTarget.set(request.targetWalletId, targetOutputs);
+	}
+
+	return {
+		outputs: [...byTarget.values()].flat(),
+		oversizedRequestIds,
+	};
 }
 
 type ClaimErrorCode = 'WALLET_UNAVAILABLE' | 'REQUESTS_ALREADY_CLAIMED' | 'BATCH_OWNERSHIP_LOST';
@@ -125,7 +178,7 @@ async function alertFundWalletUnderfunded(
 		paymentSourceType: fundWallet.paymentSourceType,
 		network: fundWallet.network,
 		assetUnit,
-		thresholdAmount: '0',
+		thresholdAmount: rule.thresholdAmount.toString(),
 		currentAmount: fundWalletBalance.toString(),
 		checkedAt: new Date().toISOString(),
 	});
@@ -190,14 +243,33 @@ export async function processRequestsForFundWallet(
 	// all-or-nothing — and keep a running remainder for every unit at once.
 	const remaining = new Map<string, bigint>(balanceMap);
 	remaining.set('lovelace', fundWalletBalance - feeBuffer);
+	const protocolParameters = requests.some((request) => request.assetUnit !== 'lovelace')
+		? await getDistributionProtocolParameters(fundWallet.rpcProviderApiKey)
+		: {
+				coinsPerUtxoSize: CONSTANTS.FALLBACK_COINS_PER_UTXO_SIZE,
+				maxValueSize: CONSTANTS.FALLBACK_MAX_VALUE_SIZE,
+			};
+	const { outputs: groupedOutputs, oversizedRequestIds } = groupRequestsByTarget(
+		requests,
+		protocolParameters.coinsPerUtxoSize,
+		protocolParameters.maxValueSize,
+	);
+	if (oversizedRequestIds.length > 0) {
+		logger.error('Fund distribution request cannot fit within the protocol value-size limit', {
+			component: 'fund_distribution',
+			fund_wallet_id: fundWallet.id,
+			request_ids: oversizedRequestIds,
+			max_value_size: protocolParameters.maxValueSize,
+		});
+	}
 
 	const affordableOutputs: TargetOutput[] = [];
 	const shortAssets = new Set<string>();
 
-	for (const output of groupRequestsByTarget(requests)) {
+	for (const output of groupedOutputs) {
 		if (affordableOutputs.length >= CONSTANTS.FUND_DISTRIBUTION_MAX_OUTPUTS_PER_TX) break;
 
-		const outputLovelace = resolveOutputLovelace(output.assets);
+		const outputLovelace = resolveOutputLovelace(output.address, output.assets, protocolParameters.coinsPerUtxoSize);
 		const cost = new Map(output.assets);
 		cost.set('lovelace', outputLovelace);
 
@@ -275,15 +347,25 @@ export async function processRequestsForFundWallet(
 						});
 						if (walletClaim.count !== 1) throw claimError('WALLET_UNAVAILABLE');
 
+						// Claim only still-unassigned rows and assign this wallet in the
+						// same atomic step. Any source has several fund wallets competing
+						// for the same pending pool; whichever commits first wins the row,
+						// and a wallet that lost the race sees count < expected and aborts.
+						// The source scope stops a wallet from ever paying another source's
+						// targets.
 						const requestClaim = await tx.fundDistributionRequest.updateMany({
 							where: {
 								id: { in: batchRequestIds },
-								fundWalletId: fundWallet.id,
+								fundWalletId: null,
 								status: FundDistributionStatus.Pending,
 								transactionId: null,
-								TargetWallet: { deletedAt: null, PaymentSource: { deletedAt: null } },
+								TargetWallet: {
+									deletedAt: null,
+									paymentSourceId: fundWallet.paymentSourceId,
+									PaymentSource: { deletedAt: null },
+								},
 							},
-							data: { transactionId: newTx.id, batchId },
+							data: { fundWalletId: fundWallet.id, transactionId: newTx.id, batchId },
 						});
 						if (requestClaim.count !== batchRequestIds.length) {
 							throw claimError('REQUESTS_ALREADY_CLAIMED');
@@ -326,6 +408,7 @@ export async function processRequestsForFundWallet(
 			requestId: req.id,
 			targetWalletId: req.targetWalletId,
 			targetWalletAddress: req.targetAddress,
+			assetUnit: req.assetUnit,
 			amount: req.amount.toString(),
 		})),
 	};
