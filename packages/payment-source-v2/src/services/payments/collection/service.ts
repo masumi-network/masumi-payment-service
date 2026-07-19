@@ -17,7 +17,6 @@ import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-cla
 import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
 import { findMatchingPaymentUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 // V2-pinned single-item builder. MUST NOT use the root V1-mesh generator
 // (@/utils/generator/transaction-generator) — that bundles the V1 cost models
@@ -304,16 +303,7 @@ async function processSinglePaymentCollection(
 	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
 	const validated = await validateAndBuildItem(request, blockchainProvider, network, smartContractAddress);
 
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
-	// Collateral must cover the pinned 3 ADA total_collateral. limitedFilteredUtxos
-	// is sorted by ASCENDING asset bloat, so [0] can be a pure-ADA DUST UTxO (< 3
-	// ADA) → deterministic phase-1 InsufficientCollateral. Prefer the smallest
-	// qualifying >= 5 ADA UTxO (the same floor the batch path enforces via
-	// pickBatchCollateral); ensureCollateralReady above provisions a 5 ADA
-	// reserve, so this normally succeeds. Fall back to [0] only if the wallet has
-	// nothing larger (no worse than the previous behaviour).
-	const collateralUtxo =
-		pickBatchCollateral(limitedFilteredUtxos, [validated.smartContractUtxo.input]) ?? limitedFilteredUtxos[0];
+	const collateralUtxo = pickBatchCollateral(utxos, [validated.smartContractUtxo.input]);
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');
 	}
@@ -331,7 +321,7 @@ async function processSinglePaymentCollection(
 				address,
 				validated.smartContractUtxo,
 				collateralUtxo,
-				limitedFilteredUtxos,
+				utxos,
 				{
 					collectAssets: validated.collectAssets,
 					collectionAddress: validated.collectionAddress,
@@ -391,7 +381,7 @@ async function processSinglePaymentCollection(
 	// outer advancedRetry and trigger a rebuild+resubmit of an already-broadcast
 	// tx. Parity with the batch path, which wraps the identical call "(non-fatal)".
 	try {
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 	} catch (projectionError) {
 		logger.warn('V2 collection single-item: post-submit balance projection failed (non-fatal)', {
 			paymentRequestId: request.id,
@@ -640,8 +630,6 @@ async function processWalletBatch(
 		if (spendingUtxoKeys.has(key)) return false;
 		return true;
 	});
-	const limitedFilteredUtxos = sortAndLimitUtxos(walletUtxos, 8000000);
-
 	const shrinkResult = shrinkBatchToFit(validated, (subset) => {
 		const window = intersectTxWindows(subset.map((v) => v.window));
 		if (window == null) return { ok: false, reason: 'window' };
@@ -718,7 +706,7 @@ async function processWalletBatch(
 					script,
 					address,
 					collateralUtxo,
-					limitedFilteredUtxos,
+					walletUtxos,
 					items,
 					composed.invalidBefore,
 					composed.invalidAfter,
@@ -975,7 +963,7 @@ async function processWalletBatch(
 	}
 
 	try {
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 	} catch (balanceError) {
 		logger.warn('V2 collection batch projected balance evaluation failed (non-fatal)', { error: balanceError });
 	}

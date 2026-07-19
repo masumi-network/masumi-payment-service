@@ -1,7 +1,6 @@
 import {
 	OnChainState,
 	PaymentSourceType,
-	PurchaseErrorType,
 	PurchasingAction,
 	TransactionStatus,
 	Prisma,
@@ -15,7 +14,8 @@ import { convertNetwork } from '@masumi/payment-core/network';
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxos } from '@/utils/utxo';
+import { selectCollateralUtxo } from '@/utils/utxo';
+import { writePurchaseErrorTransition } from '@/services/shared/error-transition';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
@@ -138,11 +138,7 @@ async function processSingleRefundCollection(
 
 	const { invalidBefore, invalidAfter } = createTxWindow(network);
 
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
-	const collateralUtxo = limitedFilteredUtxos[0];
-	if (collateralUtxo == null) {
-		throw new Error('Collateral UTXO not found');
-	}
+	const collateralUtxo = selectCollateralUtxo(utxos);
 
 	const unsignedTx = await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
 		'CollectRefund',
@@ -152,7 +148,7 @@ async function processSingleRefundCollection(
 		address,
 		utxo,
 		collateralUtxo,
-		limitedFilteredUtxos,
+		utxos,
 		{
 			collectAssets: utxo.output.amount,
 			// buyerReturnAddress validated at route via src/routes/api/purchases/schemas.ts (isCardanoAddressForNetwork superRefine)
@@ -195,7 +191,7 @@ async function processSingleRefundCollection(
 
 	//submit the transaction to the blockchain
 	const newTxHash = await wallet.submitTx(signedTx);
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 
 	await prisma.purchaseRequest.update({
 		where: { id: request.id },
@@ -275,21 +271,13 @@ export async function collectRefundV1() {
 						logger.error(`Error collecting refund ${request.id}`, {
 							error: error,
 						});
-						await prisma.purchaseRequest.update({
-							where: { id: request.id },
-							data: {
-								...connectPreviousAction(request.nextActionId),
-								...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
-									errorType: PurchaseErrorType.Unknown,
-									errorNote: 'Collecting refund failed: ' + interpretBlockchainError(error),
-								}),
-								SmartContractWallet: {
-									update: {
-										lockedAt: null,
-									},
-								},
-							},
-						});
+						await prisma.$transaction((tx) =>
+							writePurchaseErrorTransition(tx, {
+								requestId: request.id,
+								nextActionId: request.nextActionId,
+								errorNote: 'Collecting refund failed: ' + interpretBlockchainError(error),
+							}),
+						);
 					}
 					index++;
 				}

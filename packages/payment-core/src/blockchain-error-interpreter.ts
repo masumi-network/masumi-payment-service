@@ -8,7 +8,7 @@ interface ErrorPattern {
 const BLOCKCHAIN_ERROR_PATTERNS: ErrorPattern[] = [
 	{
 		test: (msg) => msg.includes('utxo fully depleted'),
-		hint: 'The wallet has no UTxOs available to cover this transaction. Ensure the wallet has sufficient ADA and UTxOs before retrying.',
+		hint: 'The selected inputs cannot produce valid transaction outputs and change. The wallet may have enough total ADA but need a larger or additional spendable UTxO; retry after consolidating UTxOs or contact support.',
 	},
 	{
 		test: (msg) =>

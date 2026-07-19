@@ -1,5 +1,5 @@
 import type { UTxO } from '@meshsdk/core';
-import { sortAndLimitUtxos, sortUtxosByLovelaceDesc } from './index';
+import { selectCollateralUtxo, sortAndLimitUtxos, sortUtxosByLovelaceDesc } from './index';
 
 type AssetSpec = { unit: string; quantity: string };
 
@@ -129,5 +129,32 @@ describe('sortUtxosByLovelaceDesc', () => {
 		];
 		const result = sortUtxosByLovelaceDesc(utxos);
 		expect(parseInt(result[0].output.amount.find((a) => a.unit === 'lovelace')?.quantity ?? '0')).toBe(5_000_000);
+	});
+});
+
+describe('selectCollateralUtxo', () => {
+	it('keeps the reported large ADA UTxO spendable by selecting the smaller qualifying collateral', () => {
+		const small = makeUtxo({ txHash: 'small', amount: [lovelace(3_336_392)] });
+		const collateral = makeUtxo({ txHash: 'collateral', amount: [lovelace(8_281_874)] });
+		const large = makeUtxo({ txHash: 'large', amount: [lovelace(485_435_616)] });
+
+		expect(selectCollateralUtxo([small, collateral, large]).input.txHash).toBe('collateral');
+	});
+
+	it('does not select a native-token UTxO as collateral', () => {
+		const tokenBearing = makeUtxo({
+			txHash: 'token-bearing',
+			amount: [lovelace(6_000_000), token(1)],
+		});
+
+		expect(() => selectCollateralUtxo([tokenBearing])).toThrow('Pure-ADA collateral UTxO not found');
+	});
+
+	it('requires at least five ADA of pure collateral', () => {
+		const dust = makeUtxo({ txHash: 'dust', amount: [lovelace(4_999_999)] });
+
+		expect(() => selectCollateralUtxo([dust])).toThrow(
+			'Pure-ADA collateral UTxO not found with at least 5000000 lovelace',
+		);
 	});
 });

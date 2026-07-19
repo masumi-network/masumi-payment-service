@@ -1,5 +1,7 @@
 import { UTxO } from '@meshsdk/core';
 
+const DEFAULT_MIN_COLLATERAL_LOVELACE = 5_000_000n;
+
 /**
  * Reads the lovelace quantity off a UTxO as `bigint`.
  *
@@ -10,8 +12,41 @@ import { UTxO } from '@meshsdk/core';
  * truncation. Project rule (CLAUDE.md): use BigInt for all monetary
  * amounts; never use Number for lovelace values.
  */
-function getLovelaceFromUtxo(utxo: UTxO): bigint {
+export function getLovelaceFromUtxo(utxo: UTxO): bigint {
 	return BigInt(utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')?.quantity ?? '0');
+}
+
+export function isSameUtxo(left: UTxO, right: UTxO): boolean {
+	return left.input.txHash === right.input.txHash && left.input.outputIndex === right.input.outputIndex;
+}
+
+/**
+ * Selects a dedicated collateral input without consuming native tokens.
+ *
+ * Prefer the smallest qualifying pure-ADA UTxO so larger UTxOs remain
+ * available to Mesh for transaction fees, outputs, and change.
+ */
+export function selectCollateralUtxo(utxos: UTxO[], minimumLovelace: bigint = DEFAULT_MIN_COLLATERAL_LOVELACE): UTxO {
+	const collateralUtxo = utxos
+		.filter(
+			(utxo) =>
+				utxo.output.amount.length > 0 &&
+				utxo.output.amount.every((asset) => asset.unit === 'lovelace' || asset.unit === '') &&
+				getLovelaceFromUtxo(utxo) >= minimumLovelace,
+		)
+		.sort((left, right) => {
+			const leftLovelace = getLovelaceFromUtxo(left);
+			const rightLovelace = getLovelaceFromUtxo(right);
+			if (leftLovelace < rightLovelace) return -1;
+			if (leftLovelace > rightLovelace) return 1;
+			return 0;
+		})[0];
+
+	if (collateralUtxo == null) {
+		throw new Error(`Pure-ADA collateral UTxO not found with at least ${minimumLovelace.toString()} lovelace`);
+	}
+
+	return collateralUtxo;
 }
 
 /**

@@ -16,6 +16,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, calculateTopUpAmount } from '@/utils/min-utxo';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
+import { isSameUtxo } from '@/utils/utxo';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	switch (network) {
@@ -26,6 +27,10 @@ function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 		default:
 			throw new Error(`Unsupported network: ${network}`);
 	}
+}
+
+function getSpendableWalletUtxos(walletUtxos: UTxO[], collateralUtxo: UTxO): UTxO[] {
+	return walletUtxos.filter((utxo) => !isSameUtxo(utxo, collateralUtxo));
 }
 
 export async function generateMasumiSmartContractInteractionTransactionAutomaticFees(
@@ -230,9 +235,10 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		.txOut(smartContractAddress, outputAmount)
 		.txOutInlineDatumValue(newInlineDatum);
 
-	for (const utxo of walletUtxos) {
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
-	}
+	// Give Mesh every spendable candidate so it can select additional inputs
+	// after accounting for fees, outputs, and minimum change. Keep collateral
+	// dedicated: a collateral input may not also be a regular spending input.
+	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
 
 	// Optional self-send splitter for V2 single-item callers. See docstring
 	// on the public AutomaticFees entry point. Emitted BEFORE
@@ -467,10 +473,6 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		);
 	}
 
-	for (const utxo of walletUtxos) {
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
-	}
-
 	if (fee) {
 		const outputReference = mOutputReference(fee.txHash, fee.outputIndex);
 		txBuilder.txOut(fee.feeAddress, fee.feeAssets).txOutInlineDatumValue(outputReference);
@@ -492,6 +494,8 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	if (walletSplitterLovelace != null) {
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
+
+	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
 
 	return await txBuilder
 		.changeAddress(walletAddress)
