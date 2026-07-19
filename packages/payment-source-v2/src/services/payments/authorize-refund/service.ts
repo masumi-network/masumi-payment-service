@@ -17,7 +17,6 @@ import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-cla
 import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
 import { findMatchingPaymentUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
 // V2-pinned single-item builder. MUST NOT use the root V1-mesh generator
 // (@/utils/generator/transaction-generator) — that bundles the V1 cost models
@@ -41,6 +40,7 @@ import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
+	getWalletUtxosForSelection,
 	intersectTxWindows,
 	pickBatchCollateral,
 	shrinkBatchToFit,
@@ -247,15 +247,7 @@ async function processSinglePaymentRequest(
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
 		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
-	// Collateral must cover the pinned 3 ADA total_collateral. limitedFilteredUtxos
-	// is sorted by ASCENDING asset bloat, so [0] can be a pure-ADA DUST UTxO (< 3
-	// ADA) → deterministic phase-1 InsufficientCollateral. Prefer the smallest
-	// qualifying >= 5 ADA UTxO (the same floor the batch path enforces via
-	// pickBatchCollateral); ensureCollateralReady above provisions a 5 ADA
-	// reserve, so this normally succeeds. Fall back to [0] only if the wallet has
-	// nothing larger (no worse than the previous behaviour).
-	const collateralUtxo = pickBatchCollateral(limitedFilteredUtxos, [utxo.input]) ?? limitedFilteredUtxos[0];
+	const collateralUtxo = pickBatchCollateral(utxos, [utxo.input]);
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');
 	}
@@ -272,7 +264,7 @@ async function processSinglePaymentRequest(
 				address,
 				utxo,
 				collateralUtxo,
-				limitedFilteredUtxos,
+				utxos,
 				datum.value,
 				invalidBefore,
 				invalidAfter,
@@ -314,7 +306,7 @@ async function processSinglePaymentRequest(
 	// Non-fatal: the tx is already on-chain. A projection failure must NOT
 	// propagate to advancedRetry and rebuild+resubmit an already-broadcast tx.
 	try {
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 	} catch (projectionError) {
 		logger.warn('V2 authorize-refund single-item: post-submit balance projection failed (non-fatal)', {
 			txHash: newTxHash,
@@ -549,18 +541,10 @@ async function processWalletBatch(
 		return;
 	}
 
-	const spendingUtxoKeys = new Set(
-		validated.map((v) => `${v.smartContractUtxo.input.txHash}#${v.smartContractUtxo.input.outputIndex}`),
+	const walletUtxos = getWalletUtxosForSelection(
+		utxos,
+		validated.map((v) => v.smartContractUtxo.input),
 	);
-	const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
-	const walletUtxos = utxos.filter((utxo) => {
-		const key = `${utxo.input.txHash}#${utxo.input.outputIndex}`;
-		if (key === collateralKey) return false;
-		if (spendingUtxoKeys.has(key)) return false;
-		return true;
-	});
-	const limitedFilteredUtxos = sortAndLimitUtxos(walletUtxos, 8000000);
-
 	const shrinkResult = shrinkBatchToFit(validated, (subset) => {
 		const window = intersectTxWindows(subset.map((v) => v.window));
 		if (window == null) return { ok: false, reason: 'window' };
@@ -629,7 +613,7 @@ async function processWalletBatch(
 					script,
 					address,
 					collateralUtxo,
-					limitedFilteredUtxos,
+					walletUtxos,
 					items,
 					composed.invalidBefore,
 					composed.invalidAfter,
@@ -899,7 +883,7 @@ async function processWalletBatch(
 	}
 
 	try {
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 	} catch (balanceError) {
 		logger.warn('V2 authorize-refund batch projected balance evaluation failed (non-fatal)', { error: balanceError });
 	}

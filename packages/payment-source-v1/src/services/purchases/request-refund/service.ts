@@ -1,4 +1,4 @@
-import { PaymentSourceType, PurchasingAction, PurchaseErrorType, Prisma } from '@/generated/prisma/client';
+import { PaymentSourceType, PurchasingAction, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
@@ -9,7 +9,8 @@ import { decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxos } from '@/utils/utxo';
+import { selectCollateralUtxo } from '@/utils/utxo';
+import { writePurchaseErrorTransition } from '@/services/shared/error-transition';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
@@ -149,11 +150,7 @@ async function processSinglePurchaseRequest(
 		constrainBeforeMs: Number(decodedContract.buyerCooldownTime),
 	});
 
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
-	const collateralUtxo = limitedFilteredUtxos[0];
-	if (collateralUtxo == null) {
-		throw new Error('Collateral UTXO not found');
-	}
+	const collateralUtxo = selectCollateralUtxo(utxos);
 
 	const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
 		'RequestRefund',
@@ -162,8 +159,8 @@ async function processSinglePurchaseRequest(
 		script,
 		address,
 		utxo,
-		limitedFilteredUtxos[0],
-		limitedFilteredUtxos,
+		collateralUtxo,
+		utxos,
 		datum.value,
 		invalidBefore,
 		invalidAfter,
@@ -188,7 +185,7 @@ async function processSinglePurchaseRequest(
 
 	//submit the transaction to the blockchain
 	const newTxHash = await wallet.submitTx(signedTx);
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 	await prisma.purchaseRequest.update({
 		where: { id: request.id },
 		data: updateCurrentTransactionHash(newTxHash),
@@ -268,21 +265,13 @@ export async function requestRefundsV1() {
 						logger.error(`Error requesting refund ${request.id}`, {
 							error: error,
 						});
-						await prisma.purchaseRequest.update({
-							where: { id: request.id },
-							data: {
-								...connectPreviousAction(request.nextActionId),
-								...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
-									errorType: PurchaseErrorType.Unknown,
-									errorNote: 'Requesting refund failed: ' + interpretBlockchainError(error),
-								}),
-								SmartContractWallet: {
-									update: {
-										lockedAt: null,
-									},
-								},
-							},
-						});
+						await prisma.$transaction((tx) =>
+							writePurchaseErrorTransition(tx, {
+								requestId: request.id,
+								nextActionId: request.nextActionId,
+								errorNote: 'Requesting refund failed: ' + interpretBlockchainError(error),
+							}),
+						);
 					}
 					index++;
 				}

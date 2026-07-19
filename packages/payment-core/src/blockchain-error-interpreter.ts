@@ -8,7 +8,7 @@ interface ErrorPattern {
 const BLOCKCHAIN_ERROR_PATTERNS: ErrorPattern[] = [
 	{
 		test: (msg) => msg.includes('utxo fully depleted'),
-		hint: 'The wallet has no UTxOs available to cover this transaction. Ensure the wallet has sufficient ADA and UTxOs before retrying.',
+		hint: 'The selected inputs cannot produce valid transaction outputs and change. The wallet may have enough total ADA but need a larger or additional spendable UTxO; retry after consolidating UTxOs or contact support.',
 	},
 	{
 		test: (msg) =>
@@ -78,7 +78,7 @@ const BLOCKCHAIN_ERROR_PATTERNS: ErrorPattern[] = [
 	},
 	{
 		test: (msg) => msg.includes('collateral utxo not found'),
-		hint: 'No suitable collateral UTxO was found. Ensure the wallet has a pure-ADA UTxO of at least 5 ADA.',
+		hint: 'No suitable collateral UTxO was found. Ensure the wallet has a UTxO with at least 5 ADA; native tokens on that UTxO are supported.',
 	},
 	{
 		test: (msg) => msg.includes('utxo not found'),

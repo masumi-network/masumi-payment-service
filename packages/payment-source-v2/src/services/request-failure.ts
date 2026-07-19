@@ -1,15 +1,7 @@
-import { PaymentAction, PaymentErrorType, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
-// Import from the concrete module, not the '@/services/shared' barrel: the
-// barrel transitively imports this package back, and the resulting cycle makes
-// typed lint unable to resolve these call signatures.
-import {
-	connectPreviousAction,
-	createNextPaymentAction,
-	createNextPurchaseAction,
-} from '@/services/shared/transition-writer';
+import { writePaymentErrorTransition, writePurchaseErrorTransition } from '@/services/shared/error-transition';
 
 /**
  * Factories for the per-service `markRequestFailed` / `unlockHotWallet`
@@ -45,18 +37,15 @@ export function makePaymentRequestFailureMarker(config: PaymentFailureConfig) {
 		// release it instead.
 		const unlockWallet = options.unlockWallet ?? true;
 		logger.error(`${config.logMessage} ${request.id}`, { error });
-		await prisma.paymentRequest.update({
-			where: { id: request.id },
-			data: {
-				...connectPreviousAction(request.nextActionId),
-				...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
-					...(config.carryResultHash ? { resultHash: request.NextAction?.resultHash ?? null } : {}),
-					errorType: PaymentErrorType.Unknown,
-					errorNote: config.errorNotePrefix + interpretBlockchainError(error),
-				}),
-				...(unlockWallet ? { SmartContractWallet: { update: { lockedAt: null } } } : {}),
-			},
-		});
+		await prisma.$transaction((tx) =>
+			writePaymentErrorTransition(tx, {
+				requestId: request.id,
+				nextActionId: request.nextActionId,
+				errorNote: config.errorNotePrefix + interpretBlockchainError(error),
+				unlockWallet,
+				...(config.carryResultHash ? { resultHash: request.NextAction?.resultHash ?? null } : {}),
+			}),
+		);
 	};
 }
 
@@ -71,17 +60,13 @@ export function makePurchaseRequestFailureMarker(config: PurchaseFailureConfig) 
 		error: unknown,
 	): Promise<void> {
 		logger.error(`${config.logMessage} ${request.id}`, { error });
-		await prisma.purchaseRequest.update({
-			where: { id: request.id },
-			data: {
-				...connectPreviousAction(request.nextActionId),
-				...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
-					errorType: PurchaseErrorType.Unknown,
-					errorNote: config.errorNotePrefix + interpretBlockchainError(error),
-				}),
-				SmartContractWallet: { update: { lockedAt: null } },
-			},
-		});
+		await prisma.$transaction((tx) =>
+			writePurchaseErrorTransition(tx, {
+				requestId: request.id,
+				nextActionId: request.nextActionId,
+				errorNote: config.errorNotePrefix + interpretBlockchainError(error),
+			}),
+		);
 	};
 }
 

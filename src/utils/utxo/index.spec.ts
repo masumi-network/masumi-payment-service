@@ -1,5 +1,5 @@
 import type { UTxO } from '@meshsdk/core';
-import { sortAndLimitUtxos, sortUtxosByLovelaceDesc } from './index';
+import { selectCollateralUtxo, sortAndLimitUtxos, sortUtxosByLovelaceDesc } from './index';
 
 type AssetSpec = { unit: string; quantity: string };
 
@@ -129,5 +129,44 @@ describe('sortUtxosByLovelaceDesc', () => {
 		];
 		const result = sortUtxosByLovelaceDesc(utxos);
 		expect(parseInt(result[0].output.amount.find((a) => a.unit === 'lovelace')?.quantity ?? '0')).toBe(5_000_000);
+	});
+});
+
+describe('selectCollateralUtxo', () => {
+	it('keeps the reported large ADA UTxO spendable by selecting the smaller qualifying collateral', () => {
+		const small = makeUtxo({ txHash: 'small', amount: [lovelace(3_336_392)] });
+		const collateral = makeUtxo({ txHash: 'collateral', amount: [lovelace(8_281_874)] });
+		const large = makeUtxo({ txHash: 'large', amount: [lovelace(485_435_616)] });
+
+		expect(selectCollateralUtxo([small, collateral, large]).input.txHash).toBe('collateral');
+	});
+
+	it('prefers pure ADA over a smaller mixed-asset collateral candidate', () => {
+		const mixed = makeUtxo({
+			txHash: 'mixed',
+			amount: [lovelace(6_000_000), token(1)],
+		});
+		const pure = makeUtxo({ txHash: 'pure', amount: [lovelace(8_000_000)] });
+
+		expect(selectCollateralUtxo([mixed, pure]).input.txHash).toBe('pure');
+	});
+
+	it('falls back to mixed-asset collateral when no pure-ADA candidate qualifies', () => {
+		const largeMixed = makeUtxo({
+			txHash: 'large-mixed',
+			amount: [lovelace(12_000_000), token(1)],
+		});
+		const smallMixed = makeUtxo({
+			txHash: 'small-mixed',
+			amount: [lovelace(6_000_000), token(1)],
+		});
+
+		expect(selectCollateralUtxo([largeMixed, smallMixed]).input.txHash).toBe('small-mixed');
+	});
+
+	it('requires at least five ADA of collateral', () => {
+		const dust = makeUtxo({ txHash: 'dust', amount: [lovelace(4_999_999)] });
+
+		expect(() => selectCollateralUtxo([dust])).toThrow('Collateral UTxO not found with at least 5000000 lovelace');
 	});
 });
