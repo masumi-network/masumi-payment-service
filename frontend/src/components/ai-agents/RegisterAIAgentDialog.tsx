@@ -1169,8 +1169,7 @@ export function RegisterAIAgentDialog({
             <div className="flex flex-col gap-1">
               <h3 className="text-sm font-medium">Payment options</h3>
               <p className="max-w-[65ch] text-xs text-muted-foreground">
-                Choose the settlement type for each option. x402 settings appear as soon as x402 is
-                selected.
+                Choose the settlement type for each option.
               </p>
             </div>
             <Button
