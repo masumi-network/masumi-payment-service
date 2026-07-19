@@ -99,8 +99,8 @@ export async function updateWalletTransactionHash() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('wallet_transaction_timeouts is already running, skipping cycle');
 		return;
 	}
 	const unlockedSellingWalletIds: string[] = [];

@@ -8951,6 +8951,10 @@
                                             }
                                         ],
                                         "description": "The time of the last update, to ensure you clear the correct error state"
+                                    },
+                                    "retryPreviousAction": {
+                                        "type": "boolean",
+                                        "description": "When true, retry the failed action. When false or omitted, only clear the error state."
                                     }
                                 },
                                 "required": [
@@ -9574,6 +9578,10 @@
                                             }
                                         ],
                                         "description": "The time of the last update, to ensure you clear the correct error state"
+                                    },
+                                    "retryPreviousAction": {
+                                        "type": "boolean",
+                                        "description": "When true, retry the failed action. When false or omitted, only clear the error state."
                                     }
                                 },
                                 "required": [

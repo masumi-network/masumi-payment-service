@@ -33,6 +33,7 @@ describe('error transition webhook outbox', () => {
 			requestId: 'payment-1',
 			nextActionId: 'action-1',
 			errorNote: 'Collecting payments failed',
+			resultHash: 'result-hash',
 		});
 
 		expect(paymentRequestUpdate).toHaveBeenCalledWith({
@@ -43,6 +44,7 @@ describe('error transition webhook outbox', () => {
 					create: expect.objectContaining({
 						requestedAction: PaymentAction.WaitingForManualAction,
 						errorNote: 'Collecting payments failed',
+						resultHash: 'result-hash',
 					}),
 				},
 				SmartContractWallet: { update: { lockedAt: null } },

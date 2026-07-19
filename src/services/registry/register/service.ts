@@ -127,8 +127,8 @@ export async function registerAgentV1() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('registry_register_v1 is already running, skipping cycle');
 		return;
 	}
 

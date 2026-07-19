@@ -19,9 +19,13 @@ type ErrorTransitionParams<TErrorType> = {
 	errorType?: TErrorType;
 };
 
+type PaymentErrorTransitionParams = ErrorTransitionParams<PaymentErrorType> & {
+	resultHash?: string | null;
+};
+
 export async function writePaymentErrorTransition(
 	tx: Prisma.TransactionClient,
-	params: ErrorTransitionParams<PaymentErrorType>,
+	params: PaymentErrorTransitionParams,
 ): Promise<void> {
 	await tx.paymentRequest.update({
 		where: { id: params.requestId },
@@ -30,6 +34,7 @@ export async function writePaymentErrorTransition(
 			...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
 				errorType: params.errorType ?? PaymentErrorType.Unknown,
 				errorNote: params.errorNote,
+				...(params.resultHash !== undefined ? { resultHash: params.resultHash } : {}),
 			}),
 			SmartContractWallet: {
 				update: {

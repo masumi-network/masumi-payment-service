@@ -49,8 +49,8 @@ export async function authorizeRefundV1() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('authorize_refund_v1 is already running, skipping cycle');
 		return;
 	}
 

@@ -110,6 +110,7 @@ export default function TransactionDetailsDialog({
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<'refund' | 'cancel' | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [errorRecoveryMode, setErrorRecoveryMode] = React.useState<'clear' | 'retry' | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
@@ -205,15 +206,16 @@ export default function TransactionDetailsDialog({
     enabled: Boolean(agentIdentifier && agentNetwork),
     staleTime: 60_000,
   });
-  const clearTransactionError = async () => {
+  const recoverTransactionError = async (retryPreviousAction: boolean) => {
     try {
       setIsLoading(true);
+      setErrorRecoveryMode(retryPreviousAction ? 'retry' : 'clear');
 
       if (!transaction) {
         toast.error('Transaction not found');
         return false;
       }
-      if (!transaction.onChainState) {
+      if (!transaction.onChainState && !(retryPreviousAction && transaction.type === 'purchase')) {
         toast.error(
           'Transaction is in its initial on-chain state. Can not be recovered. Please start a new purchase request.',
         );
@@ -226,13 +228,21 @@ export default function TransactionDetailsDialog({
             blockchainIdentifier: transaction.blockchainIdentifier,
             updatedAt: new Date(transaction.updatedAt),
             network: network,
+            retryPreviousAction,
           },
         });
         if (response.error) {
-          handleError(response.error, 'Failed to clear error state');
+          handleError(
+            response.error,
+            retryPreviousAction ? 'Failed to retry previous action' : 'Failed to clear error state',
+          );
           return false;
         }
-        toast.success('Error state cleared successfully');
+        toast.success(
+          retryPreviousAction
+            ? 'Previous action queued for retry'
+            : 'Error state cleared successfully',
+        );
         onRefresh();
         onClose();
         return true;
@@ -244,13 +254,21 @@ export default function TransactionDetailsDialog({
             blockchainIdentifier: transaction.blockchainIdentifier,
             updatedAt: new Date(transaction.updatedAt),
             network: network,
+            retryPreviousAction,
           },
         });
         if (response.error) {
-          handleError(response.error, 'Failed to clear error state');
+          handleError(
+            response.error,
+            retryPreviousAction ? 'Failed to retry previous action' : 'Failed to clear error state',
+          );
           return false;
         }
-        toast.success('Error state cleared successfully');
+        toast.success(
+          retryPreviousAction
+            ? 'Previous action queued for retry'
+            : 'Error state cleared successfully',
+        );
         onRefresh();
         onClose();
         return true;
@@ -262,6 +280,7 @@ export default function TransactionDetailsDialog({
       return false;
     } finally {
       setIsLoading(false);
+      setErrorRecoveryMode(null);
     }
   };
 
@@ -707,19 +726,29 @@ export default function TransactionDetailsDialog({
                         {transaction.NextAction.errorNote}
                       </p>
                     )}
-                    <div className="flex gap-2 mt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Retry queues the failed blockchain action again with its original data. Clear
+                      only removes the error and waits for the next external action.
+                    </p>
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      <Button
+                        size="sm"
+                        disabled={isLoading}
+                        onClick={() => recoverTransactionError(true)}
+                      >
+                        {errorRecoveryMode === 'retry'
+                          ? 'Queueing retry...'
+                          : 'Retry Failed Action'}
+                      </Button>
                       <Button
                         variant="secondary"
                         size="sm"
                         disabled={isLoading}
-                        onClick={async () => {
-                          if (await clearTransactionError()) {
-                            onClose();
-                            onRefresh();
-                          }
-                        }}
+                        onClick={() => recoverTransactionError(false)}
                       >
-                        {isLoading ? 'Clearing error state...' : 'Clear Error State'}
+                        {errorRecoveryMode === 'clear'
+                          ? 'Clearing error state...'
+                          : 'Clear Error State'}
                       </Button>
                     </div>
                   </div>

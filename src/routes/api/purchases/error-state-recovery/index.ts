@@ -1,5 +1,4 @@
-import { z } from 'zod';
-import { Network, PurchasingAction, TransactionStatus, OnChainState } from '@/generated/prisma/client';
+import { Network, PurchasingAction, Prisma, TransactionStatus, OnChainState } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@/utils/security/auth/pay-authenticated';
@@ -10,11 +9,17 @@ import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/u
 import { decodeBlockchainIdentifier } from '@/utils/generator/blockchain-identifier-generator';
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 import { purchaseResponseSchema } from '..';
+import { getPurchaseRetryAction } from '@/utils/shared/error-recovery';
+import { z } from '@/utils/zod-openapi';
 
 export const purchaseErrorStateRecoverySchemaInput = z.object({
 	blockchainIdentifier: z.string().min(1).describe('The blockchain identifier of the purchase request'),
 	network: z.nativeEnum(Network).describe('The network the transaction was made on'),
 	updatedAt: ez.dateIn().describe('The time of the last update, to ensure you clear the correct error state'),
+	retryPreviousAction: z
+		.boolean()
+		.optional()
+		.describe('When true, retry the failed action. When false or omitted, only clear the error state.'),
 });
 
 export const purchaseErrorStateRecoverySchemaOutput = purchaseResponseSchema.omit({
@@ -49,6 +54,13 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 			include: {
 				NextAction: true,
 				CurrentTransaction: true,
+				ActionHistory: {
+					orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+					take: 1,
+					select: {
+						requestedAction: true,
+					},
+				},
 				TransactionHistory: {
 					orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
 				},
@@ -62,13 +74,6 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 			);
 		}
 		assertWalletInScope(ctx.walletScopeIds, purchaseRequest.smartContractWalletId);
-		if (!purchaseRequest.onChainState) {
-			throw createHttpError(
-				400,
-				'Purchase request is in its initial on-chain state. Can not be recovered. Please start a new purchase request.',
-			);
-		}
-
 		// Validate that the request is in WaitingForManualAction with error
 		if (purchaseRequest.NextAction.requestedAction !== PurchasingAction.WaitingForManualAction) {
 			throw createHttpError(
@@ -79,6 +84,31 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 
 		if (!purchaseRequest.NextAction.errorType) {
 			throw createHttpError(400, 'Purchase request is not in an error state. No error to clear.');
+		}
+
+		const previousAction = purchaseRequest.ActionHistory[0];
+		const retryAction = previousAction ? getPurchaseRetryAction(previousAction.requestedAction) : null;
+		if (input.retryPreviousAction && retryAction == null) {
+			throw createHttpError(400, 'The immediately preceding purchase action is not retryable.');
+		}
+
+		if (
+			!purchaseRequest.onChainState &&
+			(!input.retryPreviousAction || retryAction !== PurchasingAction.FundsLockingRequested)
+		) {
+			throw createHttpError(
+				400,
+				'Purchase request is in its initial on-chain state. Only a failed funds-locking action can be retried.',
+			);
+		}
+
+		const isCompletedState =
+			purchaseRequest.onChainState != null &&
+			(
+				[OnChainState.Withdrawn, OnChainState.RefundWithdrawn, OnChainState.DisputedWithdrawn] as OnChainState[]
+			).includes(purchaseRequest.onChainState);
+		if (input.retryPreviousAction && isCompletedState) {
+			throw createHttpError(400, 'The purchase is already completed and its previous action cannot be retried.');
 		}
 
 		// Find the most recent successful transaction (confirmed or pending)
@@ -116,93 +146,105 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 			lastSuccessfulTransactionStatus: lastSuccessfulTransaction?.status || null,
 			transactionsToFailCount: transactionsToFail.length,
 			transactionsToFailIds: transactionsToFail.map((tx) => tx.id),
+			retryPreviousAction: input.retryPreviousAction === true,
+			retryAction,
 		});
 
-		const newPurchase = await prisma.$transaction(async (tx) => {
-			for (const transaction of transactionsToFail) {
-				await tx.transaction.update({
-					where: { id: transaction.id },
-					data: { status: TransactionStatus.FailedViaManualReset },
+		const newPurchase = await prisma
+			.$transaction(async (tx) => {
+				for (const transaction of transactionsToFail) {
+					await tx.transaction.update({
+						where: { id: transaction.id },
+						data: { status: TransactionStatus.FailedViaManualReset },
+					});
+				}
+
+				await tx.purchaseRequest.update({
+					where: { id: purchaseRequest.id },
+					data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
 				});
-			}
 
-			await tx.purchaseRequest.update({
-				where: { id: purchaseRequest.id },
-				data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
+				return await tx.purchaseRequest.update({
+					where: {
+						id: purchaseRequest.id,
+						nextActionId: purchaseRequest.nextActionId,
+					},
+					data: {
+						ActionHistory: {
+							connect: {
+								id: purchaseRequest.nextActionId,
+							},
+						},
+						NextAction: {
+							create: {
+								submittedTxHash: null,
+								requestedAction: input.retryPreviousAction
+									? retryAction!
+									: isCompletedState
+										? PurchasingAction.None
+										: PurchasingAction.WaitingForExternalAction,
+							},
+						},
+					},
+					include: {
+						NextAction: {
+							select: {
+								id: true,
+								requestedAction: true,
+								errorType: true,
+								errorNote: true,
+							},
+						},
+						CurrentTransaction: {
+							select: {
+								id: true,
+								createdAt: true,
+								updatedAt: true,
+								txHash: true,
+								status: true,
+								fees: true,
+								blockHeight: true,
+								blockTime: true,
+								previousOnChainState: true,
+								newOnChainState: true,
+								confirmations: true,
+							},
+						},
+						PaidFunds: { select: { id: true, amount: true, unit: true } },
+						PaymentSource: {
+							select: {
+								id: true,
+								network: true,
+								policyId: true,
+								smartContractAddress: true,
+							},
+						},
+						SellerWallet: { select: { id: true, walletVkey: true } },
+						SmartContractWallet: {
+							where: { deletedAt: null },
+							select: { id: true, walletVkey: true, walletAddress: true },
+						},
+						WithdrawnForSeller: {
+							select: { id: true, amount: true, unit: true },
+						},
+						WithdrawnForBuyer: {
+							select: { id: true, amount: true, unit: true },
+						},
+					},
+				});
+			})
+			.catch((error: unknown) => {
+				if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+					throw createHttpError(409, 'Purchase state changed concurrently; retry against the new state');
+				}
+				throw error;
 			});
-
-			const isCompletedState =
-				purchaseRequest.onChainState &&
-				(
-					[OnChainState.Withdrawn, OnChainState.RefundWithdrawn, OnChainState.DisputedWithdrawn] as OnChainState[]
-				).includes(purchaseRequest.onChainState);
-
-			return await tx.purchaseRequest.update({
-				where: { id: purchaseRequest.id },
-				data: {
-					ActionHistory: {
-						connect: {
-							id: purchaseRequest.nextActionId,
-						},
-					},
-					NextAction: {
-						create: {
-							submittedTxHash: null,
-							requestedAction: isCompletedState ? PurchasingAction.None : PurchasingAction.WaitingForExternalAction,
-						},
-					},
-				},
-				include: {
-					NextAction: {
-						select: {
-							id: true,
-							requestedAction: true,
-							errorType: true,
-							errorNote: true,
-						},
-					},
-					CurrentTransaction: {
-						select: {
-							id: true,
-							createdAt: true,
-							updatedAt: true,
-							txHash: true,
-							status: true,
-							fees: true,
-							blockHeight: true,
-							blockTime: true,
-							previousOnChainState: true,
-							newOnChainState: true,
-							confirmations: true,
-						},
-					},
-					PaidFunds: { select: { id: true, amount: true, unit: true } },
-					PaymentSource: {
-						select: {
-							id: true,
-							network: true,
-							policyId: true,
-							smartContractAddress: true,
-						},
-					},
-					SellerWallet: { select: { id: true, walletVkey: true } },
-					SmartContractWallet: {
-						where: { deletedAt: null },
-						select: { id: true, walletVkey: true, walletAddress: true },
-					},
-					WithdrawnForSeller: {
-						select: { id: true, amount: true, unit: true },
-					},
-					WithdrawnForBuyer: {
-						select: { id: true, amount: true, unit: true },
-					},
-				},
-			});
-		});
 
 		logger.info('Error state recovery completed successfully', {
 			purchaseRequestId: purchaseRequest.id,
 			failedTransactionsCount: transactionsToFail.length,
+			retryPreviousAction: input.retryPreviousAction === true,
+			retryAction,
 		});
 
 		const decoded = decodeBlockchainIdentifier(newPurchase.blockchainIdentifier);
