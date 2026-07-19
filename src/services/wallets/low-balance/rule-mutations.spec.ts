@@ -400,6 +400,26 @@ describe('WalletLowBalanceMonitorService rule mutations', () => {
 		);
 	});
 
+	it('maps a concurrent-delete P2025 to a 404 and rethrows other failures unchanged', async () => {
+		// The route pre-checks existence, so P2025 means a concurrent delete won
+		// the race — a missing row for the client, not a server fault.
+		mockDeleteLowBalanceRule.mockRejectedValueOnce(
+			Object.assign(new Error('Record to delete does not exist.'), { code: 'P2025' }),
+		);
+
+		await expect(service.deleteRule('rule-1')).rejects.toMatchObject({
+			status: 404,
+			statusCode: 404,
+			message: 'Low balance rule not found',
+		});
+
+		// Anything else is a real fault and must surface unchanged.
+		const infrastructureFailure = Object.assign(new Error('connection reset'), { code: 'P1001' });
+		mockDeleteLowBalanceRule.mockRejectedValueOnce(infrastructureFailure);
+
+		await expect(service.deleteRule('rule-1')).rejects.toBe(infrastructureFailure);
+	});
+
 	it('re-enables a rule and silently seeds low state without alerting', async () => {
 		mockUpdateLowBalanceRule.mockResolvedValue(createRuleRecord(LowBalanceStatus.Unknown));
 		mockHotWalletFindFirst

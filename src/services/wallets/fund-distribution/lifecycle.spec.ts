@@ -23,6 +23,7 @@ const mockLowBalanceRuleFindFirst = jest.fn() as AnyMock;
 const mockTransactionUpdateMany = jest.fn() as AnyMock;
 const mockLookupChainTx = jest.fn() as AnyMock;
 const mockLoggerInfo = jest.fn() as AnyMock;
+const mockLoggerError = jest.fn() as AnyMock;
 const mockQueueSent = jest.fn() as AnyMock;
 const mockQueueConfirmed = jest.fn() as AnyMock;
 const mockQueueFailed = jest.fn() as AnyMock;
@@ -146,7 +147,7 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { info: mockLoggerInfo, warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+	logger: { info: mockLoggerInfo, warn: jest.fn(), error: mockLoggerError, debug: jest.fn() },
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/blockchain-error-interpreter', () => ({
@@ -357,6 +358,27 @@ describe('reconcileInFlightRequests', () => {
 
 		expect(mockRequestUpdateMany).not.toHaveBeenCalled();
 	});
+
+	it('rolls back a partial promotion instead of emitting SENT for a subset', async () => {
+		// Another actor moved part of the batch out of Pending between the read
+		// and the promotion updateMany. Committing the remainder as Submitted
+		// would skip the SENT webhook for those rows forever, so the whole
+		// Serializable transaction rolls back and the next cycle re-reads a
+		// consistent batch.
+		phaseRows['in-flight'] = [inFlight({ txHash: 'abc' }), inFlight({ txHash: 'abc' }, { id: 'req-2' })];
+		mockRequestUpdateMany.mockImplementation(async (args: any) =>
+			args?.data?.status === FundDistributionStatus.Submitted
+				? { count: 1 }
+				: { count: args?.where?.id?.in?.length ?? 0 },
+		);
+
+		await fundDistributionService.processDistributionCycle();
+
+		expect(mockQueueSent).not.toHaveBeenCalled();
+		// The PARTIAL_BATCH_TRANSITION sentinel is caught inside the adopt path;
+		// escaping to the phase runner would log a phase failure.
+		expect(mockLoggerError).not.toHaveBeenCalled();
+	});
 });
 
 describe('confirmSubmittedRequests', () => {
@@ -502,5 +524,28 @@ describe('confirmSubmittedRequests', () => {
 
 		expect(mockQueueConfirmed).not.toHaveBeenCalled();
 		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it('rolls back a partial terminal claim without emitting or unlocking', async () => {
+		// Another actor moved part of the batch out of Submitted between the
+		// read and the terminal claim. Committing the remainder would skip the
+		// terminal webhook for the stolen rows and release the wallet lock while
+		// the batch is still split, so the transaction rolls back untouched.
+		phaseRows.submitted = [submitted(), submitted({ id: 'req-2' })];
+		mockLookupChainTx.mockResolvedValue('found');
+		mockRequestUpdateMany.mockImplementation(async (args: any) =>
+			args?.where?.status === FundDistributionStatus.Submitted
+				? { count: 1 }
+				: { count: args?.where?.id?.in?.length ?? 0 },
+		);
+
+		await fundDistributionService.processDistributionCycle();
+
+		expect(mockQueueConfirmed).not.toHaveBeenCalled();
+		expect(mockQueueFailed).not.toHaveBeenCalled();
+		expect(mockTransactionUpdateMany).not.toHaveBeenCalled();
+		expect(mockHotWalletUpdateMany).not.toHaveBeenCalled();
+		// Caught inside transitionBatch; escaping to the phase runner would log.
+		expect(mockLoggerError).not.toHaveBeenCalled();
 	});
 });
