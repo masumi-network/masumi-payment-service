@@ -9,11 +9,11 @@ import { logger } from '@masumi/payment-core/logger';
 /**
  * Lovelace amount routed into a CONDITIONAL "splitter" output that V2 batch
  * builders emit back to the funding wallet ONLY when the wallet has
- * exactly ONE fee-eligible UTxO (`walletUtxos.length === 1`, after
- * excluding the collateral input and any forced script/asset inputs).
+ * exactly ONE non-collateral wallet UTxO after excluding forced script/asset
+ * inputs. The collateral remains in Mesh's regular-input candidate list; it
+ * is excluded here only when deciding whether the optional splitter is useful.
  *
- * Per-length analysis — `walletUtxos` here is the FEE-ELIGIBLE UTxO count
- * (collateral excluded, mandatory script/asset inputs excluded):
+ * Per-length analysis — this is the non-collateral wallet UTxO count:
  *
  *   - `length === 0` → tx cannot build (no fee input); splitter would not
  *     help and the build failure is the correct operational signal.
@@ -55,11 +55,9 @@ import { logger } from '@masumi/payment-core/logger';
  * UTxOs across many txs — the splitter is a single-use second-UTxO
  * reservoir that fires only at the genuine trap-risk threshold.
  *
- * Cross-builder semantic invariant: every splitter call site MUST count
- * `walletUtxos` as collateral-excluded + mandatory-inputs-excluded.
- * batch-interaction.ts relies on the service-layer filter; batch-registry.ts
- * filters internally via `inputRefs.add(refKey(collateralUtxo))` before
- * deriving `walletUtxosForSelection` (see `generateRegistryBatchMintTransaction`).
+ * Splitter decisions deliberately count the collateral separately from
+ * ordinary wallet candidates. Coin selection does not: payment interaction
+ * builders pass the complete wallet list to Mesh.
  */
 export const WALLET_SPLITTER_LOVELACE = 5_000_000n;
 
@@ -145,6 +143,21 @@ function isPureLovelace(utxo: UTxO): boolean {
 /** Canonical reference string for a UTxO — must match the format the builders use. */
 function refKey(input: { txHash: string; outputIndex: number }): string {
 	return `${input.txHash}#${input.outputIndex}`;
+}
+
+/**
+ * Keeps every payment-key wallet candidate available to Mesh while excluding
+ * only inputs that the transaction already spends as scripts.
+ *
+ * In particular, callers must not exclude the declared collateral: CIP-40
+ * allows a VKey UTxO to appear in both regular and collateral input sets.
+ */
+export function getWalletUtxosForSelection(
+	utxos: UTxO[],
+	scriptSpendingInputs: Array<{ txHash: string; outputIndex: number }>,
+): UTxO[] {
+	const scriptInputKeys = new Set(scriptSpendingInputs.map(refKey));
+	return utxos.filter((utxo) => !scriptInputKeys.has(refKey(utxo.input)));
 }
 
 /**

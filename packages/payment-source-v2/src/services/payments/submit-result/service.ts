@@ -15,7 +15,6 @@ import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/strin
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
-import { sortAndLimitUtxos } from '@/utils/utxo';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetry } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -40,6 +39,7 @@ import { createDatumFromDecodedContractV2, getPaymentScriptFromPaymentSourceV2 }
 import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
+	getWalletUtxosForSelection,
 	intersectTxWindows,
 	pickBatchCollateral,
 	shrinkBatchToFit,
@@ -375,15 +375,7 @@ async function processSinglePaymentRequest(
 		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
 
-	const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
-	// Collateral must cover the pinned 3 ADA total_collateral. limitedUtxos is
-	// sorted by ASCENDING asset bloat, so [0] can be a pure-ADA DUST UTxO (< 3
-	// ADA) → deterministic phase-1 InsufficientCollateral. Prefer the smallest
-	// qualifying >= 5 ADA UTxO (the same floor the batch path enforces via
-	// pickBatchCollateral); ensureCollateralReady above provisions a 5 ADA
-	// reserve, so this normally succeeds. Fall back to [0] only if the wallet has
-	// nothing larger (no worse than the previous behaviour).
-	const collateralUtxo = pickBatchCollateral(limitedUtxos, [utxo.input]) ?? limitedUtxos[0];
+	const collateralUtxo = pickBatchCollateral(utxos, [utxo.input]);
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');
 	}
@@ -401,7 +393,7 @@ async function processSinglePaymentRequest(
 				address,
 				utxo,
 				collateralUtxo,
-				limitedUtxos,
+				utxos,
 				datum.value,
 				invalidBefore,
 				invalidAfter,
@@ -463,7 +455,7 @@ async function processSinglePaymentRequest(
 	// with the successful tx's hash never recorded. The batch path already wraps
 	// the identical call this way.
 	try {
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedUtxos);
+		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 	} catch (balanceError) {
 		logger.warn('V2 submit-result single-item: projected-balance check failed post-submit (non-fatal)', {
 			requestId: request.id,
@@ -711,18 +703,10 @@ async function processWalletBatch(
 		return;
 	}
 
-	const spendingUtxoKeys = new Set(
-		validated.map((v) => `${v.smartContractUtxo.input.txHash}#${v.smartContractUtxo.input.outputIndex}`),
+	const walletUtxos = getWalletUtxosForSelection(
+		utxos,
+		validated.map((v) => v.smartContractUtxo.input),
 	);
-	const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
-	const walletUtxos = utxos.filter((utxo) => {
-		const key = `${utxo.input.txHash}#${utxo.input.outputIndex}`;
-		if (key === collateralKey) return false;
-		if (spendingUtxoKeys.has(key)) return false;
-		return true;
-	});
-	const limitedFilteredUtxos = sortAndLimitUtxos(walletUtxos, 8000000);
-
 	// Constraints applied progressively: validity-window intersection then
 	// no-collateral-overlap. tx-size is checked after the build pass.
 	const shrinkResult = shrinkBatchToFit(validated, (subset) => {
@@ -800,7 +784,7 @@ async function processWalletBatch(
 					script,
 					address,
 					collateralUtxo,
-					limitedFilteredUtxos,
+					walletUtxos,
 					items,
 					composed.invalidBefore,
 					composed.invalidAfter,
@@ -1088,7 +1072,7 @@ async function processWalletBatch(
 	}
 
 	try {
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 	} catch (balanceError) {
 		logger.warn('V2 submit-result batch projected balance evaluation failed (non-fatal)', {
 			error:
