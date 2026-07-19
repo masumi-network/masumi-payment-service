@@ -1,4 +1,4 @@
-import { WebhookDeliveryStatus, WebhookEventType } from '@/generated/prisma/client';
+import { Prisma, WebhookDeliveryStatus, WebhookEventType } from '@/generated/prisma/client';
 import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
 import { prisma } from '@/utils/db';
 import { toPrismaInputJsonValue } from '@/utils/json-value';
@@ -7,8 +7,31 @@ import { CONFIG } from '@/utils/config';
 import { webhookSenderService } from './sender.service';
 import { buildEndpointWebhookPayload, buildWebhookPayload, mergeWebhookEndpointBatch } from './queue.helpers';
 
+type WebhookQueueClient = Pick<Prisma.TransactionClient, 'webhookDelivery' | 'webhookEndpoint'>;
+
 class WebhookQueueService {
 	async queueWebhook<TEventType extends WebhookEventType>(
+		eventType: TEventType,
+		payload: WebhookPayloadDataByEvent<TEventType>,
+		entityId?: string,
+		paymentSourceId?: string,
+	): Promise<void> {
+		await this.queueWebhookWithClient(prisma, false, eventType, payload, entityId, paymentSourceId);
+	}
+
+	async queueWebhookInTransaction<TEventType extends WebhookEventType>(
+		tx: Prisma.TransactionClient,
+		eventType: TEventType,
+		payload: WebhookPayloadDataByEvent<TEventType>,
+		entityId?: string,
+		paymentSourceId?: string,
+	): Promise<void> {
+		await this.queueWebhookWithClient(tx, true, eventType, payload, entityId, paymentSourceId);
+	}
+
+	private async queueWebhookWithClient<TEventType extends WebhookEventType>(
+		client: WebhookQueueClient,
+		failOnDeliveryError: boolean,
 		eventType: TEventType,
 		payload: WebhookPayloadDataByEvent<TEventType>,
 		entityId?: string,
@@ -23,7 +46,7 @@ class WebhookQueueService {
 		let queuedEndpoints: Array<{ id: string }> = [];
 
 		while (hasMore) {
-			const webhookEndpoints: Array<{ id: string }> = await prisma.webhookEndpoint.findMany({
+			const webhookEndpoints: Array<{ id: string }> = await client.webhookEndpoint.findMany({
 				where: {
 					isActive: true,
 					disabledAt: null,
@@ -61,7 +84,7 @@ class WebhookQueueService {
 				const endpointPayload = buildEndpointWebhookPayload(webhookPayload, endpoint.id);
 
 				try {
-					await prisma.webhookDelivery.create({
+					await client.webhookDelivery.create({
 						data: {
 							webhookEndpointId: endpoint.id,
 							eventType,
@@ -84,10 +107,17 @@ class WebhookQueueService {
 						entity_id: entityId,
 						error: error instanceof Error ? error.message : 'Unknown error',
 					});
+					if (failOnDeliveryError) {
+						throw error;
+					}
 				}
 			});
 
-			await Promise.allSettled(deliveries);
+			if (failOnDeliveryError) {
+				await Promise.all(deliveries);
+			} else {
+				await Promise.allSettled(deliveries);
+			}
 
 			if (webhookEndpoints.length < batchSize) {
 				hasMore = false;

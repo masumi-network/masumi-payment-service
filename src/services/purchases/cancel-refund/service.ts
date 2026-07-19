@@ -1,4 +1,4 @@
-import { OnChainState, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
+import { OnChainState, PurchasingAction } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
@@ -13,7 +13,7 @@ import { decodeV1ContractDatum, newCooldownTime } from '@/utils/converter/string
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxos } from '@/utils/utxo';
+import { selectCollateralUtxo } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
@@ -24,6 +24,7 @@ import {
 	createTxWindow,
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
+	writePurchaseErrorTransition,
 } from '@/services/shared';
 
 const mutex = new Mutex();
@@ -210,7 +211,7 @@ export async function cancelRefundsV1() {
 
 						const { invalidBefore, invalidAfter } = createTxWindow(network);
 
-						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+						const collateralUtxo = selectCollateralUtxo(utxos);
 
 						const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
 							'CancelRefund',
@@ -219,8 +220,8 @@ export async function cancelRefundsV1() {
 							script,
 							address,
 							utxo,
-							limitedFilteredUtxos[0],
-							limitedFilteredUtxos,
+							collateralUtxo,
+							utxos,
 							datum.value,
 							invalidBefore,
 							invalidAfter,
@@ -243,7 +244,7 @@ export async function cancelRefundsV1() {
 						});
 
 						const newTxHash = await wallet.submitTx(signedTx);
-						await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+						await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 						await prisma.purchaseRequest.update({
 							where: { id: request.id },
 							data: updateCurrentTransactionHash(newTxHash),
@@ -267,21 +268,13 @@ export async function cancelRefundsV1() {
 						logger.error(`Error cancelling refund ${request.id}`, {
 							error: error,
 						});
-						await prisma.purchaseRequest.update({
-							where: { id: request.id },
-							data: {
-								...connectPreviousAction(request.nextActionId),
-								...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
-									errorType: PurchaseErrorType.Unknown,
-									errorNote: 'Cancelling refund failed: ' + interpretBlockchainError(error),
-								}),
-								SmartContractWallet: {
-									update: {
-										lockedAt: null,
-									},
-								},
-							},
-						});
+						await prisma.$transaction((tx) =>
+							writePurchaseErrorTransition(tx, {
+								requestId: request.id,
+								nextActionId: request.nextActionId,
+								errorNote: 'Cancelling refund failed: ' + interpretBlockchainError(error),
+							}),
+						);
 					}
 					index++;
 				}

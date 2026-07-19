@@ -15,3 +15,4 @@ export {
 	updateCurrentTransactionHash,
 	updateCurrentTransactionStatus,
 } from './transition-writer';
+export { writePaymentErrorTransition, writePurchaseErrorTransition } from './error-transition';

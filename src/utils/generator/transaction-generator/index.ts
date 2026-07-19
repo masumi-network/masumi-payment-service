@@ -27,6 +27,13 @@ function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	}
 }
 
+function getSpendableWalletUtxos(walletUtxos: UTxO[], collateralUtxo: UTxO): UTxO[] {
+	return walletUtxos.filter(
+		(utxo) =>
+			utxo.input.txHash !== collateralUtxo.input.txHash || utxo.input.outputIndex !== collateralUtxo.input.outputIndex,
+	);
+}
+
 export async function generateMasumiSmartContractInteractionTransactionAutomaticFees(
 	type: 'AuthorizeRefund' | 'CancelRefund' | 'RequestRefund' | 'SubmitResult',
 	blockchainProvider: BlockfrostProvider,
@@ -193,9 +200,9 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		.txOut(smartContractAddress, outputAmount)
 		.txOutInlineDatumValue(newInlineDatum);
 
-	for (const utxo of walletUtxos) {
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
-	}
+	// Mesh balances the completed custom transaction from these candidates.
+	// Collateral must remain dedicated because Mesh does not exclude it from extraInputs.
+	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
 
 	return await txBuilder
 		.changeAddress(walletAddress)
@@ -375,10 +382,6 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		.setTotalCollateral('3000000')
 		.txOut(collection.collectionAddress, collection.collectAssets);
 
-	for (const utxo of walletUtxos) {
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
-	}
-
 	if (fee) {
 		const outputReference = mOutputReference(fee.txHash, fee.outputIndex);
 		txBuilder.txOut(fee.feeAddress, fee.feeAssets).txOutInlineDatumValue(outputReference);
@@ -394,6 +397,8 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 			])
 			.txOutInlineDatumValue(outputReference);
 	}
+
+	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
 
 	return await txBuilder
 		.changeAddress(walletAddress)

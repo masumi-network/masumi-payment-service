@@ -1,4 +1,4 @@
-import { PaymentAction, PaymentErrorType, Network, Prisma } from '@/generated/prisma/client';
+import { PaymentAction, Network, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { BlockfrostProvider, deserializeDatum, UTxO } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
@@ -12,7 +12,7 @@ import { convertNetwork } from '@/utils/converter/network-convert';
 import { decodeV1ContractDatum, DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { interpretBlockchainError } from '@/utils/errors/blockchain-error-interpreter';
-import { sortAndLimitUtxos } from '@/utils/utxo';
+import { selectCollateralUtxo } from '@/utils/utxo';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
@@ -25,6 +25,7 @@ import {
 	createTxWindow,
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
+	writePaymentErrorTransition,
 } from '@/services/shared';
 
 type PaymentSourceWithRelations = Prisma.PaymentSourceGetPayload<{
@@ -83,21 +84,13 @@ async function handlePaymentRequestResults(
 				error: result.error,
 			});
 
-			await prisma.paymentRequest.update({
-				where: { id: request.id },
-				data: {
-					...connectPreviousAction(request.nextActionId),
-					...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
-						errorType: PaymentErrorType.Unknown,
-						errorNote: 'Submitting result failed: ' + interpretBlockchainError(result.error),
-					}),
-					SmartContractWallet: {
-						update: {
-							lockedAt: null,
-						},
-					},
-				},
-			});
+			await prisma.$transaction((tx) =>
+				writePaymentErrorTransition(tx, {
+					requestId: request.id,
+					nextActionId: request.nextActionId,
+					errorNote: 'Submitting result failed: ' + interpretBlockchainError(result.error),
+				}),
+			);
 		}
 	}
 }
@@ -226,7 +219,7 @@ async function processSinglePaymentRequest(
 		constrainAfterMs: Number(decodedContract.resultTime),
 	});
 
-	const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
+	const collateralUtxo = selectCollateralUtxo(utxos);
 
 	const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
 		'SubmitResult',
@@ -235,8 +228,8 @@ async function processSinglePaymentRequest(
 		script,
 		address,
 		utxo,
-		limitedUtxos[0],
-		limitedUtxos,
+		collateralUtxo,
+		utxos,
 		datum.value,
 		invalidBefore,
 		invalidAfter,
@@ -259,7 +252,7 @@ async function processSinglePaymentRequest(
 	});
 	try {
 		const newTxHash = await wallet.submitTx(signedTx);
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedUtxos);
+		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 		await prisma.paymentRequest.update({
 			where: { id: request.id },
 			data: updateCurrentTransactionHash(newTxHash),

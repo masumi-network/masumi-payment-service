@@ -24,7 +24,7 @@ describe('interpretBlockchainError', () => {
 		it('should match exact message', () => {
 			const result = interpretBlockchainError(new Error('UTxO Fully Depleted'));
 			expect(result).toContain('. Hint:');
-			expect(result).toContain('no UTxOs available');
+			expect(result).toContain('wallet may have enough total ADA');
 		});
 
 		it('should match case-insensitively', () => {
@@ -34,7 +34,7 @@ describe('interpretBlockchainError', () => {
 		it('should match inside a JSON Blockfrost error object', () => {
 			const result = interpretBlockchainError({ status_code: 400, message: 'UTxO Fully Depleted' });
 			expect(result).toContain('. Hint:');
-			expect(result).toContain('no UTxOs available');
+			expect(result).toContain('wallet may have enough total ADA');
 		});
 	});
 
