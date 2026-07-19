@@ -1157,279 +1157,305 @@ export function RegisterAIAgentDialog({
             )}
           </div>
 
-          <div className="flex items-center gap-4 pt-2">
-            <Separator className="flex-1" />
-            <h3 className="whitespace-nowrap text-sm font-medium text-muted-foreground">
-              Payment configuration
-            </h3>
-            <Separator className="flex-1" />
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-col gap-1">
-              <h3 className="text-sm font-medium">Payment options</h3>
-              <p className="max-w-[65ch] text-xs text-muted-foreground">
-                Choose the settlement type for each option.
-              </p>
+          <section className="space-y-4 border-t pt-6" aria-labelledby="payment-options-heading">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <h3 id="payment-options-heading" className="text-base font-semibold">
+                    Payment options
+                  </h3>
+                  <Badge variant="secondary" className="font-normal text-muted-foreground">
+                    {paymentOptionRows.length}{' '}
+                    {paymentOptionRows.length === 1 ? 'option' : 'options'}
+                  </Badge>
+                </div>
+                <p className="max-w-[65ch] text-sm text-muted-foreground">
+                  Offer Masumi escrow, x402 direct settlement, or both.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addPaymentOption}
+                disabled={x402Options.length >= MAX_X402_OPTIONS}
+              >
+                <Plus data-icon="inline-start" />
+                Add x402 option
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addPaymentOption}
-              disabled={x402Options.length >= MAX_X402_OPTIONS}
-            >
-              <Plus data-icon="inline-start" />
-              Add payment option
-            </Button>
-          </div>
 
-          {!isV2Target && x402Options.length > 0 ? (
-            <p role="status" className="text-xs text-destructive">
-              x402 options require an active Web3 Cardano V2 payment source.
-            </p>
-          ) : null}
-          {x402Options.length > 0 && x402Networks.length === 0 ? (
-            <p role="status" className="text-xs text-destructive">
-              Configure an EVM chain in x402 setup before registering this agent.
-            </p>
-          ) : null}
-          {x402Options.length >= MAX_X402_OPTIONS ? (
-            <p className="text-xs text-muted-foreground">
-              The on-chain limit allows 24 x402 options alongside the Masumi source.
-            </p>
-          ) : null}
-          {x402Error ? (
-            <p role="alert" className="text-xs text-destructive">
-              {x402Error}
-            </p>
-          ) : null}
+            {!isV2Target && x402Options.length > 0 ? (
+              <p
+                role="status"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                x402 options require an active Web3 Cardano V2 payment source.
+              </p>
+            ) : null}
+            {x402Options.length > 0 && x402Networks.length === 0 ? (
+              <p
+                role="status"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                Configure an EVM chain in x402 setup before registering this agent.
+              </p>
+            ) : null}
+            {x402Options.length >= MAX_X402_OPTIONS ? (
+              <p className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                The on-chain limit allows 24 x402 options alongside the Masumi source.
+              </p>
+            ) : null}
+            {x402Error ? (
+              <p
+                role="alert"
+                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+              >
+                {x402Error}
+              </p>
+            ) : null}
 
-          <div className="flex flex-col gap-4">
-            {paymentOptionRows.map((optionRow, optionIndex) => {
-              const x402Option =
-                optionRow.type === 'x402'
-                  ? x402Options.find((option) => option.id === optionRow.id)
-                  : undefined;
+            <div className="flex flex-col gap-4">
+              {paymentOptionRows.map((optionRow, optionIndex) => {
+                const x402Option =
+                  optionRow.type === 'x402'
+                    ? x402Options.find((option) => option.id === optionRow.id)
+                    : undefined;
 
-              return (
-                <section
-                  key={optionRow.id}
-                  className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4"
-                  aria-labelledby={`payment-option-${optionRow.id}`}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 id={`payment-option-${optionRow.id}`} className="text-sm font-medium">
+                return (
+                  <article
+                    key={optionRow.id}
+                    className="overflow-hidden rounded-lg border bg-card/40"
+                    aria-labelledby={`payment-option-${optionRow.id}`}
+                  >
+                    <div className="flex flex-col gap-3 border-b bg-muted/20 px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
+                      <div className="min-w-0 space-y-1">
+                        <h4 id={`payment-option-${optionRow.id}`} className="text-sm font-semibold">
                           Payment option {optionIndex + 1}
                         </h4>
-                        <Badge variant="outline">
-                          {optionRow.type === 'Masumi' ? 'Escrow settlement' : 'Direct settlement'}
-                        </Badge>
+                        <p className="text-xs text-muted-foreground">
+                          {optionRow.type === 'Masumi'
+                            ? 'Escrow settlement with dispute support.'
+                            : x402Option?.pricingType === 'Fixed'
+                              ? 'An exact amount and asset stored in the registry.'
+                              : x402Option?.pricingType === 'Free'
+                                ? 'No payment is required for this x402 resource.'
+                                : 'The exact amount is supplied at runtime.'}
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {optionRow.type === 'Masumi'
-                          ? 'Disputable payments through the active Masumi contract.'
-                          : x402Option?.pricingType === 'Fixed'
-                            ? 'A fixed exact token payment over x402.'
-                            : x402Option?.pricingType === 'Free'
-                              ? 'A free x402 resource with no required payment.'
-                              : 'The exact positive amount is supplied by each runtime 402.'}
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Remove payment option ${optionIndex + 1}`}
-                      disabled={paymentOptionRows.length === 1}
-                      onClick={() => removePaymentOption(optionRow)}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </div>
 
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium">Payment type</label>
-                    <Select
-                      value={optionRow.type}
-                      onValueChange={(value) => {
-                        if (value === 'Masumi' || value === 'x402') {
-                          changePaymentOptionType(optionRow, value);
-                        }
-                      }}
-                    >
-                      <SelectTrigger aria-label={`Payment type for option ${optionIndex + 1}`}>
-                        <SelectValue placeholder="Select a payment type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem
-                            value="Masumi"
-                            disabled={hasMasumiPaymentOption && optionRow.type !== 'Masumi'}
+                      <div className="flex w-full items-end gap-2 sm:w-auto">
+                        <div className="min-w-0 flex-1 space-y-1 sm:w-56 sm:flex-none">
+                          <label className="text-xs font-medium text-muted-foreground">
+                            Payment type
+                          </label>
+                          <Select
+                            value={optionRow.type}
+                            onValueChange={(value) => {
+                              if (value === 'Masumi' || value === 'x402') {
+                                changePaymentOptionType(optionRow, value);
+                              }
+                            }}
                           >
-                            Disputable (Masumi)
-                          </SelectItem>
-                          <SelectItem value="x402">x402 direct settlement</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {optionRow.type === 'Masumi' ? (
-                    <>
-                      <div className="flex flex-col gap-1">
-                        <label className="text-xs font-medium">
-                          Pricing model <span className="text-destructive">*</span>
-                        </label>
-                        <Controller
-                          control={control}
-                          name="pricingType"
-                          render={({ field }) => (
-                            <Select
-                              value={field.value}
-                              onValueChange={(value) => {
-                                field.onChange(value);
-                                if (value === 'Fixed' && priceFields.length === 0) {
-                                  replacePrices([{ unit: defaultPriceUnit, amount: '' }]);
-                                } else if (value !== 'Fixed') {
-                                  replacePrices([]);
-                                }
-                              }}
+                            <SelectTrigger
+                              className="h-9 bg-background"
+                              aria-label={`Payment type for option ${optionIndex + 1}`}
                             >
-                              <SelectTrigger
-                                aria-label={`Pricing model for payment option ${optionIndex + 1}`}
-                              >
-                                <SelectValue placeholder="Select a pricing model" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectGroup>
-                                  <SelectItem value="Fixed">Fixed price</SelectItem>
-                                  <SelectItem value="Dynamic">Dynamic per payment</SelectItem>
-                                  <SelectItem value="Free">Free</SelectItem>
-                                </SelectGroup>
-                              </SelectContent>
-                            </Select>
-                          )}
-                        />
-                        {watch('pricingType') === 'Dynamic' ? (
-                          <p className="text-xs text-muted-foreground">
-                            Your agent sets the amount when it creates each payment request.
-                          </p>
-                        ) : null}
-                        {watch('pricingType') === 'Free' ? (
-                          <p className="text-xs text-muted-foreground">
-                            Interactions do not require a Masumi escrow payment.
-                          </p>
+                              <SelectValue placeholder="Select a payment type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                <SelectItem
+                                  value="Masumi"
+                                  disabled={hasMasumiPaymentOption && optionRow.type !== 'Masumi'}
+                                >
+                                  Disputable (Masumi)
+                                </SelectItem>
+                                <SelectItem value="x402">x402 direct settlement</SelectItem>
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        {paymentOptionRows.length > 1 ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-10 w-10 shrink-0 sm:h-9 sm:w-9"
+                            aria-label={`Remove payment option ${optionIndex + 1}`}
+                            onClick={() => removePaymentOption(optionRow)}
+                          >
+                            <Trash2 />
+                          </Button>
                         ) : null}
                       </div>
+                    </div>
 
-                      {watch('pricingType') === 'Fixed' ? (
-                        <div className="flex flex-col gap-3">
-                          <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-4 p-4">
+                      {optionRow.type === 'Masumi' ? (
+                        <>
+                          <div className="flex flex-col gap-1">
                             <label className="text-xs font-medium">
-                              Coins and prices <span className="text-destructive">*</span>
+                              Pricing model <span className="text-destructive">*</span>
                             </label>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={priceFields.length >= REGISTRY_LIMITS.pricingOptionCount}
-                              onClick={() => appendPrice({ unit: defaultPriceUnit, amount: '' })}
-                            >
-                              Add coin
-                            </Button>
+                            <Controller
+                              control={control}
+                              name="pricingType"
+                              render={({ field }) => (
+                                <Select
+                                  value={field.value}
+                                  onValueChange={(value) => {
+                                    field.onChange(value);
+                                    if (value === 'Fixed' && priceFields.length === 0) {
+                                      replacePrices([{ unit: defaultPriceUnit, amount: '' }]);
+                                    } else if (value !== 'Fixed') {
+                                      replacePrices([]);
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger
+                                    aria-label={`Pricing model for payment option ${optionIndex + 1}`}
+                                  >
+                                    <SelectValue placeholder="Select a pricing model" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectGroup>
+                                      <SelectItem value="Fixed">Fixed price</SelectItem>
+                                      <SelectItem value="Dynamic">Dynamic per payment</SelectItem>
+                                      <SelectItem value="Free">Free</SelectItem>
+                                    </SelectGroup>
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            />
+                            {watch('pricingType') === 'Dynamic' ? (
+                              <p className="text-xs text-muted-foreground">
+                                Your agent sets the amount for each payment request.
+                              </p>
+                            ) : null}
+                            {watch('pricingType') === 'Free' ? (
+                              <p className="text-xs text-muted-foreground">
+                                Interactions do not require a Masumi escrow payment.
+                              </p>
+                            ) : null}
                           </div>
-                          {priceFields.map((priceField, index) => (
-                            <div key={priceField.id} className="flex items-start gap-2">
-                              <div className="flex-1">
-                                <Controller
-                                  control={control}
-                                  name={`prices.${index}.unit` as const}
-                                  render={({ field }) => (
-                                    <Select value={field.value} onValueChange={field.onChange}>
-                                      <SelectTrigger
-                                        aria-label={`Coin for Masumi price ${index + 1}`}
-                                      >
-                                        <SelectValue placeholder="Select a coin" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectGroup>
-                                          <SelectItem value={stablecoinUnit}>
-                                            {stablecoinUnit}
-                                          </SelectItem>
-                                          <SelectItem value="lovelace">
-                                            {formatFundUnit('lovelace', network)}
-                                          </SelectItem>
-                                        </SelectGroup>
-                                      </SelectContent>
-                                    </Select>
-                                  )}
-                                />
-                              </div>
-                              <div className="flex-1">
-                                <Input
-                                  type="number"
-                                  inputMode="decimal"
-                                  aria-label={`Amount for Masumi price ${index + 1}`}
-                                  placeholder="0.00"
-                                  onWheel={(event) => event.currentTarget.blur()}
-                                  value={watch(`prices.${index}.amount`) || ''}
-                                  {...register(`prices.${index}.amount` as const)}
-                                  min="0"
-                                  step="0.000001"
-                                />
-                                {errors.prices &&
-                                Array.isArray(errors.prices) &&
-                                errors.prices[index]?.amount ? (
-                                  <p className="mt-1 text-xs text-destructive">
-                                    {errors.prices[index]?.amount?.message}
-                                  </p>
-                                ) : null}
-                              </div>
-                              {index > 0 ? (
+
+                          {watch('pricingType') === 'Fixed' ? (
+                            <div className="flex flex-col gap-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <label className="text-xs font-medium">
+                                  Coins and prices <span className="text-destructive">*</span>
+                                </label>
                                 <Button
                                   type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label={`Remove Masumi price ${index + 1}`}
-                                  onClick={() => removePrice(index)}
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={
+                                    priceFields.length >= REGISTRY_LIMITS.pricingOptionCount
+                                  }
+                                  onClick={() =>
+                                    appendPrice({ unit: defaultPriceUnit, amount: '' })
+                                  }
                                 >
-                                  <Trash2 />
+                                  <Plus data-icon="inline-start" />
+                                  Add coin
                                 </Button>
+                              </div>
+                              {priceFields.map((priceField, index) => (
+                                <div
+                                  key={priceField.id}
+                                  className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <Controller
+                                      control={control}
+                                      name={`prices.${index}.unit` as const}
+                                      render={({ field }) => (
+                                        <Select value={field.value} onValueChange={field.onChange}>
+                                          <SelectTrigger
+                                            aria-label={`Coin for Masumi price ${index + 1}`}
+                                          >
+                                            <SelectValue placeholder="Select a coin" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectGroup>
+                                              <SelectItem value={stablecoinUnit}>
+                                                {stablecoinUnit}
+                                              </SelectItem>
+                                              <SelectItem value="lovelace">
+                                                {formatFundUnit('lovelace', network)}
+                                              </SelectItem>
+                                            </SelectGroup>
+                                          </SelectContent>
+                                        </Select>
+                                      )}
+                                    />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <Input
+                                      type="number"
+                                      inputMode="decimal"
+                                      aria-label={`Amount for Masumi price ${index + 1}`}
+                                      placeholder="0.00"
+                                      onWheel={(event) => event.currentTarget.blur()}
+                                      value={watch(`prices.${index}.amount`) || ''}
+                                      {...register(`prices.${index}.amount` as const)}
+                                      min="0"
+                                      step="0.000001"
+                                    />
+                                    {errors.prices &&
+                                    Array.isArray(errors.prices) &&
+                                    errors.prices[index]?.amount ? (
+                                      <p className="mt-1 text-xs text-destructive">
+                                        {errors.prices[index]?.amount?.message}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  {index > 0 ? (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-10 w-10 self-end sm:h-9 sm:w-9 sm:self-auto"
+                                      aria-label={`Remove Masumi price ${index + 1}`}
+                                      onClick={() => removePrice(index)}
+                                    >
+                                      <Trash2 />
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              ))}
+                              {errors.prices && typeof errors.prices.message === 'string' ? (
+                                <p className="text-sm text-destructive">{errors.prices.message}</p>
                               ) : null}
                             </div>
-                          ))}
-                          {errors.prices && typeof errors.prices.message === 'string' ? (
-                            <p className="text-sm text-destructive">{errors.prices.message}</p>
                           ) : null}
-                        </div>
-                      ) : null}
-                    </>
-                  ) : x402Option ? (
-                    <X402OptionFields
-                      option={x402Option}
-                      optionNumber={optionIndex + 1}
-                      networks={x402Networks}
-                      wallets={x402Wallets}
-                      isLoadingWallets={isLoadingX402Wallets}
-                      onChange={(patch) => {
-                        setX402Options((currentOptions) =>
-                          currentOptions.map((option) =>
-                            option.id === optionRow.id ? { ...option, ...patch } : option,
-                          ),
-                        );
-                        setX402Error(null);
-                      }}
-                    />
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Preparing x402 settings…</p>
-                  )}
-                </section>
-              );
-            })}
-          </div>
+                        </>
+                      ) : x402Option ? (
+                        <X402OptionFields
+                          option={x402Option}
+                          optionNumber={optionIndex + 1}
+                          networks={x402Networks}
+                          wallets={x402Wallets}
+                          isLoadingWallets={isLoadingX402Wallets}
+                          onChange={(patch) => {
+                            setX402Options((currentOptions) =>
+                              currentOptions.map((option) =>
+                                option.id === optionRow.id ? { ...option, ...patch } : option,
+                              ),
+                            );
+                            setX402Error(null);
+                          }}
+                        />
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Preparing x402 settings…</p>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
 
           {isV2Target && (
             <VerificationsSection

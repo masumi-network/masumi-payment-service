@@ -54,50 +54,89 @@ export function X402OptionFields({
   const hasKnownTokenDecimals =
     !!selectedAssetPreset &&
     (selectedAssetPreset.isNative || selectedAssetPreset.symbol !== 'Default token');
-  const pricingDescription =
-    option.pricingType === 'Dynamic'
-      ? 'The agent supplies the exact positive amount at runtime. Optionally restrict which asset it may request.'
-      : option.pricingType === 'Free'
-        ? 'Publish this x402 resource as free. No asset or payment amount is registered.'
-        : 'Publish one exact amount and asset in the registry.';
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium">Pricing model</label>
-        <Select
-          value={option.pricingType}
-          onValueChange={(value: X402OptionDraft['pricingType']) => {
-            if (value === 'Fixed') {
-              const defaultAsset = defaultAssetForNetwork(selectedNetwork);
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium">Pricing model</label>
+          <Select
+            value={option.pricingType}
+            onValueChange={(value: X402OptionDraft['pricingType']) => {
+              if (value === 'Fixed') {
+                const defaultAsset = defaultAssetForNetwork(selectedNetwork);
+                onChange({
+                  pricingType: value,
+                  asset: defaultAsset?.address ?? selectedNetwork?.defaultAsset ?? '',
+                  decimals: String(defaultAsset?.decimals ?? 6),
+                  amount: '',
+                });
+                return;
+              }
               onChange({
                 pricingType: value,
-                asset: defaultAsset?.address ?? selectedNetwork?.defaultAsset ?? '',
-                decimals: String(defaultAsset?.decimals ?? 6),
+                asset: '',
+                decimals: '',
                 amount: '',
               });
-              return;
-            }
-            onChange({
-              pricingType: value,
-              asset: '',
-              decimals: '',
-              amount: '',
-            });
-          }}
-        >
-          <SelectTrigger aria-label={`Pricing model for payment option ${optionNumber}`}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value="Dynamic">Dynamic (default)</SelectItem>
-              <SelectItem value="Fixed">Fixed</SelectItem>
-              <SelectItem value="Free">Free</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">{pricingDescription}</p>
+            }}
+          >
+            <SelectTrigger aria-label={`Pricing model for payment option ${optionNumber}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="Dynamic">Dynamic (default)</SelectItem>
+                <SelectItem value="Fixed">Fixed</SelectItem>
+                <SelectItem value="Free">Free</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium">Receive in</label>
+          <Select
+            value={selectedWallet?.id ?? CUSTOM_WALLET}
+            onValueChange={(value) => {
+              if (value === CUSTOM_WALLET) {
+                onChange({ payTo: selectedWallet ? '' : option.payTo });
+                return;
+              }
+              const wallet = availableWallets.find((candidate) => candidate.id === value);
+              if (wallet) onChange({ payTo: wallet.address });
+            }}
+            disabled={isLoadingWallets}
+          >
+            <SelectTrigger aria-label={`Recipient for payment option ${optionNumber}`}>
+              <SelectValue
+                placeholder={isLoadingWallets ? 'Loading wallets...' : 'Select a wallet'}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {availableWallets.map((wallet) => (
+                  <SelectItem key={wallet.id} value={wallet.id}>
+                    {wallet.note || 'Selling wallet'}
+                    <span className="ml-2 font-mono text-xs text-muted-foreground">
+                      {shortenAddress(wallet.address, 6)}
+                    </span>
+                  </SelectItem>
+                ))}
+                <SelectItem value={CUSTOM_WALLET}>Custom EVM address</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          {isCustomWallet ? (
+            <Input
+              aria-label={`Custom EVM recipient for payment option ${optionNumber}`}
+              className="font-mono"
+              placeholder="0x… recipient address"
+              value={option.payTo}
+              onChange={(event) => onChange({ payTo: event.target.value })}
+            />
+          ) : null}
+        </div>
       </div>
 
       {option.pricingType === 'Fixed' ? (
@@ -154,59 +193,25 @@ export function X402OptionFields({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium">Receive in</label>
-        <Select
-          value={selectedWallet?.id ?? CUSTOM_WALLET}
-          onValueChange={(value) => {
-            if (value === CUSTOM_WALLET) {
-              onChange({ payTo: selectedWallet ? '' : option.payTo });
-              return;
-            }
-            const wallet = availableWallets.find((candidate) => candidate.id === value);
-            if (wallet) onChange({ payTo: wallet.address });
-          }}
-          disabled={isLoadingWallets}
-        >
-          <SelectTrigger aria-label={`Recipient for payment option ${optionNumber}`}>
-            <SelectValue
-              placeholder={isLoadingWallets ? 'Loading wallets...' : 'Select a wallet'}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {availableWallets.map((wallet) => (
-                <SelectItem key={wallet.id} value={wallet.id}>
-                  {wallet.note || 'Selling wallet'}
-                  <span className="ml-2 font-mono text-xs text-muted-foreground">
-                    {shortenAddress(wallet.address, 6)}
-                  </span>
-                </SelectItem>
-              ))}
-              <SelectItem value={CUSTOM_WALLET}>Custom EVM address</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        {isCustomWallet ? (
-          <Input
-            aria-label={`Custom EVM recipient for payment option ${optionNumber}`}
-            className="font-mono"
-            placeholder="0x… recipient address"
-            value={option.payTo}
-            onChange={(event) => onChange({ payTo: event.target.value })}
-          />
-        ) : null}
-      </div>
-
       <Collapsible defaultOpen={isCustomAsset || !!option.resource}>
         <Separator />
         <CollapsibleTrigger asChild>
-          <Button type="button" variant="ghost" size="sm" className="group mt-2">
-            Advanced settings
-            <ChevronDown
-              data-icon="inline-end"
-              className="transition-transform duration-200 group-data-[state=open]:rotate-180"
-            />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="group mt-2 w-full justify-between px-2 text-muted-foreground hover:text-foreground"
+          >
+            <span>Advanced settings</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="max-w-44 truncate font-normal">
+                {selectedNetwork?.displayName ?? 'Select chain'}
+              </span>
+              <ChevronDown
+                data-icon="inline-end"
+                className="transition-transform duration-200 group-data-[state=open]:rotate-180"
+              />
+            </span>
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent className="pt-3">
