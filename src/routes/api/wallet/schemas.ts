@@ -1,5 +1,6 @@
 import { HotWalletType, Network, TransactionStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
+import { CARDANO_NATIVE_ASSET_UNIT_PATTERN } from '@/utils/cardano/asset-unit';
 import { lowBalanceRuleSchema, lowBalanceSummarySchema } from './low-balance.schemas';
 
 export const walletListItemSchema = z
@@ -8,7 +9,9 @@ export const walletListItemSchema = z
 		paymentSourceId: z.string().describe('Id of the payment source this wallet belongs to'),
 		type: z
 			.nativeEnum(HotWalletType)
-			.describe('Whether this is a Selling (seller side) or Purchasing (buyer side) wallet'),
+			.describe(
+				'Whether this is a Selling (seller side), Purchasing (buyer side) or Funding (treasury that tops up the other two) wallet',
+			),
 		walletVkey: z.string().describe('Payment key hash of the wallet'),
 		walletAddress: z.string().describe('Cardano address of the wallet'),
 		collectionAddress: z.string().nullable().describe('Optional collection address for this wallet. Null if not set'),
@@ -25,7 +28,10 @@ export const getWalletListSchemaInput = z.object({
 		.optional()
 		.describe('Used to paginate through the wallets (provide the id of the last returned wallet)'),
 	paymentSourceId: z.string().max(250).optional().describe('Filter wallets to a single payment source'),
-	walletType: z.nativeEnum(HotWalletType).optional().describe('Filter wallets by type (Selling or Purchasing)'),
+	walletType: z
+		.nativeEnum(HotWalletType)
+		.optional()
+		.describe('Filter wallets by type (Selling, Purchasing or Funding)'),
 	walletVkey: z.string().max(250).optional().describe('Filter to the single wallet with this payment key hash'),
 	walletAddress: z.string().max(250).optional().describe('Filter to wallets with this Cardano address'),
 });
@@ -35,7 +41,7 @@ export const getWalletListSchemaOutput = z.object({
 });
 
 export const getWalletSchemaInput = z.object({
-	walletType: z.enum(['Selling', 'Purchasing']).describe('The type of wallet to query'),
+	walletType: z.nativeEnum(HotWalletType).describe('The type of wallet to query'),
 	id: z.string().min(1).max(250).describe('The id of the wallet to query'),
 	includeSecret: z
 		.string()
@@ -112,8 +118,6 @@ export const patchWalletSchemaOutput = getWalletSchemaOutput;
  * its own validated `lovelaceAmount` entry ahead of this list, so a caller's
  * lovelace entry is dropped on the floor with no error.
  */
-const ASSET_UNIT_PATTERN = /^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{2})*$/;
-
 /** Positive integer, no leading zeros. Rejects '0', '-5', 'abc', '1e9', '1.5'. */
 const POSITIVE_INTEGER_PATTERN = /^[1-9][0-9]*$/;
 
@@ -151,7 +155,10 @@ export const postWalletFundSchemaInput = z.object({
 			z.object({
 				unit: z
 					.string()
-					.regex(ASSET_UNIT_PATTERN, 'unit must be a policy id (56 hex chars) followed by the hex asset name')
+					.regex(
+						CARDANO_NATIVE_ASSET_UNIT_PATTERN,
+						'unit must be a policy id (56 hex chars) followed by an asset name of at most 32 bytes',
+					)
 					.describe('Asset unit: policy id (56 hex chars) followed by the hex asset name. Not "lovelace".'),
 				quantity: z
 					.string()

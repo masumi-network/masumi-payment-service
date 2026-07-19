@@ -52,7 +52,11 @@ export async function resolveScopedSellingWalletOrThrow({
 	metricPath,
 	operation,
 }: ResolveScopedSellingWalletParams): Promise<ScopedSellingWallet> {
-	const sellingWallet = await prisma.hotWallet.findUnique({
+	// findFirst, not findUnique: walletVkey is unique only among ACTIVE wallets
+	// (partial index, see prisma/schema.prisma), so it is no longer a Prisma
+	// unique key. The deletedAt: null filter below preserves at-most-one
+	// semantics for this lookup.
+	const sellingWallet = await prisma.hotWallet.findFirst({
 		where: {
 			walletVkey: sellingWalletVkey,
 			type: HotWalletType.Selling,

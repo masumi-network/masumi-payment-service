@@ -17,6 +17,11 @@ import { DEFAULTS } from '@masumi/payment-core/config';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { logger } from '@masumi/payment-core/logger';
 import { walletLowBalanceMonitorService } from '@/services/wallets';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
+import {
+	prepareTargetWalletRemoval,
+	retirePaymentSourceFundDistributions,
+} from '@/services/wallets/fund-distribution/retirement';
 import {
 	paymentSourceExtendedCreateSchemaInput,
 	paymentSourceExtendedCreateSchemaOutput,
@@ -380,17 +385,40 @@ export const paymentSourceExtendedEndpointPatch = adminAuthenticatedEndpointFact
 				);
 
 				if (walletIdsToRemove.length > 0) {
-					await prisma.paymentSource.update({
-						where: { id: input.id },
-						data: {
-							HotWallets: {
-								updateMany: {
-									where: { id: { in: walletIdsToRemove } },
-									data: { deletedAt: new Date() },
+					// The in-flight check and the soft-delete MUST commit together, at
+					// Serializable — `prepareTargetWalletRemoval` is written on that
+					// promise ("the caller soft-deletes the wallets in this same
+					// Serializable transaction, so a batch claim either wins first and
+					// blocks removal, or sees inactive targets"). Run as two statements
+					// on the base client and the promise is false: the distribution cycle
+					// runs every 30s and can claim, lock, sign and broadcast a top-up to
+					// these wallets between the check passing and the delete landing —
+					// exactly what the 409 exists to prevent. Mirrors the DELETE path.
+					await retryOnSerializationConflict(
+						() =>
+							prisma.$transaction(
+								async (tx) => {
+									await prepareTargetWalletRemoval(tx, {
+										paymentSourceId: input.id,
+										walletIds: walletIdsToRemove,
+									});
+
+									await tx.paymentSource.update({
+										where: { id: input.id },
+										data: {
+											HotWallets: {
+												updateMany: {
+													where: { id: { in: walletIdsToRemove } },
+													data: { deletedAt: new Date() },
+												},
+											},
+										},
+									});
 								},
-							},
-						},
-					});
+								{ isolationLevel: 'Serializable' },
+							),
+						{ label: 'payment-source-remove-wallets' },
+					);
 				}
 
 				const updatedPaymentSource = await prisma.paymentSource.update({
@@ -470,11 +498,22 @@ export const paymentSourceExtendedEndpointDelete = adminAuthenticatedEndpointFac
 			throw createHttpError(404, 'Payment source not found');
 		}
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, existing.network);
-		const paymentSource = await prisma.paymentSource.update({
-			where: { id: existing.id },
-			data: { deletedAt: new Date() },
-			include: paymentSourceExtendedInclude,
-		});
+		const paymentSource = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						await retirePaymentSourceFundDistributions(tx, existing.id);
+
+						return tx.paymentSource.update({
+							where: { id: existing.id, deletedAt: null },
+							data: { deletedAt: new Date() },
+							include: paymentSourceExtendedInclude,
+						});
+					},
+					{ isolationLevel: 'Serializable' },
+				),
+			{ label: 'payment-source-delete' },
+		);
 		const walletCounts = await getWalletCountsByPaymentSource([paymentSource.id], ctx.walletScopeIds);
 		return serializePaymentSourceExtendedEntry(paymentSource, walletCounts.get(paymentSource.id));
 	},

@@ -15,6 +15,7 @@ import {
 import { toast } from 'react-toastify';
 import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { isHotWalletType } from '@/lib/wallet-type';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
@@ -45,6 +46,7 @@ import {
   getRuleAssetLabel,
   getRuleAssetMetaFromPreset,
   parseThresholdInputToRaw,
+  validateRuleTopupInput,
   type WalletWithBalance,
 } from '@/components/wallets/wallet-details-utils';
 import { TokenBalanceSection } from '@/components/wallets/sections/TokenBalanceSection';
@@ -352,14 +354,18 @@ export function WalletDetailsDialog({
   }, [isOpen, wallet?.walletAddress]);
 
   const handleExport = async () => {
-    if (!wallet || wallet.type === 'Collection') return;
+    if (!wallet || !isHotWalletType(wallet.type)) return;
+    // Bind the narrowed type: TS drops narrowing on `wallet.type` inside the
+    // callback below, and the previous `as 'Purchasing' | 'Selling'` cast is
+    // what let Funding wallets reach an endpoint that rejected them.
+    const walletType = wallet.type;
     setIsExporting(true);
     await handleApiCall(
       () =>
         getWallet({
           client: apiClient,
           query: {
-            walletType: wallet.type as 'Purchasing' | 'Selling',
+            walletType,
             id: wallet.id,
             includeSecret: 'true',
           },
@@ -495,7 +501,16 @@ export function WalletDetailsDialog({
     addRuleAssetMeta.assetUnit,
     network,
   );
-  const canCreateNewRule = addRuleAssetMeta.assetUnit.trim() !== '' && newRuleRawThreshold != null;
+  const newRuleTopupValidation = validateRuleTopupInput({
+    enabled: rules.newRuleTopupEnabled,
+    topupAmountInput: rules.newRuleTopupAmountInput,
+    assetUnit: addRuleAssetMeta.assetUnit,
+    network,
+  });
+  const canCreateNewRule =
+    addRuleAssetMeta.assetUnit.trim() !== '' &&
+    newRuleRawThreshold != null &&
+    newRuleTopupValidation.error == null;
 
   return (
     <>
@@ -578,6 +593,7 @@ export function WalletDetailsDialog({
                 lowRules={lowRules}
                 enabledRuleCount={enabledRuleCount}
                 network={network}
+                supportsAutoTopup={wallet.type !== 'Funding'}
                 isWalletDetailsLoading={rules.isWalletDetailsLoading}
                 ruleDrafts={rules.ruleDrafts}
                 mutatingRuleIds={rules.mutatingRuleIds}
@@ -592,9 +608,15 @@ export function WalletDetailsDialog({
                 setNewRuleCustomAssetUnit={rules.setNewRuleCustomAssetUnit}
                 newRuleEnabled={rules.newRuleEnabled}
                 setNewRuleEnabled={rules.setNewRuleEnabled}
+                newRuleTopupEnabled={rules.newRuleTopupEnabled}
+                setNewRuleTopupEnabled={rules.setNewRuleTopupEnabled}
+                newRuleTopupAmountInput={rules.newRuleTopupAmountInput}
+                setNewRuleTopupAmountInput={rules.setNewRuleTopupAmountInput}
                 addRuleAssetMeta={addRuleAssetMeta}
                 newRuleAssetBreakdown={newRuleAssetBreakdown}
                 newRuleRawThreshold={newRuleRawThreshold}
+                newRuleRawTopup={newRuleTopupValidation.rawTopupAmount}
+                newRuleTopupError={newRuleTopupValidation.error}
                 canCreateNewRule={canCreateNewRule}
                 onCreateRule={rules.handleCreateLowBalanceRule}
                 isCreatingRule={rules.isCreatingRule}

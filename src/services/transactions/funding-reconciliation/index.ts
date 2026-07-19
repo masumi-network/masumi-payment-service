@@ -2,6 +2,7 @@ import { PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { getChainErrorStatus } from '@/services/shared/chain-tx-lookup';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
@@ -368,15 +369,21 @@ export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
 						return;
 					}
 
-					// Invariant: intendedTxHash is only set on Transactions owned by
+					// Invariant: intendedTxHash is set on Transactions owned by
 					// PurchaseRequest (V2 batch-payments, the refund/withdraw services,
-					// and collateral-prep on their behalf). The revert path below only
-					// resets PurchaseRequest.currentTransactionId. If a
-					// future caller ever sets intendedTxHash on a Transaction also
-					// referenced by PaymentRequest or RegistryRequest, this assert fires
-					// so the orphan-FK is caught at runtime instead of silently
-					// stranding rows. To extend the flow, generalize the revert below
-					// to disconnect all three request types.
+					// and collateral-prep on their behalf) and — since MAS-392 — by
+					// fund distribution. FundDistributionRequest needs no reset here:
+					// its rows stay Pending for the whole in-flight window, so the
+					// wallet unlock below is enough for the next distribution cycle to
+					// rebuild them with fresh inputs. `reconcileInFlightRequests` in
+					// the fund-distribution service observes this RolledBack row via
+					// FundDistributionRequest.transactionId and releases the link.
+					//
+					// PaymentRequest / RegistryRequest remain unsupported: the revert
+					// below only resets PurchaseRequest.currentTransactionId, so if a
+					// future caller sets intendedTxHash on a Transaction referenced by
+					// those, this assert fires and the orphan-FK is caught at runtime
+					// instead of silently stranding rows.
 					const dependentPayments = await txdb.paymentRequest.count({
 						where: { currentTransactionId: tx.id },
 					});
@@ -457,7 +464,14 @@ async function safeFetchTx(blockfrost: ReturnType<typeof getBlockfrostInstance>,
 		return { status: 'found' };
 	} catch (error) {
 		const msg = error instanceof Error ? error.message : String(error);
-		if (/404|not.?found/i.test(msg)) {
+		// Keyed on the structured status, NOT the message. `BlockfrostServerError`
+		// sets `.message` to the API's message field, and a real 404 reads "The
+		// requested component has not been found." — which contains neither "404"
+		// nor a `not.?found` match ("not BEEN found"). The previous regex therefore
+		// classified every genuine 404 as a transient error, so this worker could
+		// never reach its revert path: an ambiguous funding tx that never landed
+		// stayed Pending forever and its wallet stayed locked forever.
+		if (getChainErrorStatus(error) === 404) {
 			return { status: 'not-found' };
 		}
 		return { status: 'transient-error', error: msg };
@@ -536,6 +550,28 @@ async function resolvePaymentSourceForOrphanTx(
 		return {
 			network: inboxReq.PaymentSource.network,
 			apiKey: inboxReq.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+		};
+	}
+
+	// Fund distribution links its batch via FundDistributionRequest.transactionId
+	// rather than a currentTransactionId, and reaches its PaymentSource through
+	// the fund wallet. Without this branch a distribution tx whose BlocksWallet
+	// was severed resolves to null and this worker skips it forever — leaving the
+	// row Pending with intendedTxHash set, so `reconcileInFlightRequests` never
+	// gets a verdict and the batch strands permanently.
+	const fundDistributionReq = await prisma.fundDistributionRequest.findFirst({
+		where: { transactionId: txId },
+		select: {
+			FundWallet: {
+				select: { PaymentSource: { select: { network: true, PaymentSourceConfig: true } } },
+			},
+		},
+	});
+	const fundSource = fundDistributionReq?.FundWallet?.PaymentSource;
+	if (fundSource?.PaymentSourceConfig != null) {
+		return {
+			network: fundSource.network,
+			apiKey: fundSource.PaymentSourceConfig.rpcProviderApiKey,
 		};
 	}
 

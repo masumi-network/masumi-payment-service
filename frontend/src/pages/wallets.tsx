@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Send,
   MoreHorizontal,
+  Settings2,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -19,10 +20,17 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/router';
 import { AddWalletDialog } from '@/components/wallets/AddWalletDialog';
+import { FundWalletDialog } from '@/components/wallets/FundWalletDialog';
 import { SwapDialog } from '@/components/wallets/SwapDialog';
 import { TransferFundsDialog } from '@/components/wallets/TransferFundsDialog';
 import Link from 'next/link';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import {
+  getWalletTypeLabel,
+  getWalletTypeRowLabel,
+  WALLET_TYPE_TABS,
+  type HotWalletType,
+} from '@/lib/wallet-type';
 
 import { formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
@@ -57,11 +65,14 @@ export default function WalletsPage() {
     typeof router.query.searched === 'string' ? router.query.searched : '',
   );
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isFundWalletDialogOpen, setIsFundWalletDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
 
   // The type tab is applied server-side so each tab paginates independently.
-  const walletTypeFilter =
-    activeTab === 'Purchasing' ? 'Purchasing' : activeTab === 'Selling' ? 'Selling' : undefined;
+  // 'All' (and any unknown tab) means no filter.
+  const walletTypeFilter = WALLET_TYPE_TABS.includes(activeTab as HotWalletType)
+    ? (activeTab as HotWalletType)
+    : undefined;
 
   // Paginated wallet data for the selected payment source (cursor + load-more).
   const {
@@ -94,8 +105,7 @@ export default function WalletsPage() {
 
   const tabs = [
     { name: 'All', count: null },
-    { name: 'Purchasing', count: null },
-    { name: 'Selling', count: null },
+    ...WALLET_TYPE_TABS.map((name) => ({ name, count: null })),
   ];
 
   const allWallets = walletsList as WalletWithBalance[];
@@ -167,6 +177,13 @@ export default function WalletsPage() {
     setSelectedWalletForDetails(wallet);
   };
 
+  const activeWalletType = WALLET_TYPE_TABS.includes(activeTab as HotWalletType)
+    ? (activeTab as HotWalletType)
+    : undefined;
+  const addWalletLabel = activeWalletType
+    ? `Add ${getWalletTypeLabel(activeWalletType).toLowerCase()} wallet`
+    : 'Add wallet';
+
   return (
     <MainLayout>
       <Head>
@@ -178,7 +195,7 @@ export default function WalletsPage() {
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Wallets</h1>
               <p className="text-sm text-muted-foreground">
-                Manage your buying and selling wallets.{' '}
+                Manage buying, selling, and funding wallets.{' '}
                 <Link
                   href="https://www.masumi.network/dev/masumi/core-concepts/wallets"
                   target="_blank"
@@ -191,12 +208,22 @@ export default function WalletsPage() {
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={refetchWallets} isRefreshing={isFetchingWallets} />
+              {activeTab === 'Funding' && (
+                <Button
+                  variant="outline"
+                  className="flex items-center gap-2"
+                  onClick={() => setIsFundWalletDialogOpen(true)}
+                >
+                  <Settings2 className="h-4 w-4" />
+                  Manage funding
+                </Button>
+              )}
               <Button
                 className="flex items-center gap-2 btn-hover-lift"
                 onClick={() => setIsAddDialogOpen(true)}
               >
                 <Plus className="h-4 w-4" />
-                Add wallet
+                {addWalletLabel}
               </Button>
             </div>
           </div>
@@ -282,7 +309,7 @@ export default function WalletsPage() {
                         </td>
                         <td className="p-4">
                           <div className="text-sm font-medium truncate">
-                            {wallet.type === 'Purchasing' ? 'Buying wallet' : 'Selling wallet'}
+                            {getWalletTypeRowLabel(wallet.type)}
                           </div>
                           <div className="text-xs text-muted-foreground truncate">
                             {wallet.note || 'Created by seeding'}
@@ -362,6 +389,15 @@ export default function WalletsPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                {wallet.type === 'Funding' && (
+                                  <DropdownMenuItem
+                                    className="cursor-pointer gap-2"
+                                    onSelect={() => setIsFundWalletDialogOpen(true)}
+                                  >
+                                    <Settings2 className="h-4 w-4" />
+                                    Manage funding
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
                                   className="cursor-pointer gap-2"
                                   onSelect={() => setSelectedWalletForTopup(wallet)}
@@ -410,6 +446,13 @@ export default function WalletsPage() {
         <AddWalletDialog
           open={isAddDialogOpen}
           onClose={() => setIsAddDialogOpen(false)}
+          onSuccess={refetchAfterWalletAdded}
+          defaultType={activeWalletType}
+        />
+
+        <FundWalletDialog
+          open={isFundWalletDialogOpen}
+          onClose={() => setIsFundWalletDialogOpen(false)}
           onSuccess={refetchAfterWalletAdded}
         />
 

@@ -267,7 +267,16 @@
                                 },
                                 "enabled": {
                                     "type": "boolean",
-                                    "description": "Whether the rule is active"
+                                    "description": "Whether the rule is active (fires the low-balance alert/webhook)"
+                                },
+                                "topupEnabled": {
+                                    "type": "boolean",
+                                    "description": "Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source"
+                                },
+                                "topupAmount": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off"
                                 },
                                 "status": {
                                     "type": "string",
@@ -301,6 +310,8 @@
                                 "assetUnit",
                                 "thresholdAmount",
                                 "enabled",
+                                "topupEnabled",
+                                "topupAmount",
                                 "status",
                                 "lastKnownAmount",
                                 "lastCheckedAt",
@@ -335,9 +346,10 @@
                         "type": "string",
                         "enum": [
                             "Selling",
-                            "Purchasing"
+                            "Purchasing",
+                            "Funding"
                         ],
-                        "description": "Whether this is a Selling (seller side) or Purchasing (buyer side) wallet"
+                        "description": "Whether this is a Selling (seller side), Purchasing (buyer side) or Funding (treasury that tops up the other two) wallet"
                     },
                     "walletVkey": {
                         "type": "string",
@@ -4925,6 +4937,328 @@
                     "createdAt",
                     "updatedAt"
                 ]
+            },
+            "FundWalletList": {
+                "type": "object",
+                "properties": {
+                    "FundWallets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FundWallet"
+                        },
+                        "description": "Fund wallets for the payment source"
+                    }
+                },
+                "required": [
+                    "FundWallets"
+                ]
+            },
+            "FundWallet": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Fund wallet id"
+                    },
+                    "walletAddress": {
+                        "type": "string",
+                        "description": "Cardano address of the fund wallet"
+                    },
+                    "walletVkey": {
+                        "type": "string",
+                        "description": "Payment key hash"
+                    },
+                    "note": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Optional note"
+                    },
+                    "paymentSourceId": {
+                        "type": "string",
+                        "description": "Associated payment source id"
+                    },
+                    "lockedAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "date-time",
+                        "description": "Timestamp when wallet was locked. Null if not locked"
+                    },
+                    "LowBalanceSummary": {
+                        "type": "object",
+                        "properties": {
+                            "isLow": {
+                                "type": "boolean",
+                                "description": "Whether any enabled low-balance rule for this wallet is currently below threshold"
+                            },
+                            "lowRuleCount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "How many enabled rules for this wallet are currently in low state"
+                            },
+                            "lastCheckedAt": {
+                                "type": "string",
+                                "nullable": true,
+                                "format": "date-time",
+                                "description": "Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked"
+                            }
+                        },
+                        "required": [
+                            "isLow",
+                            "lowRuleCount",
+                            "lastCheckedAt"
+                        ]
+                    },
+                    "FundDistributionConfig": {
+                        "type": "object",
+                        "nullable": true,
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "description": "Config id"
+                            },
+                            "enabled": {
+                                "type": "boolean",
+                                "description": "Whether this wallet is an active funding source"
+                            },
+                            "batchWindowMs": {
+                                "type": "integer",
+                                "description": "Milliseconds to wait before sending batched topups"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "enabled",
+                            "batchWindowMs"
+                        ],
+                        "description": "Distribution configuration"
+                    },
+                    "pendingRequestCount": {
+                        "type": "integer",
+                        "description": "Number of pending distribution requests"
+                    }
+                },
+                "required": [
+                    "id",
+                    "walletAddress",
+                    "walletVkey",
+                    "note",
+                    "paymentSourceId",
+                    "lockedAt",
+                    "LowBalanceSummary",
+                    "FundDistributionConfig",
+                    "pendingRequestCount"
+                ]
+            },
+            "FundWalletCreated": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Fund wallet id"
+                    },
+                    "walletAddress": {
+                        "type": "string",
+                        "description": "Cardano address"
+                    },
+                    "walletVkey": {
+                        "type": "string",
+                        "description": "Payment key hash"
+                    },
+                    "paymentSourceId": {
+                        "type": "string",
+                        "description": "Associated payment source id"
+                    },
+                    "FundDistributionConfig": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "description": "Config id"
+                            },
+                            "enabled": {
+                                "type": "boolean",
+                                "description": "Whether this wallet is an active funding source"
+                            },
+                            "batchWindowMs": {
+                                "type": "integer",
+                                "description": "Milliseconds to wait before sending batched topups"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "enabled",
+                            "batchWindowMs"
+                        ],
+                        "description": "Created distribution config"
+                    }
+                },
+                "required": [
+                    "id",
+                    "walletAddress",
+                    "walletVkey",
+                    "paymentSourceId",
+                    "FundDistributionConfig"
+                ]
+            },
+            "FundWalletUpdated": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Fund wallet id"
+                    },
+                    "FundDistributionConfig": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "description": "Config id"
+                            },
+                            "enabled": {
+                                "type": "boolean",
+                                "description": "Whether this wallet is an active funding source"
+                            },
+                            "batchWindowMs": {
+                                "type": "integer",
+                                "description": "Milliseconds to wait before sending batched topups"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "enabled",
+                            "batchWindowMs"
+                        ],
+                        "description": "Updated distribution config"
+                    }
+                },
+                "required": [
+                    "id",
+                    "FundDistributionConfig"
+                ]
+            },
+            "FundWalletDeleted": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Deleted fund wallet id"
+                    }
+                },
+                "required": [
+                    "id"
+                ]
+            },
+            "FundDistributionList": {
+                "type": "object",
+                "properties": {
+                    "FundDistributions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "Distribution request id"
+                                },
+                                "createdAt": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "description": "When the request was created"
+                                },
+                                "updatedAt": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "description": "When the request was last updated"
+                                },
+                                "fundWalletId": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Id of the fund wallet sending the funds. Null until a fund wallet claims the request"
+                                },
+                                "targetWalletId": {
+                                    "type": "string",
+                                    "description": "Id of the wallet receiving the funds"
+                                },
+                                "priority": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Warning",
+                                        "Critical"
+                                    ],
+                                    "description": "Legacy priority marker. New requests use Warning; both values are dispatched through the batch window"
+                                },
+                                "assetUnit": {
+                                    "type": "string",
+                                    "description": "\"lovelace\" for ADA, otherwise policy id + hex asset name"
+                                },
+                                "amount": {
+                                    "type": "string",
+                                    "description": "Amount sent in the asset's smallest unit"
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": [
+                                        "Pending",
+                                        "Submitted",
+                                        "Confirmed",
+                                        "Failed"
+                                    ],
+                                    "description": "Current status of the distribution request"
+                                },
+                                "txHash": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "On-chain transaction hash. Null until submitted"
+                                },
+                                "error": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Error message if the distribution failed"
+                                },
+                                "batchId": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Groups requests sent in the same transaction"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "createdAt",
+                                "updatedAt",
+                                "fundWalletId",
+                                "targetWalletId",
+                                "priority",
+                                "assetUnit",
+                                "amount",
+                                "status",
+                                "txHash",
+                                "error",
+                                "batchId"
+                            ]
+                        },
+                        "description": "List of distribution requests"
+                    }
+                },
+                "required": [
+                    "FundDistributions"
+                ]
+            },
+            "FundDistributionTriggered": {
+                "type": "object",
+                "properties": {
+                    "triggered": {
+                        "type": "boolean",
+                        "description": "Always true — indicates the request was received"
+                    },
+                    "alreadyRunning": {
+                        "type": "boolean",
+                        "description": "True if a distribution cycle was already in progress when this request arrived"
+                    }
+                },
+                "required": [
+                    "triggered",
+                    "alreadyRunning"
+                ]
             }
         },
         "parameters": {}
@@ -5063,7 +5397,8 @@
                             "type": "string",
                             "enum": [
                                 "Selling",
-                                "Purchasing"
+                                "Purchasing",
+                                "Funding"
                             ],
                             "description": "The type of wallet to query"
                         },
@@ -5134,6 +5469,8 @@
                                                     "assetUnit": "lovelace",
                                                     "thresholdAmount": "5000000",
                                                     "enabled": true,
+                                                    "topupEnabled": true,
+                                                    "topupAmount": "10000000",
                                                     "status": "Low",
                                                     "lastKnownAmount": "4200000",
                                                     "lastCheckedAt": "1970-01-20T20:00:36.260Z",
@@ -5305,6 +5642,8 @@
                                                     "assetUnit": "lovelace",
                                                     "thresholdAmount": "5000000",
                                                     "enabled": true,
+                                                    "topupEnabled": true,
+                                                    "topupAmount": "10000000",
                                                     "status": "Low",
                                                     "lastKnownAmount": "4200000",
                                                     "lastCheckedAt": "1970-01-20T20:00:36.260Z",
@@ -5376,12 +5715,13 @@
                             "type": "string",
                             "enum": [
                                 "Selling",
-                                "Purchasing"
+                                "Purchasing",
+                                "Funding"
                             ],
-                            "description": "Filter wallets by type (Selling or Purchasing)"
+                            "description": "Filter wallets by type (Selling, Purchasing or Funding)"
                         },
                         "required": false,
-                        "description": "Filter wallets by type (Selling or Purchasing)",
+                        "description": "Filter wallets by type (Selling, Purchasing or Funding)",
                         "name": "walletType",
                         "in": "query"
                     },
@@ -5562,7 +5902,16 @@
                                                             },
                                                             "enabled": {
                                                                 "type": "boolean",
-                                                                "description": "Whether the rule is active"
+                                                                "description": "Whether the rule is active (fires the low-balance alert/webhook)"
+                                                            },
+                                                            "topupEnabled": {
+                                                                "type": "boolean",
+                                                                "description": "Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source"
+                                                            },
+                                                            "topupAmount": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off"
                                                             },
                                                             "status": {
                                                                 "type": "string",
@@ -5606,7 +5955,8 @@
                                                                 "type": "string",
                                                                 "enum": [
                                                                     "Selling",
-                                                                    "Purchasing"
+                                                                    "Purchasing",
+                                                                    "Funding"
                                                                 ],
                                                                 "description": "Hot wallet type"
                                                             },
@@ -5628,6 +5978,8 @@
                                                             "assetUnit",
                                                             "thresholdAmount",
                                                             "enabled",
+                                                            "topupEnabled",
+                                                            "topupAmount",
                                                             "status",
                                                             "lastKnownAmount",
                                                             "lastCheckedAt",
@@ -5660,6 +6012,8 @@
                                                     "assetUnit": "lovelace",
                                                     "thresholdAmount": "5000000",
                                                     "enabled": true,
+                                                    "topupEnabled": true,
+                                                    "topupAmount": "10000000",
                                                     "status": "Low",
                                                     "lastKnownAmount": "4200000",
                                                     "lastCheckedAt": "1970-01-20T20:00:36.260Z",
@@ -5719,6 +6073,16 @@
                                         "type": "boolean",
                                         "default": true,
                                         "description": "Whether the rule should start enabled"
+                                    },
+                                    "topupEnabled": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Whether crossing the threshold also auto-tops-up this wallet"
+                                    },
+                                    "topupAmount": {
+                                        "type": "string",
+                                        "pattern": "^[1-9]\\d*$",
+                                        "description": "Amount to top up per trigger, in raw on-chain units. Required when topupEnabled is true; ADA requires at least 5000000 lovelace"
                                     }
                                 },
                                 "required": [
@@ -5767,7 +6131,16 @@
                                                 },
                                                 "enabled": {
                                                     "type": "boolean",
-                                                    "description": "Whether the rule is active"
+                                                    "description": "Whether the rule is active (fires the low-balance alert/webhook)"
+                                                },
+                                                "topupEnabled": {
+                                                    "type": "boolean",
+                                                    "description": "Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source"
+                                                },
+                                                "topupAmount": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off"
                                                 },
                                                 "status": {
                                                     "type": "string",
@@ -5811,7 +6184,8 @@
                                                     "type": "string",
                                                     "enum": [
                                                         "Selling",
-                                                        "Purchasing"
+                                                        "Purchasing",
+                                                        "Funding"
                                                     ],
                                                     "description": "Hot wallet type"
                                                 },
@@ -5833,6 +6207,8 @@
                                                 "assetUnit",
                                                 "thresholdAmount",
                                                 "enabled",
+                                                "topupEnabled",
+                                                "topupAmount",
                                                 "status",
                                                 "lastKnownAmount",
                                                 "lastCheckedAt",
@@ -5857,6 +6233,8 @@
                                             "assetUnit": "lovelace",
                                             "thresholdAmount": "5000000",
                                             "enabled": true,
+                                            "topupEnabled": true,
+                                            "topupAmount": "10000000",
                                             "status": "Low",
                                             "lastKnownAmount": "4200000",
                                             "lastCheckedAt": "1970-01-20T20:00:36.260Z",
@@ -5913,6 +6291,16 @@
                                     "enabled": {
                                         "type": "boolean",
                                         "description": "Updated enabled state"
+                                    },
+                                    "topupEnabled": {
+                                        "type": "boolean",
+                                        "description": "Enable or disable auto top-up on this rule"
+                                    },
+                                    "topupAmount": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "pattern": "^[1-9]\\d*$",
+                                        "description": "Updated top-up amount in raw on-chain units, or null to clear it while auto top-up is disabled. ADA requires at least 5000000 lovelace"
                                     }
                                 },
                                 "required": [
@@ -5958,7 +6346,16 @@
                                                 },
                                                 "enabled": {
                                                     "type": "boolean",
-                                                    "description": "Whether the rule is active"
+                                                    "description": "Whether the rule is active (fires the low-balance alert/webhook)"
+                                                },
+                                                "topupEnabled": {
+                                                    "type": "boolean",
+                                                    "description": "Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source"
+                                                },
+                                                "topupAmount": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off"
                                                 },
                                                 "status": {
                                                     "type": "string",
@@ -6002,7 +6399,8 @@
                                                     "type": "string",
                                                     "enum": [
                                                         "Selling",
-                                                        "Purchasing"
+                                                        "Purchasing",
+                                                        "Funding"
                                                     ],
                                                     "description": "Hot wallet type"
                                                 },
@@ -6024,6 +6422,8 @@
                                                 "assetUnit",
                                                 "thresholdAmount",
                                                 "enabled",
+                                                "topupEnabled",
+                                                "topupAmount",
                                                 "status",
                                                 "lastKnownAmount",
                                                 "lastCheckedAt",
@@ -6048,6 +6448,8 @@
                                             "assetUnit": "lovelace",
                                             "thresholdAmount": "7000000",
                                             "enabled": true,
+                                            "topupEnabled": true,
+                                            "topupAmount": "10000000",
                                             "status": "Low",
                                             "lastKnownAmount": "4200000",
                                             "lastCheckedAt": "1970-01-20T20:00:36.260Z",
@@ -7672,7 +8074,7 @@
                                             "properties": {
                                                 "unit": {
                                                     "type": "string",
-                                                    "pattern": "^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{2})*$",
+                                                    "pattern": "^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{2}){0,32}$",
                                                     "description": "Asset unit: policy id (56 hex chars) followed by the hex asset name. Not \"lovelace\"."
                                                 },
                                                 "quantity": {
@@ -22691,6 +23093,9 @@
                                                                         "PURCHASE_ON_ERROR",
                                                                         "PAYMENT_ON_ERROR",
                                                                         "WALLET_LOW_BALANCE",
+                                                                        "FUND_DISTRIBUTION_SENT",
+                                                                        "FUND_DISTRIBUTION_CONFIRMED",
+                                                                        "FUND_DISTRIBUTION_FAILED",
                                                                         "X402_PAYMENT_SETTLED",
                                                                         "X402_PAYMENT_FAILED",
                                                                         "X402_WALLET_LOW_BALANCE"
@@ -22865,6 +23270,9 @@
                                                 "PURCHASE_ON_ERROR",
                                                 "PAYMENT_ON_ERROR",
                                                 "WALLET_LOW_BALANCE",
+                                                "FUND_DISTRIBUTION_SENT",
+                                                "FUND_DISTRIBUTION_CONFIRMED",
+                                                "FUND_DISTRIBUTION_FAILED",
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE"
@@ -22942,6 +23350,9 @@
                                                             "PURCHASE_ON_ERROR",
                                                             "PAYMENT_ON_ERROR",
                                                             "WALLET_LOW_BALANCE",
+                                                            "FUND_DISTRIBUTION_SENT",
+                                                            "FUND_DISTRIBUTION_CONFIRMED",
+                                                            "FUND_DISTRIBUTION_FAILED",
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE"
@@ -23071,6 +23482,9 @@
                                                 "PURCHASE_ON_ERROR",
                                                 "PAYMENT_ON_ERROR",
                                                 "WALLET_LOW_BALANCE",
+                                                "FUND_DISTRIBUTION_SENT",
+                                                "FUND_DISTRIBUTION_CONFIRMED",
+                                                "FUND_DISTRIBUTION_FAILED",
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
                                                 "X402_WALLET_LOW_BALANCE"
@@ -23146,6 +23560,9 @@
                                                             "PURCHASE_ON_ERROR",
                                                             "PAYMENT_ON_ERROR",
                                                             "WALLET_LOW_BALANCE",
+                                                            "FUND_DISTRIBUTION_SENT",
+                                                            "FUND_DISTRIBUTION_CONFIRMED",
+                                                            "FUND_DISTRIBUTION_FAILED",
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
                                                             "X402_WALLET_LOW_BALANCE"
@@ -27897,6 +28314,592 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/fund-wallet": {
+            "get": {
+                "description": "Lists active fund wallets with their distribution configuration and low-balance summary. Filter by payment source id to get every treasury serving that source, or by id for one wallet. An unconfigured source returns an empty FundWallets array.",
+                "summary": "List fund wallets. (admin access required)",
+                "tags": [
+                    "fund-wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 250,
+                            "description": "Fund wallet id"
+                        },
+                        "required": false,
+                        "description": "Fund wallet id",
+                        "name": "id",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 250,
+                            "description": "Payment source id"
+                        },
+                        "required": false,
+                        "description": "Payment source id",
+                        "name": "paymentSourceId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Fund wallets",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/FundWalletList"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "FundWallets": [
+                                                {
+                                                    "id": "cuid_v2_auto_generated",
+                                                    "walletAddress": "addr_test1...",
+                                                    "walletVkey": "a1b2c3d4e5f6...",
+                                                    "note": "Treasury for preprod V2",
+                                                    "paymentSourceId": "cuid_v2_auto_generated",
+                                                    "lockedAt": null,
+                                                    "LowBalanceSummary": {
+                                                        "isLow": false,
+                                                        "lowRuleCount": 0,
+                                                        "lastCheckedAt": "2024-01-01T00:00:00.000Z"
+                                                    },
+                                                    "FundDistributionConfig": {
+                                                        "id": "cuid_v2_auto_generated",
+                                                        "enabled": true,
+                                                        "batchWindowMs": 300000
+                                                    },
+                                                    "pendingRequestCount": 0
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Neither id nor paymentSourceId was provided"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates an enabled fund wallet for a payment source from an existing mnemonic. A source may have several fund wallets; dispatch uses the first one with enough funds. Auto-top-up thresholds and amounts are configured on each target wallet low-balance rule, not on the treasury. Fund the returned address before distribution can run. A mnemonic can back only one active wallet at a time; deleting that wallet frees it for re-registration.",
+                "summary": "Create a fund wallet for a payment source. (admin access required)",
+                "tags": [
+                    "fund-wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Fund wallet mnemonic and batch cadence",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "paymentSourceId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Payment source to associate the fund wallet with"
+                                    },
+                                    "walletMnemonic": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 1500,
+                                        "description": "24-word mnemonic phrase for the fund wallet"
+                                    },
+                                    "batchWindowMs": {
+                                        "type": "integer",
+                                        "minimum": 1000,
+                                        "maximum": 86400000,
+                                        "default": 300000,
+                                        "description": "Batch window in milliseconds (default 5 min, max 24 h)"
+                                    },
+                                    "note": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Optional note for this fund wallet"
+                                    }
+                                },
+                                "required": [
+                                    "paymentSourceId",
+                                    "walletMnemonic"
+                                ],
+                                "example": {
+                                    "paymentSourceId": "cuid_v2_auto_generated",
+                                    "walletMnemonic": "word1 word2 word3 ... word24",
+                                    "batchWindowMs": 300000,
+                                    "note": "Treasury for preprod V2"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Fund wallet created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/FundWalletCreated"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated",
+                                            "walletAddress": "addr_test1...",
+                                            "walletVkey": "a1b2c3d4e5f6...",
+                                            "paymentSourceId": "cuid_v2_auto_generated",
+                                            "FundDistributionConfig": {
+                                                "id": "cuid_v2_auto_generated",
+                                                "enabled": true,
+                                                "batchWindowMs": 300000
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "The mnemonic is invalid or the batch window is outside its allowed range"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Payment source not found"
+                    },
+                    "409": {
+                        "description": "The payment source became inactive, or this mnemonic already backs another active wallet"
+                    }
+                }
+            },
+            "patch": {
+                "description": "Updates the distribution configuration of a fund wallet. Set enabled to false to pause automatic distribution without deleting the wallet or its funds.",
+                "summary": "Update fund wallet distribution settings. (admin access required)",
+                "tags": [
+                    "fund-wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Distribution settings to change",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Fund wallet id to update"
+                                    },
+                                    "enabled": {
+                                        "type": "boolean",
+                                        "description": "Enable or disable this wallet as a funding source"
+                                    },
+                                    "batchWindowMs": {
+                                        "type": "integer",
+                                        "minimum": 1000,
+                                        "maximum": 86400000,
+                                        "description": "New batch window in milliseconds (max 24 h)"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "cuid_v2_auto_generated",
+                                    "enabled": true,
+                                    "batchWindowMs": 300000
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Fund wallet updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/FundWalletUpdated"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated",
+                                            "FundDistributionConfig": {
+                                                "id": "cuid_v2_auto_generated",
+                                                "enabled": true,
+                                                "batchWindowMs": 300000
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "The batch window is outside its allowed range"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Fund wallet not found, or it has no distribution config"
+                    }
+                }
+            },
+            "delete": {
+                "description": "Soft-deletes a fund wallet and disables its distribution config. Unclaimed source-level requests continue through another enabled fund wallet, or are cancelled when none remains. Does NOT move funds. A wallet with a broadcast or ambiguous distribution in flight cannot be deleted, even with force=true; wait for the transaction to settle first. Also refuses with 409 while the wallet still holds ADA or native assets, because deletion makes the mnemonic unexportable through the API — withdraw every asset first. Pass force=true only to skip the balance check, accepting that any remaining balance is recoverable only with direct database access.",
+                "summary": "Delete a fund wallet. (admin access required)",
+                "tags": [
+                    "fund-wallet"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Fund wallet to delete",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Fund wallet id to delete"
+                                    },
+                                    "force": {
+                                        "type": "boolean",
+                                        "description": "Delete even if the wallet still holds funds, or if the balance cannot be checked. Deletion makes the mnemonic unexportable, so the remaining balance would be recoverable only with direct database access"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "cuid_v2_auto_generated",
+                                    "force": false
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Fund wallet deleted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/FundWalletDeleted"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Fund wallet not found"
+                    },
+                    "409": {
+                        "description": "Fund wallet has a distribution in flight, or still holds funds. In-flight transactions must settle; balance-only conflicts can be bypassed with force=true"
+                    },
+                    "503": {
+                        "description": "Balance could not be checked; retry or pass force=true"
+                    }
+                }
+            }
+        },
+        "/fund-distribution": {
+            "get": {
+                "description": "Lists fund distribution requests, newest first. A request moves Pending -> Submitted -> Confirmed, or to Failed if it could not be sent or never landed on chain. Requests sharing a batchId went out in one transaction. Pagination is cursor-inclusive: the cursor row is returned again, so clients should dedupe by id.",
+                "summary": "List fund distribution requests. (admin access required)",
+                "tags": [
+                    "fund-distribution"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 250,
+                            "description": "Filter by payment source"
+                        },
+                        "required": false,
+                        "description": "Filter by payment source",
+                        "name": "paymentSourceId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 250,
+                            "description": "Filter by fund wallet"
+                        },
+                        "required": false,
+                        "description": "Filter by fund wallet",
+                        "name": "fundWalletId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Pending",
+                                "Submitted",
+                                "Confirmed",
+                                "Failed"
+                            ],
+                            "description": "Filter by status"
+                        },
+                        "required": false,
+                        "description": "Filter by status",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 20,
+                            "description": "Number of results (max 100, default 20)"
+                        },
+                        "required": false,
+                        "description": "Number of results (max 100, default 20)",
+                        "name": "take",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 250,
+                            "description": "Cursor id for pagination"
+                        },
+                        "required": false,
+                        "description": "Cursor id for pagination",
+                        "name": "cursorId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Fund distribution requests",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/FundDistributionList"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "FundDistributions": [
+                                                {
+                                                    "id": "cuid_v2_auto_generated",
+                                                    "createdAt": "2024-01-01T00:00:00.000Z",
+                                                    "updatedAt": "2024-01-01T00:00:00.000Z",
+                                                    "fundWalletId": "cuid_v2_auto_generated",
+                                                    "targetWalletId": "cuid_v2_auto_generated",
+                                                    "priority": "Warning",
+                                                    "assetUnit": "lovelace",
+                                                    "amount": "100000000",
+                                                    "status": "Confirmed",
+                                                    "txHash": "a1b2c3d4e5f6...",
+                                                    "error": null,
+                                                    "batchId": "cuid_v2_auto_generated"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/fund-distribution/trigger": {
+            "post": {
+                "description": "Runs a distribution cycle now instead of waiting for the next scheduled one. Returns immediately; the cycle runs in the background, so a 200 means the request was accepted, not that any funds moved. If a cycle is already running this is a no-op and alreadyRunning is true.",
+                "summary": "Trigger a fund distribution cycle. (admin access required)",
+                "tags": [
+                    "fund-distribution"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "No parameters",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {},
+                                "example": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Distribution cycle triggered",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/FundDistributionTriggered"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "triggered": true,
+                                            "alreadyRunning": false
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
                     }
                 }
             }

@@ -114,12 +114,13 @@ export default [
 	},
 	// Ignores
 	{
-		ignores: [
-			'.eslint-rules/**',
-			// Agent worktrees are full checkouts nested INSIDE the repo, so eslint
-			// walks into them and lints a second copy of everything. Every ignore
-			// below is anchored at the repo root, so `tests/**/*.ts` does not match
-			// `.claude/worktrees/<name>/tests/**` — the nested copy gets linted with
+			ignores: [
+				'.eslint-rules/**',
+				'.remember/**',
+				// Agent worktrees are full checkouts nested INSIDE the repo, so eslint
+				// walks into them and lints a second copy of everything. Every ignore
+				// above is anchored at the repo root, so `tests/**/*.ts` does not match
+				// `.claude/worktrees/<name>/tests/**` — the nested copy gets linted with
 			// the rules its own root config excludes it from, and pre-push fails with
 			// thousands of errors in files nobody touched.
 			'.claude/**',

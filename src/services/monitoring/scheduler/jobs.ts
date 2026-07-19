@@ -1,4 +1,4 @@
-import { CONFIG } from '@masumi/payment-core/config';
+import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
 import {
 	checkLatestTransactions,
@@ -9,6 +9,7 @@ import {
 } from '@/services/transactions';
 import {
 	walletLowBalanceMonitorService,
+	fundDistributionService,
 	processFundTransfers,
 	checkFundTransferConfirmations,
 } from '@/services/wallets';
@@ -276,6 +277,13 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting low balance monitoring',
 		finishMessage: 'Finished low balance monitoring',
 		run: () => walletLowBalanceMonitorService.runScheduledMonitoringCycle(),
+	},
+	{
+		initialDelayMs: 55000,
+		intervalMs: CONSTANTS.FUND_DISTRIBUTION_CHECK_INTERVAL_S * 1000,
+		startMessage: 'Starting fund distribution processing',
+		finishMessage: 'Finished fund distribution processing',
+		run: () => fundDistributionService.processDistributionCycle(),
 	},
 	{
 		initialDelayMs: 2750,

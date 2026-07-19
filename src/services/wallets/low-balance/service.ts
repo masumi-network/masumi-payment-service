@@ -1,7 +1,13 @@
 import { trace } from '@opentelemetry/api';
 import { Address, Transaction, Value } from '@emurgo/cardano-serialization-lib-nodejs';
 import type { UTxO } from '@meshsdk/core';
-import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/client';
+import {
+	FundDistributionStatus,
+	HotWalletType,
+	Network,
+	PaymentSourceType,
+	type Prisma,
+} from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
 import { prisma } from '@masumi/payment-core/db';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
@@ -19,6 +25,8 @@ type WalletLowBalanceRuleRecord = {
 	assetUnit: string;
 	thresholdAmount: bigint;
 	enabled: boolean;
+	topupEnabled: boolean;
+	topupAmount: bigint | null;
 	status: LowBalanceStatus;
 	lastKnownAmount: bigint | null;
 	lastCheckedAt: Date | null;
@@ -90,6 +98,26 @@ type ProjectedSubmissionEvaluation = {
 
 const LOW_BALANCE_WARNING_EVENT = 'wallet.low_balance';
 const SCHEDULED_MONITORING_CONCURRENCY = 5;
+
+async function retireUnclaimedTopupForRule(
+	tx: Prisma.TransactionClient,
+	rule: { hotWalletId: string; assetUnit: string },
+	error: string,
+): Promise<void> {
+	await tx.fundDistributionRequest.updateMany({
+		where: {
+			targetWalletId: rule.hotWalletId,
+			assetUnit: rule.assetUnit,
+			status: FundDistributionStatus.Pending,
+			fundWalletId: null,
+			transactionId: null,
+		},
+		data: {
+			status: FundDistributionStatus.Failed,
+			error,
+		},
+	});
+}
 
 function describeCheckSource(checkSource: WalletBalanceCheckSource): string {
 	return checkSource === 'interval_check' ? 'interval check' : 'submission';
@@ -259,6 +287,8 @@ function serializeLowBalanceRecord(rule: WalletLowBalanceRuleRecord) {
 		assetUnit: rule.assetUnit,
 		thresholdAmount: rule.thresholdAmount.toString(),
 		enabled: rule.enabled,
+		topupEnabled: rule.topupEnabled,
+		topupAmount: rule.topupAmount?.toString() ?? null,
 		status: rule.status,
 		lastKnownAmount: rule.lastKnownAmount?.toString() ?? null,
 		lastCheckedAt: rule.lastCheckedAt,
@@ -310,6 +340,8 @@ export class WalletLowBalanceMonitorService {
 						assetUnit: true,
 						thresholdAmount: true,
 						enabled: true,
+						topupEnabled: true,
+						topupAmount: true,
 						status: true,
 						lastKnownAmount: true,
 						lastCheckedAt: true,
@@ -365,6 +397,8 @@ export class WalletLowBalanceMonitorService {
 		assetUnit: string;
 		thresholdAmount: bigint;
 		enabled: boolean;
+		topupEnabled?: boolean;
+		topupAmount?: bigint | null;
 	}): Promise<WalletLowBalanceRuleMutationRecord> {
 		const createdRule = await prisma.hotWalletLowBalanceRule.create({
 			data: {
@@ -372,6 +406,8 @@ export class WalletLowBalanceMonitorService {
 				assetUnit: params.assetUnit,
 				thresholdAmount: params.thresholdAmount,
 				enabled: params.enabled,
+				topupEnabled: params.topupEnabled ?? false,
+				topupAmount: params.topupAmount ?? null,
 				status: LowBalanceStatus.Unknown,
 				lastKnownAmount: null,
 				lastCheckedAt: null,
@@ -383,6 +419,8 @@ export class WalletLowBalanceMonitorService {
 				assetUnit: true,
 				thresholdAmount: true,
 				enabled: true,
+				topupEnabled: true,
+				topupAmount: true,
 				status: true,
 				lastKnownAmount: true,
 				lastCheckedAt: true,
@@ -399,35 +437,81 @@ export class WalletLowBalanceMonitorService {
 		ruleId: string;
 		thresholdAmount?: bigint;
 		enabled?: boolean;
+		topupEnabled?: boolean;
+		topupAmount?: bigint | null;
 	}): Promise<WalletLowBalanceRuleMutationRecord> {
-		const updatedRule = await prisma.hotWalletLowBalanceRule.update({
-			where: {
-				id: params.ruleId,
-			},
-			data: {
-				thresholdAmount: params.thresholdAmount,
-				enabled: params.enabled,
-				status: LowBalanceStatus.Unknown,
-				lastKnownAmount: null,
-				lastCheckedAt: null,
-				lastAlertedAt: null,
-			},
-			select: {
-				id: true,
-				hotWalletId: true,
-				assetUnit: true,
-				thresholdAmount: true,
-				enabled: true,
-				status: true,
-				lastKnownAmount: true,
-				lastCheckedAt: true,
-				lastAlertedAt: true,
-			},
-		});
+		const updatedRule = await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						const updated = await tx.hotWalletLowBalanceRule.update({
+							where: {
+								id: params.ruleId,
+							},
+							data: {
+								thresholdAmount: params.thresholdAmount,
+								enabled: params.enabled,
+								topupEnabled: params.topupEnabled,
+								topupAmount: params.topupAmount,
+								status: LowBalanceStatus.Unknown,
+								lastKnownAmount: null,
+								lastCheckedAt: null,
+								lastAlertedAt: null,
+							},
+							select: {
+								id: true,
+								hotWalletId: true,
+								assetUnit: true,
+								thresholdAmount: true,
+								enabled: true,
+								topupEnabled: true,
+								topupAmount: true,
+								status: true,
+								lastKnownAmount: true,
+								lastCheckedAt: true,
+								lastAlertedAt: true,
+							},
+						});
+
+						await retireUnclaimedTopupForRule(
+							tx,
+							updated,
+							'Distribution cancelled because its low-balance rule changed',
+						);
+						return updated;
+					},
+					{ isolationLevel: 'Serializable' },
+				),
+			{ label: 'low-balance-rule-update' },
+		);
 
 		await this.refreshRuleStateAfterMutation(updatedRule.hotWalletId, updatedRule.enabled);
 
 		return (await this.getRuleMutationRecordById(updatedRule.id)) ?? updatedRule;
+	}
+
+	async deleteRule(ruleId: string): Promise<void> {
+		await retryOnSerializationConflict(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						const deletedRule = await tx.hotWalletLowBalanceRule.delete({
+							where: { id: ruleId },
+							select: {
+								hotWalletId: true,
+								assetUnit: true,
+							},
+						});
+						await retireUnclaimedTopupForRule(
+							tx,
+							deletedRule,
+							'Distribution cancelled because its low-balance rule was deleted',
+						);
+					},
+					{ isolationLevel: 'Serializable' },
+				),
+			{ label: 'low-balance-rule-delete' },
+		);
 	}
 
 	async evaluateHotWalletById(
@@ -642,6 +726,8 @@ export class WalletLowBalanceMonitorService {
 						assetUnit: true,
 						thresholdAmount: true,
 						enabled: true,
+						topupEnabled: true,
+						topupAmount: true,
 						status: true,
 						lastKnownAmount: true,
 						lastCheckedAt: true,
@@ -774,6 +860,10 @@ export class WalletLowBalanceMonitorService {
 			currentAmount: alert.currentAmount,
 			checkedAt: alert.checkedAt.toISOString(),
 		});
+
+		// Auto-top-up is driven by the fund-distribution scan, which reads each
+		// rule's topupEnabled/threshold/amount directly. The monitor's job here is
+		// the alert/webhook above; it no longer requests top-ups itself.
 	}
 
 	getSerializedRules(rules: WalletLowBalanceRuleRecord[]) {
@@ -795,6 +885,8 @@ export class WalletLowBalanceMonitorService {
 				assetUnit: true,
 				thresholdAmount: true,
 				enabled: true,
+				topupEnabled: true,
+				topupAmount: true,
 				status: true,
 				lastKnownAmount: true,
 				lastCheckedAt: true,
