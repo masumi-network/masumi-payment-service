@@ -60,8 +60,12 @@ export function sortAndLimitUtxos(utxos: UTxO[], requiredLovelace: number | bigi
 }
 
 /**
- * Selects a dedicated collateral input, preferring the smallest pure-ADA UTxO
- * that leaves enough value for the collateral return.
+ * Selects a collateral input.
+ *
+ * Prefer the smallest qualifying pure-ADA UTxO so native tokens do not need
+ * a collateral-return output. If none exists, fall back to the smallest
+ * qualifying mixed-asset UTxO: Babbage/CIP-40 permits token-bearing
+ * collateral, and Mesh emits the required collateral-return output.
  */
 export function selectCollateralUtxo(
 	utxos: UTxO[],
@@ -69,20 +73,24 @@ export function selectCollateralUtxo(
 ): UTxO {
 	const requiredLovelace = BigInt(minimumLovelace);
 	const qualifyingUtxos = utxos
-		.filter(
-			(utxo) =>
-				utxo.output.amount.every((asset) => asset.unit === 'lovelace' || asset.unit === '') &&
-				getLovelaceFromUtxo(utxo) >= requiredLovelace,
-		)
-		.sort((a, b) => {
-			const aLovelace = getLovelaceFromUtxo(a);
-			const bLovelace = getLovelaceFromUtxo(b);
-			return aLovelace === bLovelace ? 0 : aLovelace < bLovelace ? -1 : 1;
+		.filter((utxo) => utxo.output.amount.length > 0 && getLovelaceFromUtxo(utxo) >= requiredLovelace)
+		.map((utxo) => ({
+			utxo,
+			isPureAda: utxo.output.amount.every((asset) => asset.unit === 'lovelace' || asset.unit === ''),
+			lovelace: getLovelaceFromUtxo(utxo),
+		}))
+		.sort((left, right) => {
+			if (left.isPureAda !== right.isPureAda) {
+				return left.isPureAda ? -1 : 1;
+			}
+			if (left.lovelace < right.lovelace) return -1;
+			if (left.lovelace > right.lovelace) return 1;
+			return 0;
 		});
 
-	const collateralUtxo = qualifyingUtxos[0];
+	const collateralUtxo = qualifyingUtxos[0]?.utxo;
 	if (!collateralUtxo) {
-		throw new Error(`Pure-ADA collateral UTxO not found with at least ${requiredLovelace.toString()} lovelace`);
+		throw new Error(`Collateral UTxO not found with at least ${requiredLovelace.toString()} lovelace`);
 	}
 	return collateralUtxo;
 }
