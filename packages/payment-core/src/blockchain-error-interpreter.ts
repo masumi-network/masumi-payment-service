@@ -78,7 +78,7 @@ const BLOCKCHAIN_ERROR_PATTERNS: ErrorPattern[] = [
 	},
 	{
 		test: (msg) => msg.includes('collateral utxo not found'),
-		hint: 'No suitable collateral UTxO was found. Ensure the wallet has a pure-ADA UTxO of at least 5 ADA.',
+		hint: 'No suitable collateral UTxO was found. Ensure the wallet has a UTxO with at least 5 ADA; native tokens on that UTxO are supported.',
 	},
 	{
 		test: (msg) => msg.includes('utxo not found'),

@@ -89,7 +89,7 @@ async function handlePaymentRequestResults(
 		// its deadline passes.
 		if (result.success === false) {
 			logger.error(`Error submitting result ${request.id}`, {
-				error: result.error,
+				error: interpretBlockchainError(result.error),
 			});
 
 			await prisma.$transaction((tx) =>

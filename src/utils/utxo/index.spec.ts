@@ -141,20 +141,32 @@ describe('selectCollateralUtxo', () => {
 		expect(selectCollateralUtxo([small, collateral, large]).input.txHash).toBe('collateral');
 	});
 
-	it('does not select a native-token UTxO as collateral', () => {
-		const tokenBearing = makeUtxo({
-			txHash: 'token-bearing',
+	it('prefers pure ADA over a smaller mixed-asset collateral candidate', () => {
+		const mixed = makeUtxo({
+			txHash: 'mixed',
+			amount: [lovelace(6_000_000), token(1)],
+		});
+		const pure = makeUtxo({ txHash: 'pure', amount: [lovelace(8_000_000)] });
+
+		expect(selectCollateralUtxo([mixed, pure]).input.txHash).toBe('pure');
+	});
+
+	it('falls back to mixed-asset collateral when no pure-ADA candidate qualifies', () => {
+		const largeMixed = makeUtxo({
+			txHash: 'large-mixed',
+			amount: [lovelace(12_000_000), token(1)],
+		});
+		const smallMixed = makeUtxo({
+			txHash: 'small-mixed',
 			amount: [lovelace(6_000_000), token(1)],
 		});
 
-		expect(() => selectCollateralUtxo([tokenBearing])).toThrow('Pure-ADA collateral UTxO not found');
+		expect(selectCollateralUtxo([largeMixed, smallMixed]).input.txHash).toBe('small-mixed');
 	});
 
-	it('requires at least five ADA of pure collateral', () => {
+	it('requires at least five ADA of collateral', () => {
 		const dust = makeUtxo({ txHash: 'dust', amount: [lovelace(4_999_999)] });
 
-		expect(() => selectCollateralUtxo([dust])).toThrow(
-			'Pure-ADA collateral UTxO not found with at least 5000000 lovelace',
-		);
+		expect(() => selectCollateralUtxo([dust])).toThrow('Collateral UTxO not found with at least 5000000 lovelace');
 	});
 });

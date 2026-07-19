@@ -236,7 +236,8 @@ describe('interpretBlockchainError', () => {
 		it('should match "collateral utxo not found"', () => {
 			const result = interpretBlockchainError(new Error('Collateral UTXO not found'));
 			expect(result).toContain('. Hint:');
-			expect(result).toContain('pure-ADA UTxO');
+			expect(result).toContain('at least 5 ADA');
+			expect(result).toContain('native tokens');
 		});
 	});
 
@@ -254,7 +255,7 @@ describe('interpretBlockchainError', () => {
 
 		it('should NOT match pattern 17 (collateral) for plain UTXO not found', () => {
 			const result = interpretBlockchainError(new Error('UTXO not found'));
-			expect(result).not.toContain('pure-ADA UTxO');
+			expect(result).not.toContain('native tokens');
 		});
 	});
 

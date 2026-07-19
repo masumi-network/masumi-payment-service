@@ -21,29 +21,34 @@ export function isSameUtxo(left: UTxO, right: UTxO): boolean {
 }
 
 /**
- * Selects a dedicated collateral input without consuming native tokens.
+ * Selects a dedicated collateral input.
  *
- * Prefer the smallest qualifying pure-ADA UTxO so larger UTxOs remain
- * available to Mesh for transaction fees, outputs, and change.
+ * Prefer the smallest qualifying pure-ADA UTxO so native tokens do not need
+ * a collateral-return output. If none exists, fall back to the smallest
+ * qualifying mixed-asset UTxO: Babbage/CIP-40 permits token-bearing
+ * collateral, and Mesh emits the required collateral-return output.
  */
 export function selectCollateralUtxo(utxos: UTxO[], minimumLovelace: bigint = DEFAULT_MIN_COLLATERAL_LOVELACE): UTxO {
-	const collateralUtxo = utxos
-		.filter(
-			(utxo) =>
-				utxo.output.amount.length > 0 &&
-				utxo.output.amount.every((asset) => asset.unit === 'lovelace' || asset.unit === '') &&
-				getLovelaceFromUtxo(utxo) >= minimumLovelace,
-		)
+	const qualifyingUtxos = utxos
+		.filter((utxo) => utxo.output.amount.length > 0 && getLovelaceFromUtxo(utxo) >= minimumLovelace)
+		.map((utxo) => ({
+			utxo,
+			isPureAda: utxo.output.amount.every((asset) => asset.unit === 'lovelace' || asset.unit === ''),
+			lovelace: getLovelaceFromUtxo(utxo),
+		}))
 		.sort((left, right) => {
-			const leftLovelace = getLovelaceFromUtxo(left);
-			const rightLovelace = getLovelaceFromUtxo(right);
-			if (leftLovelace < rightLovelace) return -1;
-			if (leftLovelace > rightLovelace) return 1;
+			if (left.isPureAda !== right.isPureAda) {
+				return left.isPureAda ? -1 : 1;
+			}
+			if (left.lovelace < right.lovelace) return -1;
+			if (left.lovelace > right.lovelace) return 1;
 			return 0;
-		})[0];
+		});
+
+	const collateralUtxo = qualifyingUtxos[0]?.utxo;
 
 	if (collateralUtxo == null) {
-		throw new Error(`Pure-ADA collateral UTxO not found with at least ${minimumLovelace.toString()} lovelace`);
+		throw new Error(`Collateral UTxO not found with at least ${minimumLovelace.toString()} lovelace`);
 	}
 
 	return collateralUtxo;
