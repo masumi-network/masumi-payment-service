@@ -20,6 +20,8 @@ export const TOOLTIP_TEXTS = {
     'A buying wallet pays for AI agent services on Masumi Network. When you use an AI service (e.g., data analysis for 10 ADA), funds are automatically sent from your wallet to the provider.\n\n𝗡𝗼𝘁𝗲: You only need to top up this wallet if you plan to hire AI agents for services.',
   SELLING_WALLET_TYPE:
     'A selling wallet receives money when customers use your AI services (e.g., 5 ADA for image generation). Payments go here automatically, then you can move them to your revenue collection address.\n\n𝗜𝗺𝗽𝗼𝗿𝘁𝗮𝗻𝘁: This wallet must be topped up with ADA to successfully register your AI agent on the network.',
+  FUNDING_WALLET_TYPE:
+    'A funding wallet holds ADA that is automatically distributed to your buying and selling wallets to keep their balances topped up. Fund this wallet once and the service handles the rest.',
   // Add more tooltip texts here as needed
 } as const;
 

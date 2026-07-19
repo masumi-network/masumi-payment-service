@@ -1,6 +1,11 @@
-import { HotWalletType, Network } from '@/generated/prisma/client';
+import { HotWalletType, Network, TransactionStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
-import { getWalletListSchemaOutput, getWalletSchemaOutput, postWalletSchemaOutput } from './schemas';
+import {
+	getWalletListSchemaOutput,
+	getWalletSchemaOutput,
+	postWalletSchemaOutput,
+	postWalletFundSchemaOutput,
+} from './schemas';
 
 export const walletExample = {
 	walletVkey: 'wallet_vkey',
@@ -19,6 +24,8 @@ export const walletExample = {
 			assetUnit: 'lovelace',
 			thresholdAmount: '5000000',
 			enabled: true,
+			topupEnabled: true,
+			topupAmount: '10000000',
 			status: 'Low',
 			lastKnownAmount: '4200000',
 			lastCheckedAt: new Date(1713636260),
@@ -86,6 +93,8 @@ export const walletLowBalanceRuleExample = {
 	assetUnit: 'lovelace',
 	thresholdAmount: '5000000',
 	enabled: true,
+	topupEnabled: true,
+	topupAmount: '10000000',
 	status: 'Low',
 	lastKnownAmount: '4200000',
 	lastCheckedAt: new Date(1713636260),
@@ -113,4 +122,28 @@ export const updateWalletLowBalanceRuleBodyExample = {
 
 export const deleteWalletLowBalanceRuleBodyExample = {
 	ruleId: 'low_balance_rule_id',
+};
+
+export const fundTransferExample = {
+	id: 'unique_cuid_v2_of_fund_transfer',
+	status: TransactionStatus.Confirmed,
+	txHash: 'a3f8c12d9e4b71d2f0e5c8a9b3d6e7f1a2b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8',
+	toAddress: 'addr_test1qz8x...purchasing_wallet_address',
+	lovelaceAmount: '100000000',
+	assets: null,
+	createdAt: new Date(1713636260),
+	updatedAt: new Date(1713636260),
+	lastCheckedAt: new Date(1713636260),
+	errorNote: null,
+} satisfies z.infer<typeof postWalletFundSchemaOutput>;
+
+export const postWalletFundBodyExample = {
+	fromWalletAddress: 'addr_test1qx9...source_wallet_address',
+	toAddress: 'addr_test1qz8x...destination_address',
+	lovelaceAmount: '100000000',
+};
+
+export const getWalletFundQueryExample = {
+	hotWalletId: 'unique_cuid_v2_of_wallet',
+	limit: '20',
 };

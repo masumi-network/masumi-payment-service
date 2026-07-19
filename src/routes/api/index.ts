@@ -29,6 +29,8 @@ import {
 	patchWalletEndpointPatch,
 	postWalletEndpointPost,
 	queryWalletEndpointGet,
+	postWalletFundEndpointPost,
+	getWalletFundEndpointGet,
 	queryWalletListEndpointGet,
 } from './wallet';
 import {
@@ -82,6 +84,13 @@ import {
 	queryPurchaseDiffOnChainStateOrResultGet,
 } from './purchases/diff';
 import { getMonitoringStatus, triggerMonitoringCycle, startMonitoring, stopMonitoring } from './monitoring';
+import {
+	getFundWalletEndpointGet,
+	postFundWalletEndpointPost,
+	patchFundWalletEndpointPatch,
+	deleteFundWalletEndpointDelete,
+} from './fund-wallet';
+import { getFundDistributionEndpointGet, triggerFundDistributionEndpointPost } from './fund-distribution';
 import {
 	swapTokensEndpointPost,
 	getSwapConfirmEndpointGet,
@@ -271,6 +280,10 @@ export const apiRouter: Routing = {
 				patch: patchWalletLowBalanceRuleEndpointPatch,
 				delete: deleteWalletLowBalanceRuleEndpointDelete,
 			},
+			'transfer-funds': {
+				get: getWalletFundEndpointGet,
+				post: postWalletFundEndpointPost,
+			},
 		},
 		'payment-source-extended': {
 			get: paymentSourceExtendedEndpointGet,
@@ -417,6 +430,18 @@ export const apiRouter: Routing = {
 			},
 			stop: {
 				post: stopMonitoring,
+			},
+		},
+		'fund-wallet': {
+			get: getFundWalletEndpointGet,
+			post: postFundWalletEndpointPost,
+			patch: patchFundWalletEndpointPatch,
+			delete: deleteFundWalletEndpointDelete,
+		},
+		'fund-distribution': {
+			get: getFundDistributionEndpointGet,
+			trigger: {
+				post: triggerFundDistributionEndpointPost,
 			},
 		},
 	},

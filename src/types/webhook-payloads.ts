@@ -74,6 +74,59 @@ const walletLowBalancePayloadSchema = createWebhookPayloadSchema(
 	'Wallet low-balance alert payload when a monitored wallet transitions into low balance',
 );
 
+// Fund distribution reports all three outcomes of a batch. SENT alone is not
+// enough for an unattended feature: a batch can be submitted and then fail to
+// confirm (or be rolled back after its TTL provably elapses), and an operator
+// told only "sent" would never learn the top-up did not land.
+const fundDistributionBatchShape = {
+	batchId: z.string().describe('Unique identifier grouping all outputs of this distribution transaction'),
+	fundWalletId: z.string().describe('Id of the fund wallet that sent the distribution'),
+	fundWalletAddress: z.string().describe('Address of the fund wallet'),
+	network: z.nativeEnum(Network).describe('Network the transaction was submitted on'),
+	distributions: z
+		.array(
+			z.object({
+				requestId: z.string().describe('Id of the FundDistributionRequest'),
+				targetWalletId: z.string().describe('Id of the target hot wallet that received funds'),
+				targetWalletAddress: z.string().describe('Address of the target wallet'),
+				assetUnit: z.string().describe('"lovelace" for ADA, otherwise policy id plus hex asset name'),
+				amount: z.string().describe("Amount sent in the asset's smallest on-chain unit"),
+			}),
+		)
+		.describe('Individual distributions included in this batch transaction'),
+};
+
+const fundDistributionSentPayloadSchema = createWebhookPayloadSchema(
+	z.literal('FUND_DISTRIBUTION_SENT'),
+	z.object({
+		...fundDistributionBatchShape,
+		txHash: z.string().describe('On-chain transaction hash'),
+	}),
+	'Fund distribution sent payload when a fund wallet submits assets to one or more low-balance wallets. Submission only — see FUND_DISTRIBUTION_CONFIRMED / FUND_DISTRIBUTION_FAILED for the outcome',
+);
+
+const fundDistributionConfirmedPayloadSchema = createWebhookPayloadSchema(
+	z.literal('FUND_DISTRIBUTION_CONFIRMED'),
+	z.object({
+		...fundDistributionBatchShape,
+		txHash: z.string().describe('On-chain transaction hash'),
+	}),
+	'Fund distribution confirmed payload when a previously sent distribution transaction is observed on chain',
+);
+
+const fundDistributionFailedPayloadSchema = createWebhookPayloadSchema(
+	z.literal('FUND_DISTRIBUTION_FAILED'),
+	z.object({
+		...fundDistributionBatchShape,
+		txHash: z
+			.string()
+			.nullable()
+			.describe('On-chain transaction hash if the batch was broadcast, null if it failed before submission'),
+		error: z.string().describe('Why the distribution failed'),
+	}),
+	'Fund distribution failed payload when a distribution could not be submitted, or was submitted but never confirmed on chain',
+);
+
 // x402 (EVM) webhook schemas. The settle event carries the same data on success and
 // failure so a single consumer shape covers both X402_PAYMENT_SETTLED and
 // X402_PAYMENT_FAILED.
@@ -129,6 +182,9 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnErrorPayloadSchema,
 	paymentOnErrorPayloadSchema,
 	walletLowBalancePayloadSchema,
+	fundDistributionSentPayloadSchema,
+	fundDistributionConfirmedPayloadSchema,
+	fundDistributionFailedPayloadSchema,
 	x402PaymentSettledPayloadSchema,
 	x402PaymentFailedPayloadSchema,
 	x402WalletLowBalancePayloadSchema,

@@ -2,6 +2,7 @@ import { webhookQueueService } from './queue.service';
 import { logger } from '@masumi/payment-core/logger';
 import { prisma } from '@masumi/payment-core/db';
 import { WebhookEventType } from '@/generated/prisma/client';
+import type { Prisma } from '@/generated/prisma/client';
 import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 
@@ -203,6 +204,53 @@ class WebhookEventsService {
 
 	async triggerPaymentOnError(paymentId: string): Promise<void> {
 		await this.triggerGenericWebhook(WebhookEventType.PAYMENT_ON_ERROR, paymentId, 'payment');
+	}
+
+	// Fund-distribution lifecycle events are queued exclusively through the
+	// strict in-transaction variants below: the webhook row must commit (or
+	// roll back) with the domain transition it describes. There is no
+	// best-effort post-commit trigger path on purpose.
+
+	async queueFundDistributionSent(
+		tx: Prisma.TransactionClient,
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_SENT'>,
+		paymentSourceId: string,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.FUND_DISTRIBUTION_SENT,
+			payload,
+			payload.fundWalletId,
+			paymentSourceId,
+		);
+	}
+
+	async queueFundDistributionConfirmed(
+		tx: Prisma.TransactionClient,
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_CONFIRMED'>,
+		paymentSourceId: string,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.FUND_DISTRIBUTION_CONFIRMED,
+			payload,
+			payload.fundWalletId,
+			paymentSourceId,
+		);
+	}
+
+	async queueFundDistributionFailed(
+		tx: Prisma.TransactionClient,
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_FAILED'>,
+		paymentSourceId: string,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.FUND_DISTRIBUTION_FAILED,
+			payload,
+			payload.fundWalletId,
+			paymentSourceId,
+		);
 	}
 
 	async triggerWalletLowBalance(payload: WalletLowBalanceWebhookData): Promise<void> {

@@ -8,7 +8,7 @@ export type PaymentSourceWalletDetails = {
   walletAddress: string;
   collectionAddress: string | null;
   note: string | null;
-  type: 'Purchasing' | 'Selling';
+  type: 'Purchasing' | 'Selling' | 'Funding';
   balance: string;
   usdcxBalance: string;
 };

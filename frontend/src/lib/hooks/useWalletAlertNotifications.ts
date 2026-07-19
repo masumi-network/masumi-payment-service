@@ -9,7 +9,7 @@ type WalletAlertAcknowledgements = Record<string, Record<string, string>>;
 
 export type WalletAlertNotification = {
   id: string;
-  type: 'Purchasing' | 'Selling';
+  type: 'Purchasing' | 'Selling' | 'Funding';
   note: string | null;
   walletAddress: string;
   lowRuleCount: number;

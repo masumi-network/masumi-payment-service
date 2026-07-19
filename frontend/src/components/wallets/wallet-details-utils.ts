@@ -1,6 +1,7 @@
 import { shortenAddress, hexToAscii } from '@/lib/utils';
 import formatBalance from '@/lib/formatBalance';
 import { getUsdmConfig, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
+import type { DisplayWalletType } from '@/lib/wallet-type';
 
 export interface TokenBalance {
   unit: string;
@@ -22,6 +23,10 @@ export type LowBalanceRule = {
   assetUnit: string;
   thresholdAmount: string;
   enabled: boolean;
+  // Auto top-up: when topupEnabled, a fund wallet on the source sends topupAmount
+  // (raw on-chain units) each time this rule's balance drops below threshold.
+  topupEnabled: boolean;
+  topupAmount: string | null;
   status: 'Unknown' | 'Healthy' | 'Low';
   lastKnownAmount: string | null;
   lastCheckedAt: Date | null;
@@ -36,6 +41,10 @@ export type WalletDetailsState = {
 export type RuleDraft = {
   thresholdInput: string;
   enabled: boolean;
+  // Auto top-up: when enabled, a fund wallet on the source tops this wallet up by
+  // topupAmountInput (display units) whenever the balance drops below threshold.
+  topupEnabled: boolean;
+  topupAmountInput: string;
 };
 
 export type RuleAssetPreset = 'lovelace' | 'stablecoin' | 'custom';
@@ -54,7 +63,7 @@ export interface WalletWithBalance {
   walletAddress: string;
   collectionAddress: string | null;
   note: string | null;
-  type: 'Purchasing' | 'Selling' | 'Collection';
+  type: DisplayWalletType;
   balance: string;
   usdcxBalance: string;
   /** True when the balance fetch failed — render "unknown", not 0. */
@@ -70,6 +79,8 @@ export const EMPTY_LOW_BALANCE_SUMMARY: LowBalanceSummary = {
 
 export const SUPPORTED_RULE_DECIMALS = 6;
 export const CARDANO_POLICY_ID_HEX_LENGTH = 56;
+export const MIN_TOPUP_LOVELACE = BigInt(5_000_000);
+export const CARDANO_NATIVE_ASSET_UNIT_PATTERN = /^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{2}){0,32}$/;
 
 export function getAssetUnitBreakdown(assetUnit: string) {
   const normalized = assetUnit.trim();
@@ -190,6 +201,50 @@ export function parseThresholdInputToRaw(
   }
 
   return parseDecimalToRawAmount(thresholdInput, assetMeta.decimals);
+}
+
+export function validateRuleTopupInput({
+  enabled,
+  topupAmountInput,
+  assetUnit,
+  network,
+}: {
+  enabled: boolean;
+  topupAmountInput: string;
+  assetUnit: string;
+  network: 'Preprod' | 'Mainnet';
+}): {
+  rawTopupAmount: string | null;
+  error: string | null;
+} {
+  if (!enabled) {
+    return { rawTopupAmount: null, error: null };
+  }
+
+  const rawTopupAmount = parseThresholdInputToRaw(topupAmountInput, assetUnit, network);
+  if (rawTopupAmount == null || rawTopupAmount === '0') {
+    return {
+      rawTopupAmount,
+      error: 'Enter a top-up amount greater than zero, or turn auto top-up off.',
+    };
+  }
+
+  if (assetUnit === 'lovelace' && BigInt(rawTopupAmount) < MIN_TOPUP_LOVELACE) {
+    return {
+      rawTopupAmount,
+      error: 'ADA top-up amount must be at least 5 ADA.',
+    };
+  }
+
+  if (assetUnit !== 'lovelace' && !CARDANO_NATIVE_ASSET_UNIT_PATTERN.test(assetUnit)) {
+    return {
+      rawTopupAmount,
+      error:
+        'Auto top-up needs a valid Cardano asset unit: policy id followed by an asset name of at most 32 bytes.',
+    };
+  }
+
+  return { rawTopupAmount, error: null };
 }
 
 export function formatRuleAmount(

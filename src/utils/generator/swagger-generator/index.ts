@@ -11,6 +11,8 @@ import { registerRegistryInboxSupportPaths } from '@/routes/api/registry-inbox/d
 import { registerMonitoringPaths } from '@/routes/api/monitoring/docs';
 import { registerX402Paths } from '@/routes/api/x402/docs';
 import { registerX402ManagementPaths } from '@/routes/api/x402/management-docs';
+import { registerFundWalletPaths } from '@/routes/api/fund-wallet/docs';
+import { registerFundDistributionPaths } from '@/routes/api/fund-distribution/docs';
 
 extendZodWithOpenApi(z);
 
@@ -32,6 +34,8 @@ export function generateOpenAPI() {
 	registerMonitoringPaths({ registry, apiKeyAuth });
 	registerX402Paths({ registry, apiKeyAuth });
 	registerX402ManagementPaths({ registry, apiKeyAuth });
+	registerFundWalletPaths({ registry, apiKeyAuth });
+	registerFundDistributionPaths({ registry, apiKeyAuth });
 
 	return new OpenApiGeneratorV3(registry.definitions).generateDocument({
 		openapi: '3.0.0',

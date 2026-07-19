@@ -30,11 +30,17 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { shortenAddress, validateCardanoAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import type { PatchPaymentSourceExtendedData } from '@/lib/api/generated';
-import { WalletTypeBadge } from '@/components/ui/wallet-type-badge';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { extractApiPayload } from '@/lib/api-response';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
+import { WalletTypeSelector } from '@/components/wallets/WalletTypeSelector';
+import {
+  FundWalletSetupForm,
+  type FundWalletSetupSubmit,
+} from '@/components/wallets/FundWalletSetupForm';
+import { useFundWalletMutations } from '@/lib/hooks/useFundWalletMutations';
+import { getWalletTypeLabel, type HotWalletType } from '@/lib/wallet-type';
 import {
   getPaymentSourceTypeLabel,
   getPreferredPaymentSource,
@@ -45,6 +51,8 @@ interface AddWalletDialogProps {
   open: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  /** Preselect the wallet type, e.g. from the active Wallets tab. */
+  defaultType?: HotWalletType;
 }
 
 const walletSchema = z.object({
@@ -55,8 +63,8 @@ const walletSchema = z.object({
 
 type WalletFormValues = z.infer<typeof walletSchema>;
 
-export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogProps) {
-  const [type, setType] = useState<'Purchasing' | 'Selling'>('Purchasing');
+export function AddWalletDialog({ open, onClose, onSuccess, defaultType }: AddWalletDialogProps) {
+  const [type, setType] = useState<HotWalletType>('Purchasing');
   // Covers the pre-submit collection-address check; the API call itself is
   // tracked by addWallet.isPending below.
   const [isPreparing, setIsPreparing] = useState(false);
@@ -110,13 +118,16 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
   useEffect(() => {
     if (open) {
       setPaymentSourceId(defaultPaymentSource?.id ?? null);
+      // Preselect the type from the active tab; fall back to Purchasing on the
+      // All tab, matching the previous default.
+      setType(defaultType ?? 'Purchasing');
     } else {
       reset();
       setError('');
       setIsPreparing(false);
       setPaymentSourceId(null);
     }
-  }, [defaultPaymentSource?.id, open, reset]);
+  }, [defaultPaymentSource?.id, open, reset, defaultType]);
 
   const handleGenerateMnemonic = async () => {
     try {
@@ -164,7 +175,8 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
     errorMessage: `Failed to add ${type} wallet`,
     toastOnError: false,
   });
-  const isLoading = isPreparing || addWallet.isPending;
+  const { createFundWallet } = useFundWalletMutations(paymentSourceId);
+  const isLoading = isPreparing || addWallet.isPending || createFundWallet.isPending;
 
   const onSubmit = async (data: WalletFormValues) => {
     setError('');
@@ -228,163 +240,176 @@ export function AddWalletDialog({ open, onClose, onSuccess }: AddWalletDialogPro
     }
   };
 
+  const handleCreateFundWallet = async (values: FundWalletSetupSubmit) => {
+    setError('');
+    if (!paymentSourceId) {
+      setError('No payment source available');
+      return;
+    }
+
+    try {
+      await createFundWallet.mutateAsync({
+        ...values,
+        paymentSourceId,
+      });
+      toast.success('Funding wallet added. Send funds to its address to enable top-ups.');
+      onSuccess?.();
+      onClose();
+    } catch {
+      /* surfaced by useApiMutation */
+    }
+  };
+
+  const walletTypeLabel = getWalletTypeLabel(type).toLowerCase();
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent size="md">
+      <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Add {type} Wallet</DialogTitle>
+          <DialogTitle>Add wallet</DialogTitle>
           <DialogDescription>
-            Enter the wallet mnemonic phrase and required details to set up your{' '}
-            {type.toLowerCase()} wallet.
+            Create a {walletTypeLabel} wallet for {network}. The required setup changes with the
+            wallet&apos;s role.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          {error && (
-            <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">{error}</div>
-          )}
+        <WalletTypeSelector value={type} onChange={setType} disabled={isLoading} />
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Wallet type</label>
-            <div className="flex items-center gap-4 flex-nowrap">
-              <Select
-                value={type}
-                onValueChange={(value: 'Purchasing' | 'Selling') => setType(value)}
-              >
-                <SelectTrigger className="flex-1">
-                  <SelectValue placeholder="Select wallet type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Purchasing">Purchasing wallet</SelectItem>
-                  <SelectItem value="Selling">Selling wallet</SelectItem>
-                </SelectContent>
-              </Select>
-              <WalletTypeBadge type={type} className="shrink-0" />
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Payment source</label>
+          <Select
+            value={paymentSourceId ?? ''}
+            onValueChange={setPaymentSourceId}
+            disabled={isLoading || sortedPaymentSources.length === 0}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select payment source" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {sortedPaymentSources.map((paymentSource) => (
+                  <SelectItem key={paymentSource.id} value={paymentSource.id}>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <PaymentSourceTypeBadge
+                        paymentSourceType={paymentSource.paymentSourceType}
+                        showDefault
+                      />
+                      <span className="truncate">
+                        {shortenAddress(paymentSource.smartContractAddress, 8)}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {selectedPaymentSource
+              ? `This wallet belongs to ${getPaymentSourceTypeLabel(selectedPaymentSource.paymentSourceType)} on ${network}.`
+              : 'Create a payment source before adding wallets.'}
+          </p>
+        </div>
+
+        {error && (
+          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+        )}
+
+        {type === 'Funding' ? (
+          <FundWalletSetupForm
+            onSubmit={handleCreateFundWallet}
+            isSubmitting={createFundWallet.isPending}
+            network={network}
+            onCancel={onClose}
+            showDescription={false}
+            submitLabel="Add funding wallet"
+          />
+        ) : (
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">
+                  Mnemonic Phrase <span className="text-destructive">*</span>
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGenerateMnemonic}
+                  disabled={isGenerating}
+                  className="h-8"
+                >
+                  {isGenerating ? <Spinner size={16} /> : 'Generate'}
+                </Button>
+              </div>
+              <div className="relative">
+                <Textarea
+                  {...register('mnemonic')}
+                  placeholder="Enter your mnemonic phrase"
+                  required
+                  className="min-h-[100px] font-mono pr-10"
+                  spellCheck={false}
+                  autoComplete="off"
+                  style={
+                    showMnemonic
+                      ? undefined
+                      : ({
+                          WebkitTextSecurity: 'disc',
+                          textSecurity: 'disc',
+                        } as React.CSSProperties)
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowMnemonic((v) => !v)}
+                  className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+                  aria-label={showMnemonic ? 'Hide mnemonic' : 'Show mnemonic'}
+                  tabIndex={-1}
+                >
+                  {showMnemonic ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {errors.mnemonic && (
+                <p className="text-xs text-destructive mt-1">{errors.mnemonic.message}</p>
+              )}
             </div>
-            <p className="text-sm text-muted-foreground">
-              {type === 'Purchasing'
-                ? 'A purchasing wallet is used to make payments for Agentic AI services. It will be used to send payments to sellers.'
-                : 'A selling wallet is used to receive payments for Agentic AI services. It will be used to collect funds from buyers.'}
-            </p>
-          </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Payment source</label>
-            <Select
-              value={paymentSourceId ?? ''}
-              onValueChange={setPaymentSourceId}
-              disabled={isLoading || sortedPaymentSources.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select payment source" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {sortedPaymentSources.map((paymentSource) => (
-                    <SelectItem key={paymentSource.id} value={paymentSource.id}>
-                      <div className="flex min-w-0 items-center gap-2">
-                        <PaymentSourceTypeBadge
-                          paymentSourceType={paymentSource.paymentSourceType}
-                          showDefault
-                        />
-                        <span className="truncate">
-                          {shortenAddress(paymentSource.smartContractAddress, 8)}
-                        </span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <p className="text-sm text-muted-foreground">
-              {selectedPaymentSource
-                ? `This wallet will be added to ${getPaymentSourceTypeLabel(selectedPaymentSource.paymentSourceType)} on ${network}.`
-                : 'Create a payment source before adding wallets.'}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="space-y-2">
               <label className="text-sm font-medium">
-                Mnemonic Phrase <span className="text-destructive">*</span>
+                Note <span className="text-destructive">*</span>
               </label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleGenerateMnemonic}
-                disabled={isGenerating}
-                className="h-8"
-              >
-                {isGenerating ? <Spinner size={16} /> : 'Generate'}
+              <Input
+                {...register('note')}
+                placeholder="Enter a note to identify this wallet"
+                required
+              />
+              {errors.note && (
+                <p className="text-xs text-destructive mt-1">{errors.note.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                {type === 'Purchasing' ? 'Refund' : 'Revenue'} Collection Address{' '}
+              </label>
+              <Input
+                {...register('collectionAddress')}
+                placeholder={`Enter the address where ${type === 'Purchasing' ? 'refunds' : 'revenue'} will be sent`}
+              />
+              {errors.collectionAddress && (
+                <p className="text-xs text-destructive mt-1">{errors.collectionAddress.message}</p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Adding...' : 'Add Wallet'}
               </Button>
             </div>
-            <div className="relative">
-              <Textarea
-                {...register('mnemonic')}
-                placeholder="Enter your mnemonic phrase"
-                required
-                className="min-h-[100px] font-mono pr-10"
-                spellCheck={false}
-                autoComplete="off"
-                style={
-                  showMnemonic
-                    ? undefined
-                    : ({
-                        WebkitTextSecurity: 'disc',
-                        textSecurity: 'disc',
-                      } as React.CSSProperties)
-                }
-              />
-              <button
-                type="button"
-                onClick={() => setShowMnemonic((v) => !v)}
-                className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-                aria-label={showMnemonic ? 'Hide mnemonic' : 'Show mnemonic'}
-                tabIndex={-1}
-              >
-                {showMnemonic ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-            {errors.mnemonic && (
-              <p className="text-xs text-destructive mt-1">{errors.mnemonic.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Note <span className="text-destructive">*</span>
-            </label>
-            <Input
-              {...register('note')}
-              placeholder="Enter a note to identify this wallet"
-              required
-            />
-            {errors.note && <p className="text-xs text-destructive mt-1">{errors.note.message}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              {type === 'Purchasing' ? 'Refund' : 'Revenue'} Collection Address{' '}
-            </label>
-            <Input
-              {...register('collectionAddress')}
-              placeholder={`Enter the address where ${type === 'Purchasing' ? 'refunds' : 'revenue'} will be sent`}
-            />
-            {errors.collectionAddress && (
-              <p className="text-xs text-destructive mt-1">{errors.collectionAddress.message}</p>
-            )}
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isLoading}>
-              {isLoading ? 'Adding...' : 'Add Wallet'}
-            </Button>
-          </div>
-        </form>
+          </form>
+        )}
       </DialogContent>
     </Dialog>
   );

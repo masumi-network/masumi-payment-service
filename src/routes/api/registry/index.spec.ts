@@ -18,8 +18,12 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			findUnique: mockFindApiKey,
 		},
 		hotWallet: {
-			findUnique: mockFindSellingWallet,
-			findFirst: mockFindRecipientWallet,
+			// Both lookups go through findFirst since walletVkey's uniqueness moved
+			// to a partial index (no longer a Prisma unique key). Route on the
+			// distinguishing predicate: the selling lookup keys on walletVkey, the
+			// recipient lookup on walletAddress.
+			findFirst: (args: { where?: { walletVkey?: string } }) =>
+				args?.where?.walletVkey !== undefined ? mockFindSellingWallet(args) : mockFindRecipientWallet(args),
 		},
 		registryRequest: {
 			create: mockCreateRegistryRequest,
