@@ -7,7 +7,16 @@ import { normalizeAddress } from './internal';
 
 export const EXACT_SCHEME = 'exact';
 const DEFAULT_X402_TIMEOUT_SECONDS = 300;
+// Policy ceiling for owner-issued Dynamic requirements. Without a cap a seller
+// could issue a 402 whose signed authorization stays settleable indefinitely.
+export const MAX_X402_TIMEOUT_SECONDS = 86400;
 const PERMIT2_EXTRA = { assetTransferMethod: 'permit2' };
+// Well-known sentinel addresses some ecosystems use for the native asset;
+// syntactically valid but never an ERC-20 contract.
+const EVM_NATIVE_SENTINEL_ADDRESSES = new Set([
+	'0x0000000000000000000000000000000000000000',
+	'0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+]);
 
 export type X402SourceRecord = NonNullable<Awaited<ReturnType<typeof getX402SupportedPaymentSourceOrThrow>>>;
 
@@ -31,13 +40,16 @@ function toRequirementExtra(value: unknown): X402RequirementExtra {
 }
 
 function assertValidAsset(asset: string): void {
-	if (!/^0x[a-fA-F0-9]{40}$/.test(asset)) {
+	if (!/^0x[a-fA-F0-9]{40}$/.test(asset) || EVM_NATIVE_SENTINEL_ADDRESSES.has(asset.toLowerCase())) {
 		throw createHttpError(400, 'x402 asset must be an EVM token contract');
 	}
 }
 
 function parseDecimals(value: unknown): number {
-	const decimals = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
+	// Strings must be plain digits: `Number('')` is 0 and `Number('0x10')` is
+	// 16, both of which would silently misparse owner-supplied decimals.
+	const decimals =
+		typeof value === 'number' ? value : typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : Number.NaN;
 	if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
 		throw createHttpError(400, 'x402 payment requirements must include valid asset decimals');
 	}
@@ -102,8 +114,15 @@ export function sourceToRequirements(
 		amount = trustedRuntimeRequirements.amount;
 		decimals = source.dynamicDecimals ?? parseDecimals(toRequirementExtra(trustedRuntimeRequirements.extra).decimals);
 		maxTimeoutSeconds = trustedRuntimeRequirements.maxTimeoutSeconds;
-		if (!Number.isInteger(maxTimeoutSeconds) || maxTimeoutSeconds <= 0) {
-			throw createHttpError(400, 'x402 payment requirements must include a positive timeout');
+		if (
+			!Number.isInteger(maxTimeoutSeconds) ||
+			maxTimeoutSeconds <= 0 ||
+			maxTimeoutSeconds > MAX_X402_TIMEOUT_SECONDS
+		) {
+			throw createHttpError(
+				400,
+				`x402 payment requirements must include a positive timeout of at most ${MAX_X402_TIMEOUT_SECONDS} seconds`,
+			);
 		}
 		runtimeExtra = toJsonObject(trustedRuntimeRequirements.extra);
 		if (source.dynamicAsset != null && normalizeAddress(source.dynamicAsset) !== normalizeAddress(asset)) {

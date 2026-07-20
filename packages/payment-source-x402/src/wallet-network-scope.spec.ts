@@ -137,10 +137,12 @@ describe('managed wallet network limits', () => {
 		});
 
 		expect(mockNetworkFindMany).toHaveBeenCalledWith({
+			// No facilitator filter: outbound (buy) wallets need no facilitator,
+			// so enabled facilitator-less networks stay discoverable and are
+			// marked via `canSettle` instead.
 			where: {
 				isTestnet: false,
 				isEnabled: true,
-				OR: [{ facilitatorWalletId: { not: null } }, { facilitatorUrl: { not: null } }],
 				caip2Id: { in: ['eip155:8453'] },
 			},
 			orderBy: { caip2Id: 'asc' },
@@ -152,14 +154,19 @@ describe('managed wallet network limits', () => {
 				isEnabled: true,
 				defaultAsset: true,
 				defaultAssetDecimals: true,
+				facilitatorWalletId: true,
+				facilitatorUrl: true,
 			},
 		});
 		expect(networks).toEqual([
 			expect.objectContaining({
 				id: 'network-1',
 				caip2Id: 'eip155:8453',
+				canSettle: false,
 			}),
 		]);
+		expect(networks[0]).not.toHaveProperty('facilitatorWalletId');
+		expect(networks[0]).not.toHaveProperty('facilitatorUrl');
 	});
 
 	it('bootstraps a wallet from an allowed discovered network id', async () => {

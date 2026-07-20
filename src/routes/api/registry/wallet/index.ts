@@ -123,6 +123,12 @@ export function resolveAgentPricingFromMetadata(
 					(source) => metadataToString(source.chain) === SupportedPaymentSourceChain.Cardano,
 				)
 			: parsed.supported_payment_sources?.[supportedPaymentSourceIndex];
+	// An explicit index that resolves to no source is a caller/metadata
+	// mismatch — never fall through to the legacy top-level pricing block,
+	// which would price a different payment option than the one selected.
+	if (supportedPaymentSourceIndex != null && cardanoSource == null) {
+		return null;
+	}
 	if (cardanoSource != null && metadataToString(cardanoSource.chain) !== SupportedPaymentSourceChain.Cardano) {
 		return null;
 	}
@@ -130,12 +136,20 @@ export function resolveAgentPricingFromMetadata(
 	if (sourcePricing != null) {
 		const pricingType = metadataToString(sourcePricing.pricingType);
 		if (pricingType === PricingType.Fixed) {
+			const fixedPricing: Array<{ amount: bigint; unit: string | string[] }> = [];
+			for (const entry of sourcePricing.fixed ?? []) {
+				const amount = metadataToString(entry.amount);
+				// Metadata is seller-authored: a malformed amount must not throw
+				// (BigInt SyntaxError -> 500) and a negative one must not be
+				// summed into the price, so treat both as unpriceable metadata.
+				if (amount == null || !/^\d+$/.test(amount)) {
+					return null;
+				}
+				fixedPricing.push({ amount: BigInt(amount), unit: entry.asset });
+			}
 			return {
 				pricingType: PricingType.Fixed,
-				fixedPricing: (sourcePricing.fixed ?? []).map((entry) => ({
-					amount: BigInt(metadataToString(entry.amount) ?? '0'),
-					unit: entry.asset,
-				})),
+				fixedPricing,
 			};
 		}
 		if (pricingType === PricingType.Free) return { pricingType: PricingType.Free };

@@ -1,4 +1,5 @@
 import { z } from '@masumi/payment-core/zod';
+import { MAX_X402_TIMEOUT_SECONDS } from '@masumi/payment-source-x402';
 import {
 	LowBalanceStatus,
 	X402EvmWalletType,
@@ -11,7 +12,18 @@ export const caip2Eip155Schema = z
 	.regex(/^eip155:\d+$/, 'Network must be a CAIP-2 EVM chain id, for example eip155:8453');
 
 export const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Expected an EVM address');
-export const x402AssetSchema = evmAddressSchema.describe('ERC-20 token contract address');
+// Sentinel addresses some ecosystems use for the native asset are
+// syntactically valid but can never be an ERC-20 contract.
+const EVM_NATIVE_SENTINEL_ADDRESSES = new Set([
+	'0x0000000000000000000000000000000000000000',
+	'0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+]);
+export const x402AssetSchema = evmAddressSchema
+	.refine(
+		(asset) => !EVM_NATIVE_SENTINEL_ADDRESSES.has(asset.toLowerCase()),
+		'x402 asset must be an ERC-20 token contract, not a native-asset sentinel address',
+	)
+	.describe('ERC-20 token contract address');
 export const uintStringSchema = z.string().regex(/^\d+$/, 'Expected an unsigned integer string');
 // A boolean carried in a query string. z.coerce.boolean() is WRONG here: Boolean("false")
 // is true, so "false" would read as true. Parse the literal string instead.
@@ -29,7 +41,9 @@ export const x402PaymentRequirementsSchema = z.object({
 	asset: x402AssetSchema,
 	amount: uintStringSchema,
 	payTo: evmAddressSchema,
-	maxTimeoutSeconds: z.number().int().positive(),
+	// Upper bound mirrors the service-side policy cap for Dynamic runtime
+	// requirements; Fixed sources pin 300s regardless.
+	maxTimeoutSeconds: z.number().int().positive().max(MAX_X402_TIMEOUT_SECONDS),
 	extra: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -398,6 +412,11 @@ export const x402AvailableNetworkSchema = z
 		displayName: z.string().describe('Human readable chain name'),
 		isTestnet: z.boolean().describe('Whether this chain belongs to the testnet environment'),
 		isEnabled: z.boolean().describe('Whether this chain may currently be used for x402 payments'),
+		canSettle: z
+			.boolean()
+			.describe(
+				'Whether inbound settlement is configured (a facilitator wallet or URL is present). Outbound (buy) wallets do not require a facilitator, so networks may be listed with canSettle=false.',
+			),
 		defaultAsset: evmAddressSchema.nullable().describe('Default settlement asset (token contract) for this chain'),
 		defaultAssetDecimals: z
 			.number()

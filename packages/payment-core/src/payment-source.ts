@@ -23,11 +23,29 @@ export const POSTGRES_BIGINT_MAX = 9223372036854775807n;
 export const paymentSourceTypeSchema = z.nativeEnum(PaymentSourceType).describe('The configured payment source type');
 
 const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Expected an EVM address');
-const x402AssetSchema = evmAddressSchema.describe('ERC-20 token contract address');
-const atomicAmountSchema = z
+// Well-known sentinel addresses some ecosystems use to denote the native
+// asset. They are syntactically valid EVM addresses but can never be an
+// ERC-20 contract, so reject them anywhere a token contract is expected.
+const EVM_NATIVE_SENTINEL_ADDRESSES = new Set([
+	'0x0000000000000000000000000000000000000000',
+	'0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+]);
+const x402AssetSchema = evmAddressSchema
+	.refine(
+		(asset) => !EVM_NATIVE_SENTINEL_ADDRESSES.has(asset.toLowerCase()),
+		'Native-asset sentinel addresses are not ERC-20 token contracts',
+	)
+	.describe('ERC-20 token contract address');
+export const atomicAmountSchema = z
 	.string()
+	// int64 max is 19 digits; bound the string before BigInt parsing.
+	.max(19)
 	.regex(/^\d+$/)
 	.refine((amount) => {
+		// Zod 4 runs refinements even when the checks above already failed, so
+		// re-guard before BigInt() — BigInt('abc') throws an uncaught
+		// SyntaxError (a 500), not a validation issue.
+		if (!/^\d+$/.test(amount)) return false;
 		const parsedAmount = BigInt(amount);
 		return parsedAmount > 0n && parsedAmount <= POSTGRES_BIGINT_MAX;
 	}, `Atomic amount must be between 1 and ${POSTGRES_BIGINT_MAX.toString()}`)
@@ -168,20 +186,12 @@ export const supportedPaymentSourceSchema = z
 		}
 	});
 
-export const supportedPaymentSourceInputSchema = supportedPaymentSourceSchema;
-
 // Hard cap on advertised payment sources, enforced both on parse and when
 // emitting on-chain metadata.
 export const MAX_SUPPORTED_PAYMENT_SOURCES = 25;
 
 export const supportedPaymentSourcesSchema = z
 	.array(supportedPaymentSourceSchema)
-	.min(1)
-	.max(MAX_SUPPORTED_PAYMENT_SOURCES)
-	.describe('Payment sources advertised by this registry entry');
-
-export const supportedPaymentSourcesInputSchema = z
-	.array(supportedPaymentSourceInputSchema)
 	.min(1)
 	.max(MAX_SUPPORTED_PAYMENT_SOURCES)
 	.describe('Payment sources advertised by this registry entry');
@@ -208,6 +218,16 @@ function metadataToString(value: string | string[] | undefined) {
 	if (value == undefined) return undefined;
 	if (typeof value === 'string') return value;
 	return value.join('');
+}
+
+// `Number()` coerces `''` to 0 and accepts hex/exponent spellings; metadata
+// decimals must be plain digit strings. Returning NaN makes the zod
+// `.int()` check fail so malformed third-party metadata is rejected instead
+// of silently misparsed.
+function parseMetadataDecimals(value: string | string[] | undefined): number | undefined {
+	const decimals = metadataToString(value);
+	if (decimals == null) return undefined;
+	return /^\d+$/.test(decimals) ? Number(decimals) : Number.NaN;
 }
 
 // One asset descriptor inside a rail's pricing block. `asset` is the rail's
@@ -369,18 +389,36 @@ export function validateSupportedPaymentSourcesOrThrow(
 	}
 }
 
+// Canonical asset spelling for duplicate detection. Must stay in lockstep
+// with the persistence-side normalization (`normalizeCardanoAsset` in
+// `src/services/registry/source-pricing.ts`): both `''` and `'lovelace'`
+// denote ADA and are persisted as `''`, so the canonical key must fold them
+// too or alias-spelled duplicates evade rejection.
+function canonicalAssetId(asset: string): string {
+	const lowered = asset.toLowerCase();
+	return lowered === 'lovelace' ? '' : lowered;
+}
+
+// Codepoint comparison: `localeCompare` is ICU/locale-dependent and this sort
+// feeds a PERSISTED uniqueness key (`canonicalKey`), which must be stable
+// across deployments.
+function compareCodepoints(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function canonicalPricing(pricing: SupportedPaymentSourcePricing) {
 	if (pricing.pricingType === PricingType.Fixed) {
 		return {
 			pricingType: pricing.pricingType,
 			fixed: pricing.fixed
 				.map((price) => ({
-					asset: price.asset.toLowerCase(),
+					asset: canonicalAssetId(price.asset),
 					amount: BigInt(price.amount).toString(),
 					decimals: price.decimals ?? null,
 				}))
 				.sort((left, right) =>
-					`${left.asset}:${left.amount}:${left.decimals ?? ''}`.localeCompare(
+					compareCodepoints(
+						`${left.asset}:${left.amount}:${left.decimals ?? ''}`,
 						`${right.asset}:${right.amount}:${right.decimals ?? ''}`,
 					),
 				),
@@ -391,7 +429,7 @@ function canonicalPricing(pricing: SupportedPaymentSourcePricing) {
 			pricingType: pricing.pricingType,
 			dynamic:
 				pricing.dynamic?.map((asset) => ({
-					asset: asset.asset.toLowerCase(),
+					asset: canonicalAssetId(asset.asset),
 					decimals: asset.decimals ?? null,
 				})) ?? [],
 		};
@@ -438,25 +476,19 @@ export function parseSupportedPaymentSourcesFromMetadata(value: unknown): Suppor
 					? {
 							pricingType,
 							fixed:
-								source.pricing?.fixed?.map((price) => {
-									const decimals = metadataToString(price.decimals);
-									return {
-										asset: metadataToString(price.asset),
-										amount: metadataToString(price.amount),
-										decimals: decimals != null ? Number(decimals) : undefined,
-									};
-								}) ?? [],
+								source.pricing?.fixed?.map((price) => ({
+									asset: metadataToString(price.asset),
+									amount: metadataToString(price.amount),
+									decimals: parseMetadataDecimals(price.decimals),
+								})) ?? [],
 						}
 					: pricingType === PricingType.Dynamic
 						? {
 								pricingType,
-								dynamic: source.pricing?.dynamic?.map((asset) => {
-									const decimals = metadataToString(asset.decimals);
-									return {
-										asset: metadataToString(asset.asset),
-										decimals: decimals != null ? Number(decimals) : undefined,
-									};
-								}),
+								dynamic: source.pricing?.dynamic?.map((asset) => ({
+									asset: metadataToString(asset.asset),
+									decimals: parseMetadataDecimals(asset.decimals),
+								})),
 							}
 						: { pricingType };
 			if (chain === SupportedPaymentSourceChain.EVM) {

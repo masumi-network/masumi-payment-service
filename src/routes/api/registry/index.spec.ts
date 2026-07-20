@@ -328,6 +328,51 @@ describe('registerAgentPost', () => {
 		);
 	});
 
+	it('normalizes checksummed EVM supported payment source address filters', async () => {
+		const checksummedAddress = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+		const normalizedAddress = checksummedAddress.toLowerCase();
+		const { responseMock } = await testEndpoint({
+			endpoint: queryRegistryRequestGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					network: Network.Preprod,
+					limit: '10',
+					filterSupportedPaymentSourceAddress: checksummedAddress,
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockFindRegistryRequests).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					AND: expect.arrayContaining([
+						{
+							OR: [
+								{
+									SupportedPaymentSources: {
+										some: {
+											OR: [{ address: normalizedAddress }],
+										},
+									},
+								},
+								{
+									PaymentSource: {
+										network: Network.Preprod,
+										deletedAt: null,
+										smartContractAddress: normalizedAddress,
+									},
+								},
+							],
+						},
+					]),
+				}),
+			}),
+		);
+	});
+
 	it('searches source-owned V2 pricing types and fixed amounts', async () => {
 		const dynamicResult = await testEndpoint({
 			endpoint: queryRegistryRequestGet,
@@ -527,6 +572,45 @@ describe('registerAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.metadataVersion).toBe(1);
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.SupportedPaymentSources).toBeUndefined();
+	});
+
+	it('rejects malformed V1 pricing amounts at the schema boundary', async () => {
+		mockFindSellingWallet.mockResolvedValue(buildV1SellingWallet());
+
+		// Previously only `.max(25)` guarded these: '1.5'/'abc' made BigInt()
+		// throw a 500 and '-5' persisted a negative advertised price.
+		for (const amount of ['1.5', 'abc', '-5', '0', '99999999999999999999']) {
+			const { responseMock } = await testEndpoint({
+				endpoint: registerAgentPost,
+				requestProps: {
+					method: 'POST',
+					headers: { token: 'valid' },
+					body: {
+						network: Network.Preprod,
+						sellingWalletVkey: 'b'.repeat(56),
+						name: 'Paid V1 Agent',
+						description: 'Agent description',
+						apiBaseUrl: 'https://example.com/agent',
+						Tags: ['demo'],
+						Capability: {
+							name: 'demo',
+							version: '1.0.0',
+						},
+						AgentPricing: {
+							pricingType: PricingType.Fixed,
+							Pricing: [{ unit: 'lovelace', amount }],
+						},
+						Author: {
+							name: 'Author',
+						},
+						ExampleOutputs: [],
+					},
+				},
+			});
+
+			expect(responseMock.statusCode).toBe(400);
+		}
+		expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
 	});
 
 	it('preserves fixed AgentPricing for V1 registrations', async () => {

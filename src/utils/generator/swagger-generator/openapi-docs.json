@@ -2148,6 +2148,7 @@
                                                                             },
                                                                             "amount": {
                                                                                 "type": "string",
+                                                                                "maxLength": 19,
                                                                                 "pattern": "^\\d+$",
                                                                                 "description": "Atomic token amount"
                                                                             },
@@ -2316,6 +2317,7 @@
                                                                             },
                                                                             "amount": {
                                                                                 "type": "string",
+                                                                                "maxLength": 19,
                                                                                 "pattern": "^\\d+$",
                                                                                 "description": "Atomic token amount"
                                                                             },
@@ -2859,6 +2861,7 @@
                                                                             },
                                                                             "amount": {
                                                                                 "type": "string",
+                                                                                "maxLength": 19,
                                                                                 "pattern": "^\\d+$",
                                                                                 "description": "Atomic token amount"
                                                                             },
@@ -3027,6 +3030,7 @@
                                                                             },
                                                                             "amount": {
                                                                                 "type": "string",
+                                                                                "maxLength": 19,
                                                                                 "pattern": "^\\d+$",
                                                                                 "description": "Atomic token amount"
                                                                             },
@@ -3596,6 +3600,7 @@
                                                                     },
                                                                     "amount": {
                                                                         "type": "string",
+                                                                        "maxLength": 19,
                                                                         "pattern": "^\\d+$",
                                                                         "description": "Atomic token amount"
                                                                     },
@@ -3764,6 +3769,7 @@
                                                                     },
                                                                     "amount": {
                                                                         "type": "string",
+                                                                        "maxLength": 19,
                                                                         "pattern": "^\\d+$",
                                                                         "description": "Atomic token amount"
                                                                     },
@@ -4993,6 +4999,10 @@
                         "type": "boolean",
                         "description": "Whether this chain may currently be used for x402 payments"
                     },
+                    "canSettle": {
+                        "type": "boolean",
+                        "description": "Whether inbound settlement is configured (a facilitator wallet or URL is present). Outbound (buy) wallets do not require a facilitator, so networks may be listed with canSettle=false."
+                    },
                     "defaultAsset": {
                         "type": "string",
                         "nullable": true,
@@ -5013,6 +5023,7 @@
                     "displayName",
                     "isTestnet",
                     "isEnabled",
+                    "canSettle",
                     "defaultAsset",
                     "defaultAssetDecimals"
                 ]
@@ -19314,6 +19325,7 @@
                                                                                     },
                                                                                     "amount": {
                                                                                         "type": "string",
+                                                                                        "maxLength": 19,
                                                                                         "pattern": "^\\d+$",
                                                                                         "description": "Atomic token amount"
                                                                                     },
@@ -19482,6 +19494,7 @@
                                                                                     },
                                                                                     "amount": {
                                                                                         "type": "string",
+                                                                                        "maxLength": 19,
                                                                                         "pattern": "^\\d+$",
                                                                                         "description": "Atomic token amount"
                                                                                     },
@@ -19805,7 +19818,8 @@
                                                                 },
                                                                 "amount": {
                                                                     "type": "string",
-                                                                    "maxLength": 25,
+                                                                    "maxLength": 19,
+                                                                    "pattern": "^\\d+$",
                                                                     "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                                 }
                                                             },
@@ -20749,6 +20763,7 @@
                                                                                     },
                                                                                     "amount": {
                                                                                         "type": "string",
+                                                                                        "maxLength": 19,
                                                                                         "pattern": "^\\d+$",
                                                                                         "description": "Atomic token amount"
                                                                                     },
@@ -20917,6 +20932,7 @@
                                                                                     },
                                                                                     "amount": {
                                                                                         "type": "string",
+                                                                                        "maxLength": 19,
                                                                                         "pattern": "^\\d+$",
                                                                                         "description": "Atomic token amount"
                                                                                     },
@@ -21240,7 +21256,8 @@
                                                                 },
                                                                 "amount": {
                                                                     "type": "string",
-                                                                    "maxLength": 25,
+                                                                    "maxLength": 19,
+                                                                    "pattern": "^\\d+$",
                                                                     "description": "The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)"
                                                                 }
                                                             },
@@ -26161,6 +26178,7 @@
                                                     "displayName": "Base",
                                                     "isTestnet": false,
                                                     "isEnabled": true,
+                                                    "canSettle": true,
                                                     "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
                                                     "defaultAssetDecimals": 6
                                                 }
@@ -27012,7 +27030,8 @@
                                                     "maxTimeoutSeconds": {
                                                         "type": "integer",
                                                         "minimum": 0,
-                                                        "exclusiveMinimum": true
+                                                        "exclusiveMinimum": true,
+                                                        "maximum": 86400
                                                     },
                                                     "extra": {
                                                         "type": "object",
@@ -27075,7 +27094,8 @@
                                             "maxTimeoutSeconds": {
                                                 "type": "integer",
                                                 "minimum": 0,
-                                                "exclusiveMinimum": true
+                                                "exclusiveMinimum": true,
+                                                "maximum": 86400
                                             },
                                             "extra": {
                                                 "type": "object",
@@ -27276,7 +27296,8 @@
                                                     "maxTimeoutSeconds": {
                                                         "type": "integer",
                                                         "minimum": 0,
-                                                        "exclusiveMinimum": true
+                                                        "exclusiveMinimum": true,
+                                                        "maximum": 86400
                                                     },
                                                     "extra": {
                                                         "type": "object",
@@ -27339,7 +27360,8 @@
                                             "maxTimeoutSeconds": {
                                                 "type": "integer",
                                                 "minimum": 0,
-                                                "exclusiveMinimum": true
+                                                "exclusiveMinimum": true,
+                                                "maximum": 86400
                                             },
                                             "extra": {
                                                 "type": "object",

@@ -12,19 +12,17 @@ import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { bumpRegistryAssetNameVersionV2, normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
-import { supportedPaymentSourceInputSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { supportedPaymentSourcesSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
 import { validateX402NetworksAvailableOrThrow } from '@/services/registry/x402-network-availability';
 import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
 import { verificationToRow } from '@/types/verification';
 import { buildSupportedPaymentSourceCreate, getCardanoFixedAssets } from '@/services/registry/source-pricing';
 
-const updateSupportedPaymentSourcesSchema = z
-	.array(supportedPaymentSourceInputSchema)
-	.min(1)
-	.max(25)
-	.describe(
-		'Payment sources to replace on this V2 registry request. Omit the field to keep existing sources; an empty array is invalid.',
-	);
+// Reuse the shared array schema so the update route's limits can never
+// silently diverge from the register path's `MAX_SUPPORTED_PAYMENT_SOURCES`.
+const updateSupportedPaymentSourcesSchema = supportedPaymentSourcesSchema.describe(
+	'Payment sources to replace on this V2 registry request. Omit the field to keep existing sources; an empty array is invalid.',
+);
 
 // The update flow re-uses the same metadata fields as registration — the
 // V2 mint contract's UpdateAction atomically burns the current asset and
@@ -131,8 +129,11 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 			const registryRequest = await prisma.registryRequest.findUnique({
 				where: { agentIdentifier: policyId + requestedAssetName },
 				include: {
+					// Used below to re-validate x402 network availability when the
+					// caller omits supportedPaymentSources (the re-mint re-advertises
+					// the existing rails).
 					SupportedPaymentSources: {
-						select: { chain: true },
+						select: { chain: true, network: true },
 					},
 				},
 			});
@@ -220,11 +221,18 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						paymentSource.paymentSourceType,
 						ctx.caip2NetworkLimit,
 					);
-					await validateX402NetworksAvailableOrThrow(requestedSupportedPaymentSources);
 				} catch (error) {
 					throw createHttpError(400, error instanceof Error ? error.message : String(error));
 				}
 			}
+			// Outside the catch-all above: this throws its own 400s for unavailable
+			// networks while letting DB faults propagate as 500s. When sources are
+			// omitted the re-mint re-advertises the EXISTING rails, so re-check
+			// those — an x402 network disabled since registration must not be
+			// silently re-advertised.
+			await validateX402NetworksAvailableOrThrow(
+				requestedSupportedPaymentSources ?? registryRequest.SupportedPaymentSources,
+			);
 
 			const cardanoAssetUnits = getCardanoFixedAssets(requestedSupportedPaymentSources ?? []);
 			if (cardanoAssetUnits.length > 0) {

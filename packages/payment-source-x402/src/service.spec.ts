@@ -694,6 +694,66 @@ describe('x402 service helpers', () => {
 		expect(mockFacilitatorVerify).not.toHaveBeenCalled();
 	});
 
+	it('caps the dynamic settle window at the service policy maximum', async () => {
+		mockSupportedPaymentSourceFindUnique.mockResolvedValueOnce({
+			...source,
+			Pricing: { pricingType: 'Dynamic', FixedPricing: null },
+			dynamicAsset: null,
+			dynamicDecimals: null,
+			fixedDecimals: null,
+		});
+		const trustedRuntimeRequirements = {
+			...requirements,
+			// One second above MAX_X402_TIMEOUT_SECONDS (24h): the signed
+			// authorization must not stay settleable indefinitely.
+			maxTimeoutSeconds: 86401,
+		};
+
+		await expect(
+			service.verifyX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+				paymentRequirements: trustedRuntimeRequirements as never,
+			}),
+		).rejects.toMatchObject({
+			status: 400,
+			message: 'x402 payment requirements must include a positive timeout of at most 86400 seconds',
+		});
+
+		expect(mockFacilitatorVerify).not.toHaveBeenCalled();
+	});
+
+	it('rejects native-asset sentinel addresses in dynamic runtime requirements', async () => {
+		mockSupportedPaymentSourceFindUnique.mockResolvedValueOnce({
+			...source,
+			Pricing: { pricingType: 'Dynamic', FixedPricing: null },
+			dynamicAsset: null,
+			dynamicDecimals: null,
+			fixedDecimals: null,
+		});
+		const trustedRuntimeRequirements = {
+			...requirements,
+			asset: '0x0000000000000000000000000000000000000000',
+		};
+
+		await expect(
+			service.verifyX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+				paymentRequirements: trustedRuntimeRequirements as never,
+			}),
+		).rejects.toMatchObject({
+			status: 400,
+			message: 'x402 asset must be an EVM token contract',
+		});
+
+		expect(mockFacilitatorVerify).not.toHaveBeenCalled();
+	});
+
 	it('only trusts dynamic requirements from the registry owner or an admin', async () => {
 		mockSupportedPaymentSourceFindUnique.mockResolvedValueOnce({
 			...source,
@@ -710,8 +770,10 @@ describe('x402 service helpers', () => {
 				paymentPayload: typedPaymentPayload,
 			}),
 		).rejects.toMatchObject({
-			status: 403,
-			message: 'x402 supported payment source belongs to another API key',
+			// 404, not 403: existence of another tenant's source must not be
+			// disclosed to a non-owner probing source ids.
+			status: 404,
+			message: 'x402 supported payment source not found',
 		});
 
 		expect(mockFacilitatorVerify).not.toHaveBeenCalled();

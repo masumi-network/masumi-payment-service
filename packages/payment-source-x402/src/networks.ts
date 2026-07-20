@@ -42,6 +42,9 @@ const AVAILABLE_NETWORK_SELECT = {
 	isEnabled: true,
 	defaultAsset: true,
 	defaultAssetDecimals: true,
+	// Projected only to derive `canSettle`; never returned to pay clients.
+	facilitatorWalletId: true,
+	facilitatorUrl: true,
 } satisfies Prisma.X402NetworkSelect;
 
 export async function listX402Networks(input?: { isTestnet?: boolean }) {
@@ -58,17 +61,24 @@ export async function listX402Networks(input?: { isTestnet?: boolean }) {
 // Pay-capable clients need the opaque network id to create a wallet, but must not receive
 // operator-only connection or facilitator configuration. Scope this minimal projection by the
 // API key's CAIP-2 limit at the query boundary so an inaccessible network is never disclosed.
+//
+// Enabled networks WITHOUT a facilitator stay listed: outbound (buy) wallets
+// need no facilitator, only inbound settlement does. `canSettle` marks the
+// latter so registration/verification clients can filter.
 export async function listAvailableX402Networks(input?: { isTestnet?: boolean; caip2NetworkLimit?: string[] | null }) {
-	return prisma.x402Network.findMany({
+	const networks = await prisma.x402Network.findMany({
 		where: {
 			isTestnet: input?.isTestnet,
 			isEnabled: true,
-			OR: [{ facilitatorWalletId: { not: null } }, { facilitatorUrl: { not: null } }],
 			caip2Id: input?.caip2NetworkLimit == null ? undefined : { in: input.caip2NetworkLimit },
 		},
 		orderBy: { caip2Id: 'asc' },
 		select: AVAILABLE_NETWORK_SELECT,
 	});
+	return networks.map(({ facilitatorWalletId, facilitatorUrl, ...network }) => ({
+		...network,
+		canSettle: facilitatorWalletId != null || facilitatorUrl != null,
+	}));
 }
 
 // Resolve the facilitator configuration into the columns to persist, enforcing the

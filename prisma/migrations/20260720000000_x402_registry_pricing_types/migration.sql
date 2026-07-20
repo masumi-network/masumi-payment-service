@@ -1,5 +1,10 @@
 -- Give each x402 registry source its own pricing type.
 -- Existing rows were fixed-price by construction, so preserve that meaning.
+--
+-- NOT rolling-deploy safe: this migration chain (20260720000000..030000)
+-- adds CHECKs the pre-migration app violates on insert and later drops
+-- columns it reads. Deploy stop-the-world: stop old instances, migrate,
+-- start new instances.
 ALTER TABLE "SupportedPaymentSource"
 ADD COLUMN "pricingType" "PricingType";
 

@@ -250,10 +250,24 @@ FOREIGN KEY ("agentFixedPricingId") REFERENCES "AgentFixedPricing"("id")
 ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- V2 no longer owns a top-level compatibility price. Source-owned clones above
--- already contain the effective Cardano and x402 pricing.
+-- already contain the effective Cardano and x402 pricing. Only delete the
+-- top-level pricing of requests that actually received a source-owned clone:
+-- a drifted row (metadataVersion >= 2 without a V2 payment source) skipped the
+-- materialization above, and deleting its only pricing would be silent,
+-- unrecoverable loss. Such rows instead surface loudly via the serializer's
+-- integrity checks, which is recoverable.
 DELETE FROM "AgentPricing"
 WHERE "registryRequestId" IN (
-  SELECT "id" FROM "RegistryRequest" WHERE "metadataVersion" >= 2
+  SELECT rr."id"
+  FROM "RegistryRequest" rr
+  WHERE rr."metadataVersion" >= 2
+    AND EXISTS (
+      SELECT 1
+      FROM "SupportedPaymentSource" sps
+      JOIN "AgentPricing" source_pricing
+        ON source_pricing."supportedPaymentSourceId" = sps."id"
+      WHERE sps."registryRequestId" = rr."id"
+    )
 );
 
 -- V1 never advertises source-local payment options. Remove historical
@@ -281,6 +295,14 @@ DROP COLUMN "pricingType",
 DROP COLUMN "asset",
 DROP COLUMN "amount",
 DROP COLUMN "decimals";
+
+-- Historical write paths persisted a caller-echoed `paymentSourceType` on EVM
+-- rows (the old input schema allowed it as nullable). The strict completeness
+-- check below requires NULL for EVM, and `ADD CONSTRAINT` validates existing
+-- rows — without this backfill any such row aborts the whole migration.
+UPDATE "SupportedPaymentSource"
+SET "paymentSourceType" = NULL
+WHERE "chain" = 'EVM' AND "paymentSourceType" IS NOT NULL;
 
 ALTER TABLE "SupportedPaymentSource"
 ADD CONSTRAINT "SupportedPaymentSource_completeness_check" CHECK (

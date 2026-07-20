@@ -74,6 +74,7 @@ const x402AvailableNetworkExample = {
 	displayName: x402NetworkExample.displayName,
 	isTestnet: x402NetworkExample.isTestnet,
 	isEnabled: x402NetworkExample.isEnabled,
+	canSettle: true,
 	defaultAsset: x402NetworkExample.defaultAsset,
 	defaultAssetDecimals: x402NetworkExample.defaultAssetDecimals,
 } satisfies z.infer<typeof x402AvailableNetworkSchema>;

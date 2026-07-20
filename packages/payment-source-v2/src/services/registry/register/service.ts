@@ -166,6 +166,17 @@ export function buildAgentMetadata(request: {
 				`the on-chain maximum of ${MAX_SUPPORTED_PAYMENT_SOURCES}`,
 		);
 	}
+	// Mirror the V1 builder's hard version guard: a V2 row carrying a V1
+	// metadata version would gate off supported_payment_sources while V2 no
+	// longer emits a top-level agentPricing block — minting a permanently
+	// unpurchasable entry with no pricing at all. Fail the registration
+	// instead. Only reachable via corrupt/hand-edited rows; the route always
+	// writes the current version for V2.
+	if (request.metadataVersion < DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION) {
+		throw new Error(
+			`Cannot register agent: V2 requires metadataVersion >= ${DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION}`,
+		);
+	}
 	// Optional KERI/Veridian verification claims (see @masumi/payment-core/
 	// verification). Gated on the same metadata version as supported_payment_sources
 	// (a v2-metadata concept); self-describing on chain for third-party verification.
@@ -211,6 +222,35 @@ export function buildAgentMetadata(request: {
 							throw new Error('Cannot register agent: supported payment source pricing is missing');
 						}
 						const fixedAmounts = source.Pricing.FixedPricing?.Amounts ?? [];
+						// Completeness checks run BEFORE the pricing object is built so a
+						// missing decimals value can never be stringified into emitted
+						// metadata as the literal "null".
+						if (source.chain === SupportedPaymentSourceChain.EVM) {
+							if (source.payTo == null) {
+								throw new Error('Cannot register agent: x402 supported payment source is incomplete');
+							}
+							if (
+								source.Pricing.pricingType === PricingType.Fixed &&
+								(fixedAmounts.length !== 1 || source.fixedDecimals == null)
+							) {
+								throw new Error('Cannot register agent: fixed x402 pricing is incomplete');
+							}
+							if (
+								source.Pricing.pricingType === PricingType.Dynamic &&
+								(source.dynamicAsset == null) !== (source.dynamicDecimals == null)
+							) {
+								throw new Error('Cannot register agent: dynamic x402 pricing is incomplete');
+							}
+							if (
+								source.Pricing.pricingType === PricingType.Free &&
+								(source.dynamicAsset != null ||
+									source.dynamicDecimals != null ||
+									source.fixedDecimals != null ||
+									fixedAmounts.length > 0)
+							) {
+								throw new Error('Cannot register agent: free x402 pricing must not include an asset or amount');
+							}
+						}
 						const pricing =
 							source.Pricing.pricingType === PricingType.Fixed
 								? {
@@ -238,30 +278,6 @@ export function buildAgentMetadata(request: {
 									: { pricingType: source.Pricing.pricingType };
 
 						if (source.chain === SupportedPaymentSourceChain.EVM) {
-							if (source.payTo == null) {
-								throw new Error('Cannot register agent: x402 supported payment source is incomplete');
-							}
-							if (
-								source.Pricing.pricingType === PricingType.Fixed &&
-								(fixedAmounts.length !== 1 || source.fixedDecimals == null)
-							) {
-								throw new Error('Cannot register agent: fixed x402 pricing is incomplete');
-							}
-							if (
-								source.Pricing.pricingType === PricingType.Dynamic &&
-								(source.dynamicAsset == null) !== (source.dynamicDecimals == null)
-							) {
-								throw new Error('Cannot register agent: dynamic x402 pricing is incomplete');
-							}
-							if (
-								source.Pricing.pricingType === PricingType.Free &&
-								(source.dynamicAsset != null ||
-									source.dynamicDecimals != null ||
-									source.fixedDecimals != null ||
-									fixedAmounts.length > 0)
-							) {
-								throw new Error('Cannot register agent: free x402 pricing must not include an asset or amount');
-							}
 							return {
 								chain: stringToMetadata(source.chain),
 								network: stringToMetadata(String(source.network)),

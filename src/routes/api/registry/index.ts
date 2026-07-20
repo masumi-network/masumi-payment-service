@@ -148,10 +148,12 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 						sellingWallet.PaymentSource.paymentSourceType,
 						ctx.caip2NetworkLimit,
 					);
-					await validateX402NetworksAvailableOrThrow(supportedPaymentSources);
 				} catch (error) {
 					throw createHttpError(400, error instanceof Error ? error.message : String(error));
 				}
+				// Outside the catch-all above: throws its own 400s for unavailable
+				// networks while letting DB faults propagate as 500s.
+				await validateX402NetworksAvailableOrThrow(supportedPaymentSources);
 			}
 
 			// Validate pricing assets exist on-chain

@@ -30,6 +30,25 @@ export interface CardanoSupportedPaymentSource {
 	pricing: FixedSupportedPaymentSourcePricing;
 }
 
+// The API returns a Cardano/EVM union for supportedPaymentSources; e2e flows
+// only REGISTER Cardano sources today, but response types must not lie the
+// moment an x402 source appears on a queried agent.
+export interface EvmSupportedPaymentSource {
+	chain: 'EVM';
+	network: string;
+	scheme: string;
+	payTo: string;
+	resource?: string | null;
+	extra?: Record<string, unknown> | null;
+	pricing: {
+		pricingType: 'Fixed' | 'Dynamic' | 'Free';
+		fixed?: Array<{ asset: string; amount: string; decimals?: number | null }>;
+		dynamic?: Array<{ asset: string; decimals?: number | null }>;
+	};
+}
+
+export type SupportedPaymentSourceResponse = CardanoSupportedPaymentSource | EvmSupportedPaymentSource;
+
 interface RegistrationDataBase {
 	network: Network;
 	sellingWalletVkey: string;
@@ -104,7 +123,7 @@ export interface RegistrationResponse {
 	}>;
 	AgentPricing: FixedAgentPricing | null;
 	agentIdentifier?: string | null;
-	supportedPaymentSources?: CardanoSupportedPaymentSource[] | null;
+	supportedPaymentSources?: SupportedPaymentSourceResponse[] | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -150,7 +169,7 @@ export interface QueryRegistryResponse {
 		}>;
 		agentIdentifier: string | null;
 		AgentPricing: FixedAgentPricing | null;
-		supportedPaymentSources?: CardanoSupportedPaymentSource[] | null;
+		supportedPaymentSources?: SupportedPaymentSourceResponse[] | null;
 		SmartContractWallet: {
 			walletVkey: string;
 			walletAddress: string;

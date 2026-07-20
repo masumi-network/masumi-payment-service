@@ -5,7 +5,7 @@ import {
 	RegistrationState,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { supportedPaymentSourcesInputSchema, supportedPaymentSourcesSchema } from '@/types/payment-source';
+import { atomicAmountSchema, supportedPaymentSourcesSchema } from '@/types/payment-source';
 import { verificationsSchema } from '@/types/verification';
 import { z } from '@masumi/payment-core/zod';
 
@@ -240,7 +240,7 @@ export const registerAgentSchemaInput = z.object({
 		.describe(
 			'Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used.',
 		),
-	supportedPaymentSources: supportedPaymentSourcesInputSchema
+	supportedPaymentSources: supportedPaymentSourcesSchema
 		.optional()
 		.describe('Required for V2 registrations and forbidden for V1 registrations. Every V2 source owns its pricing.'),
 	verifications: verificationsSchema
@@ -280,12 +280,13 @@ export const registerAgentSchemaInput = z.object({
 							.describe(
 								'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
 							),
-						amount: z
-							.string()
-							.max(25)
-							.describe(
-								'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)',
-							),
+						// Same bounds as the V2 source-owned pricing amounts: digits
+						// only, positive, within Postgres BIGINT. The old bare
+						// `.max(25)` let `BigInt()` throw a 500 on '1.5'/'abc' and
+						// persisted negative or overlong values.
+						amount: atomicAmountSchema.describe(
+							'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)',
+						),
 					}),
 				)
 				.min(1)

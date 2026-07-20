@@ -23,7 +23,5 @@ export { deRegisterInboxAgentV2 as deRegisterInboxAgent } from './registry-inbox
 export { checkInboxAgentRegistrationTransactionsV2 as checkInboxAgentRegistrationTransactions } from './registry-inbox/tx-sync/service';
 export { parseInboxAgentRegistrationMetadata } from './registry-inbox/metadata';
 
-export { getDefaultSupportedPaymentSources } from './registry/supported-payment-sources';
-
 export { fetchUTxOsWithDeferOnEmpty } from './utxo-fetch-helpers';
 export { asV2Provider } from './provider-cast';

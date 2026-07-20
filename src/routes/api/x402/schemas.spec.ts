@@ -69,6 +69,7 @@ describe('x402 available network output', () => {
 					displayName: 'Base',
 					isTestnet: false,
 					isEnabled: true,
+					canSettle: true,
 					defaultAsset: '0x1111111111111111111111111111111111111111',
 					defaultAssetDecimals: 8,
 					rpcUrl: 'https://rpc.internal.example',
@@ -85,6 +86,7 @@ describe('x402 available network output', () => {
 			displayName: 'Base',
 			isTestnet: false,
 			isEnabled: true,
+			canSettle: true,
 			defaultAsset: '0x1111111111111111111111111111111111111111',
 			defaultAssetDecimals: 8,
 		});

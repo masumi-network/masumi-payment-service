@@ -9,6 +9,12 @@ import { FilterStatus, queryRegistryRequestSchemaInput } from './schemas';
 
 export type RegistryListQueryInput = z.infer<typeof queryRegistryRequestSchemaInput>;
 
+const EVM_ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
+
+function normalizeSupportedPaymentSourceAddress(address: string | undefined): string | undefined {
+	return address != null && EVM_ADDRESS_PATTERN.test(address) ? address.toLowerCase() : address;
+}
+
 export function resolveRegistryPaymentSourceTypeFilter(input: {
 	filterPaymentSourceType?: PaymentSourceType;
 	filterSmartContractAddress?: string | null;
@@ -90,8 +96,11 @@ export async function getRegistryEntriesForQuery(
 		?.split(',')
 		.map((value) => value.trim())
 		.filter((value) => value.length > 0);
+	const supportedPaymentSourceAddress = normalizeSupportedPaymentSourceAddress(
+		input.filterSupportedPaymentSourceAddress,
+	);
 	const supportedPaymentSourceOr: Prisma.SupportedPaymentSourceWhereInput[] = [
-		...(input.filterSupportedPaymentSourceAddress ? [{ address: input.filterSupportedPaymentSourceAddress }] : []),
+		...(supportedPaymentSourceAddress ? [{ address: supportedPaymentSourceAddress }] : []),
 		...(supportedNetworks && supportedNetworks.length > 0 ? [{ network: { in: supportedNetworks } }] : []),
 	];
 	const paymentSourceTypeFilter = resolveRegistryPaymentSourceTypeFilter(input);
@@ -111,7 +120,7 @@ export async function getRegistryEntriesForQuery(
 											PaymentSource: {
 												network: input.network,
 												deletedAt: null,
-												smartContractAddress: input.filterSupportedPaymentSourceAddress,
+												smartContractAddress: supportedPaymentSourceAddress,
 											},
 										},
 									]

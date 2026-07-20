@@ -275,6 +275,84 @@ describe('payment-source address and pricing validation', () => {
 		).toThrow('supportedPaymentSources[1] duplicates an earlier payment option');
 	});
 
+	it('folds the lovelace alias so alias-spelled Cardano duplicates are rejected', () => {
+		const cardanoFixed = (asset: string) =>
+			supportedPaymentSourceSchema.parse({
+				chain: 'Cardano',
+				network: Network.Preprod,
+				paymentSourceType: PaymentSourceType.Web3CardanoV2,
+				address: PREPROD_SCRIPT_ADDRESS,
+				pricing: {
+					pricingType: PricingType.Fixed,
+					fixed: [{ asset, amount: '1000000' }],
+				},
+			});
+
+		// '' and 'lovelace' (any case) both persist as '' — the canonical key
+		// must agree with persistence or byte-identical options are advertised twice.
+		expect(getSupportedPaymentSourceCanonicalKey(cardanoFixed(''))).toBe(
+			getSupportedPaymentSourceCanonicalKey(cardanoFixed('lovelace')),
+		);
+		expect(getSupportedPaymentSourceCanonicalKey(cardanoFixed(''))).toBe(
+			getSupportedPaymentSourceCanonicalKey(cardanoFixed('LOVELACE')),
+		);
+		expect(() =>
+			validateSupportedPaymentSourcesOrThrow(
+				[cardanoFixed(''), cardanoFixed('lovelace')],
+				Network.Preprod,
+				PaymentSourceType.Web3CardanoV2,
+			),
+		).toThrow('supportedPaymentSources[1] duplicates an earlier payment option');
+	});
+
+	it('caps atomic amount strings at int64 length', () => {
+		expect(supportedPaymentSourceSchema.safeParse(fixedX402('9223372036854775807')).success).toBe(true);
+		// 20 digits: rejected by the length cap before BigInt parsing.
+		expect(supportedPaymentSourceSchema.safeParse(fixedX402('99999999999999999999')).success).toBe(false);
+	});
+
+	it('rejects native-asset sentinel addresses as x402 assets', () => {
+		const zeroAddress = '0x0000000000000000000000000000000000000000';
+		const eeeeAddress = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+		expect(
+			supportedPaymentSourceSchema.safeParse({
+				...fixedX402(),
+				pricing: {
+					pricingType: PricingType.Fixed,
+					fixed: [{ asset: zeroAddress, amount: '10000', decimals: 6 }],
+				},
+			}).success,
+		).toBe(false);
+		expect(
+			supportedPaymentSourceSchema.safeParse({
+				...dynamicX402(),
+				pricing: {
+					pricingType: PricingType.Dynamic,
+					dynamic: [{ asset: eeeeAddress, decimals: 6 }],
+				},
+			}).success,
+		).toBe(false);
+	});
+
+	it('rejects metadata decimals that are not plain digit strings', () => {
+		const evmFixedMetadata = (decimals: string) => [
+			{
+				chain: 'EVM',
+				network: 'eip155:8453',
+				settlement: { scheme: 'Exact', payTo: PAY_TO },
+				pricing: {
+					pricingType: 'Fixed',
+					fixed: [{ asset: USDC, amount: '10000', decimals }],
+				},
+			},
+		];
+
+		// Number('') === 0 and Number('0x10') === 16 would silently misparse.
+		expect(parseSupportedPaymentSourcesFromMetadata(evmFixedMetadata(''))).toBeNull();
+		expect(parseSupportedPaymentSourcesFromMetadata(evmFixedMetadata('0x10'))).toBeNull();
+		expect(parseSupportedPaymentSourcesFromMetadata(evmFixedMetadata('6'))).not.toBeNull();
+	});
+
 	it('backfills the implicit Cardano rail before migrating legacy V2 pricing', () => {
 		const migrationSql = readFileSync(
 			join(process.cwd(), 'prisma/migrations/20260720030000_source_owned_registry_pricing/migration.sql'),
