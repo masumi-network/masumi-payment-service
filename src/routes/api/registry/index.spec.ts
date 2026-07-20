@@ -12,6 +12,7 @@ const mockCreateRegistryRequest = jest.fn() as AnyMock;
 const mockFindRegistryRequests = jest.fn() as AnyMock;
 const mockCountRegistryRequests = jest.fn() as AnyMock;
 const mockFindX402Networks = jest.fn() as AnyMock;
+const mockValidateAssetsOnChain = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -81,7 +82,7 @@ jest.unstable_mockModule('@masumi/payment-core/metrics', () => ({
 
 jest.unstable_mockModule('@/utils/blockfrost', () => ({
 	getBlockfrostInstance: jest.fn(),
-	validateAssetsOnChain: jest.fn(),
+	validateAssetsOnChain: mockValidateAssetsOnChain,
 }));
 
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
@@ -204,6 +205,7 @@ describe('registerAgentPost', () => {
 		}));
 		mockFindRegistryRequests.mockResolvedValue([]);
 		mockCountRegistryRequests.mockResolvedValue(0);
+		mockValidateAssetsOnChain.mockResolvedValue({ valid: [], invalid: [] });
 	});
 
 	it('scopes registry list queries to the current managed holder wallet', async () => {
@@ -442,6 +444,54 @@ describe('registerAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.metadataVersion).toBe(1);
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.SupportedPaymentSources).toBeUndefined();
+	});
+
+	it('preserves fixed AgentPricing for V1 registrations', async () => {
+		mockFindSellingWallet.mockResolvedValue(buildV1SellingWallet());
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					name: 'Paid V1 Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: {
+						name: 'demo',
+						version: '1.0.0',
+					},
+					AgentPricing: {
+						pricingType: PricingType.Fixed,
+						Pricing: [{ unit: 'lovelace', amount: '500000' }],
+					},
+					Author: {
+						name: 'Author',
+					},
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.Pricing).toEqual({
+			create: {
+				pricingType: PricingType.Fixed,
+				FixedPricing: {
+					create: {
+						Amounts: {
+							createMany: {
+								data: [{ unit: '', amount: BigInt(500000) }],
+							},
+						},
+					},
+				},
+			},
+		});
 	});
 
 	it('keeps V2 registrations on registry metadata schema version 2', async () => {
