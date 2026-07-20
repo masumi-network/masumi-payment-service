@@ -1,4 +1,4 @@
-import { Network, PaymentSourceType, PricingType } from '@/generated/prisma/client';
+import { PricingType } from '@/generated/prisma/client';
 import { buildAgentMetadata } from './service';
 
 describe('V1 registry metadata', () => {
@@ -21,55 +21,42 @@ describe('V1 registry metadata', () => {
 			pricingType: PricingType.Free,
 			FixedPricing: null,
 		},
-		SupportedPaymentSources: [
-			{
-				chain: 'EVM',
-				network: 'eip155:84532',
-				paymentSourceType: null,
-				address: '0x1111111111111111111111111111111111111111',
-				payTo: '0x1111111111111111111111111111111111111111',
-			},
-		],
-	};
-	const paymentSource = {
-		network: Network.Preprod,
-		paymentSourceType: PaymentSourceType.Web3CardanoV1,
-		smartContractAddress: 'addr_test1vpcardanoescrowaddress',
+		SupportedPaymentSources: [],
 	};
 
 	it('keeps metadata version 1 on the old schema shape', () => {
-		const metadata = buildAgentMetadata(
-			{
-				...baseRequest,
-				metadataVersion: 1,
-			},
-			paymentSource,
-		) as { supported_payment_sources?: unknown; verifications?: unknown; metadata_version?: unknown };
+		const metadata = buildAgentMetadata({
+			...baseRequest,
+			metadataVersion: 1,
+		}) as { supported_payment_sources?: unknown; verifications?: unknown; metadata_version?: unknown };
 
 		expect(metadata.metadata_version).toBe('1');
 		expect(metadata.supported_payment_sources).toBeUndefined();
 		expect(metadata.verifications).toBeUndefined();
 	});
 
-	it('does not advertise persisted x402 EVM rows in V1 metadata', () => {
-		const metadata = buildAgentMetadata(
-			{
+	it('rejects V2-only fields instead of silently removing them', () => {
+		expect(() =>
+			buildAgentMetadata({
+				...baseRequest,
+				metadataVersion: 1,
+				SupportedPaymentSources: [
+					{
+						chain: 'EVM',
+						network: 'eip155:84532',
+						paymentSourceType: null,
+						address: '0x1111111111111111111111111111111111111111',
+						payTo: '0x1111111111111111111111111111111111111111',
+					},
+				],
+			}),
+		).toThrow('V1 registry requests must not contain supported payment sources');
+
+		expect(() =>
+			buildAgentMetadata({
 				...baseRequest,
 				metadataVersion: 2,
-			},
-			paymentSource,
-		) as { supported_payment_sources?: unknown };
-
-		expect(metadata.supported_payment_sources).toEqual([
-			{
-				chain: ['Cardano'],
-				network: [Network.Preprod],
-				settlement: {
-					paymentSourceType: [PaymentSourceType.Web3CardanoV1],
-					address: [paymentSource.smartContractAddress],
-				},
-				pricing: { pricingType: PricingType.Free },
-			},
-		]);
+			}),
+		).toThrow('V1 registry requests require metadata version 1');
 	});
 });

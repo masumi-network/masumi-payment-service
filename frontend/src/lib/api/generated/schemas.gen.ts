@@ -2058,9 +2058,12 @@ export const AgentMetadataSchema = {
                             required: [
                                 'pricingType'
                             ]
+                        },
+                        {
+                            nullable: true
                         }
                     ],
-                    description: 'Pricing information for the agent'
+                    description: 'V1 legacy pricing. Null for V2 metadata, which prices each source independently.'
                 },
                 image: {
                     type: 'string',
@@ -2077,7 +2080,7 @@ export const AgentMetadataSchema = {
                     type: 'array',
                     nullable: true,
                     items: {
-                        oneOf: [
+                        anyOf: [
                             {
                                 type: 'object',
                                 properties: {
@@ -2108,13 +2111,119 @@ export const AgentMetadataSchema = {
                                         type: 'string',
                                         maxLength: 250,
                                         description: 'The escrow smart contract address for this payment source'
+                                    },
+                                    pricing: {
+                                        anyOf: [
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Fixed'
+                                                        ],
+                                                        description: 'A fixed amount is advertised for this payment source'
+                                                    },
+                                                    fixed: {
+                                                        type: 'array',
+                                                        items: {
+                                                            type: 'object',
+                                                            properties: {
+                                                                asset: {
+                                                                    type: 'string',
+                                                                    maxLength: 250,
+                                                                    description: 'Chain-native asset identifier'
+                                                                },
+                                                                amount: {
+                                                                    type: 'string',
+                                                                    maxLength: 19,
+                                                                    pattern: '^\\d+$',
+                                                                    description: 'Atomic token amount'
+                                                                },
+                                                                decimals: {
+                                                                    type: 'integer',
+                                                                    minimum: 0,
+                                                                    maximum: 255,
+                                                                    description: 'Asset decimals when required by the rail'
+                                                                }
+                                                            },
+                                                            required: [
+                                                                'asset',
+                                                                'amount'
+                                                            ]
+                                                        },
+                                                        minItems: 1,
+                                                        maxItems: 5
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType',
+                                                    'fixed'
+                                                ]
+                                            },
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Dynamic'
+                                                        ],
+                                                        description: 'The exact positive amount is supplied dynamically for each payment request'
+                                                    },
+                                                    dynamic: {
+                                                        type: 'array',
+                                                        items: {
+                                                            type: 'object',
+                                                            properties: {
+                                                                asset: {
+                                                                    type: 'string',
+                                                                    maxLength: 250,
+                                                                    description: 'Optional accepted asset identifier'
+                                                                },
+                                                                decimals: {
+                                                                    type: 'integer',
+                                                                    minimum: 0,
+                                                                    maximum: 255,
+                                                                    description: 'Asset decimals when required by the rail'
+                                                                }
+                                                            },
+                                                            required: [
+                                                                'asset'
+                                                            ]
+                                                        },
+                                                        minItems: 1,
+                                                        maxItems: 1
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType'
+                                                ]
+                                            },
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Free'
+                                                        ],
+                                                        description: 'This payment source does not require payment'
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType'
+                                                ]
+                                            }
+                                        ]
                                     }
                                 },
                                 required: [
                                     'chain',
                                     'network',
                                     'paymentSourceType',
-                                    'address'
+                                    'address',
+                                    'pricing'
                                 ]
                             },
                             {
@@ -2154,22 +2263,6 @@ export const AgentMetadataSchema = {
                                         ],
                                         description: 'x402 payment scheme'
                                     },
-                                    asset: {
-                                        type: 'string',
-                                        pattern: '^0x[a-fA-F0-9]{40}$',
-                                        description: 'ERC-20 token contract address'
-                                    },
-                                    amount: {
-                                        type: 'string',
-                                        pattern: '^\\d+$',
-                                        description: 'Atomic token amount'
-                                    },
-                                    decimals: {
-                                        type: 'integer',
-                                        minimum: 0,
-                                        maximum: 255,
-                                        description: 'ERC-20 token decimals'
-                                    },
                                     payTo: {
                                         type: 'string',
                                         pattern: '^0x[a-fA-F0-9]{40}$',
@@ -2187,16 +2280,119 @@ export const AgentMetadataSchema = {
                                             nullable: true
                                         },
                                         description: 'Additional x402 metadata'
+                                    },
+                                    pricing: {
+                                        anyOf: [
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Fixed'
+                                                        ],
+                                                        description: 'A fixed amount is advertised for this payment source'
+                                                    },
+                                                    fixed: {
+                                                        type: 'array',
+                                                        items: {
+                                                            type: 'object',
+                                                            properties: {
+                                                                asset: {
+                                                                    type: 'string',
+                                                                    maxLength: 250,
+                                                                    description: 'Chain-native asset identifier'
+                                                                },
+                                                                amount: {
+                                                                    type: 'string',
+                                                                    maxLength: 19,
+                                                                    pattern: '^\\d+$',
+                                                                    description: 'Atomic token amount'
+                                                                },
+                                                                decimals: {
+                                                                    type: 'integer',
+                                                                    minimum: 0,
+                                                                    maximum: 255,
+                                                                    description: 'Asset decimals when required by the rail'
+                                                                }
+                                                            },
+                                                            required: [
+                                                                'asset',
+                                                                'amount'
+                                                            ]
+                                                        },
+                                                        minItems: 1,
+                                                        maxItems: 5
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType',
+                                                    'fixed'
+                                                ]
+                                            },
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Dynamic'
+                                                        ],
+                                                        description: 'The exact positive amount is supplied dynamically for each payment request'
+                                                    },
+                                                    dynamic: {
+                                                        type: 'array',
+                                                        items: {
+                                                            type: 'object',
+                                                            properties: {
+                                                                asset: {
+                                                                    type: 'string',
+                                                                    maxLength: 250,
+                                                                    description: 'Optional accepted asset identifier'
+                                                                },
+                                                                decimals: {
+                                                                    type: 'integer',
+                                                                    minimum: 0,
+                                                                    maximum: 255,
+                                                                    description: 'Asset decimals when required by the rail'
+                                                                }
+                                                            },
+                                                            required: [
+                                                                'asset'
+                                                            ]
+                                                        },
+                                                        minItems: 1,
+                                                        maxItems: 1
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType'
+                                                ]
+                                            },
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Free'
+                                                        ],
+                                                        description: 'This payment source does not require payment'
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType'
+                                                ]
+                                            }
+                                        ]
                                     }
                                 },
                                 required: [
                                     'chain',
                                     'network',
                                     'scheme',
-                                    'asset',
-                                    'amount',
-                                    'decimals',
-                                    'payTo'
+                                    'payTo',
+                                    'pricing'
                                 ]
                             }
                         ]
@@ -2576,9 +2772,12 @@ export const AgentIdentifierMetadataSchema = {
                             required: [
                                 'pricingType'
                             ]
+                        },
+                        {
+                            nullable: true
                         }
                     ],
-                    description: 'Pricing information for the agent'
+                    description: 'V1 legacy pricing. Null for V2 metadata, which prices each source independently.'
                 },
                 image: {
                     type: 'string',
@@ -2595,7 +2794,7 @@ export const AgentIdentifierMetadataSchema = {
                     type: 'array',
                     nullable: true,
                     items: {
-                        oneOf: [
+                        anyOf: [
                             {
                                 type: 'object',
                                 properties: {
@@ -2626,13 +2825,119 @@ export const AgentIdentifierMetadataSchema = {
                                         type: 'string',
                                         maxLength: 250,
                                         description: 'The escrow smart contract address for this payment source'
+                                    },
+                                    pricing: {
+                                        anyOf: [
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Fixed'
+                                                        ],
+                                                        description: 'A fixed amount is advertised for this payment source'
+                                                    },
+                                                    fixed: {
+                                                        type: 'array',
+                                                        items: {
+                                                            type: 'object',
+                                                            properties: {
+                                                                asset: {
+                                                                    type: 'string',
+                                                                    maxLength: 250,
+                                                                    description: 'Chain-native asset identifier'
+                                                                },
+                                                                amount: {
+                                                                    type: 'string',
+                                                                    maxLength: 19,
+                                                                    pattern: '^\\d+$',
+                                                                    description: 'Atomic token amount'
+                                                                },
+                                                                decimals: {
+                                                                    type: 'integer',
+                                                                    minimum: 0,
+                                                                    maximum: 255,
+                                                                    description: 'Asset decimals when required by the rail'
+                                                                }
+                                                            },
+                                                            required: [
+                                                                'asset',
+                                                                'amount'
+                                                            ]
+                                                        },
+                                                        minItems: 1,
+                                                        maxItems: 5
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType',
+                                                    'fixed'
+                                                ]
+                                            },
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Dynamic'
+                                                        ],
+                                                        description: 'The exact positive amount is supplied dynamically for each payment request'
+                                                    },
+                                                    dynamic: {
+                                                        type: 'array',
+                                                        items: {
+                                                            type: 'object',
+                                                            properties: {
+                                                                asset: {
+                                                                    type: 'string',
+                                                                    maxLength: 250,
+                                                                    description: 'Optional accepted asset identifier'
+                                                                },
+                                                                decimals: {
+                                                                    type: 'integer',
+                                                                    minimum: 0,
+                                                                    maximum: 255,
+                                                                    description: 'Asset decimals when required by the rail'
+                                                                }
+                                                            },
+                                                            required: [
+                                                                'asset'
+                                                            ]
+                                                        },
+                                                        minItems: 1,
+                                                        maxItems: 1
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType'
+                                                ]
+                                            },
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Free'
+                                                        ],
+                                                        description: 'This payment source does not require payment'
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType'
+                                                ]
+                                            }
+                                        ]
                                     }
                                 },
                                 required: [
                                     'chain',
                                     'network',
                                     'paymentSourceType',
-                                    'address'
+                                    'address',
+                                    'pricing'
                                 ]
                             },
                             {
@@ -2672,22 +2977,6 @@ export const AgentIdentifierMetadataSchema = {
                                         ],
                                         description: 'x402 payment scheme'
                                     },
-                                    asset: {
-                                        type: 'string',
-                                        pattern: '^0x[a-fA-F0-9]{40}$',
-                                        description: 'ERC-20 token contract address'
-                                    },
-                                    amount: {
-                                        type: 'string',
-                                        pattern: '^\\d+$',
-                                        description: 'Atomic token amount'
-                                    },
-                                    decimals: {
-                                        type: 'integer',
-                                        minimum: 0,
-                                        maximum: 255,
-                                        description: 'ERC-20 token decimals'
-                                    },
                                     payTo: {
                                         type: 'string',
                                         pattern: '^0x[a-fA-F0-9]{40}$',
@@ -2705,16 +2994,119 @@ export const AgentIdentifierMetadataSchema = {
                                             nullable: true
                                         },
                                         description: 'Additional x402 metadata'
+                                    },
+                                    pricing: {
+                                        anyOf: [
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Fixed'
+                                                        ],
+                                                        description: 'A fixed amount is advertised for this payment source'
+                                                    },
+                                                    fixed: {
+                                                        type: 'array',
+                                                        items: {
+                                                            type: 'object',
+                                                            properties: {
+                                                                asset: {
+                                                                    type: 'string',
+                                                                    maxLength: 250,
+                                                                    description: 'Chain-native asset identifier'
+                                                                },
+                                                                amount: {
+                                                                    type: 'string',
+                                                                    maxLength: 19,
+                                                                    pattern: '^\\d+$',
+                                                                    description: 'Atomic token amount'
+                                                                },
+                                                                decimals: {
+                                                                    type: 'integer',
+                                                                    minimum: 0,
+                                                                    maximum: 255,
+                                                                    description: 'Asset decimals when required by the rail'
+                                                                }
+                                                            },
+                                                            required: [
+                                                                'asset',
+                                                                'amount'
+                                                            ]
+                                                        },
+                                                        minItems: 1,
+                                                        maxItems: 5
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType',
+                                                    'fixed'
+                                                ]
+                                            },
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Dynamic'
+                                                        ],
+                                                        description: 'The exact positive amount is supplied dynamically for each payment request'
+                                                    },
+                                                    dynamic: {
+                                                        type: 'array',
+                                                        items: {
+                                                            type: 'object',
+                                                            properties: {
+                                                                asset: {
+                                                                    type: 'string',
+                                                                    maxLength: 250,
+                                                                    description: 'Optional accepted asset identifier'
+                                                                },
+                                                                decimals: {
+                                                                    type: 'integer',
+                                                                    minimum: 0,
+                                                                    maximum: 255,
+                                                                    description: 'Asset decimals when required by the rail'
+                                                                }
+                                                            },
+                                                            required: [
+                                                                'asset'
+                                                            ]
+                                                        },
+                                                        minItems: 1,
+                                                        maxItems: 1
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType'
+                                                ]
+                                            },
+                                            {
+                                                type: 'object',
+                                                properties: {
+                                                    pricingType: {
+                                                        type: 'string',
+                                                        enum: [
+                                                            'Free'
+                                                        ],
+                                                        description: 'This payment source does not require payment'
+                                                    }
+                                                },
+                                                required: [
+                                                    'pricingType'
+                                                ]
+                                            }
+                                        ]
                                     }
                                 },
                                 required: [
                                     'chain',
                                     'network',
                                     'scheme',
-                                    'asset',
-                                    'amount',
-                                    'decimals',
-                                    'payTo'
+                                    'payTo',
+                                    'pricing'
                                 ]
                             }
                         ]
@@ -3126,9 +3518,12 @@ export const RegistryEntrySchema = {
                     required: [
                         'pricingType'
                     ]
+                },
+                {
+                    nullable: true
                 }
             ],
-            description: 'Pricing information for the agent'
+            description: 'V1 legacy pricing. Null for V2 entries, whose pricing is owned by each supported payment source.'
         },
         sendFundingLovelace: {
             type: 'string',
@@ -3139,7 +3534,7 @@ export const RegistryEntrySchema = {
             type: 'array',
             nullable: true,
             items: {
-                oneOf: [
+                anyOf: [
                     {
                         type: 'object',
                         properties: {
@@ -3170,13 +3565,119 @@ export const RegistryEntrySchema = {
                                 type: 'string',
                                 maxLength: 250,
                                 description: 'The escrow smart contract address for this payment source'
+                            },
+                            pricing: {
+                                anyOf: [
+                                    {
+                                        type: 'object',
+                                        properties: {
+                                            pricingType: {
+                                                type: 'string',
+                                                enum: [
+                                                    'Fixed'
+                                                ],
+                                                description: 'A fixed amount is advertised for this payment source'
+                                            },
+                                            fixed: {
+                                                type: 'array',
+                                                items: {
+                                                    type: 'object',
+                                                    properties: {
+                                                        asset: {
+                                                            type: 'string',
+                                                            maxLength: 250,
+                                                            description: 'Chain-native asset identifier'
+                                                        },
+                                                        amount: {
+                                                            type: 'string',
+                                                            maxLength: 19,
+                                                            pattern: '^\\d+$',
+                                                            description: 'Atomic token amount'
+                                                        },
+                                                        decimals: {
+                                                            type: 'integer',
+                                                            minimum: 0,
+                                                            maximum: 255,
+                                                            description: 'Asset decimals when required by the rail'
+                                                        }
+                                                    },
+                                                    required: [
+                                                        'asset',
+                                                        'amount'
+                                                    ]
+                                                },
+                                                minItems: 1,
+                                                maxItems: 5
+                                            }
+                                        },
+                                        required: [
+                                            'pricingType',
+                                            'fixed'
+                                        ]
+                                    },
+                                    {
+                                        type: 'object',
+                                        properties: {
+                                            pricingType: {
+                                                type: 'string',
+                                                enum: [
+                                                    'Dynamic'
+                                                ],
+                                                description: 'The exact positive amount is supplied dynamically for each payment request'
+                                            },
+                                            dynamic: {
+                                                type: 'array',
+                                                items: {
+                                                    type: 'object',
+                                                    properties: {
+                                                        asset: {
+                                                            type: 'string',
+                                                            maxLength: 250,
+                                                            description: 'Optional accepted asset identifier'
+                                                        },
+                                                        decimals: {
+                                                            type: 'integer',
+                                                            minimum: 0,
+                                                            maximum: 255,
+                                                            description: 'Asset decimals when required by the rail'
+                                                        }
+                                                    },
+                                                    required: [
+                                                        'asset'
+                                                    ]
+                                                },
+                                                minItems: 1,
+                                                maxItems: 1
+                                            }
+                                        },
+                                        required: [
+                                            'pricingType'
+                                        ]
+                                    },
+                                    {
+                                        type: 'object',
+                                        properties: {
+                                            pricingType: {
+                                                type: 'string',
+                                                enum: [
+                                                    'Free'
+                                                ],
+                                                description: 'This payment source does not require payment'
+                                            }
+                                        },
+                                        required: [
+                                            'pricingType'
+                                        ]
+                                    }
+                                ]
                             }
                         },
                         required: [
                             'chain',
                             'network',
                             'paymentSourceType',
-                            'address'
+                            'address',
+                            'pricing'
                         ]
                     },
                     {
@@ -3216,22 +3717,6 @@ export const RegistryEntrySchema = {
                                 ],
                                 description: 'x402 payment scheme'
                             },
-                            asset: {
-                                type: 'string',
-                                pattern: '^0x[a-fA-F0-9]{40}$',
-                                description: 'ERC-20 token contract address'
-                            },
-                            amount: {
-                                type: 'string',
-                                pattern: '^\\d+$',
-                                description: 'Atomic token amount'
-                            },
-                            decimals: {
-                                type: 'integer',
-                                minimum: 0,
-                                maximum: 255,
-                                description: 'ERC-20 token decimals'
-                            },
                             payTo: {
                                 type: 'string',
                                 pattern: '^0x[a-fA-F0-9]{40}$',
@@ -3249,16 +3734,119 @@ export const RegistryEntrySchema = {
                                     nullable: true
                                 },
                                 description: 'Additional x402 metadata'
+                            },
+                            pricing: {
+                                anyOf: [
+                                    {
+                                        type: 'object',
+                                        properties: {
+                                            pricingType: {
+                                                type: 'string',
+                                                enum: [
+                                                    'Fixed'
+                                                ],
+                                                description: 'A fixed amount is advertised for this payment source'
+                                            },
+                                            fixed: {
+                                                type: 'array',
+                                                items: {
+                                                    type: 'object',
+                                                    properties: {
+                                                        asset: {
+                                                            type: 'string',
+                                                            maxLength: 250,
+                                                            description: 'Chain-native asset identifier'
+                                                        },
+                                                        amount: {
+                                                            type: 'string',
+                                                            maxLength: 19,
+                                                            pattern: '^\\d+$',
+                                                            description: 'Atomic token amount'
+                                                        },
+                                                        decimals: {
+                                                            type: 'integer',
+                                                            minimum: 0,
+                                                            maximum: 255,
+                                                            description: 'Asset decimals when required by the rail'
+                                                        }
+                                                    },
+                                                    required: [
+                                                        'asset',
+                                                        'amount'
+                                                    ]
+                                                },
+                                                minItems: 1,
+                                                maxItems: 5
+                                            }
+                                        },
+                                        required: [
+                                            'pricingType',
+                                            'fixed'
+                                        ]
+                                    },
+                                    {
+                                        type: 'object',
+                                        properties: {
+                                            pricingType: {
+                                                type: 'string',
+                                                enum: [
+                                                    'Dynamic'
+                                                ],
+                                                description: 'The exact positive amount is supplied dynamically for each payment request'
+                                            },
+                                            dynamic: {
+                                                type: 'array',
+                                                items: {
+                                                    type: 'object',
+                                                    properties: {
+                                                        asset: {
+                                                            type: 'string',
+                                                            maxLength: 250,
+                                                            description: 'Optional accepted asset identifier'
+                                                        },
+                                                        decimals: {
+                                                            type: 'integer',
+                                                            minimum: 0,
+                                                            maximum: 255,
+                                                            description: 'Asset decimals when required by the rail'
+                                                        }
+                                                    },
+                                                    required: [
+                                                        'asset'
+                                                    ]
+                                                },
+                                                minItems: 1,
+                                                maxItems: 1
+                                            }
+                                        },
+                                        required: [
+                                            'pricingType'
+                                        ]
+                                    },
+                                    {
+                                        type: 'object',
+                                        properties: {
+                                            pricingType: {
+                                                type: 'string',
+                                                enum: [
+                                                    'Free'
+                                                ],
+                                                description: 'This payment source does not require payment'
+                                            }
+                                        },
+                                        required: [
+                                            'pricingType'
+                                        ]
+                                    }
+                                ]
                             }
                         },
                         required: [
                             'chain',
                             'network',
                             'scheme',
-                            'asset',
-                            'amount',
-                            'decimals',
-                            'payTo'
+                            'payTo',
+                            'pricing'
                         ]
                     }
                 ]
@@ -4416,11 +5004,22 @@ export const X402AvailableNetworkSchema = {
             type: 'boolean',
             description: 'Whether this chain may currently be used for x402 payments'
         },
+        canSettle: {
+            type: 'boolean',
+            description: 'Whether inbound settlement is configured (a facilitator wallet or URL is present). Outbound (buy) wallets do not require a facilitator, so networks may be listed with canSettle=false.'
+        },
         defaultAsset: {
             type: 'string',
             nullable: true,
             pattern: '^0x[a-fA-F0-9]{40}$',
             description: 'Default settlement asset (token contract) for this chain'
+        },
+        defaultAssetDecimals: {
+            type: 'integer',
+            nullable: true,
+            minimum: 0,
+            maximum: 255,
+            description: 'Decimals for the default settlement asset; null until an operator confirms them'
         }
     },
     required: [
@@ -4429,7 +5028,9 @@ export const X402AvailableNetworkSchema = {
         'displayName',
         'isTestnet',
         'isEnabled',
-        'defaultAsset'
+        'canSettle',
+        'defaultAsset',
+        'defaultAssetDecimals'
     ]
 } as const;
 
@@ -4465,6 +5066,13 @@ export const X402NetworkSchema = {
             nullable: true,
             pattern: '^0x[a-fA-F0-9]{40}$',
             description: 'Default settlement asset (token contract) for this chain'
+        },
+        defaultAssetDecimals: {
+            type: 'integer',
+            nullable: true,
+            minimum: 0,
+            maximum: 255,
+            description: 'Decimals for the default settlement asset; null until an operator confirms them'
         },
         facilitatorWalletId: {
             type: 'string',
@@ -4503,6 +5111,7 @@ export const X402NetworkSchema = {
         'isTestnet',
         'isEnabled',
         'defaultAsset',
+        'defaultAssetDecimals',
         'facilitatorWalletId',
         'facilitatorWalletAddress',
         'facilitatorUrl',

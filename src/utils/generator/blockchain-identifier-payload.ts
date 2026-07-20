@@ -13,6 +13,7 @@ export type SignedBlockchainIdentifierPayloadInput = {
 	sellerAddress: string;
 	sellerReturnAddress?: string | null;
 	smartContractAddress?: string | null;
+	supportedPaymentSourceIndex?: number;
 	paymentSourceType: PaymentSourceType;
 };
 
@@ -32,6 +33,9 @@ export function buildSignedBlockchainIdentifierPayload(input: SignedBlockchainId
 			? {
 					sellerReturnAddress: input.sellerReturnAddress ?? null,
 					smartContractAddress: input.smartContractAddress ?? null,
+					...(input.supportedPaymentSourceIndex == null
+						? {}
+						: { supportedPaymentSourceIndex: input.supportedPaymentSourceIndex }),
 				}
 			: {}),
 	};

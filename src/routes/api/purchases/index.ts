@@ -215,6 +215,12 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			const resolvedPaymentSourceType = input.paymentSourceType ?? inferredPaymentSourceType;
 			const isV2 = resolvedPaymentSourceType === PaymentSourceType.Web3CardanoV2;
 			const v2SmartContractAddress = decodedBlockchainIdentifier.smartContractAddress;
+			if (!isV2 && input.supportedPaymentSourceIndex != null) {
+				throw createHttpError(
+					400,
+					'V1 Cardano purchases must not set supportedPaymentSourceIndex; pricing comes from AgentPricing',
+				);
+			}
 
 			const paymentSource = await (async () => {
 				if (isV2) {

@@ -10,6 +10,12 @@ import { logger } from '@masumi/payment-core/logger';
 import type { RegistryListRecord } from './queries';
 
 type SupportedPaymentSourceRecord = RegistryListRecord['SupportedPaymentSources'][number];
+type LegacyAgentPricingRecord = {
+	pricingType: PricingType;
+	FixedPricing: {
+		Amounts: Array<{ unit: string; amount: bigint }>;
+	} | null;
+} | null;
 
 function jsonObjectToRecord(value: Prisma.JsonValue | null): Prisma.JsonObject | undefined {
 	if (value != null && typeof value === 'object' && !Array.isArray(value)) {
@@ -22,57 +28,134 @@ export function serializeSupportedPaymentSources(
 	sources: SupportedPaymentSourceRecord[],
 ): SupportedPaymentSource[] | null {
 	if (sources.length === 0) return null;
-	// Skip (and log) incomplete persisted rows rather than throwing: this runs inside the
-	// list serializer, so one malformed row must not fail the entire page with a 500.
-	const serialized = sources.flatMap((source): SupportedPaymentSource[] => {
-		if (source.chain === SupportedPaymentSourceChain.EVM) {
-			if (
-				source.scheme !== X402PaymentScheme.Exact ||
-				source.asset == null ||
-				source.amount == null ||
-				source.decimals == null ||
-				source.payTo == null
-			) {
-				logger.error('Skipping incomplete persisted x402 supported payment source', {
-					network: source.network,
-					address: source.address,
-				});
-				return [];
+	// Persisted sources are authoritative V2 payment options. Never silently
+	// remove a malformed row: doing so changes the advertised rails and shifts
+	// their position-based selection indexes.
+	const serialized = [...sources]
+		.sort((left, right) => left.position - right.position)
+		.flatMap((source): SupportedPaymentSource[] => {
+			if (source.Pricing == null) {
+				throw new Error(
+					`Persisted payment source ${source.position} on ${source.network} is missing source-owned pricing`,
+				);
 			}
-			return [
-				{
+
+			const amounts = source.Pricing.FixedPricing?.Amounts ?? [];
+			if (source.chain === SupportedPaymentSourceChain.EVM) {
+				if (source.scheme !== X402PaymentScheme.Exact || source.payTo == null) {
+					throw new Error(
+						`Persisted x402 payment source ${source.position} on ${source.network} has incomplete settlement`,
+					);
+				}
+				const base = {
 					chain: SupportedPaymentSourceChain.EVM,
 					network: source.network,
 					paymentSourceType: null,
 					address: source.address,
-					scheme: 'Exact',
-					asset: source.asset,
-					amount: source.amount.toString(),
-					decimals: source.decimals,
+					scheme: 'Exact' as const,
 					payTo: source.payTo,
 					resource: source.resource ?? undefined,
 					extra: jsonObjectToRecord(source.extra),
+				};
+				if (source.Pricing.pricingType === PricingType.Fixed) {
+					const [price] = amounts;
+					if (amounts.length !== 1 || price == null || source.fixedDecimals == null) {
+						throw new Error(
+							`Persisted fixed x402 payment source ${source.position} on ${source.network} requires one asset and decimals`,
+						);
+					}
+					return [
+						{
+							...base,
+							pricing: {
+								pricingType: PricingType.Fixed,
+								fixed: [
+									{
+										asset: price.unit,
+										amount: price.amount.toString(),
+										decimals: source.fixedDecimals,
+									},
+								],
+							},
+						},
+					];
+				}
+				if (source.Pricing.pricingType === PricingType.Dynamic) {
+					if ((source.dynamicAsset == null) !== (source.dynamicDecimals == null) || amounts.length > 0) {
+						throw new Error(
+							`Persisted dynamic x402 payment source ${source.position} on ${source.network} has inconsistent asset constraints`,
+						);
+					}
+					return [
+						{
+							...base,
+							pricing: {
+								pricingType: PricingType.Dynamic,
+								...(source.dynamicAsset != null && source.dynamicDecimals != null
+									? {
+											dynamic: [
+												{
+													asset: source.dynamicAsset,
+													decimals: source.dynamicDecimals,
+												},
+											],
+										}
+									: {}),
+							},
+						},
+					];
+				}
+				if (
+					source.Pricing.pricingType === PricingType.Free &&
+					source.dynamicAsset == null &&
+					source.dynamicDecimals == null &&
+					source.fixedDecimals == null &&
+					amounts.length === 0
+				) {
+					return [{ ...base, pricing: { pricingType: PricingType.Free } }];
+				}
+				throw new Error(`Persisted x402 payment source ${source.position} on ${source.network} has malformed pricing`);
+			}
+
+			if (source.paymentSourceType == null) {
+				throw new Error(
+					`Persisted Cardano payment source ${source.position} on ${source.network} is missing paymentSourceType`,
+				);
+			}
+			return [
+				{
+					chain: SupportedPaymentSourceChain.Cardano,
+					network: source.network as Network,
+					paymentSourceType: source.paymentSourceType,
+					address: source.address,
+					pricing:
+						source.Pricing.pricingType === PricingType.Fixed
+							? {
+									pricingType: PricingType.Fixed,
+									fixed: amounts.map((price) => ({
+										asset: price.unit,
+										amount: price.amount.toString(),
+									})),
+								}
+							: { pricingType: source.Pricing.pricingType },
 				},
 			];
-		}
-
-		if (source.paymentSourceType == null) {
-			logger.error('Skipping persisted Cardano supported payment source missing its paymentSourceType', {
-				network: source.network,
-				address: source.address,
-			});
-			return [];
-		}
-		return [
-			{
-				chain: SupportedPaymentSourceChain.Cardano,
-				network: source.network as Network,
-				paymentSourceType: source.paymentSourceType,
-				address: source.address,
-			},
-		];
-	});
+		});
 	return serialized.length === 0 ? null : serialized;
+}
+
+export function serializeLegacyAgentPricing(pricing: LegacyAgentPricingRecord) {
+	if (pricing == null) return null;
+	return pricing.pricingType === PricingType.Fixed
+		? {
+				pricingType: PricingType.Fixed,
+				Pricing:
+					pricing.FixedPricing?.Amounts.map((price) => ({
+						unit: price.unit,
+						amount: price.amount.toString(),
+					})) ?? [],
+			}
+		: { pricingType: pricing.pricingType };
 }
 
 // Reassemble persisted AgentVerification rows into the nested API shape. Re-validate
@@ -106,19 +189,7 @@ export function serializeRegistryEntry(item: RegistryListRecord) {
 			terms: item.terms,
 			other: item.other,
 		},
-		AgentPricing:
-			item.Pricing.pricingType == PricingType.Fixed
-				? {
-						pricingType: PricingType.Fixed,
-						Pricing:
-							item.Pricing.FixedPricing?.Amounts.map((price) => ({
-								unit: price.unit,
-								amount: price.amount.toString(),
-							})) ?? [],
-					}
-				: {
-						pricingType: item.Pricing.pricingType,
-					},
+		AgentPricing: serializeLegacyAgentPricing(item.Pricing),
 		sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
 		supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
 		verifications: serializeVerifications(item.Verifications),

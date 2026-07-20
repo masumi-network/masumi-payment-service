@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn, shortenAddress, formatX402Amount } from '@/lib/utils';
-import { useX402Networks } from '@/lib/hooks/useX402';
+import { useAvailableX402Networks } from '@/lib/hooks/useX402';
 import { RegistryEntry } from '@/lib/api/generated';
 
 type SupportedPaymentSource = NonNullable<RegistryEntry['supportedPaymentSources']>[number];
@@ -15,7 +15,7 @@ export function AgentX402Options({
 }: {
   sources: RegistryEntry['supportedPaymentSources'];
 }) {
-  const { networks } = useX402Networks({ silentErrors: true });
+  const { networks } = useAvailableX402Networks({ silentErrors: true });
   const evmSources = (sources ?? []).filter(
     (source): source is EvmPaymentSource => source.chain === 'EVM',
   );
@@ -24,6 +24,12 @@ export function AgentX402Options({
 
   const chainLabel = (caip2: string) =>
     networks.find((network) => network.caip2Id === caip2)?.displayName ?? caip2;
+  const assetLabel = (asset: string | undefined) =>
+    asset === 'native'
+      ? 'Native currency'
+      : asset
+        ? shortenAddress(asset, 6)
+        : 'Any supported asset';
 
   return (
     <Card>
@@ -34,14 +40,22 @@ export function AgentX402Options({
         <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
           {evmSources.map((source, index, arr) => (
             <div
-              key={`${source.network}-${source.asset}-${source.payTo}`}
+              key={`${source.network}-${source.pricing.pricingType}-${JSON.stringify(
+                source.pricing,
+              )}-${source.payTo}-${source.resource ?? ''}`}
               className={cn('flex flex-col gap-1 py-2', index < arr.length - 1 && 'border-b')}
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">{chainLabel(source.network)}</span>
                 <span className="font-medium font-mono">
-                  {formatX402Amount(source.amount, source.decimals)} ·{' '}
-                  {shortenAddress(source.asset, 6)}
+                  {source.pricing.pricingType === 'Fixed'
+                    ? `${formatX402Amount(
+                        source.pricing.fixed[0]?.amount ?? '0',
+                        source.pricing.fixed[0]?.decimals ?? 0,
+                      )} · ${assetLabel(source.pricing.fixed[0]?.asset)}`
+                    : source.pricing.pricingType === 'Dynamic'
+                      ? `Dynamic · ${assetLabel(source.pricing.dynamic?.[0]?.asset)}`
+                      : 'Free'}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground">

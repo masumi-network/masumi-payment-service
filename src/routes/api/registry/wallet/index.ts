@@ -115,20 +115,41 @@ type MetadataAgentPricing = NonNullable<z.infer<typeof metadataSchema>['agentPri
 // that carries neither.
 export function resolveAgentPricingFromMetadata(
 	parsed: Pick<z.infer<typeof metadataSchema>, 'agentPricing' | 'supported_payment_sources'>,
+	supportedPaymentSourceIndex?: number,
 ): MetadataAgentPricing | null {
-	const cardanoSource = parsed.supported_payment_sources?.find(
-		(source) => metadataToString(source.chain) === SupportedPaymentSourceChain.Cardano,
-	);
+	const cardanoSource =
+		supportedPaymentSourceIndex == null
+			? parsed.supported_payment_sources?.find(
+					(source) => metadataToString(source.chain) === SupportedPaymentSourceChain.Cardano,
+				)
+			: parsed.supported_payment_sources?.[supportedPaymentSourceIndex];
+	// An explicit index that resolves to no source is a caller/metadata
+	// mismatch — never fall through to the legacy top-level pricing block,
+	// which would price a different payment option than the one selected.
+	if (supportedPaymentSourceIndex != null && cardanoSource == null) {
+		return null;
+	}
+	if (cardanoSource != null && metadataToString(cardanoSource.chain) !== SupportedPaymentSourceChain.Cardano) {
+		return null;
+	}
 	const sourcePricing = cardanoSource?.pricing;
 	if (sourcePricing != null) {
 		const pricingType = metadataToString(sourcePricing.pricingType);
 		if (pricingType === PricingType.Fixed) {
+			const fixedPricing: Array<{ amount: bigint; unit: string | string[] }> = [];
+			for (const entry of sourcePricing.fixed ?? []) {
+				const amount = metadataToString(entry.amount);
+				// Metadata is seller-authored: a malformed amount must not throw
+				// (BigInt SyntaxError -> 500) and a negative one must not be
+				// summed into the price, so treat both as unpriceable metadata.
+				if (amount == null || !/^\d+$/.test(amount)) {
+					return null;
+				}
+				fixedPricing.push({ amount: BigInt(amount), unit: entry.asset });
+			}
 			return {
 				pricingType: PricingType.Fixed,
-				fixedPricing: (sourcePricing.fixed ?? []).map((entry) => ({
-					amount: BigInt(metadataToString(entry.amount) ?? '0'),
-					unit: entry.asset,
-				})),
+				fixedPricing,
 			};
 		}
 		if (pricingType === PricingType.Free) return { pricingType: PricingType.Free };
@@ -277,7 +298,8 @@ export const queryAgentFromWalletSchemaOutput = z.object({
 										pricingType: z.enum([PricingType.Dynamic]).describe('Pricing type for the agent (Dynamic)'),
 									}),
 								)
-								.describe('Pricing information for the agent'),
+								.nullable()
+								.describe('V1 legacy pricing. Null for V2 metadata, which prices each source independently.'),
 							image: z.string().max(250).describe('URL to the agent image/logo'),
 							metadataVersion: z.coerce.number().int().min(1).max(2).describe('Version of the metadata schema'),
 							supportedPaymentSources: supportedPaymentSourcesSchema
@@ -364,7 +386,7 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 					return;
 				}
 				const resolvedAgentPricing = resolveAgentPricingFromMetadata(parsedMetadata.data);
-				if (resolvedAgentPricing == null) {
+				if (parsedMetadata.data.metadata_version === 1 && resolvedAgentPricing == null) {
 					logger.error('Agent metadata does not advertise any pricing', { unit: asset.unit });
 					return;
 				}
@@ -401,17 +423,19 @@ export const queryAgentFromWalletGet = readAuthenticatedEndpointFactory.build({
 							: undefined,
 						Tags: parsedMetadata.data.tags.map((tag) => metadataToString(tag)!),
 						AgentPricing:
-							resolvedAgentPricing.pricingType == PricingType.Fixed
-								? {
-										pricingType: resolvedAgentPricing.pricingType,
-										Pricing: resolvedAgentPricing.fixedPricing.map((price) => ({
-											amount: price.amount.toString(),
-											unit: metadataToString(price.unit)!,
-										})),
-									}
-								: {
-										pricingType: resolvedAgentPricing.pricingType,
-									},
+							parsedMetadata.data.metadata_version >= 2 || resolvedAgentPricing == null
+								? null
+								: resolvedAgentPricing.pricingType == PricingType.Fixed
+									? {
+											pricingType: resolvedAgentPricing.pricingType,
+											Pricing: resolvedAgentPricing.fixedPricing.map((price) => ({
+												amount: price.amount.toString(),
+												unit: metadataToString(price.unit)!,
+											})),
+										}
+									: {
+											pricingType: resolvedAgentPricing.pricingType,
+										},
 						image: metadataToString(parsedMetadata.data.image)!,
 						metadataVersion: parsedMetadata.data.metadata_version,
 						supportedPaymentSources: parseSupportedPaymentSourcesFromMetadata(

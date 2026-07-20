@@ -1,6 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PaymentSourceType, PricingType, Prisma, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
@@ -12,14 +12,17 @@ import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { bumpRegistryAssetNameVersionV2, normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
-import { supportedPaymentSourceSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { supportedPaymentSourcesSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { validateX402NetworksAvailableOrThrow } from '@/services/registry/x402-network-availability';
 import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
 import { verificationToRow } from '@/types/verification';
+import { buildSupportedPaymentSourceCreate, getCardanoFixedAssets } from '@/services/registry/source-pricing';
 
-const updateSupportedPaymentSourcesSchema = z
-	.array(supportedPaymentSourceSchema)
-	.max(25)
-	.describe('Payment sources to replace on this registry request. Provide an empty array to clear them.');
+// Reuse the shared array schema so the update route's limits can never
+// silently diverge from the register path's `MAX_SUPPORTED_PAYMENT_SOURCES`.
+const updateSupportedPaymentSourcesSchema = supportedPaymentSourcesSchema.describe(
+	'Payment sources to replace on this V2 registry request. Omit the field to keep existing sources; an empty array is invalid.',
+);
 
 // The update flow re-uses the same metadata fields as registration — the
 // V2 mint contract's UpdateAction atomically burns the current asset and
@@ -58,6 +61,12 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof updateAgentSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
+			if (input.AgentPricing != null) {
+				throw createHttpError(
+					400,
+					'V2 updates must not set AgentPricing; put pricing inside each supportedPaymentSources[].pricing field',
+				);
+			}
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 			const requestedPolicyId = extractPolicyId(input.agentIdentifier);
@@ -119,6 +128,14 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 
 			const registryRequest = await prisma.registryRequest.findUnique({
 				where: { agentIdentifier: policyId + requestedAssetName },
+				include: {
+					// Used below to re-validate x402 network availability when the
+					// caller omits supportedPaymentSources (the re-mint re-advertises
+					// the existing rails).
+					SupportedPaymentSources: {
+						select: { chain: true, network: true },
+					},
+				},
 			});
 			if (registryRequest == null) {
 				throw createHttpError(404, 'Registration not found');
@@ -191,18 +208,15 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 				recipientHotWalletId = recipient.id;
 			}
 
-			// supportedPaymentSources is OPTIONAL on update. Distinguish:
-			//   - omitted (undefined)     → leave existing rows UNCHANGED (no delete, no recreate).
-			//                                Previously `?? []` collapsed this into a silent wipe.
-			//   - provided (including [])  → REPLACE: delete existing rows, recreate from input.
-			// This route is already V2-gated above, so supportedPaymentSources is a
-			// V2-only concept here by construction.
-			const supportedPaymentSources = input.supportedPaymentSources;
-			const replaceSupportedPaymentSources = supportedPaymentSources !== undefined;
-			if (supportedPaymentSources != null && supportedPaymentSources.length > 0) {
+			// supportedPaymentSources is optional on update: omitted leaves the
+			// existing independently-priced sources unchanged; provided replaces
+			// the complete V2 source list atomically.
+			const requestedSupportedPaymentSources = input.supportedPaymentSources;
+			const replaceSupportedPaymentSources = requestedSupportedPaymentSources !== undefined;
+			if (requestedSupportedPaymentSources != null) {
 				try {
 					validateSupportedPaymentSourcesOrThrow(
-						supportedPaymentSources,
+						requestedSupportedPaymentSources,
 						input.network,
 						paymentSource.paymentSourceType,
 						ctx.caip2NetworkLimit,
@@ -211,20 +225,26 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 					throw createHttpError(400, error instanceof Error ? error.message : String(error));
 				}
 			}
+			// Outside the catch-all above: this throws its own 400s for unavailable
+			// networks while letting DB faults propagate as 500s. When sources are
+			// omitted the re-mint re-advertises the EXISTING rails, so re-check
+			// those — an x402 network disabled since registration must not be
+			// silently re-advertised.
+			await validateX402NetworksAvailableOrThrow(
+				requestedSupportedPaymentSources ?? registryRequest.SupportedPaymentSources,
+			);
 
-			if (input.AgentPricing.pricingType === PricingType.Fixed) {
-				const assetUnits = input.AgentPricing.Pricing.map((pricing) => pricing.unit);
-				const { valid: _valid, invalid: invalidAssets } = await validateAssetsOnChain(blockfrost, assetUnits);
+			const cardanoAssetUnits = getCardanoFixedAssets(requestedSupportedPaymentSources ?? []);
+			if (cardanoAssetUnits.length > 0) {
+				const { valid: _valid, invalid: invalidAssets } = await validateAssetsOnChain(blockfrost, cardanoAssetUnits);
 				if (invalidAssets.length > 0) {
 					const invalidAssetsMessage = invalidAssets.map((item) => `${item.asset} (${item.errorMessage})`).join(', ');
 					throw createHttpError(400, `Invalid assets in pricing: ${invalidAssetsMessage}`);
 				}
 			}
 
-			// Replace pricing / example outputs / supported payment sources atomically.
-			// AgentPricing is 1:1 with RegistryRequest via a NOT NULL FK, so we
-			// build a fresh AgentPricing standalone, swap the RegistryRequest FK,
-			// then drop the orphan old row (and its AgentFixedPricing if any).
+			// Replace example outputs and, when supplied, source-owned pricing
+			// atomically with the supported payment sources.
 			const result = await prisma.$transaction(async (tx) => {
 				// Re-read state INSIDE the tx and CAS-guard the state write below to
 				// close the TOCTOU window between the validStatesForUpdate check above
@@ -247,41 +267,6 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 				if (replaceSupportedPaymentSources) {
 					await tx.supportedPaymentSource.deleteMany({ where: { registryRequestId: registryRequest.id } });
 				}
-				const oldPricing = await tx.registryRequest.findUnique({
-					where: { id: registryRequest.id },
-					select: { agentPricingId: true },
-				});
-				let oldFixedPricingId: string | null = null;
-				if (oldPricing?.agentPricingId != null) {
-					const oldAgentPricing = await tx.agentPricing.findUnique({
-						where: { id: oldPricing.agentPricingId },
-						select: { agentFixedPricingId: true },
-					});
-					oldFixedPricingId = oldAgentPricing?.agentFixedPricingId ?? null;
-				}
-				const newPricing = await tx.agentPricing.create({
-					data:
-						input.AgentPricing.pricingType == PricingType.Fixed
-							? {
-									pricingType: input.AgentPricing.pricingType,
-									FixedPricing: {
-										create: {
-											Amounts: {
-												createMany: {
-													data: input.AgentPricing.Pricing.map((price) => ({
-														unit: price.unit.toLowerCase() == 'lovelace' ? '' : price.unit,
-														amount: BigInt(price.amount),
-													})),
-												},
-											},
-										},
-									},
-								}
-							: {
-									pricingType: input.AgentPricing.pricingType,
-								},
-					select: { id: true },
-				});
 				await tx.registryRequest.update({
 					// Atomic CAS on state: if a concurrent action advanced the row out of
 					// an updatable state between the re-read above and this write, match 0
@@ -328,7 +313,6 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						// path already keys non-RegistrationRequested
 						// states off this column.
 						DeregistrationHotWallet: { connect: { id: managedHolderWallet.id } },
-						Pricing: { connect: { id: newPricing.id } },
 						...(recipientHotWalletId != null ? { RecipientWallet: { connect: { id: recipientHotWalletId } } } : {}),
 						ExampleOutputs: {
 							createMany: {
@@ -339,46 +323,17 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 								})),
 							},
 						},
-						...(supportedPaymentSources != null && supportedPaymentSources.length > 0
+						...(requestedSupportedPaymentSources != null
 							? {
 									SupportedPaymentSources: {
-										createMany: {
-											data: supportedPaymentSources.map((source) => ({
-												chain: source.chain,
-												network: source.network,
-												paymentSourceType: source.paymentSourceType,
-												address: source.chain === 'EVM' ? (source.address ?? source.payTo) : source.address,
-												...(source.chain === 'EVM'
-													? {
-															scheme: source.scheme,
-															asset: source.asset,
-															amount: BigInt(source.amount),
-															decimals: source.decimals,
-															payTo: source.payTo,
-															resource: source.resource,
-															extra: source.extra as Prisma.InputJsonValue | undefined,
-														}
-													: {}),
-											})),
-										},
+										create: requestedSupportedPaymentSources.map((source, position) =>
+											buildSupportedPaymentSourceCreate(source, position),
+										),
 									},
 								}
 							: {}),
 					},
 				});
-				if (oldFixedPricingId != null) {
-					// UnitValue.agentFixedPricingId uses ON DELETE SET NULL, not
-					// cascade. Delete amounts explicitly before dropping the old
-					// fixed-pricing row so update retries do not accumulate
-					// detached pricing values.
-					await tx.unitValue.deleteMany({ where: { agentFixedPricingId: oldFixedPricingId } });
-				}
-				if (oldPricing?.agentPricingId != null) {
-					await tx.agentPricing.delete({ where: { id: oldPricing.agentPricingId } });
-				}
-				if (oldFixedPricingId != null) {
-					await tx.agentFixedPricing.delete({ where: { id: oldFixedPricingId } });
-				}
 				return tx.registryRequest.findUniqueOrThrow({
 					where: { id: registryRequest.id },
 					include: {
@@ -397,15 +352,23 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 							select: {
 								chain: true,
 								network: true,
+								position: true,
 								paymentSourceType: true,
 								address: true,
 								scheme: true,
-								asset: true,
-								amount: true,
-								decimals: true,
+								dynamicAsset: true,
+								dynamicDecimals: true,
+								fixedDecimals: true,
 								payTo: true,
 								resource: true,
 								extra: true,
+								Pricing: {
+									include: {
+										FixedPricing: {
+											include: { Amounts: { select: { unit: true, amount: true } } },
+										},
+									},
+								},
 							},
 						},
 						CurrentTransaction: {
@@ -439,19 +402,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 					terms: result.terms,
 					other: result.other,
 				},
-				AgentPricing:
-					result.Pricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: PricingType.Fixed,
-								Pricing:
-									result.Pricing.FixedPricing?.Amounts.map((price) => ({
-										unit: price.unit,
-										amount: price.amount.toString(),
-									})) ?? [],
-							}
-						: {
-								pricingType: result.Pricing.pricingType,
-							},
+				AgentPricing: null,
 				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
 				supportedPaymentSources: serializeSupportedPaymentSources(result.SupportedPaymentSources),
 				verifications: serializeVerifications(result.Verifications),

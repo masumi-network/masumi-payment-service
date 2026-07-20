@@ -46,11 +46,7 @@ import {
 } from '../../wallet-collateral/prep-failure-guard';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 import { asV2Provider } from '../../provider-cast';
-import {
-	MAX_SUPPORTED_PAYMENT_SOURCES,
-	SupportedPaymentSourceChain,
-	type RegistryMetadataPaymentSource,
-} from '@/types/payment-source';
+import { MAX_SUPPORTED_PAYMENT_SOURCES, SupportedPaymentSourceChain } from '@/types/payment-source';
 import { verificationRowToApi, verificationsToMetadata, type AgentVerificationRow } from '@/types/verification';
 
 // V2 registry batch sizing. The on-chain `MintAction` validator runs once for
@@ -76,12 +72,18 @@ type RegistrySupportedPaymentSourceMetadataRow = {
 	paymentSourceType: PaymentSourceType | null;
 	address: string;
 	scheme?: X402PaymentScheme | null;
-	asset?: string | null;
-	amount?: bigint | string | null;
-	decimals?: number | null;
+	dynamicAsset?: string | null;
+	dynamicDecimals?: number | null;
+	fixedDecimals?: number | null;
 	payTo?: string | null;
 	resource?: string | null;
 	extra?: unknown;
+	Pricing: {
+		pricingType: PricingType;
+		FixedPricing?: {
+			Amounts: Array<{ unit: string; amount: bigint }>;
+		} | null;
+	} | null;
 };
 
 type LockedPaymentSource = Awaited<ReturnType<typeof lockAndQueryRegistryRequests>>[number];
@@ -95,102 +97,86 @@ type ValidatedRegistryItem = {
 };
 
 export function validateRegistrationPricing(request: {
-	Pricing: {
-		pricingType: PricingType;
-		FixedPricing: { Amounts: Array<{ unit: string; amount: bigint }> } | null;
-	};
+	Pricing: unknown;
+	SupportedPaymentSources: RegistrySupportedPaymentSourceMetadataRow[];
 }): void {
-	if (
-		request.Pricing.pricingType != PricingType.Fixed &&
-		request.Pricing.pricingType != PricingType.Free &&
-		request.Pricing.pricingType != PricingType.Dynamic
-	) {
-		throw new Error('Unsupported pricing type: ' + String(request.Pricing.pricingType));
+	if (request.Pricing != null) {
+		throw new Error('V2 registry requests must not contain top-level AgentPricing');
 	}
-	if (
-		request.Pricing.pricingType == PricingType.Fixed &&
-		(request.Pricing.FixedPricing == null || request.Pricing.FixedPricing.Amounts.length == 0)
-	) {
-		throw new Error('No fixed pricing found, this is likely a bug');
+	if (request.SupportedPaymentSources.length === 0) {
+		throw new Error('V2 registry requests require at least one supported payment source');
 	}
-	if (request.Pricing.pricingType != PricingType.Fixed && request.Pricing.FixedPricing != null) {
-		throw new Error('Non-fixed pricing requires no fixed pricing to be set');
+
+	for (const [index, source] of request.SupportedPaymentSources.entries()) {
+		if (source.Pricing == null) {
+			throw new Error(`Supported payment source ${index + 1} is missing pricing`);
+		}
+		if (
+			source.Pricing.pricingType !== PricingType.Fixed &&
+			source.Pricing.pricingType !== PricingType.Free &&
+			source.Pricing.pricingType !== PricingType.Dynamic
+		) {
+			throw new Error(`Supported payment source ${index + 1} has an unsupported pricing type`);
+		}
+		const amounts = source.Pricing.FixedPricing?.Amounts ?? [];
+		if (source.Pricing.pricingType === PricingType.Fixed && amounts.length === 0) {
+			throw new Error(`Supported payment source ${index + 1} has no fixed pricing amounts`);
+		}
+		if (source.Pricing.pricingType !== PricingType.Fixed && source.Pricing.FixedPricing != null) {
+			throw new Error(`Supported payment source ${index + 1} has fixed amounts for non-fixed pricing`);
+		}
+		if (
+			source.chain === SupportedPaymentSourceChain.EVM &&
+			source.Pricing.pricingType === PricingType.Fixed &&
+			(amounts.length !== 1 || source.fixedDecimals == null)
+		) {
+			throw new Error(`Fixed x402 payment source ${index + 1} requires one asset and decimals`);
+		}
 	}
 }
 
-export function buildAgentMetadata(
-	request: {
-		name: string;
-		description: string | null;
-		apiBaseUrl: string | null;
-		ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
-		capabilityName?: string | null;
-		capabilityVersion?: string | null;
-		authorName: string | null;
-		authorContactEmail: string | null;
-		authorContactOther: string | null;
-		authorOrganization: string | null;
-		privacyPolicy: string | null;
-		terms: string | null;
-		other: string | null;
-		tags: string[];
-		Pricing: {
-			pricingType: PricingType;
-			FixedPricing?: {
-				Amounts: Array<{ unit: string; amount: bigint }>;
-			} | null;
-		};
-		metadataVersion: number;
-		SupportedPaymentSources: RegistrySupportedPaymentSourceMetadataRow[];
-		// Persisted AgentVerification rows; reshaped to nested form before emit.
-		Verifications?: AgentVerificationRow[];
-	},
-	paymentSource: RegistryMetadataPaymentSource,
-): RegistryMetadata {
-	// A Cardano escrow source must always be present: V2 drops the top-level
-	// agentPricing and folds the agent's pricing into the Cardano source, so an
-	// entry advertising only x402/EVM sources would otherwise carry no Cardano
-	// pricing at all (breaking purchase/query, which resolve price from it).
-	const defaultCardanoSource = {
-		chain: SupportedPaymentSourceChain.Cardano,
-		network: paymentSource.network,
-		paymentSourceType: paymentSource.paymentSourceType,
-		address: paymentSource.smartContractAddress,
-	};
-	const hasCardanoSource = request.SupportedPaymentSources.some(
-		(source) => source.chain === SupportedPaymentSourceChain.Cardano,
-	);
-	const supportedPaymentSources = hasCardanoSource
-		? request.SupportedPaymentSources
-		: [defaultCardanoSource, ...request.SupportedPaymentSources];
-	// Guard the auto-injected Cardano source against overflowing the on-chain cap:
-	// emitting more than the max would make the entry fail its own re-parse, so a
-	// caller at the limit must leave room for the mandatory Cardano source.
+export function buildAgentMetadata(request: {
+	name: string;
+	description: string | null;
+	apiBaseUrl: string | null;
+	ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
+	capabilityName?: string | null;
+	capabilityVersion?: string | null;
+	authorName: string | null;
+	authorContactEmail: string | null;
+	authorContactOther: string | null;
+	authorOrganization: string | null;
+	privacyPolicy: string | null;
+	terms: string | null;
+	other: string | null;
+	tags: string[];
+	Pricing: unknown;
+	metadataVersion: number;
+	SupportedPaymentSources: RegistrySupportedPaymentSourceMetadataRow[];
+	// Persisted AgentVerification rows; reshaped to nested form before emit.
+	Verifications?: AgentVerificationRow[];
+}): RegistryMetadata {
+	const supportedPaymentSources = request.SupportedPaymentSources;
+	if (supportedPaymentSources.length === 0) {
+		throw new Error('Cannot register agent: V2 requires at least one supported payment source');
+	}
 	if (supportedPaymentSources.length > MAX_SUPPORTED_PAYMENT_SOURCES) {
 		throw new Error(
 			`Cannot register agent: ${supportedPaymentSources.length} payment sources exceed ` +
-				`the on-chain maximum of ${MAX_SUPPORTED_PAYMENT_SOURCES}` +
-				(hasCardanoSource
-					? ''
-					: ` (a Cardano source is added automatically; provide at most ${
-							MAX_SUPPORTED_PAYMENT_SOURCES - 1
-						} other sources)`),
+				`the on-chain maximum of ${MAX_SUPPORTED_PAYMENT_SOURCES}`,
 		);
 	}
-	// Cardano sources advertise the agent's pricing inline (one self-contained
-	// payable option per source), mirroring how x402 sources carry their own
-	// amount. Derived from the same `request.Pricing` that still feeds the
-	// top-level `agentPricing` block, so the two stay consistent.
-	const cardanoPricingMetadata =
-		request.Pricing.pricingType == PricingType.Fixed
-			? {
-					pricingType: PricingType.Fixed,
-					fixed: (request.Pricing.FixedPricing?.Amounts ?? []).map((pricing) => ({
-						asset: stringToMetadata(pricing.unit, false),
-						amount: pricing.amount.toString(),
-					})),
-				}
-			: { pricingType: request.Pricing.pricingType };
+	// Mirror the V1 builder's hard version guard: a V2 row carrying a V1
+	// metadata version would gate off supported_payment_sources while V2 no
+	// longer emits a top-level agentPricing block — minting a permanently
+	// unpurchasable entry with no pricing at all. Fail the registration
+	// instead. Only reachable via corrupt/hand-edited rows; the route always
+	// writes the current version for V2.
+	if (request.metadataVersion < DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION) {
+		throw new Error(
+			`Cannot register agent: V2 requires metadataVersion >= ${DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION}`,
+		);
+	}
 	// Optional KERI/Veridian verification claims (see @masumi/payment-core/
 	// verification). Gated on the same metadata version as supported_payment_sources
 	// (a v2-metadata concept); self-describing on chain for third-party verification.
@@ -232,14 +218,65 @@ export function buildAgentMetadata(
 		supported_payment_sources:
 			request.metadataVersion >= DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION
 				? supportedPaymentSources.map((source) => {
-						if (
-							source.chain === SupportedPaymentSourceChain.EVM &&
-							(source.amount == null || source.decimals == null || source.asset == null || source.payTo == null)
-						) {
-							// Never mint an incomplete x402 source on-chain as the literal strings
-							// "null"/"undefined"; fail the registration so the bad row is surfaced.
-							throw new Error('Cannot register agent: x402 supported payment source is incomplete');
+						if (source.Pricing == null) {
+							throw new Error('Cannot register agent: supported payment source pricing is missing');
 						}
+						const fixedAmounts = source.Pricing.FixedPricing?.Amounts ?? [];
+						// Completeness checks run BEFORE the pricing object is built so a
+						// missing decimals value can never be stringified into emitted
+						// metadata as the literal "null".
+						if (source.chain === SupportedPaymentSourceChain.EVM) {
+							if (source.payTo == null) {
+								throw new Error('Cannot register agent: x402 supported payment source is incomplete');
+							}
+							if (
+								source.Pricing.pricingType === PricingType.Fixed &&
+								(fixedAmounts.length !== 1 || source.fixedDecimals == null)
+							) {
+								throw new Error('Cannot register agent: fixed x402 pricing is incomplete');
+							}
+							if (
+								source.Pricing.pricingType === PricingType.Dynamic &&
+								(source.dynamicAsset == null) !== (source.dynamicDecimals == null)
+							) {
+								throw new Error('Cannot register agent: dynamic x402 pricing is incomplete');
+							}
+							if (
+								source.Pricing.pricingType === PricingType.Free &&
+								(source.dynamicAsset != null ||
+									source.dynamicDecimals != null ||
+									source.fixedDecimals != null ||
+									fixedAmounts.length > 0)
+							) {
+								throw new Error('Cannot register agent: free x402 pricing must not include an asset or amount');
+							}
+						}
+						const pricing =
+							source.Pricing.pricingType === PricingType.Fixed
+								? {
+										pricingType: PricingType.Fixed,
+										fixed: fixedAmounts.map((amount) => ({
+											asset: stringToMetadata(amount.unit, false),
+											amount: amount.amount.toString(),
+											...(source.chain === SupportedPaymentSourceChain.EVM
+												? { decimals: String(source.fixedDecimals) }
+												: {}),
+										})),
+									}
+								: source.Pricing.pricingType === PricingType.Dynamic &&
+									  source.chain === SupportedPaymentSourceChain.EVM &&
+									  source.dynamicAsset != null
+									? {
+											pricingType: PricingType.Dynamic,
+											dynamic: [
+												{
+													asset: stringToMetadata(source.dynamicAsset, false),
+													decimals: String(source.dynamicDecimals),
+												},
+											],
+										}
+									: { pricingType: source.Pricing.pricingType };
+
 						if (source.chain === SupportedPaymentSourceChain.EVM) {
 							return {
 								chain: stringToMetadata(source.chain),
@@ -248,18 +285,12 @@ export function buildAgentMetadata(
 									scheme: stringToMetadata(source.scheme ?? X402PaymentScheme.Exact),
 									payTo: stringToMetadata(source.payTo),
 									resource: stringToMetadata(source.resource),
-									extra: source.extra,
+									// Prisma represents an omitted nullable JSON field as null.
+									// Cardano metadata has no null value, so omit it before Mesh
+									// recursively converts this object to metadatum.
+									extra: source.extra ?? undefined,
 								},
-								pricing: {
-									pricingType: PricingType.Fixed,
-									fixed: [
-										{
-											asset: stringToMetadata(source.asset, false),
-											amount: String(source.amount),
-											decimals: String(source.decimals),
-										},
-									],
-								},
+								pricing,
 							};
 						}
 						return {
@@ -270,7 +301,7 @@ export function buildAgentMetadata(
 									source.paymentSourceType != null ? stringToMetadata(source.paymentSourceType) : undefined,
 								address: stringToMetadata(source.address),
 							},
-							pricing: cardanoPricingMetadata,
+							pricing,
 						};
 					})
 				: undefined,
@@ -349,7 +380,6 @@ function validateAndBuildItem(
 	request: RegistryRequestRecord,
 	utxo: UTxO,
 	policyId: string,
-	paymentSource: RegistryMetadataPaymentSource,
 	nonce: string,
 ): ValidatedRegistryItem {
 	validateRegistrationPricing(request);
@@ -360,7 +390,7 @@ function validateAndBuildItem(
 	// blake2b_256 layout would fail every check. The whole batch shares one
 	// `utxo` (oneshot) and disambiguates via a distinct `nonce` per item.
 	const assetName = generateRegistryAssetNameV2(utxo, nonce);
-	const metadata = buildAgentMetadata(request, paymentSource);
+	const metadata = buildAgentMetadata(request);
 	return {
 		request,
 		assetName,
@@ -571,7 +601,7 @@ export async function registerAgentV2() {
 					// Promise.allSettled and abort the whole batch via the outer catch.
 					const validations = await Promise.allSettled(
 						mintableRequests.map(async (request, idx) =>
-							validateAndBuildItem(request, sharedFirstUtxo, policyId, paymentSource, registryNonceForIndex(idx)),
+							validateAndBuildItem(request, sharedFirstUtxo, policyId, registryNonceForIndex(idx)),
 						),
 					);
 

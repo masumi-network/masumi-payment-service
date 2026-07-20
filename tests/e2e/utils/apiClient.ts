@@ -6,7 +6,50 @@ export interface ApiClientConfig {
 	timeout?: number;
 }
 
-export interface RegistrationData {
+export type FixedAgentPricing = {
+	pricingType: 'Fixed';
+	Pricing: Array<{
+		unit: string;
+		amount: string;
+	}>;
+};
+
+export type FixedSupportedPaymentSourcePricing = {
+	pricingType: 'Fixed';
+	fixed: Array<{
+		asset: string;
+		amount: string;
+	}>;
+};
+
+export interface CardanoSupportedPaymentSource {
+	chain: 'Cardano';
+	network: Network;
+	paymentSourceType: PaymentSourceType;
+	address: string;
+	pricing: FixedSupportedPaymentSourcePricing;
+}
+
+// The API returns a Cardano/EVM union for supportedPaymentSources; e2e flows
+// only REGISTER Cardano sources today, but response types must not lie the
+// moment an x402 source appears on a queried agent.
+export interface EvmSupportedPaymentSource {
+	chain: 'EVM';
+	network: string;
+	scheme: string;
+	payTo: string;
+	resource?: string | null;
+	extra?: Record<string, unknown> | null;
+	pricing: {
+		pricingType: 'Fixed' | 'Dynamic' | 'Free';
+		fixed?: Array<{ asset: string; amount: string; decimals?: number | null }>;
+		dynamic?: Array<{ asset: string; decimals?: number | null }>;
+	};
+}
+
+export type SupportedPaymentSourceResponse = CardanoSupportedPaymentSource | EvmSupportedPaymentSource;
+
+interface RegistrationDataBase {
 	network: Network;
 	sellingWalletVkey: string;
 	ExampleOutputs: Array<{
@@ -22,24 +65,11 @@ export interface RegistrationData {
 		name: string;
 		version: string;
 	};
-	AgentPricing: {
-		pricingType: 'Fixed';
-		Pricing: Array<{
-			unit: string;
-			amount: string;
-		}>;
-	};
 	Legal?: {
 		privacyPolicy?: string;
 		terms?: string;
 		other?: string;
 	};
-	supportedPaymentSources?: Array<{
-		chain: string;
-		network: Network;
-		paymentSourceType: PaymentSourceType;
-		address: string;
-	}>;
 	Author: {
 		name: string;
 		contactEmail?: string;
@@ -47,6 +77,18 @@ export interface RegistrationData {
 		organization?: string;
 	};
 }
+
+export type RegistrationData = RegistrationDataBase &
+	(
+		| {
+				AgentPricing: FixedAgentPricing;
+				supportedPaymentSources?: never;
+		  }
+		| {
+				AgentPricing?: never;
+				supportedPaymentSources: CardanoSupportedPaymentSource[];
+		  }
+	);
 
 export interface RegistrationResponse {
 	id: string;
@@ -79,20 +121,9 @@ export interface RegistrationResponse {
 		url: string;
 		mimeType: string;
 	}>;
-	AgentPricing: {
-		pricingType: 'Fixed';
-		Pricing: Array<{
-			unit: string;
-			amount: string;
-		}>;
-	};
+	AgentPricing: FixedAgentPricing | null;
 	agentIdentifier?: string | null;
-	supportedPaymentSources?: Array<{
-		chain: string;
-		network: Network;
-		paymentSourceType: PaymentSourceType;
-		address: string;
-	}> | null;
+	supportedPaymentSources?: SupportedPaymentSourceResponse[] | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -137,13 +168,8 @@ export interface QueryRegistryResponse {
 			mimeType: string;
 		}>;
 		agentIdentifier: string | null;
-		AgentPricing: {
-			pricingType: 'Fixed';
-			Pricing: Array<{
-				amount: string;
-				unit: string;
-			}>;
-		};
+		AgentPricing: FixedAgentPricing | null;
+		supportedPaymentSources?: SupportedPaymentSourceResponse[] | null;
 		SmartContractWallet: {
 			walletVkey: string;
 			walletAddress: string;
@@ -161,6 +187,7 @@ export interface CreatePaymentData {
 	agentIdentifier: string;
 	RequestedFunds?: Array<{ amount: string; unit: string }>;
 	paymentSourceType?: PaymentSourceType;
+	supportedPaymentSourceIndex?: number;
 	payByTime: string;
 	submitResultTime: string;
 	unlockTime?: string;
@@ -244,11 +271,13 @@ export interface QueryPaymentsResponse {
 export interface CreatePurchaseData {
 	blockchainIdentifier: string;
 	network: Network;
+	smartContractAddress?: string;
 	inputHash: string;
 	sellerVkey: string;
 	agentIdentifier: string;
 	Amounts?: Array<{ amount: string; unit: string }>;
 	paymentSourceType?: PaymentSourceType;
+	supportedPaymentSourceIndex?: number;
 	unlockTime: string;
 	externalDisputeUnlockTime: string;
 	submitResultTime: string;

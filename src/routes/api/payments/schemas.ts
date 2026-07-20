@@ -291,6 +291,15 @@ export const createPaymentsSchemaInput = z
 			.nativeEnum(PaymentSourceType)
 			.optional()
 			.describe('Expected payment source type for this request'),
+		supportedPaymentSourceIndex: z
+			.number()
+			.int()
+			.min(0)
+			.max(24)
+			.optional()
+			.describe(
+				'Required for V2 Cardano payments and forbidden for V1. Selects the independently-priced source by its index in supported_payment_sources.',
+			),
 		RequestedFunds: z
 			.array(
 				z.object({
