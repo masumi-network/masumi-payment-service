@@ -2136,6 +2136,7 @@ export const AgentMetadataSchema = {
                                                                 },
                                                                 amount: {
                                                                     type: 'string',
+                                                                    maxLength: 19,
                                                                     pattern: '^\\d+$',
                                                                     description: 'Atomic token amount'
                                                                 },
@@ -2304,6 +2305,7 @@ export const AgentMetadataSchema = {
                                                                 },
                                                                 amount: {
                                                                     type: 'string',
+                                                                    maxLength: 19,
                                                                     pattern: '^\\d+$',
                                                                     description: 'Atomic token amount'
                                                                 },
@@ -2848,6 +2850,7 @@ export const AgentIdentifierMetadataSchema = {
                                                                 },
                                                                 amount: {
                                                                     type: 'string',
+                                                                    maxLength: 19,
                                                                     pattern: '^\\d+$',
                                                                     description: 'Atomic token amount'
                                                                 },
@@ -3016,6 +3019,7 @@ export const AgentIdentifierMetadataSchema = {
                                                                 },
                                                                 amount: {
                                                                     type: 'string',
+                                                                    maxLength: 19,
                                                                     pattern: '^\\d+$',
                                                                     description: 'Atomic token amount'
                                                                 },
@@ -3586,6 +3590,7 @@ export const RegistryEntrySchema = {
                                                         },
                                                         amount: {
                                                             type: 'string',
+                                                            maxLength: 19,
                                                             pattern: '^\\d+$',
                                                             description: 'Atomic token amount'
                                                         },
@@ -3754,6 +3759,7 @@ export const RegistryEntrySchema = {
                                                         },
                                                         amount: {
                                                             type: 'string',
+                                                            maxLength: 19,
                                                             pattern: '^\\d+$',
                                                             description: 'Atomic token amount'
                                                         },
@@ -4998,6 +5004,10 @@ export const X402AvailableNetworkSchema = {
             type: 'boolean',
             description: 'Whether this chain may currently be used for x402 payments'
         },
+        canSettle: {
+            type: 'boolean',
+            description: 'Whether inbound settlement is configured (a facilitator wallet or URL is present). Outbound (buy) wallets do not require a facilitator, so networks may be listed with canSettle=false.'
+        },
         defaultAsset: {
             type: 'string',
             nullable: true,
@@ -5018,6 +5028,7 @@ export const X402AvailableNetworkSchema = {
         'displayName',
         'isTestnet',
         'isEnabled',
+        'canSettle',
         'defaultAsset',
         'defaultAssetDecimals'
     ]

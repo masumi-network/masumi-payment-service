@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -318,6 +318,7 @@ export function ChainDialog({
     register,
     handleSubmit,
     control,
+    setValue,
     formState: { errors },
   } = useForm<ChainFormValues>({
     resolver: zodResolver(chainSchema),
@@ -348,6 +349,16 @@ export function ChainDialog({
   const clearFacilitatorAuth = useWatch({ control, name: 'clearFacilitatorAuth' });
   const defaultAsset = useWatch({ control, name: 'defaultAsset' });
   const hasExistingRemoteFacilitator = !!editing?.facilitatorUrl;
+
+  // The decimals input is disabled while no default asset is set; clear its
+  // RHF state too when the asset is removed, otherwise stale decimals behind
+  // the disabled input make superRefine block submit on a field the user
+  // can't edit.
+  useEffect(() => {
+    if (!defaultAsset) {
+      setValue('defaultAssetDecimals', '');
+    }
+  }, [defaultAsset, setValue]);
 
   const onSubmit = async (data: ChainFormValues) => {
     // Send exactly one facilitator mode; null the other so the backend's exactly-one rule is met.

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -31,6 +32,7 @@ export function X402OptionFields({
   networks,
   wallets,
   isLoadingWallets,
+  hasError = false,
   onChange,
 }: {
   option: X402OptionDraft;
@@ -38,6 +40,8 @@ export function X402OptionFields({
   networks: X402AvailableNetwork[];
   wallets: X402Wallet[];
   isLoadingWallets: boolean;
+  /** True while a validation error targets this option. */
+  hasError?: boolean;
   onChange: (patch: Partial<X402OptionDraft>) => void;
 }) {
   const selectedNetwork = networks.find((network) => network.caip2Id === option.caip2Network);
@@ -52,6 +56,20 @@ export function X402OptionFields({
   const isCustomWallet = !selectedWallet;
   const isCustomAsset = !!option.asset && !selectedAssetPreset;
   const hasKnownTokenDecimals = !!selectedAssetPreset;
+
+  // Controlled, not defaultOpen: the token-contract/decimals inputs live in
+  // this section, so selecting "Custom token" after mount (and validation
+  // errors, which usually target fields in here) must force it open — a
+  // mount-time default would leave the required inputs hidden.
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(isCustomAsset || !!option.resource);
+  // Adjust-state-during-render (not an effect): when a validation error
+  // starts targeting this option, pop the section open so the field the
+  // error points at is visible.
+  const [prevHasError, setPrevHasError] = useState(hasError);
+  if (hasError !== prevHasError) {
+    setPrevHasError(hasError);
+    if (hasError) setIsAdvancedOpen(true);
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -159,6 +177,9 @@ export function X402OptionFields({
               onValueChange={(value) => {
                 if (value === CUSTOM_ASSET) {
                   onChange({ asset: '0x', decimals: '' });
+                  // The contract/decimals inputs for a custom token live in
+                  // the Advanced section — surface them immediately.
+                  setIsAdvancedOpen(true);
                   return;
                 }
                 const preset = assetPresets.find((candidate) => candidate.address === value);
@@ -191,7 +212,7 @@ export function X402OptionFields({
         </div>
       ) : null}
 
-      <Collapsible defaultOpen={isCustomAsset || !!option.resource}>
+      <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen}>
         <Separator />
         <CollapsibleTrigger asChild>
           <Button

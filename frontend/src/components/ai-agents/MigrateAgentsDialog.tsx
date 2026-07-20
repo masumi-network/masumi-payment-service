@@ -49,7 +49,10 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { agentMigrationKey, fetchAllRegistryEntries } from '@/lib/agent-migration';
 import { REGISTRY_LIMITS, validateApiBaseUrl } from '@/lib/registry-validation';
-import { parseLegacyAgentPricing } from '@/lib/registry-pricing';
+import {
+  parseLegacyAgentPricing,
+  validateLegacyPricingForV2Migration,
+} from '@/lib/registry-pricing';
 
 const MIN_MIGRATION_BALANCE_LOVELACE = 5_000_000; // ~5 ADA buffer per agent mint
 
@@ -323,6 +326,21 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
   }, [v1Agents, selectedAgentIds, resolveApiBaseUrl]);
   const hasInvalidUrlOverride = urlOverrideErrors.size > 0;
 
+  // Pre-flight the legacy pricing the same way as the URLs: V2's source-owned
+  // pricing rejects 0 / non-integer amounts, and catching them here flags the
+  // offending agents before the multi-transaction batch starts instead of
+  // failing mid-run. Keyed by agent id; absent = migratable.
+  const pricingErrors = useMemo(() => {
+    const errors = new Map<string, string>();
+    for (const agent of v1Agents) {
+      if (!selectedAgentIds.has(agent.id)) continue;
+      const error = validateLegacyPricingForV2Migration(agent.AgentPricing);
+      if (error) errors.set(agent.id, error);
+    }
+    return errors;
+  }, [v1Agents, selectedAgentIds]);
+  const hasInvalidPricing = pricingErrors.size > 0;
+
   // Migration execution
   const [results, setResults] = useState<Record<string, MigrationResult>>({});
   const [isMigrating, setIsMigrating] = useState(false);
@@ -503,6 +521,10 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
       toast.error('Fix the invalid API base URL before migrating');
       return;
     }
+    if (hasInvalidPricing) {
+      toast.error('Deselect the agents with invalid V1 pricing before migrating');
+      return;
+    }
     // Two-step Confirm: first click flips into the confirm preview; second
     // click on "Confirm migration" triggers `runMigration`. Prevents
     // accidental kickoff of an irreversible multi-tx batch on a single
@@ -525,6 +547,10 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     }
     if (hasInvalidUrlOverride) {
       toast.error('Fix the invalid API base URL before migrating');
+      return;
+    }
+    if (hasInvalidPricing) {
+      toast.error('Deselect the agents with invalid V1 pricing before migrating');
       return;
     }
 
@@ -1006,6 +1032,20 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                                   })()}
                                 </div>
                               )}
+                              {isSelected &&
+                                !result &&
+                                (() => {
+                                  const pricingError = pricingErrors.get(agent.id);
+                                  if (!pricingError) return null;
+                                  return (
+                                    <p className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-start gap-1">
+                                      <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                                      <span className="truncate" title={pricingError}>
+                                        Cannot migrate: {pricingError}
+                                      </span>
+                                    </p>
+                                  );
+                                })()}
                               {droppedHoldingAddress && !result && (
                                 <p className="text-xs text-amber-700 dark:text-amber-400 mt-1 flex items-start gap-1">
                                   <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
@@ -1148,7 +1188,8 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                       !selectedV2Wallet ||
                       selectedAgentIds.size === 0 ||
                       !hasEnoughBalance ||
-                      hasInvalidUrlOverride
+                      hasInvalidUrlOverride ||
+                      hasInvalidPricing
                     }
                     className="gap-2"
                   >

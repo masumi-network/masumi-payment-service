@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { X402Network, X402Wallet } from '@/lib/api/generated';
+import type { X402AvailableNetwork, X402Wallet } from '@/lib/api/generated';
 import {
   assetPresetsForNetwork,
   defaultX402Option,
@@ -11,22 +11,16 @@ import {
   type X402OptionDraft,
 } from './x402-registration';
 
-function network(overrides: Partial<X402Network> = {}): X402Network {
+function network(overrides: Partial<X402AvailableNetwork> = {}): X402AvailableNetwork {
   return {
     id: 'base',
     caip2Id: 'eip155:8453',
     displayName: 'Base',
-    rpcUrl: 'https://mainnet.base.org',
     isTestnet: false,
     isEnabled: true,
+    canSettle: true,
     defaultAsset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     defaultAssetDecimals: 6,
-    facilitatorWalletId: null,
-    facilitatorWalletAddress: null,
-    facilitatorUrl: null,
-    createdById: null,
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     ...overrides,
   };
 }
@@ -159,6 +153,41 @@ test('configured default tokens use their persisted decimals without guessing', 
     assetPresetsForNetwork(network({ defaultAssetDecimals: 8 }))[0]?.decimals,
     8,
     'the configured network value is authoritative even for a known preset address',
+  );
+});
+
+test('resource URLs must parse and respect the backend length cap', () => {
+  // Scheme-only strings pass a bare regex but are not real URLs.
+  assert.equal(
+    validateX402Options([option({ resource: 'https://' })]),
+    'x402 option 1: resource must be an http(s) URL',
+  );
+  assert.equal(
+    validateX402Options([option({ resource: 'ftp://example.com/resource' })]),
+    'x402 option 1: resource must be an http(s) URL',
+  );
+  assert.equal(
+    validateX402Options([option({ resource: `https://example.com/${'a'.repeat(500)}` })]),
+    'x402 option 1: resource URL must be at most 500 characters',
+  );
+  assert.equal(validateX402Options([option({ resource: 'https://example.com/resource' })]), null);
+});
+
+test('labels align error messages with the dialog-wide payment-option numbering', () => {
+  assert.deepEqual(findX402ValidationError([option({ caip2Network: '' })], ['Payment option 2']), {
+    index: 0,
+    message: 'Payment option 2: select a chain',
+  });
+
+  const duplicate = option({ id: 'duplicate' });
+  assert.deepEqual(
+    findX402ValidationError([option(), duplicate], ['Payment option 1', 'Payment option 3']),
+    {
+      index: 1,
+      message:
+        'Payment option 3: duplicates Payment option 1. ' +
+        'Change its chain, pricing, coin, recipient, or resource.',
+    },
   );
 });
 

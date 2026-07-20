@@ -2644,6 +2644,10 @@ export type X402AvailableNetwork = {
      */
     isEnabled: boolean;
     /**
+     * Whether inbound settlement is configured (a facilitator wallet or URL is present). Outbound (buy) wallets do not require a facilitator, so networks may be listed with canSettle=false.
+     */
+    canSettle: boolean;
+    /**
      * Default settlement asset (token contract) for this chain
      */
     defaultAsset: string | null;

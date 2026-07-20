@@ -1,4 +1,5 @@
 import type { RegistryEntry } from '@/lib/api/generated';
+import { POSTGRES_BIGINT_MAX } from '@/lib/registry-validation';
 
 export type AgentPricingView =
   | {
@@ -54,6 +55,32 @@ export function parseLegacyAgentPricing(value: unknown): AgentPricingView | null
     pricing.push({ unit: price.unit, amount: price.amount });
   }
   return { pricingType: 'Fixed', Pricing: pricing };
+}
+
+/**
+ * Pre-flight check that a V1 agent's legacy pricing can be re-registered as
+ * V2 source-owned pricing. Mirrors the backend's `atomicAmountSchema`
+ * (digits-only, > 0, <= int64 max): V1 metadata can hold 0 / decimal / junk
+ * amounts that V2 rejects, and validating up front lets the migration dialog
+ * flag offenders before starting a multi-transaction run instead of failing
+ * mid-batch. Returns an error message, or null when migratable.
+ */
+export function validateLegacyPricingForV2Migration(agentPricing: unknown): string | null {
+  const legacyPricing = parseLegacyAgentPricing(agentPricing);
+  if (!legacyPricing) {
+    return 'V1 pricing is missing or invalid';
+  }
+  if (legacyPricing.pricingType !== 'Fixed') return null;
+  for (const price of legacyPricing.Pricing) {
+    if (!/^\d{1,19}$/.test(price.amount)) {
+      return `price amount "${price.amount}" is not a positive whole number of base units`;
+    }
+    const amount = BigInt(price.amount);
+    if (amount <= BigInt(0) || amount > POSTGRES_BIGINT_MAX) {
+      return `price amount "${price.amount}" must be between 1 and ${POSTGRES_BIGINT_MAX.toString()}`;
+    }
+  }
+  return null;
 }
 
 /**

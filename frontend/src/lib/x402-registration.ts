@@ -1,4 +1,5 @@
 import type { X402AvailableNetwork, X402Wallet } from '@/lib/api/generated';
+import { POSTGRES_BIGINT_MAX } from '@/lib/registry-validation';
 
 export type X402OptionDraft = {
   id: string;
@@ -10,6 +11,12 @@ export type X402OptionDraft = {
   decimals: string;
   payTo: string;
   resource: string;
+  /**
+   * Index of the stored source in `supportedPaymentSources` this draft was
+   * prefilled from (update mode). Undefined for newly added options; used on
+   * submit to preserve the stored on-chain ordering.
+   */
+  originalIndex?: number;
 };
 
 export type EvmAssetPreset = {
@@ -61,7 +68,9 @@ export const EVM_ASSET_PRESETS: EvmAssetPreset[] = [
 const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
 const CAIP2_EIP155 = /^eip155:\d+$/;
 const DECIMAL_AMOUNT = /^\d+(?:\.\d+)?$/;
-const POSTGRES_BIGINT_MAX = BigInt('9223372036854775807');
+// Mirrors the backend's `resource: z.string().url().max(500)` in
+// packages/payment-core/src/payment-source.ts.
+export const X402_RESOURCE_MAX_LENGTH = 500;
 
 export function newX402OptionId(): string {
   return crypto.randomUUID();
@@ -198,29 +207,48 @@ function duplicateKey(option: X402OptionDraft): string {
   ]);
 }
 
+function isParseableUrl(value: string): boolean {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validate a list of x402 option drafts.
+ *
+ * `labels` optionally maps each option index to the user-facing name the
+ * surrounding UI shows for it (e.g. "Payment option 3" when the dialog
+ * interleaves Masumi and x402 rows) so error messages match the numbering the
+ * operator actually sees. Missing entries fall back to `x402 option N`
+ * numbered within this list.
+ */
 export function findX402ValidationError(
   options: X402OptionDraft[],
+  labels?: ReadonlyArray<string | undefined>,
 ): X402OptionValidationError | null {
   const firstIndexByKey = new Map<string, number>();
+  const labelFor = (index: number) => labels?.[index] ?? `x402 option ${index + 1}`;
 
   for (let index = 0; index < options.length; index++) {
     const option = options[index];
-    const optionNumber = index + 1;
     if (!CAIP2_EIP155.test(option.caip2Network)) {
-      return { index, message: `x402 option ${optionNumber}: select a chain` };
+      return { index, message: `${labelFor(index)}: select a chain` };
     }
     if (option.pricingType !== 'Free') {
       const hasAsset = option.asset.length > 0;
       if (option.pricingType === 'Fixed' && !hasAsset) {
         return {
           index,
-          message: `x402 option ${optionNumber}: select a coin or enter a token contract`,
+          message: `${labelFor(index)}: select a coin or enter a token contract`,
         };
       }
       if (hasAsset && !EVM_ADDRESS.test(option.asset)) {
         return {
           index,
-          message: `x402 option ${optionNumber}: select a coin or enter a token contract`,
+          message: `${labelFor(index)}: select a coin or enter a token contract`,
         };
       }
       if (hasAsset) {
@@ -229,7 +257,7 @@ export function findX402ValidationError(
         if (!/^\d{1,3}$/.test(option.decimals.trim()) || Number(option.decimals) > 255) {
           return {
             index,
-            message: `x402 option ${optionNumber}: decimals must be a whole number between 0 and 255`,
+            message: `${labelFor(index)}: decimals must be a whole number between 0 and 255`,
           };
         }
       }
@@ -239,7 +267,7 @@ export function findX402ValidationError(
         if (fractionalDigits > decimals) {
           return {
             index,
-            message: `x402 option ${optionNumber}: amount supports at most ${decimals} decimal places`,
+            message: `${labelFor(index)}: amount supports at most ${decimals} decimal places`,
           };
         }
         const normalizedAmount = normalizeX402Amount(option.amount, option.decimals);
@@ -252,7 +280,7 @@ export function findX402ValidationError(
           return {
             index,
             message:
-              `x402 option ${optionNumber}: enter an amount between 1 and ` +
+              `${labelFor(index)}: enter an amount between 1 and ` +
               `${POSTGRES_BIGINT_MAX.toString()} atomic units`,
           };
         }
@@ -261,23 +289,35 @@ export function findX402ValidationError(
     if (!EVM_ADDRESS.test(option.payTo)) {
       return {
         index,
-        message: `x402 option ${optionNumber}: select a wallet or enter an EVM address`,
+        message: `${labelFor(index)}: select a wallet or enter an EVM address`,
       };
     }
-    if (option.resource && !/^https?:\/\//.test(option.resource)) {
-      return {
-        index,
-        message: `x402 option ${optionNumber}: resource must be an http(s) URL`,
-      };
+    if (option.resource) {
+      // Mirror the backend contract (`z.string().url().max(500)`): a real URL
+      // parse plus the length cap, on top of the http(s) scheme requirement.
+      if (option.resource.length > X402_RESOURCE_MAX_LENGTH) {
+        return {
+          index,
+          message: `${labelFor(index)}: resource URL must be at most ${X402_RESOURCE_MAX_LENGTH} characters`,
+        };
+      }
+      if (!/^https?:\/\//.test(option.resource) || !isParseableUrl(option.resource)) {
+        return {
+          index,
+          message: `${labelFor(index)}: resource must be an http(s) URL`,
+        };
+      }
     }
 
     const key = duplicateKey(option);
     const duplicateOf = firstIndexByKey.get(key);
     if (duplicateOf != null) {
+      const duplicateLabel =
+        labels?.[duplicateOf] != null ? labels[duplicateOf] : `option ${duplicateOf + 1}`;
       return {
         index,
         message:
-          `x402 option ${optionNumber}: duplicates option ${duplicateOf + 1}. ` +
+          `${labelFor(index)}: duplicates ${duplicateLabel}. ` +
           'Change its chain, pricing, coin, recipient, or resource.',
       };
     }

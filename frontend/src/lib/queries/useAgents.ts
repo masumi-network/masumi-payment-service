@@ -104,7 +104,6 @@ export function useAgents(params?: AgentListFilters) {
     isLoading: isLoadingPaymentSources || isSourceResolving || query.isLoading,
     isFetching: query.isFetching,
     isRefetching: query.isRefetching,
-    isPlaceholderData: query.isPlaceholderData,
     refetch: query.refetch,
     loadMore: query.fetchNextPage,
   };
@@ -169,10 +168,14 @@ export function useAllAgents(
 
   return {
     agents: query.data ?? [],
-    isLoading:
-      callerEnabled &&
-      (isLoadingPaymentSources || isSourceResolving || query.isLoading || query.isFetching),
+    // Initial load only (no cached data yet). Background refetches — which
+    // staleTime 0 triggers on every reopen/refocus — must NOT flip this back
+    // to true, or agent pickers disable mid-interaction despite having a
+    // complete cached option list to offer.
+    isLoading: callerEnabled && (isLoadingPaymentSources || isSourceResolving || query.isLoading),
     isFetching: query.isFetching,
+    // Background refetch while cached data is displayed.
+    isRefetching: callerEnabled && query.isFetching && !query.isLoading,
     error: query.error,
     refetch: query.refetch,
   };

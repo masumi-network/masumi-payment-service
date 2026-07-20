@@ -83,6 +83,13 @@ test('includes every paid V2 Cardano option and preserves metadata indexes', () 
       { index: 3, pricingType: 'Fixed' },
     ],
   );
+  // Labels number by the overall metadata index (position within
+  // supportedPaymentSources), matching the registration dialog's numbering,
+  // not by position within the paid-Cardano subset.
+  assert.deepEqual(
+    options.map((option) => option.label),
+    ['Agent One · Masumi option 3', 'Agent One · Masumi option 4'],
+  );
 });
 
 test('does not expose free-only or unconfirmed agents in the payment cycle', () => {

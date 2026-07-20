@@ -5,6 +5,7 @@ import {
   getCardanoPricingOptions,
   getPrimaryCardanoPricing,
   parseLegacyAgentPricing,
+  validateLegacyPricingForV2Migration,
 } from './registry-pricing';
 
 test('V2 reads pricing from the first Cardano source instead of AgentPricing', () => {
@@ -49,6 +50,42 @@ test('malformed legacy pricing is rejected rather than partially accepted', () =
       Pricing: [{ unit: '', amount: 500000 }],
     }),
     null,
+  );
+});
+
+test('migration pre-flight mirrors the V2 atomic amount rules', () => {
+  // Non-Fixed pricing carries no amounts and always migrates.
+  assert.equal(validateLegacyPricingForV2Migration({ pricingType: 'Dynamic' }), null);
+  assert.equal(
+    validateLegacyPricingForV2Migration({
+      pricingType: 'Fixed',
+      Pricing: [{ unit: 'lovelace', amount: '500000' }],
+    }),
+    null,
+  );
+  // Missing / malformed legacy pricing is flagged up front.
+  assert.equal(validateLegacyPricingForV2Migration(null), 'V1 pricing is missing or invalid');
+  // Zero, decimal, and out-of-range amounts fail V2's atomicAmountSchema.
+  assert.match(
+    validateLegacyPricingForV2Migration({
+      pricingType: 'Fixed',
+      Pricing: [{ unit: '', amount: '0' }],
+    }) ?? '',
+    /between 1 and 9223372036854775807/,
+  );
+  assert.match(
+    validateLegacyPricingForV2Migration({
+      pricingType: 'Fixed',
+      Pricing: [{ unit: '', amount: '1.5' }],
+    }) ?? '',
+    /not a positive whole number/,
+  );
+  assert.match(
+    validateLegacyPricingForV2Migration({
+      pricingType: 'Fixed',
+      Pricing: [{ unit: '', amount: '9223372036854775808' }],
+    }) ?? '',
+    /between 1 and 9223372036854775807/,
   );
 });
 
