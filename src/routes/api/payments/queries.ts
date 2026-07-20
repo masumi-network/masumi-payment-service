@@ -78,6 +78,8 @@ export async function getPaymentsForQuery(input: PaymentListQueryInput, walletSc
 					blockHeight: true,
 					blockTime: true,
 					txHash: true,
+					layer: true,
+					hydraHeadId: true,
 					status: true,
 					previousOnChainState: true,
 					newOnChainState: true,
@@ -105,6 +107,8 @@ export async function getPaymentsForQuery(input: PaymentListQueryInput, walletSc
 								blockTime: true,
 								previousOnChainState: true,
 								newOnChainState: true,
+								layer: true,
+								hydraHeadId: true,
 								confirmations: true,
 							},
 						}

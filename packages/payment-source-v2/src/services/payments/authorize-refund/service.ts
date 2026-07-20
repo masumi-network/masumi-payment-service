@@ -1,5 +1,13 @@
-import { OnChainState, PaymentAction, PaymentSourceType, Prisma, TransactionStatus } from '@/generated/prisma/client';
+import {
+	OnChainState,
+	PaymentAction,
+	PaymentSourceType,
+	Prisma,
+	TransactionLayer,
+	TransactionStatus,
+} from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { resolveTxHash } from '@meshsdk/core';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
 import type { LanguageVersion } from '@meshsdk/core';
@@ -13,10 +21,13 @@ import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/strin
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+import { syncMeshCostModelsFromHeadV2 } from '../../../utils/mesh-cost-model-sync';
+import { headClockBehindCooldownMs, resolveHydraL2WindowOptions } from '@/utils/hydra/l2-slot-context';
 import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
 import { findMatchingPaymentUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
 // V2-pinned single-item builder. MUST NOT use the root V1-mesh generator
 // (@/utils/generator/transaction-generator) — that bundles the V1 cost models
@@ -149,18 +160,18 @@ async function validateAndBuildItem(
 	if (decodedContract == null) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Invalid datum`);
 	}
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
+		constrainBeforeMs: decodedContract.sellerCooldownTime,
+	});
 	const datum = createDatumFromDecodedContractV2({
 		decodedContract,
 		buyerAddress: decodedContract.buyerAddress,
 		sellerAddress: decodedContract.sellerAddress,
 		blockchainIdentifier: request.blockchainIdentifier,
 		resultHash: null,
-		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime)),
+		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime), invalidAfterMs),
 		newCooldownTimeBuyer: BigInt(0),
 		state: SmartContractState.RefundAuthorized,
-	});
-	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
 	return {
 		request,
@@ -233,19 +244,18 @@ async function processSinglePaymentRequest(
 	if (decodedContract == null) {
 		throw new Error(`${LOOKUP_DEFERRED_PREFIX} Invalid datum`);
 	}
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
+		constrainBeforeMs: decodedContract.sellerCooldownTime,
+	});
 	const datum = createDatumFromDecodedContractV2({
 		decodedContract,
 		buyerAddress: decodedContract.buyerAddress,
 		sellerAddress: decodedContract.sellerAddress,
 		blockchainIdentifier: request.blockchainIdentifier,
 		resultHash: null,
-		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime)),
+		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime), invalidAfterMs),
 		newCooldownTimeBuyer: BigInt(0),
 		state: SmartContractState.RefundAuthorized,
-	});
-
-	const { invalidBefore, invalidAfter } = createTxWindow(network, {
-		constrainBeforeMs: decodedContract.sellerCooldownTime,
 	});
 	const collateralUtxo = pickBatchCollateral(utxos, [utxo.input]);
 	if (collateralUtxo == null) {
@@ -950,6 +960,166 @@ async function processWalletBatch(
 	}
 }
 
+/**
+ * Hydra L2 single-item authorize-refund (in-head). Spends the contract UTxO in
+ * the head and writes the RefundAuthorized continuation, mirroring
+ * `processL2SubmitResult`. Mesh 102 via `asV2Provider`; submit is synchronous to
+ * the head. Validated on a Hydra devnet (see docs/hydra-l2-devnet-findings.md).
+ */
+async function processL2AuthorizeRefund(
+	request: PaymentRequestWithRelations,
+	paymentContract: PaymentSourceWithRelations,
+	network: 'mainnet' | 'preprod',
+): Promise<boolean> {
+	const headId = request.CurrentTransaction?.hydraHeadId;
+	if (headId == null) {
+		throw new Error('L2 authorize-refund: request has no hydraHeadId on CurrentTransaction');
+	}
+	const hydraProvider = getHydraConnectionManager().getProvider(headId);
+	if (!hydraProvider) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} no active Hydra provider for head ${headId}; retry next tick`);
+	}
+	validatePaymentRequestFields(request);
+
+	// Wallet loaded only for signing key + address; spendable set is the head
+	// snapshot below.
+	const walletSession = await loadHotWalletSession({
+		network: paymentContract.network,
+		rpcProviderApiKey: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+		encryptedMnemonic: request.SmartContractWallet!.Secret.encryptedMnemonic,
+		hotWalletId: request.SmartContractWallet!.id,
+	});
+	const { wallet, address } = walletSession;
+
+	const headWalletUtxos = await hydraProvider.fetchAddressUTxOs(address);
+	if (headWalletUtxos.length === 0) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no UTxOs in head ${headId}; retry next tick`);
+	}
+
+	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
+	const txHash = request.CurrentTransaction?.txHash;
+	if (txHash == null) {
+		throw new Error('L2 authorize-refund: CurrentTransaction has no txHash');
+	}
+
+	const utxoByHash = await hydraProvider.fetchUTxOs(txHash);
+	const utxo = findMatchingPaymentUtxo(utxoByHash, txHash, request, network, smartContractAddress);
+	if (!utxo) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 contract UTXO not found in head`);
+	}
+	const utxoDatum = utxo.output.plutusData;
+	if (!utxoDatum) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 no datum found in UTXO`);
+	}
+	const decodedDatum: unknown = deserializeDatum(utxoDatum);
+	const decodedContract = decodeV2ContractDatum(decodedDatum, network, smartContractAddress);
+	if (decodedContract == null) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 invalid datum`);
+	}
+
+	// L2: anchor the validity window to the head's clock (env devnet override or
+	// live head Tick/SyncedStatusReport); the head's ledger clock can lag L1
+	// wall-clock by more than the default window buffers.
+	const l2WindowOptions = resolveHydraL2WindowOptions(hydraProvider);
+	const headBehindMs = headClockBehindCooldownMs(l2WindowOptions, decodedContract.sellerCooldownTime);
+	if (headBehindMs > 0) {
+		throw new Error(
+			`${LOOKUP_DEFERRED_PREFIX} head clock is ${Math.ceil(headBehindMs / 1000)}s behind the seller cooldown; retry next tick`,
+		);
+	}
+	const { invalidBefore, invalidAfter, invalidAfterMs } = createTxWindow(network, {
+		constrainBeforeMs: decodedContract.sellerCooldownTime,
+		...l2WindowOptions,
+	});
+	const datum = createDatumFromDecodedContractV2({
+		decodedContract,
+		buyerAddress: decodedContract.buyerAddress,
+		sellerAddress: decodedContract.sellerAddress,
+		blockchainIdentifier: request.blockchainIdentifier,
+		resultHash: null,
+		newCooldownTimeSeller: newCooldownTime(BigInt(paymentContract.cooldownTime), invalidAfterMs),
+		newCooldownTimeBuyer: BigInt(0),
+		state: SmartContractState.RefundAuthorized,
+	});
+
+	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);
+	const collateralUtxo = limitedUtxos[0];
+	if (collateralUtxo == null) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no collateral UTxO in head`);
+	}
+
+	// Bridge the (root, 96) Hydra provider into the V2 (102) builder seam; pass
+	// it as both the source provider and the L2 build provider (isHydra path,
+	// skips Blockfrost fee evaluation).
+	const hydraV2Provider = asV2Provider(hydraProvider);
+	// Patch the V2 mesh line's bundled Plutus cost-model arrays from the HEAD's
+	// protocol parameters before building (no Blockfrost evaluator on L2). Without
+	// the head's cost models the in-head script-data-hash won't match and the head
+	// rejects with PPViewHashesDontMatch. Arrays are process-global + shared with
+	// L1, so hold the per-payment-source mesh lock across sync + build + sign;
+	// submitTx stays outside. See docs/adr/0005.
+	const headCostModels = await hydraProvider.fetchRawCostModels();
+	const signedTx = await withMeshCostModelLock(paymentContract.PaymentSourceConfig.rpcProviderApiKey, async () => {
+		await syncMeshCostModelsFromHeadV2(headCostModels);
+		const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+			'AuthorizeRefund',
+			hydraV2Provider,
+			network,
+			script,
+			address,
+			utxo,
+			collateralUtxo,
+			limitedUtxos,
+			datum.value,
+			invalidBefore,
+			invalidAfter,
+			undefined, // rpcApiKey — no chain cost-model sync on L2
+			undefined, // walletSplitterLovelace — L1-only convention
+			hydraV2Provider,
+		);
+		return await wallet.signTx(unsignedTx);
+	});
+
+	let newTxHash: string;
+	try {
+		newTxHash = await hydraProvider.submitTx(signedTx);
+	} catch (error) {
+		logger.error('L2 authorize-refund: error submitting to head', { error, headId });
+		await prisma.paymentRequest.update({
+			where: { id: request.id },
+			data: {
+				...connectPreviousAction(request.nextActionId),
+				...createNextPaymentAction(PaymentAction.AuthorizeRefundRequested, {
+					errorType: null,
+					errorNote: null,
+				}),
+				SmartContractWallet: { update: { lockedAt: null } },
+			},
+		});
+		return false;
+	}
+
+	await retryOnSerializationConflict(
+		() =>
+			prisma.paymentRequest.update({
+				where: { id: request.id },
+				data: {
+					...connectPreviousAction(request.nextActionId),
+					...createNextPaymentAction(PaymentAction.AuthorizeRefundInitiated),
+					...createPendingTransaction(request.SmartContractWallet!.id, newTxHash, {
+						layer: TransactionLayer.L2,
+						hydraHeadId: headId,
+					}),
+					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
+				},
+			}),
+		{ label: 'v2-authorize-refund-l2-post-submit' },
+	);
+
+	logger.info('L2 authorize-refund submitted to head', { txHash: newTxHash, headId, smartContractAddress });
+	return true;
+}
+
 function groupRequestsByWallet(requests: PaymentRequestWithRelations[]): Map<string, PaymentRequestWithRelations[]> {
 	const byWallet = new Map<string, PaymentRequestWithRelations[]>();
 	for (const request of requests) {
@@ -983,6 +1153,7 @@ export async function authorizeRefundV2() {
 			onChainState: { in: [OnChainState.Disputed, OnChainState.RefundRequested] },
 			maxBatchSize: AUTHORIZE_REFUND_BATCH_SIZE,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			layer: TransactionLayer.L1,
 		});
 
 		await Promise.allSettled(
@@ -1008,6 +1179,36 @@ export async function authorizeRefundV2() {
 							script,
 							smartContractAddress,
 						);
+					}),
+				);
+			}),
+		);
+
+		// --- Hydra L2: dedicated single-item head path ---
+		// L2 spends the contract UTxO in the head; in-head timing windows differ
+		// from L1. Validated on a Hydra devnet (see docs/hydra-l2-devnet-findings.md).
+		const l2PaymentContracts = await lockAndQueryPayments({
+			paymentStatus: PaymentAction.AuthorizeRefundRequested,
+			onChainState: { in: [OnChainState.Disputed, OnChainState.RefundRequested] },
+			maxBatchSize: AUTHORIZE_REFUND_BATCH_SIZE,
+			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			layer: TransactionLayer.L2,
+		});
+		await Promise.allSettled(
+			l2PaymentContracts.map(async (paymentContract) => {
+				if (paymentContract.PaymentRequests.length === 0) return;
+				const network = convertNetwork(paymentContract.network);
+				await Promise.allSettled(
+					paymentContract.PaymentRequests.map(async (request) => {
+						try {
+							await processL2AuthorizeRefund(request, paymentContract, network);
+						} catch (error) {
+							if (isLookupDeferred(error)) {
+								logger.info('L2 authorize-refund deferred to next tick', { requestId: request.id, error });
+							} else {
+								logger.error('L2 authorize-refund failed', { requestId: request.id, error });
+							}
+						}
 					}),
 				);
 			}),

@@ -19,6 +19,7 @@ import { backfillTransactionAgentNames } from '@/utils/startup-migrations/backfi
 import { warnOutOfSyncV2PaymentSources } from '@/utils/startup-migrations/warn-out-of-sync-v2-sources';
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
+import { getHydraConnectionManager } from './services/hydra-connection-manager/hydra-connection-manager.service';
 import helmet from 'helmet';
 
 const __dirname = path.resolve();
@@ -47,6 +48,10 @@ async function initialize() {
 		logger.warn('*****************************************************************');
 	}
 	await initJobs();
+
+	// Reconnect to any enabled Hydra heads that are reachable
+	await getHydraConnectionManager().initialize();
+	logger.info('Hydra connection manager initialized', { component: 'hydra' });
 
 	// Start blockchain state monitoring
 	await blockchainStateMonitorService.startMonitoring(30000); // Monitor every 30 seconds

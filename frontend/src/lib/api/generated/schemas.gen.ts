@@ -818,6 +818,19 @@ export const PaymentSchema = {
                     nullable: true,
                     description: 'Cardano transaction hash'
                 },
+                layer: {
+                    type: 'string',
+                    enum: [
+                        'L1',
+                        'L2'
+                    ],
+                    description: 'Blockchain layer this transaction was submitted to'
+                },
+                hydraHeadId: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Hydra head ID when this transaction was submitted to L2. Null for L1 transactions'
+                },
                 status: {
                     type: 'string',
                     enum: [
@@ -910,6 +923,19 @@ export const PaymentSchema = {
                         type: 'string',
                         nullable: true,
                         description: 'Cardano transaction hash'
+                    },
+                    layer: {
+                        type: 'string',
+                        enum: [
+                            'L1',
+                            'L2'
+                        ],
+                        description: 'Blockchain layer this transaction was submitted to'
+                    },
+                    hydraHeadId: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Hydra head ID when this transaction was submitted to L2. Null for L1 transactions'
                     },
                     status: {
                         type: 'string',
@@ -1468,6 +1494,19 @@ export const PurchaseSchema = {
                     nullable: true,
                     description: 'Cardano transaction hash'
                 },
+                layer: {
+                    type: 'string',
+                    enum: [
+                        'L1',
+                        'L2'
+                    ],
+                    description: 'Blockchain layer this transaction was submitted to'
+                },
+                hydraHeadId: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Hydra head ID when this transaction was submitted to L2. Null for L1 transactions'
+                },
                 status: {
                     type: 'string',
                     enum: [
@@ -1575,6 +1614,19 @@ export const PurchaseSchema = {
                         type: 'string',
                         nullable: true,
                         description: 'Cardano transaction hash'
+                    },
+                    layer: {
+                        type: 'string',
+                        enum: [
+                            'L1',
+                            'L2'
+                        ],
+                        description: 'Blockchain layer this transaction was submitted to'
+                    },
+                    hydraHeadId: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Hydra head ID when this transaction was submitted to L2. Null for L1 transactions'
                     },
                     status: {
                         type: 'string',

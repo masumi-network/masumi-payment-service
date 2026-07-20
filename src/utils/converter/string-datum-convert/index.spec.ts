@@ -1,5 +1,5 @@
 import { byteString, conStr0, conStr1, integer, pubKeyAddress, serializeAddressObj } from '@meshsdk/core';
-import { decodeV2ContractDatum } from './index';
+import { decodeV2ContractDatum, newCooldownTime } from './index';
 
 const BUYER_PKH = 'aa'.repeat(28);
 const SELLER_PKH = 'bb'.repeat(28);
@@ -77,5 +77,35 @@ describe('decodeV2ContractDatum', () => {
 			null,
 		);
 		expect(decoded).not.toBeNull();
+	});
+});
+
+describe('newCooldownTime', () => {
+	afterEach(() => {
+		delete process.env.COOLDOWN_BLOCKTIME_BUFFER_MS;
+	});
+
+	it('adds the 10-min default blocktime buffer', () => {
+		const before = BigInt(Date.now());
+		const result = newCooldownTime(60_000n);
+		const after = BigInt(Date.now());
+		expect(result).toBeGreaterThanOrEqual(before + 60_000n + 600_000n);
+		expect(result).toBeLessThanOrEqual(after + 60_000n + 600_000n);
+	});
+
+	it('honors the COOLDOWN_BLOCKTIME_BUFFER_MS override', () => {
+		process.env.COOLDOWN_BLOCKTIME_BUFFER_MS = '60000';
+		const before = BigInt(Date.now());
+		const result = newCooldownTime(60_000n);
+		const after = BigInt(Date.now());
+		expect(result).toBeGreaterThanOrEqual(before + 60_000n + 60_000n);
+		expect(result).toBeLessThanOrEqual(after + 60_000n + 60_000n);
+	});
+
+	it('ignores a non-numeric override and keeps the default', () => {
+		process.env.COOLDOWN_BLOCKTIME_BUFFER_MS = 'ten-minutes';
+		const before = BigInt(Date.now());
+		const result = newCooldownTime(0n);
+		expect(result).toBeGreaterThanOrEqual(before + 600_000n);
 	});
 });

@@ -16,6 +16,7 @@ import {
 import { webhookQueueService } from '@/services/webhooks';
 import { runX402LowBalanceMonitoringCycle } from '@/services/x402/low-balance-monitor';
 import type { JobDefinition } from '@/services/shared';
+import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 
 export const scheduledJobs: JobDefinition[] = [
 	{
@@ -327,5 +328,12 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting fund transfer confirmation checker',
 		finishMessage: 'Finished fund transfer confirmation checker',
 		run: checkFundTransferConfirmations,
+	},
+	{
+		initialDelayMs: 15000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting L2 hydra transaction polling',
+		finishMessage: 'Finished L2 hydra transaction polling',
+		run: checkHydraTransactions,
 	},
 ];

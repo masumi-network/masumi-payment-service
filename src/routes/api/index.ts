@@ -100,6 +100,28 @@ import {
 	acknowledgeSwapTimeoutEndpointPost,
 } from './swap';
 import {
+	closeHeadPost,
+	commitHeadPost,
+	createHeadPost,
+	createLocalParticipantPost,
+	createRelationPost,
+	createRemoteParticipantPost,
+	deleteLocalParticipantDelete,
+	deleteRelationDelete,
+	deleteRemoteParticipantDelete,
+	fanoutHeadPost,
+	getLocalParticipantGet,
+	getOrListHeadsGet,
+	getOrListRelationsGet,
+	getRemoteParticipantGet,
+	initHeadPost,
+	checkHeadNodePost,
+	ensureHydraWalletBasePost,
+	listHydraWalletBasesGet,
+	listHeadErrorsGet,
+	updateHeadPatch,
+} from './hydra';
+import {
 	createX402PaymentPost,
 	createX402WalletPost,
 	deleteX402LowBalanceRuleDelete,
@@ -442,6 +464,40 @@ export const apiRouter: Routing = {
 			get: getFundDistributionEndpointGet,
 			trigger: {
 				post: triggerFundDistributionEndpointPost,
+			},
+		},
+		hydra: {
+			'wallet-base': {
+				get: listHydraWalletBasesGet,
+				post: ensureHydraWalletBasePost,
+			},
+			relation: {
+				get: getOrListRelationsGet,
+				post: createRelationPost,
+				delete: deleteRelationDelete,
+			},
+			head: {
+				get: getOrListHeadsGet,
+				post: createHeadPost,
+				patch: updateHeadPatch,
+				check: { post: checkHeadNodePost },
+				init: { post: initHeadPost },
+				commit: { post: commitHeadPost },
+				close: { post: closeHeadPost },
+				fanout: { post: fanoutHeadPost },
+				errors: { get: listHeadErrorsGet },
+			},
+			participant: {
+				local: {
+					get: getLocalParticipantGet,
+					post: createLocalParticipantPost,
+					delete: deleteLocalParticipantDelete,
+				},
+				remote: {
+					get: getRemoteParticipantGet,
+					post: createRemoteParticipantPost,
+					delete: deleteRemoteParticipantDelete,
+				},
 			},
 		},
 	},

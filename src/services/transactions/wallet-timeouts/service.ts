@@ -605,6 +605,9 @@ export async function updateWalletTransactionHash() {
 				OR: [
 					{
 						PendingTransaction: {
+							// L2 (Hydra) pending transactions are reconciled by the hydra-tx-handler,
+							// not this L1 wallet-timeout reaper — keep this branch scoped to L1.
+							layer: 'L1',
 							// Prisma `lte` does NOT match NULL — without the explicit null branch
 							// below, a PendingTransaction whose lastCheckedAt is NULL (any historical
 							// row predating `createPendingTransaction`'s mandatory seed, plus any

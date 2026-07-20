@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Skeleton } from '@/components/ui/skeleton';
 import { CopyButton } from '@/components/ui/copy-button';
 import { WalletLink } from '@/components/ui/wallet-link';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'react-toastify';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
@@ -43,6 +44,18 @@ interface TransactionDetailsDialogProps {
 
 const handleError = (error: unknown, fallback: string = 'An error occurred') => {
   toast.error(extractApiErrorMessage(error, fallback));
+};
+
+const isHydraTransaction = (transaction: Transaction) =>
+  transaction.CurrentTransaction?.layer === 'L2';
+
+// Layer is only known once the request is picked up + locked (CurrentTransaction
+// exists). Before that, show neither L1 nor Hydra L2.
+const getTransactionLayerLabel = (transaction: Transaction): 'Hydra L2' | 'L1' | null => {
+  const layer = transaction.CurrentTransaction?.layer;
+  if (layer === 'L2') return 'Hydra L2';
+  if (layer === 'L1') return 'L1';
+  return null;
 };
 
 const canRequestRefund = (transaction: Transaction) => {
@@ -381,6 +394,7 @@ export default function TransactionDetailsDialog({
                     paymentSourceType={transaction.PaymentSource.paymentSourceType}
                     showDefault
                   />
+                  {isHydraTransaction(transaction) && <Badge variant="success">Hydra L2</Badge>}
                 </div>
               </div>
 
@@ -484,6 +498,28 @@ export default function TransactionDetailsDialog({
                   >
                     {formatStatus(transaction.onChainState)}
                   </p>
+                </div>
+
+                <div>
+                  <h5 className="text-sm font-medium mb-1">Layer</h5>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {getTransactionLayerLabel(transaction) ? (
+                      <Badge variant={isHydraTransaction(transaction) ? 'success' : 'secondary'}>
+                        {getTransactionLayerLabel(transaction)}
+                      </Badge>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                    {transaction.CurrentTransaction?.hydraHeadId && (
+                      <>
+                        <span className="text-xs text-muted-foreground">Head</span>
+                        <span className="font-mono text-xs">
+                          {shortenAddress(transaction.CurrentTransaction.hydraHeadId, 8)}
+                        </span>
+                        <CopyButton value={transaction.CurrentTransaction.hydraHeadId} />
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 <div>

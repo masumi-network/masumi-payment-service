@@ -832,6 +832,19 @@
                                 "nullable": true,
                                 "description": "Cardano transaction hash"
                             },
+                            "layer": {
+                                "type": "string",
+                                "enum": [
+                                    "L1",
+                                    "L2"
+                                ],
+                                "description": "Blockchain layer this transaction was submitted to"
+                            },
+                            "hydraHeadId": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
+                            },
                             "status": {
                                 "type": "string",
                                 "enum": [
@@ -924,6 +937,19 @@
                                     "type": "string",
                                     "nullable": true,
                                     "description": "Cardano transaction hash"
+                                },
+                                "layer": {
+                                    "type": "string",
+                                    "enum": [
+                                        "L1",
+                                        "L2"
+                                    ],
+                                    "description": "Blockchain layer this transaction was submitted to"
+                                },
+                                "hydraHeadId": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
                                 },
                                 "status": {
                                     "type": "string",
@@ -1481,6 +1507,19 @@
                                 "nullable": true,
                                 "description": "Cardano transaction hash"
                             },
+                            "layer": {
+                                "type": "string",
+                                "enum": [
+                                    "L1",
+                                    "L2"
+                                ],
+                                "description": "Blockchain layer this transaction was submitted to"
+                            },
+                            "hydraHeadId": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
+                            },
                             "status": {
                                 "type": "string",
                                 "enum": [
@@ -1588,6 +1627,19 @@
                                     "type": "string",
                                     "nullable": true,
                                     "description": "Cardano transaction hash"
+                                },
+                                "layer": {
+                                    "type": "string",
+                                    "enum": [
+                                        "L1",
+                                        "L2"
+                                    ],
+                                    "description": "Blockchain layer this transaction was submitted to"
+                                },
+                                "hydraHeadId": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
                                 },
                                 "status": {
                                     "type": "string",
@@ -8929,6 +8981,19 @@
                                                             "nullable": true,
                                                             "description": "Cardano transaction hash"
                                                         },
+                                                        "layer": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "L1",
+                                                                "L2"
+                                                            ],
+                                                            "description": "Blockchain layer this transaction was submitted to"
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
+                                                        },
                                                         "status": {
                                                             "type": "string",
                                                             "enum": [
@@ -10419,6 +10484,19 @@
                                                             "nullable": true,
                                                             "description": "Cardano transaction hash"
                                                         },
+                                                        "layer": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "L1",
+                                                                "L2"
+                                                            ],
+                                                            "description": "Blockchain layer this transaction was submitted to"
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
+                                                        },
                                                         "status": {
                                                             "type": "string",
                                                             "enum": [
@@ -11042,6 +11120,19 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "Cardano transaction hash"
+                                                        },
+                                                        "layer": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "L1",
+                                                                "L2"
+                                                            ],
+                                                            "description": "Blockchain layer this transaction was submitted to"
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
                                                         },
                                                         "status": {
                                                             "type": "string",
@@ -11694,6 +11785,19 @@
                                                             "nullable": true,
                                                             "description": "Cardano transaction hash"
                                                         },
+                                                        "layer": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "L1",
+                                                                "L2"
+                                                            ],
+                                                            "description": "Blockchain layer this transaction was submitted to"
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
+                                                        },
                                                         "status": {
                                                             "type": "string",
                                                             "enum": [
@@ -12338,6 +12442,19 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "Cardano transaction hash"
+                                                        },
+                                                        "layer": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "L1",
+                                                                "L2"
+                                                            ],
+                                                            "description": "Blockchain layer this transaction was submitted to"
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
                                                         },
                                                         "status": {
                                                             "type": "string",
@@ -15145,6 +15262,19 @@
                                                             "nullable": true,
                                                             "description": "Cardano transaction hash"
                                                         },
+                                                        "layer": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "L1",
+                                                                "L2"
+                                                            ],
+                                                            "description": "Blockchain layer this transaction was submitted to"
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
+                                                        },
                                                         "status": {
                                                             "type": "string",
                                                             "enum": [
@@ -15711,6 +15841,19 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "Cardano transaction hash"
+                                                        },
+                                                        "layer": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "L1",
+                                                                "L2"
+                                                            ],
+                                                            "description": "Blockchain layer this transaction was submitted to"
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
                                                         },
                                                         "status": {
                                                             "type": "string",
@@ -16865,6 +17008,19 @@
                                                             "nullable": true,
                                                             "description": "Cardano transaction hash"
                                                         },
+                                                        "layer": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "L1",
+                                                                "L2"
+                                                            ],
+                                                            "description": "Blockchain layer this transaction was submitted to"
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
+                                                        },
                                                         "status": {
                                                             "type": "string",
                                                             "enum": [
@@ -17472,6 +17628,19 @@
                                                             "type": "string",
                                                             "nullable": true,
                                                             "description": "Cardano transaction hash"
+                                                        },
+                                                        "layer": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "L1",
+                                                                "L2"
+                                                            ],
+                                                            "description": "Blockchain layer this transaction was submitted to"
+                                                        },
+                                                        "hydraHeadId": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Hydra head ID when this transaction was submitted to L2. Null for L1 transactions"
                                                         },
                                                         "status": {
                                                             "type": "string",

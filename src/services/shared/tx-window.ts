@@ -1,9 +1,16 @@
-import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot } from '@meshsdk/core';
+import { SLOT_CONFIG_NETWORK, unixTimeToEnclosingSlot, type SlotConfig } from '@meshsdk/core';
 import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 
 export type TxWindow = {
 	invalidBefore: number;
 	invalidAfter: number;
+	// Unix-ms of the END of the `invalidAfter` slot — the `tx_latest_time` the
+	// on-chain validator sees. Datum fields derived from the validity upper
+	// bound (vested_pay: `new cooldown >= tx_latest_time + cooldown_period`)
+	// must be computed from THIS, not from `Date.now()`, or the check fails
+	// whenever the window is not anchored to the caller's wall clock (Hydra
+	// head-clock windows, shrunk buffers).
+	invalidAfterMs: number;
 };
 
 type SupportedMeshNetwork = 'mainnet' | 'preprod' | 'testnet' | 'preview';
@@ -26,9 +33,17 @@ export function createTxWindow(
 		// containing `constrainBeforeMs`. Use to satisfy Aiken
 		// `must_start_after(validity_range, X)` checks (e.g. cooldowns).
 		constrainBeforeMs?: number | bigint;
+		// Override the slot config used to convert unix times → slots. Defaults
+		// to the static config for `network`, which is correct for L1 and for a
+		// Hydra head that settles on that same L1 (e.g. a preprod head uses
+		// preprod slots). A head on a different chain (e.g. a local devnet with
+		// its own genesis) must supply its slot config here, or the window lands
+		// on slots the head's ledger rejects (`OutsideValidityIntervalUTxO`).
+		slotConfig?: SlotConfig;
 	} = {},
 ): TxWindow {
 	const nowMs = options.nowMs ?? Date.now();
+	const slotConfig = options.slotConfig ?? SLOT_CONFIG_NETWORK[network];
 	const beforeBufferMs = options.beforeBufferMs ?? SERVICE_CONSTANTS.TRANSACTION.timeBufferMs;
 	const afterBufferMs = options.afterBufferMs ?? SERVICE_CONSTANTS.TRANSACTION.timeBufferMs;
 	const validitySlotBuffer = options.validitySlotBuffer ?? SERVICE_CONSTANTS.TRANSACTION.validitySlotBuffer;
@@ -49,18 +64,30 @@ export function createTxWindow(
 				? Number(options.constrainAfterMs)
 				: options.constrainAfterMs;
 
-	const defaultInvalidBefore = unixTimeToEnclosingSlot(nowMs - beforeBufferMs, SLOT_CONFIG_NETWORK[network]) - 1;
+	const slotEndMs = (slot: number) => (slot + 1 - slotConfig.zeroSlot) * slotConfig.slotLength + slotConfig.zeroTime;
+
+	const defaultInvalidBefore = unixTimeToEnclosingSlot(nowMs - beforeBufferMs, slotConfig) - 1;
 	const invalidBefore =
 		constrainBeforeMsNum == null
 			? defaultInvalidBefore
-			: Math.max(defaultInvalidBefore, unixTimeToEnclosingSlot(constrainBeforeMsNum, SLOT_CONFIG_NETWORK[network]) + 1);
-	const defaultInvalidAfter =
-		unixTimeToEnclosingSlot(nowMs + afterBufferMs, SLOT_CONFIG_NETWORK[network]) + validitySlotBuffer;
+			: Math.max(defaultInvalidBefore, unixTimeToEnclosingSlot(constrainBeforeMsNum, slotConfig) + 1);
+	const defaultInvalidAfter = unixTimeToEnclosingSlot(nowMs + afterBufferMs, slotConfig) + validitySlotBuffer;
 
 	if (constrainAfterMsNum == null) {
+		// When `constrainBeforeMs` pushes the lower bound forward (e.g. a
+		// cooldown that expires just ahead of `nowMs`), the default upper bound
+		// can land only a handful of slots above it — a window the validating
+		// node's clock may never observe (seen on a Hydra head lagging its L1:
+		// [127319734, 127319738] = 4 slots → OutsideValidityIntervalUTxO).
+		// No `constrainAfterMs` means no contract constraint on the upper
+		// bound, so widening it is always safe: keep at least the default
+		// buffer's width above `invalidBefore`.
+		const minWindowSlots = validitySlotBuffer + Math.ceil((beforeBufferMs + afterBufferMs) / 1000);
+		const wideInvalidAfter = Math.max(defaultInvalidAfter, invalidBefore + minWindowSlots);
 		return {
 			invalidBefore,
-			invalidAfter: defaultInvalidAfter,
+			invalidAfter: wideInvalidAfter,
+			invalidAfterMs: slotEndMs(wideInvalidAfter),
 		};
 	}
 
@@ -73,7 +100,7 @@ export function createTxWindow(
 	// then overshot any deadline nearer than that and was rejected on-chain,
 	// stranding near-deadline refunds / result submissions in manual action.
 	const constrainedInvalidAfter =
-		unixTimeToEnclosingSlot(constrainAfterMsNum, SLOT_CONFIG_NETWORK[network]) -
+		unixTimeToEnclosingSlot(constrainAfterMsNum, slotConfig) -
 		(options.constrainSlotBuffer ?? SERVICE_CONSTANTS.TRANSACTION.resultTimeSlotBuffer);
 
 	const invalidAfter =
@@ -97,5 +124,6 @@ export function createTxWindow(
 	return {
 		invalidBefore,
 		invalidAfter,
+		invalidAfterMs: slotEndMs(invalidAfter),
 	};
 }

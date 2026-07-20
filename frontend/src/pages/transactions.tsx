@@ -20,6 +20,7 @@ import { useTransactions, OnChainStateFilter, ON_CHAIN_STATES } from '@/lib/hook
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Badge } from '@/components/ui/badge';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
 import Link from 'next/link';
@@ -41,6 +42,30 @@ type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 const formatStatus = (status: string | null) => {
   if (!status) return '—';
   return status.replace(/([A-Z])/g, ' $1').trim();
+};
+
+const isHydraTransaction = (transaction: Transaction) =>
+  transaction.CurrentTransaction?.layer === 'L2';
+
+// The layer (L1 vs Hydra L2) is only known once the request has been picked up
+// and locked (i.e. a CurrentTransaction exists). Before that, show neither.
+const getTransactionLayerLabel = (transaction: Transaction): 'Hydra L2' | 'L1' | null => {
+  const layer = transaction.CurrentTransaction?.layer;
+  if (layer === 'L2') return 'Hydra L2';
+  if (layer === 'L1') return 'L1';
+  return null;
+};
+
+const getHydraHeadId = (transaction: Transaction) =>
+  transaction.CurrentTransaction?.hydraHeadId ?? null;
+
+const toCsvValue = (value: unknown): string => {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint')
+    return String(value);
+  if (value instanceof Date) return value.toISOString();
+  return JSON.stringify(value) ?? '';
 };
 
 export default function Transactions() {
@@ -179,6 +204,10 @@ export default function Transactions() {
       if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (tx.PaymentSource?.network?.toLowerCase().includes(query)) return true;
       if (tx.PaymentSource?.paymentSourceType?.toLowerCase().includes(query)) return true;
+      if (tx.CurrentTransaction?.layer?.toLowerCase().includes(query)) return true;
+      if (tx.CurrentTransaction?.hydraHeadId?.toLowerCase().includes(query)) return true;
+      if (query === 'hydra' && isHydraTransaction(tx)) return true;
+      if (query === 'l2' && isHydraTransaction(tx)) return true;
       if (tx.type?.toLowerCase().includes(query)) return true;
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
@@ -315,6 +344,8 @@ export default function Transactions() {
         'Payment Amounts',
         'Network',
         'Payment Source Type',
+        'Layer',
+        'Hydra Head ID',
         'Status',
         'Date',
         'Fee rate (%)',
@@ -359,6 +390,8 @@ export default function Transactions() {
           amount,
           transaction.PaymentSource.network,
           getPaymentSourceTypeLabel(transaction.PaymentSource.paymentSourceType),
+          getTransactionLayerLabel(transaction) ?? '',
+          getHydraHeadId(transaction) ?? '',
           status,
           date,
           feeRateDisplay,
@@ -372,7 +405,7 @@ export default function Transactions() {
       // or note containing a quote breaks the CSV (parsers see it as a
       // field terminator and split that row into extra columns).
       const escapeCsvField = (value: unknown): string =>
-        `"${String(value ?? '').replace(/"/g, '""')}"`;
+        `"${toCsvValue(value).replace(/"/g, '""')}"`;
       return [headers, ...rows].map((row) => row.map(escapeCsvField).join(',')).join('\n');
     },
     [selectedPaymentSource?.id, selectedPaymentSource?.feeRatePermille, network],
@@ -658,6 +691,26 @@ export default function Transactions() {
                             paymentSourceType={transaction.PaymentSource.paymentSourceType}
                             showDefault
                           />
+                          <div className="flex items-center gap-1.5">
+                            {getTransactionLayerLabel(transaction) ? (
+                              <Badge
+                                variant={isHydraTransaction(transaction) ? 'success' : 'outline'}
+                                className="w-fit"
+                              >
+                                {getTransactionLayerLabel(transaction)}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                            {isHydraTransaction(transaction) && getHydraHeadId(transaction) && (
+                              <span
+                                className="max-w-[120px] truncate font-mono text-xs text-muted-foreground"
+                                title={getHydraHeadId(transaction) ?? undefined}
+                              >
+                                {getHydraHeadId(transaction)}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="p-4">

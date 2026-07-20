@@ -103,7 +103,8 @@ The repo intentionally uses TWO Mesh SDK versions and they MUST NOT be mixed:
 - V1 code paths (repo root, `packages/payment-core`, `packages/payment-source-v1`)
   use `@meshsdk/core@1.9.0-beta.96` and `@meshsdk/core-cst@1.9.0-beta.90`.
 - V2 code paths (`packages/payment-source-v2`) use
-  `@meshsdk/core@1.9.0-beta.102` and `@meshsdk/core-cst@1.9.0-beta.102`.
+  `@meshsdk/core@1.9.0-beta.103` and `@meshsdk/core-cst@1.9.0-beta.103`
+  (bumped from beta.102 for Hydra 2.2.0's 297-param PlutusV3 cost model).
 
 Why: Mesh SDK upgrades change script address derivation, Plutus cost model
 bundles, and CBOR encoding for datums/redeemers. Changing a side's mesh

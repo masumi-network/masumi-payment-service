@@ -501,6 +501,14 @@ export type Payment = {
          */
         txHash: string | null;
         /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
+        /**
          * Current status of the transaction
          */
         status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -537,6 +545,14 @@ export type Payment = {
          * Cardano transaction hash
          */
         txHash: string | null;
+        /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
         /**
          * Current status of the transaction
          */
@@ -835,6 +851,14 @@ export type Purchase = {
          */
         txHash: string | null;
         /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
+        /**
          * Current status of the transaction
          */
         status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -883,6 +907,14 @@ export type Purchase = {
          * Cardano transaction hash
          */
         txHash: string | null;
+        /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
         /**
          * Current status of the transaction
          */
@@ -4598,6 +4630,14 @@ export type PostPaymentResponses = {
                  */
                 txHash: string | null;
                 /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
+                /**
                  * Current status of the transaction
                  */
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -5197,6 +5237,14 @@ export type PostPaymentSubmitResultResponses = {
                  */
                 txHash: string | null;
                 /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
+                /**
                  * Current status of the transaction
                  */
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -5514,6 +5562,14 @@ export type PostPaymentAuthorizeRefundResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -5853,6 +5909,14 @@ export type PostPaymentErrorStateRecoveryResponses = {
                  */
                 txHash: string | null;
                 /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
+                /**
                  * Current status of the transaction
                  */
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -6176,6 +6240,14 @@ export type PostPurchaseErrorStateRecoveryResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -7310,6 +7382,14 @@ export type PostPurchaseErrors = {
                  */
                 txHash: string | null;
                 /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
+                /**
                  * Current status of the transaction
                  */
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -7548,6 +7628,14 @@ export type PostPurchaseResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -8067,6 +8155,14 @@ export type PostPurchaseRequestRefundResponses = {
                  */
                 txHash: string | null;
                 /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
+                /**
                  * Current status of the transaction
                  */
                 status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -8341,6 +8437,14 @@ export type PostPurchaseCancelRefundRequestResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */

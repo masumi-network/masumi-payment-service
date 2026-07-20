@@ -1,5 +1,13 @@
-import { OnChainState, PaymentAction, PaymentSourceType, TransactionStatus, Prisma } from '@/generated/prisma/client';
+import {
+	OnChainState,
+	PaymentAction,
+	PaymentSourceType,
+	TransactionLayer,
+	TransactionStatus,
+	Prisma,
+} from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { resolveTxHash } from '@meshsdk/core';
 import { Asset, deserializeDatum } from '@meshsdk/core';
 import type { LanguageVersion, UTxO } from '@meshsdk/core';
@@ -13,10 +21,17 @@ import { DecodedV1ContractDatum } from '@/utils/converter/string-datum-convert';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+import { syncMeshCostModelsFromHeadV2 } from '../../../utils/mesh-cost-model-sync';
+import {
+	headClockBehindCooldownMs,
+	resolveHydraL2WindowOptions,
+	type HydraL2WindowOptions,
+} from '@/utils/hydra/l2-slot-context';
 import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
 import { findMatchingPaymentUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 // V2-pinned single-item builder. MUST NOT use the root V1-mesh generator
 // (@/utils/generator/transaction-generator) — that bundles the V1 cost models
@@ -119,6 +134,11 @@ async function validateAndBuildItem(
 	blockchainProvider: BlockfrostProvider,
 	network: 'mainnet' | 'preprod',
 	smartContractAddress: string,
+	// L2 only: validity-window overrides anchoring to the head's clock (devnet
+	// env slot config, or the live head Tick/SyncedStatusReport time on a
+	// same-network head). Without this the head's lagging ledger clock rejects
+	// the window with OutsideValidityIntervalUTxO. undefined → L1 defaults.
+	l2WindowOptions?: HydraL2WindowOptions,
 ): Promise<ValidatedCollectionItem> {
 	if (request.payByTime == null) {
 		throw new Error('Pay by time is null, this is deprecated');
@@ -227,8 +247,15 @@ async function validateAndBuildItem(
 			: decodedContract.sellerCooldownTime > decodedContract.unlockTime
 				? decodedContract.sellerCooldownTime
 				: decodedContract.unlockTime;
+	const headBehindMs = headClockBehindCooldownMs(l2WindowOptions ?? {}, lowerBoundMs);
+	if (headBehindMs > 0) {
+		throw new Error(
+			`${LOOKUP_DEFERRED_PREFIX} head clock is ${Math.ceil(headBehindMs / 1000)}s behind the unlock/cooldown bound; retry next tick`,
+		);
+	}
 	const { invalidBefore, invalidAfter } = createTxWindow(network, {
 		constrainBeforeMs: lowerBoundMs,
+		...(l2WindowOptions ?? {}),
 	});
 
 	return {
@@ -1036,6 +1063,139 @@ function groupRequestsByWallet(requests: PaymentRequestWithRelations[]): Map<str
 	return byWallet;
 }
 
+/**
+ * Hydra L2 single-item collection (in-head withdraw). Spends the contract UTxO
+ * in the head and pays the seller (and collateral return), mirroring the L1
+ * single-item path but on mesh 102 via `asV2Provider` with synchronous head
+ * submit. Validated on a Hydra devnet (see docs/hydra-l2-devnet-findings.md).
+ */
+async function processL2Collection(
+	request: PaymentRequestWithRelations,
+	paymentContract: PaymentSourceWithRelations,
+	network: 'mainnet' | 'preprod',
+): Promise<boolean> {
+	const headId = request.CurrentTransaction?.hydraHeadId;
+	if (headId == null) {
+		throw new Error('L2 collection: request has no hydraHeadId on CurrentTransaction');
+	}
+	const hydraProvider = getHydraConnectionManager().getProvider(headId);
+	if (!hydraProvider) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} no active Hydra provider for head ${headId}; retry next tick`);
+	}
+	if (request.SmartContractWallet == null) {
+		throw new Error('Smart contract wallet not found');
+	}
+
+	const walletSession = await loadHotWalletSession({
+		network: paymentContract.network,
+		rpcProviderApiKey: paymentContract.PaymentSourceConfig.rpcProviderApiKey,
+		encryptedMnemonic: request.SmartContractWallet.Secret.encryptedMnemonic,
+		hotWalletId: request.SmartContractWallet.id,
+	});
+	const { wallet, address } = walletSession;
+
+	const headWalletUtxos = await hydraProvider.fetchAddressUTxOs(address);
+	if (headWalletUtxos.length === 0) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no UTxOs in head ${headId}; retry next tick`);
+	}
+
+	const { script, smartContractAddress } = await getPaymentScriptFromPaymentSourceV2(paymentContract);
+	// validateAndBuildItem fetches the contract UTxO via the provider's
+	// fetchUTxOs; the HydraProvider implements it. Cast is safe — only
+	// fetchUTxOs is exercised here.
+	const validated = await validateAndBuildItem(
+		request,
+		hydraProvider as unknown as BlockfrostProvider,
+		network,
+		smartContractAddress,
+		// L2: anchor the validity window to the head's clock (env devnet override
+		// or live head Tick/SyncedStatusReport time).
+		resolveHydraL2WindowOptions(hydraProvider),
+	);
+
+	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);
+	const collateralUtxo = limitedUtxos[0];
+	if (collateralUtxo == null) {
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no collateral UTxO in head`);
+	}
+
+	const hydraV2Provider = asV2Provider(hydraProvider);
+	// Patch the V2 mesh line's bundled Plutus cost-model arrays from the HEAD's
+	// protocol parameters before building (no Blockfrost evaluator on L2). Without
+	// the head's cost models the in-head script-data-hash won't match and the head
+	// rejects with PPViewHashesDontMatch. Arrays are process-global + shared with
+	// L1, so hold the per-payment-source mesh lock across sync + build + sign;
+	// submitTx stays outside. See docs/adr/0005.
+	const headCostModels = await hydraProvider.fetchRawCostModels();
+	const signedTx = await withMeshCostModelLock(paymentContract.PaymentSourceConfig.rpcProviderApiKey, async () => {
+		await syncMeshCostModelsFromHeadV2(headCostModels);
+		const unsignedTx = await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
+			'CollectCompleted',
+			hydraV2Provider,
+			network,
+			script,
+			address,
+			validated.smartContractUtxo,
+			collateralUtxo,
+			limitedUtxos,
+			{
+				collectAssets: validated.collectAssets,
+				collectionAddress: validated.collectionAddress,
+			},
+			null,
+			{
+				lovelace: validated.collateralReturn.lovelace,
+				address: validated.collateralReturn.address,
+				txHash: validated.smartContractUtxo.input.txHash,
+				outputIndex: validated.smartContractUtxo.input.outputIndex,
+			},
+			validated.window.invalidBefore,
+			validated.window.invalidAfter,
+			true,
+			undefined, // rpcApiKey — no chain cost-model sync on L2
+			undefined, // walletSplitterLovelace — L1-only convention
+			hydraV2Provider,
+		);
+		return await wallet.signTx(unsignedTx);
+	});
+
+	let newTxHash: string;
+	try {
+		newTxHash = await hydraProvider.submitTx(signedTx);
+	} catch (error) {
+		logger.error('L2 collection: error submitting to head', { error, headId });
+		await prisma.paymentRequest.update({
+			where: { id: request.id },
+			data: {
+				...connectPreviousAction(request.nextActionId),
+				...createNextPaymentAction(PaymentAction.WithdrawRequested),
+				SmartContractWallet: { update: { lockedAt: null } },
+			},
+		});
+		return false;
+	}
+
+	await retryOnSerializationConflict(
+		() =>
+			prisma.paymentRequest.update({
+				where: { id: request.id },
+				data: {
+					...connectPreviousAction(request.nextActionId),
+					...createNextPaymentAction(PaymentAction.WithdrawInitiated),
+					...createPendingTransaction(request.SmartContractWallet!.id, newTxHash, {
+						layer: TransactionLayer.L2,
+						hydraHeadId: headId,
+					}),
+					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
+				},
+			}),
+		{ label: 'v2-collection-l2-post-submit' },
+	);
+
+	logger.info('L2 collection submitted to head', { txHash: newTxHash, headId, smartContractAddress });
+	return true;
+}
+
 export async function collectOutstandingPaymentsV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -1058,6 +1218,7 @@ export async function collectOutstandingPaymentsV2() {
 			resultHash: { not: null },
 			maxBatchSize: COLLECTION_BATCH_SIZE,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			layer: TransactionLayer.L1,
 			orFilters: [
 				// Variant A: timed withdrawal — unlockTime has elapsed and the
 				// on-chain UTxO is still ResultSubmitted (seller can collect).
@@ -1097,6 +1258,45 @@ export async function collectOutstandingPaymentsV2() {
 							script,
 							smartContractAddress,
 						);
+					}),
+				);
+			}),
+		);
+
+		// --- Hydra L2: dedicated single-item head collection path ---
+		// In-head withdraw timing differs from L1; validated on a Hydra devnet
+		// (see docs/hydra-l2-devnet-findings.md).
+		const l2PaymentContracts = await lockAndQueryPayments({
+			paymentStatus: PaymentAction.WithdrawRequested,
+			resultHash: { not: null },
+			maxBatchSize: COLLECTION_BATCH_SIZE,
+			paymentSourceType: PaymentSourceType.Web3CardanoV2,
+			layer: TransactionLayer.L2,
+			orFilters: [
+				{
+					onChainState: { in: [OnChainState.ResultSubmitted] },
+					unlockTime: { lte: Date.now() - 1000 * 60 * 10 },
+				},
+				{
+					onChainState: { in: [OnChainState.WithdrawAuthorized] },
+				},
+			],
+		});
+		await Promise.allSettled(
+			l2PaymentContracts.map(async (paymentContract) => {
+				if (paymentContract.PaymentRequests.length === 0) return;
+				const network = convertNetwork(paymentContract.network);
+				await Promise.allSettled(
+					paymentContract.PaymentRequests.map(async (request) => {
+						try {
+							await processL2Collection(request, paymentContract, network);
+						} catch (error) {
+							if (isLookupDeferred(error)) {
+								logger.info('L2 collection deferred to next tick', { requestId: request.id, error });
+							} else {
+								logger.error('L2 collection failed', { requestId: request.id, error });
+							}
+						}
 					}),
 				);
 			}),
