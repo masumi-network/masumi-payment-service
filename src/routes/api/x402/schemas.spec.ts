@@ -70,6 +70,7 @@ describe('x402 available network output', () => {
 					isTestnet: false,
 					isEnabled: true,
 					defaultAsset: '0x1111111111111111111111111111111111111111',
+					defaultAssetDecimals: 8,
 					rpcUrl: 'https://rpc.internal.example',
 					facilitatorUrl: 'https://facilitator.internal.example',
 					facilitatorWalletId: 'wallet-secret-topology',
@@ -85,6 +86,7 @@ describe('x402 available network output', () => {
 			isTestnet: false,
 			isEnabled: true,
 			defaultAsset: '0x1111111111111111111111111111111111111111',
+			defaultAssetDecimals: 8,
 		});
 	});
 });

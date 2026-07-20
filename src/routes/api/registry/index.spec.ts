@@ -190,7 +190,10 @@ describe('registerAgentPost', () => {
 		mockFindApiKey.mockResolvedValue(asApiKey());
 		mockFindSellingWallet.mockResolvedValue(buildSellingWallet());
 		mockFindRecipientWallet.mockResolvedValue(null);
-		mockCreateRegistryRequest.mockResolvedValue(buildRegistryRequestResponse(null));
+		mockCreateRegistryRequest.mockImplementation(async (args: any) => ({
+			...buildRegistryRequestResponse(null),
+			SupportedPaymentSources: args.data.SupportedPaymentSources?.createMany?.data ?? [],
+		}));
 		mockFindRegistryRequests.mockResolvedValue([]);
 		mockCountRegistryRequests.mockResolvedValue(0);
 	});
@@ -365,10 +368,28 @@ describe('registerAgentPost', () => {
 		expect(responseMock.statusCode).toBe(200);
 		expect(mockFindRecipientWallet).not.toHaveBeenCalled();
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.RecipientWallet).toBeUndefined();
-		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.SupportedPaymentSources).toBeUndefined();
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.SupportedPaymentSources).toEqual({
+			createMany: {
+				data: [
+					{
+						chain: 'Cardano',
+						network: Network.Preprod,
+						paymentSourceType: PaymentSourceType.Web3CardanoV2,
+						address: 'addr_test1smartcontract',
+					},
+				],
+			},
+		});
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.sendFundingLovelace).toBeUndefined();
 		expect(responseMock._getJSONData().data.RecipientWallet).toBeNull();
-		expect(responseMock._getJSONData().data.supportedPaymentSources).toBeNull();
+		expect(responseMock._getJSONData().data.supportedPaymentSources).toEqual([
+			{
+				chain: 'Cardano',
+				network: Network.Preprod,
+				paymentSourceType: PaymentSourceType.Web3CardanoV2,
+				address: 'addr_test1smartcontract',
+			},
+		]);
 		expect(responseMock._getJSONData().data.sendFundingLovelace).toBeNull();
 	});
 
@@ -447,10 +468,11 @@ describe('registerAgentPost', () => {
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.metadataVersion).toBe(2);
 	});
 
-	it('persists dynamic, fixed native, and free x402 pricing models', async () => {
+	it('persists dynamic, fixed ERC-20, and free x402 pricing models', async () => {
 		const dynamicPayTo = `0x${'1'.repeat(40)}`;
 		const fixedPayTo = `0x${'2'.repeat(40)}`;
 		const freePayTo = `0x${'3'.repeat(40)}`;
+		const fixedAsset = '0x036CbD53842c5426634e7929541eC2318f3dCF7c';
 
 		const { responseMock } = await testEndpoint({
 			endpoint: registerAgentPost,
@@ -486,10 +508,9 @@ describe('registerAgentPost', () => {
 							chain: 'EVM',
 							network: 'eip155:84532',
 							scheme: 'Exact',
-							pricingType: PricingType.Fixed,
-							asset: 'native',
+							asset: fixedAsset,
 							amount: '1000',
-							decimals: 18,
+							decimals: 6,
 							payTo: fixedPayTo,
 						},
 						{
@@ -530,9 +551,9 @@ describe('registerAgentPost', () => {
 						address: fixedPayTo,
 						scheme: 'Exact',
 						pricingType: PricingType.Fixed,
-						asset: 'native',
+						asset: fixedAsset.toLowerCase(),
 						amount: BigInt(1000),
-						decimals: 18,
+						decimals: 6,
 						payTo: fixedPayTo,
 						resource: undefined,
 						extra: undefined,
@@ -554,6 +575,12 @@ describe('registerAgentPost', () => {
 				],
 			},
 		});
+		expect(responseMock._getJSONData().data.supportedPaymentSources).toHaveLength(3);
+		expect(
+			responseMock
+				._getJSONData()
+				.data.supportedPaymentSources.every((supportedSource: { chain: string }) => supportedSource.chain === 'EVM'),
+		).toBe(true);
 	});
 
 	it('stores a managed recipient wallet override when provided', async () => {

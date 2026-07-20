@@ -111,17 +111,27 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				operation: 'register_agent',
 			});
 			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
-			// Keep persisted registry payment-source rows opt-in. Mint metadata
-			// still advertises the active payment source from the mint service.
-			// supportedPaymentSources is a V2-only concept: silently drop any
-			// provided rows for V1 (legacy) registrations so they are never
-			// persisted or advertised on-chain. (The validation + DB create below
-			// then become no-ops for V1.)
+			// Explicit V2 lists are authoritative, including EVM-only lists.
+			// Older clients omit the field, so preserve their historical Masumi
+			// behavior by persisting the active Cardano source. Persisting the
+			// fallback keeps the registry API and minted metadata in agreement.
 			const supportedPaymentSources =
 				sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
-					? (input.supportedPaymentSources ?? [])
+					? (input.supportedPaymentSources ?? [
+							{
+								chain: 'Cardano' as const,
+								network: input.network,
+								paymentSourceType: sellingWallet.PaymentSource.paymentSourceType,
+								address: sellingWallet.PaymentSource.smartContractAddress,
+							},
+						])
 					: [];
-			if (supportedPaymentSources.length > 0) {
+			// The synthesized fallback comes from the already-resolved active payment
+			// source. Validate only caller-provided rows here.
+			if (
+				input.supportedPaymentSources != null &&
+				sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
+			) {
 				try {
 					validateSupportedPaymentSourcesOrThrow(
 						supportedPaymentSources,
@@ -208,15 +218,16 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 											chain: source.chain,
 											network: source.network,
 											paymentSourceType: source.paymentSourceType,
-											address: source.chain === 'EVM' ? (source.address ?? source.payTo) : source.address,
+											address: source.chain === 'EVM' ? (source.address ?? source.payTo).toLowerCase() : source.address,
 											...(source.chain === 'EVM'
 												? {
 														scheme: source.scheme,
 														pricingType: source.pricingType,
-														asset: source.pricingType === PricingType.Free ? null : (source.asset ?? null),
+														asset:
+															source.pricingType === PricingType.Free ? null : (source.asset?.toLowerCase() ?? null),
 														amount: source.pricingType === PricingType.Fixed ? BigInt(source.amount) : null,
 														decimals: source.pricingType === PricingType.Free ? null : (source.decimals ?? null),
-														payTo: source.payTo,
+														payTo: source.payTo.toLowerCase(),
 														resource: source.resource,
 														extra: source.extra as Prisma.InputJsonValue | undefined,
 													}

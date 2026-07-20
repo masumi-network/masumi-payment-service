@@ -2192,19 +2192,9 @@
                                                     "description": "A fixed amount is advertised in the registry"
                                                 },
                                                 "asset": {
-                                                    "anyOf": [
-                                                        {
-                                                            "type": "string",
-                                                            "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                        },
-                                                        {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "native"
-                                                            ]
-                                                        }
-                                                    ],
-                                                    "description": "ERC-20 token contract address, or \"native\" for the chain native currency"
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                    "description": "ERC-20 token contract address"
                                                 },
                                                 "amount": {
                                                     "type": "string",
@@ -2292,18 +2282,8 @@
                                                     "description": "The exact positive amount is supplied dynamically in each x402 payment requirement"
                                                 },
                                                 "asset": {
-                                                    "anyOf": [
-                                                        {
-                                                            "type": "string",
-                                                            "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                        },
-                                                        {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "native"
-                                                            ]
-                                                        }
-                                                    ],
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
                                                     "description": "Optional asset allowlist for dynamic payment requirements"
                                                 },
                                                 "decimals": {
@@ -2890,19 +2870,9 @@
                                                     "description": "A fixed amount is advertised in the registry"
                                                 },
                                                 "asset": {
-                                                    "anyOf": [
-                                                        {
-                                                            "type": "string",
-                                                            "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                        },
-                                                        {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "native"
-                                                            ]
-                                                        }
-                                                    ],
-                                                    "description": "ERC-20 token contract address, or \"native\" for the chain native currency"
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                    "description": "ERC-20 token contract address"
                                                 },
                                                 "amount": {
                                                     "type": "string",
@@ -2990,18 +2960,8 @@
                                                     "description": "The exact positive amount is supplied dynamically in each x402 payment requirement"
                                                 },
                                                 "asset": {
-                                                    "anyOf": [
-                                                        {
-                                                            "type": "string",
-                                                            "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                        },
-                                                        {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "native"
-                                                            ]
-                                                        }
-                                                    ],
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
                                                     "description": "Optional asset allowlist for dynamic payment requirements"
                                                 },
                                                 "decimals": {
@@ -3614,19 +3574,9 @@
                                             "description": "A fixed amount is advertised in the registry"
                                         },
                                         "asset": {
-                                            "anyOf": [
-                                                {
-                                                    "type": "string",
-                                                    "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                },
-                                                {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "native"
-                                                    ]
-                                                }
-                                            ],
-                                            "description": "ERC-20 token contract address, or \"native\" for the chain native currency"
+                                            "type": "string",
+                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                            "description": "ERC-20 token contract address"
                                         },
                                         "amount": {
                                             "type": "string",
@@ -3714,18 +3664,8 @@
                                             "description": "The exact positive amount is supplied dynamically in each x402 payment requirement"
                                         },
                                         "asset": {
-                                            "anyOf": [
-                                                {
-                                                    "type": "string",
-                                                    "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                },
-                                                {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "native"
-                                                    ]
-                                                }
-                                            ],
+                                            "type": "string",
+                                            "pattern": "^0x[a-fA-F0-9]{40}$",
                                             "description": "Optional asset allowlist for dynamic payment requirements"
                                         },
                                         "decimals": {
@@ -4959,6 +4899,13 @@
                         "nullable": true,
                         "pattern": "^0x[a-fA-F0-9]{40}$",
                         "description": "Default settlement asset (token contract) for this chain"
+                    },
+                    "defaultAssetDecimals": {
+                        "type": "integer",
+                        "nullable": true,
+                        "minimum": 0,
+                        "maximum": 255,
+                        "description": "Decimals for the default settlement asset; null until an operator confirms them"
                     }
                 },
                 "required": [
@@ -4967,7 +4914,8 @@
                     "displayName",
                     "isTestnet",
                     "isEnabled",
-                    "defaultAsset"
+                    "defaultAsset",
+                    "defaultAssetDecimals"
                 ]
             },
             "X402Network": {
@@ -5002,6 +4950,13 @@
                         "nullable": true,
                         "pattern": "^0x[a-fA-F0-9]{40}$",
                         "description": "Default settlement asset (token contract) for this chain"
+                    },
+                    "defaultAssetDecimals": {
+                        "type": "integer",
+                        "nullable": true,
+                        "minimum": 0,
+                        "maximum": 255,
+                        "description": "Decimals for the default settlement asset; null until an operator confirms them"
                     },
                     "facilitatorWalletId": {
                         "type": "string",
@@ -5040,6 +4995,7 @@
                     "isTestnet",
                     "isEnabled",
                     "defaultAsset",
+                    "defaultAssetDecimals",
                     "facilitatorWalletId",
                     "facilitatorWalletAddress",
                     "facilitatorUrl",
@@ -19294,19 +19250,9 @@
                                                             "description": "A fixed amount is advertised in the registry"
                                                         },
                                                         "asset": {
-                                                            "anyOf": [
-                                                                {
-                                                                    "type": "string",
-                                                                    "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                                },
-                                                                {
-                                                                    "type": "string",
-                                                                    "enum": [
-                                                                        "native"
-                                                                    ]
-                                                                }
-                                                            ],
-                                                            "description": "ERC-20 token contract address, or \"native\" for the chain native currency"
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "ERC-20 token contract address"
                                                         },
                                                         "amount": {
                                                             "type": "string",
@@ -19394,18 +19340,8 @@
                                                             "description": "The exact positive amount is supplied dynamically in each x402 payment requirement"
                                                         },
                                                         "asset": {
-                                                            "anyOf": [
-                                                                {
-                                                                    "type": "string",
-                                                                    "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                                },
-                                                                {
-                                                                    "type": "string",
-                                                                    "enum": [
-                                                                        "native"
-                                                                    ]
-                                                                }
-                                                            ],
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
                                                             "description": "Optional asset allowlist for dynamic payment requirements"
                                                         },
                                                         "decimals": {
@@ -19493,6 +19429,89 @@
                                                         "payTo",
                                                         "pricingType"
                                                     ]
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "chain": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "EVM"
+                                                            ],
+                                                            "description": "The chain family used by standard x402"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "pattern": "^eip155:\\d+$",
+                                                            "description": "CAIP-2 EVM network id, for example eip155:8453"
+                                                        },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2",
+                                                                null
+                                                            ],
+                                                            "description": "The configured payment source type"
+                                                        },
+                                                        "address": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "Alias for payTo, kept for existing payment-source shape"
+                                                        },
+                                                        "scheme": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Exact"
+                                                            ],
+                                                            "description": "x402 payment scheme"
+                                                        },
+                                                        "payTo": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "EVM address receiving the x402 payment"
+                                                        },
+                                                        "resource": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "Optional absolute resource URL this x402 option protects"
+                                                        },
+                                                        "extra": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            },
+                                                            "description": "Additional x402 metadata"
+                                                        },
+                                                        "asset": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "ERC-20 token contract address"
+                                                        },
+                                                        "amount": {
+                                                            "type": "string",
+                                                            "pattern": "^\\d+$",
+                                                            "description": "Atomic token amount"
+                                                        },
+                                                        "decimals": {
+                                                            "type": "integer",
+                                                            "minimum": 0,
+                                                            "maximum": 255,
+                                                            "description": "Token decimals"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "chain",
+                                                        "network",
+                                                        "scheme",
+                                                        "payTo",
+                                                        "asset",
+                                                        "amount",
+                                                        "decimals"
+                                                    ],
+                                                    "additionalProperties": false
                                                 }
                                             ]
                                         },
@@ -20693,19 +20712,9 @@
                                                             "description": "A fixed amount is advertised in the registry"
                                                         },
                                                         "asset": {
-                                                            "anyOf": [
-                                                                {
-                                                                    "type": "string",
-                                                                    "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                                },
-                                                                {
-                                                                    "type": "string",
-                                                                    "enum": [
-                                                                        "native"
-                                                                    ]
-                                                                }
-                                                            ],
-                                                            "description": "ERC-20 token contract address, or \"native\" for the chain native currency"
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "ERC-20 token contract address"
                                                         },
                                                         "amount": {
                                                             "type": "string",
@@ -20793,18 +20802,8 @@
                                                             "description": "The exact positive amount is supplied dynamically in each x402 payment requirement"
                                                         },
                                                         "asset": {
-                                                            "anyOf": [
-                                                                {
-                                                                    "type": "string",
-                                                                    "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                                },
-                                                                {
-                                                                    "type": "string",
-                                                                    "enum": [
-                                                                        "native"
-                                                                    ]
-                                                                }
-                                                            ],
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
                                                             "description": "Optional asset allowlist for dynamic payment requirements"
                                                         },
                                                         "decimals": {
@@ -20892,11 +20891,94 @@
                                                         "payTo",
                                                         "pricingType"
                                                     ]
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "chain": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "EVM"
+                                                            ],
+                                                            "description": "The chain family used by standard x402"
+                                                        },
+                                                        "network": {
+                                                            "type": "string",
+                                                            "pattern": "^eip155:\\d+$",
+                                                            "description": "CAIP-2 EVM network id, for example eip155:8453"
+                                                        },
+                                                        "paymentSourceType": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "enum": [
+                                                                "Web3CardanoV1",
+                                                                "Web3CardanoV2",
+                                                                null
+                                                            ],
+                                                            "description": "The configured payment source type"
+                                                        },
+                                                        "address": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "Alias for payTo, kept for existing payment-source shape"
+                                                        },
+                                                        "scheme": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "Exact"
+                                                            ],
+                                                            "description": "x402 payment scheme"
+                                                        },
+                                                        "payTo": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "EVM address receiving the x402 payment"
+                                                        },
+                                                        "resource": {
+                                                            "type": "string",
+                                                            "maxLength": 500,
+                                                            "format": "uri",
+                                                            "description": "Optional absolute resource URL this x402 option protects"
+                                                        },
+                                                        "extra": {
+                                                            "type": "object",
+                                                            "additionalProperties": {
+                                                                "nullable": true
+                                                            },
+                                                            "description": "Additional x402 metadata"
+                                                        },
+                                                        "asset": {
+                                                            "type": "string",
+                                                            "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                            "description": "ERC-20 token contract address"
+                                                        },
+                                                        "amount": {
+                                                            "type": "string",
+                                                            "pattern": "^\\d+$",
+                                                            "description": "Atomic token amount"
+                                                        },
+                                                        "decimals": {
+                                                            "type": "integer",
+                                                            "minimum": 0,
+                                                            "maximum": 255,
+                                                            "description": "Token decimals"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "chain",
+                                                        "network",
+                                                        "scheme",
+                                                        "payTo",
+                                                        "asset",
+                                                        "amount",
+                                                        "decimals"
+                                                    ],
+                                                    "additionalProperties": false
                                                 }
                                             ]
                                         },
                                         "maxItems": 25,
-                                        "description": "Payment sources to replace on this registry request. Provide an empty array to clear them."
+                                        "description": "Payment sources to replace on this registry request. An empty array resets the entry to its active Masumi source."
                                     },
                                     "verifications": {
                                         "type": "array",
@@ -26039,7 +26121,8 @@
                                                     "displayName": "Base",
                                                     "isTestnet": false,
                                                     "isEnabled": true,
-                                                    "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+                                                    "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                    "defaultAssetDecimals": 6
                                                 }
                                             ]
                                         }
@@ -26124,6 +26207,7 @@
                                                     "isTestnet": false,
                                                     "isEnabled": true,
                                                     "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                                    "defaultAssetDecimals": 6,
                                                     "facilitatorWalletId": "clmanagedwallet0002",
                                                     "facilitatorWalletAddress": "0x5555555555555555555555555555555555555555",
                                                     "facilitatorUrl": null,
@@ -26182,6 +26266,12 @@
                                         "nullable": true,
                                         "pattern": "^0x[a-fA-F0-9]{40}$"
                                     },
+                                    "defaultAssetDecimals": {
+                                        "type": "integer",
+                                        "nullable": true,
+                                        "minimum": 0,
+                                        "maximum": 255
+                                    },
                                     "facilitatorWalletId": {
                                         "type": "string",
                                         "nullable": true,
@@ -26211,6 +26301,7 @@
                                     "isTestnet": false,
                                     "isEnabled": true,
                                     "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                    "defaultAssetDecimals": 6,
                                     "facilitatorWalletId": "clmanagedwallet0002"
                                 }
                             }
@@ -26249,6 +26340,7 @@
                                             "isTestnet": false,
                                             "isEnabled": true,
                                             "defaultAsset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                                            "defaultAssetDecimals": 6,
                                             "facilitatorWalletId": "clmanagedwallet0002",
                                             "facilitatorWalletAddress": "0x5555555555555555555555555555555555555555",
                                             "facilitatorUrl": null,
@@ -26865,19 +26957,9 @@
                                                         "pattern": "^eip155:\\d+$"
                                                     },
                                                     "asset": {
-                                                        "anyOf": [
-                                                            {
-                                                                "type": "string",
-                                                                "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                            },
-                                                            {
-                                                                "type": "string",
-                                                                "enum": [
-                                                                    "native"
-                                                                ]
-                                                            }
-                                                        ],
-                                                        "description": "ERC-20 token contract address, or \"native\" for the chain native currency"
+                                                        "type": "string",
+                                                        "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                        "description": "ERC-20 token contract address"
                                                     },
                                                     "amount": {
                                                         "type": "string",
@@ -26926,6 +27008,51 @@
                                             "accepted",
                                             "payload"
                                         ]
+                                    },
+                                    "paymentRequirements": {
+                                        "type": "object",
+                                        "properties": {
+                                            "scheme": {
+                                                "type": "string"
+                                            },
+                                            "network": {
+                                                "type": "string",
+                                                "pattern": "^eip155:\\d+$"
+                                            },
+                                            "asset": {
+                                                "type": "string",
+                                                "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                "description": "ERC-20 token contract address"
+                                            },
+                                            "amount": {
+                                                "type": "string",
+                                                "pattern": "^\\d+$"
+                                            },
+                                            "payTo": {
+                                                "type": "string",
+                                                "pattern": "^0x[a-fA-F0-9]{40}$"
+                                            },
+                                            "maxTimeoutSeconds": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "exclusiveMinimum": true
+                                            },
+                                            "extra": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "nullable": true
+                                                }
+                                            }
+                                        },
+                                        "required": [
+                                            "scheme",
+                                            "network",
+                                            "asset",
+                                            "amount",
+                                            "payTo",
+                                            "maxTimeoutSeconds"
+                                        ],
+                                        "description": "Trusted requirements originally issued by the authenticated resource server. Required for Dynamic registry pricing; Fixed pricing is derived from the registry."
                                     }
                                 },
                                 "required": [
@@ -27094,19 +27221,9 @@
                                                         "pattern": "^eip155:\\d+$"
                                                     },
                                                     "asset": {
-                                                        "anyOf": [
-                                                            {
-                                                                "type": "string",
-                                                                "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                            },
-                                                            {
-                                                                "type": "string",
-                                                                "enum": [
-                                                                    "native"
-                                                                ]
-                                                            }
-                                                        ],
-                                                        "description": "ERC-20 token contract address, or \"native\" for the chain native currency"
+                                                        "type": "string",
+                                                        "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                        "description": "ERC-20 token contract address"
                                                     },
                                                     "amount": {
                                                         "type": "string",
@@ -27155,6 +27272,51 @@
                                             "accepted",
                                             "payload"
                                         ]
+                                    },
+                                    "paymentRequirements": {
+                                        "type": "object",
+                                        "properties": {
+                                            "scheme": {
+                                                "type": "string"
+                                            },
+                                            "network": {
+                                                "type": "string",
+                                                "pattern": "^eip155:\\d+$"
+                                            },
+                                            "asset": {
+                                                "type": "string",
+                                                "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                "description": "ERC-20 token contract address"
+                                            },
+                                            "amount": {
+                                                "type": "string",
+                                                "pattern": "^\\d+$"
+                                            },
+                                            "payTo": {
+                                                "type": "string",
+                                                "pattern": "^0x[a-fA-F0-9]{40}$"
+                                            },
+                                            "maxTimeoutSeconds": {
+                                                "type": "integer",
+                                                "minimum": 0,
+                                                "exclusiveMinimum": true
+                                            },
+                                            "extra": {
+                                                "type": "object",
+                                                "additionalProperties": {
+                                                    "nullable": true
+                                                }
+                                            }
+                                        },
+                                        "required": [
+                                            "scheme",
+                                            "network",
+                                            "asset",
+                                            "amount",
+                                            "payTo",
+                                            "maxTimeoutSeconds"
+                                        ],
+                                        "description": "Trusted requirements originally issued by the authenticated resource server. Required for Dynamic registry pricing; Fixed pricing is derived from the registry."
                                     }
                                 },
                                 "required": [
@@ -27401,18 +27563,8 @@
                                         "description": "Restrict signing to this CAIP-2 network"
                                     },
                                     "preferredAsset": {
-                                        "anyOf": [
-                                            {
-                                                "type": "string",
-                                                "pattern": "^0x[a-fA-F0-9]{40}$"
-                                            },
-                                            {
-                                                "type": "string",
-                                                "enum": [
-                                                    "native"
-                                                ]
-                                            }
-                                        ],
+                                        "type": "string",
+                                        "pattern": "^0x[a-fA-F0-9]{40}$",
                                         "description": "Restrict signing to this token asset"
                                     },
                                     "paymentIdentifier": {
@@ -27479,19 +27631,9 @@
                                                     "pattern": "^eip155:\\d+$"
                                                 },
                                                 "asset": {
-                                                    "anyOf": [
-                                                        {
-                                                            "type": "string",
-                                                            "pattern": "^0x[a-fA-F0-9]{40}$"
-                                                        },
-                                                        {
-                                                            "type": "string",
-                                                            "enum": [
-                                                                "native"
-                                                            ]
-                                                        }
-                                                    ],
-                                                    "description": "ERC-20 token contract address, or \"native\" for the chain native currency"
+                                                    "type": "string",
+                                                    "pattern": "^0x[a-fA-F0-9]{40}$",
+                                                    "description": "ERC-20 token contract address"
                                                 },
                                                 "amount": {
                                                     "type": "string",

@@ -51,9 +51,7 @@ export function X402OptionFields({
   );
   const isCustomWallet = !selectedWallet;
   const isCustomAsset = !!option.asset && !selectedAssetPreset;
-  const hasKnownTokenDecimals =
-    !!selectedAssetPreset &&
-    (selectedAssetPreset.isNative || selectedAssetPreset.symbol !== 'Default token');
+  const hasKnownTokenDecimals = !!selectedAssetPreset;
 
   return (
     <div className="flex flex-col gap-4">
@@ -68,7 +66,7 @@ export function X402OptionFields({
                 onChange({
                   pricingType: value,
                   asset: defaultAsset?.address ?? selectedNetwork?.defaultAsset ?? '',
-                  decimals: String(defaultAsset?.decimals ?? 6),
+                  decimals: String(defaultAsset?.decimals ?? ''),
                   amount: '',
                 });
                 return;
@@ -160,7 +158,7 @@ export function X402OptionFields({
               value={selectedAssetPreset?.address ?? CUSTOM_ASSET}
               onValueChange={(value) => {
                 if (value === CUSTOM_ASSET) {
-                  onChange({ asset: '0x', decimals: '6' });
+                  onChange({ asset: '0x', decimals: '' });
                   return;
                 }
                 const preset = assetPresets.find((candidate) => candidate.address === value);
@@ -181,7 +179,7 @@ export function X402OptionFields({
                     <SelectItem key={preset.address} value={preset.address}>
                       {preset.symbol}
                       <span className="ml-2 text-xs text-muted-foreground">
-                        {preset.isNative ? 'Native currency' : shortenAddress(preset.address, 5)}
+                        {shortenAddress(preset.address, 5)}
                       </span>
                     </SelectItem>
                   ))}
@@ -233,7 +231,7 @@ export function X402OptionFields({
                       option.pricingType === 'Fixed'
                         ? (asset?.address ?? network?.defaultAsset ?? '')
                         : '',
-                    decimals: option.pricingType === 'Fixed' ? String(asset?.decimals ?? 6) : '',
+                    decimals: option.pricingType === 'Fixed' ? String(asset?.decimals ?? '') : '',
                     payTo: wallet?.address ?? '',
                   });
                 }}
@@ -266,7 +264,7 @@ export function X402OptionFields({
                       return;
                     }
                     if (value === CUSTOM_ASSET) {
-                      onChange({ asset: '0x', decimals: '6' });
+                      onChange({ asset: '0x', decimals: '' });
                       return;
                     }
                     const preset = assetPresets.find((candidate) => candidate.address === value);
@@ -288,9 +286,7 @@ export function X402OptionFields({
                         <SelectItem key={preset.address} value={preset.address}>
                           {preset.symbol}
                           <span className="ml-2 text-xs text-muted-foreground">
-                            {preset.isNative
-                              ? 'Native currency'
-                              : shortenAddress(preset.address, 5)}
+                            {shortenAddress(preset.address, 5)}
                           </span>
                         </SelectItem>
                       ))}
@@ -324,11 +320,7 @@ export function X402OptionFields({
                 <Input
                   aria-label={`Token contract for payment option ${optionNumber}`}
                   className="font-mono"
-                  value={
-                    selectedAssetPreset?.isNative
-                      ? `${selectedAssetPreset.name} (native)`
-                      : option.asset
-                  }
+                  value={option.asset}
                   readOnly
                 />
               </div>

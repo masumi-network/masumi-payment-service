@@ -59,6 +59,7 @@ export const x402NetworkExample = {
 	isTestnet: false,
 	isEnabled: true,
 	defaultAsset: exampleUsdcAsset,
+	defaultAssetDecimals: 6,
 	facilitatorWalletId: x402FacilitatorWalletExample.id,
 	facilitatorWalletAddress: x402FacilitatorWalletExample.address,
 	facilitatorUrl: null,
@@ -74,6 +75,7 @@ const x402AvailableNetworkExample = {
 	isTestnet: x402NetworkExample.isTestnet,
 	isEnabled: x402NetworkExample.isEnabled,
 	defaultAsset: x402NetworkExample.defaultAsset,
+	defaultAssetDecimals: x402NetworkExample.defaultAssetDecimals,
 } satisfies z.infer<typeof x402AvailableNetworkSchema>;
 
 export const x402BudgetExample = {
@@ -180,6 +182,7 @@ export const upsertX402NetworkBodyExample = {
 	isTestnet: false,
 	isEnabled: true,
 	defaultAsset: exampleUsdcAsset,
+	defaultAssetDecimals: 6,
 	facilitatorWalletId: x402FacilitatorWalletExample.id,
 };
 

@@ -54,6 +54,7 @@ const chainSchema = z
       .regex(/^0x[a-fA-F0-9]{40}$/, 'Must be an EVM token address')
       .or(z.literal(''))
       .optional(),
+    defaultAssetDecimals: z.string().max(3).optional(),
     // A chain settles either through an owned Selling wallet (self-hosted) or a remote
     // facilitator URL — exactly one, enforced by the backend and by the mode toggle here.
     facilitatorMode: z.enum(['wallet', 'remote']),
@@ -71,6 +72,30 @@ const chainSchema = z
   // fully configured: a facilitator is required to settle on it. Leave the chain disabled
   // to save an incomplete draft instead of exposing a half-configured rail.
   .superRefine((data, ctx) => {
+    const decimals = Number(data.defaultAssetDecimals);
+    if (data.defaultAsset && !data.defaultAssetDecimals) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Decimals are required for the default asset',
+        path: ['defaultAssetDecimals'],
+      });
+    } else if (
+      data.defaultAssetDecimals &&
+      (!Number.isInteger(decimals) || decimals < 0 || decimals > 255)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Must be a whole number between 0 and 255',
+        path: ['defaultAssetDecimals'],
+      });
+    } else if (!data.defaultAsset && data.defaultAssetDecimals) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Enter a default asset before its decimals',
+        path: ['defaultAssetDecimals'],
+      });
+    }
+
     if (!data.isEnabled) return;
     if (data.facilitatorMode === 'wallet') {
       if (!data.facilitatorWalletId || data.facilitatorWalletId === NO_FACILITATOR) {
@@ -187,10 +212,17 @@ export function ChainsTab() {
                   </td>
                   <td className="p-4 text-sm font-mono">
                     {network.defaultAsset ? (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5">
                         <span title={network.defaultAsset}>
                           {shortenAddress(network.defaultAsset, 6)}
                         </span>
+                        {network.defaultAssetDecimals != null ? (
+                          <span className="text-xs text-muted-foreground">
+                            ({network.defaultAssetDecimals} decimals)
+                          </span>
+                        ) : (
+                          <Badge variant="warning">Decimals needed</Badge>
+                        )}
                         <CopyButton value={network.defaultAsset} />
                       </div>
                     ) : (
@@ -300,6 +332,8 @@ export function ChainDialog({
       // exists. Save it disabled first; remote-facilitator users may enable it in this form.
       isEnabled: editing?.isEnabled ?? false,
       defaultAsset: editing?.defaultAsset ?? '',
+      defaultAssetDecimals:
+        editing?.defaultAssetDecimals != null ? String(editing.defaultAssetDecimals) : '',
       // Existing remote-facilitator chains open in remote mode; everything else defaults to
       // the owned-wallet mode. facilitatorAuth is write-only, so it is never prefilled.
       facilitatorMode: editing?.facilitatorUrl ? 'remote' : 'wallet',
@@ -312,6 +346,7 @@ export function ChainDialog({
 
   const facilitatorMode = useWatch({ control, name: 'facilitatorMode' });
   const clearFacilitatorAuth = useWatch({ control, name: 'clearFacilitatorAuth' });
+  const defaultAsset = useWatch({ control, name: 'defaultAsset' });
   const hasExistingRemoteFacilitator = !!editing?.facilitatorUrl;
 
   const onSubmit = async (data: ChainFormValues) => {
@@ -325,6 +360,7 @@ export function ChainDialog({
         isTestnet: data.isTestnet,
         isEnabled: data.isEnabled,
         defaultAsset: data.defaultAsset ? data.defaultAsset : null,
+        defaultAssetDecimals: data.defaultAsset ? Number(data.defaultAssetDecimals) : null,
         facilitatorWalletId:
           !isRemote && data.facilitatorWalletId && data.facilitatorWalletId !== NO_FACILITATOR
             ? data.facilitatorWalletId
@@ -403,6 +439,25 @@ export function ChainDialog({
             />
             {errors.defaultAsset && (
               <p className="text-xs text-destructive">{errors.defaultAsset.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="chain-defaultAssetDecimals" className="text-sm font-medium">
+              Default asset decimals
+            </label>
+            <Input
+              id="chain-defaultAssetDecimals"
+              type="number"
+              inputMode="numeric"
+              min="0"
+              max="255"
+              placeholder="6"
+              disabled={!defaultAsset}
+              {...register('defaultAssetDecimals')}
+            />
+            {errors.defaultAssetDecimals && (
+              <p className="text-xs text-destructive">{errors.defaultAssetDecimals.message}</p>
             )}
           </div>
 

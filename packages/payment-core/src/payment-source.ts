@@ -18,10 +18,7 @@ export const SupportedPaymentSourceChain = {
 export const paymentSourceTypeSchema = z.nativeEnum(PaymentSourceType).describe('The configured payment source type');
 
 const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Expected an EVM address');
-export const X402_NATIVE_ASSET = 'native';
-const x402AssetSchema = evmAddressSchema
-	.or(z.literal(X402_NATIVE_ASSET))
-	.describe('ERC-20 token contract address, or "native" for the chain native currency');
+const x402AssetSchema = evmAddressSchema.describe('ERC-20 token contract address');
 
 const cardanoSupportedPaymentSourceSchema = z.object({
 	chain: z.literal(SupportedPaymentSourceChain.Cardano).describe('The blockchain this payment source is available on'),
@@ -95,13 +92,35 @@ export const supportedPaymentSourceSchema = z
 		}
 	});
 
+// Fixed was the only x402 pricing model before pricingType was introduced.
+// Keep that compatibility only at write boundaries: response/on-chain schemas
+// retain a required discriminator so generated clients never see it as optional.
+const legacyX402FixedPaymentSourceInputSchema = x402SupportedPaymentSourceBaseSchema
+	.extend({
+		asset: x402AssetSchema,
+		amount: z.string().regex(/^\d+$/).describe('Atomic token amount'),
+		decimals: z.number().int().min(0).max(255).describe('Token decimals'),
+	})
+	.strict()
+	.transform((source) => ({ ...source, pricingType: PricingType.Fixed }));
+
+export const supportedPaymentSourceInputSchema = z.union([
+	supportedPaymentSourceSchema,
+	legacyX402FixedPaymentSourceInputSchema,
+]);
+
 // Hard cap on advertised payment sources, enforced both on parse and when
-// emitting on-chain metadata. v2 auto-injects a Cardano source, so the emitted
-// list must be guarded against overflowing this same limit before minting.
+// emitting on-chain metadata.
 export const MAX_SUPPORTED_PAYMENT_SOURCES = 25;
 
 export const supportedPaymentSourcesSchema = z
 	.array(supportedPaymentSourceSchema)
+	.min(1)
+	.max(MAX_SUPPORTED_PAYMENT_SOURCES)
+	.describe('Payment sources advertised by this registry entry');
+
+export const supportedPaymentSourcesInputSchema = z
+	.array(supportedPaymentSourceInputSchema)
 	.min(1)
 	.max(MAX_SUPPORTED_PAYMENT_SOURCES)
 	.describe('Payment sources advertised by this registry entry');
@@ -130,8 +149,8 @@ function metadataToString(value: string | string[] | undefined) {
 }
 
 // One asset descriptor inside a rail's pricing block. `asset` is the rail's
-// currency id: `''` (lovelace) or `policyId+assetName` hex for Cardano, an
-// ERC-20 contract `0x…`, or `native` for an EVM chain's native currency.
+// currency id: `''` (lovelace) or `policyId+assetName` hex for Cardano, or an
+// ERC-20 contract `0x…` for EVM.
 const supportedPaymentSourceMetadataAssetSchema = z.object({
 	asset: metadataStringSchema,
 	decimals: metadataStringSchema.optional(),
@@ -253,7 +272,34 @@ export function validateSupportedPaymentSourcesOrThrow(
 	// unlimited (admin); `undefined` skips the check (off-route validation paths).
 	allowedCaip2Networks?: string[] | null,
 ) {
+	const seenSources = new Set<string>();
 	for (const supportedPaymentSource of supportedPaymentSources) {
+		const sourceKey =
+			supportedPaymentSource.chain === SupportedPaymentSourceChain.EVM
+				? JSON.stringify([
+						supportedPaymentSource.chain,
+						supportedPaymentSource.network,
+						supportedPaymentSource.scheme,
+						supportedPaymentSource.pricingType,
+						'asset' in supportedPaymentSource ? (supportedPaymentSource.asset ?? '').toLowerCase() : '',
+						'amount' in supportedPaymentSource && supportedPaymentSource.amount != null
+							? BigInt(supportedPaymentSource.amount).toString()
+							: '',
+						'decimals' in supportedPaymentSource ? (supportedPaymentSource.decimals ?? '') : '',
+						supportedPaymentSource.payTo.toLowerCase(),
+						supportedPaymentSource.resource ?? '',
+					])
+				: JSON.stringify([
+						supportedPaymentSource.chain,
+						supportedPaymentSource.network,
+						supportedPaymentSource.paymentSourceType,
+						supportedPaymentSource.address,
+					]);
+		if (seenSources.has(sourceKey)) {
+			throw new Error('Duplicate supported payment source');
+		}
+		seenSources.add(sourceKey);
+
 		if (supportedPaymentSource.chain === SupportedPaymentSourceChain.EVM) {
 			if (registeringPaymentSourceType !== PaymentSourceType.Web3CardanoV2) {
 				throw new Error('x402 payment sources may only be advertised by V2 registry entries.');

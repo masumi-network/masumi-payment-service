@@ -3,6 +3,7 @@ import {
 	isCardanoAddressForNetwork,
 	isCardanoPubKeyAddressForNetwork,
 	parseSupportedPaymentSourcesFromMetadata,
+	supportedPaymentSourceInputSchema,
 	supportedPaymentSourceSchema,
 	validateSupportedPaymentSourcesOrThrow,
 } from './payment-source';
@@ -43,6 +44,20 @@ describe('payment-source address validation', () => {
 		expect(() =>
 			validateSupportedPaymentSourcesOrThrow([parsed], Network.Preprod, PaymentSourceType.Web3CardanoV2),
 		).not.toThrow();
+	});
+
+	it('defaults legacy fixed x402 sources that omit pricingType', () => {
+		expect(
+			supportedPaymentSourceInputSchema.parse({
+				chain: 'EVM',
+				network: 'eip155:84532',
+				scheme: 'Exact',
+				asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7c',
+				amount: '10000',
+				decimals: 6,
+				payTo: '0x1111111111111111111111111111111111111111',
+			}),
+		).toMatchObject({ pricingType: PricingType.Fixed });
 	});
 
 	it('rejects x402 EVM address aliases that differ from payTo', () => {
@@ -94,7 +109,7 @@ describe('payment-source address validation', () => {
 		).toThrow('x402 payment sources may only be advertised by V2 registry entries.');
 	});
 
-	it('accepts asset-agnostic and native-asset dynamic x402 pricing', () => {
+	it('accepts asset-agnostic and ERC-20-allowlisted dynamic x402 pricing', () => {
 		expect(
 			supportedPaymentSourceSchema.parse({
 				chain: 'EVM',
@@ -111,11 +126,28 @@ describe('payment-source address validation', () => {
 				network: 'eip155:8453',
 				scheme: 'Exact',
 				pricingType: PricingType.Dynamic,
+				asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+				decimals: 6,
+				payTo: '0x1111111111111111111111111111111111111111',
+			}),
+		).toMatchObject({
+			asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+			decimals: 6,
+		});
+	});
+
+	it('does not advertise unsupported native-currency exact settlement', () => {
+		expect(() =>
+			supportedPaymentSourceSchema.parse({
+				chain: 'EVM',
+				network: 'eip155:8453',
+				scheme: 'Exact',
+				pricingType: PricingType.Dynamic,
 				asset: 'native',
 				decimals: 18,
 				payTo: '0x1111111111111111111111111111111111111111',
 			}),
-		).toMatchObject({ asset: 'native', decimals: 18 });
+		).toThrow();
 	});
 
 	it('requires a dynamic asset allowlist to include its decimals', () => {
@@ -125,7 +157,7 @@ describe('payment-source address validation', () => {
 				network: 'eip155:8453',
 				scheme: 'Exact',
 				pricingType: PricingType.Dynamic,
-				asset: 'native',
+				asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
 				payTo: '0x1111111111111111111111111111111111111111',
 			}),
 		).toThrow('Dynamic x402 asset and decimals must be provided together');
@@ -155,7 +187,12 @@ describe('payment-source address validation', () => {
 					},
 					pricing: {
 						pricingType: PricingType.Dynamic,
-						dynamic: [{ asset: 'native', decimals: '18' }],
+						dynamic: [
+							{
+								asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+								decimals: '6',
+							},
+						],
 					},
 				},
 				{
@@ -171,10 +208,52 @@ describe('payment-source address validation', () => {
 		).toEqual([
 			expect.objectContaining({
 				pricingType: PricingType.Dynamic,
-				asset: 'native',
-				decimals: 18,
+				asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+				decimals: 6,
 			}),
 			expect.objectContaining({ pricingType: PricingType.Free }),
 		]);
+	});
+
+	it('rejects canonical duplicate x402 sources before persistence', () => {
+		const first = supportedPaymentSourceSchema.parse({
+			chain: 'EVM',
+			network: 'eip155:8453',
+			scheme: 'Exact',
+			pricingType: PricingType.Dynamic,
+			asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+			decimals: 6,
+			payTo: '0x1111111111111111111111111111111111111111',
+		});
+		const duplicate = supportedPaymentSourceSchema.parse({
+			...first,
+			asset: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+		});
+
+		expect(() =>
+			validateSupportedPaymentSourcesOrThrow([first, duplicate], Network.Mainnet, PaymentSourceType.Web3CardanoV2),
+		).toThrow('Duplicate supported payment source');
+
+		const fixed = supportedPaymentSourceSchema.parse({
+			chain: 'EVM',
+			network: 'eip155:8453',
+			scheme: 'Exact',
+			pricingType: PricingType.Fixed,
+			asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+			amount: '10000',
+			decimals: 6,
+			payTo: '0x2222222222222222222222222222222222222222',
+		});
+		const fixedWithLeadingZero = supportedPaymentSourceSchema.parse({
+			...fixed,
+			amount: '010000',
+		});
+		expect(() =>
+			validateSupportedPaymentSourcesOrThrow(
+				[fixed, fixedWithLeadingZero],
+				Network.Mainnet,
+				PaymentSourceType.Web3CardanoV2,
+			),
+		).toThrow('Duplicate supported payment source');
 	});
 });

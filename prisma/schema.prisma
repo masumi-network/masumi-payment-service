@@ -413,30 +413,31 @@ model SupportedPaymentSource {
 }
 
 model X402Network {
-  id                  String               @id @default(cuid())
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  caip2Id             String               @unique
-  displayName         String
-  rpcUrl              String
-  isTestnet           Boolean              @default(false)
-  isEnabled           Boolean              @default(true)
-  defaultAsset        String?
+  id                   String               @id @default(cuid())
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  caip2Id              String               @unique
+  displayName          String
+  rpcUrl               String
+  isTestnet            Boolean              @default(false)
+  isEnabled            Boolean              @default(true)
+  defaultAsset         String?
+  defaultAssetDecimals Int?
   // Facilitator config: EXACTLY ONE of facilitatorWalletId (self-hosted — an owned
   // Selling wallet signs settlements locally) or facilitatorUrl (remote — verify/settle
   // are delegated to an external x402 facilitator over HTTP; the node owns no key here).
   // Enforced at the application layer (a partial DB CHECK cannot span the wallet relation).
-  facilitatorWalletId String?
-  facilitatorUrl      String?
+  facilitatorWalletId  String?
+  facilitatorUrl       String?
   // Encrypted auth header value for the remote facilitator (only meaningful with
   // facilitatorUrl); encrypted at rest like other wallet secrets.
-  facilitatorAuthEnc  String?
-  createdById         String?
-  FacilitatorWallet   X402EvmWallet?       @relation("X402NetworkFacilitatorWallet", fields: [facilitatorWalletId], references: [id], onDelete: SetNull)
-  CreatedBy           ApiKey?              @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  facilitatorAuthEnc   String?
+  createdById          String?
+  FacilitatorWallet    X402EvmWallet?       @relation("X402NetworkFacilitatorWallet", fields: [facilitatorWalletId], references: [id], onDelete: SetNull)
+  CreatedBy            ApiKey?              @relation(fields: [createdById], references: [id], onDelete: SetNull)
   // Wallets bound to this network/payment source (mirrors PaymentSource.HotWallets).
-  Wallets             X402EvmWallet[]      @relation("X402NetworkWallets")
-  PaymentAttempts     X402PaymentAttempt[]
+  Wallets              X402EvmWallet[]      @relation("X402NetworkWallets")
+  PaymentAttempts      X402PaymentAttempt[]
 
   @@index([isEnabled])
   @@index([createdById])

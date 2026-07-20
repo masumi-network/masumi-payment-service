@@ -272,6 +272,7 @@ const source = {
 		id: 'registry-1',
 		apiBaseUrl: 'https://agent.example',
 		agentIdentifier: 'agent-1',
+		requestedById: 'api-key-1',
 	},
 };
 
@@ -387,6 +388,7 @@ describe('x402 service helpers', () => {
 			isTestnet: true,
 			isEnabled: true,
 			defaultAsset: null,
+			defaultAssetDecimals: null,
 			facilitatorWalletId: null,
 			facilitatorUrl: null,
 			FacilitatorWallet: null,
@@ -538,31 +540,24 @@ describe('x402 service helpers', () => {
 		});
 	});
 
-	it('supports a chain-native dynamic asset allowlist', () => {
-		const dynamicRequirements = requirementsService.sourceToRequirements(
-			{
-				...source,
-				pricingType: 'Dynamic',
-				asset: 'native',
-				amount: null,
-				decimals: 18,
-			} as never,
-			{
-				...requirements,
-				asset: 'native',
-				amount: '1000000000000000',
-				extra: { assetTransferMethod: 'native', decimals: 18 },
-			} as never,
-		);
-
-		expect(dynamicRequirements).toMatchObject({
-			asset: 'native',
-			amount: '1000000000000000',
-			extra: {
-				assetTransferMethod: 'native',
-				decimals: 18,
-			},
-		});
+	it('rejects native-currency exact settlement until a compatible scheme exists', () => {
+		expect(() =>
+			requirementsService.sourceToRequirements(
+				{
+					...source,
+					pricingType: 'Dynamic',
+					asset: null,
+					amount: null,
+					decimals: null,
+				} as never,
+				{
+					...requirements,
+					asset: 'native',
+					amount: '1000000000000000',
+					extra: { assetTransferMethod: 'native', decimals: 18 },
+				} as never,
+			),
+		).toThrow('x402 asset must be an EVM token contract');
 	});
 
 	it('rejects non-positive dynamic amounts and payment calls for free sources', () => {
@@ -601,6 +596,82 @@ describe('x402 service helpers', () => {
 		).rejects.toMatchObject({ status: 401 });
 
 		expect(mockFacilitatorSettle).not.toHaveBeenCalled();
+	});
+
+	it('rejects dynamic verification without owner-issued runtime requirements', async () => {
+		mockSupportedPaymentSourceFindUnique.mockResolvedValueOnce({
+			...source,
+			pricingType: 'Dynamic',
+			asset: null,
+			amount: null,
+			decimals: null,
+		});
+
+		await expect(
+			service.verifyX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toMatchObject({
+			status: 400,
+			message: 'Dynamic x402 sources require trusted runtime payment requirements',
+		});
+
+		expect(mockFacilitatorVerify).not.toHaveBeenCalled();
+	});
+
+	it('does not derive a dynamic amount from the buyer-controlled accepted payload', async () => {
+		mockSupportedPaymentSourceFindUnique.mockResolvedValueOnce({
+			...source,
+			pricingType: 'Dynamic',
+			asset: null,
+			amount: null,
+			decimals: null,
+		});
+		const trustedRuntimeRequirements = {
+			...requirements,
+			amount: '25000',
+		};
+		const forgedPayload = {
+			...paymentPayload,
+			accepted: {
+				...requirements,
+				amount: '1',
+			},
+		} as Parameters<typeof service.verifyX402Payment>[0]['paymentPayload'];
+
+		await expect(
+			service.verifyX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: forgedPayload,
+				paymentRequirements: trustedRuntimeRequirements as never,
+			}),
+		).rejects.toMatchObject({
+			status: 400,
+			message: 'x402 payment requirements do not match the registered resource',
+		});
+
+		expect(mockFacilitatorVerify).not.toHaveBeenCalled();
+	});
+
+	it('only trusts dynamic requirements from the registry owner or an admin', async () => {
+		await expect(
+			service.verifyX402Payment({
+				apiKeyId: 'different-api-key',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).rejects.toMatchObject({
+			status: 403,
+			message: 'x402 supported payment source belongs to another API key',
+		});
+
+		expect(mockFacilitatorVerify).not.toHaveBeenCalled();
 	});
 
 	it('deduplicates settle replays by canonical payment payload hash bound to the same source', async () => {
@@ -1902,6 +1973,45 @@ describe('x402 service helpers', () => {
 		const upsertUpdateArg = () =>
 			(mockX402NetworkUpsert.mock.calls[0][0] as { update: Record<string, unknown> }).update;
 		const baseInput = { caip2Id: source.network, displayName: 'Base Sepolia', rpcUrl: 'https://sepolia.base.org' };
+
+		it('requires operator-confirmed decimals when setting a default token', async () => {
+			await expect(
+				service.upsertX402Network({
+					...baseInput,
+					defaultAsset: '0x036CbD53842c5426634e7929541eC2318f3dCF7c',
+				}),
+			).rejects.toMatchObject({
+				status: 400,
+				message: 'defaultAssetDecimals is required when setting defaultAsset',
+			});
+			expect(mockX402NetworkUpsert).not.toHaveBeenCalled();
+		});
+
+		it('persists a default token together with its exact decimals', async () => {
+			await service.upsertX402Network({
+				...baseInput,
+				defaultAsset: '0x036CbD53842c5426634e7929541eC2318f3dCF7c',
+				defaultAssetDecimals: 6,
+			});
+
+			expect(upsertUpdateArg()).toMatchObject({
+				defaultAsset: '0x036cbd53842c5426634e7929541ec2318f3dcf7c',
+				defaultAssetDecimals: 6,
+			});
+		});
+
+		it('clears default-token decimals when clearing the token', async () => {
+			await service.upsertX402Network({
+				...baseInput,
+				defaultAsset: null,
+				defaultAssetDecimals: null,
+			});
+
+			expect(upsertUpdateArg()).toMatchObject({
+				defaultAsset: null,
+				defaultAssetDecimals: null,
+			});
+		});
 
 		it('leaves every facilitator column untouched on a metadata-only edit', async () => {
 			await service.upsertX402Network({ ...baseInput, displayName: 'Renamed' });

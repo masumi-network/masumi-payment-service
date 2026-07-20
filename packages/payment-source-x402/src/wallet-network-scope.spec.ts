@@ -106,6 +106,7 @@ describe('managed wallet network limits', () => {
 				isTestnet: false,
 				isEnabled: true,
 				defaultAsset: '0x1111111111111111111111111111111111111111',
+				defaultAssetDecimals: 8,
 			},
 		]);
 		mockWalletFindUnique.mockResolvedValue(wallet);
@@ -148,6 +149,7 @@ describe('managed wallet network limits', () => {
 				isTestnet: true,
 				isEnabled: true,
 				defaultAsset: true,
+				defaultAssetDecimals: true,
 			},
 		});
 		expect(networks).toEqual([

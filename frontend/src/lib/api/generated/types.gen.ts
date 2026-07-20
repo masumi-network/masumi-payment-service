@@ -1168,9 +1168,9 @@ export type AgentMetadata = {
              */
             pricingType: 'Fixed';
             /**
-             * ERC-20 token contract address, or "native" for the chain native currency
+             * ERC-20 token contract address
              */
-            asset: string | 'native';
+            asset: string;
             /**
              * Atomic token amount
              */
@@ -1221,7 +1221,7 @@ export type AgentMetadata = {
             /**
              * Optional asset allowlist for dynamic payment requirements
              */
-            asset?: string | 'native';
+            asset?: string;
             /**
              * Decimals for the optional dynamic asset
              */
@@ -1543,9 +1543,9 @@ export type AgentIdentifierMetadata = {
              */
             pricingType: 'Fixed';
             /**
-             * ERC-20 token contract address, or "native" for the chain native currency
+             * ERC-20 token contract address
              */
-            asset: string | 'native';
+            asset: string;
             /**
              * Atomic token amount
              */
@@ -1596,7 +1596,7 @@ export type AgentIdentifierMetadata = {
             /**
              * Optional asset allowlist for dynamic payment requirements
              */
-            asset?: string | 'native';
+            asset?: string;
             /**
              * Decimals for the optional dynamic asset
              */
@@ -1926,9 +1926,9 @@ export type RegistryEntry = {
          */
         pricingType: 'Fixed';
         /**
-         * ERC-20 token contract address, or "native" for the chain native currency
+         * ERC-20 token contract address
          */
-        asset: string | 'native';
+        asset: string;
         /**
          * Atomic token amount
          */
@@ -1979,7 +1979,7 @@ export type RegistryEntry = {
         /**
          * Optional asset allowlist for dynamic payment requirements
          */
-        asset?: string | 'native';
+        asset?: string;
         /**
          * Decimals for the optional dynamic asset
          */
@@ -2701,6 +2701,10 @@ export type X402AvailableNetwork = {
      * Default settlement asset (token contract) for this chain
      */
     defaultAsset: string | null;
+    /**
+     * Decimals for the default settlement asset; null until an operator confirms them
+     */
+    defaultAssetDecimals: number | null;
 };
 
 export type X402Network = {
@@ -2729,6 +2733,10 @@ export type X402Network = {
      * Default settlement asset (token contract) for this chain
      */
     defaultAsset: string | null;
+    /**
+     * Decimals for the default settlement asset; null until an operator confirms them
+     */
+    defaultAssetDecimals: number | null;
     /**
      * Id of the managed EVM wallet used to settle payments on this chain (self-hosted facilitator)
      */
@@ -9093,9 +9101,9 @@ export type PostRegistryData = {
              */
             pricingType: 'Fixed';
             /**
-             * ERC-20 token contract address, or "native" for the chain native currency
+             * ERC-20 token contract address
              */
-            asset: string | 'native';
+            asset: string;
             /**
              * Atomic token amount
              */
@@ -9146,7 +9154,7 @@ export type PostRegistryData = {
             /**
              * Optional asset allowlist for dynamic payment requirements
              */
-            asset?: string | 'native';
+            asset?: string;
             /**
              * Decimals for the optional dynamic asset
              */
@@ -9190,6 +9198,53 @@ export type PostRegistryData = {
              * This resource does not require an x402 payment
              */
             pricingType: 'Free';
+        } | {
+            /**
+             * The chain family used by standard x402
+             */
+            chain: 'EVM';
+            /**
+             * CAIP-2 EVM network id, for example eip155:8453
+             */
+            network: string;
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+            /**
+             * Alias for payTo, kept for existing payment-source shape
+             */
+            address?: string;
+            /**
+             * x402 payment scheme
+             */
+            scheme: 'Exact';
+            /**
+             * EVM address receiving the x402 payment
+             */
+            payTo: string;
+            /**
+             * Optional absolute resource URL this x402 option protects
+             */
+            resource?: string;
+            /**
+             * Additional x402 metadata
+             */
+            extra?: {
+                [key: string]: unknown;
+            };
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            /**
+             * Atomic token amount
+             */
+            amount: string;
+            /**
+             * Token decimals
+             */
+            decimals: number;
         }>;
         /**
          * Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only.
@@ -9506,7 +9561,7 @@ export type PostRegistryUpdateData = {
          */
         sendFundingLovelace?: string;
         /**
-         * Payment sources to replace on this registry request. Provide an empty array to clear them.
+         * Payment sources to replace on this registry request. An empty array resets the entry to its active Masumi source.
          */
         supportedPaymentSources?: Array<{
             /**
@@ -9565,9 +9620,9 @@ export type PostRegistryUpdateData = {
              */
             pricingType: 'Fixed';
             /**
-             * ERC-20 token contract address, or "native" for the chain native currency
+             * ERC-20 token contract address
              */
-            asset: string | 'native';
+            asset: string;
             /**
              * Atomic token amount
              */
@@ -9618,7 +9673,7 @@ export type PostRegistryUpdateData = {
             /**
              * Optional asset allowlist for dynamic payment requirements
              */
-            asset?: string | 'native';
+            asset?: string;
             /**
              * Decimals for the optional dynamic asset
              */
@@ -9662,6 +9717,53 @@ export type PostRegistryUpdateData = {
              * This resource does not require an x402 payment
              */
             pricingType: 'Free';
+        } | {
+            /**
+             * The chain family used by standard x402
+             */
+            chain: 'EVM';
+            /**
+             * CAIP-2 EVM network id, for example eip155:8453
+             */
+            network: string;
+            /**
+             * The configured payment source type
+             */
+            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
+            /**
+             * Alias for payTo, kept for existing payment-source shape
+             */
+            address?: string;
+            /**
+             * x402 payment scheme
+             */
+            scheme: 'Exact';
+            /**
+             * EVM address receiving the x402 payment
+             */
+            payTo: string;
+            /**
+             * Optional absolute resource URL this x402 option protects
+             */
+            resource?: string;
+            /**
+             * Additional x402 metadata
+             */
+            extra?: {
+                [key: string]: unknown;
+            };
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            /**
+             * Atomic token amount
+             */
+            amount: string;
+            /**
+             * Token decimals
+             */
+            decimals: number;
         }>;
         /**
          * Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only.
@@ -11539,6 +11641,7 @@ export type PostX402NetworksData = {
         isTestnet?: boolean;
         isEnabled?: boolean;
         defaultAsset?: string | null;
+        defaultAssetDecimals?: number | null;
         /**
          * Self-hosted facilitator: owned Selling wallet id (null clears it)
          */
@@ -11768,9 +11871,9 @@ export type PostX402VerifyData = {
                 scheme: string;
                 network: string;
                 /**
-                 * ERC-20 token contract address, or "native" for the chain native currency
+                 * ERC-20 token contract address
                  */
-                asset: string | 'native';
+                asset: string;
                 amount: string;
                 payTo: string;
                 maxTimeoutSeconds: number;
@@ -11782,6 +11885,23 @@ export type PostX402VerifyData = {
                 [key: string]: unknown;
             };
             extensions?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * Trusted requirements originally issued by the authenticated resource server. Required for Dynamic registry pricing; Fixed pricing is derived from the registry.
+         */
+        paymentRequirements?: {
+            scheme: string;
+            network: string;
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            amount: string;
+            payTo: string;
+            maxTimeoutSeconds: number;
+            extra?: {
                 [key: string]: unknown;
             };
         };
@@ -11834,9 +11954,9 @@ export type PostX402SettleData = {
                 scheme: string;
                 network: string;
                 /**
-                 * ERC-20 token contract address, or "native" for the chain native currency
+                 * ERC-20 token contract address
                  */
-                asset: string | 'native';
+                asset: string;
                 amount: string;
                 payTo: string;
                 maxTimeoutSeconds: number;
@@ -11848,6 +11968,23 @@ export type PostX402SettleData = {
                 [key: string]: unknown;
             };
             extensions?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * Trusted requirements originally issued by the authenticated resource server. Required for Dynamic registry pricing; Fixed pricing is derived from the registry.
+         */
+        paymentRequirements?: {
+            scheme: string;
+            network: string;
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            amount: string;
+            payTo: string;
+            maxTimeoutSeconds: number;
+            extra?: {
                 [key: string]: unknown;
             };
         };
@@ -11932,7 +12069,7 @@ export type PostX402PayData = {
         /**
          * Restrict signing to this token asset
          */
-        preferredAsset?: string | 'native';
+        preferredAsset?: string;
         paymentIdentifier?: string;
     };
     path?: never;
@@ -11954,9 +12091,9 @@ export type PostX402PayResponses = {
             payer: string;
             caip2Network: string;
             /**
-             * ERC-20 token contract address, or "native" for the chain native currency
+             * ERC-20 token contract address
              */
-            asset: string | 'native';
+            asset: string;
             /**
              * Signed payment amount in token base units
              */

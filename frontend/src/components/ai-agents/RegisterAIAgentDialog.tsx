@@ -36,8 +36,8 @@ import { useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
 import { X402OptionFields } from './X402OptionsSection';
 import {
   defaultX402Option,
+  findX402ValidationError,
   normalizeX402Amount,
-  validateX402Options,
   newX402OptionId,
   x402AmountFromBaseUnits,
   type X402OptionDraft,
@@ -265,6 +265,10 @@ type EvmSupportedSource = Extract<
   NonNullable<RegistryEntry['supportedPaymentSources']>[number],
   { chain: 'EVM' }
 >;
+type CardanoSupportedSource = Extract<
+  NonNullable<RegistryEntry['supportedPaymentSources']>[number],
+  { chain: 'Cardano' }
+>;
 
 type PaymentConfigurationType = 'Masumi' | 'x402';
 type PaymentOptionRow = {
@@ -273,7 +277,7 @@ type PaymentOptionRow = {
 };
 
 const MASUMI_PAYMENT_OPTION_ID = 'masumi-payment-option';
-const MAX_X402_OPTIONS = 24;
+const MAX_PAYMENT_OPTIONS = 25;
 
 export function RegisterAIAgentDialog({
   open,
@@ -448,9 +452,16 @@ export function RegisterAIAgentDialog({
           payTo: source.payTo,
           resource: source.resource ?? '',
         }));
+      const storedPaymentSources = editingAgent.supportedPaymentSources;
+      const hasStoredMasumiSource =
+        storedPaymentSources == null ||
+        storedPaymentSources.length === 0 ||
+        storedPaymentSources.some((source) => source.chain === 'Cardano');
       setX402Options(prefilledX402Options);
       setPaymentOptionRows([
-        { id: MASUMI_PAYMENT_OPTION_ID, type: 'Masumi' },
+        ...(hasStoredMasumiSource
+          ? [{ id: MASUMI_PAYMENT_OPTION_ID, type: 'Masumi' as const }]
+          : []),
         ...prefilledX402Options.map((option) => ({ id: option.id, type: 'x402' as const })),
       ]);
       setX402Error(null);
@@ -482,7 +493,10 @@ export function RegisterAIAgentDialog({
   );
 
   const [x402Options, setX402Options] = useState<X402OptionDraft[]>([]);
-  const [x402Error, setX402Error] = useState<string | null>(null);
+  const [x402Error, setX402Error] = useState<{
+    message: string;
+    optionId?: string;
+  } | null>(null);
   const [paymentOptionRows, setPaymentOptionRows] = useState<PaymentOptionRow[]>([
     { id: MASUMI_PAYMENT_OPTION_ID, type: 'Masumi' },
   ]);
@@ -526,7 +540,7 @@ export function RegisterAIAgentDialog({
   }, [isLoadingX402Wallets, selectedX402ChainId, x402Networks, x402Wallets]);
 
   const addPaymentOption = () => {
-    if (x402Options.length >= MAX_X402_OPTIONS) return;
+    if (paymentOptionRows.length >= MAX_PAYMENT_OPTIONS) return;
     const option = defaultX402Option(x402Networks, x402Wallets, selectedX402ChainId);
     setX402Options((currentOptions) => [...currentOptions, option]);
     setPaymentOptionRows((currentRows) => [...currentRows, { id: option.id, type: 'x402' }]);
@@ -735,15 +749,18 @@ export function RegisterAIAgentDialog({
         if (!isV2Target && x402Options.length > 0) {
           const unavailableMessage =
             'x402 payment options require an active Web3 Cardano V2 payment source';
-          setX402Error(unavailableMessage);
+          setX402Error({ message: unavailableMessage });
           toast.error(unavailableMessage);
           return;
         }
         if (x402Options.length > 0) {
-          const x402ValidationError = validateX402Options(x402Options);
+          const x402ValidationError = findX402ValidationError(x402Options);
           if (x402ValidationError) {
-            setX402Error(x402ValidationError);
-            toast.error(x402ValidationError);
+            setX402Error({
+              message: x402ValidationError.message,
+              optionId: x402Options[x402ValidationError.index]?.id,
+            });
+            toast.error(x402ValidationError.message);
             return;
           }
         }
@@ -765,13 +782,16 @@ export function RegisterAIAgentDialog({
           if (!editingAgentSmartContractAddress) {
             throw new Error('Cannot update agent: Missing payment source address');
           }
-          // Update replaces the full supported-payment-sources set; preserve any
-          // non-EVM (Cardano) entries and only rewrite the x402/EVM ones.
-          const existingNonEvmSources = (editingAgent.supportedPaymentSources ?? []).filter(
-            (source) => source.chain !== 'EVM',
-          );
-          const hadEvmSources =
-            (editingAgent.supportedPaymentSources ?? []).length > existingNonEvmSources.length;
+          const masumiSupportedSources: CardanoSupportedSource[] = hasMasumiPaymentOption
+            ? [
+                {
+                  chain: 'Cardano',
+                  network,
+                  paymentSourceType: 'Web3CardanoV2',
+                  address: editingAgentSmartContractAddress,
+                },
+              ]
+            : [];
           const updateResponse = await postRegistryUpdate({
             client: apiClient,
             body: {
@@ -789,11 +809,7 @@ export function RegisterAIAgentDialog({
               Author: author,
               Legal: Object.keys(legal).length > 0 ? legal : undefined,
               ExampleOutputs: exampleOutputs,
-              ...(evmSupportedSources.length > 0 || hadEvmSources
-                ? {
-                    supportedPaymentSources: [...existingNonEvmSources, ...evmSupportedSources],
-                  }
-                : {}),
+              supportedPaymentSources: [...masumiSupportedSources, ...evmSupportedSources],
               // Update is V2-only (isV2Target is forced true above) and the
               // form's `verifications` state is the authoritative user-facing
               // list (loaded from the agent on open). Always send it so the
@@ -823,6 +839,21 @@ export function RegisterAIAgentDialog({
           return;
         }
 
+        const activeMasumiAddress = selectedPaymentSource?.smartContractAddress;
+        if (isV2Target && hasMasumiPaymentOption && !activeMasumiAddress) {
+          throw new Error('Cannot register agent: Missing active Masumi payment source address');
+        }
+        const masumiSupportedSources: CardanoSupportedSource[] =
+          isV2Target && hasMasumiPaymentOption && activeMasumiAddress
+            ? [
+                {
+                  chain: 'Cardano',
+                  network,
+                  paymentSourceType: 'Web3CardanoV2',
+                  address: activeMasumiAddress,
+                },
+              ]
+            : [];
         const response = await postRegistry({
           client: apiClient,
           body: {
@@ -839,8 +870,10 @@ export function RegisterAIAgentDialog({
             Author: author,
             Legal: Object.keys(legal).length > 0 ? legal : undefined,
             ExampleOutputs: exampleOutputs,
-            ...(isV2Target && evmSupportedSources.length > 0
-              ? { supportedPaymentSources: evmSupportedSources }
+            ...(isV2Target
+              ? {
+                  supportedPaymentSources: [...masumiSupportedSources, ...evmSupportedSources],
+                }
               : {}),
             ...(isV2Target && verifications.length > 0
               ? { verifications: verificationsToApi(verifications) }
@@ -890,6 +923,7 @@ export function RegisterAIAgentDialog({
       x402Options,
       verifications,
       isV2Target,
+      hasMasumiPaymentOption,
     ],
   );
 
@@ -1178,7 +1212,7 @@ export function RegisterAIAgentDialog({
                 variant="outline"
                 size="sm"
                 onClick={addPaymentOption}
-                disabled={x402Options.length >= MAX_X402_OPTIONS}
+                disabled={paymentOptionRows.length >= MAX_PAYMENT_OPTIONS}
               >
                 <Plus data-icon="inline-start" />
                 Add x402 option
@@ -1201,17 +1235,17 @@ export function RegisterAIAgentDialog({
                 Configure an EVM chain in x402 setup before registering this agent.
               </p>
             ) : null}
-            {x402Options.length >= MAX_X402_OPTIONS ? (
+            {paymentOptionRows.length >= MAX_PAYMENT_OPTIONS ? (
               <p className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                The on-chain limit allows 24 x402 options alongside the Masumi source.
+                The on-chain limit allows 25 payment options in total.
               </p>
             ) : null}
-            {x402Error ? (
+            {x402Error && !x402Error.optionId ? (
               <p
                 role="alert"
                 className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
               >
-                {x402Error}
+                {x402Error.message}
               </p>
             ) : null}
 
@@ -1432,21 +1466,31 @@ export function RegisterAIAgentDialog({
                           ) : null}
                         </>
                       ) : x402Option ? (
-                        <X402OptionFields
-                          option={x402Option}
-                          optionNumber={optionIndex + 1}
-                          networks={x402Networks}
-                          wallets={x402Wallets}
-                          isLoadingWallets={isLoadingX402Wallets}
-                          onChange={(patch) => {
-                            setX402Options((currentOptions) =>
-                              currentOptions.map((option) =>
-                                option.id === optionRow.id ? { ...option, ...patch } : option,
-                              ),
-                            );
-                            setX402Error(null);
-                          }}
-                        />
+                        <>
+                          <X402OptionFields
+                            option={x402Option}
+                            optionNumber={optionIndex + 1}
+                            networks={x402Networks}
+                            wallets={x402Wallets}
+                            isLoadingWallets={isLoadingX402Wallets}
+                            onChange={(patch) => {
+                              setX402Options((currentOptions) =>
+                                currentOptions.map((option) =>
+                                  option.id === optionRow.id ? { ...option, ...patch } : option,
+                                ),
+                              );
+                              setX402Error(null);
+                            }}
+                          />
+                          {x402Error?.optionId === optionRow.id ? (
+                            <p
+                              role="alert"
+                              className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                            >
+                              {x402Error.message}
+                            </p>
+                          ) : null}
+                        </>
                       ) : (
                         <p className="text-sm text-muted-foreground">Preparing x402 settings…</p>
                       )}

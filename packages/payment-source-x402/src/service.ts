@@ -1,5 +1,5 @@
 import createHttpError from 'http-errors';
-import type { Network, PaymentPayload, SettleResponse } from '@x402/core/types';
+import type { Network, PaymentPayload, PaymentRequirements, SettleResponse } from '@x402/core/types';
 import {
 	Prisma,
 	X402CounterpartyRole,
@@ -136,18 +136,25 @@ async function createSettlement(
 
 export async function verifyX402Payment({
 	apiKeyId,
+	canAdmin = false,
 	caip2NetworkLimit,
 	supportedPaymentSourceId,
 	paymentPayload,
+	paymentRequirements,
 }: {
 	apiKeyId: string;
+	canAdmin?: boolean;
 	caip2NetworkLimit: string[] | null;
 	supportedPaymentSourceId: string;
 	paymentPayload: PaymentPayload;
+	paymentRequirements?: PaymentRequirements;
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
+	if (!canAdmin && source.RegistryRequest.requestedById !== apiKeyId) {
+		throw createHttpError(403, 'x402 supported payment source belongs to another API key');
+	}
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);
-	const requirements = sourceToRequirements(source, paymentPayload.accepted);
+	const requirements = sourceToRequirements(source, paymentRequirements);
 	if (!isAllowedCaip2Network(caip2NetworkLimit, requirements.network)) {
 		throw createHttpError(401, 'Unauthorized network');
 	}
@@ -213,18 +220,25 @@ export async function verifyX402Payment({
 
 export async function settleX402Payment({
 	apiKeyId,
+	canAdmin = false,
 	caip2NetworkLimit,
 	supportedPaymentSourceId,
 	paymentPayload,
+	paymentRequirements,
 }: {
 	apiKeyId: string;
+	canAdmin?: boolean;
 	caip2NetworkLimit: string[] | null;
 	supportedPaymentSourceId: string;
 	paymentPayload: PaymentPayload;
+	paymentRequirements?: PaymentRequirements;
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
+	if (!canAdmin && source.RegistryRequest.requestedById !== apiKeyId) {
+		throw createHttpError(403, 'x402 supported payment source belongs to another API key');
+	}
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);
-	const requirements = sourceToRequirements(source, paymentPayload.accepted);
+	const requirements = sourceToRequirements(source, paymentRequirements);
 	if (!isAllowedCaip2Network(caip2NetworkLimit, requirements.network)) {
 		throw createHttpError(401, 'Unauthorized network');
 	}

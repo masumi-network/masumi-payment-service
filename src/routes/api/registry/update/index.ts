@@ -12,14 +12,16 @@ import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { bumpRegistryAssetNameVersionV2, normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
-import { supportedPaymentSourceSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { supportedPaymentSourceInputSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
 import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
 import { verificationToRow } from '@/types/verification';
 
 const updateSupportedPaymentSourcesSchema = z
-	.array(supportedPaymentSourceSchema)
+	.array(supportedPaymentSourceInputSchema)
 	.max(25)
-	.describe('Payment sources to replace on this registry request. Provide an empty array to clear them.');
+	.describe(
+		'Payment sources to replace on this registry request. An empty array resets the entry to its active Masumi source.',
+	);
 
 // The update flow re-uses the same metadata fields as registration — the
 // V2 mint contract's UpdateAction atomically burns the current asset and
@@ -194,15 +196,29 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 			// supportedPaymentSources is OPTIONAL on update. Distinguish:
 			//   - omitted (undefined)     → leave existing rows UNCHANGED (no delete, no recreate).
 			//                                Previously `?? []` collapsed this into a silent wipe.
-			//   - provided (including [])  → REPLACE: delete existing rows, recreate from input.
+			//   - provided                  → REPLACE: delete existing rows, recreate from input.
+			//   - provided as []            → reset to the active Masumi source. V2 metadata
+			//                                 requires at least one rail, and persisting this
+			//                                 fallback keeps API and on-chain state identical.
 			// This route is already V2-gated above, so supportedPaymentSources is a
 			// V2-only concept here by construction.
-			const supportedPaymentSources = input.supportedPaymentSources;
-			const replaceSupportedPaymentSources = supportedPaymentSources !== undefined;
-			if (supportedPaymentSources != null && supportedPaymentSources.length > 0) {
+			const requestedSupportedPaymentSources = input.supportedPaymentSources;
+			const supportedPaymentSources =
+				requestedSupportedPaymentSources?.length === 0
+					? [
+							{
+								chain: 'Cardano' as const,
+								network: input.network,
+								paymentSourceType: paymentSource.paymentSourceType,
+								address: paymentSource.smartContractAddress,
+							},
+						]
+					: requestedSupportedPaymentSources;
+			const replaceSupportedPaymentSources = requestedSupportedPaymentSources !== undefined;
+			if (requestedSupportedPaymentSources != null && requestedSupportedPaymentSources.length > 0) {
 				try {
 					validateSupportedPaymentSourcesOrThrow(
-						supportedPaymentSources,
+						requestedSupportedPaymentSources,
 						input.network,
 						paymentSource.paymentSourceType,
 						ctx.caip2NetworkLimit,
@@ -347,15 +363,17 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 												chain: source.chain,
 												network: source.network,
 												paymentSourceType: source.paymentSourceType,
-												address: source.chain === 'EVM' ? (source.address ?? source.payTo) : source.address,
+												address:
+													source.chain === 'EVM' ? (source.address ?? source.payTo).toLowerCase() : source.address,
 												...(source.chain === 'EVM'
 													? {
 															scheme: source.scheme,
 															pricingType: source.pricingType,
-															asset: source.pricingType === PricingType.Free ? null : (source.asset ?? null),
+															asset:
+																source.pricingType === PricingType.Free ? null : (source.asset?.toLowerCase() ?? null),
 															amount: source.pricingType === PricingType.Fixed ? BigInt(source.amount) : null,
 															decimals: source.pricingType === PricingType.Free ? null : (source.decimals ?? null),
-															payTo: source.payTo,
+															payTo: source.payTo.toLowerCase(),
 															resource: source.resource,
 															extra: source.extra as Prisma.InputJsonValue | undefined,
 														}

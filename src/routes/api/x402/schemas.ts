@@ -11,9 +11,7 @@ export const caip2Eip155Schema = z
 	.regex(/^eip155:\d+$/, 'Network must be a CAIP-2 EVM chain id, for example eip155:8453');
 
 export const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Expected an EVM address');
-export const x402AssetSchema = evmAddressSchema
-	.or(z.literal('native'))
-	.describe('ERC-20 token contract address, or "native" for the chain native currency');
+export const x402AssetSchema = evmAddressSchema.describe('ERC-20 token contract address');
 export const uintStringSchema = z.string().regex(/^\d+$/, 'Expected an unsigned integer string');
 // A boolean carried in a query string. z.coerce.boolean() is WRONG here: Boolean("false")
 // is true, so "false" would read as true. Parse the literal string instead.
@@ -51,6 +49,11 @@ export const x402PaymentPayloadSchema = z.object({
 export const verifySettleSchemaInput = z.object({
 	supportedPaymentSourceId: z.string(),
 	paymentPayload: x402PaymentPayloadSchema,
+	paymentRequirements: x402PaymentRequirementsSchema
+		.optional()
+		.describe(
+			'Trusted requirements originally issued by the authenticated resource server. Required for Dynamic registry pricing; Fixed pricing is derived from the registry.',
+		),
 });
 
 export const verifySchemaOutput = z.object({
@@ -361,6 +364,13 @@ export const x402NetworkSchema = z
 		isTestnet: z.boolean().describe('Whether this chain is a testnet (paired with the Cardano Preprod environment)'),
 		isEnabled: z.boolean().describe('Whether this chain may be used for x402 payments'),
 		defaultAsset: evmAddressSchema.nullable().describe('Default settlement asset (token contract) for this chain'),
+		defaultAssetDecimals: z
+			.number()
+			.int()
+			.min(0)
+			.max(255)
+			.nullable()
+			.describe('Decimals for the default settlement asset; null until an operator confirms them'),
 		facilitatorWalletId: z
 			.string()
 			.nullable()
@@ -389,6 +399,13 @@ export const x402AvailableNetworkSchema = z
 		isTestnet: z.boolean().describe('Whether this chain belongs to the testnet environment'),
 		isEnabled: z.boolean().describe('Whether this chain may currently be used for x402 payments'),
 		defaultAsset: evmAddressSchema.nullable().describe('Default settlement asset (token contract) for this chain'),
+		defaultAssetDecimals: z
+			.number()
+			.int()
+			.min(0)
+			.max(255)
+			.nullable()
+			.describe('Decimals for the default settlement asset; null until an operator confirms them'),
 	})
 	.openapi('X402AvailableNetwork');
 
@@ -402,6 +419,7 @@ export const upsertNetworkSchemaInput = z.object({
 	isTestnet: z.boolean().optional(),
 	isEnabled: z.boolean().optional(),
 	defaultAsset: evmAddressSchema.nullable().optional(),
+	defaultAssetDecimals: z.number().int().min(0).max(255).nullable().optional(),
 	// Configure the facilitator in exactly one mode: an owned Selling wallet (self-hosted) or a
 	// remote facilitator URL. Supplying both is rejected by the service. Every field is tri-state
 	// on update: omit to keep the stored value, send a string to set it, or send explicit null to

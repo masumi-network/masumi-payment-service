@@ -2180,19 +2180,9 @@ export const AgentMetadataSchema = {
                                         description: 'A fixed amount is advertised in the registry'
                                     },
                                     asset: {
-                                        anyOf: [
-                                            {
-                                                type: 'string',
-                                                pattern: '^0x[a-fA-F0-9]{40}$'
-                                            },
-                                            {
-                                                type: 'string',
-                                                enum: [
-                                                    'native'
-                                                ]
-                                            }
-                                        ],
-                                        description: 'ERC-20 token contract address, or "native" for the chain native currency'
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'ERC-20 token contract address'
                                     },
                                     amount: {
                                         type: 'string',
@@ -2280,18 +2270,8 @@ export const AgentMetadataSchema = {
                                         description: 'The exact positive amount is supplied dynamically in each x402 payment requirement'
                                     },
                                     asset: {
-                                        anyOf: [
-                                            {
-                                                type: 'string',
-                                                pattern: '^0x[a-fA-F0-9]{40}$'
-                                            },
-                                            {
-                                                type: 'string',
-                                                enum: [
-                                                    'native'
-                                                ]
-                                            }
-                                        ],
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
                                         description: 'Optional asset allowlist for dynamic payment requirements'
                                     },
                                     decimals: {
@@ -2879,19 +2859,9 @@ export const AgentIdentifierMetadataSchema = {
                                         description: 'A fixed amount is advertised in the registry'
                                     },
                                     asset: {
-                                        anyOf: [
-                                            {
-                                                type: 'string',
-                                                pattern: '^0x[a-fA-F0-9]{40}$'
-                                            },
-                                            {
-                                                type: 'string',
-                                                enum: [
-                                                    'native'
-                                                ]
-                                            }
-                                        ],
-                                        description: 'ERC-20 token contract address, or "native" for the chain native currency'
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
+                                        description: 'ERC-20 token contract address'
                                     },
                                     amount: {
                                         type: 'string',
@@ -2979,18 +2949,8 @@ export const AgentIdentifierMetadataSchema = {
                                         description: 'The exact positive amount is supplied dynamically in each x402 payment requirement'
                                     },
                                     asset: {
-                                        anyOf: [
-                                            {
-                                                type: 'string',
-                                                pattern: '^0x[a-fA-F0-9]{40}$'
-                                            },
-                                            {
-                                                type: 'string',
-                                                enum: [
-                                                    'native'
-                                                ]
-                                            }
-                                        ],
+                                        type: 'string',
+                                        pattern: '^0x[a-fA-F0-9]{40}$',
                                         description: 'Optional asset allowlist for dynamic payment requirements'
                                     },
                                     decimals: {
@@ -3604,19 +3564,9 @@ export const RegistryEntrySchema = {
                                 description: 'A fixed amount is advertised in the registry'
                             },
                             asset: {
-                                anyOf: [
-                                    {
-                                        type: 'string',
-                                        pattern: '^0x[a-fA-F0-9]{40}$'
-                                    },
-                                    {
-                                        type: 'string',
-                                        enum: [
-                                            'native'
-                                        ]
-                                    }
-                                ],
-                                description: 'ERC-20 token contract address, or "native" for the chain native currency'
+                                type: 'string',
+                                pattern: '^0x[a-fA-F0-9]{40}$',
+                                description: 'ERC-20 token contract address'
                             },
                             amount: {
                                 type: 'string',
@@ -3704,18 +3654,8 @@ export const RegistryEntrySchema = {
                                 description: 'The exact positive amount is supplied dynamically in each x402 payment requirement'
                             },
                             asset: {
-                                anyOf: [
-                                    {
-                                        type: 'string',
-                                        pattern: '^0x[a-fA-F0-9]{40}$'
-                                    },
-                                    {
-                                        type: 'string',
-                                        enum: [
-                                            'native'
-                                        ]
-                                    }
-                                ],
+                                type: 'string',
+                                pattern: '^0x[a-fA-F0-9]{40}$',
                                 description: 'Optional asset allowlist for dynamic payment requirements'
                             },
                             decimals: {
@@ -4964,6 +4904,13 @@ export const X402AvailableNetworkSchema = {
             nullable: true,
             pattern: '^0x[a-fA-F0-9]{40}$',
             description: 'Default settlement asset (token contract) for this chain'
+        },
+        defaultAssetDecimals: {
+            type: 'integer',
+            nullable: true,
+            minimum: 0,
+            maximum: 255,
+            description: 'Decimals for the default settlement asset; null until an operator confirms them'
         }
     },
     required: [
@@ -4972,7 +4919,8 @@ export const X402AvailableNetworkSchema = {
         'displayName',
         'isTestnet',
         'isEnabled',
-        'defaultAsset'
+        'defaultAsset',
+        'defaultAssetDecimals'
     ]
 } as const;
 
@@ -5008,6 +4956,13 @@ export const X402NetworkSchema = {
             nullable: true,
             pattern: '^0x[a-fA-F0-9]{40}$',
             description: 'Default settlement asset (token contract) for this chain'
+        },
+        defaultAssetDecimals: {
+            type: 'integer',
+            nullable: true,
+            minimum: 0,
+            maximum: 255,
+            description: 'Decimals for the default settlement asset; null until an operator confirms them'
         },
         facilitatorWalletId: {
             type: 'string',
@@ -5046,6 +5001,7 @@ export const X402NetworkSchema = {
         'isTestnet',
         'isEnabled',
         'defaultAsset',
+        'defaultAssetDecimals',
         'facilitatorWalletId',
         'facilitatorWalletAddress',
         'facilitatorUrl',

@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { X402Network, X402Wallet } from '@/lib/api/generated';
 import {
+  assetPresetsForNetwork,
   defaultX402Option,
-  nativeAssetForNetwork,
+  findX402ValidationError,
   normalizeX402Amount,
   validateX402Options,
   x402AmountFromBaseUnits,
@@ -19,6 +20,7 @@ function network(overrides: Partial<X402Network> = {}): X402Network {
     isTestnet: false,
     isEnabled: true,
     defaultAsset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    defaultAssetDecimals: 6,
     facilitatorWalletId: null,
     facilitatorWalletAddress: null,
     facilitatorUrl: null,
@@ -73,16 +75,20 @@ test('new Base option defaults to asset-agnostic dynamic pricing and a managed s
   assert.equal(draft.payTo, wallet.address);
 });
 
-test('dynamic pricing accepts either any runtime asset or a native asset allowlist', () => {
+test('dynamic pricing accepts either any runtime asset or an ERC-20 allowlist', () => {
   assert.equal(
     validateX402Options([option({ pricingType: 'Dynamic', asset: '', amount: '', decimals: '' })]),
+    null,
+  );
+  assert.equal(
+    validateX402Options([option({ pricingType: 'Dynamic', amount: '', decimals: '6' })]),
     null,
   );
   assert.equal(
     validateX402Options([
       option({ pricingType: 'Dynamic', asset: 'native', amount: '', decimals: '18' }),
     ]),
-    null,
+    'x402 option 1: select a coin or enter a token contract',
   );
 });
 
@@ -93,17 +99,52 @@ test('free pricing does not require an asset or amount', () => {
   );
 });
 
-test('native coin labels follow the selected EVM chain', () => {
-  assert.equal(
-    nativeAssetForNetwork(network({ caip2Id: 'eip155:137', displayName: 'Polygon' }))?.symbol,
-    'POL',
+test('configured default tokens use their persisted decimals without guessing', () => {
+  const customAsset = '0x9999999999999999999999999999999999999999';
+  assert.deepEqual(
+    assetPresetsForNetwork(
+      network({
+        caip2Id: 'eip155:999999',
+        displayName: 'Custom EVM',
+        defaultAsset: customAsset,
+        defaultAssetDecimals: 8,
+      }),
+    )[0],
+    {
+      network: 'eip155:999999',
+      symbol: 'Default token',
+      name: 'Custom EVM default token',
+      address: customAsset,
+      decimals: 8,
+    },
+  );
+  assert.deepEqual(
+    assetPresetsForNetwork(
+      network({
+        caip2Id: 'eip155:999999',
+        defaultAsset: customAsset,
+        defaultAssetDecimals: null,
+      }),
+    ),
+    [],
   );
   assert.equal(
-    nativeAssetForNetwork(network({ caip2Id: 'eip155:56', displayName: 'BNB Chain' }))?.symbol,
-    'BNB',
+    assetPresetsForNetwork(network({ defaultAssetDecimals: 8 }))[0]?.decimals,
+    8,
+    'the configured network value is authoritative even for a known preset address',
   );
-  assert.equal(
-    nativeAssetForNetwork(network({ caip2Id: 'eip155:999999', displayName: 'Custom EVM' }))?.symbol,
-    'Native',
-  );
+});
+
+test('duplicate x402 options identify the exact offending row case-insensitively', () => {
+  const duplicate = option({
+    id: 'duplicate',
+    asset: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+    payTo: '0x1111111111111111111111111111111111111111',
+  });
+
+  assert.deepEqual(findX402ValidationError([option(), duplicate]), {
+    index: 1,
+    message:
+      'x402 option 2: duplicates option 1. Change its chain, pricing, coin, recipient, or resource.',
+  });
 });

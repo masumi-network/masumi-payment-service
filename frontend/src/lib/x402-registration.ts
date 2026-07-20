@@ -18,7 +18,6 @@ export type EvmAssetPreset = {
   name: string;
   address: string;
   decimals: number;
-  isNative?: boolean;
 };
 
 export const EVM_ASSET_PRESETS: EvmAssetPreset[] = [
@@ -53,22 +52,8 @@ export const EVM_ASSET_PRESETS: EvmAssetPreset[] = [
 ];
 
 const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
-const NATIVE_ASSET = 'native';
 const CAIP2_EIP155 = /^eip155:\d+$/;
 const DECIMAL_AMOUNT = /^\d+(?:\.\d+)?$/;
-
-const NATIVE_ASSET_BY_CHAIN_ID: Record<string, Pick<EvmAssetPreset, 'symbol' | 'name'>> = {
-  '1': { symbol: 'ETH', name: 'Ether' },
-  '10': { symbol: 'ETH', name: 'Ether' },
-  '56': { symbol: 'BNB', name: 'BNB' },
-  '100': { symbol: 'xDAI', name: 'xDAI' },
-  '137': { symbol: 'POL', name: 'POL' },
-  '8453': { symbol: 'ETH', name: 'Ether' },
-  '42161': { symbol: 'ETH', name: 'Ether' },
-  '43114': { symbol: 'AVAX', name: 'Avalanche' },
-  '84532': { symbol: 'ETH', name: 'Ether' },
-  '11155111': { symbol: 'ETH', name: 'Ether' },
-};
 
 export function newX402OptionId(): string {
   return crypto.randomUUID();
@@ -78,42 +63,33 @@ export function addressesMatch(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
 }
 
-export function nativeAssetForNetwork(
-  network: X402Network | undefined,
-): EvmAssetPreset | undefined {
-  if (!network) return undefined;
-  const chainId = network.caip2Id.split(':')[1] ?? '';
-  const nativeAsset = NATIVE_ASSET_BY_CHAIN_ID[chainId] ?? {
-    symbol: 'Native',
-    name: `${network.displayName} native currency`,
-  };
-  return {
-    network: network.caip2Id,
-    ...nativeAsset,
-    address: NATIVE_ASSET,
-    decimals: 18,
-    isNative: true,
-  };
-}
-
 export function assetPresetsForNetwork(network: X402Network | undefined): EvmAssetPreset[] {
   if (!network) return [];
 
   const presets = EVM_ASSET_PRESETS.filter((preset) => preset.network === network.caip2Id);
-  if (
-    network.defaultAsset &&
-    !presets.some((preset) => addressesMatch(preset.address, network.defaultAsset ?? ''))
-  ) {
-    presets.unshift({
-      network: network.caip2Id,
-      symbol: 'Default token',
-      name: `${network.displayName} default token`,
-      address: network.defaultAsset,
-      decimals: 6,
-    });
+  if (network.defaultAsset && network.defaultAssetDecimals != null) {
+    const configuredPresetIndex = presets.findIndex((preset) =>
+      addressesMatch(preset.address, network.defaultAsset ?? ''),
+    );
+    if (configuredPresetIndex >= 0) {
+      const preset = presets[configuredPresetIndex];
+      if (preset) {
+        presets[configuredPresetIndex] = {
+          ...preset,
+          address: network.defaultAsset,
+          decimals: network.defaultAssetDecimals,
+        };
+      }
+    } else {
+      presets.unshift({
+        network: network.caip2Id,
+        symbol: 'Default token',
+        name: `${network.displayName} default token`,
+        address: network.defaultAsset,
+        decimals: network.defaultAssetDecimals,
+      });
+    }
   }
-  const nativeAsset = nativeAssetForNetwork(network);
-  if (nativeAsset) presets.unshift(nativeAsset);
   return presets;
 }
 
@@ -132,9 +108,7 @@ export function defaultAssetForNetwork(
   return (
     presets.find(
       (preset) => !!network.defaultAsset && addressesMatch(preset.address, network.defaultAsset),
-    ) ??
-    presets.find((preset) => !preset.isNative) ??
-    presets[0]
+    ) ?? presets[0]
   );
 }
 
@@ -187,32 +161,70 @@ export function x402AmountFromBaseUnits(amount: string, decimals: number): strin
   return fraction ? `${whole}.${fraction}` : whole;
 }
 
-export function validateX402Options(options: X402OptionDraft[]): string | null {
+export type X402OptionValidationError = {
+  index: number;
+  message: string;
+};
+
+function duplicateKey(option: X402OptionDraft): string {
+  const asset = option.pricingType === 'Free' ? '' : option.asset.toLowerCase();
+  const amount =
+    option.pricingType === 'Fixed' ? normalizeX402Amount(option.amount, option.decimals) : '';
+  const decimals = option.pricingType === 'Free' || !asset ? '' : option.decimals;
+
+  return JSON.stringify([
+    option.caip2Network,
+    option.pricingType,
+    asset,
+    amount,
+    decimals,
+    option.payTo.toLowerCase(),
+    option.resource,
+  ]);
+}
+
+export function findX402ValidationError(
+  options: X402OptionDraft[],
+): X402OptionValidationError | null {
+  const firstIndexByKey = new Map<string, number>();
+
   for (let index = 0; index < options.length; index++) {
     const option = options[index];
     const optionNumber = index + 1;
     if (!CAIP2_EIP155.test(option.caip2Network)) {
-      return `x402 option ${optionNumber}: select a chain`;
+      return { index, message: `x402 option ${optionNumber}: select a chain` };
     }
     if (option.pricingType !== 'Free') {
       const hasAsset = option.asset.length > 0;
       if (option.pricingType === 'Fixed' && !hasAsset) {
-        return `x402 option ${optionNumber}: select a coin or enter a token contract`;
+        return {
+          index,
+          message: `x402 option ${optionNumber}: select a coin or enter a token contract`,
+        };
       }
-      if (hasAsset && option.asset !== NATIVE_ASSET && !EVM_ADDRESS.test(option.asset)) {
-        return `x402 option ${optionNumber}: select a coin or enter a token contract`;
+      if (hasAsset && !EVM_ADDRESS.test(option.asset)) {
+        return {
+          index,
+          message: `x402 option ${optionNumber}: select a coin or enter a token contract`,
+        };
       }
       if (hasAsset) {
         const decimals = Number(option.decimals);
         if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
-          return `x402 option ${optionNumber}: decimals must be a whole number between 0 and 255`;
+          return {
+            index,
+            message: `x402 option ${optionNumber}: decimals must be a whole number between 0 and 255`,
+          };
         }
       }
       if (option.pricingType === 'Fixed') {
         const decimals = Number(option.decimals);
         const fractionalDigits = option.amount.split('.')[1]?.length ?? 0;
         if (fractionalDigits > decimals) {
-          return `x402 option ${optionNumber}: amount supports at most ${decimals} decimal places`;
+          return {
+            index,
+            message: `x402 option ${optionNumber}: amount supports at most ${decimals} decimal places`,
+          };
         }
         const normalizedAmount = normalizeX402Amount(option.amount, option.decimals);
         if (
@@ -220,16 +232,41 @@ export function validateX402Options(options: X402OptionDraft[]): string | null {
           !/^\d+$/.test(normalizedAmount) ||
           BigInt(normalizedAmount) <= BigInt(0)
         ) {
-          return `x402 option ${optionNumber}: enter an amount greater than zero`;
+          return {
+            index,
+            message: `x402 option ${optionNumber}: enter an amount greater than zero`,
+          };
         }
       }
     }
     if (!EVM_ADDRESS.test(option.payTo)) {
-      return `x402 option ${optionNumber}: select a wallet or enter an EVM address`;
+      return {
+        index,
+        message: `x402 option ${optionNumber}: select a wallet or enter an EVM address`,
+      };
     }
     if (option.resource && !/^https?:\/\//.test(option.resource)) {
-      return `x402 option ${optionNumber}: resource must be an http(s) URL`;
+      return {
+        index,
+        message: `x402 option ${optionNumber}: resource must be an http(s) URL`,
+      };
     }
+
+    const key = duplicateKey(option);
+    const duplicateOf = firstIndexByKey.get(key);
+    if (duplicateOf != null) {
+      return {
+        index,
+        message:
+          `x402 option ${optionNumber}: duplicates option ${duplicateOf + 1}. ` +
+          'Change its chain, pricing, coin, recipient, or resource.',
+      };
+    }
+    firstIndexByKey.set(key, index);
   }
   return null;
+}
+
+export function validateX402Options(options: X402OptionDraft[]): string | null {
+  return findX402ValidationError(options)?.message ?? null;
 }

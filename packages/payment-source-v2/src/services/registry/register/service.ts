@@ -148,34 +148,22 @@ export function buildAgentMetadata(
 	},
 	paymentSource: RegistryMetadataPaymentSource,
 ): RegistryMetadata {
-	// A Cardano escrow source must always be present: V2 drops the top-level
-	// agentPricing and folds the agent's pricing into the Cardano source, so an
-	// entry advertising only x402/EVM sources would otherwise carry no Cardano
-	// pricing at all (breaking purchase/query, which resolve price from it).
+	// An explicit source list is authoritative: this is what lets a V2 agent
+	// advertise x402 only. Empty legacy rows still receive the active Cardano
+	// source so registrations created before explicit rail selection retain
+	// their historical Masumi behavior.
 	const defaultCardanoSource = {
 		chain: SupportedPaymentSourceChain.Cardano,
 		network: paymentSource.network,
 		paymentSourceType: paymentSource.paymentSourceType,
 		address: paymentSource.smartContractAddress,
 	};
-	const hasCardanoSource = request.SupportedPaymentSources.some(
-		(source) => source.chain === SupportedPaymentSourceChain.Cardano,
-	);
-	const supportedPaymentSources = hasCardanoSource
-		? request.SupportedPaymentSources
-		: [defaultCardanoSource, ...request.SupportedPaymentSources];
-	// Guard the auto-injected Cardano source against overflowing the on-chain cap:
-	// emitting more than the max would make the entry fail its own re-parse, so a
-	// caller at the limit must leave room for the mandatory Cardano source.
+	const supportedPaymentSources =
+		request.SupportedPaymentSources.length > 0 ? request.SupportedPaymentSources : [defaultCardanoSource];
 	if (supportedPaymentSources.length > MAX_SUPPORTED_PAYMENT_SOURCES) {
 		throw new Error(
 			`Cannot register agent: ${supportedPaymentSources.length} payment sources exceed ` +
-				`the on-chain maximum of ${MAX_SUPPORTED_PAYMENT_SOURCES}` +
-				(hasCardanoSource
-					? ''
-					: ` (a Cardano source is added automatically; provide at most ${
-							MAX_SUPPORTED_PAYMENT_SOURCES - 1
-						} other sources)`),
+				`the on-chain maximum of ${MAX_SUPPORTED_PAYMENT_SOURCES}`,
 		);
 	}
 	// Cardano sources advertise the agent's pricing inline (one self-contained
@@ -262,7 +250,10 @@ export function buildAgentMetadata(
 									scheme: stringToMetadata(source.scheme ?? X402PaymentScheme.Exact),
 									payTo: stringToMetadata(source.payTo),
 									resource: stringToMetadata(source.resource),
-									extra: source.extra,
+									// Prisma represents an omitted nullable JSON field as null.
+									// Cardano metadata has no null value, so omit it before Mesh
+									// recursively converts this object to metadatum.
+									extra: source.extra ?? undefined,
 								},
 								pricing: {
 									pricingType: source.pricingType,

@@ -17,6 +17,7 @@ function network(overrides: Partial<X402Network> = {}): X402Network {
     isTestnet: false,
     isEnabled: true,
     defaultAsset: null,
+    defaultAssetDecimals: null,
     facilitatorWalletId: null,
     facilitatorWalletAddress: null,
     facilitatorUrl: null,

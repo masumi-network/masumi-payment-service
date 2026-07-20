@@ -5,7 +5,7 @@ import {
 	RegistrationState,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { supportedPaymentSourcesSchema } from '@/types/payment-source';
+import { supportedPaymentSourcesInputSchema, supportedPaymentSourcesSchema } from '@/types/payment-source';
 import { verificationsSchema } from '@/types/verification';
 import { z } from '@masumi/payment-core/zod';
 
@@ -239,7 +239,7 @@ export const registerAgentSchemaInput = z.object({
 		.describe(
 			'Optional lovelace amount to include with the minted NFT output. If provided below the minimum NFT funding, the current minimum is still used.',
 		),
-	supportedPaymentSources: supportedPaymentSourcesSchema
+	supportedPaymentSources: supportedPaymentSourcesInputSchema
 		.optional()
 		.describe(
 			'Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.',

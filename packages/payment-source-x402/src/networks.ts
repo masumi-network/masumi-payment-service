@@ -17,6 +17,7 @@ const NETWORK_SELECT = {
 	isTestnet: true,
 	isEnabled: true,
 	defaultAsset: true,
+	defaultAssetDecimals: true,
 	facilitatorWalletId: true,
 	facilitatorUrl: true,
 	// Denormalize the facilitator address so the UI can label chains without loading the
@@ -40,6 +41,7 @@ const AVAILABLE_NETWORK_SELECT = {
 	isTestnet: true,
 	isEnabled: true,
 	defaultAsset: true,
+	defaultAssetDecimals: true,
 } satisfies Prisma.X402NetworkSelect;
 
 export async function listX402Networks(input?: { isTestnet?: boolean }) {
@@ -198,6 +200,7 @@ export async function upsertX402Network(input: {
 	isTestnet?: boolean;
 	isEnabled?: boolean;
 	defaultAsset?: string | null;
+	defaultAssetDecimals?: number | null;
 	facilitatorWalletId?: string | null;
 	facilitatorUrl?: string | null;
 	facilitatorAuth?: string | null;
@@ -205,7 +208,47 @@ export async function upsertX402Network(input: {
 }) {
 	getEip155ChainId(input.caip2Id);
 	assertSafeRpcUrl(input.rpcUrl);
-	if (input.defaultAsset != null) assertHexAddress(input.defaultAsset, 'defaultAsset');
+	const hasDefaultAssetInput = input.defaultAsset !== undefined;
+	const hasDefaultAssetDecimalsInput = input.defaultAssetDecimals !== undefined;
+	let defaultAssetData:
+		| {
+				defaultAsset: string | null;
+				defaultAssetDecimals: number | null;
+		  }
+		| undefined;
+	if (hasDefaultAssetInput || hasDefaultAssetDecimalsInput) {
+		const existing =
+			!hasDefaultAssetInput || !hasDefaultAssetDecimalsInput
+				? await prisma.x402Network.findUnique({
+						where: { caip2Id: input.caip2Id },
+						select: { defaultAsset: true, defaultAssetDecimals: true },
+					})
+				: null;
+		const resolvedAsset = hasDefaultAssetInput ? input.defaultAsset : existing?.defaultAsset;
+		let resolvedDecimals = hasDefaultAssetDecimalsInput ? input.defaultAssetDecimals : existing?.defaultAssetDecimals;
+
+		if (resolvedAsset === null) {
+			if (resolvedDecimals != null) {
+				throw createHttpError(400, 'defaultAssetDecimals must be null when defaultAsset is null');
+			}
+			resolvedDecimals = null;
+		} else {
+			if (resolvedAsset == null) {
+				throw createHttpError(400, 'defaultAsset is required when setting defaultAssetDecimals');
+			}
+			assertHexAddress(resolvedAsset, 'defaultAsset');
+			if (resolvedDecimals == null) {
+				throw createHttpError(400, 'defaultAssetDecimals is required when setting defaultAsset');
+			}
+			if (!Number.isInteger(resolvedDecimals) || resolvedDecimals < 0 || resolvedDecimals > 255) {
+				throw createHttpError(400, 'defaultAssetDecimals must be a whole number between 0 and 255');
+			}
+		}
+		defaultAssetData = {
+			defaultAsset: resolvedAsset?.toLowerCase() ?? null,
+			defaultAssetDecimals: resolvedDecimals ?? null,
+		};
+	}
 	const facilitatorData = await resolveFacilitatorData(input);
 
 	const result = await prisma.x402Network.upsert({
@@ -216,7 +259,7 @@ export async function upsertX402Network(input: {
 			rpcUrl: input.rpcUrl,
 			isTestnet: input.isTestnet ?? false,
 			isEnabled: input.isEnabled ?? true,
-			defaultAsset: input.defaultAsset,
+			...(defaultAssetData ?? {}),
 			// On create there is no prior config to preserve; default to no facilitator.
 			facilitatorWalletId: (facilitatorData?.facilitatorWalletId as string | null | undefined) ?? null,
 			facilitatorUrl: (facilitatorData?.facilitatorUrl as string | null | undefined) ?? null,
@@ -229,7 +272,7 @@ export async function upsertX402Network(input: {
 			rpcUrl: input.rpcUrl,
 			isTestnet: input.isTestnet,
 			isEnabled: input.isEnabled,
-			defaultAsset: input.defaultAsset,
+			...(defaultAssetData ?? {}),
 			// Only touch facilitator columns when the caller supplied a facilitator field, so a
 			// plain metadata edit does not silently wipe the configured facilitator.
 			...(facilitatorData ?? {}),

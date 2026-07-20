@@ -5,10 +5,8 @@ import { PricingType, Prisma, X402PaymentScheme, prisma } from '@masumi/payment-
 import { normalizeAddress } from './internal';
 
 export const EXACT_SCHEME = 'exact';
-const NATIVE_ASSET = 'native';
 const DEFAULT_X402_TIMEOUT_SECONDS = 300;
 const PERMIT2_EXTRA = { assetTransferMethod: 'permit2' };
-const NATIVE_EXTRA = { assetTransferMethod: 'native' };
 
 export type X402SourceRecord = NonNullable<Awaited<ReturnType<typeof getX402SupportedPaymentSourceOrThrow>>>;
 
@@ -17,7 +15,7 @@ type X402RequirementExtra = {
 	decimals?: unknown;
 };
 
-function toJsonObject(value: Prisma.JsonValue | null | undefined): Prisma.JsonObject {
+function toJsonObject(value: unknown): Prisma.JsonObject {
 	if (value != null && typeof value === 'object' && !Array.isArray(value)) {
 		return value;
 	}
@@ -32,8 +30,8 @@ function toRequirementExtra(value: unknown): X402RequirementExtra {
 }
 
 function assertValidAsset(asset: string): void {
-	if (asset !== NATIVE_ASSET && !/^0x[a-fA-F0-9]{40}$/.test(asset)) {
-		throw createHttpError(400, 'x402 asset must be an EVM token contract or native');
+	if (!/^0x[a-fA-F0-9]{40}$/.test(asset)) {
+		throw createHttpError(400, 'x402 asset must be an EVM token contract');
 	}
 }
 
@@ -53,7 +51,7 @@ function assertPositiveAmount(amount: string): void {
 
 export function sourceToRequirements(
 	source: X402SourceRecord,
-	presentedRequirements?: PaymentRequirements,
+	trustedRuntimeRequirements?: PaymentRequirements,
 ): PaymentRequirements {
 	if (source.scheme !== X402PaymentScheme.Exact) {
 		throw createHttpError(400, 'Only x402 exact payment sources are supported');
@@ -69,6 +67,8 @@ export function sourceToRequirements(
 	let asset: string;
 	let amount: string;
 	let decimals: number;
+	let maxTimeoutSeconds = DEFAULT_X402_TIMEOUT_SECONDS;
+	let runtimeExtra: Prisma.JsonObject = {};
 
 	if (source.pricingType === PricingType.Fixed) {
 		if (source.asset == null || source.amount == null || source.decimals == null) {
@@ -78,12 +78,24 @@ export function sourceToRequirements(
 		amount = source.amount.toString();
 		decimals = source.decimals;
 	} else if (source.pricingType === PricingType.Dynamic) {
-		if (presentedRequirements == null) {
-			throw createHttpError(400, 'Dynamic x402 sources require runtime payment requirements');
+		if (trustedRuntimeRequirements == null) {
+			throw createHttpError(400, 'Dynamic x402 sources require trusted runtime payment requirements');
 		}
-		asset = presentedRequirements.asset;
-		amount = presentedRequirements.amount;
-		decimals = source.decimals ?? parseDecimals(toRequirementExtra(presentedRequirements.extra).decimals);
+		if (
+			trustedRuntimeRequirements.scheme !== EXACT_SCHEME ||
+			trustedRuntimeRequirements.network !== source.network ||
+			normalizeAddress(trustedRuntimeRequirements.payTo) !== normalizeAddress(source.payTo)
+		) {
+			throw createHttpError(400, 'Runtime x402 payment requirements do not match the registered source');
+		}
+		asset = trustedRuntimeRequirements.asset;
+		amount = trustedRuntimeRequirements.amount;
+		decimals = source.decimals ?? parseDecimals(toRequirementExtra(trustedRuntimeRequirements.extra).decimals);
+		maxTimeoutSeconds = trustedRuntimeRequirements.maxTimeoutSeconds;
+		if (!Number.isInteger(maxTimeoutSeconds) || maxTimeoutSeconds <= 0) {
+			throw createHttpError(400, 'x402 payment requirements must include a positive timeout');
+		}
+		runtimeExtra = toJsonObject(trustedRuntimeRequirements.extra);
 		if (source.asset != null && normalizeAddress(source.asset) !== normalizeAddress(asset)) {
 			throw createHttpError(400, 'x402 payment asset is not accepted by this registered resource');
 		}
@@ -93,7 +105,6 @@ export function sourceToRequirements(
 
 	assertValidAsset(asset);
 	assertPositiveAmount(amount);
-	const transferExtra = asset === NATIVE_ASSET ? NATIVE_EXTRA : PERMIT2_EXTRA;
 
 	return {
 		scheme: EXACT_SCHEME,
@@ -101,10 +112,11 @@ export function sourceToRequirements(
 		asset,
 		amount,
 		payTo: source.payTo,
-		maxTimeoutSeconds: DEFAULT_X402_TIMEOUT_SECONDS,
+		maxTimeoutSeconds,
 		extra: {
+			...runtimeExtra,
 			...toJsonObject(source.extra),
-			...transferExtra,
+			...PERMIT2_EXTRA,
 			decimals,
 		},
 	};
@@ -137,6 +149,7 @@ export async function getX402SupportedPaymentSourceOrThrow(supportedPaymentSourc
 					id: true,
 					apiBaseUrl: true,
 					agentIdentifier: true,
+					requestedById: true,
 				},
 			},
 		},
@@ -164,22 +177,7 @@ export function requirementsMatch(a: PaymentRequirements, b: PaymentRequirements
 }
 
 function assertRequirementsMatchRegisteredSource(requirements: PaymentRequirements, expected: PaymentRequirements) {
-	const requirementsExtra = toRequirementExtra(requirements.extra);
-	const expectedExtra = toRequirementExtra(expected.extra);
-	if (
-		requirements.scheme !== EXACT_SCHEME ||
-		requirements.network !== expected.network ||
-		normalizeAddress(requirements.asset) !== normalizeAddress(expected.asset) ||
-		requirements.amount !== expected.amount ||
-		normalizeAddress(requirements.payTo) !== normalizeAddress(expected.payTo) ||
-		// Pin maxTimeoutSeconds too, mirroring requirementsMatch, so the signing window
-		// cannot drift from the registered policy.
-		requirements.maxTimeoutSeconds !== expected.maxTimeoutSeconds ||
-		requirementsExtra.assetTransferMethod !== expectedExtra.assetTransferMethod ||
-		// decimals arrives untyped from the wire (may be number or string); compare
-		// by canonical string form so 6 and "6" are treated as equal.
-		String(requirementsExtra.decimals) !== String(expectedExtra.decimals)
-	) {
+	if (requirements.scheme !== EXACT_SCHEME || !requirementsMatch(requirements, expected)) {
 		throw createHttpError(400, 'Remote x402 payment requirements do not match the registered resource');
 	}
 }
