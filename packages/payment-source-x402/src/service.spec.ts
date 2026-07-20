@@ -82,7 +82,10 @@ class X402ClientMock implements MockX402Client {
 }
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	Prisma: { PrismaClientKnownRequestError: MockPrismaClientKnownRequestError },
+	Prisma: {
+		PrismaClientKnownRequestError: MockPrismaClientKnownRequestError,
+		TransactionIsolationLevel: { Serializable: 'Serializable' },
+	},
 	X402EvmWalletType: {
 		Purchasing: 'Purchasing',
 		Selling: 'Selling',
@@ -450,7 +453,13 @@ describe('x402 service helpers', () => {
 			const callback = arg as (tx: unknown) => Promise<unknown>;
 			return callback({
 				x402Network: {
-					findUnique: mockTxX402NetworkFindUnique,
+					// upsertX402Network resolves default-asset state inside the transaction
+					// (selecting defaultAsset/defaultAssetDecimals); route that lookup to the
+					// top-level network mock the upsert tests queue, and every other
+					// in-transaction network read to the dedicated tx mock.
+					findUnique: (args: { select?: { defaultAsset?: boolean } }) =>
+						args?.select?.defaultAsset ? mockX402NetworkFindUnique(args) : mockTxX402NetworkFindUnique(args),
+					upsert: mockX402NetworkUpsert,
 				},
 				x402WalletBudget: {
 					findFirst: mockBudgetFindFirst,

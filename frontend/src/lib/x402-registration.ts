@@ -22,6 +22,11 @@ export type EvmAssetPreset = {
 
 export type X402RegistrationNetwork = X402AvailableNetwork;
 
+// Known USDC deployments per chain. These addresses are also seeded as network
+// defaults by prisma/migrations/20260720010000_x402_network_default_asset_decimals;
+// keep the two lists in sync when adding a chain. A network's configured
+// defaultAsset/defaultAssetDecimals always takes precedence (see
+// assetPresetsForNetwork below), so drift here only affects the preset labels.
 export const EVM_ASSET_PRESETS: EvmAssetPreset[] = [
   {
     network: 'eip155:1',
@@ -219,8 +224,9 @@ export function findX402ValidationError(
         };
       }
       if (hasAsset) {
-        const decimals = Number(option.decimals);
-        if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+        // Digits-only, not Number(): Number('') is 0, which would silently
+        // submit a blank decimals field as 0 for a custom token.
+        if (!/^\d{1,3}$/.test(option.decimals.trim()) || Number(option.decimals) > 255) {
           return {
             index,
             message: `x402 option ${optionNumber}: decimals must be a whole number between 0 and 255`,

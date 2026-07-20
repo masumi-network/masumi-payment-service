@@ -13,7 +13,8 @@ import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
-import { validateSupportedPaymentSourcesOrThrow, validateX402NetworksAvailableOrThrow } from '@/types/payment-source';
+import { validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { validateX402NetworksAvailableOrThrow } from '@/services/registry/x402-network-availability';
 import { verificationToRow } from '@/types/verification';
 import {
 	deleteAgentRegistrationSchemaInput,
@@ -145,12 +146,19 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				}
 			}
 
-			// AgentPricing is the legacy Cardano-rail projection. An EVM-only
-			// entry has no Cardano payment contract, so keep that projection Free
-			// while each x402 source carries its own independent pricing model.
-			const agentPricing = supportedPaymentSources.some((source) => source.chain === 'Cardano')
-				? input.AgentPricing
-				: { pricingType: PricingType.Free };
+			// AgentPricing is the legacy Cardano-rail projection. V1 registrations
+			// (empty list here) always price via AgentPricing; a V2 entry that
+			// advertises no Cardano source has no Cardano contract to price, so
+			// require an explicit Free instead of silently discarding the input.
+			const hasCardanoPaymentSource =
+				supportedPaymentSources.length === 0 || supportedPaymentSources.some((source) => source.chain === 'Cardano');
+			if (!hasCardanoPaymentSource && input.AgentPricing.pricingType !== PricingType.Free) {
+				throw createHttpError(
+					400,
+					'AgentPricing.pricingType must be Free when no Cardano payment source is advertised',
+				);
+			}
+			const agentPricing = input.AgentPricing;
 
 			// Validate pricing assets exist on-chain
 			if (agentPricing.pricingType === PricingType.Fixed) {

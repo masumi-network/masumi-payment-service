@@ -99,6 +99,26 @@ test('dynamic pricing accepts either any runtime asset or an ERC-20 allowlist', 
   );
 });
 
+test('blank decimals are rejected for a custom token instead of coercing to 0', () => {
+  assert.equal(
+    validateX402Options([
+      option({ asset: '0x9999999999999999999999999999999999999999', decimals: '' }),
+    ]),
+    'x402 option 1: decimals must be a whole number between 0 and 255',
+  );
+  assert.equal(
+    validateX402Options([
+      option({
+        pricingType: 'Dynamic',
+        asset: '0x9999999999999999999999999999999999999999',
+        amount: '',
+        decimals: '',
+      }),
+    ]),
+    'x402 option 1: decimals must be a whole number between 0 and 255',
+  );
+});
+
 test('free pricing does not require an asset or amount', () => {
   assert.equal(
     validateX402Options([option({ pricingType: 'Free', asset: '', amount: '', decimals: '' })]),

@@ -12,11 +12,8 @@ import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { bumpRegistryAssetNameVersionV2, normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
-import {
-	supportedPaymentSourceInputSchema,
-	validateSupportedPaymentSourcesOrThrow,
-	validateX402NetworksAvailableOrThrow,
-} from '@/types/payment-source';
+import { supportedPaymentSourceInputSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { validateX402NetworksAvailableOrThrow } from '@/services/registry/x402-network-availability';
 import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
 import { verificationToRow } from '@/types/verification';
 
@@ -243,7 +240,16 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 			const hasCardanoPaymentSource =
 				effectiveSupportedPaymentSources.length === 0 ||
 				effectiveSupportedPaymentSources.some((source) => source.chain === 'Cardano');
-			const agentPricing = hasCardanoPaymentSource ? input.AgentPricing : { pricingType: PricingType.Free };
+			// AgentPricing is the legacy Cardano-rail projection. An entry with no
+			// Cardano source has no Cardano contract to price, so require an
+			// explicit Free instead of silently discarding the caller's pricing.
+			if (!hasCardanoPaymentSource && input.AgentPricing.pricingType !== PricingType.Free) {
+				throw createHttpError(
+					400,
+					'AgentPricing.pricingType must be Free when no Cardano payment source is advertised',
+				);
+			}
+			const agentPricing = input.AgentPricing;
 
 			if (agentPricing.pricingType === PricingType.Fixed) {
 				const assetUnits = agentPricing.Pricing.map((pricing) => pricing.unit);

@@ -210,84 +210,94 @@ export async function upsertX402Network(input: {
 }) {
 	getEip155ChainId(input.caip2Id);
 	assertSafeRpcUrl(input.rpcUrl);
-	const hasDefaultAssetInput = input.defaultAsset !== undefined;
-	const hasDefaultAssetDecimalsInput = input.defaultAssetDecimals !== undefined;
-	let defaultAssetData:
-		| {
-				defaultAsset: string | null;
-				defaultAssetDecimals: number | null;
-		  }
-		| undefined;
-	if (hasDefaultAssetInput || hasDefaultAssetDecimalsInput) {
-		const existing =
-			!hasDefaultAssetInput || !hasDefaultAssetDecimalsInput
-				? await prisma.x402Network.findUnique({
-						where: { caip2Id: input.caip2Id },
-						select: { defaultAsset: true, defaultAssetDecimals: true },
-					})
-				: null;
-		const resolvedAsset = hasDefaultAssetInput ? input.defaultAsset : existing?.defaultAsset;
-		let resolvedDecimals: number | null | undefined;
-
-		if (resolvedAsset === null) {
-			if (hasDefaultAssetDecimalsInput && input.defaultAssetDecimals != null) {
-				throw createHttpError(400, 'defaultAssetDecimals must be null when defaultAsset is null');
-			}
-			resolvedDecimals = null;
-		} else {
-			if (resolvedAsset == null) {
-				throw createHttpError(400, 'defaultAsset is required when setting defaultAssetDecimals');
-			}
-			const isSameStoredAsset =
-				existing?.defaultAsset != null && normalizeAddress(existing.defaultAsset) === normalizeAddress(resolvedAsset);
-			resolvedDecimals = hasDefaultAssetDecimalsInput
-				? input.defaultAssetDecimals
-				: !hasDefaultAssetInput || isSameStoredAsset
-					? existing?.defaultAssetDecimals
-					: undefined;
-			assertHexAddress(resolvedAsset, 'defaultAsset');
-			if (resolvedDecimals == null) {
-				throw createHttpError(400, 'defaultAssetDecimals is required when setting defaultAsset');
-			}
-			if (!Number.isInteger(resolvedDecimals) || resolvedDecimals < 0 || resolvedDecimals > 255) {
-				throw createHttpError(400, 'defaultAssetDecimals must be a whole number between 0 and 255');
-			}
-		}
-		defaultAssetData = {
-			defaultAsset: resolvedAsset?.toLowerCase() ?? null,
-			defaultAssetDecimals: resolvedDecimals ?? null,
-		};
-	}
 	const facilitatorData = await resolveFacilitatorData(input);
 
-	const result = await prisma.x402Network.upsert({
-		where: { caip2Id: input.caip2Id },
-		create: {
-			caip2Id: input.caip2Id,
-			displayName: input.displayName,
-			rpcUrl: input.rpcUrl,
-			isTestnet: input.isTestnet ?? false,
-			isEnabled: input.isEnabled ?? true,
-			...(defaultAssetData ?? {}),
-			// On create there is no prior config to preserve; default to no facilitator.
-			facilitatorWalletId: (facilitatorData?.facilitatorWalletId as string | null | undefined) ?? null,
-			facilitatorUrl: (facilitatorData?.facilitatorUrl as string | null | undefined) ?? null,
-			facilitatorAuthEnc: (facilitatorData?.facilitatorAuthEnc as string | null | undefined) ?? null,
-			createdById: input.createdById,
+	// The default-asset resolution reads the stored row to fill in whichever of
+	// asset/decimals the caller omitted; run read + upsert in one serializable
+	// transaction so a concurrent edit cannot interleave a stale read.
+	const result = await prisma.$transaction(
+		async (tx) => {
+			const hasDefaultAssetInput = input.defaultAsset !== undefined;
+			const hasDefaultAssetDecimalsInput = input.defaultAssetDecimals !== undefined;
+			let defaultAssetData:
+				| {
+						defaultAsset: string | null;
+						defaultAssetDecimals: number | null;
+				  }
+				| undefined;
+			if (hasDefaultAssetInput || hasDefaultAssetDecimalsInput) {
+				const existing =
+					!hasDefaultAssetInput || !hasDefaultAssetDecimalsInput
+						? await tx.x402Network.findUnique({
+								where: { caip2Id: input.caip2Id },
+								select: { defaultAsset: true, defaultAssetDecimals: true },
+							})
+						: null;
+				const resolvedAsset = hasDefaultAssetInput ? input.defaultAsset : existing?.defaultAsset;
+				let resolvedDecimals: number | null | undefined;
+
+				if (resolvedAsset === null) {
+					if (hasDefaultAssetDecimalsInput && input.defaultAssetDecimals != null) {
+						throw createHttpError(400, 'defaultAssetDecimals must be null when defaultAsset is null');
+					}
+					resolvedDecimals = null;
+				} else {
+					if (resolvedAsset == null) {
+						throw createHttpError(400, 'defaultAsset is required when setting defaultAssetDecimals');
+					}
+					const isSameStoredAsset =
+						existing?.defaultAsset != null &&
+						normalizeAddress(existing.defaultAsset) === normalizeAddress(resolvedAsset);
+					resolvedDecimals = hasDefaultAssetDecimalsInput
+						? input.defaultAssetDecimals
+						: !hasDefaultAssetInput || isSameStoredAsset
+							? existing?.defaultAssetDecimals
+							: undefined;
+					assertHexAddress(resolvedAsset, 'defaultAsset');
+					if (resolvedDecimals == null) {
+						throw createHttpError(400, 'defaultAssetDecimals is required when setting defaultAsset');
+					}
+					if (!Number.isInteger(resolvedDecimals) || resolvedDecimals < 0 || resolvedDecimals > 255) {
+						throw createHttpError(400, 'defaultAssetDecimals must be a whole number between 0 and 255');
+					}
+				}
+				defaultAssetData = {
+					defaultAsset: resolvedAsset?.toLowerCase() ?? null,
+					defaultAssetDecimals: resolvedDecimals ?? null,
+				};
+			}
+
+			return tx.x402Network.upsert({
+				where: { caip2Id: input.caip2Id },
+				create: {
+					caip2Id: input.caip2Id,
+					displayName: input.displayName,
+					rpcUrl: input.rpcUrl,
+					isTestnet: input.isTestnet ?? false,
+					isEnabled: input.isEnabled ?? true,
+					...(defaultAssetData ?? {}),
+					// On create there is no prior config to preserve; default to no facilitator.
+					facilitatorWalletId: (facilitatorData?.facilitatorWalletId as string | null | undefined) ?? null,
+					facilitatorUrl: (facilitatorData?.facilitatorUrl as string | null | undefined) ?? null,
+					facilitatorAuthEnc: (facilitatorData?.facilitatorAuthEnc as string | null | undefined) ?? null,
+					createdById: input.createdById,
+				},
+				// createdById is intentionally not updated — it records the original creator.
+				update: {
+					displayName: input.displayName,
+					rpcUrl: input.rpcUrl,
+					isTestnet: input.isTestnet,
+					isEnabled: input.isEnabled,
+					...(defaultAssetData ?? {}),
+					// Only touch facilitator columns when the caller supplied a facilitator field, so a
+					// plain metadata edit does not silently wipe the configured facilitator.
+					...(facilitatorData ?? {}),
+				},
+				select: NETWORK_SELECT,
+			});
 		},
-		// createdById is intentionally not updated — it records the original creator.
-		update: {
-			displayName: input.displayName,
-			rpcUrl: input.rpcUrl,
-			isTestnet: input.isTestnet,
-			isEnabled: input.isEnabled,
-			...(defaultAssetData ?? {}),
-			// Only touch facilitator columns when the caller supplied a facilitator field, so a
-			// plain metadata edit does not silently wipe the configured facilitator.
-			...(facilitatorData ?? {}),
-		},
-		select: NETWORK_SELECT,
-	});
+		{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+	);
 	return flattenNetwork(result);
 }
 

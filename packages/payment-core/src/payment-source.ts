@@ -108,14 +108,32 @@ export const supportedPaymentSourceSchema = z
 // Fixed was the only x402 pricing model before pricingType was introduced.
 // Keep that compatibility only at write boundaries: response/on-chain schemas
 // retain a required discriminator so generated clients never see it as optional.
-const legacyX402FixedPaymentSourceInputSchema = x402SupportedPaymentSourceBaseSchema
-	.extend({
-		asset: x402AssetSchema,
-		amount: x402AtomicAmountSchema,
-		decimals: z.number().int().min(0).max(255).describe('Token decimals'),
-	})
-	.strict()
-	.transform((source) => ({ ...source, pricingType: PricingType.Fixed }));
+const legacyX402FixedPaymentSourceInputSchema = z.preprocess(
+	// A payload that carries pricingType must parse via supportedPaymentSourceSchema:
+	// non-strict parsing would strip a malformed pricingType (e.g. lowercase
+	// 'fixed') and silently re-interpret the source as Fixed. Poison such input to
+	// undefined so this union member fails while other unknown keys are still
+	// stripped, matching the pre-pricingType schema behavior. (A pricingType key
+	// in the object shape would be the natural guard, but zod-to-openapi cannot
+	// represent ZodUndefined/ZodNever fields.)
+	(value) => (typeof value === 'object' && value != null && 'pricingType' in value ? undefined : value),
+	x402SupportedPaymentSourceBaseSchema
+		.extend({
+			asset: x402AssetSchema,
+			amount: x402AtomicAmountSchema,
+			decimals: z.number().int().min(0).max(255).describe('Token decimals'),
+		})
+		.superRefine((source, ctx) => {
+			if (source.address != null && source.address.toLowerCase() !== source.payTo.toLowerCase()) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['address'],
+					message: 'x402 address alias must match payTo',
+				});
+			}
+		})
+		.transform((source) => ({ ...source, pricingType: PricingType.Fixed })),
+);
 
 export const supportedPaymentSourceInputSchema = z.union([
 	supportedPaymentSourceSchema,

@@ -60,6 +60,52 @@ describe('payment-source address validation', () => {
 		).toMatchObject({ pricingType: PricingType.Fixed });
 	});
 
+	it('strips unknown keys from legacy fixed x402 sources like the pre-pricingType schema did', () => {
+		const parsed = supportedPaymentSourceInputSchema.parse({
+			chain: 'EVM',
+			network: 'eip155:84532',
+			scheme: 'Exact',
+			asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7c',
+			amount: '10000',
+			decimals: 6,
+			payTo: '0x1111111111111111111111111111111111111111',
+			chainName: 'Base Sepolia',
+		});
+
+		expect(parsed).toMatchObject({ pricingType: PricingType.Fixed });
+		expect(parsed).not.toHaveProperty('chainName');
+	});
+
+	it('rejects legacy x402 address aliases that differ from payTo', () => {
+		expect(() =>
+			supportedPaymentSourceInputSchema.parse({
+				chain: 'EVM',
+				network: 'eip155:84532',
+				address: '0x2222222222222222222222222222222222222222',
+				scheme: 'Exact',
+				asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7c',
+				amount: '10000',
+				decimals: 6,
+				payTo: '0x1111111111111111111111111111111111111111',
+			}),
+		).toThrow();
+	});
+
+	it('does not reinterpret a malformed pricingType as legacy Fixed', () => {
+		expect(() =>
+			supportedPaymentSourceInputSchema.parse({
+				chain: 'EVM',
+				network: 'eip155:84532',
+				scheme: 'Exact',
+				pricingType: 'fixed',
+				asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7c',
+				amount: '10000',
+				decimals: 6,
+				payTo: '0x1111111111111111111111111111111111111111',
+			}),
+		).toThrow();
+	});
+
 	it('rejects fixed x402 amounts that cannot be stored in PostgreSQL BIGINT columns', () => {
 		expect(() =>
 			supportedPaymentSourceSchema.parse({

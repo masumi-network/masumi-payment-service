@@ -499,7 +499,7 @@ describe('registerAgentPost', () => {
 						version: '1.0.0',
 					},
 					AgentPricing: {
-						pricingType: PricingType.Dynamic,
+						pricingType: PricingType.Free,
 					},
 					Author: {
 						name: 'Author',
@@ -592,6 +592,80 @@ describe('registerAgentPost', () => {
 				._getJSONData()
 				.data.supportedPaymentSources.every((supportedSource: { chain: string }) => supportedSource.chain === 'EVM'),
 		).toBe(true);
+	});
+
+	it('rejects non-Free AgentPricing when no Cardano payment source is advertised', async () => {
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					name: 'EVM-only Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: { name: 'demo', version: '1.0.0' },
+					AgentPricing: { pricingType: PricingType.Dynamic },
+					Author: { name: 'Author' },
+					supportedPaymentSources: [
+						{
+							chain: 'EVM',
+							network: 'eip155:84532',
+							scheme: 'Exact',
+							pricingType: PricingType.Dynamic,
+							payTo: `0x${'1'.repeat(40)}`,
+						},
+					],
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(JSON.stringify(responseMock._getJSONData())).toContain(
+			'AgentPricing.pricingType must be Free when no Cardano payment source is advertised',
+		);
+		expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
+	});
+
+	it('rejects a legacy x402 source whose address alias does not match payTo', async () => {
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					name: 'Legacy alias Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: { name: 'demo', version: '1.0.0' },
+					AgentPricing: { pricingType: PricingType.Free },
+					Author: { name: 'Author' },
+					supportedPaymentSources: [
+						{
+							chain: 'EVM',
+							network: 'eip155:84532',
+							scheme: 'Exact',
+							asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7c',
+							amount: '1000',
+							decimals: 6,
+							address: `0x${'4'.repeat(40)}`,
+							payTo: `0x${'2'.repeat(40)}`,
+						},
+					],
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
 	});
 
 	it('rejects an x402 option whose network is not available for settlement', async () => {

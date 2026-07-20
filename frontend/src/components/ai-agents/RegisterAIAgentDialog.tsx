@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postRegistry, postRegistryUpdate, RegistryEntry } from '@/lib/api/generated';
@@ -510,13 +510,21 @@ export function RegisterAIAgentDialog({
   const { wallets: x402Wallets, isLoading: isLoadingX402Wallets } = useX402Wallets(open, 'Selling');
   const hasMasumiPaymentOption = paymentOptionRows.some((option) => option.type === 'Masumi');
 
+  // Options that already went through the one-shot autofill below. Without this
+  // guard the effect would re-run on every wallets-query refresh and stomp
+  // fields the user deliberately cleared (e.g. "Custom EVM address" empties
+  // payTo). Ids are fresh per dialog session, so stale entries are harmless.
+  const autofilledOptionIds = useRef(new Set<string>());
+
   useEffect(() => {
-    if (x402Networks.length === 0) return;
+    if (x402Networks.length === 0 || isLoadingX402Wallets) return;
 
     setX402Options((currentOptions) => {
       let hasChanges = false;
       const nextOptions = currentOptions.map((option) => {
-        if (option.caip2Network && (option.payTo || isLoadingX402Wallets)) return option;
+        if (autofilledOptionIds.current.has(option.id)) return option;
+        autofilledOptionIds.current.add(option.id);
+        if (option.caip2Network && option.payTo) return option;
 
         const defaults = defaultX402Option(x402Networks, x402Wallets, selectedX402ChainId);
         const nextOption = {
@@ -539,9 +547,20 @@ export function RegisterAIAgentDialog({
     });
   }, [isLoadingX402Wallets, selectedX402ChainId, x402Networks, x402Wallets]);
 
+  // New options are born with live defaults when networks and wallets are
+  // already loaded, so mark them autofilled immediately; otherwise leave them
+  // for the one-shot effect above to complete once the data arrives.
+  const createX402Option = () => {
+    const option = defaultX402Option(x402Networks, x402Wallets, selectedX402ChainId);
+    if (x402Networks.length > 0 && !isLoadingX402Wallets) {
+      autofilledOptionIds.current.add(option.id);
+    }
+    return option;
+  };
+
   const addPaymentOption = () => {
     if (paymentOptionRows.length >= MAX_PAYMENT_OPTIONS) return;
-    const option = defaultX402Option(x402Networks, x402Wallets, selectedX402ChainId);
+    const option = createX402Option();
     setX402Options((currentOptions) => [...currentOptions, option]);
     setPaymentOptionRows((currentRows) => [...currentRows, { id: option.id, type: 'x402' }]);
     setX402Error(null);
@@ -569,7 +588,7 @@ export function RegisterAIAgentDialog({
       return;
     }
 
-    const option = defaultX402Option(x402Networks, x402Wallets, selectedX402ChainId);
+    const option = createX402Option();
     setX402Options((currentOptions) => [...currentOptions, option]);
     setPaymentOptionRows((currentRows) =>
       currentRows.map((row) => (row.id === optionRow.id ? { id: option.id, type: 'x402' } : row)),

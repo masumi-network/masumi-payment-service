@@ -122,8 +122,12 @@ export function sourceToRequirements(
 		payTo: source.payTo,
 		maxTimeoutSeconds,
 		extra: {
-			...runtimeExtra,
+			// Runtime extra (owner-issued, only present for Dynamic) wins over the
+			// persisted registry extra: dynamic sellers may vary EIP-712 domain
+			// details per 402 and the buyer signed the runtime values. The transfer
+			// method and decimals stay pinned by this service regardless of input.
 			...toJsonObject(source.extra),
+			...runtimeExtra,
 			...PERMIT2_EXTRA,
 			decimals,
 		},
@@ -185,7 +189,26 @@ export function requirementsMatch(a: PaymentRequirements, b: PaymentRequirements
 }
 
 function assertRequirementsMatchRegisteredSource(requirements: PaymentRequirements, expected: PaymentRequirements) {
-	if (requirements.scheme !== EXACT_SCHEME || !requirementsMatch(requirements, expected)) {
+	const requirementsExtra = toRequirementExtra(requirements.extra);
+	const expectedExtra = toRequirementExtra(expected.extra);
+	// Deliberately NOT requirementsMatch(): that canonical-stringify-compares the
+	// full `extra`, which hard-fails sellers whose 402 carries extra keys this
+	// service does not persist (EIP-712 domain fields) or serializes decimals as
+	// a string. Compare only the economically- and authorization-relevant fields.
+	if (
+		requirements.scheme !== EXACT_SCHEME ||
+		requirements.network !== expected.network ||
+		normalizeAddress(requirements.asset) !== normalizeAddress(expected.asset) ||
+		requirements.amount !== expected.amount ||
+		normalizeAddress(requirements.payTo) !== normalizeAddress(expected.payTo) ||
+		// Pin maxTimeoutSeconds too, mirroring requirementsMatch, so the signing window
+		// cannot drift from the registered policy.
+		requirements.maxTimeoutSeconds !== expected.maxTimeoutSeconds ||
+		requirementsExtra.assetTransferMethod !== PERMIT2_EXTRA.assetTransferMethod ||
+		// decimals arrives untyped from the wire (may be number or string); compare
+		// by canonical string form so 6 and "6" are treated as equal.
+		String(requirementsExtra.decimals) !== String(expectedExtra.decimals)
+	) {
 		throw createHttpError(400, 'Remote x402 payment requirements do not match the registered resource');
 	}
 }

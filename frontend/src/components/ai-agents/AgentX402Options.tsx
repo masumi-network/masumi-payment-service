@@ -42,7 +42,9 @@ export function AgentX402Options({
             <div
               key={`${source.network}-${source.pricingType}-${
                 source.pricingType === 'Free' ? 'none' : (source.asset ?? 'any')
-              }-${source.payTo}`}
+              }-${source.pricingType === 'Fixed' ? source.amount : ''}-${source.payTo}-${
+                source.resource ?? ''
+              }`}
               className={cn('flex flex-col gap-1 py-2', index < arr.length - 1 && 'border-b')}
             >
               <div className="flex items-center justify-between">
