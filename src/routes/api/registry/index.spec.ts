@@ -13,6 +13,7 @@ const mockFindRegistryRequests = jest.fn() as AnyMock;
 const mockCountRegistryRequests = jest.fn() as AnyMock;
 const mockFindX402Networks = jest.fn() as AnyMock;
 const mockValidateAssetsOnChain = jest.fn() as AnyMock;
+const PREPROD_SCRIPT_ADDRESS = 'addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm';
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -133,7 +134,7 @@ function buildSellingWallet() {
 		walletAddress: 'addr_test1sellingwallet',
 		PaymentSource: {
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
-			smartContractAddress: 'addr_test1smartcontract',
+			smartContractAddress: PREPROD_SCRIPT_ADDRESS,
 			network: Network.Preprod,
 			PaymentSourceConfig: {
 				rpcProviderApiKey: 'provider-key',
@@ -178,10 +179,7 @@ function buildRegistryRequestResponse(
 		lastCheckedAt: null,
 		agentIdentifier: null,
 		ExampleOutputs: [],
-		Pricing: {
-			pricingType: PricingType.Free,
-			FixedPricing: null,
-		},
+		Pricing: null,
 		sendFundingLovelace,
 		SmartContractWallet: {
 			walletVkey: 'b'.repeat(56),
@@ -193,6 +191,28 @@ function buildRegistryRequestResponse(
 	};
 }
 
+function freeCardanoSource() {
+	return {
+		chain: 'Cardano' as const,
+		network: Network.Preprod,
+		paymentSourceType: PaymentSourceType.Web3CardanoV2,
+		address: PREPROD_SCRIPT_ADDRESS,
+		pricing: { pricingType: PricingType.Free },
+	};
+}
+
+function materializePricing(create: any) {
+	if (create == null) return null;
+	return {
+		pricingType: create.pricingType,
+		FixedPricing: create.FixedPricing?.create
+			? {
+					Amounts: create.FixedPricing.create.Amounts.createMany.data,
+				}
+			: null,
+	};
+}
+
 describe('registerAgentPost', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
@@ -201,7 +221,12 @@ describe('registerAgentPost', () => {
 		mockFindRecipientWallet.mockResolvedValue(null);
 		mockCreateRegistryRequest.mockImplementation(async (args: any) => ({
 			...buildRegistryRequestResponse(null),
-			SupportedPaymentSources: args.data.SupportedPaymentSources?.createMany?.data ?? [],
+			Pricing: materializePricing(args.data.Pricing?.create),
+			SupportedPaymentSources:
+				args.data.SupportedPaymentSources?.create?.map((source: any) => ({
+					...source,
+					Pricing: materializePricing(source.Pricing?.create),
+				})) ?? [],
 		}));
 		mockFindRegistryRequests.mockResolvedValue([]);
 		mockCountRegistryRequests.mockResolvedValue(0);
@@ -364,9 +389,7 @@ describe('registerAgentPost', () => {
 						name: 'demo',
 						version: '1.0.0',
 					},
-					AgentPricing: {
-						pricingType: PricingType.Free,
-					},
+					supportedPaymentSources: [freeCardanoSource()],
 					Author: {
 						name: 'Author',
 					},
@@ -379,16 +402,15 @@ describe('registerAgentPost', () => {
 		expect(mockFindRecipientWallet).not.toHaveBeenCalled();
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.RecipientWallet).toBeUndefined();
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.SupportedPaymentSources).toEqual({
-			createMany: {
-				data: [
-					{
-						chain: 'Cardano',
-						network: Network.Preprod,
-						paymentSourceType: PaymentSourceType.Web3CardanoV2,
-						address: 'addr_test1smartcontract',
-					},
-				],
-			},
+			create: [
+				expect.objectContaining({
+					chain: 'Cardano',
+					network: Network.Preprod,
+					paymentSourceType: PaymentSourceType.Web3CardanoV2,
+					address: PREPROD_SCRIPT_ADDRESS,
+					Pricing: { create: { pricingType: PricingType.Free } },
+				}),
+			],
 		});
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.sendFundingLovelace).toBeUndefined();
 		expect(responseMock._getJSONData().data.RecipientWallet).toBeNull();
@@ -397,7 +419,8 @@ describe('registerAgentPost', () => {
 				chain: 'Cardano',
 				network: Network.Preprod,
 				paymentSourceType: PaymentSourceType.Web3CardanoV2,
-				address: 'addr_test1smartcontract',
+				address: PREPROD_SCRIPT_ADDRESS,
+				pricing: { pricingType: PricingType.Free },
 			},
 		]);
 		expect(responseMock._getJSONData().data.sendFundingLovelace).toBeNull();
@@ -428,14 +451,6 @@ describe('registerAgentPost', () => {
 					Author: {
 						name: 'Author',
 					},
-					supportedPaymentSources: [
-						{
-							chain: 'Cardano',
-							network: Network.Preprod,
-							paymentSourceType: PaymentSourceType.Web3CardanoV1,
-							address: 'addr_test1smartcontract',
-						},
-					],
 					ExampleOutputs: [],
 				},
 			},
@@ -511,9 +526,7 @@ describe('registerAgentPost', () => {
 						name: 'demo',
 						version: '1.0.0',
 					},
-					AgentPricing: {
-						pricingType: PricingType.Free,
-					},
+					supportedPaymentSources: [freeCardanoSource()],
 					Author: {
 						name: 'Author',
 					},
@@ -548,9 +561,6 @@ describe('registerAgentPost', () => {
 						name: 'demo',
 						version: '1.0.0',
 					},
-					AgentPricing: {
-						pricingType: PricingType.Free,
-					},
 					Author: {
 						name: 'Author',
 					},
@@ -559,24 +569,25 @@ describe('registerAgentPost', () => {
 							chain: 'EVM',
 							network: 'eip155:84532',
 							scheme: 'Exact',
-							pricingType: PricingType.Dynamic,
 							payTo: dynamicPayTo,
+							pricing: { pricingType: PricingType.Dynamic },
 						},
 						{
 							chain: 'EVM',
 							network: 'eip155:84532',
 							scheme: 'Exact',
-							asset: fixedAsset,
-							amount: '1000',
-							decimals: 6,
 							payTo: fixedPayTo,
+							pricing: {
+								pricingType: PricingType.Fixed,
+								fixed: [{ asset: fixedAsset, amount: '1000', decimals: 6 }],
+							},
 						},
 						{
 							chain: 'EVM',
 							network: 'eip155:84532',
 							scheme: 'Exact',
-							pricingType: PricingType.Free,
 							payTo: freePayTo,
+							pricing: { pricingType: PricingType.Free },
 						},
 					],
 					ExampleOutputs: [],
@@ -585,56 +596,51 @@ describe('registerAgentPost', () => {
 		});
 
 		expect(responseMock.statusCode).toBe(200);
-		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.Pricing).toEqual({
-			create: { pricingType: PricingType.Free },
-		});
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.Pricing).toBeUndefined();
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.SupportedPaymentSources).toEqual({
-			createMany: {
-				data: [
-					{
-						chain: 'EVM',
-						network: 'eip155:84532',
-						paymentSourceType: undefined,
-						address: dynamicPayTo,
-						scheme: 'Exact',
-						pricingType: PricingType.Dynamic,
-						asset: null,
-						amount: null,
-						decimals: null,
-						payTo: dynamicPayTo,
-						resource: undefined,
-						extra: undefined,
+			create: [
+				expect.objectContaining({
+					chain: 'EVM',
+					network: 'eip155:84532',
+					paymentSourceType: null,
+					address: dynamicPayTo,
+					scheme: 'Exact',
+					payTo: dynamicPayTo,
+					Pricing: { create: { pricingType: PricingType.Dynamic } },
+				}),
+				expect.objectContaining({
+					chain: 'EVM',
+					network: 'eip155:84532',
+					paymentSourceType: null,
+					address: fixedPayTo,
+					scheme: 'Exact',
+					fixedDecimals: 6,
+					payTo: fixedPayTo,
+					Pricing: {
+						create: {
+							pricingType: PricingType.Fixed,
+							FixedPricing: {
+								create: {
+									Amounts: {
+										createMany: {
+											data: [{ unit: fixedAsset.toLowerCase(), amount: BigInt(1000) }],
+										},
+									},
+								},
+							},
+						},
 					},
-					{
-						chain: 'EVM',
-						network: 'eip155:84532',
-						paymentSourceType: undefined,
-						address: fixedPayTo,
-						scheme: 'Exact',
-						pricingType: PricingType.Fixed,
-						asset: fixedAsset.toLowerCase(),
-						amount: BigInt(1000),
-						decimals: 6,
-						payTo: fixedPayTo,
-						resource: undefined,
-						extra: undefined,
-					},
-					{
-						chain: 'EVM',
-						network: 'eip155:84532',
-						paymentSourceType: undefined,
-						address: freePayTo,
-						scheme: 'Exact',
-						pricingType: PricingType.Free,
-						asset: null,
-						amount: null,
-						decimals: null,
-						payTo: freePayTo,
-						resource: undefined,
-						extra: undefined,
-					},
-				],
-			},
+				}),
+				expect.objectContaining({
+					chain: 'EVM',
+					network: 'eip155:84532',
+					paymentSourceType: null,
+					address: freePayTo,
+					scheme: 'Exact',
+					payTo: freePayTo,
+					Pricing: { create: { pricingType: PricingType.Free } },
+				}),
+			],
 		});
 		expect(responseMock._getJSONData().data.supportedPaymentSources).toHaveLength(3);
 		expect(
@@ -644,7 +650,7 @@ describe('registerAgentPost', () => {
 		).toBe(true);
 	});
 
-	it('rejects non-Free AgentPricing when no Cardano payment source is advertised', async () => {
+	it('rejects legacy AgentPricing on V2 instead of silently discarding it', async () => {
 		const { responseMock } = await testEndpoint({
 			endpoint: registerAgentPost,
 			requestProps: {
@@ -665,8 +671,8 @@ describe('registerAgentPost', () => {
 							chain: 'EVM',
 							network: 'eip155:84532',
 							scheme: 'Exact',
-							pricingType: PricingType.Dynamic,
 							payTo: `0x${'1'.repeat(40)}`,
+							pricing: { pricingType: PricingType.Dynamic },
 						},
 					],
 					ExampleOutputs: [],
@@ -676,12 +682,99 @@ describe('registerAgentPost', () => {
 
 		expect(responseMock.statusCode).toBe(400);
 		expect(JSON.stringify(responseMock._getJSONData())).toContain(
-			'AgentPricing.pricingType must be Free when no Cardano payment source is advertised',
+			'V2 registrations must not set AgentPricing; put pricing inside each supportedPaymentSources[].pricing field',
 		);
 		expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
 	});
 
-	it('rejects a legacy x402 source whose address alias does not match payTo', async () => {
+	it('rejects supportedPaymentSources on V1 instead of silently discarding them', async () => {
+		mockFindSellingWallet.mockResolvedValue(buildV1SellingWallet());
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					name: 'Invalid V1 Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: { name: 'demo', version: '1.0.0' },
+					AgentPricing: { pricingType: PricingType.Free },
+					Author: { name: 'Author' },
+					supportedPaymentSources: [freeCardanoSource()],
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(JSON.stringify(responseMock._getJSONData())).toContain(
+			'V1 registrations must not set supportedPaymentSources; use the top-level AgentPricing field',
+		);
+		expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
+	});
+
+	it('requires top-level AgentPricing on V1', async () => {
+		mockFindSellingWallet.mockResolvedValue(buildV1SellingWallet());
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					name: 'Incomplete V1 Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: { name: 'demo', version: '1.0.0' },
+					Author: { name: 'Author' },
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(JSON.stringify(responseMock._getJSONData())).toContain(
+			'V1 registrations require the top-level AgentPricing field',
+		);
+		expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
+	});
+
+	it('requires source-local pricing on V2', async () => {
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					name: 'Incomplete V2 Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: { name: 'demo', version: '1.0.0' },
+					Author: { name: 'Author' },
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(JSON.stringify(responseMock._getJSONData())).toContain(
+			'V2 registrations require supportedPaymentSources with source-local pricing',
+		);
+		expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
+	});
+
+	it('rejects an x402 source whose address alias does not match payTo', async () => {
 		const { responseMock } = await testEndpoint({
 			endpoint: registerAgentPost,
 			requestProps: {
@@ -695,18 +788,24 @@ describe('registerAgentPost', () => {
 					apiBaseUrl: 'https://example.com/agent',
 					Tags: ['demo'],
 					Capability: { name: 'demo', version: '1.0.0' },
-					AgentPricing: { pricingType: PricingType.Free },
 					Author: { name: 'Author' },
 					supportedPaymentSources: [
 						{
 							chain: 'EVM',
 							network: 'eip155:84532',
 							scheme: 'Exact',
-							asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7c',
-							amount: '1000',
-							decimals: 6,
 							address: `0x${'4'.repeat(40)}`,
 							payTo: `0x${'2'.repeat(40)}`,
+							pricing: {
+								pricingType: PricingType.Fixed,
+								fixed: [
+									{
+										asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7c',
+										amount: '1000',
+										decimals: 6,
+									},
+								],
+							},
 						},
 					],
 					ExampleOutputs: [],
@@ -734,15 +833,14 @@ describe('registerAgentPost', () => {
 					apiBaseUrl: 'https://example.com/agent',
 					Tags: ['demo'],
 					Capability: { name: 'demo', version: '1.0.0' },
-					AgentPricing: { pricingType: PricingType.Free },
 					Author: { name: 'Author' },
 					supportedPaymentSources: [
 						{
 							chain: 'EVM',
 							network: 'eip155:84532',
 							scheme: 'Exact',
-							pricingType: PricingType.Dynamic,
 							payTo: `0x${'1'.repeat(40)}`,
+							pricing: { pricingType: PricingType.Dynamic },
 						},
 					],
 					ExampleOutputs: [],
@@ -787,9 +885,7 @@ describe('registerAgentPost', () => {
 						name: 'demo',
 						version: '1.0.0',
 					},
-					AgentPricing: {
-						pricingType: PricingType.Free,
-					},
+					supportedPaymentSources: [freeCardanoSource()],
 					Author: {
 						name: 'Author',
 					},
@@ -842,9 +938,7 @@ describe('registerAgentPost', () => {
 						name: 'demo',
 						version: '1.0.0',
 					},
-					AgentPricing: {
-						pricingType: PricingType.Free,
-					},
+					supportedPaymentSources: [freeCardanoSource()],
 					Author: {
 						name: 'Author',
 					},
@@ -883,9 +977,7 @@ describe('registerAgentPost', () => {
 						name: 'demo',
 						version: '1.0.0',
 					},
-					AgentPricing: {
-						pricingType: PricingType.Free,
-					},
+					supportedPaymentSources: [freeCardanoSource()],
 					Author: {
 						name: 'Author',
 					},

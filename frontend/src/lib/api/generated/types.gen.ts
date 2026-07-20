@@ -1069,7 +1069,7 @@ export type AgentMetadata = {
             other?: string | null;
         } | null;
         /**
-         * Pricing information for the agent
+         * V1 legacy pricing. Null for V2 metadata, which prices each source independently.
          */
         AgentPricing: {
             /**
@@ -1099,7 +1099,7 @@ export type AgentMetadata = {
              * Pricing type for the agent (Dynamic)
              */
             pricingType: 'Dynamic';
-        };
+        } | unknown;
         /**
          * URL to the agent image/logo
          */
@@ -1128,6 +1128,48 @@ export type AgentMetadata = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
+            };
         } | {
             /**
              * The chain family used by standard x402
@@ -1163,108 +1205,48 @@ export type AgentMetadata = {
             extra?: {
                 [key: string]: unknown;
             };
-            /**
-             * A fixed amount is advertised in the registry
-             */
-            pricingType: 'Fixed';
-            /**
-             * ERC-20 token contract address
-             */
-            asset: string;
-            /**
-             * Atomic token amount
-             */
-            amount: string;
-            /**
-             * Token decimals
-             */
-            decimals: number;
-        } | {
-            /**
-             * The chain family used by standard x402
-             */
-            chain: 'EVM';
-            /**
-             * CAIP-2 EVM network id, for example eip155:8453
-             */
-            network: string;
-            /**
-             * The configured payment source type
-             */
-            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-            /**
-             * Alias for payTo, kept for existing payment-source shape
-             */
-            address?: string;
-            /**
-             * x402 payment scheme
-             */
-            scheme: 'Exact';
-            /**
-             * EVM address receiving the x402 payment
-             */
-            payTo: string;
-            /**
-             * Optional absolute resource URL this x402 option protects
-             */
-            resource?: string;
-            /**
-             * Additional x402 metadata
-             */
-            extra?: {
-                [key: string]: unknown;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
             };
-            /**
-             * The exact positive amount is supplied dynamically in each x402 payment requirement
-             */
-            pricingType: 'Dynamic';
-            /**
-             * Optional asset allowlist for dynamic payment requirements
-             */
-            asset?: string;
-            /**
-             * Decimals for the optional dynamic asset
-             */
-            decimals?: number;
-        } | {
-            /**
-             * The chain family used by standard x402
-             */
-            chain: 'EVM';
-            /**
-             * CAIP-2 EVM network id, for example eip155:8453
-             */
-            network: string;
-            /**
-             * The configured payment source type
-             */
-            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-            /**
-             * Alias for payTo, kept for existing payment-source shape
-             */
-            address?: string;
-            /**
-             * x402 payment scheme
-             */
-            scheme: 'Exact';
-            /**
-             * EVM address receiving the x402 payment
-             */
-            payTo: string;
-            /**
-             * Optional absolute resource URL this x402 option protects
-             */
-            resource?: string;
-            /**
-             * Additional x402 metadata
-             */
-            extra?: {
-                [key: string]: unknown;
-            };
-            /**
-             * This resource does not require an x402 payment
-             */
-            pricingType: 'Free';
         }> | null;
         /**
          * KERI/Veridian verification claims advertised by this registry entry. Null when none.
@@ -1444,7 +1426,7 @@ export type AgentIdentifierMetadata = {
             other?: string | null;
         } | null;
         /**
-         * Pricing information for the agent
+         * V1 legacy pricing. Null for V2 metadata, which prices each source independently.
          */
         AgentPricing: {
             /**
@@ -1474,7 +1456,7 @@ export type AgentIdentifierMetadata = {
              * Pricing type for the agent (Dynamic). Amounts are provided per payment/purchase request
              */
             pricingType: 'Dynamic';
-        };
+        } | unknown;
         /**
          * URL to the agent image/logo
          */
@@ -1503,6 +1485,48 @@ export type AgentIdentifierMetadata = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
+            };
         } | {
             /**
              * The chain family used by standard x402
@@ -1538,108 +1562,48 @@ export type AgentIdentifierMetadata = {
             extra?: {
                 [key: string]: unknown;
             };
-            /**
-             * A fixed amount is advertised in the registry
-             */
-            pricingType: 'Fixed';
-            /**
-             * ERC-20 token contract address
-             */
-            asset: string;
-            /**
-             * Atomic token amount
-             */
-            amount: string;
-            /**
-             * Token decimals
-             */
-            decimals: number;
-        } | {
-            /**
-             * The chain family used by standard x402
-             */
-            chain: 'EVM';
-            /**
-             * CAIP-2 EVM network id, for example eip155:8453
-             */
-            network: string;
-            /**
-             * The configured payment source type
-             */
-            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-            /**
-             * Alias for payTo, kept for existing payment-source shape
-             */
-            address?: string;
-            /**
-             * x402 payment scheme
-             */
-            scheme: 'Exact';
-            /**
-             * EVM address receiving the x402 payment
-             */
-            payTo: string;
-            /**
-             * Optional absolute resource URL this x402 option protects
-             */
-            resource?: string;
-            /**
-             * Additional x402 metadata
-             */
-            extra?: {
-                [key: string]: unknown;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
             };
-            /**
-             * The exact positive amount is supplied dynamically in each x402 payment requirement
-             */
-            pricingType: 'Dynamic';
-            /**
-             * Optional asset allowlist for dynamic payment requirements
-             */
-            asset?: string;
-            /**
-             * Decimals for the optional dynamic asset
-             */
-            decimals?: number;
-        } | {
-            /**
-             * The chain family used by standard x402
-             */
-            chain: 'EVM';
-            /**
-             * CAIP-2 EVM network id, for example eip155:8453
-             */
-            network: string;
-            /**
-             * The configured payment source type
-             */
-            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-            /**
-             * Alias for payTo, kept for existing payment-source shape
-             */
-            address?: string;
-            /**
-             * x402 payment scheme
-             */
-            scheme: 'Exact';
-            /**
-             * EVM address receiving the x402 payment
-             */
-            payTo: string;
-            /**
-             * Optional absolute resource URL this x402 option protects
-             */
-            resource?: string;
-            /**
-             * Additional x402 metadata
-             */
-            extra?: {
-                [key: string]: unknown;
-            };
-            /**
-             * This resource does not require an x402 payment
-             */
-            pricingType: 'Free';
         }> | null;
         /**
          * KERI/Veridian verification claims advertised by this registry entry. Null when none.
@@ -1831,7 +1795,7 @@ export type RegistryEntry = {
      */
     agentIdentifier: string | null;
     /**
-     * Pricing information for the agent
+     * V1 legacy pricing. Null for V2 entries, whose pricing is owned by each supported payment source.
      */
     AgentPricing: {
         /**
@@ -1861,7 +1825,7 @@ export type RegistryEntry = {
          * Pricing type for the agent. Amounts are provided per payment/purchase request
          */
         pricingType: 'Dynamic';
-    };
+    } | unknown;
     /**
      * Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.
      */
@@ -1886,6 +1850,48 @@ export type RegistryEntry = {
          * The escrow smart contract address for this payment source
          */
         address: string;
+        pricing: {
+            /**
+             * A fixed amount is advertised for this payment source
+             */
+            pricingType: 'Fixed';
+            fixed: Array<{
+                /**
+                 * Chain-native asset identifier
+                 */
+                asset: string;
+                /**
+                 * Atomic token amount
+                 */
+                amount: string;
+                /**
+                 * Asset decimals when required by the rail
+                 */
+                decimals?: number;
+            }>;
+        } | {
+            /**
+             * The exact positive amount is supplied dynamically for each payment request
+             */
+            pricingType: 'Dynamic';
+            dynamic?: [
+                {
+                    /**
+                     * Optional accepted asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }
+            ];
+        } | {
+            /**
+             * This payment source does not require payment
+             */
+            pricingType: 'Free';
+        };
     } | {
         /**
          * The chain family used by standard x402
@@ -1921,108 +1927,48 @@ export type RegistryEntry = {
         extra?: {
             [key: string]: unknown;
         };
-        /**
-         * A fixed amount is advertised in the registry
-         */
-        pricingType: 'Fixed';
-        /**
-         * ERC-20 token contract address
-         */
-        asset: string;
-        /**
-         * Atomic token amount
-         */
-        amount: string;
-        /**
-         * Token decimals
-         */
-        decimals: number;
-    } | {
-        /**
-         * The chain family used by standard x402
-         */
-        chain: 'EVM';
-        /**
-         * CAIP-2 EVM network id, for example eip155:8453
-         */
-        network: string;
-        /**
-         * The configured payment source type
-         */
-        paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-        /**
-         * Alias for payTo, kept for existing payment-source shape
-         */
-        address?: string;
-        /**
-         * x402 payment scheme
-         */
-        scheme: 'Exact';
-        /**
-         * EVM address receiving the x402 payment
-         */
-        payTo: string;
-        /**
-         * Optional absolute resource URL this x402 option protects
-         */
-        resource?: string;
-        /**
-         * Additional x402 metadata
-         */
-        extra?: {
-            [key: string]: unknown;
+        pricing: {
+            /**
+             * A fixed amount is advertised for this payment source
+             */
+            pricingType: 'Fixed';
+            fixed: Array<{
+                /**
+                 * Chain-native asset identifier
+                 */
+                asset: string;
+                /**
+                 * Atomic token amount
+                 */
+                amount: string;
+                /**
+                 * Asset decimals when required by the rail
+                 */
+                decimals?: number;
+            }>;
+        } | {
+            /**
+             * The exact positive amount is supplied dynamically for each payment request
+             */
+            pricingType: 'Dynamic';
+            dynamic?: [
+                {
+                    /**
+                     * Optional accepted asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }
+            ];
+        } | {
+            /**
+             * This payment source does not require payment
+             */
+            pricingType: 'Free';
         };
-        /**
-         * The exact positive amount is supplied dynamically in each x402 payment requirement
-         */
-        pricingType: 'Dynamic';
-        /**
-         * Optional asset allowlist for dynamic payment requirements
-         */
-        asset?: string;
-        /**
-         * Decimals for the optional dynamic asset
-         */
-        decimals?: number;
-    } | {
-        /**
-         * The chain family used by standard x402
-         */
-        chain: 'EVM';
-        /**
-         * CAIP-2 EVM network id, for example eip155:8453
-         */
-        network: string;
-        /**
-         * The configured payment source type
-         */
-        paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-        /**
-         * Alias for payTo, kept for existing payment-source shape
-         */
-        address?: string;
-        /**
-         * x402 payment scheme
-         */
-        scheme: 'Exact';
-        /**
-         * EVM address receiving the x402 payment
-         */
-        payTo: string;
-        /**
-         * Optional absolute resource URL this x402 option protects
-         */
-        resource?: string;
-        /**
-         * Additional x402 metadata
-         */
-        extra?: {
-            [key: string]: unknown;
-        };
-        /**
-         * This resource does not require an x402 payment
-         */
-        pricingType: 'Free';
     }> | null;
     /**
      * KERI/Veridian verification claims advertised by this registry entry. Null when none.
@@ -4653,6 +4599,10 @@ export type PostPaymentData = {
          * Expected payment source type for this request
          */
         paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * Required for V2 Cardano payments and forbidden for V1. Selects the independently-priced source by its index in supported_payment_sources.
+         */
+        supportedPaymentSourceIndex?: number;
         /**
          * The amounts of the payment, should be null for fixed amount
          */
@@ -9042,7 +8992,7 @@ export type PostRegistryData = {
          */
         sendFundingLovelace?: string;
         /**
-         * Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.
+         * Required for V2 registrations and forbidden for V1 registrations. Every V2 source owns its pricing.
          */
         supportedPaymentSources?: Array<{
             /**
@@ -9061,6 +9011,48 @@ export type PostRegistryData = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
+            };
         } | {
             /**
              * The chain family used by standard x402
@@ -9096,155 +9088,48 @@ export type PostRegistryData = {
             extra?: {
                 [key: string]: unknown;
             };
-            /**
-             * A fixed amount is advertised in the registry
-             */
-            pricingType: 'Fixed';
-            /**
-             * ERC-20 token contract address
-             */
-            asset: string;
-            /**
-             * Atomic token amount
-             */
-            amount: string;
-            /**
-             * Token decimals
-             */
-            decimals: number;
-        } | {
-            /**
-             * The chain family used by standard x402
-             */
-            chain: 'EVM';
-            /**
-             * CAIP-2 EVM network id, for example eip155:8453
-             */
-            network: string;
-            /**
-             * The configured payment source type
-             */
-            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-            /**
-             * Alias for payTo, kept for existing payment-source shape
-             */
-            address?: string;
-            /**
-             * x402 payment scheme
-             */
-            scheme: 'Exact';
-            /**
-             * EVM address receiving the x402 payment
-             */
-            payTo: string;
-            /**
-             * Optional absolute resource URL this x402 option protects
-             */
-            resource?: string;
-            /**
-             * Additional x402 metadata
-             */
-            extra?: {
-                [key: string]: unknown;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
             };
-            /**
-             * The exact positive amount is supplied dynamically in each x402 payment requirement
-             */
-            pricingType: 'Dynamic';
-            /**
-             * Optional asset allowlist for dynamic payment requirements
-             */
-            asset?: string;
-            /**
-             * Decimals for the optional dynamic asset
-             */
-            decimals?: number;
-        } | {
-            /**
-             * The chain family used by standard x402
-             */
-            chain: 'EVM';
-            /**
-             * CAIP-2 EVM network id, for example eip155:8453
-             */
-            network: string;
-            /**
-             * The configured payment source type
-             */
-            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-            /**
-             * Alias for payTo, kept for existing payment-source shape
-             */
-            address?: string;
-            /**
-             * x402 payment scheme
-             */
-            scheme: 'Exact';
-            /**
-             * EVM address receiving the x402 payment
-             */
-            payTo: string;
-            /**
-             * Optional absolute resource URL this x402 option protects
-             */
-            resource?: string;
-            /**
-             * Additional x402 metadata
-             */
-            extra?: {
-                [key: string]: unknown;
-            };
-            /**
-             * This resource does not require an x402 payment
-             */
-            pricingType: 'Free';
-        } | {
-            /**
-             * The chain family used by standard x402
-             */
-            chain: 'EVM';
-            /**
-             * CAIP-2 EVM network id, for example eip155:8453
-             */
-            network: string;
-            /**
-             * The configured payment source type
-             */
-            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-            /**
-             * Alias for payTo, kept for existing payment-source shape
-             */
-            address?: string;
-            /**
-             * x402 payment scheme
-             */
-            scheme: 'Exact';
-            /**
-             * EVM address receiving the x402 payment
-             */
-            payTo: string;
-            /**
-             * Optional absolute resource URL this x402 option protects
-             */
-            resource?: string;
-            /**
-             * Additional x402 metadata
-             */
-            extra?: {
-                [key: string]: unknown;
-            };
-            /**
-             * ERC-20 token contract address
-             */
-            asset: string;
-            /**
-             * Atomic token amount
-             */
-            amount: string;
-            /**
-             * Token decimals
-             */
-            decimals: number;
         }>;
         /**
          * Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only.
@@ -9366,9 +9251,9 @@ export type PostRegistryData = {
             version: string;
         };
         /**
-         * Pricing information for the agent
+         * Required legacy pricing for V1 registrations and forbidden for V2 registrations. V2 pricing belongs inside supportedPaymentSources[].pricing.
          */
-        AgentPricing: {
+        AgentPricing?: {
             /**
              * Pricing type for the agent
              */
@@ -9561,7 +9446,7 @@ export type PostRegistryUpdateData = {
          */
         sendFundingLovelace?: string;
         /**
-         * Payment sources to replace on this registry request. An empty array resets the entry to its active Masumi source.
+         * Payment sources to replace on this V2 registry request. Omit the field to keep existing sources; an empty array is invalid.
          */
         supportedPaymentSources?: Array<{
             /**
@@ -9580,6 +9465,48 @@ export type PostRegistryUpdateData = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
+            };
         } | {
             /**
              * The chain family used by standard x402
@@ -9615,155 +9542,48 @@ export type PostRegistryUpdateData = {
             extra?: {
                 [key: string]: unknown;
             };
-            /**
-             * A fixed amount is advertised in the registry
-             */
-            pricingType: 'Fixed';
-            /**
-             * ERC-20 token contract address
-             */
-            asset: string;
-            /**
-             * Atomic token amount
-             */
-            amount: string;
-            /**
-             * Token decimals
-             */
-            decimals: number;
-        } | {
-            /**
-             * The chain family used by standard x402
-             */
-            chain: 'EVM';
-            /**
-             * CAIP-2 EVM network id, for example eip155:8453
-             */
-            network: string;
-            /**
-             * The configured payment source type
-             */
-            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-            /**
-             * Alias for payTo, kept for existing payment-source shape
-             */
-            address?: string;
-            /**
-             * x402 payment scheme
-             */
-            scheme: 'Exact';
-            /**
-             * EVM address receiving the x402 payment
-             */
-            payTo: string;
-            /**
-             * Optional absolute resource URL this x402 option protects
-             */
-            resource?: string;
-            /**
-             * Additional x402 metadata
-             */
-            extra?: {
-                [key: string]: unknown;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
             };
-            /**
-             * The exact positive amount is supplied dynamically in each x402 payment requirement
-             */
-            pricingType: 'Dynamic';
-            /**
-             * Optional asset allowlist for dynamic payment requirements
-             */
-            asset?: string;
-            /**
-             * Decimals for the optional dynamic asset
-             */
-            decimals?: number;
-        } | {
-            /**
-             * The chain family used by standard x402
-             */
-            chain: 'EVM';
-            /**
-             * CAIP-2 EVM network id, for example eip155:8453
-             */
-            network: string;
-            /**
-             * The configured payment source type
-             */
-            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-            /**
-             * Alias for payTo, kept for existing payment-source shape
-             */
-            address?: string;
-            /**
-             * x402 payment scheme
-             */
-            scheme: 'Exact';
-            /**
-             * EVM address receiving the x402 payment
-             */
-            payTo: string;
-            /**
-             * Optional absolute resource URL this x402 option protects
-             */
-            resource?: string;
-            /**
-             * Additional x402 metadata
-             */
-            extra?: {
-                [key: string]: unknown;
-            };
-            /**
-             * This resource does not require an x402 payment
-             */
-            pricingType: 'Free';
-        } | {
-            /**
-             * The chain family used by standard x402
-             */
-            chain: 'EVM';
-            /**
-             * CAIP-2 EVM network id, for example eip155:8453
-             */
-            network: string;
-            /**
-             * The configured payment source type
-             */
-            paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2' | null;
-            /**
-             * Alias for payTo, kept for existing payment-source shape
-             */
-            address?: string;
-            /**
-             * x402 payment scheme
-             */
-            scheme: 'Exact';
-            /**
-             * EVM address receiving the x402 payment
-             */
-            payTo: string;
-            /**
-             * Optional absolute resource URL this x402 option protects
-             */
-            resource?: string;
-            /**
-             * Additional x402 metadata
-             */
-            extra?: {
-                [key: string]: unknown;
-            };
-            /**
-             * ERC-20 token contract address
-             */
-            asset: string;
-            /**
-             * Atomic token amount
-             */
-            amount: string;
-            /**
-             * Token decimals
-             */
-            decimals: number;
         }>;
         /**
          * Optional KERI/Veridian verification claims advertised in the registry metadata for independent third-party verification. Accepted on any registration; surfaced in the UI for V2 registries only.
@@ -9885,9 +9705,9 @@ export type PostRegistryUpdateData = {
             version: string;
         };
         /**
-         * Pricing information for the agent
+         * Required legacy pricing for V1 registrations and forbidden for V2 registrations. V2 pricing belongs inside supportedPaymentSources[].pricing.
          */
-        AgentPricing: {
+        AgentPricing?: {
             /**
              * Pricing type for the agent
              */

@@ -49,6 +49,7 @@ import {
   verificationsToApi,
   type VerificationDraft,
 } from './VerificationsSection';
+import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -275,9 +276,186 @@ type PaymentOptionRow = {
   id: string;
   type: PaymentConfigurationType;
 };
+type MasumiOptionDraft = {
+  id: string;
+  pricingType: 'Fixed' | 'Dynamic' | 'Free';
+  prices: Array<{
+    unit: 'lovelace' | 'USDCx' | 'tUSDM';
+    amount: string;
+  }>;
+};
 
 const MASUMI_PAYMENT_OPTION_ID = 'masumi-payment-option';
 const MAX_PAYMENT_OPTIONS = 25;
+
+function createMasumiOption(
+  defaultPriceUnit: 'lovelace' | 'USDCx' | 'tUSDM',
+  id = `masumi-${crypto.randomUUID()}`,
+): MasumiOptionDraft {
+  return {
+    id,
+    pricingType: 'Fixed',
+    prices: [{ unit: defaultPriceUnit, amount: '' }],
+  };
+}
+
+function MasumiOptionFields({
+  option,
+  optionNumber,
+  network,
+  stablecoinUnit,
+  defaultPriceUnit,
+  onChange,
+}: {
+  option: MasumiOptionDraft;
+  optionNumber: number;
+  network: 'Mainnet' | 'Preprod';
+  stablecoinUnit: 'USDCx' | 'tUSDM';
+  defaultPriceUnit: 'lovelace' | 'USDCx' | 'tUSDM';
+  onChange: (option: MasumiOptionDraft) => void;
+}) {
+  return (
+    <>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-medium">
+          Pricing model <span className="text-destructive">*</span>
+        </label>
+        <Select
+          value={option.pricingType}
+          onValueChange={(value: MasumiOptionDraft['pricingType']) =>
+            onChange({
+              ...option,
+              pricingType: value,
+              prices:
+                value === 'Fixed'
+                  ? option.prices.length > 0
+                    ? option.prices
+                    : [{ unit: defaultPriceUnit, amount: '' }]
+                  : [],
+            })
+          }
+        >
+          <SelectTrigger aria-label={`Pricing model for payment option ${optionNumber}`}>
+            <SelectValue placeholder="Select a pricing model" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="Fixed">Fixed price</SelectItem>
+              <SelectItem value="Dynamic">Dynamic per payment</SelectItem>
+              <SelectItem value="Free">Free</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        {option.pricingType === 'Dynamic' ? (
+          <p className="text-xs text-muted-foreground">
+            Your agent sets the amount for each payment request.
+          </p>
+        ) : null}
+        {option.pricingType === 'Free' ? (
+          <p className="text-xs text-muted-foreground">
+            Interactions do not require a Masumi escrow payment.
+          </p>
+        ) : null}
+      </div>
+
+      {option.pricingType === 'Fixed' ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-xs font-medium">
+              Coins and prices <span className="text-destructive">*</span>
+            </label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={option.prices.length >= REGISTRY_LIMITS.pricingOptionCount}
+              onClick={() =>
+                onChange({
+                  ...option,
+                  prices: [...option.prices, { unit: defaultPriceUnit, amount: '' }],
+                })
+              }
+            >
+              <Plus data-icon="inline-start" />
+              Add coin
+            </Button>
+          </div>
+          {option.prices.map((price, priceIndex) => (
+            <div
+              key={`${option.id}-${priceIndex}`}
+              className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
+            >
+              <div className="min-w-0 flex-1">
+                <Select
+                  value={price.unit}
+                  onValueChange={(unit: MasumiOptionDraft['prices'][number]['unit']) =>
+                    onChange({
+                      ...option,
+                      prices: option.prices.map((candidate, index) =>
+                        index === priceIndex ? { ...candidate, unit } : candidate,
+                      ),
+                    })
+                  }
+                >
+                  <SelectTrigger aria-label={`Coin for Masumi price ${priceIndex + 1}`}>
+                    <SelectValue placeholder="Select a coin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={stablecoinUnit}>{stablecoinUnit}</SelectItem>
+                      <SelectItem value="lovelace">
+                        {formatFundUnit('lovelace', network)}
+                      </SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-0 flex-1">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  aria-label={`Amount for Masumi price ${priceIndex + 1}`}
+                  placeholder="0.00"
+                  onWheel={(event) => event.currentTarget.blur()}
+                  value={price.amount}
+                  onChange={(event) =>
+                    onChange({
+                      ...option,
+                      prices: option.prices.map((candidate, index) =>
+                        index === priceIndex
+                          ? { ...candidate, amount: event.target.value }
+                          : candidate,
+                      ),
+                    })
+                  }
+                  min="0"
+                  step="0.000001"
+                />
+              </div>
+              {option.prices.length > 1 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 self-end sm:h-9 sm:w-9 sm:self-auto"
+                  aria-label={`Remove Masumi price ${priceIndex + 1}`}
+                  onClick={() =>
+                    onChange({
+                      ...option,
+                      prices: option.prices.filter((_, index) => index !== priceIndex),
+                    })
+                  }
+                >
+                  <Trash2 />
+                </Button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
 
 export function RegisterAIAgentDialog({
   open,
@@ -304,6 +482,10 @@ export function RegisterAIAgentDialog({
 
   const { wallets, isLoading: isLoadingWallets, isError: isWalletsError } = useWallets();
   const { apiClient, network, selectedPaymentSource, selectedX402ChainId } = useAppContext();
+  // x402 and source-owned pricing are V2-only; update always targets V2.
+  const isV2Target = isUpdateMode
+    ? true
+    : !!selectedPaymentSource && isV2PaymentSource(selectedPaymentSource);
   const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
   // V2 treats every advertised payment source as a peer. Start fixed pricing
   // with the network stablecoin instead of implying that ADA is mandatory.
@@ -320,7 +502,10 @@ export function RegisterAIAgentDialog({
     watch,
   } = useForm<AgentFormValues>({
     resolver: zodResolver(createAgentSchema(network)),
-    defaultValues: createAgentDefaultValues(defaultPriceUnit),
+    defaultValues: {
+      ...createAgentDefaultValues(defaultPriceUnit),
+      ...(isV2Target ? { prices: [], pricingType: 'Dynamic' as const } : {}),
+    },
   });
 
   const {
@@ -401,6 +586,9 @@ export function RegisterAIAgentDialog({
           return rawAmount;
         }
       };
+      const editingPricing = getPrimaryCardanoPricing(editingAgent) ?? {
+        pricingType: 'Free' as const,
+      };
       reset({
         apiUrl: editingAgent.apiBaseUrl,
         name: editingAgent.name,
@@ -413,14 +601,14 @@ export function RegisterAIAgentDialog({
           ? mapAmount(editingAgent.sendFundingLovelace)
           : '',
         prices:
-          editingAgent.AgentPricing.pricingType === 'Fixed'
-            ? editingAgent.AgentPricing.Pricing.map((p) => ({
+          !isV2Target && editingPricing.pricingType === 'Fixed'
+            ? editingPricing.Pricing.map((p) => ({
                 unit: mapPricingUnitToOption(p.unit),
                 amount: mapAmount(p.amount),
               }))
             : [],
         tags: editingAgent.Tags ?? [],
-        pricingType: editingAgent.AgentPricing.pricingType,
+        pricingType: isV2Target ? 'Dynamic' : editingPricing.pricingType,
         authorName: editingAgent.Author.name,
         authorEmail: editingAgent.Author.contactEmail ?? '',
         organization: editingAgent.Author.organization ?? '',
@@ -438,30 +626,66 @@ export function RegisterAIAgentDialog({
       });
       const prefilledX402Options = (editingAgent.supportedPaymentSources ?? [])
         .filter((source): source is EvmSupportedSource => source.chain === 'EVM')
-        .map((source) => ({
-          id: newX402OptionId(),
-          pricingType: source.pricingType,
-          caip2Network: source.network,
-          asset: source.pricingType === 'Free' ? '' : (source.asset ?? ''),
-          amount:
-            source.pricingType === 'Fixed'
-              ? x402AmountFromBaseUnits(source.amount, source.decimals)
-              : '',
-          decimals:
-            source.pricingType === 'Free' || source.decimals == null ? '' : String(source.decimals),
-          payTo: source.payTo,
-          resource: source.resource ?? '',
-        }));
+        .map((source) => {
+          const pricing = source.pricing;
+          const fixedPrice = pricing.pricingType === 'Fixed' ? pricing.fixed[0] : undefined;
+          const dynamicAsset = pricing.pricingType === 'Dynamic' ? pricing.dynamic?.[0] : undefined;
+
+          return {
+            id: newX402OptionId(),
+            pricingType: pricing.pricingType,
+            caip2Network: source.network,
+            asset: fixedPrice?.asset ?? dynamicAsset?.asset ?? '',
+            amount:
+              fixedPrice == null
+                ? ''
+                : x402AmountFromBaseUnits(fixedPrice.amount, fixedPrice.decimals ?? 0),
+            decimals:
+              fixedPrice?.decimals != null
+                ? String(fixedPrice.decimals)
+                : dynamicAsset?.decimals != null
+                  ? String(dynamicAsset.decimals)
+                  : '',
+            payTo: source.payTo,
+            resource: source.resource ?? '',
+          };
+        });
       const storedPaymentSources = editingAgent.supportedPaymentSources;
-      const hasStoredMasumiSource =
-        storedPaymentSources == null ||
-        storedPaymentSources.length === 0 ||
-        storedPaymentSources.some((source) => source.chain === 'Cardano');
+      const storedCardanoSources = (storedPaymentSources ?? []).filter(
+        (source): source is CardanoSupportedSource => source.chain === 'Cardano',
+      );
+      const prefilledMasumiOptions: MasumiOptionDraft[] =
+        storedCardanoSources.length > 0
+          ? storedCardanoSources.map((source, index) => ({
+              id: index === 0 ? MASUMI_PAYMENT_OPTION_ID : `masumi-${crypto.randomUUID()}`,
+              pricingType: source.pricing.pricingType,
+              prices:
+                source.pricing.pricingType === 'Fixed'
+                  ? source.pricing.fixed.map((price) => ({
+                      unit: mapPricingUnitToOption(price.asset),
+                      amount: mapAmount(price.amount),
+                    }))
+                  : [],
+            }))
+          : storedPaymentSources == null || storedPaymentSources.length === 0
+            ? [
+                {
+                  id: MASUMI_PAYMENT_OPTION_ID,
+                  pricingType: editingPricing.pricingType,
+                  prices:
+                    editingPricing.pricingType === 'Fixed'
+                      ? editingPricing.Pricing.map((price) => ({
+                          unit: mapPricingUnitToOption(price.unit),
+                          amount: mapAmount(price.amount),
+                        }))
+                      : [],
+                },
+              ]
+            : [];
+      setMasumiOptions(prefilledMasumiOptions);
       setX402Options(prefilledX402Options);
       setPaymentOptionRows([
-        ...(hasStoredMasumiSource
-          ? [{ id: MASUMI_PAYMENT_OPTION_ID, type: 'Masumi' as const }]
-          : []),
+        ...prefilledMasumiOptions.map((option) => ({ id: option.id, type: 'Masumi' as const })),
         ...prefilledX402Options.map((option) => ({ id: option.id, type: 'x402' as const })),
       ]);
       setX402Error(null);
@@ -469,13 +693,17 @@ export function RegisterAIAgentDialog({
       setVerificationsError(null);
       return;
     }
-    reset(createAgentDefaultValues(defaultPriceUnit));
+    reset({
+      ...createAgentDefaultValues(defaultPriceUnit),
+      ...(isV2Target ? { prices: [], pricingType: 'Dynamic' as const } : {}),
+    });
+    setMasumiOptions([createMasumiOption(defaultPriceUnit, MASUMI_PAYMENT_OPTION_ID)]);
     setPaymentOptionRows([{ id: MASUMI_PAYMENT_OPTION_ID, type: 'Masumi' }]);
     setX402Options([]);
     setX402Error(null);
     setVerifications([]);
     setVerificationsError(null);
-  }, [defaultPriceUnit, open, reset, sourceAgent, network, stablecoinUnit]);
+  }, [defaultPriceUnit, isV2Target, open, reset, sourceAgent, network, stablecoinUnit]);
 
   const selectedWallet = useMemo(
     () => sellingWallets.find((wallet) => wallet.wallet.walletVkey === selectedWalletVkey),
@@ -500,12 +728,15 @@ export function RegisterAIAgentDialog({
   const [paymentOptionRows, setPaymentOptionRows] = useState<PaymentOptionRow[]>([
     { id: MASUMI_PAYMENT_OPTION_ID, type: 'Masumi' },
   ]);
+  const [masumiOptions, setMasumiOptions] = useState<MasumiOptionDraft[]>(() => [
+    createMasumiOption(defaultPriceUnit, MASUMI_PAYMENT_OPTION_ID),
+  ]);
+  const [masumiError, setMasumiError] = useState<{
+    message: string;
+    optionId?: string;
+  } | null>(null);
   const [verifications, setVerifications] = useState<VerificationDraft[]>([]);
   const [verificationsError, setVerificationsError] = useState<string | null>(null);
-  // x402 supported payment sources are a V2-only capability; update always targets V2.
-  const isV2Target = isUpdateMode
-    ? true
-    : !!selectedPaymentSource && isV2PaymentSource(selectedPaymentSource);
   const { networks: x402Networks } = useAvailableX402Networks({ silentErrors: true });
   const { wallets: x402Wallets, isLoading: isLoadingX402Wallets } = useX402Wallets(open, 'Selling');
   const hasMasumiPaymentOption = paymentOptionRows.some((option) => option.type === 'Masumi');
@@ -573,22 +804,29 @@ export function RegisterAIAgentDialog({
     if (optionRow.type === nextType) return;
 
     if (nextType === 'Masumi') {
-      if (hasMasumiPaymentOption) return;
       setX402Options((currentOptions) =>
         currentOptions.filter((option) => option.id !== optionRow.id),
       );
+      const option = createMasumiOption(defaultPriceUnit);
+      setMasumiOptions((currentOptions) => [...currentOptions, option]);
       setPaymentOptionRows((currentRows) =>
         currentRows.map((row) =>
-          row.id === optionRow.id ? { id: MASUMI_PAYMENT_OPTION_ID, type: 'Masumi' } : row,
+          row.id === optionRow.id ? { id: option.id, type: 'Masumi' } : row,
         ),
       );
-      setValue('pricingType', 'Fixed');
-      replacePrices([{ unit: defaultPriceUnit, amount: '' }]);
+      if (!isV2Target) {
+        setValue('pricingType', 'Fixed');
+        replacePrices([{ unit: defaultPriceUnit, amount: '' }]);
+      }
       setX402Error(null);
+      setMasumiError(null);
       return;
     }
 
     const option = createX402Option();
+    setMasumiOptions((currentOptions) =>
+      currentOptions.filter((candidate) => candidate.id !== optionRow.id),
+    );
     setX402Options((currentOptions) => [...currentOptions, option]);
     setPaymentOptionRows((currentRows) =>
       currentRows.map((row) => (row.id === optionRow.id ? { id: option.id, type: 'x402' } : row)),
@@ -610,8 +848,14 @@ export function RegisterAIAgentDialog({
       return;
     }
 
-    setValue('pricingType', 'Dynamic');
-    replacePrices([]);
+    setMasumiOptions((currentOptions) =>
+      currentOptions.filter((option) => option.id !== optionRow.id),
+    );
+    setMasumiError(null);
+    if (!isV2Target) {
+      setValue('pricingType', 'Dynamic');
+      replacePrices([]);
+    }
   };
 
   useEffect(() => {
@@ -700,10 +944,85 @@ export function RegisterAIAgentDialog({
           version: data.capabilityVersion || '1.0.0',
         };
 
-        const agentPricing = (() => {
-          if (!hasMasumiPaymentOption) {
-            return { pricingType: 'Free' as const };
+        const stablecoinAsset = getActiveStablecoinConfig(network).fullAssetId;
+        const sourcePricingByMasumiOption = new Map<string, CardanoSupportedSource['pricing']>();
+        if (isV2Target) {
+          const firstMasumiIndexByKey = new Map<string, number>();
+          for (const option of masumiOptions) {
+            const optionIndex = paymentOptionRows.findIndex((row) => row.id === option.id);
+            const optionNumber = optionIndex >= 0 ? optionIndex + 1 : 1;
+            let pricing: CardanoSupportedSource['pricing'];
+            if (option.pricingType === 'Fixed') {
+              if (
+                option.prices.length === 0 ||
+                option.prices.length > REGISTRY_LIMITS.pricingOptionCount
+              ) {
+                const message = `Masumi option ${optionNumber}: add between 1 and 5 coin prices`;
+                setMasumiError({ message, optionId: option.id });
+                toast.error(message);
+                return;
+              }
+              const fixed: Extract<
+                CardanoSupportedSource['pricing'],
+                { pricingType: 'Fixed' }
+              >['fixed'] = [];
+              for (const price of option.prices) {
+                if (!isValidDecimalAmount(price.amount)) {
+                  const message = `Masumi option ${optionNumber}: enter a valid positive amount with up to 6 decimals`;
+                  setMasumiError({ message, optionId: option.id });
+                  toast.error(message);
+                  return;
+                }
+                const amount = convertDecimalToBaseUnits(price.amount);
+                if (BigInt(amount) <= BigInt(0) || BigInt(amount) > BigInt('9223372036854775807')) {
+                  const message = `Masumi option ${optionNumber}: each price must be greater than zero and fit in the supported range`;
+                  setMasumiError({ message, optionId: option.id });
+                  toast.error(message);
+                  return;
+                }
+                fixed.push({
+                  asset:
+                    price.unit === stablecoinUnit
+                      ? stablecoinAsset
+                      : price.unit === 'lovelace'
+                        ? ''
+                        : price.unit,
+                  amount,
+                });
+              }
+              pricing = { pricingType: 'Fixed', fixed };
+            } else {
+              pricing = { pricingType: option.pricingType };
+            }
+
+            const canonicalPricing =
+              pricing.pricingType === 'Fixed'
+                ? {
+                    ...pricing,
+                    fixed: [...pricing.fixed].sort(
+                      (left, right) =>
+                        left.asset.localeCompare(right.asset) ||
+                        left.amount.localeCompare(right.amount),
+                    ),
+                  }
+                : pricing;
+            const duplicateKey = JSON.stringify(canonicalPricing);
+            const duplicateOf = firstMasumiIndexByKey.get(duplicateKey);
+            if (duplicateOf != null) {
+              const message =
+                `Masumi option ${optionNumber}: duplicates payment option ${duplicateOf + 1}. ` +
+                'Choose a different pricing model, coin, or amount.';
+              setMasumiError({ message, optionId: option.id });
+              toast.error(message);
+              return;
+            }
+            firstMasumiIndexByKey.set(duplicateKey, optionIndex);
+            sourcePricingByMasumiOption.set(option.id, pricing);
           }
+        }
+        setMasumiError(null);
+
+        const agentPricing = (() => {
           if (data.pricingType === 'Free') {
             return { pricingType: 'Free' as const };
           }
@@ -742,30 +1061,48 @@ export function RegisterAIAgentDialog({
             chain: 'EVM' as const,
             network: option.caip2Network,
             scheme: 'Exact' as const,
-            pricingType: option.pricingType,
             payTo: option.payTo,
             resource: option.resource ? option.resource : undefined,
           };
           if (option.pricingType === 'Fixed') {
             return {
               ...common,
-              pricingType: 'Fixed' as const,
-              asset: option.asset,
-              amount: normalizeX402Amount(option.amount, option.decimals),
-              decimals: Number(option.decimals),
+              pricing: {
+                pricingType: 'Fixed' as const,
+                fixed: [
+                  {
+                    asset: option.asset,
+                    amount: normalizeX402Amount(option.amount, option.decimals),
+                    decimals: Number(option.decimals),
+                  },
+                ],
+              },
             };
           }
           if (option.pricingType === 'Dynamic' && option.asset) {
             return {
               ...common,
-              pricingType: 'Dynamic' as const,
-              asset: option.asset,
-              decimals: Number(option.decimals),
+              pricing: {
+                pricingType: 'Dynamic' as const,
+                dynamic: [
+                  {
+                    asset: option.asset,
+                    decimals: Number(option.decimals),
+                  },
+                ] as [
+                  {
+                    asset: string;
+                    decimals: number;
+                  },
+                ],
+              },
             };
           }
           return {
             ...common,
-            pricingType: option.pricingType,
+            pricing: {
+              pricingType: option.pricingType,
+            },
           };
         });
         if (!isV2Target && x402Options.length > 0) {
@@ -804,16 +1141,13 @@ export function RegisterAIAgentDialog({
           if (!editingAgentSmartContractAddress) {
             throw new Error('Cannot update agent: Missing payment source address');
           }
-          const masumiSupportedSources: CardanoSupportedSource[] = hasMasumiPaymentOption
-            ? [
-                {
-                  chain: 'Cardano',
-                  network,
-                  paymentSourceType: 'Web3CardanoV2',
-                  address: editingAgentSmartContractAddress,
-                },
-              ]
-            : [];
+          const masumiSupportedSources: CardanoSupportedSource[] = masumiOptions.map((option) => ({
+            chain: 'Cardano',
+            network,
+            paymentSourceType: 'Web3CardanoV2',
+            address: editingAgentSmartContractAddress,
+            pricing: sourcePricingByMasumiOption.get(option.id)!,
+          }));
           const updateResponse = await postRegistryUpdate({
             client: apiClient,
             body: {
@@ -827,7 +1161,6 @@ export function RegisterAIAgentDialog({
               apiBaseUrl: data.apiUrl,
               Tags: data.tags,
               Capability: capability,
-              AgentPricing: agentPricing,
               Author: author,
               Legal: Object.keys(legal).length > 0 ? legal : undefined,
               ExampleOutputs: exampleOutputs,
@@ -862,19 +1195,18 @@ export function RegisterAIAgentDialog({
         }
 
         const activeMasumiAddress = selectedPaymentSource?.smartContractAddress;
-        if (isV2Target && hasMasumiPaymentOption && !activeMasumiAddress) {
+        if (isV2Target && masumiOptions.length > 0 && !activeMasumiAddress) {
           throw new Error('Cannot register agent: Missing active Masumi payment source address');
         }
         const masumiSupportedSources: CardanoSupportedSource[] =
-          isV2Target && hasMasumiPaymentOption && activeMasumiAddress
-            ? [
-                {
-                  chain: 'Cardano',
-                  network,
-                  paymentSourceType: 'Web3CardanoV2',
-                  address: activeMasumiAddress,
-                },
-              ]
+          isV2Target && activeMasumiAddress
+            ? masumiOptions.map((option) => ({
+                chain: 'Cardano',
+                network,
+                paymentSourceType: 'Web3CardanoV2',
+                address: activeMasumiAddress,
+                pricing: sourcePricingByMasumiOption.get(option.id)!,
+              }))
             : [];
         const response = await postRegistry({
           client: apiClient,
@@ -888,7 +1220,6 @@ export function RegisterAIAgentDialog({
             apiBaseUrl: data.apiUrl,
             Tags: data.tags,
             Capability: capability,
-            AgentPricing: agentPricing,
             Author: author,
             Legal: Object.keys(legal).length > 0 ? legal : undefined,
             ExampleOutputs: exampleOutputs,
@@ -896,7 +1227,7 @@ export function RegisterAIAgentDialog({
               ? {
                   supportedPaymentSources: [...masumiSupportedSources, ...evmSupportedSources],
                 }
-              : {}),
+              : { AgentPricing: agentPricing }),
             ...(isV2Target && verifications.length > 0
               ? { verifications: verificationsToApi(verifications) }
               : {}),
@@ -943,9 +1274,10 @@ export function RegisterAIAgentDialog({
       editingAgent,
       editingAgentSmartContractAddress,
       x402Options,
+      masumiOptions,
+      paymentOptionRows,
       verifications,
       isV2Target,
-      hasMasumiPaymentOption,
     ],
   );
 
@@ -1237,7 +1569,7 @@ export function RegisterAIAgentDialog({
                 disabled={paymentOptionRows.length >= MAX_PAYMENT_OPTIONS}
               >
                 <Plus data-icon="inline-start" />
-                Add x402 option
+                Add payment option
               </Button>
             </div>
 
@@ -1276,6 +1608,10 @@ export function RegisterAIAgentDialog({
                 const x402Option =
                   optionRow.type === 'x402'
                     ? x402Options.find((option) => option.id === optionRow.id)
+                    : undefined;
+                const masumiOption =
+                  optionRow.type === 'Masumi'
+                    ? masumiOptions.find((option) => option.id === optionRow.id)
                     : undefined;
 
                 return (
@@ -1323,7 +1659,11 @@ export function RegisterAIAgentDialog({
                               <SelectGroup>
                                 <SelectItem
                                   value="Masumi"
-                                  disabled={hasMasumiPaymentOption && optionRow.type !== 'Masumi'}
+                                  disabled={
+                                    !isV2Target &&
+                                    hasMasumiPaymentOption &&
+                                    optionRow.type !== 'Masumi'
+                                  }
                                 >
                                   Disputable (Masumi)
                                 </SelectItem>
@@ -1349,144 +1689,177 @@ export function RegisterAIAgentDialog({
 
                     <div className="space-y-4 p-4">
                       {optionRow.type === 'Masumi' ? (
-                        <>
-                          <div className="flex flex-col gap-1">
-                            <label className="text-xs font-medium">
-                              Pricing model <span className="text-destructive">*</span>
-                            </label>
-                            <Controller
-                              control={control}
-                              name="pricingType"
-                              render={({ field }) => (
-                                <Select
-                                  value={field.value}
-                                  onValueChange={(value) => {
-                                    field.onChange(value);
-                                    if (value === 'Fixed' && priceFields.length === 0) {
-                                      replacePrices([{ unit: defaultPriceUnit, amount: '' }]);
-                                    } else if (value !== 'Fixed') {
-                                      replacePrices([]);
-                                    }
-                                  }}
-                                >
-                                  <SelectTrigger
-                                    aria-label={`Pricing model for payment option ${optionIndex + 1}`}
-                                  >
-                                    <SelectValue placeholder="Select a pricing model" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectGroup>
-                                      <SelectItem value="Fixed">Fixed price</SelectItem>
-                                      <SelectItem value="Dynamic">Dynamic per payment</SelectItem>
-                                      <SelectItem value="Free">Free</SelectItem>
-                                    </SelectGroup>
-                                  </SelectContent>
-                                </Select>
-                              )}
+                        isV2Target && masumiOption ? (
+                          <>
+                            <MasumiOptionFields
+                              option={masumiOption}
+                              optionNumber={optionIndex + 1}
+                              network={network}
+                              stablecoinUnit={stablecoinUnit}
+                              defaultPriceUnit={defaultPriceUnit}
+                              onChange={(nextOption) => {
+                                setMasumiOptions((currentOptions) =>
+                                  currentOptions.map((option) =>
+                                    option.id === nextOption.id ? nextOption : option,
+                                  ),
+                                );
+                                setMasumiError(null);
+                              }}
                             />
-                            {watch('pricingType') === 'Dynamic' ? (
-                              <p className="text-xs text-muted-foreground">
-                                Your agent sets the amount for each payment request.
+                            {masumiError?.optionId === optionRow.id ? (
+                              <p
+                                role="alert"
+                                className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                              >
+                                {masumiError.message}
                               </p>
                             ) : null}
-                            {watch('pricingType') === 'Free' ? (
-                              <p className="text-xs text-muted-foreground">
-                                Interactions do not require a Masumi escrow payment.
-                              </p>
-                            ) : null}
-                          </div>
-
-                          {watch('pricingType') === 'Fixed' ? (
-                            <div className="flex flex-col gap-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <label className="text-xs font-medium">
-                                  Coins and prices <span className="text-destructive">*</span>
-                                </label>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  disabled={
-                                    priceFields.length >= REGISTRY_LIMITS.pricingOptionCount
-                                  }
-                                  onClick={() =>
-                                    appendPrice({ unit: defaultPriceUnit, amount: '' })
-                                  }
-                                >
-                                  <Plus data-icon="inline-start" />
-                                  Add coin
-                                </Button>
-                              </div>
-                              {priceFields.map((priceField, index) => (
-                                <div
-                                  key={priceField.id}
-                                  className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <Controller
-                                      control={control}
-                                      name={`prices.${index}.unit` as const}
-                                      render={({ field }) => (
-                                        <Select value={field.value} onValueChange={field.onChange}>
-                                          <SelectTrigger
-                                            aria-label={`Coin for Masumi price ${index + 1}`}
-                                          >
-                                            <SelectValue placeholder="Select a coin" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectGroup>
-                                              <SelectItem value={stablecoinUnit}>
-                                                {stablecoinUnit}
-                                              </SelectItem>
-                                              <SelectItem value="lovelace">
-                                                {formatFundUnit('lovelace', network)}
-                                              </SelectItem>
-                                            </SelectGroup>
-                                          </SelectContent>
-                                        </Select>
-                                      )}
-                                    />
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <Input
-                                      type="number"
-                                      inputMode="decimal"
-                                      aria-label={`Amount for Masumi price ${index + 1}`}
-                                      placeholder="0.00"
-                                      onWheel={(event) => event.currentTarget.blur()}
-                                      value={watch(`prices.${index}.amount`) || ''}
-                                      {...register(`prices.${index}.amount` as const)}
-                                      min="0"
-                                      step="0.000001"
-                                    />
-                                    {errors.prices &&
-                                    Array.isArray(errors.prices) &&
-                                    errors.prices[index]?.amount ? (
-                                      <p className="mt-1 text-xs text-destructive">
-                                        {errors.prices[index]?.amount?.message}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                  {index > 0 ? (
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-10 w-10 self-end sm:h-9 sm:w-9 sm:self-auto"
-                                      aria-label={`Remove Masumi price ${index + 1}`}
-                                      onClick={() => removePrice(index)}
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-medium">
+                                Pricing model <span className="text-destructive">*</span>
+                              </label>
+                              <Controller
+                                control={control}
+                                name="pricingType"
+                                render={({ field }) => (
+                                  <Select
+                                    value={field.value}
+                                    onValueChange={(value) => {
+                                      field.onChange(value);
+                                      if (value === 'Fixed' && priceFields.length === 0) {
+                                        replacePrices([{ unit: defaultPriceUnit, amount: '' }]);
+                                      } else if (value !== 'Fixed') {
+                                        replacePrices([]);
+                                      }
+                                    }}
+                                  >
+                                    <SelectTrigger
+                                      aria-label={`Pricing model for payment option ${optionIndex + 1}`}
                                     >
-                                      <Trash2 />
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              ))}
-                              {errors.prices && typeof errors.prices.message === 'string' ? (
-                                <p className="text-sm text-destructive">{errors.prices.message}</p>
+                                      <SelectValue placeholder="Select a pricing model" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectGroup>
+                                        <SelectItem value="Fixed">Fixed price</SelectItem>
+                                        <SelectItem value="Dynamic">Dynamic per payment</SelectItem>
+                                        <SelectItem value="Free">Free</SelectItem>
+                                      </SelectGroup>
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              />
+                              {watch('pricingType') === 'Dynamic' ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Your agent sets the amount for each payment request.
+                                </p>
+                              ) : null}
+                              {watch('pricingType') === 'Free' ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Interactions do not require a Masumi escrow payment.
+                                </p>
                               ) : null}
                             </div>
-                          ) : null}
-                        </>
+
+                            {watch('pricingType') === 'Fixed' ? (
+                              <div className="flex flex-col gap-3">
+                                <div className="flex items-center justify-between gap-3">
+                                  <label className="text-xs font-medium">
+                                    Coins and prices <span className="text-destructive">*</span>
+                                  </label>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={
+                                      priceFields.length >= REGISTRY_LIMITS.pricingOptionCount
+                                    }
+                                    onClick={() =>
+                                      appendPrice({ unit: defaultPriceUnit, amount: '' })
+                                    }
+                                  >
+                                    <Plus data-icon="inline-start" />
+                                    Add coin
+                                  </Button>
+                                </div>
+                                {priceFields.map((priceField, index) => (
+                                  <div
+                                    key={priceField.id}
+                                    className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <Controller
+                                        control={control}
+                                        name={`prices.${index}.unit` as const}
+                                        render={({ field }) => (
+                                          <Select
+                                            value={field.value}
+                                            onValueChange={field.onChange}
+                                          >
+                                            <SelectTrigger
+                                              aria-label={`Coin for Masumi price ${index + 1}`}
+                                            >
+                                              <SelectValue placeholder="Select a coin" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectGroup>
+                                                <SelectItem value={stablecoinUnit}>
+                                                  {stablecoinUnit}
+                                                </SelectItem>
+                                                <SelectItem value="lovelace">
+                                                  {formatFundUnit('lovelace', network)}
+                                                </SelectItem>
+                                              </SelectGroup>
+                                            </SelectContent>
+                                          </Select>
+                                        )}
+                                      />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <Input
+                                        type="number"
+                                        inputMode="decimal"
+                                        aria-label={`Amount for Masumi price ${index + 1}`}
+                                        placeholder="0.00"
+                                        onWheel={(event) => event.currentTarget.blur()}
+                                        value={watch(`prices.${index}.amount`) || ''}
+                                        {...register(`prices.${index}.amount` as const)}
+                                        min="0"
+                                        step="0.000001"
+                                      />
+                                      {errors.prices &&
+                                      Array.isArray(errors.prices) &&
+                                      errors.prices[index]?.amount ? (
+                                        <p className="mt-1 text-xs text-destructive">
+                                          {errors.prices[index]?.amount?.message}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                    {index > 0 ? (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-10 w-10 self-end sm:h-9 sm:w-9 sm:self-auto"
+                                        aria-label={`Remove Masumi price ${index + 1}`}
+                                        onClick={() => removePrice(index)}
+                                      >
+                                        <Trash2 />
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                ))}
+                                {errors.prices && typeof errors.prices.message === 'string' ? (
+                                  <p className="text-sm text-destructive">
+                                    {errors.prices.message}
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </>
+                        )
                       ) : x402Option ? (
                         <>
                           <X402OptionFields

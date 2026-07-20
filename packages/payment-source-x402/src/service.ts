@@ -151,7 +151,11 @@ export async function verifyX402Payment({
 	paymentRequirements?: PaymentRequirements;
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
-	if (source.pricingType === PricingType.Dynamic && !canAdmin && source.RegistryRequest.requestedById !== apiKeyId) {
+	if (
+		source.Pricing?.pricingType === PricingType.Dynamic &&
+		!canAdmin &&
+		source.RegistryRequest.requestedById !== apiKeyId
+	) {
 		throw createHttpError(403, 'x402 supported payment source belongs to another API key');
 	}
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);
@@ -235,7 +239,11 @@ export async function settleX402Payment({
 	paymentRequirements?: PaymentRequirements;
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
-	if (source.pricingType === PricingType.Dynamic && !canAdmin && source.RegistryRequest.requestedById !== apiKeyId) {
+	if (
+		source.Pricing?.pricingType === PricingType.Dynamic &&
+		!canAdmin &&
+		source.RegistryRequest.requestedById !== apiKeyId
+	) {
 		throw createHttpError(403, 'x402 supported payment source belongs to another API key');
 	}
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);

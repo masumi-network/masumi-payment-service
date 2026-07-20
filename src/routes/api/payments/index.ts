@@ -97,11 +97,10 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const policyId = extractPolicyId(input.agentIdentifier);
 
-		const specifiedPaymentContract = await prisma.paymentSource.findFirst({
+		const registryPaymentSource = await prisma.paymentSource.findFirst({
 			where: {
 				network: input.network,
 				policyId: policyId,
-				paymentSourceType: input.paymentSourceType,
 				deletedAt: null,
 			},
 			include: {
@@ -110,16 +109,12 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 				},
 			},
 		});
-		if (specifiedPaymentContract == null) {
+		if (registryPaymentSource == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
 		}
-		// No post-fetch paymentSourceType guard needed: when the caller supplies
-		// `input.paymentSourceType`, the `findFirst` above already filters by
-		// that exact value, so a mismatching row cannot be returned. Active-row
-		// uniqueness on `(network, policyId)` is enforced by the partial unique
-		// index `PaymentSource_network_policyId_active_key` (migration
-		// 20260519120000_add_payment_source_type_v2_registry_metadata), so the
-		// lookup is deterministic even when `paymentSourceType` is omitted.
+		if (input.paymentSourceType != null && input.paymentSourceType !== registryPaymentSource.paymentSourceType) {
+			throw createHttpError(400, 'paymentSourceType does not match the agent registry source');
+		}
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		const purchaserId = input.identifierFromPurchaser;
 		if (validateHexString(purchaserId) == false) {
@@ -164,10 +159,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			throw createHttpError(400, 'Submit result time must be before unlock time with at least 15 minutes difference');
 		}
 
-		const provider = getBlockfrostInstance(
-			input.network,
-			specifiedPaymentContract.PaymentSourceConfig.rpcProviderApiKey,
-		);
+		const provider = getBlockfrostInstance(input.network, registryPaymentSource.PaymentSourceConfig.rpcProviderApiKey);
 
 		if (input.agentIdentifier.startsWith(policyId) == false) {
 			throw createHttpError(404, 'The agentIdentifier is not of the specified payment source');
@@ -178,9 +170,69 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		}
 
 		const { assetInWallet, parsedMetadata } = fetchResult.data;
-		const pricing = resolveAgentPricingFromMetadata(parsedMetadata);
+		let specifiedPaymentContract = registryPaymentSource;
+		let pricing: ReturnType<typeof resolveAgentPricingFromMetadata>;
+		if (registryPaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2) {
+			if (input.supportedPaymentSourceIndex == null) {
+				throw createHttpError(
+					400,
+					'V2 Cardano payments require supportedPaymentSourceIndex to select a priced Cardano source',
+				);
+			}
+			const selectedSource = parsedMetadata.supported_payment_sources?.[input.supportedPaymentSourceIndex];
+			if (selectedSource == null) {
+				throw createHttpError(
+					400,
+					`supportedPaymentSourceIndex ${input.supportedPaymentSourceIndex} is not advertised by this agent`,
+				);
+			}
+			if (metadataToString(selectedSource.chain) !== 'Cardano') {
+				throw createHttpError(
+					400,
+					`supportedPaymentSourceIndex ${input.supportedPaymentSourceIndex} does not select a Cardano payment source`,
+				);
+			}
+			if (metadataToString(selectedSource.network) !== input.network) {
+				throw createHttpError(400, 'Selected Cardano payment source network does not match the request network');
+			}
+			const selectedAddress = metadataToString(selectedSource.settlement?.address);
+			const selectedPaymentSourceType = metadataToString(selectedSource.settlement?.paymentSourceType);
+			if (selectedAddress == null || selectedPaymentSourceType !== PaymentSourceType.Web3CardanoV2) {
+				throw createHttpError(400, 'Selected Cardano payment source settlement is incomplete or unsupported');
+			}
+			const selectedPaymentContract = await prisma.paymentSource.findUnique({
+				where: {
+					network_smartContractAddress: {
+						network: input.network,
+						smartContractAddress: selectedAddress,
+					},
+					deletedAt: null,
+				},
+				include: {
+					PaymentSourceConfig: {
+						select: { rpcProviderApiKey: true, rpcProvider: true },
+					},
+				},
+			});
+			if (
+				selectedPaymentContract == null ||
+				selectedPaymentContract.paymentSourceType !== PaymentSourceType.Web3CardanoV2
+			) {
+				throw createHttpError(404, 'Selected Cardano payment source is not configured on this node');
+			}
+			specifiedPaymentContract = selectedPaymentContract;
+			pricing = resolveAgentPricingFromMetadata(parsedMetadata, input.supportedPaymentSourceIndex);
+		} else {
+			if (input.supportedPaymentSourceIndex != null) {
+				throw createHttpError(
+					400,
+					'V1 Cardano payments must not set supportedPaymentSourceIndex; pricing comes from AgentPricing',
+				);
+			}
+			pricing = resolveAgentPricingFromMetadata(parsedMetadata);
+		}
 		if (pricing == null) {
-			throw createHttpError(400, 'Agent metadata does not advertise any pricing');
+			throw createHttpError(400, 'Selected payment source does not advertise valid Cardano pricing');
 		}
 		if (pricing.pricingType == PricingType.Fixed && input.RequestedFunds != null) {
 			throw createHttpError(400, 'For fixed pricing, RequestedFunds must be null');

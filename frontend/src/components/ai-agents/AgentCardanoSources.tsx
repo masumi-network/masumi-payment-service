@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import { cn, shortenAddress } from '@/lib/utils';
 import { RegistryEntry } from '@/lib/api/generated';
+import { formatFundUnit } from '@/lib/utils';
 
 type SupportedPaymentSource = NonNullable<RegistryEntry['supportedPaymentSources']>[number];
 type CardanoPaymentSource = Extract<SupportedPaymentSource, { chain: 'Cardano' }>;
@@ -21,6 +22,16 @@ export function AgentCardanoSources({
   );
   if (cardanoSources.length === 0) return null;
 
+  const pricingLabel = (source: CardanoPaymentSource): string => {
+    if (source.pricing.pricingType === 'Free') return 'Free';
+    if (source.pricing.pricingType === 'Dynamic') return 'Dynamic per payment';
+    return source.pricing.fixed
+      .map(
+        (price) => `${price.amount} ${formatFundUnit(price.asset || 'lovelace', source.network)}`,
+      )
+      .join(' · ');
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -35,7 +46,11 @@ export function AgentCardanoSources({
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">{source.network}</span>
-                <Badge variant="outline">{source.paymentSourceType}</Badge>
+                <Badge variant="outline">{pricingLabel(source)}</Badge>
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Settlement</span>
+                <span>{source.paymentSourceType}</span>
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>Escrow contract</span>

@@ -145,7 +145,8 @@ export const registryRequestOutputSchema = z
 						.describe('Pricing type for the agent. Amounts are provided per payment/purchase request'),
 				}),
 			)
-			.describe('Pricing information for the agent'),
+			.nullable()
+			.describe('V1 legacy pricing. Null for V2 entries, whose pricing is owned by each supported payment source.'),
 		sendFundingLovelace: z
 			.string()
 			.nullable()
@@ -241,9 +242,7 @@ export const registerAgentSchemaInput = z.object({
 		),
 	supportedPaymentSources: supportedPaymentSourcesInputSchema
 		.optional()
-		.describe(
-			'Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.',
-		),
+		.describe('Required for V2 registrations and forbidden for V1 registrations. Every V2 source owns its pricing.'),
 	verifications: verificationsSchema
 		.optional()
 		.describe(
@@ -305,7 +304,10 @@ export const registerAgentSchemaInput = z.object({
 					.describe('Pricing type for the agent. Amounts are provided per payment/purchase request'),
 			}),
 		)
-		.describe('Pricing information for the agent'),
+		.optional()
+		.describe(
+			'Required legacy pricing for V1 registrations and forbidden for V2 registrations. V2 pricing belongs inside supportedPaymentSources[].pricing.',
+		),
 	Legal: z
 		.object({
 			privacyPolicy: z.string().max(250).optional().describe('URL to the privacy policy'),

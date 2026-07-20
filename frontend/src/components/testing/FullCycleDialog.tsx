@@ -30,6 +30,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
+import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 
 interface FullCycleDialogProps {
   open: boolean;
@@ -89,17 +90,26 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
 
   const paidAgents = useMemo(
     () =>
-      agents
-        .filter(
-          (agent) =>
-            agent.state === 'RegistrationConfirmed' &&
-            agent.agentIdentifier !== null &&
-            agent.AgentPricing?.pricingType !== 'Free',
-        )
-        .map((agent) => ({
-          ...agent,
-          pricingType: agent.AgentPricing?.pricingType,
-        })),
+      agents.flatMap((agent) => {
+        const pricing = getPrimaryCardanoPricing(agent);
+        if (
+          agent.state !== 'RegistrationConfirmed' ||
+          agent.agentIdentifier === null ||
+          pricing == null ||
+          pricing.pricingType === 'Free'
+        ) {
+          return [];
+        }
+        return [
+          {
+            ...agent,
+            pricingType: pricing.pricingType,
+            supportedPaymentSourceIndex: (agent.supportedPaymentSources ?? []).findIndex(
+              (source) => source.chain === 'Cardano',
+            ),
+          },
+        ];
+      }),
     [agents],
   );
 
@@ -221,6 +231,9 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           unlockTime: times.unlockTime,
           externalDisputeUnlockTime: times.externalDisputeUnlockTime,
           metadata: data.metadata || undefined,
+          ...(selectedAgent && selectedAgent.supportedPaymentSourceIndex >= 0
+            ? { supportedPaymentSourceIndex: selectedAgent.supportedPaymentSourceIndex }
+            : {}),
           ...(requestedFunds ? { RequestedFunds: requestedFunds } : {}),
         };
 

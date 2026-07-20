@@ -64,11 +64,12 @@ export function sourceToRequirements(
 	if (source.scheme !== X402PaymentScheme.Exact) {
 		throw createHttpError(400, 'Only x402 exact payment sources are supported');
 	}
-	if (source.payTo == null || source.pricingType == null) {
+	if (source.payTo == null || source.Pricing == null) {
 		throw createHttpError(400, 'x402 supported payment source is incomplete');
 	}
+	const pricingType = source.Pricing.pricingType;
 
-	if (source.pricingType === PricingType.Free) {
+	if (pricingType === PricingType.Free) {
 		throw createHttpError(400, 'Free x402 sources do not require payment verification or settlement');
 	}
 
@@ -78,14 +79,15 @@ export function sourceToRequirements(
 	let maxTimeoutSeconds = DEFAULT_X402_TIMEOUT_SECONDS;
 	let runtimeExtra: Prisma.JsonObject = {};
 
-	if (source.pricingType === PricingType.Fixed) {
-		if (source.asset == null || source.amount == null || source.decimals == null) {
+	if (pricingType === PricingType.Fixed) {
+		const [fixedPrice] = source.Pricing.FixedPricing?.Amounts ?? [];
+		if (source.Pricing.FixedPricing?.Amounts.length !== 1 || fixedPrice == null || source.fixedDecimals == null) {
 			throw createHttpError(400, 'Fixed x402 supported payment source is incomplete');
 		}
-		asset = source.asset;
-		amount = source.amount.toString();
-		decimals = source.decimals;
-	} else if (source.pricingType === PricingType.Dynamic) {
+		asset = fixedPrice.unit;
+		amount = fixedPrice.amount.toString();
+		decimals = source.fixedDecimals;
+	} else if (pricingType === PricingType.Dynamic) {
 		if (trustedRuntimeRequirements == null) {
 			throw createHttpError(400, 'Dynamic x402 sources require trusted runtime payment requirements');
 		}
@@ -98,13 +100,13 @@ export function sourceToRequirements(
 		}
 		asset = trustedRuntimeRequirements.asset;
 		amount = trustedRuntimeRequirements.amount;
-		decimals = source.decimals ?? parseDecimals(toRequirementExtra(trustedRuntimeRequirements.extra).decimals);
+		decimals = source.dynamicDecimals ?? parseDecimals(toRequirementExtra(trustedRuntimeRequirements.extra).decimals);
 		maxTimeoutSeconds = trustedRuntimeRequirements.maxTimeoutSeconds;
 		if (!Number.isInteger(maxTimeoutSeconds) || maxTimeoutSeconds <= 0) {
 			throw createHttpError(400, 'x402 payment requirements must include a positive timeout');
 		}
 		runtimeExtra = toJsonObject(trustedRuntimeRequirements.extra);
-		if (source.asset != null && normalizeAddress(source.asset) !== normalizeAddress(asset)) {
+		if (source.dynamicAsset != null && normalizeAddress(source.dynamicAsset) !== normalizeAddress(asset)) {
 			throw createHttpError(400, 'x402 payment asset is not accepted by this registered resource');
 		}
 	} else {
@@ -156,6 +158,13 @@ export async function getX402SupportedPaymentSourceOrThrow(supportedPaymentSourc
 	const source = await prisma.supportedPaymentSource.findUnique({
 		where: { id: supportedPaymentSourceId },
 		include: {
+			Pricing: {
+				include: {
+					FixedPricing: {
+						include: { Amounts: true },
+					},
+				},
+			},
 			RegistryRequest: {
 				select: {
 					id: true,

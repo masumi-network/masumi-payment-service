@@ -48,6 +48,7 @@ import { SetupV2Banner } from '@/components/setup/SetupV2Banner';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
+import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 
 type AIAgent = RegistryEntry;
 
@@ -323,31 +324,34 @@ export default function Overview() {
                             </div>
                           </div>
                           <div className="text-sm min-w-content flex items-center gap-1">
-                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
-                              <span className="text-xs font-normal text-muted-foreground">
-                                Free
-                              </span>
-                            )}
-                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Dynamic' && (
-                              <span className="text-xs font-normal text-muted-foreground">
-                                Dynamic
-                              </span>
-                            )}
-                            {agent.AgentPricing &&
-                            agent.AgentPricing.pricingType == 'Fixed' &&
-                            agent.AgentPricing.Pricing?.[0] ? (
-                              <>
-                                <span className="text-xs font-normal text-muted-foreground">
-                                  {(() => {
-                                    const price = agent.AgentPricing.Pricing[0];
-                                    if (price.unit === 'free') return 'Free';
-                                    return formatAssetAmount(price.amount, price.unit, network);
-                                  })()}
-                                </span>
-                              </>
-                            ) : (
-                              <span className="text-xs font-normal text-muted-foreground">—</span>
-                            )}
+                            {(() => {
+                              const pricing = getPrimaryCardanoPricing(agent);
+                              if (pricing?.pricingType === 'Free') {
+                                return (
+                                  <span className="text-xs font-normal text-muted-foreground">
+                                    Free
+                                  </span>
+                                );
+                              }
+                              if (pricing?.pricingType === 'Dynamic') {
+                                return (
+                                  <span className="text-xs font-normal text-muted-foreground">
+                                    Dynamic
+                                  </span>
+                                );
+                              }
+                              if (pricing?.pricingType === 'Fixed' && pricing.Pricing[0]) {
+                                const price = pricing.Pricing[0];
+                                return (
+                                  <span className="text-xs font-normal text-muted-foreground">
+                                    {formatAssetAmount(price.amount, price.unit, network)}
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="text-xs font-normal text-muted-foreground">—</span>
+                              );
+                            })()}
                           </div>
                         </div>
                       ))}

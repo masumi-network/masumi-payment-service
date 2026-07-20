@@ -1,6 +1,10 @@
 import { Network, PaymentSourceType } from '@/generated/prisma/client';
 import { DEFAULTS } from '@masumi/payment-core/config';
-import { SupportedPaymentSourceChain, type SupportedPaymentSource } from '@/types/payment-source';
+import {
+	SupportedPaymentSourceChain,
+	type SupportedPaymentSource,
+	type SupportedPaymentSourcePricing,
+} from '@/types/payment-source';
 import { getPaymentScriptV2 } from '@masumi/payment-source-v2';
 
 function getDefaultV2AdminWallets(network: Network) {
@@ -9,7 +13,10 @@ function getDefaultV2AdminWallets(network: Network) {
 		: [DEFAULTS.ADMIN_WALLET1_PREPROD, DEFAULTS.ADMIN_WALLET2_PREPROD, DEFAULTS.ADMIN_WALLET3_PREPROD];
 }
 
-export async function getDefaultSupportedPaymentSources(network: Network): Promise<SupportedPaymentSource[]> {
+export async function getDefaultSupportedPaymentSources(
+	network: Network,
+	pricing: SupportedPaymentSourcePricing,
+): Promise<SupportedPaymentSource[]> {
 	const { smartContractAddress } = await getPaymentScriptV2(
 		getDefaultV2AdminWallets(network),
 		DEFAULTS.DEFAULT_ADMIN_SIGNATURES_V2,
@@ -23,6 +30,7 @@ export async function getDefaultSupportedPaymentSources(network: Network): Promi
 			network,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 			address: smartContractAddress,
+			pricing,
 		},
 	];
 }

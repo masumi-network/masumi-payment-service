@@ -40,20 +40,21 @@ export function AgentX402Options({
         <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
           {evmSources.map((source, index, arr) => (
             <div
-              key={`${source.network}-${source.pricingType}-${
-                source.pricingType === 'Free' ? 'none' : (source.asset ?? 'any')
-              }-${source.pricingType === 'Fixed' ? source.amount : ''}-${source.payTo}-${
-                source.resource ?? ''
-              }`}
+              key={`${source.network}-${source.pricing.pricingType}-${JSON.stringify(
+                source.pricing,
+              )}-${source.payTo}-${source.resource ?? ''}`}
               className={cn('flex flex-col gap-1 py-2', index < arr.length - 1 && 'border-b')}
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">{chainLabel(source.network)}</span>
                 <span className="font-medium font-mono">
-                  {source.pricingType === 'Fixed'
-                    ? `${formatX402Amount(source.amount, source.decimals)} · ${assetLabel(source.asset)}`
-                    : source.pricingType === 'Dynamic'
-                      ? `Dynamic · ${assetLabel(source.asset)}`
+                  {source.pricing.pricingType === 'Fixed'
+                    ? `${formatX402Amount(
+                        source.pricing.fixed[0]?.amount ?? '0',
+                        source.pricing.fixed[0]?.decimals ?? 0,
+                      )} · ${assetLabel(source.pricing.fixed[0]?.asset)}`
+                    : source.pricing.pricingType === 'Dynamic'
+                      ? `Dynamic · ${assetLabel(source.pricing.dynamic?.[0]?.asset)}`
                       : 'Free'}
                 </span>
               </div>

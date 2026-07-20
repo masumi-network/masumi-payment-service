@@ -10,11 +10,13 @@ export {
 	MAX_SUPPORTED_PAYMENT_SOURCES,
 	POSTGRES_BIGINT_MAX,
 	SupportedPaymentSourceChain,
+	getSupportedPaymentSourceCanonicalKey,
 	isCardanoAddressForNetwork,
 	isCardanoPubKeyAddressForNetwork,
 	parseSupportedPaymentSourcesFromMetadata,
 	paymentSourceTypeSchema,
 	supportedPaymentSourceMetadataSchema,
+	supportedPaymentSourcePricingSchema,
 	supportedPaymentSourceInputSchema,
 	supportedPaymentSourceSchema,
 	supportedPaymentSourcesInputSchema,
@@ -22,6 +24,7 @@ export {
 	validateSupportedPaymentSourcesOrThrow,
 	type RegistryMetadataPaymentSource,
 	type SupportedPaymentSource,
+	type SupportedPaymentSourcePricing,
 } from './payment-source';
 export { SmartContractState, smartContractStateEqualsOnChainState } from './smart-contract-state';
 export {

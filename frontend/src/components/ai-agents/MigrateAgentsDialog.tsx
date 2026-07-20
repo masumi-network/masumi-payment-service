@@ -49,6 +49,7 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
 import { agentMigrationKey, fetchAllRegistryEntries } from '@/lib/agent-migration';
 import { REGISTRY_LIMITS, validateApiBaseUrl } from '@/lib/registry-validation';
+import { parseLegacyAgentPricing } from '@/lib/registry-pricing';
 
 const MIN_MIGRATION_BALANCE_LOVELACE = 5_000_000; // ~5 ADA buffer per agent mint
 
@@ -399,33 +400,27 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
     }
   };
 
-  // Constructs the V2 mint payload from a V1 RegistryEntry.
-  //
-  // INTENTIONAL OMISSION: `agent.supportedPaymentSources` is NOT forwarded
-  // to the V2 entry. V1 supportedPaymentSources advertise compatibility
-  // with V1 contracts; carrying them onto a V2 mint would publish a V2
-  // agent that claims V1 contract support, which is incorrect — V2 agents
-  // must only advertise V2-contract compatibility. The V2 registry's
-  // default behavior (advertise the active V2 payment source if no
-  // explicit list is supplied) is the right shape here. Do NOT add a
-  // `supportedPaymentSources:` line below without re-evaluating the
-  // V1/V2 contract-compatibility model.
+  // Constructs the V2 mint payload from a V1 RegistryEntry. V2 requires
+  // source-owned pricing, so the legacy top-level pricing is moved onto the
+  // new V2 Cardano source instead of being copied as AgentPricing.
   const buildRegistryBody = (agent: RegistryEntry, walletVkey: string) => {
-    const pricing = (() => {
-      if (agent.AgentPricing.pricingType === 'Free') {
-        return { pricingType: 'Free' as const };
-      }
-      if (agent.AgentPricing.pricingType === 'Dynamic') {
-        return { pricingType: 'Dynamic' as const };
-      }
-      return {
-        pricingType: 'Fixed' as const,
-        Pricing: agent.AgentPricing.Pricing.map((p) => ({
-          unit: p.unit,
-          amount: p.amount,
-        })),
-      };
-    })();
+    const legacyPricing = parseLegacyAgentPricing(agent.AgentPricing);
+    if (!legacyPricing) {
+      throw new Error(`Cannot migrate ${agent.name}: V1 AgentPricing is missing or invalid`);
+    }
+    if (!v2Source?.smartContractAddress) {
+      throw new Error('Cannot migrate agents: the V2 payment source has no contract address');
+    }
+    const sourcePricing =
+      legacyPricing.pricingType === 'Fixed'
+        ? {
+            pricingType: 'Fixed' as const,
+            fixed: legacyPricing.Pricing.map((price) => ({
+              asset: price.unit === 'lovelace' ? '' : price.unit,
+              amount: price.amount,
+            })),
+          }
+        : { pricingType: legacyPricing.pricingType };
 
     const legal: Record<string, string> = {};
     if (agent.Legal.privacyPolicy) legal.privacyPolicy = agent.Legal.privacyPolicy;
@@ -472,7 +467,15 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
         name: agent.Capability.name ?? 'Custom Agent',
         version: agent.Capability.version ?? '1.0.0',
       },
-      AgentPricing: pricing,
+      supportedPaymentSources: [
+        {
+          chain: 'Cardano' as const,
+          network,
+          paymentSourceType: 'Web3CardanoV2' as const,
+          address: v2Source.smartContractAddress,
+          pricing: sourcePricing,
+        },
+      ],
       Author: author,
       Legal: Object.keys(legal).length > 0 ? legal : undefined,
       ExampleOutputs: agent.ExampleOutputs.map((e) => ({
@@ -944,7 +947,8 @@ export function MigrateAgentsDialog({ open, onClose, onSuccess }: MigrateAgentsD
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-medium truncate">{agent.name}</span>
                                 <Badge variant="outline" className="text-xs shrink-0">
-                                  {agent.AgentPricing.pricingType}
+                                  {parseLegacyAgentPricing(agent.AgentPricing)?.pricingType ??
+                                    'Invalid pricing'}
                                 </Badge>
                                 {droppedHoldingAddress && (
                                   <Badge

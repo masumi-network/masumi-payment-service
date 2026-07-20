@@ -43,6 +43,7 @@ import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { formatDate } from '@/lib/format-date';
+import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 type AIAgent = RegistryEntry & { relation?: AgentRelation };
 
 // Tells apart agents registered on the active source from those registered elsewhere that
@@ -138,6 +139,7 @@ export default function AIAgentsPage() {
     const amountRange = parseAmountSearchRange(query);
 
     return agents.filter((agent) => {
+      const pricing = getPrimaryCardanoPricing(agent);
       if (agent.name?.toLowerCase().includes(query)) return true;
       if (agent.description?.toLowerCase().includes(query)) return true;
       // Backend uses hasSome (exact match against tag array), not partial
@@ -145,12 +147,12 @@ export default function AIAgentsPage() {
       if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (agent.state?.toLowerCase().includes(query)) return true;
-      if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
-      if (agent.AgentPricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
+      if (pricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
+      if (pricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
       if (
         amountRange &&
-        agent.AgentPricing?.pricingType === 'Fixed' &&
-        agent.AgentPricing.Pricing?.some((p) => {
+        pricing?.pricingType === 'Fixed' &&
+        pricing.Pricing.some((p) => {
           const amt = parseAmountToBigInt(p.amount);
           return amt != null && amt >= amountRange.min && amt <= amountRange.max;
         })
@@ -671,19 +673,23 @@ export default function AIAgentsPage() {
                             </div>
                           </td>
                           <td className="p-4 text-sm truncate max-w-25">
-                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
-                              <div className="whitespace-nowrap">Free</div>
-                            )}
-                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Dynamic' && (
-                              <div className="whitespace-nowrap">Dynamic</div>
-                            )}
-                            {agent.AgentPricing &&
-                              agent.AgentPricing.pricingType == 'Fixed' &&
-                              agent.AgentPricing.Pricing?.map((price, index) => (
-                                <div key={index} className="whitespace-nowrap">
-                                  {formatAssetAmount(price.amount, price.unit, network)}
-                                </div>
-                              ))}
+                            {(() => {
+                              const pricing = getPrimaryCardanoPricing(agent);
+                              if (pricing?.pricingType === 'Free') {
+                                return <div className="whitespace-nowrap">Free</div>;
+                              }
+                              if (pricing?.pricingType === 'Dynamic') {
+                                return <div className="whitespace-nowrap">Dynamic</div>;
+                              }
+                              if (pricing?.pricingType === 'Fixed') {
+                                return pricing.Pricing.map((price, index) => (
+                                  <div key={index} className="whitespace-nowrap">
+                                    {formatAssetAmount(price.amount, price.unit, network)}
+                                  </div>
+                                ));
+                              }
+                              return null;
+                            })()}
                             {agentHasX402Options(agent.supportedPaymentSources) && (
                               <div className="mt-1">
                                 <Badge variant="secondary">x402</Badge>

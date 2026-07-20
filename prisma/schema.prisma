@@ -69,7 +69,7 @@ model UnitValue {
   buyerWithdrawnPurchaseRequestId  String?
   sellerWithdrawnPaymentRequestId  String?
   sellerWithdrawnPurchaseRequestId String?
-  AgentFixedPricing                AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id])
+  AgentFixedPricing                AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id], onDelete: Cascade)
   ApiKey                           ApiKey?            @relation(fields: [apiKeyId], references: [id])
   BuyerWithdrawnPaymentRequest     PaymentRequest?    @relation("BuyerWithdrawnPaymentRequest", fields: [buyerWithdrawnPaymentRequestId], references: [id])
   BuyerWithdrawnPurchaseRequest    PurchaseRequest?   @relation("BuyerWithdrawnPurchaseRequest", fields: [buyerWithdrawnPurchaseRequestId], references: [id])
@@ -311,7 +311,6 @@ model RegistryRequest {
   authorOrganization             String?
   metadataVersion                Int
   tags                           String[]
-  agentPricingId                 String                   @unique
   agentIdentifier                String?                  @unique
   state                          RegistrationState
   registrationStateLastChangedAt DateTime                 @default(now())
@@ -328,7 +327,8 @@ model RegistryRequest {
   ExampleOutputs                 ExampleOutput[]
   SupportedPaymentSources        SupportedPaymentSource[]
   Verifications                  AgentVerification[]
-  Pricing                        AgentPricing             @relation(fields: [agentPricingId], references: [id])
+  /// V1-only legacy pricing. V2 pricing is owned by each SupportedPaymentSource.
+  Pricing                        AgentPricing?
   CurrentTransaction             Transaction?             @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                  PaymentSource            @relation(fields: [paymentSourceId], references: [id])
   SmartContractWallet            HotWallet                @relation("RegistryRequestMintingWallet", fields: [smartContractWalletId], references: [id])
@@ -387,26 +387,29 @@ model SupportedPaymentSource {
   /// Existing Cardano rows keep `Mainnet` / `Preprod` for wire compatibility.
   /// Standard x402 rows use CAIP-2 ids such as `eip155:8453`.
   network           String
+  /// Stable zero-based order in supported_payment_sources metadata.
+  position          Int
   /// Cardano escrow entries keep their PaymentSourceType. Standard x402 rows
   /// are not Masumi escrow PaymentSourceTypes and leave this null.
   paymentSourceType PaymentSourceType?
   address           String
   scheme            X402PaymentScheme?
-  /// Pricing advertised by this payment source. Cardano rows leave this null
-  /// because their pricing lives on AgentPricing; EVM rows use Fixed, Dynamic,
-  /// or Free directly.
-  pricingType       PricingType?
-  asset             String?
-  amount            BigInt?
-  decimals          Int?
   payTo             String?
   resource          String?
   extra             Json?
+  /// Canonical settlement + pricing key used to reject duplicate V2 options.
+  canonicalKey      String
+  /// EVM-only optional allowlist for Dynamic pricing.
+  dynamicAsset      String?
+  dynamicDecimals   Int?
+  /// EVM-only decimals for the single Fixed pricing asset.
+  fixedDecimals     Int?
   RegistryRequest   RegistryRequest      @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+  Pricing           AgentPricing?
   X402Attempts      X402PaymentAttempt[]
 
-  // Partial database unique indexes preserve the legacy Cardano key and the
-  // separate x402 key. Prisma cannot model those partial indexes directly.
+  @@unique([registryRequestId, position])
+  @@unique([registryRequestId, canonicalKey])
   @@index([address])
   @@index([paymentSourceType])
   @@index([chain, network])
@@ -684,21 +687,24 @@ model ExampleOutput {
 }
 
 model AgentPricing {
-  id                  String             @id @default(cuid())
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  pricingType         PricingType
-  agentFixedPricingId String?            @unique
-  FixedPricing        AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id])
-  RegistryRequest     RegistryRequest?
+  id                       String                  @id @default(cuid())
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  pricingType              PricingType
+  registryRequestId        String?                 @unique
+  supportedPaymentSourceId String?                 @unique
+  FixedPricing             AgentFixedPricing?
+  RegistryRequest          RegistryRequest?        @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+  SupportedPaymentSource   SupportedPaymentSource? @relation(fields: [supportedPaymentSourceId], references: [id], onDelete: Cascade)
 }
 
 model AgentFixedPricing {
-  id           String        @id @default(cuid())
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  AgentPricing AgentPricing?
-  Amounts      UnitValue[]
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  agentPricingId String       @unique
+  AgentPricing   AgentPricing @relation(fields: [agentPricingId], references: [id], onDelete: Cascade)
+  Amounts        UnitValue[]
 }
 
 model PaymentRequest {

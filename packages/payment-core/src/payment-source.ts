@@ -24,7 +24,7 @@ export const paymentSourceTypeSchema = z.nativeEnum(PaymentSourceType).describe(
 
 const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Expected an EVM address');
 const x402AssetSchema = evmAddressSchema.describe('ERC-20 token contract address');
-const x402AtomicAmountSchema = z
+const atomicAmountSchema = z
 	.string()
 	.regex(/^\d+$/)
 	.refine((amount) => {
@@ -33,11 +33,39 @@ const x402AtomicAmountSchema = z
 	}, `Atomic amount must be between 1 and ${POSTGRES_BIGINT_MAX.toString()}`)
 	.describe('Atomic token amount');
 
+const supportedPaymentSourceFixedPriceSchema = z.object({
+	asset: z.string().max(250).describe('Chain-native asset identifier'),
+	amount: atomicAmountSchema,
+	decimals: z.number().int().min(0).max(255).optional().describe('Asset decimals when required by the rail'),
+});
+
+const supportedPaymentSourceDynamicAssetSchema = z.object({
+	asset: z.string().max(250).describe('Optional accepted asset identifier'),
+	decimals: z.number().int().min(0).max(255).optional().describe('Asset decimals when required by the rail'),
+});
+
+export const supportedPaymentSourcePricingSchema = z.union([
+	z.object({
+		pricingType: z.literal(PricingType.Fixed).describe('A fixed amount is advertised for this payment source'),
+		fixed: z.array(supportedPaymentSourceFixedPriceSchema).min(1).max(5),
+	}),
+	z.object({
+		pricingType: z
+			.literal(PricingType.Dynamic)
+			.describe('The exact positive amount is supplied dynamically for each payment request'),
+		dynamic: z.array(supportedPaymentSourceDynamicAssetSchema).min(1).max(1).optional(),
+	}),
+	z.object({
+		pricingType: z.literal(PricingType.Free).describe('This payment source does not require payment'),
+	}),
+]);
+
 const cardanoSupportedPaymentSourceSchema = z.object({
 	chain: z.literal(SupportedPaymentSourceChain.Cardano).describe('The blockchain this payment source is available on'),
 	network: z.nativeEnum(Network).describe('The Cardano network this payment source is available on'),
 	paymentSourceType: paymentSourceTypeSchema,
 	address: z.string().max(250).describe('The escrow smart contract address for this payment source'),
+	pricing: supportedPaymentSourcePricingSchema,
 });
 
 const x402SupportedPaymentSourceBaseSchema = z.object({
@@ -54,32 +82,12 @@ const x402SupportedPaymentSourceBaseSchema = z.object({
 	extra: z.record(z.string(), z.unknown()).optional().describe('Additional x402 metadata'),
 });
 
-const x402FixedPaymentSourceSchema = x402SupportedPaymentSourceBaseSchema.extend({
-	pricingType: z.literal(PricingType.Fixed).describe('A fixed amount is advertised in the registry'),
-	asset: x402AssetSchema,
-	amount: x402AtomicAmountSchema,
-	decimals: z.number().int().min(0).max(255).describe('Token decimals'),
-});
-
-const x402DynamicPaymentSourceSchema = x402SupportedPaymentSourceBaseSchema.extend({
-	pricingType: z
-		.literal(PricingType.Dynamic)
-		.describe('The exact positive amount is supplied dynamically in each x402 payment requirement'),
-	asset: x402AssetSchema.optional().describe('Optional asset allowlist for dynamic payment requirements'),
-	decimals: z.number().int().min(0).max(255).optional().describe('Decimals for the optional dynamic asset'),
-});
-
-const x402FreePaymentSourceSchema = x402SupportedPaymentSourceBaseSchema.extend({
-	pricingType: z.literal(PricingType.Free).describe('This resource does not require an x402 payment'),
+const x402SupportedPaymentSourceSchema = x402SupportedPaymentSourceBaseSchema.extend({
+	pricing: supportedPaymentSourcePricingSchema,
 });
 
 export const supportedPaymentSourceSchema = z
-	.union([
-		cardanoSupportedPaymentSourceSchema,
-		x402FixedPaymentSourceSchema,
-		x402DynamicPaymentSourceSchema,
-		x402FreePaymentSourceSchema,
-	])
+	.union([cardanoSupportedPaymentSourceSchema, x402SupportedPaymentSourceSchema])
 	.superRefine((source, ctx) => {
 		if (
 			source.chain === SupportedPaymentSourceChain.EVM &&
@@ -92,53 +100,75 @@ export const supportedPaymentSourceSchema = z
 				message: 'x402 address alias must match payTo',
 			});
 		}
-		if (
-			source.chain === SupportedPaymentSourceChain.EVM &&
-			source.pricingType === PricingType.Dynamic &&
-			(source.asset == null) !== (source.decimals == null)
-		) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: source.asset == null ? ['asset'] : ['decimals'],
-				message: 'Dynamic x402 asset and decimals must be provided together',
-			});
+
+		if (source.chain === SupportedPaymentSourceChain.Cardano) {
+			if (source.pricing.pricingType === PricingType.Fixed) {
+				source.pricing.fixed.forEach((price, index) => {
+					if (price.decimals != null) {
+						ctx.addIssue({
+							code: z.ZodIssueCode.custom,
+							path: ['pricing', 'fixed', index, 'decimals'],
+							message: 'Cardano fixed pricing does not use decimals',
+						});
+					}
+				});
+			}
+			if (source.pricing.pricingType === PricingType.Dynamic && source.pricing.dynamic != null) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['pricing', 'dynamic'],
+					message: 'Cardano dynamic pricing does not support an asset allowlist',
+				});
+			}
+			return;
+		}
+
+		if (source.pricing.pricingType === PricingType.Fixed) {
+			if (source.pricing.fixed.length !== 1) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['pricing', 'fixed'],
+					message: 'Fixed x402 pricing requires exactly one asset',
+				});
+				return;
+			}
+			const [price] = source.pricing.fixed;
+			if (!x402AssetSchema.safeParse(price.asset).success) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['pricing', 'fixed', 0, 'asset'],
+					message: 'Fixed x402 pricing requires an ERC-20 token contract address',
+				});
+			}
+			if (price.decimals == null) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['pricing', 'fixed', 0, 'decimals'],
+					message: 'Fixed x402 pricing requires token decimals',
+				});
+			}
+		}
+
+		if (source.pricing.pricingType === PricingType.Dynamic && source.pricing.dynamic != null) {
+			const [acceptedAsset] = source.pricing.dynamic;
+			if (!x402AssetSchema.safeParse(acceptedAsset.asset).success) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['pricing', 'dynamic', 0, 'asset'],
+					message: 'Dynamic x402 accepted asset must be an ERC-20 token contract address',
+				});
+			}
+			if (acceptedAsset.decimals == null) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					path: ['pricing', 'dynamic', 0, 'decimals'],
+					message: 'Dynamic x402 accepted asset requires token decimals',
+				});
+			}
 		}
 	});
 
-// Fixed was the only x402 pricing model before pricingType was introduced.
-// Keep that compatibility only at write boundaries: response/on-chain schemas
-// retain a required discriminator so generated clients never see it as optional.
-const legacyX402FixedPaymentSourceInputSchema = z.preprocess(
-	// A payload that carries pricingType must parse via supportedPaymentSourceSchema:
-	// non-strict parsing would strip a malformed pricingType (e.g. lowercase
-	// 'fixed') and silently re-interpret the source as Fixed. Poison such input to
-	// undefined so this union member fails while other unknown keys are still
-	// stripped, matching the pre-pricingType schema behavior. (A pricingType key
-	// in the object shape would be the natural guard, but zod-to-openapi cannot
-	// represent ZodUndefined/ZodNever fields.)
-	(value) => (typeof value === 'object' && value != null && 'pricingType' in value ? undefined : value),
-	x402SupportedPaymentSourceBaseSchema
-		.extend({
-			asset: x402AssetSchema,
-			amount: x402AtomicAmountSchema,
-			decimals: z.number().int().min(0).max(255).describe('Token decimals'),
-		})
-		.superRefine((source, ctx) => {
-			if (source.address != null && source.address.toLowerCase() !== source.payTo.toLowerCase()) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					path: ['address'],
-					message: 'x402 address alias must match payTo',
-				});
-			}
-		})
-		.transform((source) => ({ ...source, pricingType: PricingType.Fixed })),
-);
-
-export const supportedPaymentSourceInputSchema = z.union([
-	supportedPaymentSourceSchema,
-	legacyX402FixedPaymentSourceInputSchema,
-]);
+export const supportedPaymentSourceInputSchema = supportedPaymentSourceSchema;
 
 // Hard cap on advertised payment sources, enforced both on parse and when
 // emitting on-chain metadata.
@@ -157,6 +187,7 @@ export const supportedPaymentSourcesInputSchema = z
 	.describe('Payment sources advertised by this registry entry');
 
 export type SupportedPaymentSource = z.infer<typeof supportedPaymentSourceSchema>;
+export type SupportedPaymentSourcePricing = z.infer<typeof supportedPaymentSourcePricingSchema>;
 
 /**
  * Minimal payment-source descriptor consumed by registry mint paths when
@@ -286,15 +317,8 @@ export function validateSupportedPaymentSourcesOrThrow(
 	supportedPaymentSources: SupportedPaymentSource[],
 	expectedNetwork: Network,
 	// Type of the payment source that the registry entry is being minted
-	// against. The rule is asymmetric — by design — between V1 and V2:
-	//   - V2 entries (the canonical going-forward type) MUST advertise
-	//     only V2 payment sources. Advertising a Legacy V1 source on a
-	//     V2 mint confuses on-chain consumers about which contract
-	//     family the agent actually targets.
-	//   - V1 entries (Legacy Payment Source Type) MAY advertise any
-	//     payment-source type, including V2. This lets a legacy entry
-	//     cross-list to V2 as a "migration breadcrumb" without rebuilding
-	//     it from scratch.
+	// against. V1 pricing is top-level and therefore cannot advertise this
+	// V2-only source list. V2 entries may advertise only V2 Cardano sources.
 	// Caller may pass `undefined` only on early-boot / off-route
 	// validation paths where the registering type is not yet bound;
 	// in that case the asymmetric rule is skipped.
@@ -303,40 +327,21 @@ export function validateSupportedPaymentSourcesOrThrow(
 	// unlimited (admin); `undefined` skips the check (off-route validation paths).
 	allowedCaip2Networks?: string[] | null,
 ) {
+	if (registeringPaymentSourceType === PaymentSourceType.Web3CardanoV1 && supportedPaymentSources.length > 0) {
+		throw new Error('V1 registry entries must not advertise supported payment sources');
+	}
+
 	const seenSources = new Set<string>();
-	for (const supportedPaymentSource of supportedPaymentSources) {
-		const sourceKey =
-			supportedPaymentSource.chain === SupportedPaymentSourceChain.EVM
-				? JSON.stringify([
-						supportedPaymentSource.chain,
-						supportedPaymentSource.network,
-						supportedPaymentSource.scheme,
-						supportedPaymentSource.pricingType,
-						'asset' in supportedPaymentSource ? (supportedPaymentSource.asset ?? '').toLowerCase() : '',
-						'amount' in supportedPaymentSource && supportedPaymentSource.amount != null
-							? BigInt(supportedPaymentSource.amount).toString()
-							: '',
-						'decimals' in supportedPaymentSource ? (supportedPaymentSource.decimals ?? '') : '',
-						supportedPaymentSource.payTo.toLowerCase(),
-						supportedPaymentSource.resource ?? '',
-					])
-				: JSON.stringify([
-						supportedPaymentSource.chain,
-						supportedPaymentSource.network,
-						supportedPaymentSource.paymentSourceType,
-						supportedPaymentSource.address,
-					]);
+	for (const [index, supportedPaymentSource] of supportedPaymentSources.entries()) {
+		const sourceKey = getSupportedPaymentSourceCanonicalKey(supportedPaymentSource);
 		if (seenSources.has(sourceKey)) {
-			throw new Error('Duplicate supported payment source');
+			throw new Error(`supportedPaymentSources[${index}] duplicates an earlier payment option`);
 		}
 		seenSources.add(sourceKey);
 
 		if (supportedPaymentSource.chain === SupportedPaymentSourceChain.EVM) {
 			if (registeringPaymentSourceType !== PaymentSourceType.Web3CardanoV2) {
 				throw new Error('x402 payment sources may only be advertised by V2 registry entries.');
-			}
-			if (supportedPaymentSource.pricingType === PricingType.Fixed && BigInt(supportedPaymentSource.amount) <= 0n) {
-				throw new Error('x402 payment source amount must be greater than zero');
 			}
 			if (
 				allowedCaip2Networks !== undefined &&
@@ -364,6 +369,55 @@ export function validateSupportedPaymentSourcesOrThrow(
 	}
 }
 
+function canonicalPricing(pricing: SupportedPaymentSourcePricing) {
+	if (pricing.pricingType === PricingType.Fixed) {
+		return {
+			pricingType: pricing.pricingType,
+			fixed: pricing.fixed
+				.map((price) => ({
+					asset: price.asset.toLowerCase(),
+					amount: BigInt(price.amount).toString(),
+					decimals: price.decimals ?? null,
+				}))
+				.sort((left, right) =>
+					`${left.asset}:${left.amount}:${left.decimals ?? ''}`.localeCompare(
+						`${right.asset}:${right.amount}:${right.decimals ?? ''}`,
+					),
+				),
+		};
+	}
+	if (pricing.pricingType === PricingType.Dynamic) {
+		return {
+			pricingType: pricing.pricingType,
+			dynamic:
+				pricing.dynamic?.map((asset) => ({
+					asset: asset.asset.toLowerCase(),
+					decimals: asset.decimals ?? null,
+				})) ?? [],
+		};
+	}
+	return { pricingType: pricing.pricingType };
+}
+
+export function getSupportedPaymentSourceCanonicalKey(source: SupportedPaymentSource): string {
+	return source.chain === SupportedPaymentSourceChain.EVM
+		? JSON.stringify({
+				chain: source.chain,
+				network: source.network,
+				scheme: source.scheme,
+				payTo: source.payTo.toLowerCase(),
+				resource: source.resource ?? '',
+				pricing: canonicalPricing(source.pricing),
+			})
+		: JSON.stringify({
+				chain: source.chain,
+				network: source.network,
+				paymentSourceType: source.paymentSourceType,
+				address: source.address,
+				pricing: canonicalPricing(source.pricing),
+			});
+}
+
 export function parseSupportedPaymentSourcesFromMetadata(value: unknown): SupportedPaymentSource[] | null {
 	if (value == null) {
 		return null;
@@ -379,43 +433,49 @@ export function parseSupportedPaymentSourcesFromMetadata(value: unknown): Suppor
 			const chain = metadataToString(source.chain);
 			const settlement = source.settlement ?? {};
 			const pricingType = metadataToString(source.pricing?.pricingType);
-			const fixed = source.pricing?.fixed?.[0];
-			const dynamic = source.pricing?.dynamic?.[0];
+			const pricing =
+				pricingType === PricingType.Fixed
+					? {
+							pricingType,
+							fixed:
+								source.pricing?.fixed?.map((price) => {
+									const decimals = metadataToString(price.decimals);
+									return {
+										asset: metadataToString(price.asset),
+										amount: metadataToString(price.amount),
+										decimals: decimals != null ? Number(decimals) : undefined,
+									};
+								}) ?? [],
+						}
+					: pricingType === PricingType.Dynamic
+						? {
+								pricingType,
+								dynamic: source.pricing?.dynamic?.map((asset) => {
+									const decimals = metadataToString(asset.decimals);
+									return {
+										asset: metadataToString(asset.asset),
+										decimals: decimals != null ? Number(decimals) : undefined,
+									};
+								}),
+							}
+						: { pricingType };
 			if (chain === SupportedPaymentSourceChain.EVM) {
-				const base = {
+				return {
 					chain,
 					network: metadataToString(source.network),
 					scheme: metadataToString(settlement.scheme),
 					payTo: metadataToString(settlement.payTo),
 					resource: metadataToString(settlement.resource),
 					extra: settlement.extra,
+					pricing,
 				};
-				if (pricingType === PricingType.Fixed) {
-					const decimals = metadataToString(fixed?.decimals);
-					return {
-						...base,
-						pricingType,
-						asset: metadataToString(fixed?.asset),
-						amount: metadataToString(fixed?.amount),
-						decimals: decimals != null ? Number(decimals) : undefined,
-					};
-				}
-				if (pricingType === PricingType.Dynamic) {
-					const decimals = metadataToString(dynamic?.decimals);
-					return {
-						...base,
-						pricingType,
-						asset: metadataToString(dynamic?.asset),
-						decimals: decimals != null ? Number(decimals) : undefined,
-					};
-				}
-				return { ...base, pricingType };
 			}
 			return {
 				chain,
 				network: metadataToString(source.network),
 				paymentSourceType: metadataToString(settlement.paymentSourceType),
 				address: metadataToString(settlement.address),
+				pricing,
 			};
 		}),
 	);

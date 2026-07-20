@@ -1,6 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { Network, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { Network, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
@@ -12,7 +12,7 @@ import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
-import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
+import { serializeLegacyAgentPricing, serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
 
 export const unregisterAgentSchemaInput = z.object({
 	agentIdentifier: z
@@ -190,16 +190,23 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 									select: {
 										chain: true,
 										network: true,
+										position: true,
 										paymentSourceType: true,
 										address: true,
 										scheme: true,
-										pricingType: true,
-										asset: true,
-										amount: true,
-										decimals: true,
+										dynamicAsset: true,
+										dynamicDecimals: true,
+										fixedDecimals: true,
 										payTo: true,
 										resource: true,
 										extra: true,
+										Pricing: {
+											include: {
+												FixedPricing: {
+													include: { Amounts: { select: { unit: true, amount: true } } },
+												},
+											},
+										},
 									},
 								},
 								CurrentTransaction: {
@@ -237,19 +244,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 				terms: result.terms,
 				other: result.other,
 			},
-			AgentPricing:
-				result.Pricing.pricingType == PricingType.Fixed
-					? {
-							pricingType: PricingType.Fixed,
-							Pricing:
-								result.Pricing.FixedPricing?.Amounts.map((price) => ({
-									unit: price.unit,
-									amount: price.amount.toString(),
-								})) ?? [],
-						}
-					: {
-							pricingType: result.Pricing.pricingType,
-						},
+			AgentPricing: serializeLegacyAgentPricing(result.Pricing),
 			sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
 			supportedPaymentSources: serializeSupportedPaymentSources(result.SupportedPaymentSources),
 			verifications: serializeVerifications(result.Verifications),

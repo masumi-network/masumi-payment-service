@@ -1,6 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PaymentSourceType, PricingType, Prisma, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
@@ -16,12 +16,14 @@ import { supportedPaymentSourceInputSchema, validateSupportedPaymentSourcesOrThr
 import { validateX402NetworksAvailableOrThrow } from '@/services/registry/x402-network-availability';
 import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
 import { verificationToRow } from '@/types/verification';
+import { buildSupportedPaymentSourceCreate, getCardanoFixedAssets } from '@/services/registry/source-pricing';
 
 const updateSupportedPaymentSourcesSchema = z
 	.array(supportedPaymentSourceInputSchema)
+	.min(1)
 	.max(25)
 	.describe(
-		'Payment sources to replace on this registry request. An empty array resets the entry to its active Masumi source.',
+		'Payment sources to replace on this V2 registry request. Omit the field to keep existing sources; an empty array is invalid.',
 	);
 
 // The update flow re-uses the same metadata fields as registration — the
@@ -61,6 +63,12 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof updateAgentSchemaInput>; ctx: AuthContext }) => {
 		const startTime = Date.now();
 		try {
+			if (input.AgentPricing != null) {
+				throw createHttpError(
+					400,
+					'V2 updates must not set AgentPricing; put pricing inside each supportedPaymentSources[].pricing field',
+				);
+			}
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 			const requestedPolicyId = extractPolicyId(input.agentIdentifier);
@@ -199,29 +207,12 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 				recipientHotWalletId = recipient.id;
 			}
 
-			// supportedPaymentSources is OPTIONAL on update. Distinguish:
-			//   - omitted (undefined)     → leave existing rows UNCHANGED (no delete, no recreate).
-			//                                Previously `?? []` collapsed this into a silent wipe.
-			//   - provided                  → REPLACE: delete existing rows, recreate from input.
-			//   - provided as []            → reset to the active Masumi source. V2 metadata
-			//                                 requires at least one rail, and persisting this
-			//                                 fallback keeps API and on-chain state identical.
-			// This route is already V2-gated above, so supportedPaymentSources is a
-			// V2-only concept here by construction.
+			// supportedPaymentSources is optional on update: omitted leaves the
+			// existing independently-priced sources unchanged; provided replaces
+			// the complete V2 source list atomically.
 			const requestedSupportedPaymentSources = input.supportedPaymentSources;
-			const supportedPaymentSources =
-				requestedSupportedPaymentSources?.length === 0
-					? [
-							{
-								chain: 'Cardano' as const,
-								network: input.network,
-								paymentSourceType: paymentSource.paymentSourceType,
-								address: paymentSource.smartContractAddress,
-							},
-						]
-					: requestedSupportedPaymentSources;
 			const replaceSupportedPaymentSources = requestedSupportedPaymentSources !== undefined;
-			if (requestedSupportedPaymentSources != null && requestedSupportedPaymentSources.length > 0) {
+			if (requestedSupportedPaymentSources != null) {
 				try {
 					validateSupportedPaymentSourcesOrThrow(
 						requestedSupportedPaymentSources,
@@ -234,36 +225,18 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 					throw createHttpError(400, error instanceof Error ? error.message : String(error));
 				}
 			}
-			const effectiveSupportedPaymentSources = supportedPaymentSources ?? registryRequest.SupportedPaymentSources;
-			// Legacy V2 rows can have no persisted sources; metadata generation
-			// intentionally treats that empty list as the active Cardano source.
-			const hasCardanoPaymentSource =
-				effectiveSupportedPaymentSources.length === 0 ||
-				effectiveSupportedPaymentSources.some((source) => source.chain === 'Cardano');
-			// AgentPricing is the legacy Cardano-rail projection. An entry with no
-			// Cardano source has no Cardano contract to price, so require an
-			// explicit Free instead of silently discarding the caller's pricing.
-			if (!hasCardanoPaymentSource && input.AgentPricing.pricingType !== PricingType.Free) {
-				throw createHttpError(
-					400,
-					'AgentPricing.pricingType must be Free when no Cardano payment source is advertised',
-				);
-			}
-			const agentPricing = input.AgentPricing;
 
-			if (agentPricing.pricingType === PricingType.Fixed) {
-				const assetUnits = agentPricing.Pricing.map((pricing) => pricing.unit);
-				const { valid: _valid, invalid: invalidAssets } = await validateAssetsOnChain(blockfrost, assetUnits);
+			const cardanoAssetUnits = getCardanoFixedAssets(requestedSupportedPaymentSources ?? []);
+			if (cardanoAssetUnits.length > 0) {
+				const { valid: _valid, invalid: invalidAssets } = await validateAssetsOnChain(blockfrost, cardanoAssetUnits);
 				if (invalidAssets.length > 0) {
 					const invalidAssetsMessage = invalidAssets.map((item) => `${item.asset} (${item.errorMessage})`).join(', ');
 					throw createHttpError(400, `Invalid assets in pricing: ${invalidAssetsMessage}`);
 				}
 			}
 
-			// Replace pricing / example outputs / supported payment sources atomically.
-			// AgentPricing is 1:1 with RegistryRequest via a NOT NULL FK, so we
-			// build a fresh AgentPricing standalone, swap the RegistryRequest FK,
-			// then drop the orphan old row (and its AgentFixedPricing if any).
+			// Replace example outputs and, when supplied, source-owned pricing
+			// atomically with the supported payment sources.
 			const result = await prisma.$transaction(async (tx) => {
 				// Re-read state INSIDE the tx and CAS-guard the state write below to
 				// close the TOCTOU window between the validStatesForUpdate check above
@@ -286,41 +259,6 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 				if (replaceSupportedPaymentSources) {
 					await tx.supportedPaymentSource.deleteMany({ where: { registryRequestId: registryRequest.id } });
 				}
-				const oldPricing = await tx.registryRequest.findUnique({
-					where: { id: registryRequest.id },
-					select: { agentPricingId: true },
-				});
-				let oldFixedPricingId: string | null = null;
-				if (oldPricing?.agentPricingId != null) {
-					const oldAgentPricing = await tx.agentPricing.findUnique({
-						where: { id: oldPricing.agentPricingId },
-						select: { agentFixedPricingId: true },
-					});
-					oldFixedPricingId = oldAgentPricing?.agentFixedPricingId ?? null;
-				}
-				const newPricing = await tx.agentPricing.create({
-					data:
-						agentPricing.pricingType == PricingType.Fixed
-							? {
-									pricingType: agentPricing.pricingType,
-									FixedPricing: {
-										create: {
-											Amounts: {
-												createMany: {
-													data: agentPricing.Pricing.map((price) => ({
-														unit: price.unit.toLowerCase() == 'lovelace' ? '' : price.unit,
-														amount: BigInt(price.amount),
-													})),
-												},
-											},
-										},
-									},
-								}
-							: {
-									pricingType: agentPricing.pricingType,
-								},
-					select: { id: true },
-				});
 				await tx.registryRequest.update({
 					// Atomic CAS on state: if a concurrent action advanced the row out of
 					// an updatable state between the re-read above and this write, match 0
@@ -367,7 +305,6 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						// path already keys non-RegistrationRequested
 						// states off this column.
 						DeregistrationHotWallet: { connect: { id: managedHolderWallet.id } },
-						Pricing: { connect: { id: newPricing.id } },
 						...(recipientHotWalletId != null ? { RecipientWallet: { connect: { id: recipientHotWalletId } } } : {}),
 						ExampleOutputs: {
 							createMany: {
@@ -378,49 +315,17 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 								})),
 							},
 						},
-						...(supportedPaymentSources != null && supportedPaymentSources.length > 0
+						...(requestedSupportedPaymentSources != null
 							? {
 									SupportedPaymentSources: {
-										createMany: {
-											data: supportedPaymentSources.map((source) => ({
-												chain: source.chain,
-												network: source.network,
-												paymentSourceType: source.paymentSourceType,
-												address:
-													source.chain === 'EVM' ? (source.address ?? source.payTo).toLowerCase() : source.address,
-												...(source.chain === 'EVM'
-													? {
-															scheme: source.scheme,
-															pricingType: source.pricingType,
-															asset:
-																source.pricingType === PricingType.Free ? null : (source.asset?.toLowerCase() ?? null),
-															amount: source.pricingType === PricingType.Fixed ? BigInt(source.amount) : null,
-															decimals: source.pricingType === PricingType.Free ? null : (source.decimals ?? null),
-															payTo: source.payTo.toLowerCase(),
-															resource: source.resource,
-															extra: source.extra as Prisma.InputJsonValue | undefined,
-														}
-													: {}),
-											})),
-										},
+										create: requestedSupportedPaymentSources.map((source, position) =>
+											buildSupportedPaymentSourceCreate(source, position),
+										),
 									},
 								}
 							: {}),
 					},
 				});
-				if (oldFixedPricingId != null) {
-					// UnitValue.agentFixedPricingId uses ON DELETE SET NULL, not
-					// cascade. Delete amounts explicitly before dropping the old
-					// fixed-pricing row so update retries do not accumulate
-					// detached pricing values.
-					await tx.unitValue.deleteMany({ where: { agentFixedPricingId: oldFixedPricingId } });
-				}
-				if (oldPricing?.agentPricingId != null) {
-					await tx.agentPricing.delete({ where: { id: oldPricing.agentPricingId } });
-				}
-				if (oldFixedPricingId != null) {
-					await tx.agentFixedPricing.delete({ where: { id: oldFixedPricingId } });
-				}
 				return tx.registryRequest.findUniqueOrThrow({
 					where: { id: registryRequest.id },
 					include: {
@@ -439,16 +344,23 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 							select: {
 								chain: true,
 								network: true,
+								position: true,
 								paymentSourceType: true,
 								address: true,
 								scheme: true,
-								pricingType: true,
-								asset: true,
-								amount: true,
-								decimals: true,
+								dynamicAsset: true,
+								dynamicDecimals: true,
+								fixedDecimals: true,
 								payTo: true,
 								resource: true,
 								extra: true,
+								Pricing: {
+									include: {
+										FixedPricing: {
+											include: { Amounts: { select: { unit: true, amount: true } } },
+										},
+									},
+								},
 							},
 						},
 						CurrentTransaction: {
@@ -482,19 +394,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 					terms: result.terms,
 					other: result.other,
 				},
-				AgentPricing:
-					result.Pricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: PricingType.Fixed,
-								Pricing:
-									result.Pricing.FixedPricing?.Amounts.map((price) => ({
-										unit: price.unit,
-										amount: price.amount.toString(),
-									})) ?? [],
-							}
-						: {
-								pricingType: result.Pricing.pricingType,
-							},
+				AgentPricing: null,
 				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
 				supportedPaymentSources: serializeSupportedPaymentSources(result.SupportedPaymentSources),
 				verifications: serializeVerifications(result.Verifications),

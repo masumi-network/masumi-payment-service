@@ -268,6 +268,20 @@ const source = {
 	asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
 	amount: 10_000n,
 	decimals: 6,
+	dynamicAsset: null,
+	dynamicDecimals: null,
+	fixedDecimals: 6,
+	Pricing: {
+		pricingType: 'Fixed',
+		FixedPricing: {
+			Amounts: [
+				{
+					unit: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+					amount: 10_000n,
+				},
+			],
+		},
+	},
 	payTo: '0x1111111111111111111111111111111111111111',
 	resource: 'https://agent.example/run',
 	extra: null,
@@ -528,10 +542,10 @@ describe('x402 service helpers', () => {
 		const dynamicRequirements = requirementsService.sourceToRequirements(
 			{
 				...source,
-				pricingType: 'Dynamic',
-				asset: null,
-				amount: null,
-				decimals: null,
+				Pricing: { pricingType: 'Dynamic', FixedPricing: null },
+				dynamicAsset: null,
+				dynamicDecimals: null,
+				fixedDecimals: null,
 			} as never,
 			{
 				...requirements,
@@ -554,10 +568,10 @@ describe('x402 service helpers', () => {
 			requirementsService.sourceToRequirements(
 				{
 					...source,
-					pricingType: 'Dynamic',
-					asset: null,
-					amount: null,
-					decimals: null,
+					Pricing: { pricingType: 'Dynamic', FixedPricing: null },
+					dynamicAsset: null,
+					dynamicDecimals: null,
+					fixedDecimals: null,
 				} as never,
 				{
 					...requirements,
@@ -574,10 +588,10 @@ describe('x402 service helpers', () => {
 			requirementsService.sourceToRequirements(
 				{
 					...source,
-					pricingType: 'Dynamic',
-					asset: null,
-					amount: null,
-					decimals: null,
+					Pricing: { pricingType: 'Dynamic', FixedPricing: null },
+					dynamicAsset: null,
+					dynamicDecimals: null,
+					fixedDecimals: null,
 				} as never,
 				{ ...requirements, amount: '0' } as never,
 			),
@@ -587,10 +601,10 @@ describe('x402 service helpers', () => {
 			requirementsService.sourceToRequirements(
 				{
 					...source,
-					pricingType: 'Dynamic',
-					asset: null,
-					amount: null,
-					decimals: null,
+					Pricing: { pricingType: 'Dynamic', FixedPricing: null },
+					dynamicAsset: null,
+					dynamicDecimals: null,
+					fixedDecimals: null,
 				} as never,
 				{ ...requirements, amount: '9223372036854775808' } as never,
 			),
@@ -599,10 +613,10 @@ describe('x402 service helpers', () => {
 		expect(() =>
 			requirementsService.sourceToRequirements({
 				...source,
-				pricingType: 'Free',
-				asset: null,
-				amount: null,
-				decimals: null,
+				Pricing: { pricingType: 'Free', FixedPricing: null },
+				dynamicAsset: null,
+				dynamicDecimals: null,
+				fixedDecimals: null,
 			} as never),
 		).toThrow('Free x402 sources do not require payment verification or settlement');
 	});
@@ -623,10 +637,10 @@ describe('x402 service helpers', () => {
 	it('rejects dynamic verification without owner-issued runtime requirements', async () => {
 		mockSupportedPaymentSourceFindUnique.mockResolvedValueOnce({
 			...source,
-			pricingType: 'Dynamic',
-			asset: null,
-			amount: null,
-			decimals: null,
+			Pricing: { pricingType: 'Dynamic', FixedPricing: null },
+			dynamicAsset: null,
+			dynamicDecimals: null,
+			fixedDecimals: null,
 		});
 
 		await expect(
@@ -647,10 +661,10 @@ describe('x402 service helpers', () => {
 	it('does not derive a dynamic amount from the buyer-controlled accepted payload', async () => {
 		mockSupportedPaymentSourceFindUnique.mockResolvedValueOnce({
 			...source,
-			pricingType: 'Dynamic',
-			asset: null,
-			amount: null,
-			decimals: null,
+			Pricing: { pricingType: 'Dynamic', FixedPricing: null },
+			dynamicAsset: null,
+			dynamicDecimals: null,
+			fixedDecimals: null,
 		});
 		const trustedRuntimeRequirements = {
 			...requirements,
@@ -683,10 +697,10 @@ describe('x402 service helpers', () => {
 	it('only trusts dynamic requirements from the registry owner or an admin', async () => {
 		mockSupportedPaymentSourceFindUnique.mockResolvedValueOnce({
 			...source,
-			pricingType: 'Dynamic',
-			asset: null,
-			amount: null,
-			decimals: null,
+			Pricing: { pricingType: 'Dynamic', FixedPricing: null },
+			dynamicAsset: null,
+			dynamicDecimals: null,
+			fixedDecimals: null,
 		});
 		await expect(
 			service.verifyX402Payment({

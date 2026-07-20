@@ -3,24 +3,22 @@ import { Network, PaymentSourceType, PricingType, X402PaymentScheme } from '@/ge
 import { buildAgentMetadata } from './service';
 
 describe('V2 registry metadata', () => {
-	const paymentSource = {
-		network: Network.Preprod,
-		paymentSourceType: PaymentSourceType.Web3CardanoV2,
-		smartContractAddress: 'addr_test1vpcardanoescrowaddress',
-	};
 	const x402Source = {
 		chain: 'EVM',
 		network: 'eip155:84532',
 		paymentSourceType: null,
 		address: '0x1111111111111111111111111111111111111111',
 		scheme: X402PaymentScheme.Exact,
-		pricingType: PricingType.Dynamic,
-		asset: null,
-		amount: null,
-		decimals: null,
+		dynamicAsset: null,
+		dynamicDecimals: null,
+		fixedDecimals: null,
 		payTo: '0x1111111111111111111111111111111111111111',
 		resource: null,
 		extra: null,
+		Pricing: {
+			pricingType: PricingType.Dynamic,
+			FixedPricing: null,
+		},
 	};
 	const baseRequest = {
 		name: 'x402 Agent',
@@ -37,16 +35,13 @@ describe('V2 registry metadata', () => {
 		terms: null,
 		other: null,
 		tags: [],
-		Pricing: {
-			pricingType: PricingType.Dynamic,
-			FixedPricing: null,
-		},
+		Pricing: null,
 		metadataVersion: 2,
 		SupportedPaymentSources: [x402Source],
 	};
 
 	it('keeps an explicit x402-only rail list authoritative', () => {
-		const metadata = buildAgentMetadata(baseRequest, paymentSource) as {
+		const metadata = buildAgentMetadata(baseRequest) as {
 			supported_payment_sources: Array<{ chain: string[] }>;
 		};
 
@@ -55,7 +50,7 @@ describe('V2 registry metadata', () => {
 	});
 
 	it('omits nullable JSON extras before Mesh converts CIP-25 metadata', () => {
-		const metadata = buildAgentMetadata(baseRequest, paymentSource) as {
+		const metadata = buildAgentMetadata(baseRequest) as {
 			supported_payment_sources: Array<{ settlement: { extra?: unknown } }>;
 		};
 
@@ -72,27 +67,20 @@ describe('V2 registry metadata', () => {
 				payTo: `0x${suffix}`,
 			};
 		});
-		const metadata = buildAgentMetadata(
-			{
-				...baseRequest,
-				SupportedPaymentSources: sources,
-			},
-			paymentSource,
-		) as { supported_payment_sources: unknown[] };
+		const metadata = buildAgentMetadata({
+			...baseRequest,
+			SupportedPaymentSources: sources,
+		}) as { supported_payment_sources: unknown[] };
 
 		expect(metadata.supported_payment_sources).toHaveLength(25);
 	});
 
-	it('retains the historical Cardano fallback only for empty legacy rows', () => {
-		const metadata = buildAgentMetadata(
-			{
+	it('rejects an empty V2 source list instead of silently injecting Cardano', () => {
+		expect(() =>
+			buildAgentMetadata({
 				...baseRequest,
 				SupportedPaymentSources: [],
-			},
-			paymentSource,
-		) as { supported_payment_sources: Array<{ chain: string[] }> };
-
-		expect(metadata.supported_payment_sources).toHaveLength(1);
-		expect(metadata.supported_payment_sources[0]?.chain).toEqual(['Cardano']);
+			}),
+		).toThrow('V2 requires at least one supported payment source');
 	});
 });

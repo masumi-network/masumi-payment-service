@@ -43,7 +43,6 @@ import {
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 import { asV2Provider } from '../../provider-cast';
 import { buildAgentMetadata, validateRegistrationPricing } from '../register/service';
-import type { RegistryMetadataPaymentSource } from '@/types/payment-source';
 
 // One UpdateAction tx can atomically burn+remint several assets (see
 // smart-contracts/registry-v2/validators/mint.ak). When more than one
@@ -119,7 +118,6 @@ function buildUpdateItem(
 	utxos: UTxO[],
 	address: string,
 	policyId: string,
-	paymentSourceMetadata: RegistryMetadataPaymentSource,
 ): ValidatedUpdateItem {
 	if (!request.agentIdentifier) {
 		throw new Error('Agent identifier is required for update');
@@ -137,7 +135,7 @@ function buildUpdateItem(
 	// Holder-holds-asset guard (see single-item processUpdate): the asset UTxO
 	// must be in the signing wallet or there is nothing to burn+remint.
 	const tokenUtxo = findRegistryTokenUtxo(utxos, request.agentIdentifier);
-	const metadata = buildAgentMetadata(request, paymentSourceMetadata);
+	const metadata = buildAgentMetadata(request);
 	// Default the version-bumped NFT recipient to the CURRENT HOLDER (the signing
 	// wallet), not SmartContractWallet — see the single-item comment.
 	const recipientWalletAddress = request.RecipientWallet?.walletAddress ?? address;
@@ -248,12 +246,7 @@ async function processUpdate(
 		throw new Error('Collateral UTXO not found');
 	}
 
-	const paymentSourceMetadata: RegistryMetadataPaymentSource = {
-		network: paymentSource.network,
-		paymentSourceType: paymentSource.paymentSourceType,
-		smartContractAddress: paymentSource.smartContractAddress,
-	};
-	const metadata = buildAgentMetadata(request, paymentSourceMetadata);
+	const metadata = buildAgentMetadata(request);
 
 	// Default the version-bumped NFT recipient to the CURRENT HOLDER (`address`,
 	// the wallet that signs this tx), NOT request.SmartContractWallet. When the
@@ -402,16 +395,10 @@ async function processBatchUpdate(
 	// Collateral ready — clear any transient prep-failure count on every item.
 	await Promise.allSettled(requests.map((request) => resetRegistryPrepFailureCount(request.id)));
 
-	const paymentSourceMetadata: RegistryMetadataPaymentSource = {
-		network: paymentSource.network,
-		paymentSourceType: paymentSource.paymentSourceType,
-		smartContractAddress: paymentSource.smartContractAddress,
-	};
-
 	const validated: ValidatedUpdateItem[] = [];
 	for (const request of requests) {
 		try {
-			validated.push(buildUpdateItem(request, utxos, address, policyId, paymentSourceMetadata));
+			validated.push(buildUpdateItem(request, utxos, address, policyId));
 		} catch (validationError) {
 			// Mid-batch: keep the shared wallet lock so the remaining items can build.
 			await markRequestFailed(request, validationError, { unlockWallet: false });

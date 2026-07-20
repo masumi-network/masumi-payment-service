@@ -133,16 +133,23 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 					select: {
 						chain: true,
 						network: true,
+						position: true,
 						paymentSourceType: true,
 						address: true,
 						scheme: true,
-						pricingType: true,
-						asset: true,
-						amount: true,
-						decimals: true,
+						dynamicAsset: true,
+						dynamicDecimals: true,
+						fixedDecimals: true,
 						payTo: true,
 						resource: true,
 						extra: true,
+						Pricing: {
+							include: {
+								FixedPricing: {
+									include: { Amounts: { select: { unit: true, amount: true } } },
+								},
+							},
+						},
 					},
 				},
 			},
