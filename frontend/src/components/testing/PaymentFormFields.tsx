@@ -21,6 +21,7 @@ import {
 } from 'react-hook-form';
 import { generateRandomHex, generateMIP004InputHash } from './utils';
 import { RefreshCw, ExternalLink } from 'lucide-react';
+import type { PaidAgentOption } from './payment-options';
 
 export const INPUT_DATA_PRESETS = [
   {
@@ -74,7 +75,7 @@ export const INPUT_DATA_PRESETS = [
 import { z } from 'zod';
 
 export const paymentFormSchema = z.object({
-  agentIdentifier: z.string().min(57, 'Agent identifier required'),
+  paymentOptionId: z.string().min(1, 'Select a paid agent option'),
   inputHash: z
     .string()
     .length(64, 'Input hash must be 64 characters')
@@ -91,21 +92,15 @@ export const paymentFormSchema = z.object({
 
 export type PaymentFormValues = z.infer<typeof paymentFormSchema>;
 
-export interface PaidAgent {
-  id: string;
-  name: string;
-  agentIdentifier: string | null;
-  pricingType?: string;
-}
-
 interface PaymentFormFieldsProps {
   register: UseFormRegister<PaymentFormValues>;
   setValue: UseFormSetValue<PaymentFormValues>;
   watch: UseFormWatch<PaymentFormValues>;
   control: Control<PaymentFormValues>;
   errors: FieldErrors<PaymentFormValues>;
-  paidAgents: PaidAgent[];
+  paidAgents: PaidAgentOption[];
   isLoadingAgents: boolean;
+  hasAgentsError?: boolean;
 }
 
 export function useInputDataHash(
@@ -170,6 +165,7 @@ export function PaymentFormFields({
   errors,
   paidAgents,
   isLoadingAgents,
+  hasAgentsError = false,
   inputData,
   setInputData,
   inputDataError,
@@ -179,8 +175,8 @@ export function PaymentFormFields({
   inputDataError: string | null;
 }) {
   const [isSpinning, setIsSpinning] = useState(false);
-  const selectedAgentId = _watch('agentIdentifier');
-  const selectedAgent = paidAgents.find((a) => a.agentIdentifier === selectedAgentId);
+  const selectedOptionId = _watch('paymentOptionId');
+  const selectedAgent = paidAgents.find((option) => option.optionId === selectedOptionId);
   const isDynamicPricing = selectedAgent?.pricingType === 'Dynamic';
 
   const handleGenerateIdentifier = () => {
@@ -198,7 +194,7 @@ export function PaymentFormFields({
         </Label>
         <Controller
           control={control}
-          name="agentIdentifier"
+          name="paymentOptionId"
           render={({ field }) => (
             <Select
               value={field.value}
@@ -209,38 +205,54 @@ export function PaymentFormFields({
               }}
             >
               <SelectTrigger
-                disabled={isLoadingAgents || paidAgents.length === 0}
-                className={`transition-colors duration-200 ${errors.agentIdentifier ? 'border-destructive' : ''}`}
+                disabled={isLoadingAgents || hasAgentsError || paidAgents.length === 0}
+                className={`transition-colors duration-200 ${errors.paymentOptionId ? 'border-destructive' : ''}`}
               >
                 <SelectValue
                   placeholder={
                     isLoadingAgents
                       ? 'Loading agents...'
-                      : paidAgents.length === 0
-                        ? 'No paid agents available'
-                        : 'Select a paid agent'
+                      : hasAgentsError
+                        ? 'Could not load agents'
+                        : paidAgents.length === 0
+                          ? 'No paid agents available'
+                          : 'Select a paid agent'
                   }
                 />
               </SelectTrigger>
               <SelectContent>
                 {paidAgents.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.agentIdentifier || ''}>
-                    {agent.name}
+                  <SelectItem key={agent.optionId} value={agent.optionId}>
+                    <span>{agent.label}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {agent.paymentSourceType === 'Web3CardanoV2' ? 'V2' : 'V1'} ·{' '}
+                      {agent.pricingType}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
         />
-        {errors.agentIdentifier && (
+        {errors.paymentOptionId && (
           <p className="text-sm text-destructive animate-fade-in">
-            {errors.agentIdentifier.message}
+            {errors.paymentOptionId.message}
+          </p>
+        )}
+        {hasAgentsError && !isLoadingAgents && (
+          <p className="text-xs text-destructive">
+            Registered agents could not be loaded. Close and reopen the dialog to retry.
           </p>
         )}
         {paidAgents.length === 0 && !isLoadingAgents && (
-          <p className="text-xs text-muted-foreground">
-            No paid agents available. Free agents cannot be used with the payment flow.
-          </p>
+          <>
+            {!hasAgentsError && (
+              <p className="text-xs text-muted-foreground">
+                No paid agents are registered on this exact payment source. Free agents cannot be
+                used with the payment flow.
+              </p>
+            )}
+          </>
         )}
       </div>
 

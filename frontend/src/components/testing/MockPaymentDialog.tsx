@@ -6,7 +6,7 @@ import { postPayment, PostPaymentResponse } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useAgents } from '@/lib/queries/useAgents';
+import { useAllAgents } from '@/lib/queries/useAgents';
 import { Spinner } from '@/components/ui/spinner';
 import { CurlResponseViewer } from './CurlResponseViewer';
 import {
@@ -21,7 +21,7 @@ import {
   paymentFormSchema,
   type PaymentFormValues,
 } from './PaymentFormFields';
-import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
+import { buildPaidAgentOptions } from './payment-options';
 
 interface MockPaymentDialogProps {
   open: boolean;
@@ -29,8 +29,15 @@ interface MockPaymentDialogProps {
 }
 
 export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
-  const { apiClient, network, apiKey } = useAppContext();
-  const { agents, isLoading: isLoadingAgents } = useAgents();
+  const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
+  const {
+    agents,
+    isLoading: isLoadingAgents,
+    error: agentsError,
+  } = useAllAgents({
+    filterStatus: 'Registered',
+    enabled: open,
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [curlCommand, setCurlCommand] = useState<string>('');
   const [response, setResponse] = useState<PostPaymentResponse['data'] | null>(null);
@@ -47,7 +54,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
   } = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentFormSchema),
     defaultValues: {
-      agentIdentifier: '',
+      paymentOptionId: '',
       inputHash: '',
       identifierFromPurchaser: '',
       metadata: '',
@@ -55,28 +62,8 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
   });
 
   const paidAgents = useMemo(
-    () =>
-      agents.flatMap((agent) => {
-        const pricing = getPrimaryCardanoPricing(agent);
-        if (
-          agent.state !== 'RegistrationConfirmed' ||
-          agent.agentIdentifier === null ||
-          pricing == null ||
-          pricing.pricingType === 'Free'
-        ) {
-          return [];
-        }
-        return [
-          {
-            ...agent,
-            pricingType: pricing.pricingType,
-            supportedPaymentSourceIndex: (agent.supportedPaymentSources ?? []).findIndex(
-              (source) => source.chain === 'Cardano',
-            ),
-          },
-        ];
-      }),
-    [agents],
+    () => buildPaidAgentOptions(agents, selectedPaymentSource?.paymentSourceType),
+    [agents, selectedPaymentSource?.paymentSourceType],
   );
 
   const { inputData, setInputData, inputDataError, resetInputData } = useInputDataHash(
@@ -87,12 +74,13 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
   useEffect(() => {
     if (open) {
       resetInputData();
+      setValue('paymentOptionId', '');
       setValue('identifierFromPurchaser', generateRandomHex(16));
       setResponse(null);
       setError(null);
       setCurlCommand('');
     }
-  }, [open, setValue, resetInputData]);
+  }, [open, selectedPaymentSource?.id, setValue, resetInputData]);
 
   const onSubmit = useCallback(
     async (data: PaymentFormValues) => {
@@ -101,8 +89,13 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         setError(null);
 
         const times = calculateDefaultTimes();
-        const selectedAgent = paidAgents.find((a) => a.agentIdentifier === data.agentIdentifier);
-        const isDynamic = selectedAgent?.pricingType === 'Dynamic';
+        const selectedAgent = paidAgents.find((option) => option.optionId === data.paymentOptionId);
+        if (!selectedAgent) {
+          throw new Error(
+            'The selected agent option is no longer available on this payment source. Select it again.',
+          );
+        }
+        const isDynamic = selectedAgent.pricingType === 'Dynamic';
 
         if (isDynamic && !data.requestedFundsAmount) {
           setError('Amount is required for dynamic pricing agents');
@@ -125,7 +118,8 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
 
         const requestBody = {
           network: network,
-          agentIdentifier: data.agentIdentifier,
+          agentIdentifier: selectedAgent.agentIdentifier,
+          paymentSourceType: selectedAgent.paymentSourceType,
           inputHash: data.inputHash,
           identifierFromPurchaser: data.identifierFromPurchaser,
           payByTime: times.payByTime,
@@ -133,7 +127,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
           unlockTime: times.unlockTime,
           externalDisputeUnlockTime: times.externalDisputeUnlockTime,
           metadata: data.metadata || undefined,
-          ...(selectedAgent && selectedAgent.supportedPaymentSourceIndex >= 0
+          ...(selectedAgent.supportedPaymentSourceIndex != null
             ? { supportedPaymentSourceIndex: selectedAgent.supportedPaymentSourceIndex }
             : {}),
           ...(requestedFunds ? { RequestedFunds: requestedFunds } : {}),
@@ -199,6 +193,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
               errors={errors}
               paidAgents={paidAgents}
               isLoadingAgents={isLoadingAgents}
+              hasAgentsError={agentsError != null}
               inputData={inputData}
               setInputData={setInputData}
               inputDataError={inputDataError}
@@ -210,7 +205,9 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
               </Button>
               <Button
                 type="submit"
-                disabled={isLoading || isLoadingAgents || paidAgents.length === 0}
+                disabled={
+                  isLoading || isLoadingAgents || agentsError != null || paidAgents.length === 0
+                }
               >
                 {isLoading ? (
                   <>

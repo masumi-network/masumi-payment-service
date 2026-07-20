@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { RegistryEntry } from '@/lib/api/generated';
-import { getPrimaryCardanoPricing, parseLegacyAgentPricing } from './registry-pricing';
+import {
+  getCardanoPricingOptions,
+  getPrimaryCardanoPricing,
+  parseLegacyAgentPricing,
+} from './registry-pricing';
 
 test('V2 reads pricing from the first Cardano source instead of AgentPricing', () => {
   const agent = {
@@ -46,4 +50,39 @@ test('malformed legacy pricing is rejected rather than partially accepted', () =
     }),
     null,
   );
+});
+
+test('V2 exposes all Cardano pricing options with their original source indexes', () => {
+  const agent = {
+    AgentPricing: null,
+    supportedPaymentSources: [
+      {
+        chain: 'EVM',
+        pricing: { pricingType: 'Dynamic' },
+      },
+      {
+        chain: 'Cardano',
+        address: 'addr_test1_dynamic',
+        pricing: { pricingType: 'Dynamic' },
+      },
+      {
+        chain: 'Cardano',
+        address: 'addr_test1_free',
+        pricing: { pricingType: 'Free' },
+      },
+    ],
+  } as unknown as RegistryEntry;
+
+  assert.deepEqual(getCardanoPricingOptions(agent), [
+    {
+      pricing: { pricingType: 'Dynamic' },
+      supportedPaymentSourceIndex: 1,
+      address: 'addr_test1_dynamic',
+    },
+    {
+      pricing: { pricingType: 'Free' },
+      supportedPaymentSourceIndex: 2,
+      address: 'addr_test1_free',
+    },
+  ]);
 });

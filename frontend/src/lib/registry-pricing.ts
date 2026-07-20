@@ -9,6 +9,12 @@ export type AgentPricingView =
       pricingType: 'Dynamic' | 'Free';
     };
 
+export type CardanoPricingOption = {
+  pricing: AgentPricingView;
+  supportedPaymentSourceIndex?: number;
+  address?: string;
+};
+
 type UnknownAgentPricing = {
   pricingType?: unknown;
   Pricing?: unknown;
@@ -51,27 +57,45 @@ export function parseLegacyAgentPricing(value: unknown): AgentPricingView | null
 }
 
 /**
+ * Returns every independently-priced Cardano option advertised by an agent.
+ * V2 preserves the source's metadata-array index because the payment endpoint
+ * requires that exact index. V1 has one legacy top-level pricing option.
+ */
+export function getCardanoPricingOptions(agent: RegistryEntry): CardanoPricingOption[] {
+  if (agent.supportedPaymentSources != null) {
+    return agent.supportedPaymentSources.flatMap((source, index) => {
+      if (source.chain !== 'Cardano') return [];
+
+      const pricing: AgentPricingView =
+        source.pricing.pricingType === 'Fixed'
+          ? {
+              pricingType: 'Fixed',
+              Pricing: source.pricing.fixed.map((price) => ({
+                unit: price.asset,
+                amount: price.amount,
+              })),
+            }
+          : { pricingType: source.pricing.pricingType };
+
+      return [
+        {
+          pricing,
+          supportedPaymentSourceIndex: index,
+          address: source.address,
+        },
+      ];
+    });
+  }
+
+  const legacyPricing = parseLegacyAgentPricing(agent.AgentPricing);
+  return legacyPricing ? [{ pricing: legacyPricing }] : [];
+}
+
+/**
  * Returns the Cardano pricing operators edit in the registration dialog.
  * V2 reads it from the selected source; V1 falls back to the legacy top-level
  * field. This keeps the compatibility field out of all V2 write payloads.
  */
 export function getPrimaryCardanoPricing(agent: RegistryEntry): AgentPricingView | null {
-  const cardanoSource = (agent.supportedPaymentSources ?? []).find(
-    (source) => source.chain === 'Cardano',
-  );
-  if (cardanoSource) {
-    const pricing = cardanoSource.pricing;
-    if (pricing.pricingType === 'Fixed') {
-      return {
-        pricingType: 'Fixed',
-        Pricing: pricing.fixed.map((price) => ({
-          unit: price.asset,
-          amount: price.amount,
-        })),
-      };
-    }
-    return { pricingType: pricing.pricingType };
-  }
-
-  return parseLegacyAgentPricing(agent.AgentPricing);
+  return getCardanoPricingOptions(agent)[0]?.pricing ?? null;
 }
