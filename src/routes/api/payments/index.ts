@@ -312,6 +312,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			sellerAddress: sellingWallet.walletAddress,
 			sellerReturnAddress,
 			smartContractAddress: isV2 ? specifiedPaymentContract.smartContractAddress : null,
+			supportedPaymentSourceIndex: isV2 ? input.supportedPaymentSourceIndex : undefined,
 			paymentSourceType: specifiedPaymentContract.paymentSourceType,
 		});
 

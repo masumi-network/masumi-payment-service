@@ -328,6 +328,74 @@ describe('registerAgentPost', () => {
 		);
 	});
 
+	it('searches source-owned V2 pricing types and fixed amounts', async () => {
+		const dynamicResult = await testEndpoint({
+			endpoint: queryRegistryRequestGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					network: Network.Preprod,
+					limit: '10',
+					filterPaymentSourceType: PaymentSourceType.Web3CardanoV2,
+					searchQuery: 'dynamic',
+				},
+			},
+		});
+
+		expect(dynamicResult.responseMock.statusCode).toBe(200);
+		const dynamicQuery = mockFindRegistryRequests.mock.calls[mockFindRegistryRequests.mock.calls.length - 1]?.[0];
+		expect(dynamicQuery?.where?.OR).toEqual(
+			expect.arrayContaining([
+				{ Pricing: { pricingType: PricingType.Dynamic } },
+				{
+					SupportedPaymentSources: {
+						some: { Pricing: { pricingType: PricingType.Dynamic } },
+					},
+				},
+			]),
+		);
+
+		const amountResult = await testEndpoint({
+			endpoint: queryRegistryRequestGet,
+			requestProps: {
+				method: 'GET',
+				headers: { token: 'valid' },
+				query: {
+					network: Network.Preprod,
+					limit: '10',
+					filterPaymentSourceType: PaymentSourceType.Web3CardanoV2,
+					searchQuery: '500000',
+				},
+			},
+		});
+
+		expect(amountResult.responseMock.statusCode).toBe(200);
+		const amountQuery = mockFindRegistryRequests.mock.calls[mockFindRegistryRequests.mock.calls.length - 1]?.[0];
+		expect(amountQuery?.where?.OR).toEqual(
+			expect.arrayContaining([
+				{
+					SupportedPaymentSources: {
+						some: {
+							Pricing: {
+								FixedPricing: {
+									Amounts: {
+										some: {
+											amount: {
+												gte: expect.anything(),
+												lte: expect.anything(),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			]),
+		);
+	});
+
 	it('scopes registry counts to the current managed holder wallet', async () => {
 		mockFindApiKey.mockResolvedValue(asApiKey(['holding-wallet-id']));
 

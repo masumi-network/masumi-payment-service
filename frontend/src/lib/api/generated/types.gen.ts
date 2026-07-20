@@ -7315,6 +7315,10 @@ export type PostPurchaseData = {
          */
         smartContractAddress?: string;
         /**
+         * The V2 Cardano source index selected when the seller created the payment. The seller signature covers this value. Omit only for legacy V2 identifiers created before source-owned pricing.
+         */
+        supportedPaymentSourceIndex?: number;
+        /**
          * The hash of the input data of the purchase, should be sha256 hash of the input data, therefore needs to be in hex string format
          */
         inputHash: string;

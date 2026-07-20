@@ -29,6 +29,43 @@ SET "agentPricingId" = pricing."id"
 FROM "AgentPricing" AS pricing
 WHERE pricing."agentFixedPricingId" = fixed."id";
 
+-- Before source-owned pricing, V2 persisted only caller-supplied payment
+-- sources. The mint builder injected the active Cardano source into metadata
+-- without inserting a SupportedPaymentSource row, so ordinary V2 requests have
+-- no source rows and V2+x402 requests commonly have EVM rows only. Materialize
+-- that previously implicit Cardano option before cloning and deleting the
+-- request-owned price.
+INSERT INTO "SupportedPaymentSource" (
+  "id",
+  "createdAt",
+  "updatedAt",
+  "registryRequestId",
+  "chain",
+  "network",
+  "paymentSourceType",
+  "address"
+)
+SELECT
+  'legacy-cardano-source-' || request."id",
+  request."createdAt",
+  request."updatedAt",
+  request."id",
+  'Cardano',
+  payment_source."network"::TEXT,
+  payment_source."paymentSourceType",
+  payment_source."smartContractAddress"
+FROM "RegistryRequest" AS request
+JOIN "PaymentSource" AS payment_source
+  ON payment_source."id" = request."paymentSourceId"
+WHERE request."metadataVersion" >= 2
+  AND payment_source."paymentSourceType" = 'Web3CardanoV2'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM "SupportedPaymentSource" AS existing_source
+    WHERE existing_source."registryRequestId" = request."id"
+      AND existing_source."chain" = 'Cardano'
+  );
+
 -- Clone every existing source's effective pricing into a source-owned
 -- AgentPricing row. Existing Cardano sources inherit the request pricing;
 -- existing EVM rows already carry their own pricing columns.
@@ -139,7 +176,13 @@ WITH ranked_sources AS (
     (
       ROW_NUMBER() OVER (
         PARTITION BY "registryRequestId"
-        ORDER BY "createdAt", "id"
+        -- The old mint builder prepended its implicit Cardano source before
+        -- caller-supplied EVM options. Preserve that signed metadata order so
+        -- existing source indexes keep their original meaning.
+        ORDER BY
+          CASE WHEN "id" LIKE 'legacy-cardano-source-%' THEN 0 ELSE 1 END,
+          "createdAt",
+          "id"
       ) - 1
     )::INTEGER AS "position"
   FROM "SupportedPaymentSource"

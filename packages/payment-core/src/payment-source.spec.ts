@@ -1,4 +1,6 @@
 import { Network, PaymentSourceType, PricingType } from '@prisma/client';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
 	getSupportedPaymentSourceCanonicalKey,
 	isCardanoAddressForNetwork,
@@ -271,5 +273,24 @@ describe('payment-source address and pricing validation', () => {
 				PaymentSourceType.Web3CardanoV2,
 			),
 		).toThrow('supportedPaymentSources[1] duplicates an earlier payment option');
+	});
+
+	it('backfills the implicit Cardano rail before migrating legacy V2 pricing', () => {
+		const migrationSql = readFileSync(
+			join(process.cwd(), 'prisma/migrations/20260720030000_source_owned_registry_pricing/migration.sql'),
+			'utf8',
+		);
+		const cardanoBackfill = migrationSql.indexOf('legacy-cardano-source-');
+		const sourcePricingClone = migrationSql.indexOf('INSERT INTO "AgentPricing"');
+		const v2TopLevelPricingDelete = migrationSql.indexOf('DELETE FROM "AgentPricing"\nWHERE "registryRequestId" IN');
+
+		expect(cardanoBackfill).toBeGreaterThan(-1);
+		expect(migrationSql).toContain(
+			'AND NOT EXISTS (\n    SELECT 1\n    FROM "SupportedPaymentSource" AS existing_source',
+		);
+		expect(migrationSql).toContain(`existing_source."chain" = 'Cardano'`);
+		expect(migrationSql).toContain(`CASE WHEN "id" LIKE 'legacy-cardano-source-%' THEN 0 ELSE 1 END`);
+		expect(cardanoBackfill).toBeLessThan(sourcePricingClone);
+		expect(sourcePricingClone).toBeLessThan(v2TopLevelPricingDelete);
 	});
 });

@@ -169,8 +169,26 @@ export async function getRegistryEntriesForQuery(
 								},
 							},
 							...(matchingStates && matchingStates.length > 0 ? [{ state: { in: matchingStates } }] : []),
-							...('free'.startsWith(searchLower) ? [{ Pricing: { pricingType: PricingType.Free } }] : []),
-							...('dynamic'.startsWith(searchLower) ? [{ Pricing: { pricingType: PricingType.Dynamic } }] : []),
+							...('free'.startsWith(searchLower)
+								? [
+										{ Pricing: { pricingType: PricingType.Free } },
+										{
+											SupportedPaymentSources: {
+												some: { Pricing: { pricingType: PricingType.Free } },
+											},
+										},
+									]
+								: []),
+							...('dynamic'.startsWith(searchLower)
+								? [
+										{ Pricing: { pricingType: PricingType.Dynamic } },
+										{
+											SupportedPaymentSources: {
+												some: { Pricing: { pricingType: PricingType.Dynamic } },
+											},
+										},
+									]
+								: []),
 							...(amountFilter
 								? [
 										{
@@ -178,6 +196,19 @@ export async function getRegistryEntriesForQuery(
 												FixedPricing: {
 													Amounts: {
 														some: { amount: { gte: amountFilter.gte, lte: amountFilter.lte } },
+													},
+												},
+											},
+										},
+										{
+											SupportedPaymentSources: {
+												some: {
+													Pricing: {
+														FixedPricing: {
+															Amounts: {
+																some: { amount: { gte: amountFilter.gte, lte: amountFilter.lte } },
+															},
+														},
 													},
 												},
 											},

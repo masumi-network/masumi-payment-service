@@ -117,6 +117,14 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           payment.RequestedFunds && payment.RequestedFunds.length > 0
             ? payment.RequestedFunds.map((f) => ({ amount: f.amount, unit: f.unit }))
             : undefined;
+        const selectedAgent = paidAgents.find(
+          (option) => option.optionId === originalFormData.paymentOptionId,
+        );
+        if (!selectedAgent) {
+          throw new Error(
+            'The selected agent option is no longer available. Restart the cycle and select it again.',
+          );
+        }
 
         const requestBody = {
           blockchainIdentifier: payment.blockchainIdentifier,
@@ -130,6 +138,9 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           unlockTime: payment.unlockTime || '',
           externalDisputeUnlockTime: payment.externalDisputeUnlockTime || '',
           metadata: originalFormData.metadata || undefined,
+          ...(selectedAgent.supportedPaymentSourceIndex != null
+            ? { supportedPaymentSourceIndex: selectedAgent.supportedPaymentSourceIndex }
+            : {}),
           ...(amounts ? { Amounts: amounts } : {}),
         };
 
@@ -161,7 +172,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPurchase(false);
       }
     },
-    [apiClient, apiKey, network],
+    [apiClient, apiKey, network, paidAgents],
   );
 
   const onSubmitPayment = useCallback(
