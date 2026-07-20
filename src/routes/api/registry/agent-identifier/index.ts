@@ -138,7 +138,8 @@ const agentMetadataObjectSchema = z.object({
 					.describe('Pricing type for the agent (Dynamic). Amounts are provided per payment/purchase request'),
 			}),
 		)
-		.describe('Pricing information for the agent'),
+		.nullable()
+		.describe('V1 legacy pricing. Null for V2 metadata, which prices each source independently.'),
 	image: z.string().max(250).describe('URL to the agent image/logo'),
 	metadataVersion: z.coerce.number().int().min(1).max(2).describe('Version of the metadata schema'),
 	supportedPaymentSources: supportedPaymentSourcesSchema
@@ -262,7 +263,7 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 		}
 
 		const resolvedAgentPricing = resolveAgentPricingFromMetadata(parsedMetadata.data);
-		if (resolvedAgentPricing == null) {
+		if (parsedMetadata.data.metadata_version === 1 && resolvedAgentPricing == null) {
 			throw createHttpError(422, 'Agent metadata does not advertise any pricing');
 		}
 
@@ -302,17 +303,19 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 					: undefined,
 				Tags: parsedMetadata.data.tags.map((tag) => metadataToString(tag)!),
 				AgentPricing:
-					resolvedAgentPricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: resolvedAgentPricing.pricingType,
-								Pricing: resolvedAgentPricing.fixedPricing.map((price) => ({
-									amount: price.amount.toString(),
-									unit: metadataToString(price.unit)!,
-								})),
-							}
-						: {
-								pricingType: resolvedAgentPricing.pricingType,
-							},
+					parsedMetadata.data.metadata_version >= 2 || resolvedAgentPricing == null
+						? null
+						: resolvedAgentPricing.pricingType == PricingType.Fixed
+							? {
+									pricingType: resolvedAgentPricing.pricingType,
+									Pricing: resolvedAgentPricing.fixedPricing.map((price) => ({
+										amount: price.amount.toString(),
+										unit: metadataToString(price.unit)!,
+									})),
+								}
+							: {
+									pricingType: resolvedAgentPricing.pricingType,
+								},
 				image: metadataToString(parsedMetadata.data.image)!,
 				metadataVersion: parsedMetadata.data.metadata_version,
 				supportedPaymentSources: filterValidSupportedPaymentSources(

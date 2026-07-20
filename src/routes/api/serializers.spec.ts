@@ -198,6 +198,46 @@ describe('route serializers', () => {
 		expect(serialized.CurrentTransaction?.fees).toBe('777');
 	});
 
+	it('fails clearly instead of dropping a persisted V2 source without pricing', () => {
+		const entry = {
+			capabilityName: null,
+			capabilityVersion: null,
+			authorName: 'Author',
+			authorContactEmail: null,
+			authorContactOther: null,
+			authorOrganization: null,
+			privacyPolicy: null,
+			terms: null,
+			other: null,
+			tags: [],
+			Pricing: null,
+			sendFundingLovelace: null,
+			CurrentTransaction: null,
+			SupportedPaymentSources: [
+				{
+					position: 0,
+					chain: 'Cardano',
+					network: 'Preprod',
+					paymentSourceType: 'Web3CardanoV2',
+					address: 'addr_test1missing',
+					scheme: null,
+					dynamicAsset: null,
+					dynamicDecimals: null,
+					fixedDecimals: null,
+					payTo: null,
+					resource: null,
+					extra: null,
+					Pricing: null,
+				},
+			],
+			Verifications: [],
+		} as unknown as Parameters<typeof serializeRegistryEntry>[0];
+
+		expect(() => serializeRegistryEntry(entry)).toThrow(
+			'Persisted payment source 0 on Preprod is missing source-owned pricing',
+		);
+	});
+
 	it('serializes inbox registry transaction fields deterministically', () => {
 		const entry = {
 			sendFundingLovelace: BigInt(7_500_000),

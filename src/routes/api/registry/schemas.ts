@@ -5,7 +5,7 @@ import {
 	RegistrationState,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { supportedPaymentSourcesSchema } from '@/types/payment-source';
+import { atomicAmountSchema, supportedPaymentSourcesSchema } from '@/types/payment-source';
 import { verificationsSchema } from '@/types/verification';
 import { z } from '@masumi/payment-core/zod';
 
@@ -145,7 +145,8 @@ export const registryRequestOutputSchema = z
 						.describe('Pricing type for the agent. Amounts are provided per payment/purchase request'),
 				}),
 			)
-			.describe('Pricing information for the agent'),
+			.nullable()
+			.describe('V1 legacy pricing. Null for V2 entries, whose pricing is owned by each supported payment source.'),
 		sendFundingLovelace: z
 			.string()
 			.nullable()
@@ -241,9 +242,7 @@ export const registerAgentSchemaInput = z.object({
 		),
 	supportedPaymentSources: supportedPaymentSourcesSchema
 		.optional()
-		.describe(
-			'Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.',
-		),
+		.describe('Required for V2 registrations and forbidden for V1 registrations. Every V2 source owns its pricing.'),
 	verifications: verificationsSchema
 		.optional()
 		.describe(
@@ -281,12 +280,13 @@ export const registerAgentSchemaInput = z.object({
 							.describe(
 								'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
 							),
-						amount: z
-							.string()
-							.max(25)
-							.describe(
-								'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)',
-							),
+						// Same bounds as the V2 source-owned pricing amounts: digits
+						// only, positive, within Postgres BIGINT. The old bare
+						// `.max(25)` let `BigInt()` throw a 500 on '1.5'/'abc' and
+						// persisted negative or overlong values.
+						amount: atomicAmountSchema.describe(
+							'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)',
+						),
 					}),
 				)
 				.min(1)
@@ -305,7 +305,10 @@ export const registerAgentSchemaInput = z.object({
 					.describe('Pricing type for the agent. Amounts are provided per payment/purchase request'),
 			}),
 		)
-		.describe('Pricing information for the agent'),
+		.optional()
+		.describe(
+			'Required legacy pricing for V1 registrations and forbidden for V2 registrations. V2 pricing belongs inside supportedPaymentSources[].pricing.',
+		),
 	Legal: z
 		.object({
 			privacyPolicy: z.string().max(250).optional().describe('URL to the privacy policy'),

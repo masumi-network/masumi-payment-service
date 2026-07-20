@@ -115,7 +115,18 @@ export async function lockAndQueryRegistryRequests({
 												include: { FixedPricing: { include: { Amounts: true } } },
 											},
 											ExampleOutputs: true,
-											SupportedPaymentSources: true,
+											SupportedPaymentSources: {
+												orderBy: { position: 'asc' },
+												include: {
+													Pricing: {
+														include: {
+															FixedPricing: {
+																include: { Amounts: true },
+															},
+														},
+													},
+												},
+											},
 											Verifications: true,
 										},
 										orderBy: {

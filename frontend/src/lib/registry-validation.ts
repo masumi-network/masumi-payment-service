@@ -28,6 +28,11 @@ export const INBOX_REGISTRY_LIMITS = {
 
 export const REGISTRY_DECIMAL_ADA_AMOUNT_PATTERN = /^\d+(\.\d{1,6})?$/;
 
+// Largest value Postgres BIGINT (int64) can hold. The backend's
+// atomicAmountSchema bounds every stored token amount by it, so client-side
+// amount validation must mirror the same ceiling.
+export const POSTGRES_BIGINT_MAX = BigInt('9223372036854775807');
+
 // Client-side apiBaseUrl validation shared between registration and migration.
 // Mirrors the zod rules in RegisterAIAgentDialog (valid URL, <= 250 chars, must
 // be http(s)) so an override can't pass the UI and only fail when postRegistry

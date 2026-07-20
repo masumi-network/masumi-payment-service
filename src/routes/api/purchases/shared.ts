@@ -27,6 +27,7 @@ interface PurchaseInitBaseInput {
 	identifierFromPurchaser: string;
 	paymentSourceType: PaymentSourceType;
 	sellerReturnAddress?: string;
+	supportedPaymentSourceIndex?: number;
 }
 
 export async function resolvePurchaseCreationContext({
@@ -112,12 +113,57 @@ export async function resolvePurchaseCreationContext({
 		throw createHttpError(404, 'Agent identifier not found');
 	}
 
+	const decoded = decodeBlockchainIdentifier(input.blockchainIdentifier);
+	if (decoded == null) {
+		throw createHttpError(400, 'Invalid blockchain identifier, format invalid');
+	}
+
 	const parsedMetadata = metadataSchema.safeParse(assetInfo.onchain_metadata);
 	if (!parsedMetadata.success || !parsedMetadata.data) {
 		throw createHttpError(404, 'Agent identifier metadata invalid or unsupported');
 	}
 
-	const pricing = resolveAgentPricingFromMetadata(parsedMetadata.data);
+	const isV2 = input.paymentSourceType === PaymentSourceType.Web3CardanoV2;
+	if (!isV2 && input.supportedPaymentSourceIndex != null) {
+		throw createHttpError(
+			400,
+			'V1 Cardano purchases must not set supportedPaymentSourceIndex; pricing comes from AgentPricing',
+		);
+	}
+	const selectedSource =
+		input.supportedPaymentSourceIndex == null
+			? parsedMetadata.data.supported_payment_sources?.find((source) => metadataToString(source.chain) === 'Cardano')
+			: parsedMetadata.data.supported_payment_sources?.[input.supportedPaymentSourceIndex];
+	if (isV2) {
+		if (selectedSource == null) {
+			throw createHttpError(
+				400,
+				input.supportedPaymentSourceIndex == null
+					? 'Agent metadata does not advertise a Cardano payment source'
+					: `supportedPaymentSourceIndex ${input.supportedPaymentSourceIndex} is not advertised by this agent`,
+			);
+		}
+		if (metadataToString(selectedSource.chain) !== 'Cardano') {
+			throw createHttpError(
+				400,
+				`supportedPaymentSourceIndex ${input.supportedPaymentSourceIndex} does not select a Cardano payment source`,
+			);
+		}
+		if (metadataToString(selectedSource.network) !== input.network) {
+			throw createHttpError(400, 'Selected Cardano payment source network does not match the request network');
+		}
+		if (
+			metadataToString(selectedSource.settlement?.paymentSourceType) !== PaymentSourceType.Web3CardanoV2 ||
+			metadataToString(selectedSource.settlement?.address) !== decoded.smartContractAddress
+		) {
+			throw createHttpError(
+				400,
+				'Selected Cardano payment source settlement does not match the signed smartContractAddress',
+			);
+		}
+	}
+
+	const pricing = resolveAgentPricingFromMetadata(parsedMetadata.data, input.supportedPaymentSourceIndex);
 	if (pricing == null) {
 		throw createHttpError(400, 'Agent metadata does not advertise any pricing');
 	}
@@ -161,11 +207,6 @@ export async function resolvePurchaseCreationContext({
 		}
 	}
 
-	const decoded = decodeBlockchainIdentifier(input.blockchainIdentifier);
-	if (decoded == null) {
-		throw createHttpError(400, 'Invalid blockchain identifier, format invalid');
-	}
-
 	const purchaserId = decoded.purchaserId;
 	const sellerId = decoded.sellerId;
 	if (purchaserId !== input.identifierFromPurchaser) {
@@ -190,7 +231,6 @@ export async function resolvePurchaseCreationContext({
 	}
 
 	const resolvedPaymentSourceType = input.paymentSourceType;
-	const isV2 = resolvedPaymentSourceType === PaymentSourceType.Web3CardanoV2;
 	if (isV2 && decoded.smartContractAddress == null) {
 		throw createHttpError(400, 'Invalid blockchain identifier, V2 must carry smartContractAddress');
 	}
@@ -223,6 +263,7 @@ export async function resolvePurchaseCreationContext({
 		sellerAddress,
 		sellerReturnAddress,
 		smartContractAddress: isV2 ? decoded.smartContractAddress : null,
+		supportedPaymentSourceIndex: input.supportedPaymentSourceIndex,
 		paymentSourceType: resolvedPaymentSourceType,
 	});
 

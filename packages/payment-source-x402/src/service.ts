@@ -1,6 +1,7 @@
 import createHttpError from 'http-errors';
-import type { Network, PaymentPayload, SettleResponse } from '@x402/core/types';
+import type { Network, PaymentPayload, PaymentRequirements, SettleResponse } from '@x402/core/types';
 import {
+	PricingType,
 	Prisma,
 	X402CounterpartyRole,
 	X402FacilitatorMode,
@@ -101,6 +102,7 @@ export {
 export { listX402PaymentAttempts, listX402Settlements } from './queries';
 export { reconcileX402PaymentAttempt } from './reconcile';
 export { createX402Payment } from './pay';
+export { MAX_X402_TIMEOUT_SECONDS } from './requirements';
 export { hashX402PaymentPayload };
 
 async function createSettlement(
@@ -136,18 +138,33 @@ async function createSettlement(
 
 export async function verifyX402Payment({
 	apiKeyId,
+	canAdmin = false,
 	caip2NetworkLimit,
 	supportedPaymentSourceId,
 	paymentPayload,
+	paymentRequirements,
 }: {
 	apiKeyId: string;
+	canAdmin?: boolean;
 	caip2NetworkLimit: string[] | null;
 	supportedPaymentSourceId: string;
 	paymentPayload: PaymentPayload;
+	paymentRequirements?: PaymentRequirements;
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
+	if (
+		source.Pricing?.pricingType === PricingType.Dynamic &&
+		!canAdmin &&
+		source.RegistryRequest.requestedById !== apiKeyId
+	) {
+		// 404, not 403: match the not-found message used by the wallet paths so a
+		// non-owner cannot use this endpoint to probe which source ids exist.
+		// (Legacy sources with a null requestedById stay admin-only by design —
+		// there is no owner to authenticate against.)
+		throw createHttpError(404, 'x402 supported payment source not found');
+	}
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);
-	const requirements = sourceToRequirements(source);
+	const requirements = sourceToRequirements(source, paymentRequirements);
 	if (!isAllowedCaip2Network(caip2NetworkLimit, requirements.network)) {
 		throw createHttpError(401, 'Unauthorized network');
 	}
@@ -185,7 +202,7 @@ export async function verifyX402Payment({
 			registryRequestId: source.registryRequestId,
 			supportedPaymentSourceId,
 			scheme: X402PaymentScheme.Exact,
-			asset: requirements.asset,
+			asset: normalizeAddress(requirements.asset),
 			amount: BigInt(requirements.amount),
 			payTo: normalizeAddress(requirements.payTo),
 			// Attribute to the registered resource only; the payload resource is buyer-supplied
@@ -213,18 +230,33 @@ export async function verifyX402Payment({
 
 export async function settleX402Payment({
 	apiKeyId,
+	canAdmin = false,
 	caip2NetworkLimit,
 	supportedPaymentSourceId,
 	paymentPayload,
+	paymentRequirements,
 }: {
 	apiKeyId: string;
+	canAdmin?: boolean;
 	caip2NetworkLimit: string[] | null;
 	supportedPaymentSourceId: string;
 	paymentPayload: PaymentPayload;
+	paymentRequirements?: PaymentRequirements;
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
+	if (
+		source.Pricing?.pricingType === PricingType.Dynamic &&
+		!canAdmin &&
+		source.RegistryRequest.requestedById !== apiKeyId
+	) {
+		// 404, not 403: match the not-found message used by the wallet paths so a
+		// non-owner cannot use this endpoint to probe which source ids exist.
+		// (Legacy sources with a null requestedById stay admin-only by design —
+		// there is no owner to authenticate against.)
+		throw createHttpError(404, 'x402 supported payment source not found');
+	}
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);
-	const requirements = sourceToRequirements(source);
+	const requirements = sourceToRequirements(source, paymentRequirements);
 	if (!isAllowedCaip2Network(caip2NetworkLimit, requirements.network)) {
 		throw createHttpError(401, 'Unauthorized network');
 	}
@@ -281,7 +313,7 @@ export async function settleX402Payment({
 				registryRequestId: source.registryRequestId,
 				supportedPaymentSourceId,
 				scheme: X402PaymentScheme.Exact,
-				asset: requirements.asset,
+				asset: normalizeAddress(requirements.asset),
 				amount: BigInt(requirements.amount),
 				payTo: normalizeAddress(requirements.payTo),
 				// Registered resource only; never persist the buyer-supplied payload resource.
@@ -385,7 +417,7 @@ export async function settleX402Payment({
 							registryRequestId: source.registryRequestId,
 							supportedPaymentSourceId,
 							scheme: X402PaymentScheme.Exact,
-							asset: requirements.asset,
+							asset: normalizeAddress(requirements.asset),
 							amount: BigInt(requirements.amount),
 							payTo: normalizeAddress(requirements.payTo),
 							// Registered resource only; never persist the buyer-supplied payload resource.
@@ -640,7 +672,7 @@ export async function settleX402Payment({
 			supportedPaymentSourceId,
 			registryRequestId: source.registryRequestId,
 			caip2Network: requirements.network,
-			asset: requirements.asset,
+			asset: normalizeAddress(requirements.asset),
 			amount: requirements.amount,
 			payTo: requirements.payTo,
 			payer: settleResponse.payer ?? null,

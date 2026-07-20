@@ -50,6 +50,10 @@ export const registryEntryExample = {
 			network: Network.Preprod,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 			address: 'addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm',
+			pricing: {
+				pricingType: PricingType.Fixed,
+				fixed: [{ asset: '', amount: '1000000' }],
+			},
 		},
 	],
 	verifications: [

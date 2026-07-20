@@ -268,6 +268,15 @@ export const createPurchaseInitSchemaInput = z
 			.describe(
 				'Optional V2 payment contract address. When omitted, the address is inferred from the signed blockchainIdentifier; when provided, it must match that identifier.',
 			),
+		supportedPaymentSourceIndex: z
+			.number()
+			.int()
+			.min(0)
+			.max(24)
+			.optional()
+			.describe(
+				'The V2 Cardano source index selected when the seller created the payment. The seller signature covers this value. Omit only for legacy V2 identifiers created before source-owned pricing.',
+			),
 		inputHash: z
 			.string()
 			.max(250)

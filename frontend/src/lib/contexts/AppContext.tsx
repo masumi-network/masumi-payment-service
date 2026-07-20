@@ -152,8 +152,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return null;
   });
 
-  const [selectedPaymentSource, setSelectedPaymentSource] = useState<PaymentSourceExtended | null>(
-    null,
+  // Derive the selected source from the persisted id and the current source list.
+  // Keeping a second state value here created a one-render mismatch during source
+  // switches: consumers saw the new id paired with the previous source object and
+  // could cache V1 results under a V2 key (or vice versa).
+  const selectedPaymentSource = useMemo<PaymentSourceExtended | null>(
+    () =>
+      currentNetworkPaymentSources.find((source) => source.id === selectedPaymentSourceId) ?? null,
+    [currentNetworkPaymentSources, selectedPaymentSourceId],
   );
 
   const [isChangingNetwork, setIsChangingNetwork] = useState(false);
@@ -200,7 +206,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronizing localStorage-backed selection with available payment sources requires state updates
         setSelectedPaymentSourceIdAndPersist(null);
       }
-      setSelectedPaymentSource(null);
       return;
     }
 
@@ -211,14 +216,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       foundPaymentSource ?? getPreferredPaymentSource(currentNetworkPaymentSources);
 
     if (!nextPaymentSource) {
-      setSelectedPaymentSource(null);
       return;
     }
 
     if (selectedPaymentSourceId !== nextPaymentSource.id) {
       setSelectedPaymentSourceIdAndPersist(nextPaymentSource.id);
     }
-    setSelectedPaymentSource(nextPaymentSource);
   }, [
     apiKey,
     isLoadingPaymentSources,
@@ -306,7 +309,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAuthorized(false);
     setNetwork('Preprod');
     setSelectedPaymentSourceId(null);
-    setSelectedPaymentSource(null);
     setIsChangingNetwork(false);
     setIsSetupMode(false);
     setSetupWizardStep(0);
