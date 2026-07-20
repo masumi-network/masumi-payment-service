@@ -4,7 +4,7 @@ import { hexToAscii } from '@/lib/utils';
 import formatBalance from '@/lib/formatBalance';
 import { convertBaseUnitsToDecimal } from '@/lib/convertDecimalToBaseUnits';
 import { useRate } from '@/lib/hooks/useRate';
-import { fetchAllUtxos } from '@/lib/wallet-balance';
+import { fetchAddressBalance } from '@/lib/wallet-balance';
 import { getUsdmConfig, USDCX_CONFIG } from '@/lib/constants/defaultWallets';
 import {
   CARDANO_POLICY_ID_HEX_LENGTH,
@@ -75,14 +75,13 @@ export function useTokenBalances(wallet: WalletWithBalance | null) {
     setTokenBalances([]); // Reset balances when refreshing
 
     try {
-      const utxos = await fetchAllUtxos(apiClient, network, wallet.walletAddress);
+      const balance = await fetchAddressBalance(apiClient, network, wallet.walletAddress);
       const balanceMap = new Map<string, bigint>();
 
-      utxos.forEach((utxo) => {
-        utxo.Amounts.forEach((amount) => {
-          const currentAmount = balanceMap.get(amount.unit) || BigInt(0);
-          balanceMap.set(amount.unit, currentAmount + BigInt(amount.quantity || 0));
-        });
+      balance.forEach((amount) => {
+        const unit = amount.unit === '' ? 'lovelace' : amount.unit;
+        const currentAmount = balanceMap.get(unit) || BigInt(0);
+        balanceMap.set(unit, currentAmount + BigInt(amount.quantity || 0));
       });
 
       const tokens: TokenBalance[] = [];
@@ -111,9 +110,8 @@ export function useTokenBalances(wallet: WalletWithBalance | null) {
 
       setTokenBalances(tokens);
     } catch {
-      // Don't set error for no token balances - treat as normal state
       setTokenBalances([]);
-      setError(null);
+      setError('Failed to fetch token balances');
     } finally {
       setIsLoading(false);
     }

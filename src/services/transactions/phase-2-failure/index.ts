@@ -99,7 +99,15 @@ export async function markTransactionPhase2Failed(
 			//    nextActionId; updateMany cannot express relation writes.
 			const paymentRequests = await tx.paymentRequest.findMany({
 				where: { currentTransactionId: transactionId },
-				select: { id: true, nextActionId: true },
+				select: {
+					id: true,
+					nextActionId: true,
+					NextAction: {
+						select: {
+							resultHash: true,
+						},
+					},
+				},
 			});
 			// intentional sequential — Prisma serializes interactive-tx queries on a single connection
 			for (const request of paymentRequests) {
@@ -112,6 +120,7 @@ export async function markTransactionPhase2Failed(
 								requestedAction: PaymentAction.WaitingForManualAction,
 								errorType: PaymentErrorType.Unknown,
 								errorNote: ERROR_NOTE_PHASE_2,
+								resultHash: request.NextAction.resultHash,
 							},
 						},
 					},

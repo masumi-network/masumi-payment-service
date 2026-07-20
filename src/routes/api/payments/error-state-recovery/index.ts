@@ -1,4 +1,4 @@
-import { Network, PaymentAction, TransactionStatus, OnChainState } from '@/generated/prisma/client';
+import { Network, PaymentAction, Prisma, TransactionStatus, OnChainState } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
@@ -12,11 +12,16 @@ import { transformPaymentGetTimestamps, transformPaymentGetAmounts } from '@/uti
 import { assertWalletInScope } from '@/utils/shared/wallet-scope';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { z } from '@masumi/payment-core/zod';
+import { getPaymentRetryAction, getPaymentRetryResultHash } from '@/utils/shared/error-recovery';
 
 export const paymentErrorStateRecoverySchemaInput = z.object({
 	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier of the payment request'),
 	network: z.nativeEnum(Network).describe('The network the transaction was made on'),
 	updatedAt: ez.dateIn().describe('The time of the last update, to ensure you clear the correct error state'),
+	retryPreviousAction: z
+		.boolean()
+		.optional()
+		.describe('When true, retry the failed action. When false or omitted, only clear the error state.'),
 });
 
 export const paymentErrorStateRecoverySchemaOutput = paymentResponseSchema.omit({
@@ -51,6 +56,14 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 			include: {
 				NextAction: true,
 				CurrentTransaction: true,
+				ActionHistory: {
+					orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+					take: 2,
+					select: {
+						requestedAction: true,
+						resultHash: true,
+					},
+				},
 				TransactionHistory: {
 					orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
 				},
@@ -82,6 +95,29 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 
 		if (!paymentRequest.NextAction.errorType) {
 			throw createHttpError(400, 'Payment request is not in an error state. No error to clear.');
+		}
+
+		const previousAction = paymentRequest.ActionHistory[0];
+		const actionBeforePrevious = paymentRequest.ActionHistory[1];
+		const retryAction = previousAction ? getPaymentRetryAction(previousAction.requestedAction) : null;
+		if (input.retryPreviousAction && retryAction == null) {
+			throw createHttpError(400, 'The immediately preceding payment action is not retryable.');
+		}
+
+		const retryResultHash = getPaymentRetryResultHash(
+			paymentRequest.NextAction.resultHash,
+			previousAction,
+			actionBeforePrevious,
+		);
+		if (input.retryPreviousAction && retryAction === PaymentAction.SubmitResultRequested && retryResultHash == null) {
+			throw createHttpError(400, 'The failed submit-result action has no result hash to retry.');
+		}
+
+		const isCompletedState = (
+			[OnChainState.Withdrawn, OnChainState.RefundWithdrawn, OnChainState.DisputedWithdrawn] as OnChainState[]
+		).includes(paymentRequest.onChainState);
+		if (input.retryPreviousAction && isCompletedState) {
+			throw createHttpError(400, 'The payment is already completed and its previous action cannot be retried.');
 		}
 
 		// Find the most recent successful transaction (confirmed or pending)
@@ -119,105 +155,122 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 			lastSuccessfulTransactionStatus: lastSuccessfulTransaction?.status || null,
 			transactionsToFailCount: transactionsToFail.length,
 			transactionsToFailIds: transactionsToFail.map((tx) => tx.id),
+			retryPreviousAction: input.retryPreviousAction === true,
+			retryAction,
 		});
 
 		// Serializable + retry: this handler races concurrent tx-sync handlers
 		// that may advance the same PaymentRequest. Without Serializable
 		// isolation, a concurrent state-machine update can win between this
 		// route's pre-read (line 41-57) and the in-transaction updates here.
-		const result = await retryOnSerializationConflict(
-			() =>
-				prisma.$transaction(
-					async (tx) => {
-						for (const transaction of transactionsToFail) {
-							await tx.transaction.update({
-								where: { id: transaction.id },
-								data: { status: TransactionStatus.FailedViaManualReset },
+		let result;
+		try {
+			result = await retryOnSerializationConflict(
+				() =>
+					prisma.$transaction(
+						async (tx) => {
+							for (const transaction of transactionsToFail) {
+								await tx.transaction.update({
+									where: { id: transaction.id },
+									data: { status: TransactionStatus.FailedViaManualReset },
+								});
+							}
+
+							await tx.paymentRequest.update({
+								where: { id: paymentRequest.id },
+								data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
 							});
-						}
-
-						await tx.paymentRequest.update({
-							where: { id: paymentRequest.id },
-							data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
-						});
-						const isCompletedState =
-							paymentRequest.onChainState &&
-							(
-								[OnChainState.Withdrawn, OnChainState.RefundWithdrawn, OnChainState.DisputedWithdrawn] as OnChainState[]
-							).includes(paymentRequest.onChainState);
-
-						const updatedPaymentRequest = await tx.paymentRequest.update({
-							where: { id: paymentRequest.id },
-							data: {
-								ActionHistory: {
-									connect: {
-										id: paymentRequest.nextActionId,
+							const updatedPaymentRequest = await tx.paymentRequest.update({
+								where: {
+									id: paymentRequest.id,
+									nextActionId: paymentRequest.nextActionId,
+								},
+								data: {
+									ActionHistory: {
+										connect: {
+											id: paymentRequest.nextActionId,
+										},
+									},
+									NextAction: {
+										create: {
+											requestedAction: input.retryPreviousAction
+												? retryAction!
+												: isCompletedState
+													? PaymentAction.None
+													: PaymentAction.WaitingForExternalAction,
+											submittedTxHash: null,
+											...(input.retryPreviousAction && retryAction === PaymentAction.SubmitResultRequested
+												? { resultHash: retryResultHash }
+												: {}),
+										},
 									},
 								},
-								NextAction: {
-									create: {
-										requestedAction: isCompletedState ? PaymentAction.None : PaymentAction.WaitingForExternalAction,
+								include: {
+									BuyerWallet: { select: { id: true, walletVkey: true } },
+									SmartContractWallet: {
+										where: { deletedAt: null },
+										select: { id: true, walletVkey: true, walletAddress: true },
+									},
+									RequestedFunds: { select: { id: true, amount: true, unit: true } },
+									NextAction: {
+										select: {
+											id: true,
+											requestedAction: true,
+											errorType: true,
+											errorNote: true,
+											resultHash: true,
+										},
+									},
+									PaymentSource: {
+										select: {
+											id: true,
+											network: true,
+											paymentSourceType: true,
+											smartContractAddress: true,
+											policyId: true,
+										},
+									},
+									CurrentTransaction: {
+										select: {
+											id: true,
+											createdAt: true,
+											updatedAt: true,
+											fees: true,
+											blockHeight: true,
+											blockTime: true,
+											txHash: true,
+											status: true,
+											previousOnChainState: true,
+											newOnChainState: true,
+											confirmations: true,
+										},
+									},
+									WithdrawnForSeller: {
+										select: { id: true, amount: true, unit: true },
+									},
+									WithdrawnForBuyer: {
+										select: { id: true, amount: true, unit: true },
 									},
 								},
-							},
-							include: {
-								BuyerWallet: { select: { id: true, walletVkey: true } },
-								SmartContractWallet: {
-									where: { deletedAt: null },
-									select: { id: true, walletVkey: true, walletAddress: true },
-								},
-								RequestedFunds: { select: { id: true, amount: true, unit: true } },
-								NextAction: {
-									select: {
-										id: true,
-										requestedAction: true,
-										errorType: true,
-										errorNote: true,
-										resultHash: true,
-									},
-								},
-								PaymentSource: {
-									select: {
-										id: true,
-										network: true,
-										paymentSourceType: true,
-										smartContractAddress: true,
-										policyId: true,
-									},
-								},
-								CurrentTransaction: {
-									select: {
-										id: true,
-										createdAt: true,
-										updatedAt: true,
-										fees: true,
-										blockHeight: true,
-										blockTime: true,
-										txHash: true,
-										status: true,
-										previousOnChainState: true,
-										newOnChainState: true,
-										confirmations: true,
-									},
-								},
-								WithdrawnForSeller: {
-									select: { id: true, amount: true, unit: true },
-								},
-								WithdrawnForBuyer: {
-									select: { id: true, amount: true, unit: true },
-								},
-							},
-						});
-						return updatedPaymentRequest;
-					},
-					{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
-				),
-			{ label: 'payments-error-state-recovery' },
-		);
+							});
+							return updatedPaymentRequest;
+						},
+						{ isolationLevel: 'Serializable', timeout: 30_000, maxWait: 30_000 },
+					),
+				{ label: 'payments-error-state-recovery' },
+			);
+		} catch (error) {
+			if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+				throw createHttpError(409, 'Payment state changed concurrently; retry against the new state');
+			}
+			throw error;
+		}
 
 		logger.info('Error state recovery completed successfully', {
 			paymentRequestId: paymentRequest.id,
 			failedTransactionsCount: transactionsToFail.length,
+			retryPreviousAction: input.retryPreviousAction === true,
+			retryAction,
 		});
 		const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
 

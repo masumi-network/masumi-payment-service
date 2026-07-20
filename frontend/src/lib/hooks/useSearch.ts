@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { usePaymentSourceExtendedAll } from './usePaymentSourceExtendedAll';
 import { useAllWallets } from '../queries/useWallets';
 import { useAppContext } from '../contexts/AppContext';
+import { getWalletTypeTitleLabel } from '../wallet-type';
 
 export interface SearchableItem {
   id: string;
@@ -141,7 +142,7 @@ export function useSearch(enabled = true) {
       if (!currentNetworkSourceIds.has(wallet.paymentSourceId)) return;
       dynamicResults.push({
         id: wallet.walletAddress,
-        title: wallet.type === 'Selling' ? 'Selling Wallet' : 'Buying Wallet',
+        title: getWalletTypeTitleLabel(wallet.type),
         description: (wallet.note ?? '') + ` Address: ${wallet.walletAddress}`,
         type: 'wallet',
         href: `/wallets?searched=${wallet.walletAddress}`,

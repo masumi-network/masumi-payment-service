@@ -23,7 +23,7 @@ import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromHeadV2 } from '../../../utils/mesh-cost-model-sync';
 import { headClockBehindCooldownMs, resolveHydraL2WindowOptions } from '@/utils/hydra/l2-slot-context';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 import { makeHotWalletUnlocker, makePurchaseRequestFailureMarker } from '../../request-failure';
 import { findMatchingPurchaseUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
@@ -48,6 +48,7 @@ import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
+	getWalletUtxosForSelection,
 	intersectTxWindows,
 	pickBatchCollateral,
 	shrinkBatchToFit,
@@ -285,15 +286,7 @@ async function processSinglePurchaseRequest(
 		windowUpperMs: invalidAfterMs,
 	});
 
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
-	// Collateral must cover the pinned 3 ADA total_collateral. limitedFilteredUtxos
-	// is sorted by ASCENDING asset bloat, so [0] can be a pure-ADA DUST UTxO (< 3
-	// ADA) → deterministic phase-1 InsufficientCollateral. Prefer the smallest
-	// qualifying >= 5 ADA UTxO (the same floor the batch path enforces via
-	// pickBatchCollateral); ensureCollateralReady above provisions a 5 ADA
-	// reserve, so this normally succeeds. Fall back to [0] only if the wallet has
-	// nothing larger (no worse than the previous behaviour).
-	const collateralUtxo = pickBatchCollateral(limitedFilteredUtxos, [utxo.input]) ?? limitedFilteredUtxos[0];
+	const collateralUtxo = pickBatchCollateral(utxos, [utxo.input]);
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');
 	}
@@ -311,7 +304,7 @@ async function processSinglePurchaseRequest(
 				address,
 				utxo,
 				collateralUtxo,
-				limitedFilteredUtxos,
+				utxos,
 				datum.value,
 				invalidBefore,
 				invalidAfter,
@@ -345,7 +338,7 @@ async function processSinglePurchaseRequest(
 	// Non-fatal: the tx is already on-chain. A projection failure must NOT
 	// propagate to advancedRetry and rebuild+resubmit an already-broadcast tx.
 	try {
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 	} catch (projectionError) {
 		logger.warn('V2 request-refund single-item: post-submit balance projection failed (non-fatal)', {
 			txHash: newTxHash,
@@ -485,10 +478,10 @@ async function processWalletBatch(
 
 	// Cardano allows a VKey wallet UTxO to appear in both `inputs` and
 	// `collateral_inputs`; only script-locked UTxOs are invalid collateral.
-	// The current V2 builders still maintain a separate collateral reserve for
-	// predictable next-tick readiness. If the wallet has collapsed to a single
-	// UTxO, submit a self-send prep tx to restore that service invariant and
-	// defer the batch to the next tick. ensureCollateralReady leaves
+	// The readiness helper still keeps an additional confirmed UTxO for
+	// predictable next-tick readiness, while Mesh may use the declared
+	// collateral for regular funding. If the wallet has collapsed to a single
+	// UTxO, submit a self-send prep tx and defer the batch. ensureCollateralReady leaves
 	// the wallet locked (via its shared Tx row) when it returns
 	// 'deferred' or 'failed'; wallet-timeouts / tx-sync will release the
 	// lock once the prep tx confirms or times out.
@@ -587,18 +580,10 @@ async function processWalletBatch(
 		return;
 	}
 
-	const spendingUtxoKeys = new Set(
-		validated.map((v) => `${v.smartContractUtxo.input.txHash}#${v.smartContractUtxo.input.outputIndex}`),
+	const walletUtxos = getWalletUtxosForSelection(
+		utxos,
+		validated.map((v) => v.smartContractUtxo.input),
 	);
-	const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
-	const walletUtxos = utxos.filter((utxo) => {
-		const key = `${utxo.input.txHash}#${utxo.input.outputIndex}`;
-		if (key === collateralKey) return false;
-		if (spendingUtxoKeys.has(key)) return false;
-		return true;
-	});
-	const limitedFilteredUtxos = sortAndLimitUtxos(walletUtxos, 8000000);
-
 	const shrinkResult = shrinkBatchToFit(validated, (subset) => {
 		const window = intersectTxWindows(subset.map((v) => v.window));
 		if (window == null) return { ok: false, reason: 'window' };
@@ -682,7 +667,7 @@ async function processWalletBatch(
 					script,
 					address,
 					collateralUtxo,
-					limitedFilteredUtxos,
+					walletUtxos,
 					items,
 					composed.invalidBefore,
 					composed.invalidAfter,
@@ -948,7 +933,7 @@ async function processWalletBatch(
 	}
 
 	try {
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 	} catch (balanceError) {
 		logger.warn('V2 request-refund batch projected balance evaluation failed (non-fatal)', { error: balanceError });
 	}
@@ -1180,8 +1165,8 @@ export async function requestRefundsV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('request_refund_v2 is already running, skipping cycle');
 		return;
 	}
 

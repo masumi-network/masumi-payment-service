@@ -2,6 +2,7 @@ import { webhookQueueService } from './queue.service';
 import { logger } from '@masumi/payment-core/logger';
 import { prisma } from '@masumi/payment-core/db';
 import { WebhookEventType } from '@/generated/prisma/client';
+import type { Prisma } from '@/generated/prisma/client';
 import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 
@@ -13,10 +14,12 @@ type WalletLowBalanceWebhookData = WebhookPayloadDataByEvent<'WALLET_LOW_BALANCE
 type X402PaymentWebhookEvent = 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED';
 type X402PaymentWebhookData = WebhookPayloadDataByEvent<X402PaymentWebhookEvent>;
 type X402WalletLowBalanceWebhookData = WebhookPayloadDataByEvent<'X402_WALLET_LOW_BALANCE'>;
+type PaymentWebhookQueryClient = Pick<Prisma.TransactionClient, 'paymentRequest'>;
+type PurchaseWebhookQueryClient = Pick<Prisma.TransactionClient, 'purchaseRequest'>;
 
 class WebhookEventsService {
-	private async queryPurchaseForWebhook(purchaseId: string) {
-		return prisma.purchaseRequest.findUnique({
+	private async queryPurchaseForWebhook(purchaseId: string, client: PurchaseWebhookQueryClient = prisma) {
+		return client.purchaseRequest.findUnique({
 			where: { id: purchaseId },
 			include: {
 				SellerWallet: true,
@@ -33,8 +36,8 @@ class WebhookEventsService {
 		});
 	}
 
-	private async queryPaymentForWebhook(paymentId: string) {
-		return prisma.paymentRequest.findUnique({
+	private async queryPaymentForWebhook(paymentId: string, client: PaymentWebhookQueryClient = prisma) {
+		return client.paymentRequest.findUnique({
 			where: { id: paymentId },
 			include: {
 				BuyerWallet: true,
@@ -203,6 +206,81 @@ class WebhookEventsService {
 
 	async triggerPaymentOnError(paymentId: string): Promise<void> {
 		await this.triggerGenericWebhook(WebhookEventType.PAYMENT_ON_ERROR, paymentId, 'payment');
+	}
+
+	async queuePurchaseOnErrorInTransaction(tx: Prisma.TransactionClient, purchaseId: string): Promise<void> {
+		const purchase = await this.queryPurchaseForWebhook(purchaseId, tx);
+		if (purchase == null) {
+			throw new Error(`Purchase ${purchaseId} not found while queuing error webhook`);
+		}
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.PURCHASE_ON_ERROR,
+			this.formatPurchaseForWebhook(purchase),
+			purchase.blockchainIdentifier,
+			purchase.PaymentSource.id,
+		);
+	}
+
+	async queuePaymentOnErrorInTransaction(tx: Prisma.TransactionClient, paymentId: string): Promise<void> {
+		const payment = await this.queryPaymentForWebhook(paymentId, tx);
+		if (payment == null) {
+			throw new Error(`Payment ${paymentId} not found while queuing error webhook`);
+		}
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.PAYMENT_ON_ERROR,
+			this.formatPaymentForWebhook(payment),
+			payment.blockchainIdentifier,
+			payment.PaymentSource.id,
+		);
+	}
+
+	// Fund-distribution lifecycle events are queued exclusively through the
+	// strict in-transaction variants below: the webhook row must commit (or
+	// roll back) with the domain transition it describes. There is no
+	// best-effort post-commit trigger path on purpose.
+
+	async queueFundDistributionSent(
+		tx: Prisma.TransactionClient,
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_SENT'>,
+		paymentSourceId: string,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.FUND_DISTRIBUTION_SENT,
+			payload,
+			payload.fundWalletId,
+			paymentSourceId,
+		);
+	}
+
+	async queueFundDistributionConfirmed(
+		tx: Prisma.TransactionClient,
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_CONFIRMED'>,
+		paymentSourceId: string,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.FUND_DISTRIBUTION_CONFIRMED,
+			payload,
+			payload.fundWalletId,
+			paymentSourceId,
+		);
+	}
+
+	async queueFundDistributionFailed(
+		tx: Prisma.TransactionClient,
+		payload: WebhookPayloadDataByEvent<'FUND_DISTRIBUTION_FAILED'>,
+		paymentSourceId: string,
+	): Promise<void> {
+		await webhookQueueService.queueWebhookInTransaction(
+			tx,
+			WebhookEventType.FUND_DISTRIBUTION_FAILED,
+			payload,
+			payload.fundWalletId,
+			paymentSourceId,
+		);
 	}
 
 	async triggerWalletLowBalance(payload: WalletLowBalanceWebhookData): Promise<void> {

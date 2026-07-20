@@ -1,4 +1,4 @@
-import { CONFIG } from '@masumi/payment-core/config';
+import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { web3CardanoV1, web3CardanoV2 } from '@/services/payment-source-types';
 import {
 	checkLatestTransactions,
@@ -7,7 +7,12 @@ import {
 	unlockStaleOrphanWalletLocks,
 	updateWalletTransactionHash,
 } from '@/services/transactions';
-import { walletLowBalanceMonitorService } from '@/services/wallets';
+import {
+	walletLowBalanceMonitorService,
+	fundDistributionService,
+	processFundTransfers,
+	checkFundTransferConfirmations,
+} from '@/services/wallets';
 import { webhookQueueService } from '@/services/webhooks';
 import { runX402LowBalanceMonitoringCycle } from '@/services/x402/low-balance-monitor';
 import type { JobDefinition } from '@/services/shared';
@@ -275,6 +280,16 @@ export const scheduledJobs: JobDefinition[] = [
 		run: () => walletLowBalanceMonitorService.runScheduledMonitoringCycle(),
 	},
 	{
+		// 57500 keeps the staggered startup on its own scheduler slot — 55000
+		// and 60000 are taken by the fund-transfer processor and confirmation
+		// checker, which also lock hot wallets and call Blockfrost at startup.
+		initialDelayMs: 57500,
+		intervalMs: CONSTANTS.FUND_DISTRIBUTION_CHECK_INTERVAL_S * 1000,
+		startMessage: 'Starting fund distribution processing',
+		finishMessage: 'Finished fund distribution processing',
+		run: () => fundDistributionService.processDistributionCycle(),
+	},
+	{
 		initialDelayMs: 2750,
 		intervalMs: CONFIG.LOW_BALANCE_CHECK_INTERVAL * 1000,
 		startMessage: 'Starting x402 low balance monitoring',
@@ -299,6 +314,20 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting orphan action-data cleanup',
 		finishMessage: 'Finished orphan action-data cleanup',
 		run: cleanupOrphanActionData,
+	},
+	{
+		initialDelayMs: 55000,
+		intervalMs: CONFIG.CHECK_FUND_TRANSFER_INTERVAL * 1000,
+		startMessage: 'Starting fund transfer processor',
+		finishMessage: 'Finished fund transfer processor',
+		run: processFundTransfers,
+	},
+	{
+		initialDelayMs: 60000,
+		intervalMs: CONFIG.CHECK_FUND_TRANSFER_CONFIRMATION_INTERVAL * 1000,
+		startMessage: 'Starting fund transfer confirmation checker',
+		finishMessage: 'Finished fund transfer confirmation checker',
+		run: checkFundTransferConfirmations,
 	},
 	{
 		initialDelayMs: 15000,

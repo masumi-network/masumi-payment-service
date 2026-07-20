@@ -9,7 +9,13 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { chainsForEnv, isTestnetEnv, X402_ACCENT } from '@/lib/x402-rail';
+import {
+  chainsForEnv,
+  hasBudgetOnEnabledNetworks,
+  isTestnetEnv,
+  walletsForNetworks,
+  X402_ACCENT,
+} from '@/lib/x402-rail';
 import { X402Network, X402Wallet } from '@/lib/api/generated';
 import { CreateWalletDialog } from '@/components/x402/WalletsTab';
 import { ChainDialog } from '@/components/x402/ChainsTab';
@@ -58,26 +64,33 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   const loading = !authorized || walletsLoading || networksLoading || budgetsLoading;
 
   const envChains = useMemo(() => chainsForEnv(networks, networkType), [networks, networkType]);
+  const envWallets = useMemo(() => walletsForNetworks(wallets, envChains), [wallets, envChains]);
   // Wallets are split by direction: a Selling wallet settles inbound payments (facilitator),
   // a Purchasing wallet funds outbound ones (budget). Each step owns its type.
-  const hasSellingWallet = wallets.some((wallet) => wallet.type === 'Selling');
-  const hasPurchasingWallet = wallets.some((wallet) => wallet.type === 'Purchasing');
-  const hasFacilitator = envChains.some((chain) => !!chain.facilitatorWalletId);
-  const configuredChain = envChains.find((chain) => !!chain.facilitatorWalletId) ?? null;
-  // Scope budgets to the active environment so a budget on the other env doesn't mark this
-  // env's optional step complete.
-  const envCaip2 = useMemo(() => {
-    const wantTestnet = isTestnetEnv(networkType);
-    return new Set(networks.filter((n) => n.isTestnet === wantTestnet).map((n) => n.caip2Id));
-  }, [networks, networkType]);
-  const hasBudget = budgets.some((budget) => envCaip2.has(budget.caip2Network));
+  const hasSellingWallet = envWallets.some((wallet) => wallet.type === 'Selling');
+  const hasPurchasingWallet = envWallets.some((wallet) => wallet.type === 'Purchasing');
+  const hasFacilitator = envChains.some(
+    (chain) => !!chain.facilitatorWalletId || !!chain.facilitatorUrl,
+  );
+  const configuredChain =
+    envChains.find((chain) => !!chain.facilitatorWalletId || !!chain.facilitatorUrl) ?? null;
+  // Scope budgets to enabled chains in this environment so a preconfigured budget on a disabled
+  // or other-environment chain cannot mark the optional outbound step complete.
+  const hasBudget = useMemo(
+    () => hasBudgetOnEnabledNetworks(budgets, envChains),
+    [budgets, envChains],
+  );
 
   // Prefer attaching a facilitator to an enabled chain in the active env that lacks one (Base
   // ships preconfigured), then any chain in the same env, never crossing environments.
   const chainToConfigure: X402Network | null = useMemo(() => {
     const wantTestnet = isTestnetEnv(networkType);
     const envScoped = networks.filter((n) => n.isTestnet === wantTestnet);
-    return envScoped.find((n) => n.isEnabled && !n.facilitatorWalletId) ?? envScoped[0] ?? null;
+    return (
+      envScoped.find((n) => n.isEnabled && !n.facilitatorWalletId && !n.facilitatorUrl) ??
+      envScoped[0] ??
+      null
+    );
   }, [networks, networkType]);
 
   const invalidate = () => {
@@ -93,7 +106,8 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
 
   const finish = () => {
     // Read the chain from the current render BEFORE invalidating (invalidation is async).
-    const configured = envChains.find((c) => !!c.facilitatorWalletId) ?? envChains[0] ?? null;
+    const configured =
+      envChains.find((c) => !!c.facilitatorWalletId || !!c.facilitatorUrl) ?? envChains[0] ?? null;
     if (configured) setSelectedX402ChainId(configured.id);
     setActiveRail('x402');
     setIsSetupMode(false);
@@ -104,7 +118,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   // Chips for the wallets the operator already has of a direction, so each step reflects state
   // rather than re-asking them to create one.
   const walletChips = (type: X402Wallet['type']) => {
-    const matching = wallets.filter((wallet) => wallet.type === type);
+    const matching = envWallets.filter((wallet) => wallet.type === type);
     if (matching.length === 0) return null;
     return (
       <div className="flex flex-wrap justify-center gap-1.5">
@@ -181,8 +195,8 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
         <StepHeaderIcon icon={Link2} />
         <h1 className="text-2xl font-bold tracking-tight">Enable receiving payments</h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-          Create a Selling wallet and assign it as the facilitator on an EVM chain (Base is
-          preconfigured) so your agents can be paid over x402.
+          Assign an owned Selling wallet or a remote facilitator on an EVM chain so your agents can
+          be paid over x402.
         </p>
       </div>
 
@@ -201,20 +215,23 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
           <p className="text-xs text-muted-foreground">
             {hasSellingWallet
               ? 'Assign your Selling wallet as a chain facilitator to start receiving.'
-              : 'Create a Selling wallet to act as the chain facilitator.'}
+              : 'Configure a remote facilitator, or create a Selling wallet for self-hosted settlement.'}
           </p>
         )}
-        <Button
-          variant={hasFacilitator ? 'outline' : 'default'}
-          className="gap-2"
-          onClick={() => (hasSellingWallet ? setOpenDialog('chain') : openWalletDialog('Selling'))}
-        >
-          {!hasSellingWallet
-            ? 'Create selling wallet'
-            : hasFacilitator
-              ? 'Manage chain'
-              : 'Assign facilitator'}
-        </Button>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button
+            variant={hasFacilitator ? 'outline' : 'default'}
+            className="gap-2"
+            onClick={() => setOpenDialog('chain')}
+          >
+            {hasFacilitator ? 'Manage chain' : 'Configure facilitator'}
+          </Button>
+          {!hasFacilitator && !hasSellingWallet && (
+            <Button variant="outline" onClick={() => openWalletDialog('Selling')}>
+              Create selling wallet
+            </Button>
+          )}
+        </div>
       </Card>
 
       <div className="flex items-center justify-between pt-6">

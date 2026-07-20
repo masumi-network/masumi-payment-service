@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'react-toastify';
 import { formatDateTime } from '@/lib/format-date';
 import { rowActivation } from '@/lib/a11y';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Spinner } from '@/components/ui/spinner';
@@ -16,21 +18,43 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { RefreshButton } from '@/components/RefreshButton';
 import {
-  useX402Networks,
+  useAvailableX402Networks,
   useX402PaymentAttempts,
   type X402PaymentFilters,
 } from '@/lib/hooks/useX402';
-import { groupDigits, shortenAddress } from '@/lib/utils';
+import { cn, groupDigits, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { X402PaymentAttempt } from '@/lib/api/generated';
+import { useApiMutation } from '@/lib/hooks/useApiMutation';
+import {
+  postX402PaymentsReconcile,
+  type PostX402PaymentsReconcileData,
+  X402PaymentAttempt,
+} from '@/lib/api/generated';
+
+const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
+
+// Mirrors the backend's SETTLE_STALE_MS: an ambiguous settle younger than this may still be live,
+// so the backend refuses to reconcile it and the panel must not offer to.
+const SETTLE_STALE_MS = 300_000;
 
 const ALL = '__all__';
+
+// Primary view switcher (mirrors Cardano's Payments/Purchases split): Pay = outbound, Receive =
+// both inbound directions, Needs action = the reconciliation backlog.
+type PaymentView = 'all' | 'buy' | 'sell' | 'needs';
+const VIEW_OPTIONS: { key: PaymentView; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'buy', label: 'Pay' },
+  { key: 'sell', label: 'Receive' },
+  { key: 'needs', label: 'Needs action' },
+];
 
 const STATUS_OPTIONS: X402PaymentAttempt['status'][] = [
   'PaymentRequired',
@@ -38,12 +62,6 @@ const STATUS_OPTIONS: X402PaymentAttempt['status'][] = [
   'Settled',
   'Failed',
   'Replayed',
-];
-
-const DIRECTION_OPTIONS: X402PaymentAttempt['direction'][] = [
-  'InboundVerify',
-  'InboundSettle',
-  'OutboundPayment',
 ];
 
 const STATUS_VARIANT: Record<X402PaymentAttempt['status'], BadgeProps['variant']> = {
@@ -61,10 +79,18 @@ const DIRECTION_LABEL: Record<X402PaymentAttempt['direction'], string> = {
 };
 
 export function PaymentsTab() {
-  const { networks } = useX402Networks();
+  const { networks } = useAvailableX402Networks();
   const { activeRail, selectedX402ChainId } = useAppContext();
   const [filters, setFilters] = useState<X402PaymentFilters>({});
   const [selected, setSelected] = useState<X402PaymentAttempt | null>(null);
+  // Captured when the details dialog opens (event time, render stays pure); the reconcile
+  // panel compares it against the attempt's updatedAt to apply the backend's staleness gate.
+  const [detailsOpenedAt, setDetailsOpenedAt] = useState(0);
+  const openDetails = (attempt: X402PaymentAttempt) => {
+    setSelected(attempt);
+    // eslint-disable-next-line react-hooks/purity -- Event handler (invoked via onClick/rowActivation, never during render); the open-time snapshot is exactly what the staleness gate needs.
+    setDetailsOpenedAt(Date.now());
+  };
 
   // On the EVM rail, scope the payment list to the chain selected in the sidebar, and keep
   // it in sync when that selection changes. A manual chain filter persists until the
@@ -79,7 +105,6 @@ export function PaymentsTab() {
     if (!selectedX402ChainId) {
       if (lastAppliedCaip2.current !== undefined) {
         lastAppliedCaip2.current = undefined;
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- Clears the stale chain scope when the sidebar selection is cleared.
         setFilters((prev) => (prev.caip2Network ? { ...prev, caip2Network: undefined } : prev));
       }
       return;
@@ -98,57 +123,74 @@ export function PaymentsTab() {
   const chainLabel = (caip2: string) =>
     networks.find((n) => n.caip2Id === caip2)?.displayName ?? caip2;
 
+  // The switcher is the primary control; it maps to the coarse side/needs-action filters.
+  const activeView: PaymentView = filters.needsManualAction ? 'needs' : (filters.side ?? 'all');
+  const setView = (view: PaymentView) =>
+    setFilters((prev) => ({
+      ...prev,
+      side: view === 'buy' ? 'buy' : view === 'sell' ? 'sell' : undefined,
+      needsManualAction: view === 'needs' ? true : undefined,
+      // Needs-action pins its own set of states, so drop any status refinement.
+      status: view === 'needs' ? undefined : prev.status,
+    }));
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Every x402 payment this service signed (outbound) or verified and settled (inbound), newest
-        first. Filter by status, direction or chain.
+        Every x402 payment this service signed (Pay / outbound) or verified and settled (Receive /
+        inbound), newest first. Use the switcher for the buy vs sell side or the reconciliation
+        backlog.
       </p>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={filters.status ?? ALL}
-            onValueChange={(value) =>
-              setFilters((prev) => ({
-                ...prev,
-                status: value === ALL ? undefined : (value as X402PaymentAttempt['status']),
-              }))
-            }
+          <div
+            className="inline-flex rounded-lg border bg-muted/40 p-0.5"
+            role="group"
+            aria-label="Payment view"
           >
-            <SelectTrigger className="w-[170px]">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All statuses</SelectItem>
-              {STATUS_OPTIONS.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {status}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            {VIEW_OPTIONS.map((v) => (
+              <button
+                key={v.key}
+                type="button"
+                onClick={() => setView(v.key)}
+                aria-pressed={activeView === v.key}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                  activeView === v.key
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
 
-          <Select
-            value={filters.direction ?? ALL}
-            onValueChange={(value) =>
-              setFilters((prev) => ({
-                ...prev,
-                direction: value === ALL ? undefined : (value as X402PaymentAttempt['direction']),
-              }))
-            }
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="All directions" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All directions</SelectItem>
-              {DIRECTION_OPTIONS.map((direction) => (
-                <SelectItem key={direction} value={direction}>
-                  {DIRECTION_LABEL[direction]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {activeView !== 'needs' && (
+            <Select
+              value={filters.status ?? ALL}
+              onValueChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  status: value === ALL ? undefined : (value as X402PaymentAttempt['status']),
+                }))
+              }
+            >
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value={ALL}>All statuses</SelectItem>
+                  {STATUS_OPTIONS.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          )}
 
           <Select
             value={filters.caip2Network ?? ALL}
@@ -163,12 +205,14 @@ export function PaymentsTab() {
               <SelectValue placeholder="All chains" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All chains</SelectItem>
-              {networks.map((network) => (
-                <SelectItem key={network.id} value={network.caip2Id}>
-                  {network.displayName}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                <SelectItem value={ALL}>All chains</SelectItem>
+                {networks.map((network) => (
+                  <SelectItem key={network.id} value={network.caip2Id}>
+                    {network.displayName}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
         </div>
@@ -223,8 +267,8 @@ export function PaymentsTab() {
                   key={attempt.id}
                   className="border-b last:border-0 cursor-pointer hover:bg-muted/40"
                   aria-label="View payment attempt details"
-                  onClick={() => setSelected(attempt)}
-                  {...rowActivation(() => setSelected(attempt))}
+                  onClick={() => openDetails(attempt)}
+                  {...rowActivation(() => openDetails(attempt))}
                 >
                   <td className="p-4 text-sm">{DIRECTION_LABEL[attempt.direction]}</td>
                   <td className="p-4">
@@ -256,7 +300,12 @@ export function PaymentsTab() {
       <PaymentDetailsDialog
         attempt={selected}
         chainLabel={selected ? chainLabel(selected.caip2Network) : ''}
+        openedAtMs={detailsOpenedAt}
         onClose={() => setSelected(null)}
+        onReconciled={() => {
+          setSelected(null);
+          refetch();
+        }}
       />
     </div>
   );
@@ -281,14 +330,28 @@ function DetailRow({
   );
 }
 
+// A mono value with a copy button, for ids / hashes / addresses.
+function CopyValue({ value }: { value: string }) {
+  return (
+    <span className="flex items-center justify-end gap-1">
+      <span className="font-mono text-sm text-right break-all">{value}</span>
+      <CopyButton value={value} />
+    </span>
+  );
+}
+
 function PaymentDetailsDialog({
   attempt,
   chainLabel,
+  openedAtMs,
   onClose,
+  onReconciled,
 }: {
   attempt: X402PaymentAttempt | null;
   chainLabel: string;
+  openedAtMs: number;
   onClose: () => void;
+  onReconciled: () => void;
 }) {
   return (
     <Dialog open={!!attempt} onOpenChange={(value) => !value && onClose()}>
@@ -301,21 +364,65 @@ function PaymentDetailsDialog({
         {attempt && (
           <div className="space-y-4">
             <div className="rounded-lg border p-3">
+              <p className="text-sm font-medium mb-2">Overview</p>
+              <DetailRow label="Attempt id" value={<CopyValue value={attempt.id} />} />
               <DetailRow label="Direction" value={DIRECTION_LABEL[attempt.direction]} />
               <DetailRow
                 label="Status"
                 value={<Badge variant={STATUS_VARIANT[attempt.status]}>{attempt.status}</Badge>}
               />
               <DetailRow label="Chain" value={chainLabel} />
+              <DetailRow label="Created" value={formatDateTime(attempt.createdAt)} />
+              <DetailRow label="Updated" value={formatDateTime(attempt.updatedAt)} />
+              <DetailRow label="API key" value={attempt.apiKeyId} mono />
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="text-sm font-medium mb-2">Payment</p>
               <DetailRow label="Amount (base units)" value={attempt.amount} mono />
               <DetailRow label="Asset" value={attempt.asset} mono />
-              <DetailRow label="Pay to" value={attempt.payTo} mono />
-              {attempt.payer && <DetailRow label="Payer" value={attempt.payer} mono />}
+              <DetailRow label="Pay to" value={attempt.payTo ?? '—'} mono={!!attempt.payTo} />
+              <DetailRow label="Payer" value={attempt.payer ?? '—'} mono={!!attempt.payer} />
               {attempt.resource && <DetailRow label="Resource" value={attempt.resource} mono />}
               {attempt.paymentIdentifier && (
                 <DetailRow label="Payment identifier" value={attempt.paymentIdentifier} mono />
               )}
-              <DetailRow label="Created" value={formatDateTime(attempt.createdAt)} />
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="text-sm font-medium mb-2">Wallet &amp; facilitator</p>
+              {attempt.direction === 'OutboundPayment' ? (
+                <DetailRow
+                  label="Signing wallet"
+                  value={attempt.evmWalletId ? <CopyValue value={attempt.evmWalletId} /> : '—'}
+                />
+              ) : attempt.facilitator ? (
+                <DetailRow
+                  label="Facilitator"
+                  value={
+                    attempt.facilitator.mode === 'remote'
+                      ? 'Remote facilitator'
+                      : attempt.facilitator.mode === 'self_hosted'
+                        ? (attempt.facilitator.address ?? 'Self-hosted wallet')
+                        : 'Unknown (legacy attempt)'
+                  }
+                  mono={attempt.facilitator.mode === 'self_hosted' && !!attempt.facilitator.address}
+                />
+              ) : (
+                <DetailRow label="Facilitator" value="—" />
+              )}
+              {attempt.supportedPaymentSourceId && (
+                <DetailRow
+                  label="Payment source"
+                  value={<CopyValue value={attempt.supportedPaymentSourceId} />}
+                />
+              )}
+              {attempt.registryRequestId && (
+                <DetailRow
+                  label="Registry request"
+                  value={<CopyValue value={attempt.registryRequestId} />}
+                />
+              )}
             </div>
 
             {attempt.errorReason && (
@@ -355,11 +462,119 @@ function PaymentDetailsDialog({
                 {attempt.Settlement.payer && (
                   <DetailRow label="Payer" value={attempt.Settlement.payer} mono />
                 )}
+                <DetailRow
+                  label="Settled at"
+                  value={formatDateTime(attempt.Settlement.createdAt)}
+                />
               </div>
             )}
+
+            <ReconcileSection
+              attempt={attempt}
+              openedAtMs={openedAtMs}
+              onReconciled={onReconciled}
+            />
           </div>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// An inbound settle can get stuck when the on-chain settle result is ambiguous (the settle threw
+// or crashed after broadcasting). Only an operator can resolve it — by confirming on-chain whether
+// funds moved. Every Verified marker must first become stale: even one carrying an error can belong
+// to a remote facilitator that accepted the request before this node lost the response.
+function ReconcileSection({
+  attempt,
+  openedAtMs,
+  onReconciled,
+}: {
+  attempt: X402PaymentAttempt;
+  openedAtMs: number;
+  onReconciled: () => void;
+}) {
+  const { apiClient } = useAppContext();
+  const [txHash, setTxHash] = useState('');
+  const [pendingResolution, setPendingResolution] = useState<'settled' | 'failed' | null>(null);
+  const reconcile = useApiMutation({
+    mutationFn: (body: NonNullable<PostX402PaymentsReconcileData['body']>) =>
+      postX402PaymentsReconcile({ client: apiClient, body }),
+    // Every filter combination is its own query key; invalidate the whole keyspace so the
+    // "Needs action" view can't keep showing an already-reconciled attempt from its cache.
+    invalidateKeys: [['x402-payments']],
+    errorMessage: 'Failed to reconcile payment',
+  });
+
+  const isStale = openedAtMs - new Date(attempt.updatedAt).getTime() > SETTLE_STALE_MS;
+  const settledMissingRecord = attempt.status === 'Settled' && !attempt.Settlement && isStale;
+  const ambiguousVerified = attempt.status === 'Verified' && isStale;
+  const isReconcilable =
+    attempt.direction === 'InboundSettle' && (ambiguousVerified || settledMissingRecord);
+  if (!isReconcilable) return null;
+
+  const txHashValid = TX_HASH_REGEX.test(txHash);
+  const submit = async (resolution: 'settled' | 'failed') => {
+    setPendingResolution(resolution);
+    const body: NonNullable<PostX402PaymentsReconcileData['body']> =
+      resolution === 'settled'
+        ? { attemptId: attempt.id, resolution, txHash }
+        : { attemptId: attempt.id, resolution };
+    const response = await reconcile
+      .mutateAsync(body)
+      .catch(() => null)
+      .finally(() => setPendingResolution(null));
+    if (!response) return;
+    toast.success(resolution === 'settled' ? 'Marked settled' : 'Marked failed');
+    onReconciled();
+  };
+
+  return (
+    <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 space-y-3 dark:border-amber-900/40 dark:bg-amber-950/20">
+      <div>
+        <p className="text-sm font-medium">Needs reconciliation</p>
+        <p className="text-xs text-muted-foreground">
+          The settle outcome is unknown. Confirm on-chain whether the funds moved, then record it.
+        </p>
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor="reconcile-txhash" className="text-xs font-medium text-muted-foreground">
+          Settlement tx hash
+        </label>
+        <Input
+          id="reconcile-txhash"
+          placeholder="0x… 32-byte tx hash"
+          className="font-mono text-xs"
+          value={txHash}
+          onChange={(e) => setTxHash(e.target.value.trim())}
+          aria-invalid={txHash !== '' && !txHashValid}
+          aria-describedby="reconcile-txhash-hint"
+        />
+        <p id="reconcile-txhash-hint" className="text-xs text-muted-foreground">
+          {txHash !== '' && !txHashValid
+            ? 'Not a valid transaction hash — expected 0x followed by 64 hex characters.'
+            : 'Required to mark the attempt settled.'}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          disabled={!txHashValid || reconcile.isPending}
+          onClick={() => submit('settled')}
+        >
+          {pendingResolution === 'settled' ? 'Saving…' : 'Mark settled'}
+        </Button>
+        {!settledMissingRecord && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={reconcile.isPending}
+            onClick={() => submit('failed')}
+          >
+            {pendingResolution === 'failed' ? 'Saving…' : 'Mark failed (retryable)'}
+          </Button>
+        )}
+      </div>
+    </div>
   );
 }

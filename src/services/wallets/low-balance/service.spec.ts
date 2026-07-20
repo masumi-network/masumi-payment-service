@@ -12,8 +12,10 @@ const mockHotWalletFindFirst = jest.fn() as AnyMock;
 const mockHotWalletFindMany = jest.fn() as AnyMock;
 const mockCreateLowBalanceRule = jest.fn() as AnyMock;
 const mockUpdateLowBalanceRule = jest.fn() as AnyMock;
+const mockDeleteLowBalanceRule = jest.fn() as AnyMock;
 const mockFindUniqueLowBalanceRule = jest.fn() as AnyMock;
-const mockGenerateWalletExtended = jest.fn() as AnyMock;
+const mockDistributionUpdateMany = jest.fn() as AnyMock;
+const mockFetchAddressBalanceMap = jest.fn() as AnyMock;
 const mockLoggerInfo = jest.fn() as AnyMock;
 const mockLoggerWarn = jest.fn() as AnyMock;
 const mockLoggerError = jest.fn() as AnyMock;
@@ -21,6 +23,7 @@ const mockLoggerError = jest.fn() as AnyMock;
 const HotWalletType = {
 	Purchasing: 'Purchasing',
 	Selling: 'Selling',
+	Funding: 'Funding',
 } as const;
 
 const Network = {
@@ -43,6 +46,9 @@ jest.unstable_mockModule('@/generated/prisma/client', () => ({
 	HotWalletType,
 	Network,
 	PaymentSourceType,
+	FundDistributionPriority: { Warning: 'Warning', Critical: 'Critical' },
+	FundDistributionStatus: { Pending: 'Pending', Submitted: 'Submitted', Confirmed: 'Confirmed', Failed: 'Failed' },
+	TransactionStatus: { Pending: 'Pending', Submitted: 'Submitted', Confirmed: 'Confirmed' },
 }));
 
 jest.unstable_mockModule('@/generated/prisma/enums', () => ({
@@ -52,12 +58,22 @@ jest.unstable_mockModule('@/generated/prisma/enums', () => ({
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		$transaction: async (
-			callback: (tx: { hotWalletLowBalanceRule: { updateMany: typeof mockUpdateMany } }) => Promise<unknown>,
+			callback: (tx: {
+				hotWalletLowBalanceRule: {
+					updateMany: typeof mockUpdateMany;
+					update: typeof mockUpdateLowBalanceRule;
+					delete: typeof mockDeleteLowBalanceRule;
+				};
+				fundDistributionRequest: { updateMany: typeof mockDistributionUpdateMany };
+			}) => Promise<unknown>,
 		) =>
 			callback({
 				hotWalletLowBalanceRule: {
 					updateMany: mockUpdateMany,
+					update: mockUpdateLowBalanceRule,
+					delete: mockDeleteLowBalanceRule,
 				},
+				fundDistributionRequest: { updateMany: mockDistributionUpdateMany },
 			}),
 		hotWallet: {
 			findFirst: mockHotWalletFindFirst,
@@ -66,6 +82,7 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 		hotWalletLowBalanceRule: {
 			create: mockCreateLowBalanceRule,
 			update: mockUpdateLowBalanceRule,
+			delete: mockDeleteLowBalanceRule,
 			findUnique: mockFindUniqueLowBalanceRule,
 			createMany: jest.fn(),
 		},
@@ -76,6 +93,15 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 	CONFIG: {
 		LOW_BALANCE_DEFAULT_RULES_MAINNET: [],
 		LOW_BALANCE_DEFAULT_RULES_PREPROD: [],
+	},
+	CONSTANTS: {
+		MIN_TX_FEE_BUFFER_LOVELACE: 2000000n,
+	},
+}));
+
+jest.unstable_mockModule('@/services/wallets/fund-distribution', () => ({
+	fundDistributionService: {
+		requestTopup: jest.fn(),
 	},
 }));
 
@@ -95,8 +121,8 @@ jest.unstable_mockModule('@masumi/payment-core/metrics', () => ({
 	recordWalletLowBalanceAlert: mockRecordWalletLowBalanceAlert,
 }));
 
-jest.unstable_mockModule('@/utils/generator/wallet-generator', () => ({
-	generateWalletExtended: mockGenerateWalletExtended,
+jest.unstable_mockModule('@/services/shared/address-balance', () => ({
+	fetchAddressBalanceMap: mockFetchAddressBalanceMap,
 }));
 
 jest.unstable_mockModule('@/services/webhooks', () => ({
@@ -115,7 +141,6 @@ jest.unstable_mockModule('@opentelemetry/api', () => ({
 
 let WalletLowBalanceMonitorService: typeof import('./service').WalletLowBalanceMonitorService;
 let projectBalanceMapFromUnsignedTx: typeof import('./service').projectBalanceMapFromUnsignedTx;
-let generateWalletExtended: typeof import('@/utils/generator/wallet-generator').generateWalletExtended;
 let Address: typeof import('@emurgo/cardano-serialization-lib-nodejs').Address;
 let BigNum: typeof import('@emurgo/cardano-serialization-lib-nodejs').BigNum;
 let Transaction: typeof import('@emurgo/cardano-serialization-lib-nodejs').Transaction;
@@ -137,7 +162,6 @@ describe('WalletLowBalanceMonitorService', () => {
 
 	beforeAll(async () => {
 		({ WalletLowBalanceMonitorService, projectBalanceMapFromUnsignedTx } = await import('./service'));
-		({ generateWalletExtended } = await import('@/utils/generator/wallet-generator'));
 		({
 			Address,
 			BigNum,
@@ -157,11 +181,14 @@ describe('WalletLowBalanceMonitorService', () => {
 		service = new WalletLowBalanceMonitorService();
 	});
 
-	const createWallet = (status: (typeof LowBalanceStatus)[keyof typeof LowBalanceStatus]) => ({
+	const createWallet = (
+		status: (typeof LowBalanceStatus)[keyof typeof LowBalanceStatus],
+		type: (typeof HotWalletType)[keyof typeof HotWalletType] = HotWalletType.Purchasing,
+	) => ({
 		id: 'wallet-1',
 		walletVkey: 'wallet_vkey',
 		walletAddress: 'addr_test1...',
-		type: HotWalletType.Purchasing,
+		type,
 		PaymentSource: {
 			id: 'payment-source-1',
 			network: Network.Preprod,
@@ -173,6 +200,8 @@ describe('WalletLowBalanceMonitorService', () => {
 				assetUnit: 'lovelace',
 				thresholdAmount: 5000000n,
 				enabled: true,
+				topupEnabled: false,
+				topupAmount: null,
 				status,
 				lastKnownAmount: null,
 				lastCheckedAt: null,
@@ -182,22 +211,9 @@ describe('WalletLowBalanceMonitorService', () => {
 	});
 
 	const balanceMap = (amount: bigint) => new Map<string, bigint>([['lovelace', amount]]);
-	const createRuleRecord = (status: (typeof LowBalanceStatus)[keyof typeof LowBalanceStatus], enabled = true) => ({
-		id: 'rule-1',
-		hotWalletId: 'wallet-1',
-		assetUnit: 'lovelace',
-		thresholdAmount: 5000000n,
-		enabled,
-		status,
-		lastKnownAmount: null,
-		lastCheckedAt: null,
-		lastAlertedAt: null,
-	});
 	const createBalanceFetchWallet = () => ({
 		id: 'wallet-1',
-		Secret: {
-			encryptedMnemonic: 'encrypted-secret',
-		},
+		walletAddress: 'addr_test1...',
 		PaymentSource: {
 			id: 'payment-source-1',
 			network: Network.Preprod,
@@ -206,18 +222,6 @@ describe('WalletLowBalanceMonitorService', () => {
 			},
 		},
 	});
-	const createMeshUtxos = (quantity: string) => [
-		{
-			output: {
-				amount: [
-					{
-						unit: 'lovelace',
-						quantity,
-					},
-				],
-			},
-		},
-	];
 
 	beforeEach(() => {
 		jest.clearAllMocks();
@@ -226,8 +230,10 @@ describe('WalletLowBalanceMonitorService', () => {
 		mockHotWalletFindMany.mockReset();
 		mockCreateLowBalanceRule.mockReset();
 		mockUpdateLowBalanceRule.mockReset();
+		mockDeleteLowBalanceRule.mockReset();
 		mockFindUniqueLowBalanceRule.mockReset();
-		mockGenerateWalletExtended.mockReset();
+		mockFetchAddressBalanceMap.mockReset();
+		mockDistributionUpdateMany.mockResolvedValue({ count: 1 });
 	});
 
 	it('does not warn on Unknown -> Low', async () => {
@@ -292,6 +298,30 @@ describe('WalletLowBalanceMonitorService', () => {
 			network: Network.Preprod,
 			asset_unit: 'lovelace',
 			wallet_type: HotWalletType.Purchasing,
+			check_source: 'interval_check',
+			payment_source_type: PaymentSourceType.Web3CardanoV1,
+		});
+	});
+
+	it('emits low-balance alerts and webhooks for Funding wallets', async () => {
+		await service.evaluateWalletContext(
+			createWallet(LowBalanceStatus.Healthy, HotWalletType.Funding),
+			balanceMap(4000000n),
+			'interval_check',
+		);
+
+		expect(mockTriggerWalletLowBalance).toHaveBeenCalledWith(
+			expect.objectContaining({
+				walletId: 'wallet-1',
+				walletType: HotWalletType.Funding,
+				paymentSourceId: 'payment-source-1',
+				assetUnit: 'lovelace',
+			}),
+		);
+		expect(mockRecordWalletLowBalanceAlert).toHaveBeenCalledWith({
+			network: Network.Preprod,
+			asset_unit: 'lovelace',
+			wallet_type: HotWalletType.Funding,
 			check_source: 'interval_check',
 			payment_source_type: PaymentSourceType.Web3CardanoV1,
 		});
@@ -369,157 +399,6 @@ describe('WalletLowBalanceMonitorService', () => {
 		expect(mockRecordWalletLowBalanceAlert).not.toHaveBeenCalled();
 	});
 
-	it('creates a rule and silently seeds low state when current balance is already below threshold', async () => {
-		mockCreateLowBalanceRule.mockResolvedValue(createRuleRecord(LowBalanceStatus.Unknown));
-		mockHotWalletFindFirst
-			.mockResolvedValueOnce(createBalanceFetchWallet())
-			.mockResolvedValueOnce(createWallet(LowBalanceStatus.Unknown));
-		mockGenerateWalletExtended.mockResolvedValue({
-			utxos: createMeshUtxos('4000000'),
-		});
-		mockFindUniqueLowBalanceRule.mockResolvedValue({
-			...createRuleRecord(LowBalanceStatus.Low),
-			lastKnownAmount: 4000000n,
-			lastCheckedAt: new Date('2026-03-10T12:00:00.000Z'),
-			lastAlertedAt: null,
-		});
-
-		const createdRule = await service.createRuleForWallet({
-			hotWalletId: 'wallet-1',
-			assetUnit: 'lovelace',
-			thresholdAmount: 5000000n,
-			enabled: true,
-		});
-
-		expect(mockCreateLowBalanceRule).toHaveBeenCalledWith(
-			expect.objectContaining({
-				data: expect.objectContaining({
-					status: LowBalanceStatus.Unknown,
-					lastKnownAmount: null,
-					lastCheckedAt: null,
-					lastAlertedAt: null,
-				}),
-			}),
-		);
-		expect(generateWalletExtended).toHaveBeenCalledWith(Network.Preprod, 'provider-key', 'encrypted-secret');
-		expect(mockUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: expect.objectContaining({
-					id: 'rule-1',
-					status: LowBalanceStatus.Unknown,
-				}),
-				data: expect.objectContaining({
-					status: LowBalanceStatus.Low,
-					lastKnownAmount: 4000000n,
-					lastAlertedAt: null,
-				}),
-			}),
-		);
-		expect(mockLogWarn).not.toHaveBeenCalled();
-		expect(createdRule.status).toBe(LowBalanceStatus.Low);
-		expect(createdRule.lastAlertedAt).toBeNull();
-	});
-
-	it('resets a low rule and silently reseeds it healthy when the threshold is lowered', async () => {
-		mockUpdateLowBalanceRule.mockResolvedValue({
-			...createRuleRecord(LowBalanceStatus.Unknown),
-			thresholdAmount: 3000000n,
-		});
-		mockHotWalletFindFirst.mockResolvedValueOnce(createBalanceFetchWallet()).mockResolvedValueOnce({
-			...createWallet(LowBalanceStatus.Unknown),
-			LowBalanceRules: [
-				{
-					...createWallet(LowBalanceStatus.Unknown).LowBalanceRules[0],
-					thresholdAmount: 3000000n,
-				},
-			],
-		});
-		mockGenerateWalletExtended.mockResolvedValue({
-			utxos: createMeshUtxos('4000000'),
-		});
-		mockFindUniqueLowBalanceRule.mockResolvedValue({
-			...createRuleRecord(LowBalanceStatus.Healthy),
-			thresholdAmount: 3000000n,
-			lastKnownAmount: 4000000n,
-			lastCheckedAt: new Date('2026-03-10T12:01:00.000Z'),
-			lastAlertedAt: null,
-		});
-
-		const updatedRule = await service.updateRule({
-			ruleId: 'rule-1',
-			thresholdAmount: 3000000n,
-		});
-
-		expect(mockUpdateLowBalanceRule).toHaveBeenCalledWith(
-			expect.objectContaining({
-				data: expect.objectContaining({
-					thresholdAmount: 3000000n,
-					status: LowBalanceStatus.Unknown,
-					lastKnownAmount: null,
-					lastCheckedAt: null,
-					lastAlertedAt: null,
-				}),
-			}),
-		);
-		expect(mockUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: expect.objectContaining({
-					id: 'rule-1',
-					status: LowBalanceStatus.Unknown,
-				}),
-				data: expect.objectContaining({
-					status: LowBalanceStatus.Healthy,
-					lastKnownAmount: 4000000n,
-					lastAlertedAt: null,
-				}),
-			}),
-		);
-		expect(mockLogWarn).not.toHaveBeenCalled();
-		expect(updatedRule.status).toBe(LowBalanceStatus.Healthy);
-		expect(updatedRule.lastAlertedAt).toBeNull();
-	});
-
-	it('disables a rule without re-querying the wallet balance', async () => {
-		mockUpdateLowBalanceRule.mockResolvedValue(createRuleRecord(LowBalanceStatus.Unknown, false));
-		mockFindUniqueLowBalanceRule.mockResolvedValue(createRuleRecord(LowBalanceStatus.Unknown, false));
-
-		const updatedRule = await service.updateRule({
-			ruleId: 'rule-1',
-			enabled: false,
-		});
-
-		expect(generateWalletExtended).not.toHaveBeenCalled();
-		expect(mockHotWalletFindFirst).not.toHaveBeenCalled();
-		expect(updatedRule.enabled).toBe(false);
-		expect(updatedRule.status).toBe(LowBalanceStatus.Unknown);
-	});
-
-	it('re-enables a rule and silently seeds low state without alerting', async () => {
-		mockUpdateLowBalanceRule.mockResolvedValue(createRuleRecord(LowBalanceStatus.Unknown));
-		mockHotWalletFindFirst
-			.mockResolvedValueOnce(createBalanceFetchWallet())
-			.mockResolvedValueOnce(createWallet(LowBalanceStatus.Unknown));
-		mockGenerateWalletExtended.mockResolvedValue({
-			utxos: createMeshUtxos('2000000'),
-		});
-		mockFindUniqueLowBalanceRule.mockResolvedValue({
-			...createRuleRecord(LowBalanceStatus.Low),
-			lastKnownAmount: 2000000n,
-			lastCheckedAt: new Date('2026-03-10T12:02:00.000Z'),
-			lastAlertedAt: null,
-		});
-
-		const updatedRule = await service.updateRule({
-			ruleId: 'rule-1',
-			enabled: true,
-		});
-
-		expect(generateWalletExtended).toHaveBeenCalledWith(Network.Preprod, 'provider-key', 'encrypted-secret');
-		expect(mockLogWarn).not.toHaveBeenCalled();
-		expect(updatedRule.status).toBe(LowBalanceStatus.Low);
-		expect(updatedRule.lastAlertedAt).toBeNull();
-	});
-
 	it('logs scheduler failures and emits a summary after processing wallets', async () => {
 		mockHotWalletFindMany.mockResolvedValue([
 			{
@@ -550,10 +429,8 @@ describe('WalletLowBalanceMonitorService', () => {
 				},
 			},
 		]);
-		mockGenerateWalletExtended
-			.mockResolvedValueOnce({
-				utxos: createMeshUtxos('6000000'),
-			})
+		mockFetchAddressBalanceMap
+			.mockResolvedValueOnce(balanceMap(6000000n))
 			.mockRejectedValueOnce(new Error('provider unavailable'));
 
 		await service.runScheduledMonitoringCycle();
@@ -578,7 +455,30 @@ describe('WalletLowBalanceMonitorService', () => {
 		);
 	});
 
-	it('projects the post-submission balance from consumed wallet inputs and wallet outputs', () => {
+	it('skips projected monitoring instead of treating a balance lookup failure as zero', async () => {
+		mockHotWalletFindFirst.mockResolvedValueOnce(createBalanceFetchWallet());
+		mockFetchAddressBalanceMap.mockRejectedValueOnce(new Error('provider unavailable'));
+
+		await service.evaluateProjectedHotWalletById({
+			hotWalletId: 'wallet-1',
+			walletAddress: validWalletAddress,
+			walletUtxos: [],
+			unsignedTx: 'invalid-transaction',
+			checkSource: 'submission',
+		});
+
+		expect(mockUpdateMany).not.toHaveBeenCalled();
+		expect(mockTriggerWalletLowBalance).not.toHaveBeenCalled();
+		expect(mockLoggerWarn).toHaveBeenCalledWith(
+			'Skipping projected wallet balance evaluation because the confirmed balance is unavailable',
+			expect.objectContaining({
+				operation: 'projected_balance_skip',
+				wallet_id: 'wallet-1',
+			}),
+		);
+	});
+
+	it('projects from the complete confirmed balance while using a UTXO subset to identify consumed inputs', () => {
 		const txHash = '11'.repeat(32);
 		const inputs = TransactionInputs.new();
 		inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from(txHash, 'hex')), 0));
@@ -614,8 +514,13 @@ describe('WalletLowBalanceMonitorService', () => {
 				},
 			],
 			unsignedTx,
+			new Map([
+				['lovelace', 10000000n],
+				['usdm', 1009494700n],
+			]),
 		);
 
 		expect(projectedBalanceMap.get('lovelace')).toBe(3500000n);
+		expect(projectedBalanceMap.get('usdm')).toBe(1009494700n);
 	});
 });

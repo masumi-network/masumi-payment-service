@@ -22,7 +22,14 @@ export const lowBalanceRuleSchema = z.object({
 	id: z.string().describe('Unique identifier for the low-balance rule'),
 	assetUnit: z.string().describe('Raw on-chain asset unit, for example lovelace or a full policy+asset identifier'),
 	thresholdAmount: z.string().describe('Threshold in raw on-chain units used to determine low balance'),
-	enabled: z.boolean().describe('Whether the rule is active'),
+	enabled: z.boolean().describe('Whether the rule is active (fires the low-balance alert/webhook)'),
+	topupEnabled: z
+		.boolean()
+		.describe('Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source'),
+	topupAmount: z
+		.string()
+		.nullable()
+		.describe('Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off'),
 	status: z.nativeEnum(LowBalanceStatus).describe('Current deduped state of the rule'),
 	lastKnownAmount: z
 		.string()
@@ -64,6 +71,14 @@ export const postWalletLowBalanceRuleSchemaInput = z.object({
 		.describe('Raw on-chain asset unit, for example lovelace or a policy+asset identifier'),
 	thresholdAmount: z.string().regex(/^\d+$/).describe('Threshold in raw on-chain units. Example: 5000000 for 5 ADA'),
 	enabled: z.boolean().default(true).describe('Whether the rule should start enabled'),
+	topupEnabled: z.boolean().default(false).describe('Whether crossing the threshold also auto-tops-up this wallet'),
+	topupAmount: z
+		.string()
+		.regex(/^[1-9]\d*$/)
+		.optional()
+		.describe(
+			'Amount to top up per trigger, in raw on-chain units. Required when topupEnabled is true; ADA requires at least 5000000 lovelace',
+		),
 });
 
 export const postWalletLowBalanceRuleSchemaOutput = walletLowBalanceRuleWithWalletSchema;
@@ -72,6 +87,15 @@ export const patchWalletLowBalanceRuleSchemaInput = z.object({
 	ruleId: z.string().min(1).max(250).describe('Low-balance rule id to update'),
 	thresholdAmount: z.string().regex(/^\d+$/).optional().describe('Updated threshold in raw on-chain units'),
 	enabled: z.boolean().optional().describe('Updated enabled state'),
+	topupEnabled: z.boolean().optional().describe('Enable or disable auto top-up on this rule'),
+	topupAmount: z
+		.string()
+		.regex(/^[1-9]\d*$/)
+		.nullable()
+		.optional()
+		.describe(
+			'Updated top-up amount in raw on-chain units, or null to clear it while auto top-up is disabled. ADA requires at least 5000000 lovelace',
+		),
 });
 
 export const patchWalletLowBalanceRuleSchemaOutput = walletLowBalanceRuleWithWalletSchema;

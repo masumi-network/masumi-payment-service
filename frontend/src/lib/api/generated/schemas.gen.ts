@@ -248,7 +248,16 @@ export const WalletSchema = {
                     },
                     enabled: {
                         type: 'boolean',
-                        description: 'Whether the rule is active'
+                        description: 'Whether the rule is active (fires the low-balance alert/webhook)'
+                    },
+                    topupEnabled: {
+                        type: 'boolean',
+                        description: 'Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source'
+                    },
+                    topupAmount: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off'
                     },
                     status: {
                         type: 'string',
@@ -282,6 +291,8 @@ export const WalletSchema = {
                     'assetUnit',
                     'thresholdAmount',
                     'enabled',
+                    'topupEnabled',
+                    'topupAmount',
                     'status',
                     'lastKnownAmount',
                     'lastCheckedAt',
@@ -317,9 +328,10 @@ export const WalletListItemSchema = {
             type: 'string',
             enum: [
                 'Selling',
-                'Purchasing'
+                'Purchasing',
+                'Funding'
             ],
-            description: 'Whether this is a Selling (seller side) or Purchasing (buyer side) wallet'
+            description: 'Whether this is a Selling (seller side), Purchasing (buyer side) or Funding (treasury that tops up the other two) wallet'
         },
         walletVkey: {
             type: 'string',
@@ -398,6 +410,109 @@ export const GeneratedWalletSecretSchema = {
         'walletMnemonic',
         'walletAddress',
         'walletVkey'
+    ]
+} as const;
+
+export const WalletFundTransferSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Unique identifier of the fund transfer'
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'Pending',
+                'Confirmed',
+                'FailedViaTimeout',
+                'FailedViaManualReset',
+                'RolledBack'
+            ],
+            description: 'Current status of the fund transfer'
+        },
+        txHash: {
+            type: 'string',
+            nullable: true,
+            description: 'Cardano transaction hash. Null until submitted to blockchain'
+        },
+        toAddress: {
+            type: 'string',
+            description: 'Destination Cardano address'
+        },
+        lovelaceAmount: {
+            type: 'string',
+            description: 'Amount transferred in lovelace'
+        },
+        assets: {
+            type: 'array',
+            nullable: true,
+            items: {
+                type: 'object',
+                properties: {
+                    unit: {
+                        type: 'string'
+                    },
+                    quantity: {
+                        type: 'string'
+                    }
+                },
+                required: [
+                    'unit',
+                    'quantity'
+                ]
+            },
+            description: 'Additional native assets included in this transfer. Null if lovelace-only.'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the transfer was requested'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'Timestamp when the transfer was last updated'
+        },
+        lastCheckedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time',
+            description: 'Timestamp when the blockchain was last polled for confirmation'
+        },
+        errorNote: {
+            type: 'string',
+            nullable: true,
+            description: 'Error message if the transfer failed'
+        }
+    },
+    required: [
+        'id',
+        'status',
+        'txHash',
+        'toAddress',
+        'lovelaceAmount',
+        'assets',
+        'createdAt',
+        'updatedAt',
+        'lastCheckedAt',
+        'errorNote'
+    ]
+} as const;
+
+export const WalletFundTransferListSchema = {
+    type: 'object',
+    properties: {
+        transfers: {
+            type: 'array',
+            items: {
+                $ref: '#/components/schemas/WalletFundTransfer'
+            },
+            description: 'List of fund transfers'
+        }
+    },
+    required: [
+        'transfers'
     ]
 } as const;
 
@@ -3810,6 +3925,27 @@ export const UtxoAmountSchema = {
     ]
 } as const;
 
+export const BalanceAmountSchema = {
+    type: 'object',
+    properties: {
+        unit: {
+            type: 'string',
+            description: 'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)'
+        },
+        quantity: {
+            type: 'integer',
+            nullable: true,
+            minimum: 0,
+            maximum: 100000000000000,
+            description: 'The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)'
+        }
+    },
+    required: [
+        'unit',
+        'quantity'
+    ]
+} as const;
+
 export const RpcProviderKeySchema = {
     type: 'object',
     properties: {
@@ -4308,6 +4444,47 @@ export const StoppedMonitoringSchema = {
     ]
 } as const;
 
+export const X402AvailableNetworkSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Opaque x402 network id accepted by managed-wallet endpoints'
+        },
+        caip2Id: {
+            type: 'string',
+            pattern: '^eip155:\\d+$',
+            description: 'CAIP-2 EVM chain id, for example eip155:8453'
+        },
+        displayName: {
+            type: 'string',
+            description: 'Human readable chain name'
+        },
+        isTestnet: {
+            type: 'boolean',
+            description: 'Whether this chain belongs to the testnet environment'
+        },
+        isEnabled: {
+            type: 'boolean',
+            description: 'Whether this chain may currently be used for x402 payments'
+        },
+        defaultAsset: {
+            type: 'string',
+            nullable: true,
+            pattern: '^0x[a-fA-F0-9]{40}$',
+            description: 'Default settlement asset (token contract) for this chain'
+        }
+    },
+    required: [
+        'id',
+        'caip2Id',
+        'displayName',
+        'isTestnet',
+        'isEnabled',
+        'defaultAsset'
+    ]
+} as const;
+
 export const X402NetworkSchema = {
     type: 'object',
     properties: {
@@ -4344,12 +4521,17 @@ export const X402NetworkSchema = {
         facilitatorWalletId: {
             type: 'string',
             nullable: true,
-            description: 'Id of the managed EVM wallet used to settle payments on this chain'
+            description: 'Id of the managed EVM wallet used to settle payments on this chain (self-hosted facilitator)'
         },
         facilitatorWalletAddress: {
             type: 'string',
             nullable: true,
-            description: 'Resolved address of the facilitator wallet. Null when no facilitator is set.'
+            description: 'Resolved address of the facilitator wallet. Null when no self-hosted facilitator is set.'
+        },
+        facilitatorUrl: {
+            type: 'string',
+            nullable: true,
+            description: 'HTTPS URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)'
         },
         createdById: {
             type: 'string',
@@ -4375,6 +4557,7 @@ export const X402NetworkSchema = {
         'defaultAsset',
         'facilitatorWalletId',
         'facilitatorWalletAddress',
+        'facilitatorUrl',
         'createdById',
         'createdAt',
         'updatedAt'
@@ -4387,6 +4570,15 @@ export const X402WalletSchema = {
         id: {
             type: 'string',
             description: 'Unique identifier of the managed EVM wallet'
+        },
+        networkId: {
+            type: 'string',
+            description: 'Id of the x402 network (payment source) this wallet is bound to'
+        },
+        caip2Network: {
+            type: 'string',
+            pattern: '^eip155:\\d+$',
+            description: 'CAIP-2 chain id of the network this wallet is bound to'
         },
         address: {
             type: 'string',
@@ -4422,6 +4614,8 @@ export const X402WalletSchema = {
     },
     required: [
         'id',
+        'networkId',
+        'caip2Network',
         'address',
         'type',
         'note',
@@ -4574,7 +4768,9 @@ export const X402PaymentAttemptSchema = {
             description: 'Payment amount in token base units'
         },
         payTo: {
-            type: 'string'
+            type: 'string',
+            nullable: true,
+            description: 'Immutable payee-address snapshot. Null only for legacy transition rows without a snapshot.'
         },
         payer: {
             type: 'string',
@@ -4595,6 +4791,31 @@ export const X402PaymentAttemptSchema = {
         errorMessage: {
             type: 'string',
             nullable: true
+        },
+        facilitator: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                mode: {
+                    type: 'string',
+                    enum: [
+                        'self_hosted',
+                        'remote',
+                        'unknown'
+                    ],
+                    description: 'Whether an owned wallet, a remote URL, or an unknown legacy facilitator settled'
+                },
+                address: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Self-hosted facilitator wallet address; null for remote or unknown legacy mode'
+                }
+            },
+            required: [
+                'mode',
+                'address'
+            ],
+            description: 'The facilitator that settled this inbound payment; null for outbound payments and verifies.'
         },
         Settlement: {
             type: 'object',
@@ -4654,6 +4875,7 @@ export const X402PaymentAttemptSchema = {
         'paymentIdentifier',
         'errorReason',
         'errorMessage',
+        'facilitator',
         'Settlement'
     ]
 } as const;
@@ -4778,5 +5000,334 @@ export const X402LowBalanceRuleSchema = {
         'lastAlertedAt',
         'createdAt',
         'updatedAt'
+    ]
+} as const;
+
+export const FundWalletListSchema = {
+    type: 'object',
+    properties: {
+        FundWallets: {
+            type: 'array',
+            items: {
+                $ref: '#/components/schemas/FundWallet'
+            },
+            description: 'Fund wallets for the payment source'
+        }
+    },
+    required: [
+        'FundWallets'
+    ]
+} as const;
+
+export const FundWalletSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Fund wallet id'
+        },
+        walletAddress: {
+            type: 'string',
+            description: 'Cardano address of the fund wallet'
+        },
+        walletVkey: {
+            type: 'string',
+            description: 'Payment key hash'
+        },
+        note: {
+            type: 'string',
+            nullable: true,
+            description: 'Optional note'
+        },
+        paymentSourceId: {
+            type: 'string',
+            description: 'Associated payment source id'
+        },
+        lockedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time',
+            description: 'Timestamp when wallet was locked. Null if not locked'
+        },
+        LowBalanceSummary: {
+            type: 'object',
+            properties: {
+                isLow: {
+                    type: 'boolean',
+                    description: 'Whether any enabled low-balance rule for this wallet is currently below threshold'
+                },
+                lowRuleCount: {
+                    type: 'integer',
+                    minimum: 0,
+                    description: 'How many enabled rules for this wallet are currently in low state'
+                },
+                lastCheckedAt: {
+                    type: 'string',
+                    nullable: true,
+                    format: 'date-time',
+                    description: 'Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked'
+                }
+            },
+            required: [
+                'isLow',
+                'lowRuleCount',
+                'lastCheckedAt'
+            ]
+        },
+        FundDistributionConfig: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                id: {
+                    type: 'string',
+                    description: 'Config id'
+                },
+                enabled: {
+                    type: 'boolean',
+                    description: 'Whether this wallet is an active funding source'
+                },
+                batchWindowMs: {
+                    type: 'integer',
+                    description: 'Milliseconds to wait before sending batched topups'
+                }
+            },
+            required: [
+                'id',
+                'enabled',
+                'batchWindowMs'
+            ],
+            description: 'Distribution configuration'
+        },
+        pendingRequestCount: {
+            type: 'integer',
+            description: 'Number of pending distribution requests'
+        }
+    },
+    required: [
+        'id',
+        'walletAddress',
+        'walletVkey',
+        'note',
+        'paymentSourceId',
+        'lockedAt',
+        'LowBalanceSummary',
+        'FundDistributionConfig',
+        'pendingRequestCount'
+    ]
+} as const;
+
+export const FundWalletCreatedSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Fund wallet id'
+        },
+        walletAddress: {
+            type: 'string',
+            description: 'Cardano address'
+        },
+        walletVkey: {
+            type: 'string',
+            description: 'Payment key hash'
+        },
+        paymentSourceId: {
+            type: 'string',
+            description: 'Associated payment source id'
+        },
+        FundDistributionConfig: {
+            type: 'object',
+            properties: {
+                id: {
+                    type: 'string',
+                    description: 'Config id'
+                },
+                enabled: {
+                    type: 'boolean',
+                    description: 'Whether this wallet is an active funding source'
+                },
+                batchWindowMs: {
+                    type: 'integer',
+                    description: 'Milliseconds to wait before sending batched topups'
+                }
+            },
+            required: [
+                'id',
+                'enabled',
+                'batchWindowMs'
+            ],
+            description: 'Created distribution config'
+        }
+    },
+    required: [
+        'id',
+        'walletAddress',
+        'walletVkey',
+        'paymentSourceId',
+        'FundDistributionConfig'
+    ]
+} as const;
+
+export const FundWalletUpdatedSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Fund wallet id'
+        },
+        FundDistributionConfig: {
+            type: 'object',
+            properties: {
+                id: {
+                    type: 'string',
+                    description: 'Config id'
+                },
+                enabled: {
+                    type: 'boolean',
+                    description: 'Whether this wallet is an active funding source'
+                },
+                batchWindowMs: {
+                    type: 'integer',
+                    description: 'Milliseconds to wait before sending batched topups'
+                }
+            },
+            required: [
+                'id',
+                'enabled',
+                'batchWindowMs'
+            ],
+            description: 'Updated distribution config'
+        }
+    },
+    required: [
+        'id',
+        'FundDistributionConfig'
+    ]
+} as const;
+
+export const FundWalletDeletedSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string',
+            description: 'Deleted fund wallet id'
+        }
+    },
+    required: [
+        'id'
+    ]
+} as const;
+
+export const FundDistributionListSchema = {
+    type: 'object',
+    properties: {
+        FundDistributions: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    id: {
+                        type: 'string',
+                        description: 'Distribution request id'
+                    },
+                    createdAt: {
+                        type: 'string',
+                        format: 'date-time',
+                        description: 'When the request was created'
+                    },
+                    updatedAt: {
+                        type: 'string',
+                        format: 'date-time',
+                        description: 'When the request was last updated'
+                    },
+                    fundWalletId: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Id of the fund wallet sending the funds. Null until a fund wallet claims the request'
+                    },
+                    targetWalletId: {
+                        type: 'string',
+                        description: 'Id of the wallet receiving the funds'
+                    },
+                    priority: {
+                        type: 'string',
+                        enum: [
+                            'Warning',
+                            'Critical'
+                        ],
+                        description: 'Legacy priority marker. New requests use Warning; both values are dispatched through the batch window'
+                    },
+                    assetUnit: {
+                        type: 'string',
+                        description: '"lovelace" for ADA, otherwise policy id + hex asset name'
+                    },
+                    amount: {
+                        type: 'string',
+                        description: 'Amount sent in the asset\'s smallest unit'
+                    },
+                    status: {
+                        type: 'string',
+                        enum: [
+                            'Pending',
+                            'Submitted',
+                            'Confirmed',
+                            'Failed'
+                        ],
+                        description: 'Current status of the distribution request'
+                    },
+                    txHash: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'On-chain transaction hash. Null until submitted'
+                    },
+                    error: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Error message if the distribution failed'
+                    },
+                    batchId: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Groups requests sent in the same transaction'
+                    }
+                },
+                required: [
+                    'id',
+                    'createdAt',
+                    'updatedAt',
+                    'fundWalletId',
+                    'targetWalletId',
+                    'priority',
+                    'assetUnit',
+                    'amount',
+                    'status',
+                    'txHash',
+                    'error',
+                    'batchId'
+                ]
+            },
+            description: 'List of distribution requests'
+        }
+    },
+    required: [
+        'FundDistributions'
+    ]
+} as const;
+
+export const FundDistributionTriggeredSchema = {
+    type: 'object',
+    properties: {
+        triggered: {
+            type: 'boolean',
+            description: 'Always true — indicates the request was received'
+        },
+        alreadyRunning: {
+            type: 'boolean',
+            description: 'True if a distribution cycle was already in progress when this request arrived'
+        }
+    },
+    required: [
+        'triggered',
+        'alreadyRunning'
     ]
 } as const;

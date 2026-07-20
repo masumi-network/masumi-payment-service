@@ -65,7 +65,7 @@ export async function getX402Analytics(input: {
 	const attempts = await prisma.x402PaymentAttempt.findMany({
 		where: {
 			createdAt: { gte: periodStart, lte: periodEnd },
-			caip2Network: input.caip2Network,
+			...(input.caip2Network != null ? { Network: { caip2Id: input.caip2Network } } : {}),
 			OR: [
 				{ direction: X402PaymentDirection.InboundSettle, status: X402PaymentStatus.Settled },
 				{
@@ -74,7 +74,8 @@ export async function getX402Analytics(input: {
 				},
 			],
 		},
-		select: { createdAt: true, direction: true, caip2Network: true, asset: true, amount: true },
+		// caip2 comes from the rail relation now; project it so bucketing keeps working.
+		select: { createdAt: true, direction: true, asset: true, amount: true, Network: { select: { caip2Id: true } } },
 	});
 
 	const totalIncome: UnitMap = new Map();
@@ -97,14 +98,14 @@ export async function getX402Analytics(input: {
 
 		if (isIncome) {
 			incomeCount += 1;
-			addUnit(totalIncome, attempt.caip2Network, attempt.asset, attempt.amount);
-			addUnit(monthBucket.Income, attempt.caip2Network, attempt.asset, attempt.amount);
-			addUnit(dayBucket.Income, attempt.caip2Network, attempt.asset, attempt.amount);
+			addUnit(totalIncome, attempt.Network.caip2Id, attempt.asset, attempt.amount);
+			addUnit(monthBucket.Income, attempt.Network.caip2Id, attempt.asset, attempt.amount);
+			addUnit(dayBucket.Income, attempt.Network.caip2Id, attempt.asset, attempt.amount);
 		} else {
 			spendCount += 1;
-			addUnit(totalSpend, attempt.caip2Network, attempt.asset, attempt.amount);
-			addUnit(monthBucket.Spend, attempt.caip2Network, attempt.asset, attempt.amount);
-			addUnit(dayBucket.Spend, attempt.caip2Network, attempt.asset, attempt.amount);
+			addUnit(totalSpend, attempt.Network.caip2Id, attempt.asset, attempt.amount);
+			addUnit(monthBucket.Spend, attempt.Network.caip2Id, attempt.asset, attempt.amount);
+			addUnit(dayBucket.Spend, attempt.Network.caip2Id, attempt.asset, attempt.amount);
 		}
 	}
 

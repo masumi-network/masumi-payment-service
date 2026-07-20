@@ -21,7 +21,7 @@ import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
-import { toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
+import { type BalanceMap, toBalanceMapFromMeshUtxos, walletLowBalanceMonitorService } from '@/services/wallets';
 import {
 	connectExistingTransaction,
 	connectPreviousAction,
@@ -30,8 +30,8 @@ import {
 	createTxWindow,
 } from '@/services/shared';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
-import { isTransientPreSubmitError } from './pre-submit-error';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
+import { isTransientPreSubmitError } from '@masumi/payment-core/pre-submit-error';
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
@@ -117,6 +117,7 @@ type WalletPairing = {
 	changeAddress: string;
 	collectionAddress: string | null;
 	utxos: UTxO[];
+	currentBalanceMap: BalanceMap | null;
 	batchedRequests: BatchedRequest[];
 	// Placeholder Transaction row id created at lock time. The placeholder
 	// already carries `BlocksWallet → wallet` so the wallet's
@@ -591,6 +592,7 @@ async function executeSpecificBatchPayment(
 			walletUtxos: walletPairing.utxos,
 			unsignedTx: completeTx,
 			checkSource: 'submission',
+			currentBalanceMap: walletPairing.currentBalanceMap ?? undefined,
 		});
 	} catch (balanceError) {
 		logger.warn('batch-payments post-submit balance monitor failed (non-fatal; tx already on chain)', {
@@ -645,8 +647,8 @@ export async function batchLatestPaymentEntriesV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('batch_payments_v2 is already running, skipping cycle');
 		return;
 	}
 
@@ -887,13 +889,17 @@ export async function batchLatestPaymentEntriesV2() {
 								wallet.Secret.encryptedMnemonic,
 							);
 							const balanceMap = toBalanceMapFromMeshUtxos(utxos);
-							await walletLowBalanceMonitorService.evaluateHotWalletById(wallet.id, balanceMap, 'submission');
+							const currentBalanceMap = await walletLowBalanceMonitorService.evaluateCurrentHotWalletById(
+								wallet.id,
+								'submission',
+							);
 							return {
 								wallet: meshWallet,
 								walletId: wallet.id,
 								changeAddress: address,
 								collectionAddress: wallet.collectionAddress,
 								utxos,
+								currentBalanceMap,
 								scriptAddress: paymentContract.smartContractAddress,
 								amounts: Array.from(balanceMap.entries()).map(([unit, quantity]) => ({
 									unit: unit === 'lovelace' ? '' : unit,
@@ -1176,6 +1182,7 @@ export async function batchLatestPaymentEntriesV2() {
 								changeAddress: walletData.changeAddress,
 								collectionAddress: walletData.collectionAddress,
 								utxos: walletData.utxos,
+								currentBalanceMap: walletData.currentBalanceMap,
 								batchedRequests: batchedPaymentRequests,
 								placeholderTransactionId: walletData.placeholderTransactionId,
 							});
@@ -1191,24 +1198,25 @@ export async function batchLatestPaymentEntriesV2() {
 					}
 					//only go into error state if we did not reach max batch size, as otherwise we might have enough funds in other wallets
 					if (paymentRequestsRemaining.length > 0 && maxBatchSizeReached == false) {
+						//count all existing wallets, including ones busy with a pending transaction or locked by
+						//a concurrent run: a busy wallet frees up with its funds intact, so it must suppress the
+						//permanent error state instead of being treated as nonexistent
 						const allWalletCount = await prisma.hotWallet.count({
 							where: {
 								deletedAt: null,
 								type: HotWalletType.Purchasing,
-								PendingTransaction: null,
 								PaymentSource: {
 									id: paymentContract.id,
 								},
 							},
 						});
-						//only go into error state if all eligible wallets were unlocked, otherwise we might have enough funds in other wallets
+						//only go into error state if all eligible wallets were evaluated this run, otherwise we might have enough funds in busy wallets
 						for (const paymentRequest of paymentRequestsRemaining) {
 							const eligibleWalletCount = paymentRequest.isLimitedToHotWallets
 								? await prisma.hotWallet.count({
 										where: {
 											deletedAt: null,
 											type: HotWalletType.Purchasing,
-											PendingTransaction: null,
 											PaymentSource: { id: paymentContract.id },
 											id: { in: paymentRequest.HotWalletLimit.map((hw) => hw.id) },
 										},
@@ -1220,6 +1228,8 @@ export async function batchLatestPaymentEntriesV2() {
 							if (eligibleWalletCount == eligiblePotentialCount) {
 								logger.warn('No wallets with funds found, going into error state for', {
 									purchaseRequestId: paymentRequest.id,
+									eligibleWalletCount,
+									eligiblePotentialCount,
 								});
 								await prisma.purchaseRequest.update({
 									where: { id: paymentRequest.id },
@@ -1499,9 +1509,38 @@ export async function batchLatestPaymentEntriesV2() {
 						paymentContract.HotWallets.map(async (candidateWallet) => {
 							const fresh = await prisma.hotWallet.findUnique({
 								where: { id: candidateWallet.id, deletedAt: null },
-								select: { pendingTransactionId: true, type: true },
+								select: {
+									pendingTransactionId: true,
+									type: true,
+									PendingTransaction: { select: { status: true, intendedTxHash: true, txHash: true } },
+								},
 							});
 							if (fresh == null || fresh.type !== HotWalletType.Purchasing) return;
+							// CRITICAL double-lock guard: only roll back + unlock a pending tx that
+							// PROVABLY never broadcast (both hashes null — an unused placeholder or a
+							// pre-submit failure). If a per-outcome revert above threw and jumped us
+							// here while a sibling pairing had already succeeded (txHash set) or
+							// returned submit-ambiguous (intendedTxHash set, txHash null, tx MAY be on
+							// chain), rolling its shared tx back would hide it from
+							// funding-reconciliation / tx-sync (both key on status: Pending) AND free
+							// the wallet into a double-lock. Leave any tx with either hash set.
+							const pendingTx = fresh.PendingTransaction;
+							if (
+								pendingTx != null &&
+								pendingTx.status === TransactionStatus.Pending &&
+								(pendingTx.intendedTxHash != null || pendingTx.txHash != null)
+							) {
+								logger.warn(
+									'batch-payments outer-catch: preserving possibly-on-chain funding tx (leaving Pending + wallet locked)',
+									{
+										walletId: candidateWallet.id,
+										pendingTransactionId: fresh.pendingTransactionId,
+										hasTxHash: pendingTx.txHash != null,
+										hasIntendedTxHash: pendingTx.intendedTxHash != null,
+									},
+								);
+								return;
+							}
 							if (fresh.pendingTransactionId != null) {
 								try {
 									await prisma.transaction.update({

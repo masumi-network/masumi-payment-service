@@ -34,10 +34,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { useX402WalletsPaginated } from '@/lib/hooks/useX402';
+import { useAvailableX402Networks, useX402WalletsPaginated } from '@/lib/hooks/useX402';
 import { cn, copyToClipboard, shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { extractApiPayload } from '@/lib/api-response';
@@ -83,6 +91,11 @@ export function WalletsTab() {
   const queryClient = useQueryClient();
   const { wallets, isLoading, isRefetching, refetch, hasMore, isFetchingNextPage, loadMore } =
     useX402WalletsPaginated();
+  // Label-only network lookup: the wallet list spans both environments, and a label miss
+  // falls back to the raw CAIP-2 id, so load silently across all environments.
+  const { networks } = useAvailableX402Networks({ silentErrors: true, allEnvironments: true });
+  const chainLabel = (caip2: string) =>
+    networks.find((network) => network.caip2Id === caip2)?.displayName ?? caip2;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [retiringId, setRetiringId] = useState<string | null>(null);
   const [balanceWallet, setBalanceWallet] = useState<X402Wallet | null>(null);
@@ -116,8 +129,8 @@ export function WalletsTab() {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           Managed EVM wallets are split by direction: Purchasing wallets fund outbound x402
-          payments, Selling wallets settle inbound ones as chain facilitators. Private keys are
-          stored encrypted and never leave the server.
+          payments, Selling wallets settle inbound ones as chain facilitators. Keys are encrypted at
+          rest; generated keys are returned once for backup and imported keys are never echoed.
         </p>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
@@ -139,6 +152,9 @@ export function WalletsTab() {
                 Type
               </th>
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
+                Network
+              </th>
+              <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
                 Note
               </th>
               <th scope="col" className="p-4 text-left text-sm font-medium text-muted-foreground">
@@ -152,7 +168,7 @@ export function WalletsTab() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={5} className="py-10">
+                <td colSpan={6} className="py-10">
                   <div className="flex justify-center">
                     <Spinner />
                   </div>
@@ -160,7 +176,7 @@ export function WalletsTab() {
               </tr>
             ) : wallets.length === 0 ? (
               <tr>
-                <td colSpan={5}>
+                <td colSpan={6}>
                   <EmptyState
                     title="No managed wallets"
                     description="Create a wallet to fund and settle x402 payments."
@@ -179,6 +195,7 @@ export function WalletsTab() {
                     </div>
                   </td>
                   <td className="p-4 text-sm">{WALLET_TYPE_LABEL[wallet.type]}</td>
+                  <td className="p-4 text-sm">{chainLabel(wallet.caip2Network)}</td>
                   <td className="p-4 text-sm text-muted-foreground">
                     {wallet.note || <span className="italic opacity-60">—</span>}
                   </td>
@@ -285,11 +302,17 @@ export function CreateWalletDialog({
   defaultType?: WalletType;
 }) {
   const { apiClient } = useAppContext();
+  // A managed wallet is bound to exactly one x402 network (payment source).
+  const { networks, isLoading: networksLoading } = useAvailableX402Networks();
+  const [networkId, setNetworkId] = useState('');
   const [type, setType] = useState<WalletType>(defaultType);
   const [keySource, setKeySource] = useState<KeySource>('generate');
   const [privateKey, setPrivateKey] = useState('');
   const [showImportKey, setShowImportKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Rendered under the Network select (not the shared key-section error), and cleared as
+  // soon as a network is picked, so the message sits next to the field it is about.
+  const [networkError, setNetworkError] = useState<string | null>(null);
   const createWallet = useApiMutation({
     mutationFn: (body: NonNullable<PostX402WalletsData['body']>) =>
       postX402Wallets({ client: apiClient, body }),
@@ -301,6 +324,10 @@ export function CreateWalletDialog({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!networkId) {
+      setNetworkError('Select the network this wallet operates on');
+      return;
+    }
     const trimmed = privateKey.trim();
     if (keySource === 'import' && !PRIVATE_KEY_REGEX.test(trimmed)) {
       setError('Private key must be a 0x-prefixed 32-byte hex string');
@@ -308,7 +335,9 @@ export function CreateWalletDialog({
     }
     setError(null);
     const response = await createWallet
-      .mutateAsync(keySource === 'import' ? { type, privateKey: trimmed } : { type })
+      .mutateAsync(
+        keySource === 'import' ? { networkId, type, privateKey: trimmed } : { networkId, type },
+      )
       .catch(() => null);
     if (!response) return;
 
@@ -354,10 +383,44 @@ export function CreateWalletDialog({
             <DialogHeader>
               <DialogTitle>Create managed wallet</DialogTitle>
               <DialogDescription>
-                Wallets are split by direction. Keys are encrypted at rest and never leave the
-                server.
+                Wallets are split by direction. Keys are encrypted at rest; generated keys are
+                returned once for backup and imported keys are never echoed.
               </DialogDescription>
             </DialogHeader>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Network</Label>
+              <Select
+                value={networkId}
+                onValueChange={(value) => {
+                  setNetworkId(value);
+                  setNetworkError(null);
+                }}
+                disabled={networksLoading}
+              >
+                <SelectTrigger aria-label="Network" aria-invalid={!!networkError}>
+                  <SelectValue
+                    placeholder={networksLoading ? 'Loading networks…' : 'Select a network'}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {networks.map((network) => (
+                      <SelectItem key={network.id} value={network.id}>
+                        {network.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              {networkError ? (
+                <p className="text-xs text-destructive">{networkError}</p>
+              ) : (
+                <p className="text-xs leading-snug text-muted-foreground">
+                  The wallet is bound to this payment source and can only transact on its chain.
+                </p>
+              )}
+            </div>
 
             <div className="space-y-2">
               <Label className="text-sm font-medium">Direction</Label>

@@ -1,4 +1,19 @@
-import { buildTransactionSearchFilter, parseAmountSearchRange } from './queries';
+import { buildNeedsManualActionFilter, buildTransactionSearchFilter, parseAmountSearchRange } from './queries';
+
+describe('buildNeedsManualActionFilter', () => {
+	it('returns an empty fragment when the filter is off', () => {
+		expect(buildNeedsManualActionFilter(undefined)).toEqual({});
+		expect(buildNeedsManualActionFilter(false)).toEqual({});
+	});
+
+	it('matches WaitingForManualAction or a recorded error on the next action', () => {
+		expect(buildNeedsManualActionFilter(true)).toEqual({
+			NextAction: {
+				OR: [{ requestedAction: 'WaitingForManualAction' }, { errorType: { not: null } }],
+			},
+		});
+	});
+});
 
 describe('buildTransactionSearchFilter', () => {
 	it('includes agentName in search OR clauses', () => {

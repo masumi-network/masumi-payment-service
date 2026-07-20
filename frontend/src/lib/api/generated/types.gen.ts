@@ -162,9 +162,17 @@ export type Wallet = {
          */
         thresholdAmount: string;
         /**
-         * Whether the rule is active
+         * Whether the rule is active (fires the low-balance alert/webhook)
          */
         enabled: boolean;
+        /**
+         * Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source
+         */
+        topupEnabled: boolean;
+        /**
+         * Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off
+         */
+        topupAmount: string | null;
         /**
          * Current deduped state of the rule
          */
@@ -194,9 +202,9 @@ export type WalletListItem = {
      */
     paymentSourceId: string;
     /**
-     * Whether this is a Selling (seller side) or Purchasing (buyer side) wallet
+     * Whether this is a Selling (seller side), Purchasing (buyer side) or Funding (treasury that tops up the other two) wallet
      */
-    type: 'Selling' | 'Purchasing';
+    type: 'Selling' | 'Purchasing' | 'Funding';
     /**
      * Payment key hash of the wallet
      */
@@ -245,6 +253,59 @@ export type GeneratedWalletSecret = {
      * Payment key hash of the newly generated wallet
      */
     walletVkey: string;
+};
+
+export type WalletFundTransfer = {
+    /**
+     * Unique identifier of the fund transfer
+     */
+    id: string;
+    /**
+     * Current status of the fund transfer
+     */
+    status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
+    /**
+     * Cardano transaction hash. Null until submitted to blockchain
+     */
+    txHash: string | null;
+    /**
+     * Destination Cardano address
+     */
+    toAddress: string;
+    /**
+     * Amount transferred in lovelace
+     */
+    lovelaceAmount: string;
+    /**
+     * Additional native assets included in this transfer. Null if lovelace-only.
+     */
+    assets: Array<{
+        unit: string;
+        quantity: string;
+    }> | null;
+    /**
+     * Timestamp when the transfer was requested
+     */
+    createdAt: Date;
+    /**
+     * Timestamp when the transfer was last updated
+     */
+    updatedAt: Date;
+    /**
+     * Timestamp when the blockchain was last polled for confirmation
+     */
+    lastCheckedAt: Date | null;
+    /**
+     * Error message if the transfer failed
+     */
+    errorNote: string | null;
+};
+
+export type WalletFundTransferList = {
+    /**
+     * List of fund transfers
+     */
+    transfers: Array<WalletFundTransfer>;
 };
 
 export type Payment = {
@@ -2067,6 +2128,17 @@ export type UtxoAmount = {
     quantity: number | null;
 };
 
+export type BalanceAmount = {
+    /**
+     * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+     */
+    unit: string;
+    /**
+     * The quantity of the asset in its smallest unit. For ADA, this is lovelace (1 ADA = 1000000 lovelace)
+     */
+    quantity: number | null;
+};
+
 export type RpcProviderKey = {
     /**
      * Unique identifier for the RPC provider key
@@ -2366,6 +2438,33 @@ export type StoppedMonitoring = {
     stopped: boolean;
 };
 
+export type X402AvailableNetwork = {
+    /**
+     * Opaque x402 network id accepted by managed-wallet endpoints
+     */
+    id: string;
+    /**
+     * CAIP-2 EVM chain id, for example eip155:8453
+     */
+    caip2Id: string;
+    /**
+     * Human readable chain name
+     */
+    displayName: string;
+    /**
+     * Whether this chain belongs to the testnet environment
+     */
+    isTestnet: boolean;
+    /**
+     * Whether this chain may currently be used for x402 payments
+     */
+    isEnabled: boolean;
+    /**
+     * Default settlement asset (token contract) for this chain
+     */
+    defaultAsset: string | null;
+};
+
 export type X402Network = {
     id: string;
     /**
@@ -2393,13 +2492,17 @@ export type X402Network = {
      */
     defaultAsset: string | null;
     /**
-     * Id of the managed EVM wallet used to settle payments on this chain
+     * Id of the managed EVM wallet used to settle payments on this chain (self-hosted facilitator)
      */
     facilitatorWalletId: string | null;
     /**
-     * Resolved address of the facilitator wallet. Null when no facilitator is set.
+     * Resolved address of the facilitator wallet. Null when no self-hosted facilitator is set.
      */
     facilitatorWalletAddress: string | null;
+    /**
+     * HTTPS URL of a remote x402 facilitator used to settle payments on this chain (no owned wallet needed)
+     */
+    facilitatorUrl: string | null;
     /**
      * Id of the API key that created this chain configuration
      */
@@ -2413,6 +2516,14 @@ export type X402Wallet = {
      * Unique identifier of the managed EVM wallet
      */
     id: string;
+    /**
+     * Id of the x402 network (payment source) this wallet is bound to
+     */
+    networkId: string;
+    /**
+     * CAIP-2 chain id of the network this wallet is bound to
+     */
+    caip2Network: string;
     /**
      * The EVM address derived from the wallet private key
      */
@@ -2491,12 +2602,28 @@ export type X402PaymentAttempt = {
      * Payment amount in token base units
      */
     amount: string;
-    payTo: string;
+    /**
+     * Immutable payee-address snapshot. Null only for legacy transition rows without a snapshot.
+     */
+    payTo: string | null;
     payer: string | null;
     resource: string | null;
     paymentIdentifier: string | null;
     errorReason: string | null;
     errorMessage: string | null;
+    /**
+     * The facilitator that settled this inbound payment; null for outbound payments and verifies.
+     */
+    facilitator: {
+        /**
+         * Whether an owned wallet, a remote URL, or an unknown legacy facilitator settled
+         */
+        mode: 'self_hosted' | 'remote' | 'unknown';
+        /**
+         * Self-hosted facilitator wallet address; null for remote or unknown legacy mode
+         */
+        address: string | null;
+    } | null;
     Settlement: {
         id: string;
         success: boolean;
@@ -2542,6 +2669,209 @@ export type X402LowBalanceRule = {
     lastAlertedAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
+};
+
+export type FundWalletList = {
+    /**
+     * Fund wallets for the payment source
+     */
+    FundWallets: Array<FundWallet>;
+};
+
+export type FundWallet = {
+    /**
+     * Fund wallet id
+     */
+    id: string;
+    /**
+     * Cardano address of the fund wallet
+     */
+    walletAddress: string;
+    /**
+     * Payment key hash
+     */
+    walletVkey: string;
+    /**
+     * Optional note
+     */
+    note: string | null;
+    /**
+     * Associated payment source id
+     */
+    paymentSourceId: string;
+    /**
+     * Timestamp when wallet was locked. Null if not locked
+     */
+    lockedAt: Date | null;
+    LowBalanceSummary: {
+        /**
+         * Whether any enabled low-balance rule for this wallet is currently below threshold
+         */
+        isLow: boolean;
+        /**
+         * How many enabled rules for this wallet are currently in low state
+         */
+        lowRuleCount: number;
+        /**
+         * Timestamp of the latest low-balance evaluation across this wallet rules. Null if never checked
+         */
+        lastCheckedAt: Date | null;
+    };
+    /**
+     * Distribution configuration
+     */
+    FundDistributionConfig: {
+        /**
+         * Config id
+         */
+        id: string;
+        /**
+         * Whether this wallet is an active funding source
+         */
+        enabled: boolean;
+        /**
+         * Milliseconds to wait before sending batched topups
+         */
+        batchWindowMs: number;
+    } | null;
+    /**
+     * Number of pending distribution requests
+     */
+    pendingRequestCount: number;
+};
+
+export type FundWalletCreated = {
+    /**
+     * Fund wallet id
+     */
+    id: string;
+    /**
+     * Cardano address
+     */
+    walletAddress: string;
+    /**
+     * Payment key hash
+     */
+    walletVkey: string;
+    /**
+     * Associated payment source id
+     */
+    paymentSourceId: string;
+    /**
+     * Created distribution config
+     */
+    FundDistributionConfig: {
+        /**
+         * Config id
+         */
+        id: string;
+        /**
+         * Whether this wallet is an active funding source
+         */
+        enabled: boolean;
+        /**
+         * Milliseconds to wait before sending batched topups
+         */
+        batchWindowMs: number;
+    };
+};
+
+export type FundWalletUpdated = {
+    /**
+     * Fund wallet id
+     */
+    id: string;
+    /**
+     * Updated distribution config
+     */
+    FundDistributionConfig: {
+        /**
+         * Config id
+         */
+        id: string;
+        /**
+         * Whether this wallet is an active funding source
+         */
+        enabled: boolean;
+        /**
+         * Milliseconds to wait before sending batched topups
+         */
+        batchWindowMs: number;
+    };
+};
+
+export type FundWalletDeleted = {
+    /**
+     * Deleted fund wallet id
+     */
+    id: string;
+};
+
+export type FundDistributionList = {
+    /**
+     * List of distribution requests
+     */
+    FundDistributions: Array<{
+        /**
+         * Distribution request id
+         */
+        id: string;
+        /**
+         * When the request was created
+         */
+        createdAt: Date;
+        /**
+         * When the request was last updated
+         */
+        updatedAt: Date;
+        /**
+         * Id of the fund wallet sending the funds. Null until a fund wallet claims the request
+         */
+        fundWalletId: string | null;
+        /**
+         * Id of the wallet receiving the funds
+         */
+        targetWalletId: string;
+        /**
+         * Legacy priority marker. New requests use Warning; both values are dispatched through the batch window
+         */
+        priority: 'Warning' | 'Critical';
+        /**
+         * "lovelace" for ADA, otherwise policy id + hex asset name
+         */
+        assetUnit: string;
+        /**
+         * Amount sent in the asset's smallest unit
+         */
+        amount: string;
+        /**
+         * Current status of the distribution request
+         */
+        status: 'Pending' | 'Submitted' | 'Confirmed' | 'Failed';
+        /**
+         * On-chain transaction hash. Null until submitted
+         */
+        txHash: string | null;
+        /**
+         * Error message if the distribution failed
+         */
+        error: string | null;
+        /**
+         * Groups requests sent in the same transaction
+         */
+        batchId: string | null;
+    }>;
+};
+
+export type FundDistributionTriggered = {
+    /**
+     * Always true — indicates the request was received
+     */
+    triggered: boolean;
+    /**
+     * True if a distribution cycle was already in progress when this request arrived
+     */
+    alreadyRunning: boolean;
 };
 
 export type GetHealthData = {
@@ -2594,7 +2924,7 @@ export type GetWalletData = {
         /**
          * The type of wallet to query
          */
-        walletType: 'Selling' | 'Purchasing';
+        walletType: 'Selling' | 'Purchasing' | 'Funding';
         /**
          * The id of the wallet to query
          */
@@ -2695,9 +3025,9 @@ export type GetWalletListData = {
          */
         paymentSourceId?: string;
         /**
-         * Filter wallets by type (Selling or Purchasing)
+         * Filter wallets by type (Selling, Purchasing or Funding)
          */
-        walletType?: 'Selling' | 'Purchasing';
+        walletType?: 'Selling' | 'Purchasing' | 'Funding';
         /**
          * Filter to the single wallet with this payment key hash
          */
@@ -2815,9 +3145,17 @@ export type GetWalletLowBalanceResponses = {
                  */
                 thresholdAmount: string;
                 /**
-                 * Whether the rule is active
+                 * Whether the rule is active (fires the low-balance alert/webhook)
                  */
                 enabled: boolean;
+                /**
+                 * Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source
+                 */
+                topupEnabled: boolean;
+                /**
+                 * Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off
+                 */
+                topupAmount: string | null;
                 /**
                  * Current deduped state of the rule
                  */
@@ -2849,7 +3187,7 @@ export type GetWalletLowBalanceResponses = {
                 /**
                  * Hot wallet type
                  */
-                walletType: 'Selling' | 'Purchasing';
+                walletType: 'Selling' | 'Purchasing' | 'Funding';
                 /**
                  * Payment source id owning the wallet
                  */
@@ -2882,6 +3220,14 @@ export type PatchWalletLowBalanceData = {
          * Updated enabled state
          */
         enabled?: boolean;
+        /**
+         * Enable or disable auto top-up on this rule
+         */
+        topupEnabled?: boolean;
+        /**
+         * Updated top-up amount in raw on-chain units, or null to clear it while auto top-up is disabled. ADA requires at least 5000000 lovelace
+         */
+        topupAmount?: string | null;
     };
     path?: never;
     query?: never;
@@ -2889,6 +3235,10 @@ export type PatchWalletLowBalanceData = {
 };
 
 export type PatchWalletLowBalanceErrors = {
+    /**
+     * No changes were requested, or the auto top-up configuration is invalid
+     */
+    400: unknown;
     /**
      * Low-balance rule not found
      */
@@ -2915,9 +3265,17 @@ export type PatchWalletLowBalanceResponses = {
              */
             thresholdAmount: string;
             /**
-             * Whether the rule is active
+             * Whether the rule is active (fires the low-balance alert/webhook)
              */
             enabled: boolean;
+            /**
+             * Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source
+             */
+            topupEnabled: boolean;
+            /**
+             * Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off
+             */
+            topupAmount: string | null;
             /**
              * Current deduped state of the rule
              */
@@ -2949,7 +3307,7 @@ export type PatchWalletLowBalanceResponses = {
             /**
              * Hot wallet type
              */
-            walletType: 'Selling' | 'Purchasing';
+            walletType: 'Selling' | 'Purchasing' | 'Funding';
             /**
              * Payment source id owning the wallet
              */
@@ -2985,6 +3343,14 @@ export type PostWalletLowBalanceData = {
          * Whether the rule should start enabled
          */
         enabled?: boolean;
+        /**
+         * Whether crossing the threshold also auto-tops-up this wallet
+         */
+        topupEnabled?: boolean;
+        /**
+         * Amount to top up per trigger, in raw on-chain units. Required when topupEnabled is true; ADA requires at least 5000000 lovelace
+         */
+        topupAmount?: string;
     };
     path?: never;
     query?: never;
@@ -2992,6 +3358,10 @@ export type PostWalletLowBalanceData = {
 };
 
 export type PostWalletLowBalanceErrors = {
+    /**
+     * Invalid asset unit or auto top-up configuration
+     */
+    400: unknown;
     /**
      * Wallet not found
      */
@@ -3022,9 +3392,17 @@ export type PostWalletLowBalanceResponses = {
              */
             thresholdAmount: string;
             /**
-             * Whether the rule is active
+             * Whether the rule is active (fires the low-balance alert/webhook)
              */
             enabled: boolean;
+            /**
+             * Whether crossing the threshold also auto-tops-up this wallet from a fund wallet on its source
+             */
+            topupEnabled: boolean;
+            /**
+             * Amount to top up per trigger, in raw on-chain units. Null when auto top-up is off
+             */
+            topupAmount: string | null;
             /**
              * Current deduped state of the rule
              */
@@ -3056,7 +3434,7 @@ export type PostWalletLowBalanceResponses = {
             /**
              * Hot wallet type
              */
-            walletType: 'Selling' | 'Purchasing';
+            walletType: 'Selling' | 'Purchasing' | 'Funding';
             /**
              * Payment source id owning the wallet
              */
@@ -3832,6 +4210,112 @@ export type PostSwapAcknowledgeTimeoutResponses = {
 
 export type PostSwapAcknowledgeTimeoutResponse = PostSwapAcknowledgeTimeoutResponses[keyof PostSwapAcknowledgeTimeoutResponses];
 
+export type GetWalletTransferFundsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Query a specific fund transfer by id
+         */
+        id?: string;
+        /**
+         * Query all fund transfers for a wallet by internal id
+         */
+        hotWalletId?: string;
+        /**
+         * Query all fund transfers for a wallet by its Cardano address
+         */
+        walletAddress?: string;
+        /**
+         * Cursor for pagination
+         */
+        cursorId?: string;
+        /**
+         * Number of results to return (1-100, default 20)
+         */
+        limit?: number;
+    };
+    url: '/wallet/transfer-funds';
+};
+
+export type GetWalletTransferFundsErrors = {
+    /**
+     * Fund transfer not found
+     */
+    404: unknown;
+};
+
+export type GetWalletTransferFundsResponses = {
+    /**
+     * Fund transfer list
+     */
+    200: {
+        status: 'success';
+        data: WalletFundTransferList;
+    };
+};
+
+export type GetWalletTransferFundsResponse = GetWalletTransferFundsResponses[keyof GetWalletTransferFundsResponses];
+
+export type PostWalletTransferFundsData = {
+    /**
+     * Fund transfer request
+     */
+    body?: {
+        /**
+         * The Cardano address of the hot wallet to send funds from
+         */
+        fromWalletAddress: string;
+        /**
+         * The Cardano address to send funds to
+         */
+        toAddress: string;
+        /**
+         * Amount of lovelace to transfer (minimum 2000000 = 2 ADA)
+         */
+        lovelaceAmount: string;
+        /**
+         * Additional native assets to transfer alongside lovelace
+         */
+        assets?: Array<{
+            /**
+             * Asset unit: policy id (56 hex chars) followed by the hex asset name. Not "lovelace".
+             */
+            unit: string;
+            /**
+             * Amount of the asset to transfer, in its smallest unit
+             */
+            quantity: string;
+        }>;
+    };
+    path?: never;
+    query?: never;
+    url: '/wallet/transfer-funds';
+};
+
+export type PostWalletTransferFundsErrors = {
+    /**
+     * Bad Request (lovelaceAmount below 2 ADA minimum)
+     */
+    400: unknown;
+    /**
+     * Not Found (wallet not found)
+     */
+    404: unknown;
+};
+
+export type PostWalletTransferFundsResponses = {
+    /**
+     * Fund transfer queued
+     */
+    200: {
+        status: 'success';
+        data: WalletFundTransfer;
+    };
+};
+
+export type PostWalletTransferFundsResponse = PostWalletTransferFundsResponses[keyof PostWalletTransferFundsResponses];
+
 export type GetPaymentData = {
     body?: never;
     path?: never;
@@ -3860,6 +4344,10 @@ export type GetPaymentData = {
          * Filter by payment source type. When omitted with no smart-contract-address filter, payment list/count endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
         /**
          * Search query to filter by ID, hash, agent name, state, network, wallet address, or amount
          */
@@ -4407,6 +4895,10 @@ export type GetPaymentCountData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
+         * When true, only counts payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
+        /**
          * The smart contract address of the payment source. When omitted with no explicit payment source type, payment count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
         filterSmartContractAddress?: string | null;
@@ -4443,6 +4935,10 @@ export type GetPurchaseCountData = {
          * The network the purchases were made on
          */
         network: 'Preprod' | 'Mainnet';
+        /**
+         * When true, only counts purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
         /**
          * The smart contract address of the payment source. When omitted with no explicit payment source type, purchase count defaults to Web3CardanoV1 for backwards compatibility. Supplying this field queries that exact V1 or V2 source.
          */
@@ -5210,6 +5706,10 @@ export type PostPaymentErrorStateRecoveryData = {
          * The time of the last update, to ensure you clear the correct error state
          */
         updatedAt: Date | Date;
+        /**
+         * When true, retry the failed action. When false or omitted, only clear the error state.
+         */
+        retryPreviousAction?: boolean;
     };
     path?: never;
     query?: never;
@@ -5551,6 +6051,10 @@ export type PostPurchaseErrorStateRecoveryData = {
          * The time of the last update, to ensure you clear the correct error state
          */
         updatedAt: Date | Date;
+        /**
+         * When true, retry the failed action. When false or omitted, only clear the error state.
+         */
+        retryPreviousAction?: boolean;
     };
     path?: never;
     query?: never;
@@ -6591,6 +7095,10 @@ export type GetPurchaseData = {
          * Filter by payment source type. When omitted with no smart-contract-address filter, purchase list/count endpoints default to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
+         */
+        filterNeedsManualAction?: string;
         /**
          * Search query to filter by ID, hash, agent name, state, network, wallet address, or amount
          */
@@ -9196,6 +9704,13 @@ export type PatchPaymentSourceExtendedData = {
     url: '/payment-source-extended';
 };
 
+export type PatchPaymentSourceExtendedErrors = {
+    /**
+     * A wallet listed for removal is a fund wallet, which must be deleted via the fund wallet endpoint instead
+     */
+    400: unknown;
+};
+
 export type PatchPaymentSourceExtendedResponses = {
     /**
      * Payment contract updated
@@ -9354,6 +9869,39 @@ export type GetUtxosResponses = {
 };
 
 export type GetUtxosResponse = GetUtxosResponses[keyof GetUtxosResponses];
+
+export type GetBalanceData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The address to get the confirmed balance for
+         */
+        address: string;
+        /**
+         * The Cardano network
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    url: '/balance';
+};
+
+export type GetBalanceResponses = {
+    /**
+     * Complete confirmed address balance
+     */
+    200: {
+        status: string;
+        data: {
+            /**
+             * Complete confirmed address balance aggregated across all UTXOs
+             */
+            Balance: Array<BalanceAmount>;
+        };
+    };
+};
+
+export type GetBalanceResponse = GetBalanceResponses[keyof GetBalanceResponses];
 
 export type GetRpcApiKeysData = {
     body?: never;
@@ -9874,7 +10422,7 @@ export type GetWebhooksResponses = {
                 id: string;
                 url: string;
                 format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -9918,7 +10466,7 @@ export type PatchWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -9966,7 +10514,7 @@ export type PatchWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -9998,7 +10546,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -10046,7 +10594,7 @@ export type PostWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -10582,6 +11130,32 @@ export type PostMonitoringStopResponses = {
 
 export type PostMonitoringStopResponse = PostMonitoringStopResponses[keyof PostMonitoringStopResponses];
 
+export type GetX402NetworksAvailableData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter chains by environment: true for testnet (Preprod), false for mainnet
+         */
+        isTestnet?: 'true' | 'false';
+    };
+    url: '/x402/networks/available';
+};
+
+export type GetX402NetworksAvailableResponses = {
+    /**
+     * Accessible x402 EVM chains
+     */
+    200: {
+        status: 'success';
+        data: {
+            Networks: Array<X402AvailableNetwork>;
+        };
+    };
+};
+
+export type GetX402NetworksAvailableResponse = GetX402NetworksAvailableResponses[keyof GetX402NetworksAvailableResponses];
+
 export type GetX402NetworksData = {
     body?: never;
     path?: never;
@@ -10619,7 +11193,18 @@ export type PostX402NetworksData = {
         isTestnet?: boolean;
         isEnabled?: boolean;
         defaultAsset?: string | null;
+        /**
+         * Self-hosted facilitator: owned Selling wallet id (null clears it)
+         */
         facilitatorWalletId?: string | null;
+        /**
+         * Remote facilitator: HTTPS endpoint (null clears it)
+         */
+        facilitatorUrl?: string | null;
+        /**
+         * Authorization header value for the remote facilitator, stored encrypted at rest. Omit to preserve it only when the URL origin is unchanged; changing origin clears it. Send a string to set/rotate it, or null to clear it. Requires a remote facilitator URL (existing or set in the same request).
+         */
+        facilitatorAuth?: string | null;
     };
     path?: never;
     query?: never;
@@ -10654,6 +11239,10 @@ export type GetX402WalletsData = {
          * Filter wallets by direction (Purchasing or Selling)
          */
         type?: 'Purchasing' | 'Selling';
+        /**
+         * Filter wallets by the bound x402 network id
+         */
+        networkId?: string;
     };
     url: '/x402/wallets';
 };
@@ -10677,6 +11266,10 @@ export type PostX402WalletsData = {
      * Optional private key to import
      */
     body?: {
+        /**
+         * Id of the x402 network (payment source) to bind this wallet to
+         */
+        networkId: string;
         /**
          * Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators
          */
@@ -10706,6 +11299,30 @@ export type PostX402WalletsResponses = {
 };
 
 export type PostX402WalletsResponse = PostX402WalletsResponses[keyof PostX402WalletsResponses];
+
+export type GetX402WalletsDetailData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Id of the managed EVM wallet to fetch
+         */
+        id: string;
+    };
+    url: '/x402/wallets/detail';
+};
+
+export type GetX402WalletsDetailResponses = {
+    /**
+     * Managed x402 EVM wallet
+     */
+    200: {
+        status: 'success';
+        data: X402Wallet;
+    };
+};
+
+export type GetX402WalletsDetailResponse = GetX402WalletsDetailResponses[keyof GetX402WalletsDetailResponses];
 
 export type PostX402WalletsDeleteData = {
     /**
@@ -11029,9 +11646,17 @@ export type GetX402PaymentsData = {
          */
         direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
         /**
+         * Coarse side filter: buy = outbound payments, sell = inbound (verify + settle). A direction wins.
+         */
+        side?: 'buy' | 'sell';
+        /**
          * Filter by CAIP-2 chain id
          */
         caip2Network?: string;
+        /**
+         * When true, only returns attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.
+         */
+        filterNeedsManualAction?: 'true' | 'false';
     };
     url: '/x402/payments';
 };
@@ -11049,6 +11674,53 @@ export type GetX402PaymentsResponses = {
 };
 
 export type GetX402PaymentsResponse = GetX402PaymentsResponses[keyof GetX402PaymentsResponses];
+
+export type PostX402PaymentsReconcileData = {
+    /**
+     * The attempt to reconcile and the operator-confirmed outcome
+     */
+    body?: {
+        /**
+         * Id of the InboundSettle attempt awaiting reconciliation
+         */
+        attemptId: string;
+        /**
+         * Funds moved on-chain
+         */
+        resolution: 'settled';
+        /**
+         * On-chain settlement transaction hash
+         */
+        txHash: string;
+    } | {
+        /**
+         * Id of the InboundSettle attempt awaiting reconciliation
+         */
+        attemptId: string;
+        /**
+         * Funds did not move on-chain and the payment is safe to retry
+         */
+        resolution: 'failed';
+    };
+    path?: never;
+    query?: never;
+    url: '/x402/payments/reconcile';
+};
+
+export type PostX402PaymentsReconcileResponses = {
+    /**
+     * Reconciliation result
+     */
+    200: {
+        status: 'success';
+        data: {
+            attemptId: string;
+            status: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
+        };
+    };
+};
+
+export type PostX402PaymentsReconcileResponse = PostX402PaymentsReconcileResponses[keyof PostX402PaymentsReconcileResponses];
 
 export type GetX402SettlementsData = {
     body?: never;
@@ -11124,7 +11796,7 @@ export type GetX402WalletsBalanceData = {
          */
         id: string;
         /**
-         * Restrict to a single chain; defaults to all enabled chains
+         * Optional CAIP-2 chain id; must be the wallet's bound network (any other chain returns no balances)
          */
         caip2Network?: string;
     };
@@ -11324,7 +11996,15 @@ export type GetX402PaymentsCountData = {
     query?: {
         status?: 'PaymentRequired' | 'Verified' | 'Settled' | 'Failed' | 'Replayed';
         direction?: 'InboundVerify' | 'InboundSettle' | 'OutboundPayment';
+        /**
+         * Coarse side filter: buy = outbound, sell = inbound
+         */
+        side?: 'buy' | 'sell';
         caip2Network?: string;
+        /**
+         * When true, only counts attempts that require manual reconciliation: a settle that failed, threw, or was interrupted without recording its outcome (a stale Verified marker, or a stale Settled attempt missing its settlement record). Overrides the status filter.
+         */
+        filterNeedsManualAction?: 'true' | 'false';
     };
     url: '/x402/payments/count';
 };
@@ -11479,3 +12159,278 @@ export type PostX402AnalyticsResponses = {
 };
 
 export type PostX402AnalyticsResponse = PostX402AnalyticsResponses[keyof PostX402AnalyticsResponses];
+
+export type DeleteFundWalletData = {
+    /**
+     * Fund wallet to delete
+     */
+    body?: {
+        /**
+         * Fund wallet id to delete
+         */
+        id: string;
+        /**
+         * Delete even if the wallet still holds funds, or if the balance cannot be checked. Deletion makes the mnemonic unexportable, so the remaining balance would be recoverable only with direct database access
+         */
+        force?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/fund-wallet';
+};
+
+export type DeleteFundWalletErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Fund wallet not found
+     */
+    404: unknown;
+    /**
+     * Fund wallet has a distribution in flight, or still holds funds. In-flight transactions must settle; balance-only conflicts can be bypassed with force=true
+     */
+    409: unknown;
+    /**
+     * Balance could not be checked; retry or pass force=true
+     */
+    503: unknown;
+};
+
+export type DeleteFundWalletResponses = {
+    /**
+     * Fund wallet deleted
+     */
+    200: {
+        status: 'success';
+        data: FundWalletDeleted;
+    };
+};
+
+export type DeleteFundWalletResponse = DeleteFundWalletResponses[keyof DeleteFundWalletResponses];
+
+export type GetFundWalletData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Fund wallet id
+         */
+        id?: string;
+        /**
+         * Payment source id
+         */
+        paymentSourceId?: string;
+    };
+    url: '/fund-wallet';
+};
+
+export type GetFundWalletErrors = {
+    /**
+     * Neither id nor paymentSourceId was provided
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetFundWalletResponses = {
+    /**
+     * Fund wallets
+     */
+    200: {
+        status: 'success';
+        data: FundWalletList;
+    };
+};
+
+export type GetFundWalletResponse = GetFundWalletResponses[keyof GetFundWalletResponses];
+
+export type PatchFundWalletData = {
+    /**
+     * Distribution settings to change
+     */
+    body?: {
+        /**
+         * Fund wallet id to update
+         */
+        id: string;
+        /**
+         * Enable or disable this wallet as a funding source
+         */
+        enabled?: boolean;
+        /**
+         * New batch window in milliseconds (max 24 h)
+         */
+        batchWindowMs?: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/fund-wallet';
+};
+
+export type PatchFundWalletErrors = {
+    /**
+     * No changes were requested, or the batch window is outside its allowed range
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Fund wallet not found, or it has no distribution config
+     */
+    404: unknown;
+};
+
+export type PatchFundWalletResponses = {
+    /**
+     * Fund wallet updated
+     */
+    200: {
+        status: 'success';
+        data: FundWalletUpdated;
+    };
+};
+
+export type PatchFundWalletResponse = PatchFundWalletResponses[keyof PatchFundWalletResponses];
+
+export type PostFundWalletData = {
+    /**
+     * Fund wallet mnemonic and batch cadence
+     */
+    body?: {
+        /**
+         * Payment source to associate the fund wallet with
+         */
+        paymentSourceId: string;
+        /**
+         * BIP-39 mnemonic phrase for the fund wallet (12-24 words)
+         */
+        walletMnemonic: string;
+        /**
+         * Batch window in milliseconds (default 5 min, max 24 h)
+         */
+        batchWindowMs?: number;
+        /**
+         * Optional note for this fund wallet
+         */
+        note?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/fund-wallet';
+};
+
+export type PostFundWalletErrors = {
+    /**
+     * The mnemonic is invalid or the batch window is outside its allowed range
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Payment source not found
+     */
+    404: unknown;
+    /**
+     * The payment source became inactive, or this mnemonic already backs another active wallet
+     */
+    409: unknown;
+};
+
+export type PostFundWalletResponses = {
+    /**
+     * Fund wallet created
+     */
+    200: {
+        status: 'success';
+        data: FundWalletCreated;
+    };
+};
+
+export type PostFundWalletResponse = PostFundWalletResponses[keyof PostFundWalletResponses];
+
+export type GetFundDistributionData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter by payment source
+         */
+        paymentSourceId?: string;
+        /**
+         * Filter by fund wallet
+         */
+        fundWalletId?: string;
+        /**
+         * Filter by status
+         */
+        status?: 'Pending' | 'Submitted' | 'Confirmed' | 'Failed';
+        /**
+         * Number of results (max 100, default 20)
+         */
+        take?: number;
+        /**
+         * Cursor id for pagination
+         */
+        cursorId?: string;
+    };
+    url: '/fund-distribution';
+};
+
+export type GetFundDistributionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetFundDistributionResponses = {
+    /**
+     * Fund distribution requests
+     */
+    200: {
+        status: 'success';
+        data: FundDistributionList;
+    };
+};
+
+export type GetFundDistributionResponse = GetFundDistributionResponses[keyof GetFundDistributionResponses];
+
+export type PostFundDistributionTriggerData = {
+    /**
+     * No parameters
+     */
+    body?: {
+        [key: string]: unknown;
+    };
+    path?: never;
+    query?: never;
+    url: '/fund-distribution/trigger';
+};
+
+export type PostFundDistributionTriggerErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostFundDistributionTriggerResponses = {
+    /**
+     * Distribution cycle triggered
+     */
+    200: {
+        status: 'success';
+        data: FundDistributionTriggered;
+    };
+};
+
+export type PostFundDistributionTriggerResponse = PostFundDistributionTriggerResponses[keyof PostFundDistributionTriggerResponses];

@@ -230,9 +230,11 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		.txOut(smartContractAddress, outputAmount)
 		.txOutInlineDatumValue(newInlineDatum);
 
-	for (const utxo of walletUtxos) {
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
-	}
+	// Keep every wallet UTxO available to Mesh's final balancing pass. Declaring
+	// one UTxO as collateral does not require removing it from regular input
+	// selection, and doing so can hide the only input large enough to fund the
+	// outputs, fees, and minimum change.
+	txBuilder.selectUtxosFrom(walletUtxos);
 
 	// Optional self-send splitter for V2 single-item callers. See docstring
 	// on the public AutomaticFees entry point. Emitted BEFORE
@@ -467,10 +469,6 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		);
 	}
 
-	for (const utxo of walletUtxos) {
-		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
-	}
-
 	if (fee) {
 		const outputReference = mOutputReference(fee.txHash, fee.outputIndex);
 		txBuilder.txOut(fee.feeAddress, fee.feeAssets).txOutInlineDatumValue(outputReference);
@@ -492,6 +490,8 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	if (walletSplitterLovelace != null) {
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
+
+	txBuilder.selectUtxosFrom(walletUtxos);
 
 	return await txBuilder
 		.changeAddress(walletAddress)

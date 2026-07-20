@@ -11,8 +11,6 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'react-toastify';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
-  Payment,
-  Purchase,
   postPurchaseRequestRefund,
   postPurchaseCancelRefundRequest,
   postPaymentAuthorizeRefund,
@@ -28,26 +26,15 @@ import { extractApiErrorMessage } from '@/lib/api-error';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
-
-type Transaction =
-  | (Omit<Payment, 'CurrentTransaction' | 'TransactionHistory'> & {
-      type: 'payment';
-      CurrentTransaction?:
-        | (NonNullable<Payment['CurrentTransaction']> & {
-            layer?: 'L1' | 'L2';
-            hydraHeadId?: string | null;
-          })
-        | null;
-    })
-  | (Omit<Purchase, 'CurrentTransaction' | 'TransactionHistory'> & {
-      type: 'purchase';
-      CurrentTransaction?:
-        | (NonNullable<Purchase['CurrentTransaction']> & {
-            layer?: 'L1' | 'L2';
-            hydraHeadId?: string | null;
-          })
-        | null;
-    });
+import { TransactionHistorySection } from './TransactionHistorySection';
+import {
+  formatOnChainState,
+  formatRequestedAction,
+  formatStatus,
+  getLatestTxHash,
+  getStatusColor,
+  type Transaction,
+} from './transaction-format.helpers';
 
 interface TransactionDetailsDialogProps {
   transaction: Transaction | null;
@@ -57,33 +44,6 @@ interface TransactionDetailsDialogProps {
 
 const handleError = (error: unknown, fallback: string = 'An error occurred') => {
   toast.error(extractApiErrorMessage(error, fallback));
-};
-
-const getStatusColor = (status: string | null, hasError?: boolean) => {
-  if (hasError) return 'text-destructive';
-  switch (status?.toLowerCase()) {
-    case 'fundslocked':
-      return 'text-yellow-500';
-    case 'withdrawn':
-    case 'resultsubmitted':
-      return 'text-green-500';
-    case 'refundrequested':
-    case 'withdrawauthorized':
-    case 'refundauthorized':
-      return 'text-orange-500';
-    case 'refundwithdrawn':
-      return 'text-blue-500';
-    case 'disputed':
-    case 'disputedwithdrawn':
-      return 'text-destructive';
-    default:
-      return 'text-muted-foreground';
-  }
-};
-
-const formatStatus = (status: string | null) => {
-  if (!status) return '—';
-  return status.replace(/([A-Z])/g, ' $1').trim();
 };
 
 const isHydraTransaction = (transaction: Transaction) =>
@@ -133,6 +93,7 @@ export default function TransactionDetailsDialog({
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const [confirmAction, setConfirmAction] = React.useState<'refund' | 'cancel' | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [errorRecoveryMode, setErrorRecoveryMode] = React.useState<'clear' | 'retry' | null>(null);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
@@ -238,9 +199,10 @@ export default function TransactionDetailsDialog({
   const resolvedAgentName = registryAgentForLink?.name ?? agentNameFromChain ?? null;
   const agentNameLoading =
     registryAgentLinkLoading || (chainAgentNameLookupEnabled && chainAgentNameLoading);
-  const clearTransactionError = async () => {
+  const recoverTransactionError = async (retryPreviousAction: boolean) => {
     try {
       setIsLoading(true);
+      setErrorRecoveryMode(retryPreviousAction ? 'retry' : 'clear');
 
       if (!transaction) {
         toast.error('Transaction not found');
@@ -259,13 +221,21 @@ export default function TransactionDetailsDialog({
             blockchainIdentifier: transaction.blockchainIdentifier,
             updatedAt: new Date(transaction.updatedAt),
             network: transactionNetwork,
+            retryPreviousAction,
           },
         });
         if (response.error) {
-          handleError(response.error, 'Failed to clear error state');
+          handleError(
+            response.error,
+            retryPreviousAction ? 'Failed to retry previous action' : 'Failed to clear error state',
+          );
           return false;
         }
-        toast.success('Error state cleared successfully');
+        toast.success(
+          retryPreviousAction
+            ? 'Previous action queued for retry'
+            : 'Error state cleared successfully',
+        );
         onRefresh();
         onClose();
         return true;
@@ -277,13 +247,21 @@ export default function TransactionDetailsDialog({
             blockchainIdentifier: transaction.blockchainIdentifier,
             updatedAt: new Date(transaction.updatedAt),
             network: transactionNetwork,
+            retryPreviousAction,
           },
         });
         if (response.error) {
-          handleError(response.error, 'Failed to clear error state');
+          handleError(
+            response.error,
+            retryPreviousAction ? 'Failed to retry previous action' : 'Failed to clear error state',
+          );
           return false;
         }
-        toast.success('Error state cleared successfully');
+        toast.success(
+          retryPreviousAction
+            ? 'Previous action queued for retry'
+            : 'Error state cleared successfully',
+        );
         onRefresh();
         onClose();
         return true;
@@ -295,6 +273,7 @@ export default function TransactionDetailsDialog({
       return false;
     } finally {
       setIsLoading(false);
+      setErrorRecoveryMode(null);
     }
   };
 
@@ -496,72 +475,11 @@ export default function TransactionDetailsDialog({
               <h4 className="font-semibold">Onchain state</h4>
               <div className="rounded-md border p-4 bg-muted/10">
                 <p className="text-sm font-medium">
-                  {(() => {
-                    const state = transaction.onChainState?.toLowerCase();
-                    switch (state) {
-                      case 'fundslocked':
-                        return 'Funds Locked';
-                      case 'resultsubmitted':
-                        return 'Result Submitted';
-                      case 'refundrequested':
-                        return 'Refund Requested (waiting for approval)';
-                      case 'withdrawauthorized':
-                        return 'Withdraw Authorized';
-                      case 'refundauthorized':
-                        return 'Refund Authorized';
-                      case 'refundwithdrawn':
-                        return 'Refund Withdrawn';
-                      case 'disputed':
-                        return 'Disputed';
-                      case 'disputedwithdrawn':
-                        return 'Disputed Withdrawn';
-                      case 'withdrawn':
-                        return 'Withdrawn';
-                      case 'fundsordatuminvalid':
-                        return 'Funds or Datum Invalid';
-                      default:
-                        return state ? state.charAt(0).toUpperCase() + state.slice(1) : '—';
-                    }
-                  })()}
+                  {formatOnChainState(transaction.onChainState)}
                 </p>
                 {transaction.NextAction?.requestedAction && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    Next action:{' '}
-                    {(() => {
-                      const action = transaction.NextAction.requestedAction;
-                      switch (action) {
-                        case 'None':
-                          return 'None';
-                        case 'Ignore':
-                          return 'Ignore';
-                        case 'WaitingForManualAction':
-                          return 'Waiting for manual action';
-                        case 'WaitingForExternalAction':
-                          return 'Waiting for external action';
-                        case 'FundsLockingRequested':
-                          return 'Funds locking requested';
-                        case 'FundsLockingInitiated':
-                          return 'Funds locking initiated';
-                        case 'SetRefundRequestedRequested':
-                          return 'Refund request initiated';
-                        case 'SetRefundRequestedInitiated':
-                          return 'Refund request in progress';
-                        case 'WithdrawRequested':
-                          return 'Withdraw requested';
-                        case 'WithdrawInitiated':
-                          return 'Withdraw initiated';
-                        case 'WithdrawRefundRequested':
-                          return 'Refund withdraw requested';
-                        case 'WithdrawRefundInitiated':
-                          return 'Refund withdraw initiated';
-                        case 'AuthorizeWithdrawalRequested':
-                          return 'Withdrawal authorization requested';
-                        case 'AuthorizeWithdrawalInitiated':
-                          return 'Withdrawal authorization initiated';
-                        default:
-                          return action;
-                      }
-                    })()}
+                    Next action: {formatRequestedAction(transaction.NextAction.requestedAction)}
                   </p>
                 )}
               </div>
@@ -631,25 +549,32 @@ export default function TransactionDetailsDialog({
 
                 <div className="col-span-2">
                   <h5 className="text-sm font-medium mb-1">Transaction Hash</h5>
-                  {transaction.CurrentTransaction?.txHash ? (
-                    <div className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
-                      <a
-                        href={getExplorerUrl(
-                          transaction.CurrentTransaction.txHash,
-                          transactionNetwork,
-                          'transaction',
+                  {(() => {
+                    // Fall back to the latest historical hash so an error-state row
+                    // (cleared CurrentTransaction) still shows its last on-chain tx.
+                    const displayTxHash = getLatestTxHash(transaction);
+                    const isHistorical = !transaction.CurrentTransaction?.txHash;
+                    return displayTxHash ? (
+                      <div className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
+                        <a
+                          href={getExplorerUrl(displayTxHash, transactionNetwork, 'transaction')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-mono break-all hover:underline text-primary"
+                        >
+                          {displayTxHash}
+                        </a>
+                        <CopyButton value={displayTxHash} />
+                        {isHistorical && (
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            (previous)
+                          </span>
                         )}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm font-mono break-all hover:underline text-primary"
-                      >
-                        {transaction.CurrentTransaction.txHash}
-                      </a>
-                      <CopyButton value={transaction.CurrentTransaction?.txHash} />
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No transaction hash available</p>
-                  )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No transaction hash available</p>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -746,25 +671,37 @@ export default function TransactionDetailsDialog({
                         {transaction.NextAction.errorNote}
                       </p>
                     )}
-                    <div className="flex gap-2 mt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Retry queues the failed blockchain action again with its original data. Clear
+                      only removes the error and waits for the next external action.
+                    </p>
+                    <div className="flex flex-wrap gap-2 mt-4">
+                      <Button
+                        size="sm"
+                        disabled={isLoading}
+                        onClick={() => recoverTransactionError(true)}
+                      >
+                        {errorRecoveryMode === 'retry'
+                          ? 'Queueing retry...'
+                          : 'Retry Failed Action'}
+                      </Button>
                       <Button
                         variant="secondary"
                         size="sm"
                         disabled={isLoading}
-                        onClick={async () => {
-                          if (await clearTransactionError()) {
-                            onClose();
-                            onRefresh();
-                          }
-                        }}
+                        onClick={() => recoverTransactionError(false)}
                       >
-                        {isLoading ? 'Clearing error state...' : 'Clear Error State'}
+                        {errorRecoveryMode === 'clear'
+                          ? 'Clearing error state...'
+                          : 'Clear Error State'}
                       </Button>
                     </div>
                   </div>
                 </div>
               </div>
             )}
+
+            <TransactionHistorySection transaction={transaction} network={transactionNetwork} />
 
             <div className="flex gap-2 justify-end">
               {canRequestRefund(transaction) && transaction.type === 'purchase' && (

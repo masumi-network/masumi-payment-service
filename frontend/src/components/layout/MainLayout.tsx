@@ -653,7 +653,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               <div className="flex items-center gap-4">
                 <Button variant="outline" size="sm" asChild>
                   <Link
-                    href="https://docs.masumi.network"
+                    href="https://www.masumi.network/dev/masumi"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2"

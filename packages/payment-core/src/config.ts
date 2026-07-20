@@ -234,6 +234,13 @@ const lowBalanceCheckInterval = parseNumberEnv(
 	5,
 );
 
+const checkFundTransferInterval = Number(process.env.CHECK_FUND_TRANSFER_INTERVAL ?? '15');
+if (checkFundTransferInterval < 5) throw new Error('CHECK_FUND_TRANSFER_INTERVAL must be at least 5 seconds');
+
+const checkFundTransferConfirmationInterval = Number(process.env.CHECK_FUND_TRANSFER_CONFIRMATION_INTERVAL ?? '20');
+if (checkFundTransferConfirmationInterval < 5)
+	throw new Error('CHECK_FUND_TRANSFER_CONFIRMATION_INTERVAL must be at least 5 seconds');
+
 const lowBalanceDefaultRulesMainnet = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_MAINNET');
 const lowBalanceDefaultRulesPreprod = parseLowBalanceDefaultRules('LOW_BALANCE_DEFAULT_RULES_PREPROD');
 
@@ -276,6 +283,8 @@ export const CONFIG = {
 	IS_COINGECKO_DEMO: process.env.IS_COINGECKO_DEMO?.toLowerCase() === 'true',
 	LOW_BALANCE_DEFAULT_RULES_MAINNET: lowBalanceDefaultRulesMainnet,
 	LOW_BALANCE_DEFAULT_RULES_PREPROD: lowBalanceDefaultRulesPreprod,
+	CHECK_FUND_TRANSFER_INTERVAL: checkFundTransferInterval,
+	CHECK_FUND_TRANSFER_CONFIRMATION_INTERVAL: checkFundTransferConfirmationInterval,
 	// Prisma span filtering: only export outlier (slow) queries and cap volume
 	OTEL_PRISMA_OUTLIER_THRESHOLD_MS: parseNumberEnv(
 		'OTEL_PRISMA_OUTLIER_THRESHOLD_MS',
@@ -320,9 +329,48 @@ export const CONSTANTS = {
 	MUTEX_TIMEOUT_MINUTES: 3,
 	MIN_COLLATERAL_LOVELACE: 1435230n,
 	MIN_TX_FEE_BUFFER_LOVELACE: 2000000n,
+	FUND_DISTRIBUTION_TX_CONFIRMATION_TIMEOUT_MS: 30 * 60 * 1000, // 30 minutes
+	FUND_DISTRIBUTION_DEFAULT_BATCH_WINDOW_MS: 5 * 60 * 1000, // 5 minutes
+	FUND_DISTRIBUTION_CHECK_INTERVAL_S: 30, // seconds between distribution cycles
+	// Keep one transaction comfortably below Cardano's max transaction size.
+	// Requests beyond this cap remain Pending and are picked up by a later batch.
+	FUND_DISTRIBUTION_MAX_OUTPUTS_PER_TX: 100,
+	// Grace before a submitted distribution is even checked for confirmation.
+	// Blockfrost has not indexed a tx submitted in the current cycle, and a
+	// not-found there would otherwise look like a failure.
+	FUND_DISTRIBUTION_CONFIRMATION_DELAY_MS: 5 * 60 * 1000, // 5 minutes
+	// Upper bound for the configurable batch window. Also keeps the value
+	// inside Postgres' Int (i32) range — an unbounded input overflowed the
+	// column and surfaced as a 500.
+	FUND_DISTRIBUTION_MAX_BATCH_WINDOW_MS: 24 * 60 * 60 * 1000, // 24 hours
+	// After a distribution attempt fails pre-broadcast, wait this long before
+	// re-creating a request for the same target. Retrying is correct (the
+	// wallets are still low), but without a cooldown a persistent failure
+	// (bad Blockfrost key, malformed address) re-fired FUND_DISTRIBUTION_FAILED
+	// every 30s cycle.
+	FUND_DISTRIBUTION_FAILURE_RETRY_COOLDOWN_MS: 5 * 60 * 1000, // 5 minutes
+	// Minimum gap between "fund wallet itself is underfunded" alerts. The
+	// distribution cycle runs every 30s and pending requests stay Pending while
+	// the treasury is empty, so without a cooldown the alert fired per cycle.
+	FUND_DISTRIBUTION_UNDERFUNDED_ALERT_COOLDOWN_MS: 15 * 60 * 1000, // 15 minutes
+	// Floor for a single lovelace topup. Each distribution is one tx output, so
+	// anything below Cardano's min-UTxO can never build. Set at the collateral
+	// amount (5 ADA) rather than the bare ~1 ADA minimum: a topup smaller than
+	// that is not a useful top-up for a wallet that needs to pay fees and
+	// collateral.
+	MIN_TOPUP_LOVELACE: 5_000_000n,
+	// Operational floor for a native-token distribution output. The executor
+	// also calculates the exact ledger min-UTxO from the serialized output and
+	// current coinsPerUtxoSize; the larger value wins. Keeping a 2 ADA floor
+	// gives the receiving hot wallet enough ADA to spend a small token UTxO.
+	FUND_DISTRIBUTION_TOKEN_OUTPUT_LOVELACE: 2_000_000n,
 	MAX_DEFAULT_SMART_CONTRACT_HISTORY_LEVELS: 10,
 
 	FALLBACK_COINS_PER_UTXO_SIZE: 4310,
+	// Current Cardano fallback for the maximum serialized Value size. Fund
+	// distribution loads the live protocol value and uses this only when the
+	// provider is unavailable or returns an invalid parameter.
+	FALLBACK_MAX_VALUE_SIZE: 5000,
 
 	RESULT_HASH_SIZE_BYTES: 65,
 	TRANSACTION_TIMEOUTS: {

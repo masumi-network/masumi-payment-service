@@ -84,6 +84,11 @@ function refKey(utxo: UTxO): string {
 	return `${utxo.input.txHash}#${utxo.input.outputIndex}`;
 }
 
+function countNonCollateralWalletUtxos(walletUtxos: UTxO[], collateralUtxo: UTxO): number {
+	const collateralKey = refKey(collateralUtxo);
+	return walletUtxos.filter((utxo) => refKey(utxo) !== collateralKey).length;
+}
+
 function assertDistinctRefs<T extends { smartContractUtxo: UTxO }>(items: T[]): void {
 	const seen = new Set<string>();
 	for (const item of items) {
@@ -264,6 +269,7 @@ export async function generateMasumiSmartContractBatchInteractionTransactionAuto
 	}
 
 	const sortedItems = sortItemsCanonical(items);
+	const nonCollateralWalletUtxoCount = countNonCollateralWalletUtxos(walletUtxos, collateralUtxo);
 
 	async function buildTwoPass(includeWalletSplitter: boolean): Promise<string> {
 		const evaluationTx = await buildBatchInteractionTx(
@@ -318,7 +324,7 @@ export async function generateMasumiSmartContractBatchInteractionTransactionAuto
 	} catch (error) {
 		if (
 			!shouldRetryWithoutOptionalWalletSplitter({
-				walletUtxoCount: walletUtxos.length,
+				walletUtxoCount: nonCollateralWalletUtxoCount,
 				includeWalletSplitter: true,
 				error,
 			})
@@ -326,7 +332,7 @@ export async function generateMasumiSmartContractBatchInteractionTransactionAuto
 			throw error;
 		}
 		logger.warn('V2 batch interaction optional wallet splitter depleted fee input; retrying without splitter', {
-			walletUtxoCount: walletUtxos.length,
+			walletUtxoCount: nonCollateralWalletUtxoCount,
 			itemCount: sortedItems.length,
 			error: error instanceof Error ? { name: error.name, message: error.message } : error,
 		});
@@ -455,19 +461,20 @@ async function buildBatchInteractionTx(
 		txBuilder.txOut(smartContractAddress, outputAmount).txOutInlineDatumValue(item.newInlineDatum);
 	}
 
+	const nonCollateralWalletUtxoCount = countNonCollateralWalletUtxos(walletUtxos, collateralUtxo);
+
 	// Conditional wallet "splitter" output: an explicit pure-ADA self-send
-	// emitted ONLY when the wallet has exactly ONE fee-eligible UTxO (the
-	// genuine trap-risk floor). Threshold rationale:
+	// emitted ONLY when the wallet has exactly ONE non-collateral wallet UTxO
+	// (the genuine trap-risk floor). Threshold rationale:
 	//
-	//   - `walletUtxos.length === 0` → tx cannot build; splitter would not
-	//     help and the build failure is the correct signal.
-	//   - `walletUtxos.length === 1` → mesh consumes the one fee input,
+	//   - count === 0 → the collateral is the only wallet candidate.
+	//   - count === 1 → mesh may consume the one ordinary fee input,
 	//     emits one change. Without splitter the wallet ends at
 	//     [collateral, change] = exactly the 2-UTxO floor — any phase-2
 	//     failure or external consolidation drops below 2 and re-triggers
 	//     `ensureCollateralReady` prep. Splitter adds a 3rd UTxO so the
 	//     wallet has a buffer.
-	//   - `walletUtxos.length >= 2` → mesh's natural behavior post-tx is
+	//   - count >= 2 → mesh's natural behavior post-tx is
 	//     at least [collateral, change] = 2 UTxOs regardless of how many
 	//     fee inputs it picks. Splitter is over-emission; firing it adds
 	//     an extra output that competes with the script continuation
@@ -475,25 +482,22 @@ async function buildBatchInteractionTx(
 	//     `[batch-fallback]` on dense batches (the regression that
 	//     surfaced the `<= 2` threshold being too loose).
 	//
-	// The collateral input is excluded from `walletUtxos` by the service
-	// layer (each service's `.filter(...)` walk removes `collateralUtxo`
-	// before passing here), so `walletUtxos.length` is the count of
-	// FEE-ELIGIBLE wallet UTxOs.
+	// `walletUtxos` includes the declared collateral because CIP-40 permits a
+	// payment-key UTxO to appear in both input sets. Mesh performs the final
+	// regular-input selection from this complete candidate list.
 	//
 	// See `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for the lifecycle
 	// rationale and the cross-module invariant
 	// `WALLET_SPLITTER_LOVELACE >= COLLATERAL_RESERVE_LOVELACE`.
-	if ((options.includeWalletSplitter ?? true) && walletUtxos.length === 1) {
+	if ((options.includeWalletSplitter ?? true) && nonCollateralWalletUtxoCount === 1) {
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
 	}
 
 	// Hand the candidate wallet UTxOs to Mesh's coin selector instead of
-	// force-adding every one. Force-adding (a) blows tx size on fragmented
-	// wallets and (b) bypasses caller-supplied exclusion lists (e.g.
-	// `pickBatchCollateral`'s `excludeSpendingInputs`) — the service layer
-	// pre-filters `walletUtxos` to exclude collateral + spending refs so
-	// passing the full list to `selectUtxosFrom` is safe and lets Mesh pick
-	// only what's needed for fees + change.
+	// force-adding every one. Force-adding blows tx size on fragmented
+	// wallets. The service layer only excludes script-spending refs; it keeps
+	// collateral available because the ledger allows regular VKey overlap.
+	// Mesh then picks only what's needed for fees + change.
 	txBuilder.selectUtxosFrom(walletUtxos);
 
 	return await txBuilder
@@ -687,9 +691,9 @@ async function buildBatchWithdrawTx(
 	}
 
 	// Conditional wallet "splitter" output — same rationale as in
-	// buildBatchInteractionTx. Emit ONLY when wallet has exactly one
-	// fee-eligible UTxO (the genuine trap-risk floor).
-	if (walletUtxos.length === 1) {
+	// buildBatchInteractionTx. Emit only when there is exactly one
+	// non-collateral wallet UTxO.
+	if (countNonCollateralWalletUtxos(walletUtxos, collateralUtxo) === 1) {
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: WALLET_SPLITTER_LOVELACE.toString() }]);
 	}
 

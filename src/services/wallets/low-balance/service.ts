@@ -1,24 +1,29 @@
 import { trace } from '@opentelemetry/api';
-import { Address, Transaction, Value } from '@emurgo/cardano-serialization-lib-nodejs';
-import type { UTxO } from '@meshsdk/core';
 import { HotWalletType, Network, PaymentSourceType } from '@/generated/prisma/client';
 import { LowBalanceStatus } from '@/generated/prisma/enums';
 import { prisma } from '@masumi/payment-core/db';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
-import { CONFIG, type LowBalanceDefaultRule } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { logWarn } from '@/utils/logs';
 import { recordWalletLowBalanceAlert } from '@masumi/payment-core/metrics';
-import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { webhookEventsService } from '@/services/webhooks';
-
-type BalanceMap = Map<string, bigint>;
+import { fetchAddressBalanceMap } from '@/services/shared/address-balance';
+import { projectBalanceMapFromUnsignedTx, type BalanceMap, type ProjectableWalletUtxo } from './balance-map';
+import {
+	createRuleForWallet as createLowBalanceRuleForWallet,
+	deleteRule as deleteLowBalanceRule,
+	seedDefaultRulesForWallets as seedDefaultLowBalanceRulesForWallets,
+	updateRule as updateLowBalanceRule,
+	type WalletLowBalanceRuleMutationRecord,
+} from './rule-mutations';
 
 type WalletLowBalanceRuleRecord = {
 	id: string;
 	assetUnit: string;
 	thresholdAmount: bigint;
 	enabled: boolean;
+	topupEnabled: boolean;
+	topupAmount: bigint | null;
 	status: LowBalanceStatus;
 	lastKnownAmount: bigint | null;
 	lastCheckedAt: Date | null;
@@ -54,37 +59,13 @@ type EvaluateWalletContextOptions = {
 	emitAlerts?: boolean;
 };
 
-type WalletLowBalanceRuleMutationRecord = WalletLowBalanceRuleRecord & {
-	hotWalletId: string;
-};
-
-type MeshLikeUtxo = {
-	output: Pick<UTxO['output'], 'amount'>;
-};
-
-type LucidLikeUtxo = {
-	assets: Record<string, bigint>;
-};
-
-type ProjectableMeshLikeUtxo = {
-	input: Pick<UTxO['input'], 'txHash' | 'outputIndex'>;
-	output: Pick<UTxO['output'], 'amount'>;
-};
-
-type ProjectableLucidLikeUtxo = {
-	txHash: string;
-	outputIndex: number;
-	assets: Record<string, bigint>;
-};
-
-type ProjectableWalletUtxo = ProjectableMeshLikeUtxo | ProjectableLucidLikeUtxo;
-
 type ProjectedSubmissionEvaluation = {
 	hotWalletId: string;
 	walletAddress: string;
 	walletUtxos: ProjectableWalletUtxo[];
 	unsignedTx: string;
 	checkSource: WalletBalanceCheckSource;
+	currentBalanceMap?: BalanceMap;
 };
 
 const LOW_BALANCE_WARNING_EVENT = 'wallet.low_balance';
@@ -98,164 +79,14 @@ function statusForBalance(currentAmount: bigint, thresholdAmount: bigint): LowBa
 	return currentAmount < thresholdAmount ? LowBalanceStatus.Low : LowBalanceStatus.Healthy;
 }
 
-function addQuantity(balanceMap: BalanceMap, assetUnit: string, quantity: bigint) {
-	balanceMap.set(assetUnit, (balanceMap.get(assetUnit) ?? 0n) + quantity);
-}
-
-function subtractQuantity(balanceMap: BalanceMap, assetUnit: string, quantity: bigint) {
-	balanceMap.set(assetUnit, (balanceMap.get(assetUnit) ?? 0n) - quantity);
-}
-
-function toBalanceMapFromMeshUtxos(utxos: MeshLikeUtxo[]): BalanceMap {
-	const balanceMap = new Map<string, bigint>();
-
-	for (const utxo of utxos) {
-		for (const amount of utxo.output.amount) {
-			const assetUnit = amount.unit === '' ? 'lovelace' : amount.unit;
-			addQuantity(balanceMap, assetUnit, BigInt(amount.quantity));
-		}
-	}
-
-	return balanceMap;
-}
-
-function toBalanceMapFromLucidUtxos(utxos: LucidLikeUtxo[]): BalanceMap {
-	const balanceMap = new Map<string, bigint>();
-
-	for (const utxo of utxos) {
-		for (const [assetUnit, quantity] of Object.entries(utxo.assets)) {
-			addQuantity(balanceMap, assetUnit === '' ? 'lovelace' : assetUnit, quantity);
-		}
-	}
-
-	return balanceMap;
-}
-
-function isLucidProjectableUtxo(utxo: ProjectableWalletUtxo): utxo is ProjectableLucidLikeUtxo {
-	return 'assets' in utxo;
-}
-
-function createUtxoReferenceKey(txHash: string, outputIndex: number): string {
-	return `${txHash}#${outputIndex}`;
-}
-
-function toBalanceMapFromProjectableUtxo(utxo: ProjectableWalletUtxo): BalanceMap {
-	if (isLucidProjectableUtxo(utxo)) {
-		return toBalanceMapFromLucidUtxos([utxo]);
-	}
-
-	return toBalanceMapFromMeshUtxos([utxo]);
-}
-
-function toBalanceMapFromProjectableUtxos(utxos: ProjectableWalletUtxo[]): BalanceMap {
-	const balanceMap = new Map<string, bigint>();
-
-	for (const utxo of utxos) {
-		const utxoBalanceMap = toBalanceMapFromProjectableUtxo(utxo);
-
-		for (const [assetUnit, quantity] of utxoBalanceMap) {
-			addQuantity(balanceMap, assetUnit, quantity);
-		}
-	}
-
-	return balanceMap;
-}
-
-function toBalanceMapFromCardanoValue(value: Value): BalanceMap {
-	const balanceMap = new Map<string, bigint>();
-
-	addQuantity(balanceMap, 'lovelace', BigInt(value.coin().to_str()));
-
-	const multiAsset = value.multiasset();
-	if (multiAsset == null) {
-		return balanceMap;
-	}
-
-	const policyIds = multiAsset.keys();
-	for (let policyIndex = 0; policyIndex < policyIds.len(); policyIndex++) {
-		const policyId = policyIds.get(policyIndex);
-		const assets = multiAsset.get(policyId);
-		if (assets == null) {
-			continue;
-		}
-
-		const assetNames = assets.keys();
-		for (let assetIndex = 0; assetIndex < assetNames.len(); assetIndex++) {
-			const assetName = assetNames.get(assetIndex);
-			const quantity = assets.get(assetName);
-			if (quantity == null) {
-				continue;
-			}
-
-			addQuantity(balanceMap, `${policyId.to_hex()}${assetName.to_hex()}`, BigInt(quantity.to_str()));
-		}
-	}
-
-	return balanceMap;
-}
-
-function projectBalanceMapFromUnsignedTx(
-	walletAddress: string,
-	walletUtxos: ProjectableWalletUtxo[],
-	unsignedTx: string,
-): BalanceMap {
-	const projectedBalanceMap = toBalanceMapFromProjectableUtxos(walletUtxos);
-	const knownWalletInputs = new Map<string, BalanceMap>();
-
-	for (const utxo of walletUtxos) {
-		const referenceKey = isLucidProjectableUtxo(utxo)
-			? createUtxoReferenceKey(utxo.txHash, utxo.outputIndex)
-			: createUtxoReferenceKey(utxo.input.txHash, utxo.input.outputIndex);
-		knownWalletInputs.set(referenceKey, toBalanceMapFromProjectableUtxo(utxo));
-	}
-
-	const walletAddressHex = Address.from_bech32(walletAddress).to_hex();
-	const transaction = Transaction.from_bytes(Buffer.from(unsignedTx, 'hex'));
-	const transactionBody = transaction.body();
-	const inputs = transactionBody.inputs();
-
-	for (let inputIndex = 0; inputIndex < inputs.len(); inputIndex++) {
-		const input = inputs.get(inputIndex);
-		const inputBalanceMap = knownWalletInputs.get(
-			createUtxoReferenceKey(input.transaction_id().to_hex(), input.index()),
-		);
-
-		if (inputBalanceMap == null) {
-			continue;
-		}
-
-		for (const [assetUnit, quantity] of inputBalanceMap) {
-			subtractQuantity(projectedBalanceMap, assetUnit, quantity);
-		}
-	}
-
-	const outputs = transactionBody.outputs();
-	for (let outputIndex = 0; outputIndex < outputs.len(); outputIndex++) {
-		const output = outputs.get(outputIndex);
-		if (output.address().to_hex() !== walletAddressHex) {
-			continue;
-		}
-
-		for (const [assetUnit, quantity] of toBalanceMapFromCardanoValue(output.amount())) {
-			addQuantity(projectedBalanceMap, assetUnit, quantity);
-		}
-	}
-
-	return projectedBalanceMap;
-}
-
-function getNetworkDefaultLowBalanceRules(network: Network): LowBalanceDefaultRule[] {
-	return network === Network.Mainnet
-		? CONFIG.LOW_BALANCE_DEFAULT_RULES_MAINNET
-		: CONFIG.LOW_BALANCE_DEFAULT_RULES_PREPROD;
-}
-
 function serializeLowBalanceRecord(rule: WalletLowBalanceRuleRecord) {
 	return {
 		id: rule.id,
 		assetUnit: rule.assetUnit,
 		thresholdAmount: rule.thresholdAmount.toString(),
 		enabled: rule.enabled,
+		topupEnabled: rule.topupEnabled,
+		topupAmount: rule.topupAmount?.toString() ?? null,
 		status: rule.status,
 		lastKnownAmount: rule.lastKnownAmount?.toString() ?? null,
 		lastCheckedAt: rule.lastCheckedAt,
@@ -307,6 +138,8 @@ export class WalletLowBalanceMonitorService {
 						assetUnit: true,
 						thresholdAmount: true,
 						enabled: true,
+						topupEnabled: true,
+						topupAmount: true,
 						status: true,
 						lastKnownAmount: true,
 						lastCheckedAt: true,
@@ -318,43 +151,7 @@ export class WalletLowBalanceMonitorService {
 	}
 
 	async seedDefaultRulesForWallets(walletIds: string[]): Promise<void> {
-		if (walletIds.length === 0) {
-			return;
-		}
-
-		const wallets = await prisma.hotWallet.findMany({
-			where: {
-				id: { in: walletIds },
-				deletedAt: null,
-			},
-			select: {
-				id: true,
-				PaymentSource: {
-					select: {
-						network: true,
-					},
-				},
-			},
-		});
-
-		const rulesToCreate = wallets.flatMap((wallet) =>
-			getNetworkDefaultLowBalanceRules(wallet.PaymentSource.network).map((rule) => ({
-				hotWalletId: wallet.id,
-				assetUnit: rule.assetUnit,
-				thresholdAmount: BigInt(rule.thresholdAmount),
-				enabled: true,
-				status: LowBalanceStatus.Unknown,
-			})),
-		);
-
-		if (rulesToCreate.length === 0) {
-			return;
-		}
-
-		await prisma.hotWalletLowBalanceRule.createMany({
-			data: rulesToCreate,
-			skipDuplicates: true,
-		});
+		return seedDefaultLowBalanceRulesForWallets(walletIds);
 	}
 
 	async createRuleForWallet(params: {
@@ -362,69 +159,24 @@ export class WalletLowBalanceMonitorService {
 		assetUnit: string;
 		thresholdAmount: bigint;
 		enabled: boolean;
+		topupEnabled?: boolean;
+		topupAmount?: bigint | null;
 	}): Promise<WalletLowBalanceRuleMutationRecord> {
-		const createdRule = await prisma.hotWalletLowBalanceRule.create({
-			data: {
-				hotWalletId: params.hotWalletId,
-				assetUnit: params.assetUnit,
-				thresholdAmount: params.thresholdAmount,
-				enabled: params.enabled,
-				status: LowBalanceStatus.Unknown,
-				lastKnownAmount: null,
-				lastCheckedAt: null,
-				lastAlertedAt: null,
-			},
-			select: {
-				id: true,
-				hotWalletId: true,
-				assetUnit: true,
-				thresholdAmount: true,
-				enabled: true,
-				status: true,
-				lastKnownAmount: true,
-				lastCheckedAt: true,
-				lastAlertedAt: true,
-			},
-		});
-
-		await this.refreshRuleStateAfterMutation(createdRule.hotWalletId, createdRule.enabled);
-
-		return (await this.getRuleMutationRecordById(createdRule.id)) ?? createdRule;
+		return createLowBalanceRuleForWallet(this, params);
 	}
 
 	async updateRule(params: {
 		ruleId: string;
 		thresholdAmount?: bigint;
 		enabled?: boolean;
+		topupEnabled?: boolean;
+		topupAmount?: bigint | null;
 	}): Promise<WalletLowBalanceRuleMutationRecord> {
-		const updatedRule = await prisma.hotWalletLowBalanceRule.update({
-			where: {
-				id: params.ruleId,
-			},
-			data: {
-				thresholdAmount: params.thresholdAmount,
-				enabled: params.enabled,
-				status: LowBalanceStatus.Unknown,
-				lastKnownAmount: null,
-				lastCheckedAt: null,
-				lastAlertedAt: null,
-			},
-			select: {
-				id: true,
-				hotWalletId: true,
-				assetUnit: true,
-				thresholdAmount: true,
-				enabled: true,
-				status: true,
-				lastKnownAmount: true,
-				lastCheckedAt: true,
-				lastAlertedAt: true,
-			},
-		});
+		return updateLowBalanceRule(this, params);
+	}
 
-		await this.refreshRuleStateAfterMutation(updatedRule.hotWalletId, updatedRule.enabled);
-
-		return (await this.getRuleMutationRecordById(updatedRule.id)) ?? updatedRule;
+	async deleteRule(ruleId: string): Promise<void> {
+		return deleteLowBalanceRule(ruleId);
 	}
 
 	async evaluateHotWalletById(
@@ -440,17 +192,48 @@ export class WalletLowBalanceMonitorService {
 		await this.evaluateWalletContext(wallet, balanceMap, checkSource);
 	}
 
+	async evaluateCurrentHotWalletById(
+		hotWalletId: string,
+		checkSource: WalletBalanceCheckSource,
+	): Promise<BalanceMap | null> {
+		const balanceMap = await this.fetchCurrentBalanceMapForWallet(hotWalletId);
+		if (balanceMap == null) {
+			return null;
+		}
+
+		await this.evaluateHotWalletById(hotWalletId, balanceMap, checkSource);
+		return balanceMap;
+	}
+
 	async evaluateProjectedHotWalletById({
 		hotWalletId,
 		walletAddress,
 		walletUtxos,
 		unsignedTx,
 		checkSource,
+		currentBalanceMap: providedCurrentBalanceMap,
 	}: ProjectedSubmissionEvaluation): Promise<void> {
-		const currentBalanceMap = toBalanceMapFromProjectableUtxos(walletUtxos);
+		const currentBalanceMap =
+			providedCurrentBalanceMap == null
+				? await this.fetchCurrentBalanceMapForWallet(hotWalletId)
+				: new Map(providedCurrentBalanceMap);
+		if (currentBalanceMap == null) {
+			logger.warn('Skipping projected wallet balance evaluation because the confirmed balance is unavailable', {
+				component: 'wallet_low_balance_monitor',
+				operation: 'projected_balance_skip',
+				wallet_id: hotWalletId,
+				check_source: checkSource,
+			});
+			return;
+		}
 
 		try {
-			const projectedBalanceMap = projectBalanceMapFromUnsignedTx(walletAddress, walletUtxos, unsignedTx);
+			const projectedBalanceMap = projectBalanceMapFromUnsignedTx(
+				walletAddress,
+				walletUtxos,
+				unsignedTx,
+				currentBalanceMap,
+			);
 			await this.evaluateHotWalletById(hotWalletId, projectedBalanceMap, checkSource);
 		} catch (error) {
 			logger.warn('Failed to project post-submission wallet balance, falling back to current balance monitoring', {
@@ -586,11 +369,6 @@ export class WalletLowBalanceMonitorService {
 				walletVkey: true,
 				walletAddress: true,
 				type: true,
-				Secret: {
-					select: {
-						encryptedMnemonic: true,
-					},
-				},
 				PaymentSource: {
 					select: {
 						id: true,
@@ -613,6 +391,8 @@ export class WalletLowBalanceMonitorService {
 						assetUnit: true,
 						thresholdAmount: true,
 						enabled: true,
+						topupEnabled: true,
+						topupAmount: true,
 						status: true,
 						lastKnownAmount: true,
 						lastCheckedAt: true,
@@ -648,17 +428,13 @@ export class WalletLowBalanceMonitorService {
 						continue;
 					}
 
-					const { utxos } = await generateWalletExtended(
-						wallet.PaymentSource.network,
-						wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
-						wallet.Secret.encryptedMnemonic,
-					);
+					const balanceMap = await fetchAddressBalanceMap({
+						network: wallet.PaymentSource.network,
+						rpcProviderApiKey: wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+						address: wallet.walletAddress,
+					});
 
-					await this.evaluateWalletContext(
-						wallet,
-						toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]),
-						'interval_check',
-					);
+					await this.evaluateWalletContext(wallet, balanceMap, 'interval_check');
 					checkedWalletCount += 1;
 				} catch (error) {
 					failedWalletCount += 1;
@@ -749,6 +525,10 @@ export class WalletLowBalanceMonitorService {
 			currentAmount: alert.currentAmount,
 			checkedAt: alert.checkedAt.toISOString(),
 		});
+
+		// Auto-top-up is driven by the fund-distribution scan, which reads each
+		// rule's topupEnabled/threshold/amount directly. The monitor's job here is
+		// the alert/webhook above; it no longer requests top-ups itself.
 	}
 
 	getSerializedRules(rules: WalletLowBalanceRuleRecord[]) {
@@ -759,44 +539,7 @@ export class WalletLowBalanceMonitorService {
 		return serializeLowBalanceSummary(rules);
 	}
 
-	private async getRuleMutationRecordById(ruleId: string): Promise<WalletLowBalanceRuleMutationRecord | null> {
-		return prisma.hotWalletLowBalanceRule.findUnique({
-			where: {
-				id: ruleId,
-			},
-			select: {
-				id: true,
-				hotWalletId: true,
-				assetUnit: true,
-				thresholdAmount: true,
-				enabled: true,
-				status: true,
-				lastKnownAmount: true,
-				lastCheckedAt: true,
-				lastAlertedAt: true,
-			},
-		});
-	}
-
-	private async refreshRuleStateAfterMutation(hotWalletId: string, enabled: boolean): Promise<void> {
-		if (!enabled) {
-			return;
-		}
-
-		const balanceMap = await this.fetchCurrentBalanceMapForWallet(hotWalletId);
-		if (balanceMap == null) {
-			return;
-		}
-
-		const wallet = await this.getWalletLowBalanceContext(hotWalletId);
-		if (wallet == null || wallet.LowBalanceRules.length === 0) {
-			return;
-		}
-
-		await this.evaluateWalletContext(wallet, balanceMap, 'interval_check', { emitAlerts: false });
-	}
-
-	private async fetchCurrentBalanceMapForWallet(hotWalletId: string): Promise<BalanceMap | null> {
+	async fetchCurrentBalanceMapForWallet(hotWalletId: string): Promise<BalanceMap | null> {
 		const wallet = await prisma.hotWallet.findFirst({
 			where: {
 				id: hotWalletId,
@@ -804,11 +547,7 @@ export class WalletLowBalanceMonitorService {
 			},
 			select: {
 				id: true,
-				Secret: {
-					select: {
-						encryptedMnemonic: true,
-					},
-				},
+				walletAddress: true,
 				PaymentSource: {
 					select: {
 						id: true,
@@ -840,16 +579,15 @@ export class WalletLowBalanceMonitorService {
 		}
 
 		try {
-			const { utxos } = await generateWalletExtended(
-				wallet.PaymentSource.network,
+			return await fetchAddressBalanceMap({
+				network: wallet.PaymentSource.network,
 				rpcProviderApiKey,
-				wallet.Secret.encryptedMnemonic,
-			);
-			return toBalanceMapFromMeshUtxos(utxos as MeshLikeUtxo[]);
+				address: wallet.walletAddress,
+			});
 		} catch (error) {
-			logger.warn('Failed to refresh low balance state after rule mutation', {
+			logger.warn('Failed to fetch current wallet balance', {
 				component: 'wallet_low_balance_monitor',
-				operation: 'rule_refresh_error',
+				operation: 'current_balance_fetch_error',
 				wallet_id: wallet.id,
 				payment_source_id: wallet.PaymentSource.id,
 				network: wallet.PaymentSource.network,
@@ -861,14 +599,7 @@ export class WalletLowBalanceMonitorService {
 }
 
 export const walletLowBalanceMonitorService = new WalletLowBalanceMonitorService();
-export {
-	getNetworkDefaultLowBalanceRules,
-	projectBalanceMapFromUnsignedTx,
-	serializeLowBalanceRecord,
-	serializeLowBalanceSummary,
-	toBalanceMapFromLucidUtxos,
-	toBalanceMapFromMeshUtxos,
-};
+export { projectBalanceMapFromUnsignedTx, toBalanceMapFromLucidUtxos, toBalanceMapFromMeshUtxos } from './balance-map';
 export type {
 	BalanceMap,
 	LucidLikeUtxo,
@@ -876,6 +607,11 @@ export type {
 	ProjectableLucidLikeUtxo,
 	ProjectableMeshLikeUtxo,
 	ProjectableWalletUtxo,
+} from './balance-map';
+export { getNetworkDefaultLowBalanceRules } from './rule-mutations';
+export { serializeLowBalanceRecord, serializeLowBalanceSummary };
+export type {
+	EvaluateWalletContextOptions,
 	WalletBalanceCheckSource,
 	WalletLowBalanceContext,
 	WalletLowBalanceRuleRecord,

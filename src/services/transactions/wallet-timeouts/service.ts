@@ -40,8 +40,8 @@ export async function updateWalletTransactionHash() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('wallet_transaction_timeouts is already running, skipping cycle');
 		return;
 	}
 	const unlockedSellingWalletIds: string[] = [];
@@ -61,6 +61,24 @@ export async function updateWalletTransactionHash() {
 			// we never skip work we should have done.
 			unlockedV1 = true;
 			unlockedV2 = true;
+		}
+	};
+	/**
+	 * Tally an unlocked wallet onto the list whose scheduler modules need kicking.
+	 *
+	 * `Funding` is deliberately tallied to NEITHER list: fund wallets drive no
+	 * selling/purchasing module, so kicking those would be pure waste. This is an
+	 * explicit no-op rather than a silent `else if` fall-through so that adding a
+	 * fourth HotWalletType forces a decision here — the queries feeding these
+	 * sweeps filter on lock state, not type, so every wallet type reaches this
+	 * code and the compiler gives no signal (there is no exhaustiveness check on
+	 * HotWalletType anywhere in the repo).
+	 */
+	const tallyUnlockedWallet = (wallet: { id: string; type: HotWalletType }) => {
+		if (wallet.type === HotWalletType.Selling) {
+			unlockedSellingWalletIds.push(wallet.id);
+		} else if (wallet.type === HotWalletType.Purchasing) {
+			unlockedPurchasingWalletIds.push(wallet.id);
 		}
 	};
 	try {
@@ -664,11 +682,7 @@ export async function updateWalletTransactionHash() {
 							where: { id: wallet.id, deletedAt: null },
 							data: { lockedAt: null },
 						});
-						if (wallet.type == HotWalletType.Selling) {
-							unlockedSellingWalletIds.push(wallet.id);
-						} else if (wallet.type == HotWalletType.Purchasing) {
-							unlockedPurchasingWalletIds.push(wallet.id);
-						}
+						tallyUnlockedWallet(wallet);
 						markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 						return;
 					}
@@ -752,18 +766,40 @@ export async function updateWalletTransactionHash() {
 						// signed but never recorded an intended hash). Preserve the
 						// previous blind-disconnect behavior; nothing on chain we
 						// could be stranding.
-						await prisma.hotWallet.update({
-							where: { id: wallet.id, deletedAt: null },
+						//
+						// This premise ONLY holds for callers that record intendedTxHash
+						// before broadcast — for them `intendedTxHash == null` proves the
+						// body was never signed or sent, so disconnecting is safe. A
+						// caller that submits BEFORE recording would land here with a tx
+						// possibly already on chain, and this branch would free the wallet
+						// for a duplicate send. Fund distribution originally had that bug
+						// (MAS-392); it now records pre-submit like V1/V2 batch-payments.
+						// Any new flow that locks a HotWallet must do the same.
+						//
+						// The predicate re-checks what the sweep read: a slow build can
+						// record intendedTxHash (or the hash itself) on this same row
+						// between our read and this write, and an unguarded disconnect
+						// would then free the wallet with a signed tx in flight.
+						const disconnected = await prisma.hotWallet.updateMany({
+							where: {
+								id: wallet.id,
+								deletedAt: null,
+								pendingTransactionId: wallet.PendingTransaction.id,
+								PendingTransaction: { intendedTxHash: null, txHash: null },
+							},
 							data: {
-								PendingTransaction: { disconnect: true },
+								pendingTransactionId: null,
 								lockedAt: null,
 							},
 						});
-						if (wallet.type == HotWalletType.Selling) {
-							unlockedSellingWalletIds.push(wallet.id);
-						} else if (wallet.type == HotWalletType.Purchasing) {
-							unlockedPurchasingWalletIds.push(wallet.id);
+						if (disconnected.count !== 1) {
+							logger.info('wallet-timeouts: orphan lock advanced before disconnect; leaving it', {
+								walletId: wallet.id,
+								transactionId: wallet.PendingTransaction.id,
+							});
+							return;
 						}
+						tallyUnlockedWallet(wallet);
 						markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 						return;
 					}
@@ -861,11 +897,7 @@ export async function updateWalletTransactionHash() {
 								},
 							});
 						}
-						if (wallet.type == HotWalletType.Selling) {
-							unlockedSellingWalletIds.push(wallet.id);
-						} else if (wallet.type == HotWalletType.Purchasing) {
-							unlockedPurchasingWalletIds.push(wallet.id);
-						}
+						tallyUnlockedWallet(wallet);
 						markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 					} else {
 						// A no-TTL tx (registry burn+mint / single-item register+deregister —
@@ -940,11 +972,7 @@ export async function updateWalletTransactionHash() {
 								{ label: 'wallet-timeouts-force-unlock-registry' },
 							);
 							if (didForceUnlock) {
-								if (wallet.type == HotWalletType.Selling) {
-									unlockedSellingWalletIds.push(wallet.id);
-								} else if (wallet.type == HotWalletType.Purchasing) {
-									unlockedPurchasingWalletIds.push(wallet.id);
-								}
+								tallyUnlockedWallet(wallet);
 								markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 							}
 						} else {
@@ -1206,11 +1234,7 @@ export async function updateWalletTransactionHash() {
 						},
 					});
 
-					if (wallet.type == HotWalletType.Selling) {
-						unlockedSellingWalletIds.push(wallet.id);
-					} else if (wallet.type == HotWalletType.Purchasing) {
-						unlockedPurchasingWalletIds.push(wallet.id);
-					}
+					tallyUnlockedWallet(wallet);
 					markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 				} catch (error) {
 					logger.error(`Error updating timed out wallet: ${errorToString(error)}`);

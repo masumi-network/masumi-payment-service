@@ -9,7 +9,7 @@ import {
 import { prisma } from '@masumi/payment-core/db';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { resolveTxHash, UTxO } from '@meshsdk/core';
-import { isDefinitiveNodeRejection } from '../../submit-error-classifier';
+import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-classifier';
 import { makeHotWalletUnlocker, makePaymentRequestFailureMarker } from '../../request-failure';
 import { findMatchingPaymentUtxoWithContract } from '../../utxo-matching';
 import type { LanguageVersion } from '@meshsdk/core';
@@ -23,9 +23,9 @@ import { DecodedV1ContractDatum, newCooldownTime } from '@/utils/converter/strin
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
-import { sortAndLimitUtxos } from '@/utils/utxo';
 import { delayErrorResolver } from 'advanced-retry';
 import { advancedRetry } from 'advanced-retry';
+import { sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 // V2-pinned single-item builder. MUST NOT use the root V1-mesh generator
 // (@/utils/generator/transaction-generator) — that bundles the V1 cost models
@@ -50,6 +50,7 @@ import { syncMeshCostModelsFromHeadV2 } from '../../../utils/mesh-cost-model-syn
 import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
+	getWalletUtxosForSelection,
 	intersectTxWindows,
 	pickBatchCollateral,
 	shrinkBatchToFit,
@@ -383,15 +384,7 @@ async function processSinglePaymentRequest(
 		state: determineNewContractState(decodedContract.state),
 	});
 
-	const limitedUtxos = sortAndLimitUtxos(utxos, 8000000);
-	// Collateral must cover the pinned 3 ADA total_collateral. limitedUtxos is
-	// sorted by ASCENDING asset bloat, so [0] can be a pure-ADA DUST UTxO (< 3
-	// ADA) → deterministic phase-1 InsufficientCollateral. Prefer the smallest
-	// qualifying >= 5 ADA UTxO (the same floor the batch path enforces via
-	// pickBatchCollateral); ensureCollateralReady above provisions a 5 ADA
-	// reserve, so this normally succeeds. Fall back to [0] only if the wallet has
-	// nothing larger (no worse than the previous behaviour).
-	const collateralUtxo = pickBatchCollateral(limitedUtxos, [utxo.input]) ?? limitedUtxos[0];
+	const collateralUtxo = pickBatchCollateral(utxos, [utxo.input]);
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');
 	}
@@ -409,7 +402,7 @@ async function processSinglePaymentRequest(
 				address,
 				utxo,
 				collateralUtxo,
-				limitedUtxos,
+				utxos,
 				datum.value,
 				invalidBefore,
 				invalidAfter,
@@ -471,7 +464,7 @@ async function processSinglePaymentRequest(
 	// with the successful tx's hash never recorded. The batch path already wraps
 	// the identical call this way.
 	try {
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedUtxos);
+		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 	} catch (balanceError) {
 		logger.warn('V2 submit-result single-item: projected-balance check failed post-submit (non-fatal)', {
 			requestId: request.id,
@@ -493,7 +486,9 @@ async function processSinglePaymentRequest(
 				where: { id: request.id },
 				data: {
 					...connectPreviousAction(request.nextActionId),
-					...createNextPaymentAction(PaymentAction.SubmitResultInitiated),
+					...createNextPaymentAction(PaymentAction.SubmitResultInitiated, {
+						resultHash: request.NextAction.resultHash,
+					}),
 					...createPendingTransaction(request.SmartContractWallet!.id, newTxHash),
 					TransactionHistory: {
 						connect: {
@@ -886,18 +881,10 @@ async function processWalletBatch(
 		return;
 	}
 
-	const spendingUtxoKeys = new Set(
-		validated.map((v) => `${v.smartContractUtxo.input.txHash}#${v.smartContractUtxo.input.outputIndex}`),
+	const walletUtxos = getWalletUtxosForSelection(
+		utxos,
+		validated.map((v) => v.smartContractUtxo.input),
 	);
-	const collateralKey = `${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex}`;
-	const walletUtxos = utxos.filter((utxo) => {
-		const key = `${utxo.input.txHash}#${utxo.input.outputIndex}`;
-		if (key === collateralKey) return false;
-		if (spendingUtxoKeys.has(key)) return false;
-		return true;
-	});
-	const limitedFilteredUtxos = sortAndLimitUtxos(walletUtxos, 8000000);
-
 	// Constraints applied progressively: validity-window intersection then
 	// no-collateral-overlap. tx-size is checked after the build pass.
 	const shrinkResult = shrinkBatchToFit(validated, (subset) => {
@@ -975,7 +962,7 @@ async function processWalletBatch(
 					script,
 					address,
 					collateralUtxo,
-					limitedFilteredUtxos,
+					walletUtxos,
 					items,
 					composed.invalidBefore,
 					composed.invalidAfter,
@@ -1054,7 +1041,10 @@ async function processWalletBatch(
 							// isn't directly returned; we need it to safely clean up orphans on
 							// rollback (see #6 audit-trail leak design).
 							const initiated = await tx.paymentActionData.create({
-								data: { requestedAction: PaymentAction.SubmitResultInitiated },
+								data: {
+									requestedAction: PaymentAction.SubmitResultInitiated,
+									resultHash: v.request.NextAction.resultHash,
+								},
 							});
 							await tx.paymentRequest.update({
 								where: { id: v.request.id },
@@ -1263,7 +1253,7 @@ async function processWalletBatch(
 	}
 
 	try {
-		await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+		await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 	} catch (balanceError) {
 		logger.warn('V2 submit-result batch projected balance evaluation failed (non-fatal)', {
 			error:
@@ -1356,8 +1346,8 @@ export async function submitResultV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('submit_result_v2 is already running, skipping cycle');
 		return;
 	}
 

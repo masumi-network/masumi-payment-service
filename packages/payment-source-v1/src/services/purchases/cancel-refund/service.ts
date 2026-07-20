@@ -1,4 +1,4 @@
-import { OnChainState, PaymentSourceType, PurchaseErrorType, PurchasingAction } from '@/generated/prisma/client';
+import { OnChainState, PaymentSourceType, PurchasingAction } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { deserializeDatum, UTxO } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
@@ -9,7 +9,8 @@ import { DecodedV1ContractDatum, decodeV1ContractDatum, newCooldownTime } from '
 import { lockAndQueryPurchases } from '@/utils/db/lock-and-query-purchases';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxos } from '@/utils/utxo';
+import { selectCollateralUtxo } from '@/utils/utxo';
+import { writePurchaseErrorTransition } from '@/services/shared/error-transition';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
@@ -85,8 +86,8 @@ export async function cancelRefundsV1() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('cancel_refund_v1 is already running, skipping cycle');
 		return;
 	}
 
@@ -182,7 +183,7 @@ export async function cancelRefundsV1() {
 						const { invalidBefore, invalidAfter } = createTxWindow(network, {
 							constrainBeforeMs: Number(decodedContract.buyerCooldownTime),
 						});
-						const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
+						const collateralUtxo = selectCollateralUtxo(utxos);
 
 						const unsignedTx = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
 							'CancelRefund',
@@ -191,8 +192,8 @@ export async function cancelRefundsV1() {
 							script,
 							address,
 							utxo,
-							limitedFilteredUtxos[0],
-							limitedFilteredUtxos,
+							collateralUtxo,
+							utxos,
 							datum.value,
 							invalidBefore,
 							invalidAfter,
@@ -211,7 +212,7 @@ export async function cancelRefundsV1() {
 						});
 
 						const newTxHash = await wallet.submitTx(signedTx);
-						await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+						await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 						await prisma.purchaseRequest.update({
 							where: { id: request.id },
 							data: updateCurrentTransactionHash(newTxHash),
@@ -232,17 +233,13 @@ export async function cancelRefundsV1() {
 					if (result.success == false || result.result != true) {
 						const error = result.error;
 						logger.error(`Error cancelling V1 refund ${request.id}`, { error });
-						await prisma.purchaseRequest.update({
-							where: { id: request.id },
-							data: {
-								...connectPreviousAction(request.nextActionId),
-								...createNextPurchaseAction(PurchasingAction.WaitingForManualAction, {
-									errorType: PurchaseErrorType.Unknown,
-									errorNote: 'Cancelling refund failed: ' + interpretBlockchainError(error),
-								}),
-								SmartContractWallet: { update: { lockedAt: null } },
-							},
-						});
+						await prisma.$transaction((tx) =>
+							writePurchaseErrorTransition(tx, {
+								requestId: request.id,
+								nextActionId: request.nextActionId,
+								errorNote: 'Cancelling refund failed: ' + interpretBlockchainError(error),
+							}),
+						);
 					}
 					index++;
 				}

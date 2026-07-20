@@ -1,11 +1,4 @@
-import {
-	OnChainState,
-	PaymentAction,
-	PaymentErrorType,
-	PaymentSourceType,
-	TransactionStatus,
-	Prisma,
-} from '@/generated/prisma/client';
+import { OnChainState, PaymentAction, PaymentSourceType, TransactionStatus, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { Asset, BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
@@ -15,7 +8,8 @@ import { convertNetwork } from '@masumi/payment-core/network';
 import { lockAndQueryPayments } from '@/utils/db/lock-and-query-payments';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { advancedRetryAll, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxos } from '@/utils/utxo';
+import { selectCollateralUtxo } from '@/utils/utxo';
+import { writePaymentErrorTransition } from '@/services/shared/error-transition';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import { CONSTANTS } from '@masumi/payment-core/config';
@@ -218,11 +212,7 @@ async function processSinglePaymentCollection(
 		collectionAddress = request.SmartContractWallet.walletAddress;
 	}
 
-	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8000000);
-	const collateralUtxo = limitedFilteredUtxos[0];
-	if (collateralUtxo == null) {
-		throw new Error('Collateral UTXO not found');
-	}
+	const collateralUtxo = selectCollateralUtxo(utxos);
 	const feeReceiverAddress = paymentContract.FeeReceiverNetworkWallet?.walletAddress ?? collectionAddress;
 	const shouldIncludeFeeOutput =
 		paymentContract.paymentSourceType !== PaymentSourceType.Web3CardanoV2 && Object.values(feeAssets).length > 0;
@@ -235,7 +225,7 @@ async function processSinglePaymentCollection(
 		address,
 		utxo,
 		collateralUtxo,
-		limitedFilteredUtxos,
+		utxos,
 		{
 			collectAssets: Object.values(remainingAssets),
 			collectionAddress: collectionAddress,
@@ -286,7 +276,7 @@ async function processSinglePaymentCollection(
 	});
 	//submit the transaction to the blockchain
 	const newTxHash = await wallet.submitTx(signedTx);
-	await walletSession.evaluateProjectedBalance(unsignedTx, limitedFilteredUtxos);
+	await walletSession.evaluateProjectedBalance(unsignedTx, utxos);
 
 	await prisma.paymentRequest.update({
 		where: { id: request.id },
@@ -306,8 +296,8 @@ export async function collectOutstandingPaymentsV1() {
 	let release: MutexInterface.Releaser | null;
 	try {
 		release = await tryAcquire(mutex).acquire();
-	} catch (e) {
-		logger.info('Mutex timeout when locking', { error: e });
+	} catch {
+		logger.info('payment_collection_v1 is already running, skipping cycle');
 		return;
 	}
 
@@ -361,21 +351,13 @@ export async function collectOutstandingPaymentsV1() {
 						logger.error(`Error collecting payments ${request.id}`, {
 							error: error,
 						});
-						await prisma.paymentRequest.update({
-							where: { id: request.id },
-							data: {
-								...connectPreviousAction(request.nextActionId),
-								...createNextPaymentAction(PaymentAction.WaitingForManualAction, {
-									errorType: PaymentErrorType.Unknown,
-									errorNote: 'Collecting payments failed: ' + interpretBlockchainError(error),
-								}),
-								SmartContractWallet: {
-									update: {
-										lockedAt: null,
-									},
-								},
-							},
-						});
+						await prisma.$transaction((tx) =>
+							writePaymentErrorTransition(tx, {
+								requestId: request.id,
+								nextActionId: request.nextActionId,
+								errorNote: 'Collecting payments failed: ' + interpretBlockchainError(error),
+							}),
+						);
 					}
 					index++;
 				}

@@ -3,7 +3,9 @@ import { z } from '@masumi/payment-core/zod';
 import {
 	budgetSchema,
 	createPaymentSchemaOutput,
+	createWalletSchemaInput,
 	createWalletSchemaOutput,
+	listAvailableNetworksSchemaOutput,
 	listBudgetSchemaOutput,
 	listNetworksSchemaOutput,
 	listPaymentAttemptsSchemaOutput,
@@ -13,6 +15,7 @@ import {
 	verifySchemaOutput,
 	verifySettleSchemaInput,
 	walletSchemaOutput,
+	x402AvailableNetworkSchema,
 	x402NetworkSchema,
 	x402PaymentAttemptSchema,
 	x402SettlementSchema,
@@ -24,6 +27,8 @@ const examplePayer = '0x3333333333333333333333333333333333333333';
 
 export const x402WalletExample = {
 	id: 'clmanagedwallet0001',
+	networkId: 'clx402network0001',
+	caip2Network: 'eip155:8453',
 	address: '0x1111111111111111111111111111111111111111',
 	type: X402EvmWalletType.Purchasing,
 	note: 'Agent payout buyer wallet',
@@ -36,6 +41,8 @@ export const x402WalletExample = {
 // one rather than the Purchasing wallet above.
 export const x402FacilitatorWalletExample = {
 	id: 'clmanagedwallet0002',
+	networkId: 'clx402network0001',
+	caip2Network: 'eip155:8453',
 	address: '0x5555555555555555555555555555555555555555',
 	type: X402EvmWalletType.Selling,
 	note: 'Base facilitator',
@@ -54,10 +61,20 @@ export const x402NetworkExample = {
 	defaultAsset: exampleUsdcAsset,
 	facilitatorWalletId: x402FacilitatorWalletExample.id,
 	facilitatorWalletAddress: x402FacilitatorWalletExample.address,
+	facilitatorUrl: null,
 	createdById: 'api_key_id',
 	createdAt: exampleDate,
 	updatedAt: exampleDate,
 } satisfies z.infer<typeof x402NetworkSchema>;
+
+const x402AvailableNetworkExample = {
+	id: x402NetworkExample.id,
+	caip2Id: x402NetworkExample.caip2Id,
+	displayName: x402NetworkExample.displayName,
+	isTestnet: x402NetworkExample.isTestnet,
+	isEnabled: x402NetworkExample.isEnabled,
+	defaultAsset: x402NetworkExample.defaultAsset,
+} satisfies z.infer<typeof x402AvailableNetworkSchema>;
 
 export const x402BudgetExample = {
 	id: 'clx402budget0001',
@@ -80,7 +97,7 @@ export const x402PaymentAttemptExample = {
 	direction: X402PaymentDirection.InboundSettle,
 	status: X402PaymentStatus.Settled,
 	apiKeyId: 'api_key_id',
-	evmWalletId: null,
+	evmWalletId: x402FacilitatorWalletExample.id,
 	registryRequestId: null,
 	supportedPaymentSourceId: 'supported_payment_source_id',
 	caip2Network: 'eip155:8453',
@@ -92,6 +109,7 @@ export const x402PaymentAttemptExample = {
 	paymentIdentifier: null,
 	errorReason: null,
 	errorMessage: null,
+	facilitator: { mode: 'self_hosted', address: x402FacilitatorWalletExample.address },
 	Settlement: {
 		id: 'clx402settlement0001',
 		success: true,
@@ -127,6 +145,10 @@ export const listX402NetworksResponseExample = {
 	Networks: [x402NetworkExample],
 } satisfies z.infer<typeof listNetworksSchemaOutput>;
 
+export const listAvailableX402NetworksResponseExample = {
+	Networks: [x402AvailableNetworkExample],
+} satisfies z.infer<typeof listAvailableNetworksSchemaOutput>;
+
 export const listX402BudgetsResponseExample = {
 	Budgets: [x402BudgetExample],
 } satisfies z.infer<typeof listBudgetSchemaOutput>;
@@ -141,8 +163,9 @@ export const listX402SettlementsResponseExample = {
 
 // Request examples. privateKey is intentionally omitted so a new key is generated server-side.
 export const createX402WalletBodyExample = {
+	networkId: x402WalletExample.networkId,
 	type: X402EvmWalletType.Purchasing,
-};
+} satisfies z.infer<typeof createWalletSchemaInput>;
 
 // The create response returns the generated key once for backup (null when imported).
 export const createX402WalletResponseExample = {

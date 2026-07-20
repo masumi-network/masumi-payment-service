@@ -31,6 +31,10 @@ export async function getWalletCountsByPaymentSource(
 		where: {
 			paymentSourceId: { in: paymentSourceIds },
 			deletedAt: null,
+			// Only the two types this endpoint reports. Without it a Funding
+			// wallet's group row would fall through the `else` below and be
+			// counted as Purchasing.
+			type: { in: [HotWalletType.Selling, HotWalletType.Purchasing] },
 			...buildHotWalletScopeFilter(walletScopeIds),
 		},
 		_count: { _all: true },
@@ -40,7 +44,7 @@ export async function getWalletCountsByPaymentSource(
 		const entry = counts.get(row.paymentSourceId) ?? { PurchasingWalletsCount: 0, SellingWalletsCount: 0 };
 		if (row.type === HotWalletType.Selling) {
 			entry.SellingWalletsCount = row._count._all;
-		} else {
+		} else if (row.type === HotWalletType.Purchasing) {
 			entry.PurchasingWalletsCount = row._count._all;
 		}
 		counts.set(row.paymentSourceId, entry);

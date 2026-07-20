@@ -83,7 +83,11 @@ model HotWallet {
   id                                      String                          @id @default(cuid())
   createdAt                               DateTime                        @default(now())
   updatedAt                               DateTime                        @updatedAt
-  walletVkey                              String                          @unique
+  /// Unique among ACTIVE wallets only, via the partial database index in
+  /// 20260717000001_scope_wallet_vkey_uniqueness_to_active (Prisma cannot
+  /// express predicated indexes). A global unique made a soft-deleted fund
+  /// wallet's mnemonic permanently unregisterable.
+  walletVkey                              String
   walletAddress                           String
   type                                    HotWalletType
   secretId                                String
@@ -98,6 +102,7 @@ model HotWallet {
   PendingTransaction                      Transaction?                    @relation(fields: [pendingTransactionId], references: [id])
   PendingSwapTransaction                  SwapTransaction?                @relation(fields: [pendingSwapTransactionId], references: [id])
   SwapTransactionHistory                  SwapTransaction[]               @relation("SwapTransactionHistory")
+  FundTransferHistory                     WalletFundTransfer[]            @relation("FundTransferHistory")
   Secret                                  WalletSecret                    @relation(fields: [secretId], references: [id])
   PaymentRequest                          PaymentRequest[]
   PurchaseRequest                         PurchaseRequest[]
@@ -110,6 +115,9 @@ model HotWallet {
   apiKeyWalletScopes                      ApiKeyWalletScope[]
   LimitedPurchaseRequests                 PurchaseRequest[]               @relation("HotWalletLimit")
   LowBalanceRules                         HotWalletLowBalanceRule[]
+  FundDistributionConfig                  FundDistributionConfig?
+  FundDistributionsSent                   FundDistributionRequest[]       @relation("FundDistributionSource")
+  FundDistributionsReceived               FundDistributionRequest[]       @relation("FundDistributionTarget")
   hydraRelations                          HydraRelation[]
   hydraLocalParticipants                  HydraLocalParticipant[]
 }
@@ -122,6 +130,13 @@ model HotWalletLowBalanceRule {
   assetUnit       String
   thresholdAmount BigInt
   enabled         Boolean          @default(true)
+  /// When the balance falls below `thresholdAmount`, this rule always fires the
+  /// low-balance alert/webhook. If `topupEnabled` is also set, a fund wallet on
+  /// the same source additionally tops the wallet up by `topupAmount` (in the
+  /// asset's own smallest unit). The trigger and the amount live here, on the
+  /// wallet that runs low, rather than on the treasury.
+  topupEnabled    Boolean          @default(false)
+  topupAmount     BigInt?
   status          LowBalanceStatus @default(Unknown)
   lastKnownAmount BigInt?
   lastCheckedAt   DateTime?
@@ -170,6 +185,8 @@ model Transaction {
   PurchaseRequestCurrent        PurchaseRequest[]               @relation("CurrentPurchaseTransaction")
   RegistryRequest               RegistryRequest[]
   InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
+  FundDistributionRequests      FundDistributionRequest[]       @relation("FundDistributionTransaction")
+  FundTransfer                  WalletFundTransfer?             @relation("FundTransferTransaction")
   // History is many-to-many because a V2 batch can move one shared Transaction
   // row through multiple request histories after it leaves CurrentTransaction.
   PaymentRequestHistory         PaymentRequest[]                @relation("PaymentTransactionHistory")
@@ -220,6 +237,41 @@ model SwapTransaction {
   hotWalletId      String?
   BlocksWallet     HotWallet?
   HotWallet        HotWallet?        @relation("SwapTransactionHistory", fields: [hotWalletId], references: [id])
+}
+
+/// Operator-initiated transfer of funds out of a hot wallet to an arbitrary
+/// address. This row is the operator-facing REQUEST and audit record; the
+/// on-chain lifecycle lives on the linked Transaction, exactly as
+/// FundDistributionRequest does. Reusing Transaction (rather than a private
+/// txHash + a pendingFundTransferId lock column) is what makes a fund transfer
+/// visible to the shared machinery every other hot-wallet flow already relies
+/// on: the stale-lock reaper, funding-reconciliation, and tx-sync rollback all
+/// key off Transaction / HotWallet.pendingTransactionId and knew nothing about
+/// the parallel columns this model used to own.
+model WalletFundTransfer {
+  id             String            @id @default(cuid())
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  hotWalletId    String
+  toAddress      String
+  lovelaceAmount BigInt
+  assets         Json?
+  /// Denormalized copy of Transaction.txHash, set at submit for cheap display
+  /// and history queries. Transaction is the source of truth for the lifecycle.
+  txHash         String?
+  status         TransactionStatus @default(Pending)
+  lastCheckedAt  DateTime?
+  errorNote      String?
+  /// The Transaction row carrying this transfer's on-chain lifecycle, set
+  /// atomically with the hot-wallet lock (HotWallet.pendingTransactionId)
+  /// BEFORE the tx is signed or broadcast. One transfer maps to one tx, so this
+  /// is unique. onDelete: SetNull keeps the audit row if the tx is ever pruned.
+  transactionId  String?           @unique
+  Transaction    Transaction?      @relation("FundTransferTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
+  HotWallet      HotWallet         @relation("FundTransferHistory", fields: [hotWalletId], references: [id])
+
+  @@index([hotWalletId])
+  @@index([status, txHash])
 }
 
 model WalletSecret {
@@ -379,36 +431,72 @@ model X402Network {
   isTestnet           Boolean              @default(false)
   isEnabled           Boolean              @default(true)
   defaultAsset        String?
+  // Facilitator config: EXACTLY ONE of facilitatorWalletId (self-hosted — an owned
+  // Selling wallet signs settlements locally) or facilitatorUrl (remote — verify/settle
+  // are delegated to an external x402 facilitator over HTTP; the node owns no key here).
+  // Enforced at the application layer (a partial DB CHECK cannot span the wallet relation).
   facilitatorWalletId String?
+  facilitatorUrl      String?
+  // Encrypted auth header value for the remote facilitator (only meaningful with
+  // facilitatorUrl); encrypted at rest like other wallet secrets.
+  facilitatorAuthEnc  String?
   createdById         String?
   FacilitatorWallet   X402EvmWallet?       @relation("X402NetworkFacilitatorWallet", fields: [facilitatorWalletId], references: [id], onDelete: SetNull)
   CreatedBy           ApiKey?              @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  WalletBudgets       X402WalletBudget[]
+  // Wallets bound to this network/payment source (mirrors PaymentSource.HotWallets).
+  Wallets             X402EvmWallet[]      @relation("X402NetworkWallets")
   PaymentAttempts     X402PaymentAttempt[]
 
   @@index([isEnabled])
   @@index([createdById])
 }
 
+model X402WalletSecret {
+  id                  String          @id @default(cuid())
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  // Public key identity for the encrypted private key. The unique constraint makes
+  // concurrent imports of one EVM key converge on one secret across every network.
+  address             String          @unique
+  encryptedPrivateKey String
+  // One secret backs N wallet rows — the same EVM keypair reused across chains.
+  Wallets             X402EvmWallet[]
+}
+
 model X402EvmWallet {
   id                  String                        @id @default(cuid())
   createdAt           DateTime                      @default(now())
   updatedAt           DateTime                      @updatedAt
-  address             String                        @unique
+  // Bound to exactly one payment source (network). The SAME EVM keypair on N chains is
+  // modelled as N wallet rows (one per network) sharing one X402WalletSecret — mirrors the
+  // Cardano HotWallet/WalletSecret split. address is thus unique per network, not globally.
+  networkId           String
+  secretId            String
+  address             String
   type                X402EvmWalletType
-  encryptedPrivateKey String
   note                String?
   deletedAt           DateTime?
   createdById         String?
+  // Cross-instance settle lock, held on the wallet itself — the direct analogue of Cardano's
+  // HotWallet.lockedAt. A self-hosted facilitator broadcasts each settle as a tx from this single
+  // account, so the account nonce is a shared resource; this row-level lock serializes concurrent
+  // settles per facilitator wallet across processes. Set while a settle is in flight, cleared on
+  // completion; a stale lock (holder crashed) is stolen after the app's stale timeout. Only ever
+  // set on a Selling/facilitator wallet — Purchasing wallets sign offline and never lock.
+  lockedAt            DateTime?
+  Network             X402Network                   @relation("X402NetworkWallets", fields: [networkId], references: [id], onDelete: Restrict)
+  Secret              X402WalletSecret              @relation(fields: [secretId], references: [id])
   CreatedBy           ApiKey?                       @relation(fields: [createdById], references: [id], onDelete: SetNull)
   FacilitatesNetworks X402Network[]                 @relation("X402NetworkFacilitatorWallet")
   Budgets             X402WalletBudget[]
   PaymentAttempts     X402PaymentAttempt[]
   LowBalanceRules     X402EvmWalletLowBalanceRule[]
 
+  @@unique([networkId, address])
   @@index([deletedAt])
   @@index([createdById])
   @@index([type])
+  @@index([secretId])
 }
 
 model X402EvmWalletLowBalanceRule {
@@ -416,10 +504,10 @@ model X402EvmWalletLowBalanceRule {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   evmWalletId     String
-  caip2Network    String
   // ERC-20 token contract address (lowercased), or the literal "native" for the
   // chain's gas token (ETH). A Selling/facilitator wallet typically monitors "native"
-  // (gas to settle); a Purchasing wallet monitors its payment token plus gas.
+  // (gas to settle); a Purchasing wallet monitors its payment token plus gas. The chain
+  // is implied by the wallet's network — no caip2Network column needed here.
   asset           String
   thresholdAmount BigInt
   enabled         Boolean          @default(true)
@@ -429,7 +517,7 @@ model X402EvmWalletLowBalanceRule {
   lastAlertedAt   DateTime?
   EvmWallet       X402EvmWallet    @relation(fields: [evmWalletId], references: [id], onDelete: Cascade)
 
-  @@unique([evmWalletId, caip2Network, asset])
+  @@unique([evmWalletId, asset])
   @@index([evmWalletId, enabled])
   @@index([enabled, status])
 }
@@ -440,21 +528,23 @@ model X402WalletBudget {
   updatedAt       DateTime      @updatedAt
   apiKeyId        String
   evmWalletId     String
-  caip2Network    String
+  // Chain is implied by the wallet's network (EvmWallet.networkId); no caip2Network here.
   asset           String
   remainingAmount BigInt
   spentAmount     BigInt        @default(0)
+  // Incremented whenever an admin replaces the grant. In-flight refunds must match the
+  // generation they reserved from so they cannot credit a later replacement grant.
+  generation      Int           @default(0)
   enabled         Boolean       @default(true)
   createdById     String?
   ApiKey          ApiKey        @relation("X402WalletBudgetGrantee", fields: [apiKeyId], references: [id], onDelete: Cascade)
   CreatedBy       ApiKey?       @relation("X402WalletBudgetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   EvmWallet       X402EvmWallet @relation(fields: [evmWalletId], references: [id], onDelete: Cascade)
-  Network         X402Network   @relation(fields: [caip2Network], references: [caip2Id], onDelete: Restrict)
 
-  @@unique([apiKeyId, evmWalletId, caip2Network, asset])
+  @@unique([apiKeyId, evmWalletId, asset])
   @@index([apiKeyId, enabled])
   @@index([evmWalletId, enabled])
-  @@index([caip2Network, asset])
+  @@index([evmWalletId, asset])
   @@index([createdById])
 }
 
@@ -465,15 +555,27 @@ model X402PaymentAttempt {
   direction                X402PaymentDirection
   status                   X402PaymentStatus
   apiKeyId                 String
+  // The payment source / rail this attempt ran on. Network is structural here (FK to the
+  // rail), NOT derived from the wallet: an inbound settle handled by a REMOTE facilitator
+  // has no owned wallet, so the rail is the authoritative record of the chain.
+  networkId                String
+  // Own managed wallet, when the node holds one: outbound → purchasing wallet; inbound with
+  // a self-hosted facilitator → the facilitator wallet; inbound with a remote facilitator → null.
   evmWalletId              String?
+  // Immutable facilitator-mode snapshot for inbound settles. Null is deliberate for legacy
+  // rows whose historical mode cannot be reconstructed truthfully from today's network config.
+  facilitatorMode          X402FacilitatorMode?
+  // Counterparty (other side) of the transfer: outbound → the payee (payTo); inbound → the
+  // payer (buyer), linked after settle once the facilitator reports the address.
+  counterpartyWalletId     String?
   registryRequestId        String?
   supportedPaymentSourceId String?
-  caip2Network             String
   scheme                   X402PaymentScheme       @default(Exact)
   asset                    String
   amount                   BigInt
-  payTo                    String
-  payer                    String?
+  // Immutable recipient snapshot. Inbound attempts must not derive historical payTo
+  // solely from SupportedPaymentSource because registry updates replace those rows.
+  payTo                    String?
   resource                 String?
   paymentPayloadHash       String?
   paymentPayload           Json?
@@ -481,18 +583,24 @@ model X402PaymentAttempt {
   errorReason              String?
   errorMessage             String?
   ApiKey                   ApiKey                  @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
-  EvmWallet                X402EvmWallet?          @relation(fields: [evmWalletId], references: [id], onDelete: SetNull)
+  Network                  X402Network             @relation(fields: [networkId], references: [id], onDelete: Restrict)
+  EvmWallet                X402EvmWallet?          @relation(fields: [evmWalletId], references: [id], onDelete: Restrict)
+  CounterpartyWallet       X402CounterpartyWallet? @relation(fields: [counterpartyWalletId], references: [id], onDelete: Restrict)
   RegistryRequest          RegistryRequest?        @relation(fields: [registryRequestId], references: [id], onDelete: SetNull)
   SupportedPaymentSource   SupportedPaymentSource? @relation(fields: [supportedPaymentSourceId], references: [id], onDelete: SetNull)
-  Network                  X402Network             @relation(fields: [caip2Network], references: [caip2Id], onDelete: Restrict)
   Settlement               X402Settlement?
+  // A partial unique index created by migration 20260712000000 permits only one
+  // InboundSettle attempt in Verified/Settled state per paymentPayloadHash.
+  // Prisma schema syntax cannot represent partial unique indexes.
 
   @@index([apiKeyId, createdAt])
   @@index([registryRequestId, createdAt])
   @@index([supportedPaymentSourceId])
   @@index([paymentIdentifier])
-  @@index([caip2Network, asset])
+  @@index([networkId, asset])
   @@index([status, createdAt])
+  @@index([evmWalletId])
+  @@index([counterpartyWalletId])
   // Settle dedup/crash-window guards look up attempts by paymentPayloadHash
   // (+ direction/status) on every settle; without this they scan the table.
   @@index([paymentPayloadHash])
@@ -506,14 +614,31 @@ model X402Settlement {
   paymentPayloadHash String             @unique
   success            Boolean
   txHash             String?
-  caip2Network       String
   amount             BigInt?
-  payer              String?
+  // network + payer are derivable from the linked attempt (Network.caip2Id) and its
+  // CounterpartyWallet; the facilitator-reported originals remain in rawResponse for audit.
   rawResponse        Json?
   PaymentAttempt     X402PaymentAttempt @relation(fields: [paymentAttemptId], references: [id], onDelete: Cascade)
 
   @@index([txHash])
-  @@index([caip2Network])
+}
+
+// The counterparty (other side) of an x402 transfer — the EVM analogue of Cardano's
+// WalletBase. No vkey: on EVM the address IS the identity. caip2Network is a loose string
+// (not an FK) on purpose: a counterparty may sit on a chain this decentralized node does
+// not fully configure, and node config can change over time.
+model X402CounterpartyWallet {
+  id              String               @id @default(cuid())
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  caip2Network    String
+  address         String
+  role            X402CounterpartyRole
+  note            String?
+  PaymentAttempts X402PaymentAttempt[]
+
+  @@unique([caip2Network, address, role])
+  @@index([address])
 }
 
 model InboxAgentRegistrationRequest {
@@ -650,6 +775,9 @@ model PaymentRequest {
   @@index([onChainStateOrResultLastChangedAt, id])
   @@index([nextActionOrOnChainStateOrResultLastChangedAt], map: "PaymentRequest_combinedLastChangedAt_idx")
   @@index([nextActionOrOnChainStateOrResultLastChangedAt, id], map: "PaymentRequest_combinedLastChangedAt_id_idx")
+  // List endpoints sort by createdAt DESC with cursor pagination; without this
+  // every filtered page sorts the full table.
+  @@index([createdAt, id])
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
@@ -736,6 +864,9 @@ model PurchaseRequest {
   @@index([onChainStateOrResultLastChangedAt, id])
   @@index([nextActionOrOnChainStateOrResultLastChangedAt], map: "PurchaseRequest_combinedLastChangedAt_idx")
   @@index([nextActionOrOnChainStateOrResultLastChangedAt, id], map: "PurchaseRequest_combinedLastChangedAt_id_idx")
+  // List endpoints sort by createdAt DESC with cursor pagination; without this
+  // every filtered page sorts the full table.
+  @@index([createdAt, id])
   @@index([paymentSourceId, createdAt])
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
@@ -847,6 +978,72 @@ model PaymentSourceConfig {
   PaymentSource     PaymentSource?
 }
 
+model FundDistributionConfig {
+  id            String    @id @default(cuid())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  hotWalletId   String    @unique
+  HotWallet     HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+  enabled       Boolean   @default(true)
+  batchWindowMs Int       @default(300000)
+  /// A fund wallet is now purely a funding source: it holds no per-asset
+  /// thresholds or top-up sizes. Those live on each hot wallet's
+  /// HotWalletLowBalanceRule (the wallet that runs low decides when and how
+  /// much). `enabled` toggles this wallet as a funding source; `batchWindowMs`
+  /// is its distribution-cycle cadence.
+}
+
+/// One top-up requested by a target wallet's per-asset low-balance rule.
+///
+/// The request remains unassigned until any enabled fund wallet on the same
+/// payment source claims it. `assetUnit` uses the rule convention: 'lovelace'
+/// for ADA, otherwise policyId + hex asset name.
+model FundDistributionRequest {
+  id             String                   @id @default(cuid())
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  /// The fund wallet that will pay this top-up. Null while unassigned: a
+  /// shortage is recorded per (target, asset) and any fund wallet on the source
+  /// can fulfil it, so the wallet is chosen at dispatch (first with funds) and
+  /// set atomically with the fund-wallet lock.
+  fundWalletId   String?
+  FundWallet     HotWallet?               @relation("FundDistributionSource", fields: [fundWalletId], references: [id])
+  targetWalletId String
+  TargetWallet   HotWallet                @relation("FundDistributionTarget", fields: [targetWalletId], references: [id])
+  priority       FundDistributionPriority
+  /// Which asset this top-up moves. 'lovelace' for ADA, otherwise
+  /// policyId + hex asset name — same convention as HotWalletLowBalanceRule.
+  assetUnit      String                   @default("lovelace")
+  /// Amount in the asset's own smallest unit. For a native token this is the
+  /// token quantity; the ADA that must ride along to satisfy min-UTxO is
+  /// computed at build time, not stored here.
+  amount         BigInt
+  status         FundDistributionStatus   @default(Pending)
+  txHash         String?
+  error          String?
+  batchId        String?
+  /// The Transaction row this request was batched into, set atomically with the
+  /// fund-wallet lock BEFORE the tx is signed or broadcast. This link is what
+  /// lets `reconcileInFlightRequests` observe the outcome that
+  /// funding-reconciliation wrote: on promote (chain found the intended hash)
+  /// the requests are advanced to Submitted; on RolledBack (TTL provably
+  /// elapsed) they are released back to Pending for a fresh build. Without it
+  /// an ambiguous submit strands the requests — reconciliation resolves the
+  /// Transaction but nothing maps that back to the distribution rows.
+  transactionId  String?
+  Transaction    Transaction?             @relation("FundDistributionTransaction", fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@index([fundWalletId, status])
+  @@index([status, priority, createdAt])
+  // Dedupe is per (target, asset) across ALL fund wallets on the source: a
+  // shortage is funded by exactly one wallet regardless of which. An in-flight
+  // ADA top-up must not suppress a USDM one to the same wallet — independent
+  // shortages.
+  @@index([targetWalletId, assetUnit, status])
+  @@index([status, updatedAt])
+  @@index([transactionId])
+}
+
 enum ApiKeyStatus {
   Active
   Revoked
@@ -855,6 +1052,7 @@ enum ApiKeyStatus {
 enum HotWalletType {
   Selling
   Purchasing
+  Funding
 }
 
 enum WalletType {
@@ -952,6 +1150,18 @@ enum X402PaymentDirection {
   InboundVerify
   InboundSettle
   OutboundPayment
+}
+
+enum X402CounterpartyRole {
+  // The counterparty receives funds (attempt's payTo). Set for outbound payments.
+  Payee
+  // The counterparty sends funds (attempt's payer/buyer). Set for inbound settlements.
+  Payer
+}
+
+enum X402FacilitatorMode {
+  SelfHosted
+  Remote
 }
 
 enum X402PaymentStatus {
@@ -1180,9 +1390,26 @@ enum WebhookEventType {
   PURCHASE_ON_ERROR
   PAYMENT_ON_ERROR
   WALLET_LOW_BALANCE
+  FUND_DISTRIBUTION_SENT
+  FUND_DISTRIBUTION_CONFIRMED
+  FUND_DISTRIBUTION_FAILED
   X402_PAYMENT_SETTLED
   X402_PAYMENT_FAILED
   X402_WALLET_LOW_BALANCE
+}
+
+// Critical is retained for historical rows only: the dispatcher creates
+// every request as Warning (single batched tier).
+enum FundDistributionPriority {
+  Warning
+  Critical
+}
+
+enum FundDistributionStatus {
+  Pending
+  Submitted
+  Confirmed
+  Failed
 }
 
 enum WebhookFormat {

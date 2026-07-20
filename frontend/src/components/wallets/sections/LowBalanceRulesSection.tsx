@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { X, AlertTriangle } from 'lucide-react';
+import { X, AlertTriangle, Zap } from 'lucide-react';
 import { formatDateTime } from '@/lib/format-date';
 import { shortenAddress } from '@/lib/utils';
 import {
@@ -20,6 +20,7 @@ import {
   getRuleAssetMeta,
   getThresholdInputFromRaw,
   parseThresholdInputToRaw,
+  validateRuleTopupInput,
   type LowBalanceRule,
   type LowBalanceSummary,
   type RuleAssetMeta,
@@ -27,12 +28,75 @@ import {
   type RuleDraft,
 } from '@/components/wallets/wallet-details-utils';
 
+function AutoTopupControl({
+  checked,
+  onCheckedChange,
+  amountInput,
+  onAmountInputChange,
+  assetLabel,
+  placeholder,
+  error,
+  rawAmount,
+  ariaLabel,
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  amountInput: string;
+  onAmountInputChange: (value: string) => void;
+  assetLabel: string;
+  placeholder: string;
+  error: string | null;
+  rawAmount: string | null;
+  ariaLabel: string;
+}) {
+  return (
+    <div className="border-t pt-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+            <Zap className="h-4 w-4" />
+          </span>
+          <div>
+            <div className="text-sm font-medium">Auto top-up</div>
+            <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+              When this rule enters Low, a funding wallet on the same source sends a fixed amount.
+            </div>
+          </div>
+        </div>
+        <Switch checked={checked} onCheckedChange={onCheckedChange} aria-label={ariaLabel} />
+      </div>
+
+      {checked && (
+        <div className="mt-3 space-y-1.5 sm:ml-11 sm:max-w-sm">
+          <div className="text-xs font-medium">Top-up amount ({assetLabel})</div>
+          <Input
+            value={amountInput}
+            inputMode="decimal"
+            onChange={(event) => onAmountInputChange(event.target.value)}
+            placeholder={placeholder}
+            aria-invalid={error != null}
+          />
+          {error ? (
+            <div className="text-[11px] text-destructive">{error}</div>
+          ) : (
+            <div className="text-[11px] text-muted-foreground">
+              Amount sent per transition. Stored raw:{' '}
+              <span className="font-mono text-foreground">{rawAmount}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LowBalanceRulesSection({
   monitoringSummary,
   configuredRules,
   lowRules,
   enabledRuleCount,
   network,
+  supportsAutoTopup,
   isWalletDetailsLoading,
   ruleDrafts,
   mutatingRuleIds,
@@ -47,9 +111,15 @@ export function LowBalanceRulesSection({
   setNewRuleCustomAssetUnit,
   newRuleEnabled,
   setNewRuleEnabled,
+  newRuleTopupEnabled,
+  setNewRuleTopupEnabled,
+  newRuleTopupAmountInput,
+  setNewRuleTopupAmountInput,
   addRuleAssetMeta,
   newRuleAssetBreakdown,
   newRuleRawThreshold,
+  newRuleRawTopup,
+  newRuleTopupError,
   canCreateNewRule,
   onCreateRule,
   isCreatingRule,
@@ -59,6 +129,7 @@ export function LowBalanceRulesSection({
   lowRules: LowBalanceRule[];
   enabledRuleCount: number;
   network: 'Preprod' | 'Mainnet';
+  supportsAutoTopup: boolean;
   isWalletDetailsLoading: boolean;
   ruleDrafts: Record<string, RuleDraft>;
   mutatingRuleIds: Set<string>;
@@ -73,9 +144,15 @@ export function LowBalanceRulesSection({
   setNewRuleCustomAssetUnit: (value: string) => void;
   newRuleEnabled: boolean;
   setNewRuleEnabled: (value: boolean) => void;
+  newRuleTopupEnabled: boolean;
+  setNewRuleTopupEnabled: (value: boolean) => void;
+  newRuleTopupAmountInput: string;
+  setNewRuleTopupAmountInput: (value: string) => void;
   addRuleAssetMeta: RuleAssetMeta;
   newRuleAssetBreakdown: ReturnType<typeof getAssetUnitBreakdown>;
   newRuleRawThreshold: string | null;
+  newRuleRawTopup: string | null;
+  newRuleTopupError: string | null;
   canCreateNewRule: boolean;
   onCreateRule: () => void;
   isCreatingRule: boolean;
@@ -200,14 +277,31 @@ export function LowBalanceRulesSection({
                     network,
                   ),
                   enabled: rule.enabled,
+                  topupEnabled: rule.topupEnabled,
+                  topupAmountInput:
+                    rule.topupAmount != null
+                      ? getThresholdInputFromRaw(rule.topupAmount, rule.assetUnit, network)
+                      : '',
                 };
                 const draftRawThreshold = parseThresholdInputToRaw(
                   draft.thresholdInput,
                   rule.assetUnit,
                   network,
                 );
+                const effectiveTopupEnabled = supportsAutoTopup && draft.topupEnabled;
+                const draftTopupValidation = validateRuleTopupInput({
+                  enabled: effectiveTopupEnabled,
+                  topupAmountInput: draft.topupAmountInput,
+                  assetUnit: rule.assetUnit,
+                  network,
+                });
+                const draftRawTopup = draftTopupValidation.rawTopupAmount;
                 const hasChanges =
-                  draftRawThreshold !== rule.thresholdAmount || draft.enabled !== rule.enabled;
+                  draftRawThreshold !== rule.thresholdAmount ||
+                  draft.enabled !== rule.enabled ||
+                  effectiveTopupEnabled !== rule.topupEnabled ||
+                  (effectiveTopupEnabled && draftRawTopup !== rule.topupAmount);
+                const topupInvalid = draftTopupValidation.error != null;
                 const isMutating = mutatingRuleIds.has(rule.id);
 
                 return (
@@ -311,7 +405,7 @@ export function LowBalanceRulesSection({
                         </div>
                       )}
 
-                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_200px_auto] lg:items-end">
+                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-end">
                         <div className="space-y-1.5">
                           <div className="text-xs text-muted-foreground">
                             {assetMeta.inputLabel}
@@ -348,13 +442,36 @@ export function LowBalanceRulesSection({
                             />
                           </div>
                         </div>
+                      </div>
+
+                      {supportsAutoTopup && (
+                        <AutoTopupControl
+                          checked={draft.topupEnabled}
+                          onCheckedChange={(checked) =>
+                            updateRuleDraft(rule.id, { topupEnabled: checked })
+                          }
+                          amountInput={draft.topupAmountInput}
+                          onAmountInputChange={(value) =>
+                            updateRuleDraft(rule.id, { topupAmountInput: value })
+                          }
+                          assetLabel={assetMeta.label}
+                          placeholder={assetMeta.decimals != null ? '50.0' : '50000000'}
+                          error={draftTopupValidation.error}
+                          rawAmount={draftRawTopup}
+                          ariaLabel="Toggle auto top-up"
+                        />
+                      )}
+
+                      <div className="flex justify-end">
                         <Button
                           variant="outline"
-                          className="w-full lg:w-auto"
+                          className="w-full sm:w-auto sm:min-w-24"
                           onClick={() => onSaveRule(rule)}
-                          disabled={!hasChanges || isMutating || draftRawThreshold == null}
+                          disabled={
+                            !hasChanges || isMutating || draftRawThreshold == null || topupInvalid
+                          }
                         >
-                          {isMutating ? <Spinner size={16} /> : 'Save'}
+                          {isMutating ? <Spinner size={16} /> : 'Save rule'}
                         </Button>
                       </div>
                     </div>
@@ -380,6 +497,7 @@ export function LowBalanceRulesSection({
                   onValueChange={(value) => {
                     setNewRuleAssetPreset(value as RuleAssetPreset);
                     setNewRuleThresholdInput('');
+                    setNewRuleTopupAmountInput('');
                   }}
                 >
                   <SelectTrigger>
@@ -453,6 +571,22 @@ export function LowBalanceRulesSection({
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {supportsAutoTopup && (
+              <div className="mt-4">
+                <AutoTopupControl
+                  checked={newRuleTopupEnabled}
+                  onCheckedChange={setNewRuleTopupEnabled}
+                  amountInput={newRuleTopupAmountInput}
+                  onAmountInputChange={setNewRuleTopupAmountInput}
+                  assetLabel={addRuleAssetMeta.label}
+                  placeholder={addRuleAssetMeta.decimals != null ? '50.0' : '50000000'}
+                  error={newRuleTopupError}
+                  rawAmount={newRuleRawTopup}
+                  ariaLabel="Enable auto top-up for new rule"
+                />
               </div>
             )}
 

@@ -20,6 +20,9 @@ src/services/.DS_Store
 # Claude local settings (user-specific)
 .claude/
 
+# Claude Code session memory (local only)
+.remember/
+
 /certs/
 
 frontend/.env
@@ -43,11 +46,13 @@ scripts/example-invoice.html
 # Prisma Generated Files
 src/generated/
 
-# Local agent/tooling scratch databases (ruvector / agentdb, .remember)
+# Local vector-db/agent-memory tool artifacts
 *.rvf
 *.rvf.lock
 ruvector.db
 **/ruvector.db
+agentdb.rvf
+agentdb.rvf.lock
 .remember/
 
 # Hydra L2 E2E harness — generated seller mnemonic (never commit)
