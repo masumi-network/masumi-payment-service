@@ -560,7 +560,7 @@ describe('x402 service helpers', () => {
 		).toThrow('x402 asset must be an EVM token contract');
 	});
 
-	it('rejects non-positive dynamic amounts and payment calls for free sources', () => {
+	it('rejects dynamic amounts outside the persistence range and payment calls for free sources', () => {
 		expect(() =>
 			requirementsService.sourceToRequirements(
 				{
@@ -572,7 +572,20 @@ describe('x402 service helpers', () => {
 				} as never,
 				{ ...requirements, amount: '0' } as never,
 			),
-		).toThrow('x402 payment amount must be a positive unsigned integer');
+		).toThrow('x402 payment amount must be between 1 and 9223372036854775807 atomic units');
+
+		expect(() =>
+			requirementsService.sourceToRequirements(
+				{
+					...source,
+					pricingType: 'Dynamic',
+					asset: null,
+					amount: null,
+					decimals: null,
+				} as never,
+				{ ...requirements, amount: '9223372036854775808' } as never,
+			),
+		).toThrow('x402 payment amount must be between 1 and 9223372036854775807 atomic units');
 
 		expect(() =>
 			requirementsService.sourceToRequirements({
@@ -659,6 +672,13 @@ describe('x402 service helpers', () => {
 	});
 
 	it('only trusts dynamic requirements from the registry owner or an admin', async () => {
+		mockSupportedPaymentSourceFindUnique.mockResolvedValueOnce({
+			...source,
+			pricingType: 'Dynamic',
+			asset: null,
+			amount: null,
+			decimals: null,
+		});
 		await expect(
 			service.verifyX402Payment({
 				apiKeyId: 'different-api-key',
@@ -672,6 +692,21 @@ describe('x402 service helpers', () => {
 		});
 
 		expect(mockFacilitatorVerify).not.toHaveBeenCalled();
+	});
+
+	it('keeps registered fixed pricing usable by another pay-scoped runtime key', async () => {
+		mockX402PaymentAttemptCreate.mockResolvedValueOnce({ id: 'attempt-fixed-runtime' });
+
+		await expect(
+			service.verifyX402Payment({
+				apiKeyId: 'different-api-key',
+				caip2NetworkLimit: [source.network],
+				supportedPaymentSourceId: source.id,
+				paymentPayload: typedPaymentPayload,
+			}),
+		).resolves.toMatchObject({ attemptId: 'attempt-fixed-runtime' });
+
+		expect(mockFacilitatorVerify).toHaveBeenCalledTimes(1);
 	});
 
 	it('deduplicates settle replays by canonical payment payload hash bound to the same source', async () => {
@@ -1525,7 +1560,7 @@ describe('x402 service helpers', () => {
 			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
 		});
 
-		it.each([['-1000'], ['0'], ['1.5'], ['abc'], ['']])(
+		it.each([['-1000'], ['0'], ['1.5'], ['abc'], [''], ['9223372036854775808']])(
 			'rejects a forwarded requirement with a non-positive/malformed amount %p without touching the budget',
 			async (amount) => {
 				await expect(
@@ -1997,6 +2032,58 @@ describe('x402 service helpers', () => {
 			expect(upsertUpdateArg()).toMatchObject({
 				defaultAsset: '0x036cbd53842c5426634e7929541ec2318f3dcf7c',
 				defaultAssetDecimals: 6,
+			});
+		});
+
+		it('requires fresh decimals when changing an existing default token', async () => {
+			mockX402NetworkFindUnique.mockResolvedValueOnce({
+				defaultAsset: '0x1111111111111111111111111111111111111111',
+				defaultAssetDecimals: 6,
+			});
+
+			await expect(
+				service.upsertX402Network({
+					...baseInput,
+					defaultAsset: '0x2222222222222222222222222222222222222222',
+				}),
+			).rejects.toMatchObject({
+				status: 400,
+				message: 'defaultAssetDecimals is required when setting defaultAsset',
+			});
+			expect(mockX402NetworkUpsert).not.toHaveBeenCalled();
+		});
+
+		it('preserves stored decimals when the default token address is unchanged', async () => {
+			mockX402NetworkFindUnique.mockResolvedValueOnce({
+				defaultAsset: '0x1111111111111111111111111111111111111111',
+				defaultAssetDecimals: 6,
+			});
+
+			await service.upsertX402Network({
+				...baseInput,
+				defaultAsset: '0x1111111111111111111111111111111111111111',
+			});
+
+			expect(upsertUpdateArg()).toMatchObject({
+				defaultAsset: '0x1111111111111111111111111111111111111111',
+				defaultAssetDecimals: 6,
+			});
+		});
+
+		it('clears stored decimals when a legacy client clears only the default token', async () => {
+			mockX402NetworkFindUnique.mockResolvedValueOnce({
+				defaultAsset: '0x1111111111111111111111111111111111111111',
+				defaultAssetDecimals: 6,
+			});
+
+			await service.upsertX402Network({
+				...baseInput,
+				defaultAsset: null,
+			});
+
+			expect(upsertUpdateArg()).toMatchObject({
+				defaultAsset: null,
+				defaultAssetDecimals: null,
 			});
 		});
 

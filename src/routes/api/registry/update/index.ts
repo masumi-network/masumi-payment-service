@@ -12,7 +12,11 @@ import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { bumpRegistryAssetNameVersionV2, normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
-import { supportedPaymentSourceInputSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import {
+	supportedPaymentSourceInputSchema,
+	validateSupportedPaymentSourcesOrThrow,
+	validateX402NetworksAvailableOrThrow,
+} from '@/types/payment-source';
 import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
 import { verificationToRow } from '@/types/verification';
 
@@ -121,6 +125,11 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 
 			const registryRequest = await prisma.registryRequest.findUnique({
 				where: { agentIdentifier: policyId + requestedAssetName },
+				include: {
+					SupportedPaymentSources: {
+						select: { chain: true },
+					},
+				},
 			});
 			if (registryRequest == null) {
 				throw createHttpError(404, 'Registration not found');
@@ -223,13 +232,21 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						paymentSource.paymentSourceType,
 						ctx.caip2NetworkLimit,
 					);
+					await validateX402NetworksAvailableOrThrow(requestedSupportedPaymentSources);
 				} catch (error) {
 					throw createHttpError(400, error instanceof Error ? error.message : String(error));
 				}
 			}
+			const effectiveSupportedPaymentSources = supportedPaymentSources ?? registryRequest.SupportedPaymentSources;
+			// Legacy V2 rows can have no persisted sources; metadata generation
+			// intentionally treats that empty list as the active Cardano source.
+			const hasCardanoPaymentSource =
+				effectiveSupportedPaymentSources.length === 0 ||
+				effectiveSupportedPaymentSources.some((source) => source.chain === 'Cardano');
+			const agentPricing = hasCardanoPaymentSource ? input.AgentPricing : { pricingType: PricingType.Free };
 
-			if (input.AgentPricing.pricingType === PricingType.Fixed) {
-				const assetUnits = input.AgentPricing.Pricing.map((pricing) => pricing.unit);
+			if (agentPricing.pricingType === PricingType.Fixed) {
+				const assetUnits = agentPricing.Pricing.map((pricing) => pricing.unit);
 				const { valid: _valid, invalid: invalidAssets } = await validateAssetsOnChain(blockfrost, assetUnits);
 				if (invalidAssets.length > 0) {
 					const invalidAssetsMessage = invalidAssets.map((item) => `${item.asset} (${item.errorMessage})`).join(', ');
@@ -277,14 +294,14 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 				}
 				const newPricing = await tx.agentPricing.create({
 					data:
-						input.AgentPricing.pricingType == PricingType.Fixed
+						agentPricing.pricingType == PricingType.Fixed
 							? {
-									pricingType: input.AgentPricing.pricingType,
+									pricingType: agentPricing.pricingType,
 									FixedPricing: {
 										create: {
 											Amounts: {
 												createMany: {
-													data: input.AgentPricing.Pricing.map((price) => ({
+													data: agentPricing.Pricing.map((price) => ({
 														unit: price.unit.toLowerCase() == 'lovelace' ? '' : price.unit,
 														amount: BigInt(price.amount),
 													})),
@@ -294,7 +311,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 									},
 								}
 							: {
-									pricingType: input.AgentPricing.pricingType,
+									pricingType: agentPricing.pricingType,
 								},
 					select: { id: true },
 				});

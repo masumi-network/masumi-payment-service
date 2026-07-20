@@ -60,6 +60,36 @@ describe('payment-source address validation', () => {
 		).toMatchObject({ pricingType: PricingType.Fixed });
 	});
 
+	it('rejects fixed x402 amounts that cannot be stored in PostgreSQL BIGINT columns', () => {
+		expect(() =>
+			supportedPaymentSourceSchema.parse({
+				chain: 'EVM',
+				network: 'eip155:84532',
+				scheme: 'Exact',
+				pricingType: PricingType.Fixed,
+				asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7c',
+				amount: '9223372036854775808',
+				decimals: 18,
+				payTo: '0x1111111111111111111111111111111111111111',
+			}),
+		).toThrow('Atomic amount must be between 1 and 9223372036854775807');
+	});
+
+	it('rejects a zero fixed x402 amount', () => {
+		expect(() =>
+			supportedPaymentSourceSchema.parse({
+				chain: 'EVM',
+				network: 'eip155:84532',
+				scheme: 'Exact',
+				pricingType: PricingType.Fixed,
+				asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+				amount: '0',
+				decimals: 18,
+				payTo: '0x1111111111111111111111111111111111111111',
+			}),
+		).toThrow('Atomic amount must be between 1 and 9223372036854775807');
+	});
+
 	it('rejects x402 EVM address aliases that differ from payTo', () => {
 		expect(() =>
 			supportedPaymentSourceSchema.parse({

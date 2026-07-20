@@ -4,13 +4,11 @@ import type { PaymentPayload } from '@x402/core/types';
 import { extractAndValidatePaymentIdentifier } from '@x402/extensions/payment-identifier';
 import { Prisma } from '@masumi/payment-core/db';
 import { encrypt } from '@masumi/payment-core/encryption';
+import { POSTGRES_BIGINT_MAX } from '@masumi/payment-core/payment-source';
 
 // Payload serialization helpers shared by the sell side (verify/settle in service.ts) and the
 // buy side (createX402Payment in pay.ts): hashing, encryption-at-rest, JSON coercion and the
 // payment-identifier extraction. Kept in one module so both sides share a single implementation.
-
-// Largest value the Postgres BigInt (signed 64-bit) settlement-amount column can hold.
-const POSTGRES_BIGINT_MAX = 9223372036854775807n;
 
 // Parse an unsigned-integer string to BigInt, returning null for null/undefined or
 // any non-integer form. Used for amounts that arrive from external services where a

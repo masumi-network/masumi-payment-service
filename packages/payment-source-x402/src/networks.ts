@@ -62,6 +62,8 @@ export async function listAvailableX402Networks(input?: { isTestnet?: boolean; c
 	return prisma.x402Network.findMany({
 		where: {
 			isTestnet: input?.isTestnet,
+			isEnabled: true,
+			OR: [{ facilitatorWalletId: { not: null } }, { facilitatorUrl: { not: null } }],
 			caip2Id: input?.caip2NetworkLimit == null ? undefined : { in: input.caip2NetworkLimit },
 		},
 		orderBy: { caip2Id: 'asc' },
@@ -225,10 +227,10 @@ export async function upsertX402Network(input: {
 					})
 				: null;
 		const resolvedAsset = hasDefaultAssetInput ? input.defaultAsset : existing?.defaultAsset;
-		let resolvedDecimals = hasDefaultAssetDecimalsInput ? input.defaultAssetDecimals : existing?.defaultAssetDecimals;
+		let resolvedDecimals: number | null | undefined;
 
 		if (resolvedAsset === null) {
-			if (resolvedDecimals != null) {
+			if (hasDefaultAssetDecimalsInput && input.defaultAssetDecimals != null) {
 				throw createHttpError(400, 'defaultAssetDecimals must be null when defaultAsset is null');
 			}
 			resolvedDecimals = null;
@@ -236,6 +238,13 @@ export async function upsertX402Network(input: {
 			if (resolvedAsset == null) {
 				throw createHttpError(400, 'defaultAsset is required when setting defaultAssetDecimals');
 			}
+			const isSameStoredAsset =
+				existing?.defaultAsset != null && normalizeAddress(existing.defaultAsset) === normalizeAddress(resolvedAsset);
+			resolvedDecimals = hasDefaultAssetDecimalsInput
+				? input.defaultAssetDecimals
+				: !hasDefaultAssetInput || isSameStoredAsset
+					? existing?.defaultAssetDecimals
+					: undefined;
 			assertHexAddress(resolvedAsset, 'defaultAsset');
 			if (resolvedDecimals == null) {
 				throw createHttpError(400, 'defaultAssetDecimals is required when setting defaultAsset');

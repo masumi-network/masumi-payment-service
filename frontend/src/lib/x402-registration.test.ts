@@ -57,6 +57,13 @@ test('x402 validation rejects precision beyond the selected token', () => {
   );
 });
 
+test('x402 validation rejects fixed amounts outside the database range', () => {
+  assert.equal(
+    validateX402Options([option({ amount: '9223372036855', decimals: '6' })]),
+    'x402 option 1: enter an amount between 1 and 9223372036854775807 atomic units',
+  );
+});
+
 test('new Base option defaults to asset-agnostic dynamic pricing and a managed selling wallet', () => {
   const base = network();
   const wallet = {
@@ -140,6 +147,19 @@ test('duplicate x402 options identify the exact offending row case-insensitively
     id: 'duplicate',
     asset: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
     payTo: '0x1111111111111111111111111111111111111111',
+  });
+
+  assert.deepEqual(findX402ValidationError([option(), duplicate]), {
+    index: 1,
+    message:
+      'x402 option 2: duplicates option 1. Change its chain, pricing, coin, recipient, or resource.',
+  });
+});
+
+test('duplicate x402 options canonicalize equivalent decimal spellings', () => {
+  const duplicate = option({
+    id: 'duplicate',
+    decimals: '06',
   });
 
   assert.deepEqual(findX402ValidationError([option(), duplicate]), {

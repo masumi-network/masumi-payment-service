@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import type { X402Network, X402Wallet } from '@/lib/api/generated';
+import type { X402AvailableNetwork, X402Wallet } from '@/lib/api/generated';
 import { shortenAddress } from '@/lib/utils';
 import {
   addressesMatch,
@@ -35,7 +35,7 @@ export function X402OptionFields({
 }: {
   option: X402OptionDraft;
   optionNumber: number;
-  networks: X402Network[];
+  networks: X402AvailableNetwork[];
   wallets: X402Wallet[];
   isLoadingWallets: boolean;
   onChange: (patch: Partial<X402OptionDraft>) => void;

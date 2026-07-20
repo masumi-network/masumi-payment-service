@@ -15,10 +15,23 @@ export const SupportedPaymentSourceChain = {
 	EVM: 'EVM',
 } as const;
 
+// Prisma maps PostgreSQL BIGINT columns to JavaScript bigint, but PostgreSQL
+// itself is limited to signed int64. Keep every externally supplied atomic
+// amount within that range before it reaches a persistence boundary.
+export const POSTGRES_BIGINT_MAX = 9223372036854775807n;
+
 export const paymentSourceTypeSchema = z.nativeEnum(PaymentSourceType).describe('The configured payment source type');
 
 const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Expected an EVM address');
 const x402AssetSchema = evmAddressSchema.describe('ERC-20 token contract address');
+const x402AtomicAmountSchema = z
+	.string()
+	.regex(/^\d+$/)
+	.refine((amount) => {
+		const parsedAmount = BigInt(amount);
+		return parsedAmount > 0n && parsedAmount <= POSTGRES_BIGINT_MAX;
+	}, `Atomic amount must be between 1 and ${POSTGRES_BIGINT_MAX.toString()}`)
+	.describe('Atomic token amount');
 
 const cardanoSupportedPaymentSourceSchema = z.object({
 	chain: z.literal(SupportedPaymentSourceChain.Cardano).describe('The blockchain this payment source is available on'),
@@ -44,7 +57,7 @@ const x402SupportedPaymentSourceBaseSchema = z.object({
 const x402FixedPaymentSourceSchema = x402SupportedPaymentSourceBaseSchema.extend({
 	pricingType: z.literal(PricingType.Fixed).describe('A fixed amount is advertised in the registry'),
 	asset: x402AssetSchema,
-	amount: z.string().regex(/^\d+$/).describe('Atomic token amount'),
+	amount: x402AtomicAmountSchema,
 	decimals: z.number().int().min(0).max(255).describe('Token decimals'),
 });
 
@@ -98,7 +111,7 @@ export const supportedPaymentSourceSchema = z
 const legacyX402FixedPaymentSourceInputSchema = x402SupportedPaymentSourceBaseSchema
 	.extend({
 		asset: x402AssetSchema,
-		amount: z.string().regex(/^\d+$/).describe('Atomic token amount'),
+		amount: x402AtomicAmountSchema,
 		decimals: z.number().int().min(0).max(255).describe('Token decimals'),
 	})
 	.strict()

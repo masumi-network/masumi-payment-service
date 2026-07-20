@@ -1,4 +1,4 @@
-import type { X402Network, X402Wallet } from '@/lib/api/generated';
+import type { X402AvailableNetwork, X402Wallet } from '@/lib/api/generated';
 
 export type X402OptionDraft = {
   id: string;
@@ -19,6 +19,8 @@ export type EvmAssetPreset = {
   address: string;
   decimals: number;
 };
+
+export type X402RegistrationNetwork = X402AvailableNetwork;
 
 export const EVM_ASSET_PRESETS: EvmAssetPreset[] = [
   {
@@ -54,6 +56,7 @@ export const EVM_ASSET_PRESETS: EvmAssetPreset[] = [
 const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
 const CAIP2_EIP155 = /^eip155:\d+$/;
 const DECIMAL_AMOUNT = /^\d+(?:\.\d+)?$/;
+const POSTGRES_BIGINT_MAX = BigInt('9223372036854775807');
 
 export function newX402OptionId(): string {
   return crypto.randomUUID();
@@ -63,7 +66,9 @@ export function addressesMatch(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
 }
 
-export function assetPresetsForNetwork(network: X402Network | undefined): EvmAssetPreset[] {
+export function assetPresetsForNetwork(
+  network: X402RegistrationNetwork | undefined,
+): EvmAssetPreset[] {
   if (!network) return [];
 
   const presets = EVM_ASSET_PRESETS.filter((preset) => preset.network === network.caip2Id);
@@ -94,14 +99,14 @@ export function assetPresetsForNetwork(network: X402Network | undefined): EvmAss
 }
 
 export function findAssetPreset(
-  network: X402Network | undefined,
+  network: X402RegistrationNetwork | undefined,
   asset: string,
 ): EvmAssetPreset | undefined {
   return assetPresetsForNetwork(network).find((preset) => addressesMatch(preset.address, asset));
 }
 
 export function defaultAssetForNetwork(
-  network: X402Network | undefined,
+  network: X402RegistrationNetwork | undefined,
 ): EvmAssetPreset | undefined {
   if (!network) return undefined;
   const presets = assetPresetsForNetwork(network);
@@ -113,7 +118,7 @@ export function defaultAssetForNetwork(
 }
 
 export function defaultX402Option(
-  networks: X402Network[],
+  networks: X402RegistrationNetwork[],
   wallets: X402Wallet[],
   preferredNetworkId?: string | null,
 ): X402OptionDraft {
@@ -170,7 +175,12 @@ function duplicateKey(option: X402OptionDraft): string {
   const asset = option.pricingType === 'Free' ? '' : option.asset.toLowerCase();
   const amount =
     option.pricingType === 'Fixed' ? normalizeX402Amount(option.amount, option.decimals) : '';
-  const decimals = option.pricingType === 'Free' || !asset ? '' : option.decimals;
+  const decimals =
+    option.pricingType === 'Free' || !asset
+      ? ''
+      : Number.isInteger(Number(option.decimals))
+        ? Number(option.decimals).toString()
+        : option.decimals;
 
   return JSON.stringify([
     option.caip2Network,
@@ -230,11 +240,14 @@ export function findX402ValidationError(
         if (
           !DECIMAL_AMOUNT.test(option.amount) ||
           !/^\d+$/.test(normalizedAmount) ||
-          BigInt(normalizedAmount) <= BigInt(0)
+          BigInt(normalizedAmount) <= BigInt(0) ||
+          BigInt(normalizedAmount) > POSTGRES_BIGINT_MAX
         ) {
           return {
             index,
-            message: `x402 option ${optionNumber}: enter an amount greater than zero`,
+            message:
+              `x402 option ${optionNumber}: enter an amount between 1 and ` +
+              `${POSTGRES_BIGINT_MAX.toString()} atomic units`,
           };
         }
       }

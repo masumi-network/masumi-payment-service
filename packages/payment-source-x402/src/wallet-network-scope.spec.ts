@@ -139,6 +139,8 @@ describe('managed wallet network limits', () => {
 		expect(mockNetworkFindMany).toHaveBeenCalledWith({
 			where: {
 				isTestnet: false,
+				isEnabled: true,
+				OR: [{ facilitatorWalletId: { not: null } }, { facilitatorUrl: { not: null } }],
 				caip2Id: { in: ['eip155:8453'] },
 			},
 			orderBy: { caip2Id: 'asc' },

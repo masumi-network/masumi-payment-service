@@ -11,6 +11,7 @@ const mockFindRecipientWallet = jest.fn() as AnyMock;
 const mockCreateRegistryRequest = jest.fn() as AnyMock;
 const mockFindRegistryRequests = jest.fn() as AnyMock;
 const mockCountRegistryRequests = jest.fn() as AnyMock;
+const mockFindX402Networks = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -31,6 +32,9 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			findMany: mockFindRegistryRequests,
 			findUnique: jest.fn(),
 			delete: jest.fn(),
+		},
+		x402Network: {
+			findMany: mockFindX402Networks,
 		},
 	},
 }));
@@ -99,6 +103,10 @@ jest.unstable_mockModule('@prisma/client', async () => ({
 }));
 
 const { queryRegistryRequestGet, queryRegistryCountGet, registerAgentPost } = await import('./index');
+
+beforeEach(() => {
+	mockFindX402Networks.mockResolvedValue([{ caip2Id: 'eip155:8453' }, { caip2Id: 'eip155:84532' }]);
+});
 
 function asApiKey(walletScopeIds: string[] | null = null) {
 	return {
@@ -527,6 +535,9 @@ describe('registerAgentPost', () => {
 		});
 
 		expect(responseMock.statusCode).toBe(200);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.Pricing).toEqual({
+			create: { pricingType: PricingType.Free },
+		});
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.SupportedPaymentSources).toEqual({
 			createMany: {
 				data: [
@@ -581,6 +592,45 @@ describe('registerAgentPost', () => {
 				._getJSONData()
 				.data.supportedPaymentSources.every((supportedSource: { chain: string }) => supportedSource.chain === 'EVM'),
 		).toBe(true);
+	});
+
+	it('rejects an x402 option whose network is not available for settlement', async () => {
+		mockFindX402Networks.mockResolvedValueOnce([]);
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					name: 'Unavailable x402 Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: { name: 'demo', version: '1.0.0' },
+					AgentPricing: { pricingType: PricingType.Free },
+					Author: { name: 'Author' },
+					supportedPaymentSources: [
+						{
+							chain: 'EVM',
+							network: 'eip155:84532',
+							scheme: 'Exact',
+							pricingType: PricingType.Dynamic,
+							payTo: `0x${'1'.repeat(40)}`,
+						},
+					],
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(JSON.stringify(responseMock._getJSONData())).toContain(
+			'x402 network is not available for settlement: eip155:84532',
+		);
+		expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
 	});
 
 	it('stores a managed recipient wallet override when provided', async () => {

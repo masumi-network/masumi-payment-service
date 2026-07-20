@@ -13,7 +13,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
-import { validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { validateSupportedPaymentSourcesOrThrow, validateX402NetworksAvailableOrThrow } from '@/types/payment-source';
 import { verificationToRow } from '@/types/verification';
 import {
 	deleteAgentRegistrationSchemaInput,
@@ -139,19 +139,27 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 						sellingWallet.PaymentSource.paymentSourceType,
 						ctx.caip2NetworkLimit,
 					);
+					await validateX402NetworksAvailableOrThrow(supportedPaymentSources);
 				} catch (error) {
 					throw createHttpError(400, error instanceof Error ? error.message : String(error));
 				}
 			}
 
+			// AgentPricing is the legacy Cardano-rail projection. An EVM-only
+			// entry has no Cardano payment contract, so keep that projection Free
+			// while each x402 source carries its own independent pricing model.
+			const agentPricing = supportedPaymentSources.some((source) => source.chain === 'Cardano')
+				? input.AgentPricing
+				: { pricingType: PricingType.Free };
+
 			// Validate pricing assets exist on-chain
-			if (input.AgentPricing.pricingType === PricingType.Fixed) {
+			if (agentPricing.pricingType === PricingType.Fixed) {
 				const blockfrost = getBlockfrostInstance(
 					input.network,
 					sellingWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
 				);
 
-				const assetUnits = input.AgentPricing.Pricing.map((pricing) => pricing.unit);
+				const assetUnits = agentPricing.Pricing.map((pricing) => pricing.unit);
 				const { valid: _validAssets, invalid: invalidAssets } = await validateAssetsOnChain(blockfrost, assetUnits);
 
 				if (invalidAssets.length > 0) {
@@ -260,14 +268,14 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 						: {}),
 					Pricing: {
 						create:
-							input.AgentPricing.pricingType == PricingType.Fixed
+							agentPricing.pricingType == PricingType.Fixed
 								? {
-										pricingType: input.AgentPricing.pricingType,
+										pricingType: agentPricing.pricingType,
 										FixedPricing: {
 											create: {
 												Amounts: {
 													createMany: {
-														data: input.AgentPricing.Pricing.map((price) => ({
+														data: agentPricing.Pricing.map((price) => ({
 															unit: price.unit.toLowerCase() == 'lovelace' ? '' : price.unit,
 															amount: BigInt(price.amount),
 														})),
@@ -277,7 +285,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 										},
 									}
 								: {
-										pricingType: input.AgentPricing.pricingType,
+										pricingType: agentPricing.pricingType,
 									},
 					},
 				},

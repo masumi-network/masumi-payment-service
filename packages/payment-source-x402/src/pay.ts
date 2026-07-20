@@ -12,6 +12,7 @@ import {
 } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { isAllowedCaip2Network } from '@masumi/payment-core/network';
+import { POSTGRES_BIGINT_MAX } from '@masumi/payment-core/payment-source';
 import { readAssetAmount } from './balance';
 import { getClientForWallet } from './facilitator';
 import {
@@ -161,7 +162,9 @@ export async function createX402Payment({
 		// Defense-in-depth: the amount must be a positive unsigned integer before it
 		// reaches BigInt()/budget math. A negative value would invert the budget
 		// decrement (minting budget); a non-numeric value would throw.
-		if (!/^\d+$/.test(requirement.amount) || BigInt(requirement.amount) <= 0n) return false;
+		if (!/^\d+$/.test(requirement.amount)) return false;
+		const amount = BigInt(requirement.amount);
+		if (amount <= 0n || amount > POSTGRES_BIGINT_MAX) return false;
 		if (!/^eip155:\d+$/.test(requirement.network)) return false;
 		if (!isAllowedCaip2Network(caip2NetworkLimit, requirement.network)) return false;
 		if (preferredNetwork != null && requirement.network !== preferredNetwork) return false;

@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn, shortenAddress, formatX402Amount } from '@/lib/utils';
-import { useX402Networks } from '@/lib/hooks/useX402';
+import { useAvailableX402Networks } from '@/lib/hooks/useX402';
 import { RegistryEntry } from '@/lib/api/generated';
 
 type SupportedPaymentSource = NonNullable<RegistryEntry['supportedPaymentSources']>[number];
@@ -15,7 +15,7 @@ export function AgentX402Options({
 }: {
   sources: RegistryEntry['supportedPaymentSources'];
 }) {
-  const { networks } = useX402Networks({ silentErrors: true });
+  const { networks } = useAvailableX402Networks({ silentErrors: true });
   const evmSources = (sources ?? []).filter(
     (source): source is EvmPaymentSource => source.chain === 'EVM',
   );

@@ -1,6 +1,7 @@
 import createHttpError from 'http-errors';
 import type { Network, PaymentPayload, PaymentRequirements, SettleResponse } from '@x402/core/types';
 import {
+	PricingType,
 	Prisma,
 	X402CounterpartyRole,
 	X402FacilitatorMode,
@@ -150,7 +151,7 @@ export async function verifyX402Payment({
 	paymentRequirements?: PaymentRequirements;
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
-	if (!canAdmin && source.RegistryRequest.requestedById !== apiKeyId) {
+	if (source.pricingType === PricingType.Dynamic && !canAdmin && source.RegistryRequest.requestedById !== apiKeyId) {
 		throw createHttpError(403, 'x402 supported payment source belongs to another API key');
 	}
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);
@@ -234,7 +235,7 @@ export async function settleX402Payment({
 	paymentRequirements?: PaymentRequirements;
 }) {
 	const source = await getX402SupportedPaymentSourceOrThrow(supportedPaymentSourceId);
-	if (!canAdmin && source.RegistryRequest.requestedById !== apiKeyId) {
+	if (source.pricingType === PricingType.Dynamic && !canAdmin && source.RegistryRequest.requestedById !== apiKeyId) {
 		throw createHttpError(403, 'x402 supported payment source belongs to another API key');
 	}
 	assertPaymentPayloadMatchesRegisteredResource(source, paymentPayload);

@@ -2,6 +2,7 @@ import canonicalStringify from 'canonical-json';
 import createHttpError from 'http-errors';
 import type { Network, PaymentPayload, PaymentRequirements } from '@x402/core/types';
 import { PricingType, Prisma, X402PaymentScheme, prisma } from '@masumi/payment-core/db';
+import { POSTGRES_BIGINT_MAX } from '@masumi/payment-core/payment-source';
 import { normalizeAddress } from './internal';
 
 export const EXACT_SCHEME = 'exact';
@@ -44,8 +45,15 @@ function parseDecimals(value: unknown): number {
 }
 
 function assertPositiveAmount(amount: string): void {
-	if (!/^\d+$/.test(amount) || BigInt(amount) <= 0n) {
+	if (!/^\d+$/.test(amount)) {
 		throw createHttpError(400, 'x402 payment amount must be a positive unsigned integer');
+	}
+	const parsedAmount = BigInt(amount);
+	if (parsedAmount <= 0n || parsedAmount > POSTGRES_BIGINT_MAX) {
+		throw createHttpError(
+			400,
+			`x402 payment amount must be between 1 and ${POSTGRES_BIGINT_MAX.toString()} atomic units`,
+		);
 	}
 }
 

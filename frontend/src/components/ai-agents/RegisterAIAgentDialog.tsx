@@ -32,7 +32,7 @@ import {
 } from '@/lib/convertDecimalToBaseUnits';
 import { extractApiErrorMessage } from '@/lib/api-error';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
-import { useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
+import { useAvailableX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
 import { X402OptionFields } from './X402OptionsSection';
 import {
   defaultX402Option,
@@ -506,7 +506,7 @@ export function RegisterAIAgentDialog({
   const isV2Target = isUpdateMode
     ? true
     : !!selectedPaymentSource && isV2PaymentSource(selectedPaymentSource);
-  const { networks: x402Networks } = useX402Networks({ silentErrors: true });
+  const { networks: x402Networks } = useAvailableX402Networks({ silentErrors: true });
   const { wallets: x402Wallets, isLoading: isLoadingX402Wallets } = useX402Wallets(open, 'Selling');
   const hasMasumiPaymentOption = paymentOptionRows.some((option) => option.type === 'Masumi');
 
@@ -682,6 +682,9 @@ export function RegisterAIAgentDialog({
         };
 
         const agentPricing = (() => {
+          if (!hasMasumiPaymentOption) {
+            return { pricingType: 'Free' as const };
+          }
           if (data.pricingType === 'Free') {
             return { pricingType: 'Free' as const };
           }
