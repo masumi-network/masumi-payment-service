@@ -150,6 +150,9 @@ describe('V2 batch builders — collateral fallback', () => {
 			200,
 		);
 
+		// Length assertion matters: an empty `builders` array would make the loop
+		// below pass vacuously.
+		expect(builders).toHaveLength(2);
 		for (const builder of builders) {
 			expect(builder.selectUtxosFrom).toHaveBeenCalledWith([largeUtxo]);
 		}
