@@ -143,6 +143,7 @@ let WalletLowBalanceMonitorService: typeof import('./service').WalletLowBalanceM
 let projectBalanceMapFromUnsignedTx: typeof import('./service').projectBalanceMapFromUnsignedTx;
 let Address: typeof import('@emurgo/cardano-serialization-lib-nodejs').Address;
 let BigNum: typeof import('@emurgo/cardano-serialization-lib-nodejs').BigNum;
+let EnterpriseAddress: typeof import('@emurgo/cardano-serialization-lib-nodejs').EnterpriseAddress;
 let Transaction: typeof import('@emurgo/cardano-serialization-lib-nodejs').Transaction;
 let TransactionBody: typeof import('@emurgo/cardano-serialization-lib-nodejs').TransactionBody;
 let TransactionHash: typeof import('@emurgo/cardano-serialization-lib-nodejs').TransactionHash;
@@ -165,6 +166,7 @@ describe('WalletLowBalanceMonitorService', () => {
 		({
 			Address,
 			BigNum,
+			EnterpriseAddress,
 			Transaction,
 			TransactionBody,
 			TransactionHash,
@@ -522,5 +524,85 @@ describe('WalletLowBalanceMonitorService', () => {
 
 		expect(projectedBalanceMap.get('lovelace')).toBe(3500000n);
 		expect(projectedBalanceMap.get('usdm')).toBe(1009494700n);
+	});
+
+	it('credits change returned to another address of the same payment credential', () => {
+		const txHash = '22'.repeat(32);
+		const inputs = TransactionInputs.new();
+		inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from(txHash, 'hex')), 0));
+
+		// Same payment key hash as validWalletAddress, without the delegation part.
+		const walletAddress = Address.from_bech32(validWalletAddress);
+		const changeAddress = EnterpriseAddress.new(walletAddress.network_id(), walletAddress.payment_cred()!)
+			.to_address()
+			.to_bech32();
+
+		const outputs = TransactionOutputs.new();
+		outputs.add(TransactionOutput.new(Address.from_bech32(changeAddress), Value.new(BigNum.from_str('7000000'))));
+
+		const unsignedTx = Buffer.from(
+			Transaction.new(
+				TransactionBody.new(inputs, outputs, BigNum.from_str('1000000')),
+				TransactionWitnessSet.new(),
+				undefined,
+			).to_bytes(),
+		).toString('hex');
+
+		const projectedBalanceMap = projectBalanceMapFromUnsignedTx(
+			validWalletAddress,
+			[
+				{
+					input: { txHash, outputIndex: 0 },
+					output: {
+						amount: [
+							{ unit: 'lovelace', quantity: '8000000' },
+							{ unit: 'usdm', quantity: '656544700' },
+						],
+					},
+				},
+			],
+			unsignedTx,
+			new Map([
+				['lovelace', 8000000n],
+				['usdm', 656544700n],
+			]),
+		);
+
+		expect(projectedBalanceMap.get('lovelace')).toBe(7000000n);
+		expect(projectedBalanceMap.get('usdm')).toBe(0n);
+	});
+
+	it('refuses to project a spending transaction without the wallet UTXO set', async () => {
+		const txHash = '33'.repeat(32);
+		const inputs = TransactionInputs.new();
+		inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from(txHash, 'hex')), 0));
+
+		const outputs = TransactionOutputs.new();
+		outputs.add(TransactionOutput.new(Address.from_bech32(otherAddress), Value.new(BigNum.from_str('3000000'))));
+
+		const unsignedTx = Buffer.from(
+			Transaction.new(
+				TransactionBody.new(inputs, outputs, BigNum.from_str('1000000')),
+				TransactionWitnessSet.new(),
+				undefined,
+			).to_bytes(),
+		).toString('hex');
+
+		mockHotWalletFindFirst.mockResolvedValueOnce(createWallet(LowBalanceStatus.Healthy));
+
+		await service.evaluateProjectedHotWalletById({
+			hotWalletId: 'wallet-1',
+			walletAddress: validWalletAddress,
+			walletUtxos: [],
+			unsignedTx,
+			checkSource: 'submission',
+			currentBalanceMap: new Map([['lovelace', 1289148400n]]),
+		});
+
+		expect(mockTriggerWalletLowBalance).not.toHaveBeenCalled();
+		expect(mockLoggerWarn).toHaveBeenCalledWith(
+			'Failed to project post-submission wallet balance, falling back to current balance monitoring',
+			expect.objectContaining({ wallet_id: 'wallet-1' }),
+		);
 	});
 });
