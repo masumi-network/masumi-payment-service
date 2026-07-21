@@ -22,6 +22,19 @@ function buildFetcher(liveUtxos: UTxO[]): { fetcher: IFetcher; callCount: () => 
 	return { fetcher, callCount: () => calls };
 }
 
+/** Returns a different set per call, so a stale snapshot can be simulated. */
+function buildSequenceFetcher(sets: UTxO[][]): { fetcher: IFetcher; callCount: () => number } {
+	let calls = 0;
+	const fetcher = {
+		fetchAddressUTxOs: () => {
+			const set = sets[Math.min(calls, sets.length - 1)];
+			calls += 1;
+			return Promise.resolve(set);
+		},
+	} as unknown as IFetcher;
+	return { fetcher, callCount: () => calls };
+}
+
 describe('assertEscrowUtxoUnspent', () => {
 	beforeEach(() => {
 		clearEscrowUtxoCache();
@@ -90,6 +103,34 @@ describe('assertEscrowUtxoUnspent', () => {
 		await assertEscrowUtxoUnspent(fetcher, SMART_CONTRACT_ADDRESS, utxo, NOW_MS);
 		await assertEscrowUtxoUnspent(fetcher, SMART_CONTRACT_ADDRESS, utxo, NOW_MS + 1_000);
 
+		expect(callCount()).toBe(2);
+	});
+
+	// A cached snapshot omits every UTxO created AFTER it was taken. A
+	// just-confirmed continuation output is exactly that, so concluding 'spent'
+	// from a cached set would park a live request in WaitingForManualAction.
+	it('refetches instead of concluding spent when the UTxO is missing from a cached set', async () => {
+		const older = buildUtxo('older', 0);
+		const justCreated = buildUtxo('just-created', 0);
+		const { fetcher, callCount } = buildSequenceFetcher([[older], [older, justCreated]]);
+
+		await assertEscrowUtxoUnspent(fetcher, SMART_CONTRACT_ADDRESS, older, NOW_MS);
+		expect(callCount()).toBe(1);
+
+		await expect(
+			assertEscrowUtxoUnspent(fetcher, SMART_CONTRACT_ADDRESS, justCreated, NOW_MS + 1_000),
+		).resolves.toBeUndefined();
+		expect(callCount()).toBe(2);
+	});
+
+	it('still throws when the UTxO is absent from a freshly fetched set', async () => {
+		const other = buildUtxo('other', 0);
+		const spent = buildUtxo('spent', 0);
+		const { fetcher, callCount } = buildSequenceFetcher([[other], [other]]);
+
+		await expect(assertEscrowUtxoUnspent(fetcher, SMART_CONTRACT_ADDRESS, spent, NOW_MS)).rejects.toThrow(
+			'already spent',
+		);
 		expect(callCount()).toBe(2);
 	});
 });
