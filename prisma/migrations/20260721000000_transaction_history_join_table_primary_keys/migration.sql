@@ -11,6 +11,10 @@
 --
 -- Guarded with DO blocks / IF EXISTS for partial-replay safety, matching the
 -- idiom used by 20260525001000.
+--
+-- Operational note: ADD CONSTRAINT ... PRIMARY KEY takes an ACCESS EXCLUSIVE
+-- lock and builds the backing index synchronously. On a deployment where these
+-- join tables are large, run this in a maintenance window.
 
 -- _PaymentTransactionHistory
 DO $$ BEGIN
