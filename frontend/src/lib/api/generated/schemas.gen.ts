@@ -5888,3 +5888,94 @@ export const FundDistributionTriggeredSchema = {
         'alreadyRunning'
     ]
 } as const;
+
+export const RailReadinessSchema = {
+    type: 'object',
+    properties: {
+        network: {
+            type: 'string',
+            enum: [
+                'Preprod',
+                'Mainnet'
+            ],
+            description: 'The environment these results describe'
+        },
+        Rails: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    rail: {
+                        type: 'string',
+                        enum: [
+                            'CardanoV2',
+                            'X402'
+                        ],
+                        description: 'Which payment rail this readiness block describes'
+                    },
+                    isReady: {
+                        type: 'boolean',
+                        description: 'Whether the rail can actually take payments right now. True only when every blocking check is complete — optional checks (e.g. outbound spending) do not affect it'
+                    },
+                    Checks: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                id: {
+                                    type: 'string',
+                                    enum: [
+                                        'cardano.payment_source',
+                                        'cardano.contract_current',
+                                        'cardano.rpc_provider',
+                                        'cardano.admin_signatures',
+                                        'cardano.selling_wallet',
+                                        'cardano.purchasing_wallet',
+                                        'cardano.payments_enabled',
+                                        'x402.enabled_chain',
+                                        'x402.rpc_url',
+                                        'x402.facilitator',
+                                        'x402.selling_wallet',
+                                        'x402.purchasing_wallet',
+                                        'x402.budget'
+                                    ],
+                                    description: 'Stable check identifier. The admin UI maps setup steps onto these'
+                                },
+                                label: {
+                                    type: 'string',
+                                    description: 'Short human-readable name for the check'
+                                },
+                                isComplete: {
+                                    type: 'boolean',
+                                    description: 'Whether the backend considers this check satisfied'
+                                },
+                                detail: {
+                                    type: 'string',
+                                    nullable: true,
+                                    description: 'Why the check is incomplete, or extra context when it passes. Null when there is nothing to add'
+                                }
+                            },
+                            required: [
+                                'id',
+                                'label',
+                                'isComplete',
+                                'detail'
+                            ]
+                        },
+                        description: 'Individual checks, in setup order'
+                    }
+                },
+                required: [
+                    'rail',
+                    'isReady',
+                    'Checks'
+                ]
+            },
+            description: 'Readiness per payment rail'
+        }
+    },
+    required: [
+        'network',
+        'Rails'
+    ]
+} as const;
