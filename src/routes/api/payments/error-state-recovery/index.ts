@@ -165,10 +165,20 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 								});
 							}
 
-							await tx.paymentRequest.update({
-								where: { id: paymentRequest.id },
-								data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
-							});
+							// Only ever REPOINT, never detach. The previous `|| null` cleared
+							// currentTransactionId whenever no candidate qualified, which threw
+							// away the request's only link to its escrow transaction — the row
+							// still existed and was Confirmed, but nothing pointed at it any
+							// more, so every later retry failed with 'Transaction hash not
+							// found' and the link had to be restored by hand. Leaving the
+							// pointer alone loses nothing: the caller is no worse off than
+							// before the retry, and the information survives.
+							if (lastSuccessfulTransaction != null) {
+								await tx.paymentRequest.update({
+									where: { id: paymentRequest.id },
+									data: { currentTransactionId: lastSuccessfulTransaction.id },
+								});
+							}
 							const updatedPaymentRequest = await tx.paymentRequest.update({
 								where: {
 									id: paymentRequest.id,
