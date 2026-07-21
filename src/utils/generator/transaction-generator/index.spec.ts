@@ -88,7 +88,7 @@ describe('automatic smart-contract transaction input selection', () => {
 		builders.length = 0;
 	});
 
-	it('offers every wallet UTxO to Mesh in both fee passes, including collateral', async () => {
+	it('offers the spendable wallet UTxOs to Mesh in both fee passes, holding back collateral', async () => {
 		const collateralUtxo = createUtxo('collateral', '8281874');
 		const smallUtxo = createUtxo('small', '3336392');
 		const largeUtxo = createUtxo('large', '485435616');
@@ -126,7 +126,10 @@ describe('automatic smart-contract transaction input selection', () => {
 		for (const builder of builders) {
 			expect(builder.txInCollateral).toHaveBeenCalledWith('collateral', 0);
 			expect(builder.setTotalCollateral).toHaveBeenCalledWith('3000000');
-			expect(builder.selectUtxosFrom).toHaveBeenCalledWith([collateralUtxo, smallUtxo, largeUtxo]);
+			// Mesh does not exclude `txInCollateral` UTxOs from `selectUtxosFrom`
+			// candidates, so coin selection would otherwise spend the collateral
+			// reserve and leave the wallet unable to fund the next escrow action.
+			expect(builder.selectUtxosFrom).toHaveBeenCalledWith([smallUtxo, largeUtxo]);
 			expect(builder.txIn).toHaveBeenCalledTimes(1);
 			expect(builder.txIn).toHaveBeenCalledWith(
 				'contract',

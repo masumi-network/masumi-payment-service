@@ -1,4 +1,4 @@
-import { OnChainState, PaymentAction, TransactionStatus, Prisma } from '@/generated/prisma/client';
+import { OnChainState, PaymentAction, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@/utils/db';
 import { Asset, BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@/utils/logger';
@@ -16,9 +16,11 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import { CONSTANTS } from '@/utils/config';
 import {
+	assertEscrowUtxoUnspent,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPaymentAction,
+	createPendingTransaction,
 	createTxWindow,
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
@@ -120,6 +122,8 @@ async function processSinglePaymentCollection(
 	if (!utxo) {
 		throw new Error('UTXO not found');
 	}
+
+	await assertEscrowUtxoUnspent(blockchainProvider, smartContractAddress, utxo);
 
 	const utxoDatum = utxo.output.plutusData;
 	if (!utxoDatum) {
@@ -236,17 +240,10 @@ async function processSinglePaymentCollection(
 		data: {
 			...connectPreviousAction(request.nextActionId),
 			...createNextPaymentAction(PaymentAction.WithdrawInitiated),
-			CurrentTransaction: {
-				update: {
-					txHash: null,
-					status: TransactionStatus.Pending,
-					BlocksWallet: {
-						connect: {
-							id: request.SmartContractWallet.id,
-						},
-					},
-				},
-			},
+			// See purchases/collect-refund — blanking the current row in place
+			// destroyed the confirmed escrow tx hash whenever anything after
+			// this write failed. Create a new pending row instead.
+			...createPendingTransaction(request.SmartContractWallet.id),
 			TransactionHistory: {
 				connect: {
 					id: request.CurrentTransaction!.id,

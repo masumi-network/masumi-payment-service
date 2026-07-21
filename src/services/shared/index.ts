@@ -17,3 +17,4 @@ export {
 	updateCurrentTransactionStatus,
 } from './transition-writer';
 export { writePaymentErrorTransition, writePurchaseErrorTransition } from './error-transition';
+export { assertEscrowUtxoUnspent, ESCROW_UTXO_SPENT_MESSAGE } from './escrow-utxo';

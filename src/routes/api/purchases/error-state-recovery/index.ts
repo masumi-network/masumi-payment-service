@@ -111,16 +111,21 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 			throw createHttpError(400, 'The purchase is already completed and its previous action cannot be retried.');
 		}
 
-		// Find the most recent successful transaction (confirmed or pending)
+		// Find the most recent successful transaction (confirmed or pending).
+		// A row without a txHash is never a valid target: the retried action
+		// reads `CurrentTransaction.txHash` to locate its escrow UTxO and fails
+		// with 'Transaction hash not found'. Such a row would also be excluded
+		// from `transactionsToFail` below (it is the selected one), so the
+		// request could never leave the error state by retrying.
 		// Priority 1: Most recent Confirmed transaction (fully successful)
 		const confirmedTransactions = purchaseRequest.TransactionHistory.filter(
-			(tx) => tx.status === TransactionStatus.Confirmed,
+			(tx) => tx.status === TransactionStatus.Confirmed && tx.txHash != null,
 		);
 		const mostRecentConfirmedTransaction = confirmedTransactions.length > 0 ? confirmedTransactions[0] : undefined;
 
 		// Priority 2: If no confirmed, get most recent Pending transaction (in progress)
 		const pendingTransactions = purchaseRequest.TransactionHistory.filter(
-			(tx) => tx.status === TransactionStatus.Pending,
+			(tx) => tx.status === TransactionStatus.Pending && tx.txHash != null,
 		);
 		const mostRecentPendingTransaction = pendingTransactions.length > 0 ? pendingTransactions[0] : undefined;
 

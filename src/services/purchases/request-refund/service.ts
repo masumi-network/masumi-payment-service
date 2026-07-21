@@ -17,6 +17,7 @@ import { selectCollateralUtxo } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	assertEscrowUtxoUnspent,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPurchaseAction,
@@ -123,6 +124,8 @@ async function processSinglePurchaseRequest(
 	if (!utxo) {
 		throw new Error('UTXO not found');
 	}
+
+	await assertEscrowUtxoUnspent(blockchainProvider, smartContractAddress, utxo);
 
 	const utxoDatum = utxo.output.plutusData;
 	if (!utxoDatum) {
