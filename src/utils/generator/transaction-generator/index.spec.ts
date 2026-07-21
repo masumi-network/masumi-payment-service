@@ -94,7 +94,10 @@ jest.unstable_mockModule('@/utils/mesh-cost-model-sync', () => ({
 	syncMeshCostModelsFromChain: jest.fn(),
 }));
 
-const { generateMasumiSmartContractInteractionTransactionAutomaticFees } = await import('./index');
+const {
+	generateMasumiSmartContractInteractionTransactionAutomaticFees,
+	generateMasumiSmartContractWithdrawTransactionAutomaticFees,
+} = await import('./index');
 
 function createUtxo(txHash: string, lovelace: string) {
 	return {
@@ -241,5 +244,87 @@ describe('V1 automatic smart-contract input selection', () => {
 
 		// One build only — no collateral retry for an unrelated failure.
 		expect(builders).toHaveLength(1);
+	});
+
+	// collect-refund and payments/collection — the services this whole fix is
+	// about — go through the WITHDRAW builder, not the interaction one. Its
+	// fallback is wired separately, so it needs its own coverage: a port of this
+	// change to another layout dropped the flag on exactly this path and only
+	// lint caught it.
+	it('retries the withdraw build with collateral offered when it cannot balance without it', async () => {
+		const collateralUtxo = createUtxo('collateral', '8281874');
+		const dustUtxo = createUtxo('dust', '1500000');
+		const smartContractUtxo = {
+			...createUtxo('contract', '7331310'),
+			output: { ...createUtxo('contract', '7331310').output, address: 'addr_test1_contract' },
+		};
+		const blockchainProvider = {
+			fetchProtocolParameters: jest.fn(async () => ({ coinsPerUtxoSize: 4310 })),
+			evaluateTx: jest.fn<(tx: string) => Promise<Array<{ budget: { mem: number; steps: number } }>>>(async () => [
+				{ budget: { mem: 100, steps: 200 } },
+			]),
+		};
+
+		MockMeshTxBuilder.failWhenCollateralExcluded = true;
+		try {
+			const result = await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
+				'CollectRefund',
+				blockchainProvider as never,
+				'preprod',
+				{ version: 'V3', code: 'script-cbor' },
+				'addr_test1_wallet',
+				smartContractUtxo as never,
+				collateralUtxo as never,
+				[collateralUtxo, dustUtxo] as never,
+				{ collectAssets: smartContractUtxo.output.amount, collectionAddress: 'addr_test1_wallet' },
+				null,
+				null,
+				100,
+				200,
+			);
+
+			expect(result).toBeDefined();
+			expect(builders[0].selectUtxosFrom).toHaveBeenCalledWith([dustUtxo]);
+			expect(builders[builders.length - 1].selectUtxosFrom).toHaveBeenCalledWith([collateralUtxo, dustUtxo]);
+		} finally {
+			MockMeshTxBuilder.failWhenCollateralExcluded = false;
+		}
+	});
+
+	it('holds the collateral back on the withdraw path when the wallet can afford it', async () => {
+		const collateralUtxo = createUtxo('collateral', '8281874');
+		const largeUtxo = createUtxo('large', '485435616');
+		const smartContractUtxo = {
+			...createUtxo('contract', '7331310'),
+			output: { ...createUtxo('contract', '7331310').output, address: 'addr_test1_contract' },
+		};
+		const blockchainProvider = {
+			fetchProtocolParameters: jest.fn(async () => ({ coinsPerUtxoSize: 4310 })),
+			evaluateTx: jest.fn<(tx: string) => Promise<Array<{ budget: { mem: number; steps: number } }>>>(async () => [
+				{ budget: { mem: 100, steps: 200 } },
+			]),
+		};
+
+		await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
+			'CollectRefund',
+			blockchainProvider as never,
+			'preprod',
+			{ version: 'V3', code: 'script-cbor' },
+			'addr_test1_wallet',
+			smartContractUtxo as never,
+			collateralUtxo as never,
+			[collateralUtxo, largeUtxo] as never,
+			{ collectAssets: smartContractUtxo.output.amount, collectionAddress: 'addr_test1_wallet' },
+			null,
+			null,
+			100,
+			200,
+		);
+
+		// No retry: two builds only, both without the collateral.
+		expect(builders).toHaveLength(2);
+		for (const builder of builders) {
+			expect(builder.selectUtxosFrom).toHaveBeenCalledWith([largeUtxo]);
+		}
 	});
 });
