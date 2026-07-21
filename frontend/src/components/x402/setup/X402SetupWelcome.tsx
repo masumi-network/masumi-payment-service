@@ -9,13 +9,9 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import {
-  chainsForEnv,
-  hasBudgetOnEnabledNetworks,
-  isTestnetEnv,
-  walletsForNetworks,
-  X402_ACCENT,
-} from '@/lib/x402-rail';
+import { chainsForEnv, isTestnetEnv, walletsForNetworks, X402_ACCENT } from '@/lib/x402-rail';
+import { useRailReadiness } from '@/lib/hooks/useRailReadiness';
+import { areChecksComplete, checkDetail, isCheckComplete } from '@/lib/rail-readiness';
 import { X402Network, X402Wallet } from '@/lib/api/generated';
 import { CreateWalletDialog } from '@/components/x402/WalletsTab';
 import { ChainDialog } from '@/components/x402/ChainsTab';
@@ -52,7 +48,14 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   const { authorized, setActiveRail, setSelectedX402ChainId, setIsSetupMode } = useAppContext();
   const { wallets, isLoading: walletsLoading } = useX402Wallets();
   const { networks, isLoading: networksLoading } = useX402Networks({ network: networkType });
-  const { budgets, isLoading: budgetsLoading } = useX402Budgets();
+  const { isLoading: budgetsLoading } = useX402Budgets();
+  // Step completion comes from the backend, not from re-deriving it here. The
+  // chain/wallet/budget lists are still read for the affordances below (which
+  // chain to configure, which wallet addresses to show) — but whether a step
+  // counts as DONE is the server's call.
+  const { x402: x402Readiness, isLoading: readinessLoading } = useRailReadiness({
+    network: networkType,
+  });
 
   const [currentStep, setCurrentStep] = useState(0);
   const [openDialog, setOpenDialog] = useState<DialogKind>(null);
@@ -61,25 +64,26 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   // The x402 hooks are disabled (and return []) until authorized, which would otherwise read
   // as "nothing configured". Treat the pre-auth window as loading so step state never acts on
   // empty data.
-  const loading = !authorized || walletsLoading || networksLoading || budgetsLoading;
+  const loading =
+    !authorized || walletsLoading || networksLoading || budgetsLoading || readinessLoading;
 
   const envChains = useMemo(() => chainsForEnv(networks, networkType), [networks, networkType]);
   const envWallets = useMemo(() => walletsForNetworks(wallets, envChains), [wallets, envChains]);
   // Wallets are split by direction: a Selling wallet settles inbound payments (facilitator),
   // a Purchasing wallet funds outbound ones (budget). Each step owns its type.
-  const hasSellingWallet = envWallets.some((wallet) => wallet.type === 'Selling');
-  const hasPurchasingWallet = envWallets.some((wallet) => wallet.type === 'Purchasing');
-  const hasFacilitator = envChains.some(
-    (chain) => !!chain.facilitatorWalletId || !!chain.facilitatorUrl,
-  );
+  const hasSellingWallet = isCheckComplete(x402Readiness, 'x402.selling_wallet');
+  const hasPurchasingWallet = isCheckComplete(x402Readiness, 'x402.purchasing_wallet');
+  // The inbound step is complete only when the rail can actually settle: an
+  // enabled chain WITH an RPC URL and exactly one facilitator. Deriving this
+  // locally used to pass a facilitator-but-no-RPC chain, marking the step done
+  // for a rail that would fail on the first payment.
+  const hasFacilitator = x402Readiness?.isReady ?? false;
+  const facilitatorDetail = checkDetail(x402Readiness, 'x402.facilitator');
   const configuredChain =
     envChains.find((chain) => !!chain.facilitatorWalletId || !!chain.facilitatorUrl) ?? null;
-  // Scope budgets to enabled chains in this environment so a preconfigured budget on a disabled
-  // or other-environment chain cannot mark the optional outbound step complete.
-  const hasBudget = useMemo(
-    () => hasBudgetOnEnabledNetworks(budgets, envChains),
-    [budgets, envChains],
-  );
+  // Outbound needs both halves — a purchasing wallet and a funded, enabled budget
+  // on it. The backend already scopes budgets to this environment's chains.
+  const hasBudget = areChecksComplete(x402Readiness, ['x402.purchasing_wallet', 'x402.budget']);
 
   // Prefer attaching a facilitator to an enabled chain in the active env that lacks one (Base
   // ships preconfigured), then any chain in the same env, never crossing environments.
@@ -97,6 +101,10 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
     queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
     queryClient.invalidateQueries({ queryKey: ['x402-networks'] });
     queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
+    // Step completion now comes from the readiness endpoint, so it has to be
+    // refetched alongside the lists — otherwise a step the user just finished
+    // stays incomplete until the 30s staleTime expires.
+    queryClient.invalidateQueries({ queryKey: ['rail-readiness'] });
   };
 
   const openWalletDialog = (type: X402Wallet['type']) => {
@@ -241,7 +249,11 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
         <Button
           className="btn-hover-lift group gap-2"
           disabled={!hasFacilitator}
-          title={hasFacilitator ? undefined : 'Assign a chain facilitator to continue'}
+          title={
+            hasFacilitator
+              ? undefined
+              : (facilitatorDetail ?? 'Assign a chain facilitator to continue')
+          }
           onClick={() => setCurrentStep(2)}
         >
           Continue <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
