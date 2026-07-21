@@ -4,7 +4,12 @@
 // one — kept consistent with the rest of the V2 builders. See
 // docs/adr/0005-meshsdk-version-pinning-v1-v2.md.
 import type { UTxO } from '@meshsdk/core';
-import { logger } from '@masumi/payment-core/logger';
+// Shared with the V1 rail on purpose. Unlike `getSpendableWalletUtxos` below
+// — duplicated to keep the mesh lines isolated — the collateral RANKING must
+// be identical on both rails, and `@/utils/utxo` carries no mesh runtime
+// (it imports `UTxO` as a type only), so importing it cannot collapse this
+// package onto the V1 mesh line. See the note at the top of that file.
+import { pickCollateralUtxo } from '@/utils/utxo';
 
 /**
  * Lovelace amount routed into a CONDITIONAL "splitter" output that V2 batch
@@ -110,38 +115,6 @@ export function intersectTxWindows(windows: TxWindowBounds[]): TxWindowBounds | 
 	return { invalidBefore, invalidAfter };
 }
 
-/** Internal helper: read the lovelace quantity from a UTxO's asset list. */
-function getLovelace(utxo: UTxO): bigint {
-	const lovelaceAsset = utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '');
-	if (lovelaceAsset == null) return 0n;
-	try {
-		return BigInt(lovelaceAsset.quantity);
-	} catch (parseError) {
-		// A malformed `quantity` string here means blockfrost returned data that
-		// violates our expectations; previously we silently treated the UTxO as
-		// zero-lovelace, which made it look like an invalid collateral
-		// candidate (it got skipped) without any diagnostic. Log loudly so an
-		// operator can investigate; still return 0n so the helper stays total.
-		logger.warn('getLovelace: malformed quantity string on UTxO; treating as 0 [batch-helpers]', {
-			txHash: utxo.input.txHash,
-			outputIndex: utxo.input.outputIndex,
-			rawQuantity: lovelaceAsset.quantity,
-			error: parseError instanceof Error ? parseError.message : parseError,
-		});
-		return 0n;
-	}
-}
-
-/** Internal helper: true iff the UTxO holds only the implicit lovelace asset. */
-function isPureLovelace(utxo: UTxO): boolean {
-	const amount = utxo.output.amount;
-	if (amount.length === 0) return false;
-	for (const asset of amount) {
-		if (asset.unit !== 'lovelace' && asset.unit !== '') return false;
-	}
-	return true;
-}
-
 /** Canonical reference string for a UTxO — must match the format the builders use. */
 function refKey(input: { txHash: string; outputIndex: number }): string {
 	return `${input.txHash}#${input.outputIndex}`;
@@ -193,14 +166,15 @@ export function getSpendableWalletUtxos(walletUtxos: UTxO[], collateralUtxo: UTx
 /**
  * Pick a collateral UTxO that is NOT also a script spending input.
  *
- * Preference order:
- *   1. Pure-ADA UTxO, smallest qualifying first — avoids burning a fat UTxO
- *      as collateral and avoids the collateral-return-output overhead that
- *      kicks in for native-token collateral.
- *   2. Native-token-carrying UTxO, smallest qualifying first — fallback when
- *      the wallet has no pure-ADA candidate (typical of selling/purchasing
- *      wallets that have accumulated NFT registration tokens). Mesh-SDK
- *      auto-emits a `collateral_return_output` in this case.
+ * Ordering is defined once, in `rankCollateralCandidates` (`@/utils/utxo`),
+ * and shared by every rail and action: pure-ADA first, then smallest
+ * qualifying lovelace, then `txHash#index` as a deterministic tie-break.
+ *
+ * A native-token-carrying UTxO is a perfectly valid collateral, not a
+ * degraded fallback: Babbage/CIP-40 permits it and the builder's
+ * `setTotalCollateral` declaration makes Mesh emit the `collateral_return`
+ * output that carries the balance back. Pure ADA is merely preferred because
+ * it keeps that return output smaller.
  *
  * The `requiredLovelace` floor accounts for Conway's `collateralPercentage`
  * (typically 150) applied to `sum_of_redeemer_fees`. For batches with N
@@ -235,41 +209,11 @@ export function pickBatchCollateral(
 	excludeSpendingInputs: Array<{ txHash: string; outputIndex: number }>,
 	requiredLovelace: bigint = 5_000_000n,
 ): UTxO | null {
-	const excludeKeys = new Set<string>();
-	for (const ref of excludeSpendingInputs) {
-		excludeKeys.add(refKey(ref));
-	}
-
-	const pureCandidates: Array<{ utxo: UTxO; lovelace: bigint }> = [];
-	const mixedCandidates: Array<{ utxo: UTxO; lovelace: bigint }> = [];
-	for (const utxo of utxos) {
-		if (excludeKeys.has(refKey(utxo.input))) continue;
-		const lovelace = getLovelace(utxo);
-		if (lovelace < requiredLovelace) continue;
-		if (isPureLovelace(utxo)) {
-			pureCandidates.push({ utxo, lovelace });
-		} else {
-			mixedCandidates.push({ utxo, lovelace });
-		}
-	}
-
-	// Prefer pure-ADA; fall back to native-token UTxOs only when the wallet
-	// has none. Within each group, pick the smallest qualifying UTxO so we
-	// don't burn a fat one as collateral.
-	const ascending = (a: { lovelace: bigint }, b: { lovelace: bigint }): number => {
-		if (a.lovelace < b.lovelace) return -1;
-		if (a.lovelace > b.lovelace) return 1;
-		return 0;
-	};
-	if (pureCandidates.length > 0) {
-		pureCandidates.sort(ascending);
-		return pureCandidates[0].utxo;
-	}
-	if (mixedCandidates.length > 0) {
-		mixedCandidates.sort(ascending);
-		return mixedCandidates[0].utxo;
-	}
-	return null;
+	// Delegates to the shared selector so the batch builders, the single-action
+	// builders and the registry paths all rank collateral identically. The
+	// previous local copy differed subtly (no deterministic tie-break), which
+	// let two equal-sized UTxOs swap places between builds.
+	return pickCollateralUtxo(utxos, requiredLovelace, excludeSpendingInputs);
 }
 
 /**
@@ -507,9 +451,41 @@ export const MIN_TOTAL_COLLATERAL_LOVELACE = 3_000_000n;
  * Min-ADA headroom kept aside on the collateral input when clamping declared
  * total collateral, so the resulting collateral-return output still satisfies
  * the ledger's min-UTxO rule. 1 ADA comfortably exceeds the min-ADA of a
- * pure-ADA output at current `coinsPerUtxoSize`.
+ * PURE-ADA output at current `coinsPerUtxoSize`.
  */
 export const COLLATERAL_RETURN_MIN_LOVELACE = 1_000_000n;
+
+/**
+ * Extra min-ADA headroom per distinct native asset carried by the collateral.
+ *
+ * Mesh's collateral return carries the FULL value of the collateral input,
+ * tokens included (verified against both pinned mesh lines: `addCollateralReturn`
+ * merges `toValue(collateral.txIn.amount)` into the return). Each distinct
+ * asset therefore grows the return output, and the ledger's
+ * `(160 + outputSize) * coinsPerUtxoByte` floor grows with it — while Mesh
+ * never min-ADA-checks the collateral return itself (`sanitizeOutputs` only
+ * walks `meshTxBuilderBody.outputs`).
+ *
+ * A flat 1 ADA floor is therefore only correct for pure-ADA collateral. Sized
+ * generously: ~50 bytes per asset at `coinsPerUtxoSize` 4310 is ~215k lovelace,
+ * so 350k leaves margin without meaningfully reducing declarable collateral.
+ */
+export const COLLATERAL_RETURN_MIN_LOVELACE_PER_ASSET = 350_000n;
+
+/** Distinct native (non-lovelace) assets carried by a UTxO. */
+export function nativeAssetCount(utxo: UTxO): number {
+	return utxo.output.amount.filter((asset) => asset.unit !== 'lovelace' && asset.unit !== '').length;
+}
+
+/**
+ * Min-ADA to reserve for the collateral-return output, given how many native
+ * assets the collateral input carries. Pure-ADA collateral keeps the original
+ * 1 ADA floor.
+ */
+export function collateralReturnMinLovelace(assetCount: number): bigint {
+	if (assetCount <= 0) return COLLATERAL_RETURN_MIN_LOVELACE;
+	return COLLATERAL_RETURN_MIN_LOVELACE + BigInt(assetCount) * COLLATERAL_RETURN_MIN_LOVELACE_PER_ASSET;
+}
 
 /**
  * Shape we accept from any of mesh's `Protocol`, the V1 helper's cached
@@ -563,6 +539,7 @@ export function deriveTotalCollateral(
 	budgets: Array<{ mem: number; steps: number }>,
 	protocolParameters: unknown,
 	collateralCapLovelace?: bigint,
+	collateralNativeAssetCount: number = 0,
 ): string {
 	const params = extractCollateralProtocolParams(protocolParameters);
 	if (params == null) {
@@ -579,8 +556,12 @@ export function deriveTotalCollateral(
 	// single-item fallback for any batch of ~4+ legs. Cap to the input value
 	// (leaving a min-ADA collateral-return) so the evaluation build succeeds; the
 	// second pass uses real, far smaller budgets that stay well under the cap.
-	if (collateralCapLovelace != null && collateralCapLovelace > COLLATERAL_RETURN_MIN_LOVELACE) {
-		const cap = collateralCapLovelace - COLLATERAL_RETURN_MIN_LOVELACE;
+	// The reserved headroom scales with the collateral's native assets: mesh
+	// copies them into the collateral return, so a token-bearing return needs
+	// more min-ADA than a pure-ADA one.
+	const returnMinLovelace = collateralReturnMinLovelace(collateralNativeAssetCount);
+	if (collateralCapLovelace != null && collateralCapLovelace > returnMinLovelace) {
+		const cap = collateralCapLovelace - returnMinLovelace;
 		if (cap >= MIN_TOTAL_COLLATERAL_LOVELACE && total > cap) {
 			total = cap;
 		}

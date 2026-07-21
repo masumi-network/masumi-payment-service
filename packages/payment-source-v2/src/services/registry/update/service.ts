@@ -11,7 +11,7 @@ import { advancedRetry, delayErrorResolver } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { interpretBlockchainError } from '@masumi/payment-core/blockchain-error-interpreter';
 import { extractAssetName, extractPolicyId } from '@/utils/converter/agent-identifier';
-import { sortAndLimitUtxos, sortUtxosByLovelaceDesc } from '@/utils/utxo';
+import { pickCollateralUtxo, sortAndLimitUtxos, sortUtxosByLovelaceDesc } from '@/utils/utxo';
 import {
 	connectExistingTransaction,
 	createMeshProvider,
@@ -241,7 +241,11 @@ async function processUpdate(
 	// here with a clear message instead.
 	const tokenUtxo = findRegistryTokenUtxo(utxos, request.agentIdentifier);
 	const limitedFilteredUtxos = sortAndLimitUtxos(utxos, 8_000_000);
-	const collateralUtxo = limitedFilteredUtxos[0];
+	// Rank within the same pool the builder spends from, so the collateral
+	// keeps its existing relationship to the inputs while still preferring a
+	// pure-ADA, smallest-qualifying, deterministically-ordered UTxO. Falls
+	// back to the previous behaviour when nothing clears the 5 ADA floor.
+	const collateralUtxo = pickCollateralUtxo(limitedFilteredUtxos) ?? limitedFilteredUtxos[0];
 	if (collateralUtxo == null) {
 		throw new Error('Collateral UTXO not found');
 	}
