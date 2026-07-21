@@ -14,6 +14,8 @@ import { registerX402ManagementPaths } from '@/routes/api/x402/management-docs';
 import { registerFundWalletPaths } from '@/routes/api/fund-wallet/docs';
 import { registerFundDistributionPaths } from '@/routes/api/fund-distribution/docs';
 import { registerRailReadinessPaths } from '@/routes/api/rail-readiness/docs';
+import { registerTxSyncQuarantinePaths } from '@/routes/api/tx-sync-quarantine/docs';
+import { registerRequestRepairPaths } from '@/routes/api/request-repair/docs';
 
 extendZodWithOpenApi(z);
 
@@ -38,6 +40,8 @@ export function generateOpenAPI() {
 	registerFundWalletPaths({ registry, apiKeyAuth });
 	registerFundDistributionPaths({ registry, apiKeyAuth });
 	registerRailReadinessPaths({ registry, apiKeyAuth });
+	registerTxSyncQuarantinePaths({ registry, apiKeyAuth });
+	registerRequestRepairPaths({ registry, apiKeyAuth });
 
 	return new OpenApiGeneratorV3(registry.definitions).generateDocument({
 		openapi: '3.0.0',

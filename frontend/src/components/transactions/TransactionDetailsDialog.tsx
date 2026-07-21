@@ -26,6 +26,8 @@ import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSour
 import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntryByAgentIdentifier';
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { TransactionHistorySection } from './TransactionHistorySection';
+import { TransactionErrorSection } from './TransactionErrorSection';
+import { RequestRepairDialog } from './RequestRepairDialog';
 import {
   formatOnChainState,
   formatRequestedAction,
@@ -81,6 +83,7 @@ export default function TransactionDetailsDialog({
   const [confirmAction, setConfirmAction] = React.useState<'refund' | 'cancel' | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [errorRecoveryMode, setErrorRecoveryMode] = React.useState<'clear' | 'retry' | null>(null);
+  const [showRepairDialog, setShowRepairDialog] = useState(false);
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
 
@@ -358,7 +361,10 @@ export default function TransactionDetailsDialog({
 
   return (
     <>
-      <Dialog open={!!transaction && !showConfirmDialog} onOpenChange={onClose}>
+      <Dialog
+        open={!!transaction && !showConfirmDialog && !showRepairDialog}
+        onOpenChange={onClose}
+      >
         <DialogContent size="md" isPushedBack={!!selectedWalletForDetails}>
           <DialogHeader>
             <DialogTitle>Transaction Details</DialogTitle>
@@ -620,54 +626,24 @@ export default function TransactionDetailsDialog({
               </div>
             )}
 
-            {transaction.NextAction?.errorType && (
-              <div className="space-y-2 break-all">
-                <h4 className="font-semibold">Error Details</h4>
-                <div className="space-y-2 rounded-md bg-destructive/20 p-4">
-                  <div className="space-y-1">
-                    <p className="text-sm">
-                      <span className="font-medium">Error Type:</span>{' '}
-                      {transaction.NextAction.errorType}
-                    </p>
-                    {transaction.NextAction.errorNote && (
-                      <p className="text-sm">
-                        <span className="font-medium">Error Note:</span>{' '}
-                        {transaction.NextAction.errorNote}
-                      </p>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      Retry queues the failed blockchain action again with its original data. Clear
-                      only removes the error and waits for the next external action.
-                    </p>
-                    <div className="flex flex-wrap gap-2 mt-4">
-                      <Button
-                        size="sm"
-                        disabled={isLoading}
-                        onClick={() => recoverTransactionError(true)}
-                      >
-                        {errorRecoveryMode === 'retry'
-                          ? 'Queueing retry...'
-                          : 'Retry Failed Action'}
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={isLoading}
-                        onClick={() => recoverTransactionError(false)}
-                      >
-                        {errorRecoveryMode === 'clear'
-                          ? 'Clearing error state...'
-                          : 'Clear Error State'}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            <TransactionErrorSection
+              transaction={transaction}
+              isLoading={isLoading}
+              errorRecoveryMode={errorRecoveryMode}
+              onRecover={recoverTransactionError}
+            />
 
             <TransactionHistorySection transaction={transaction} network={transactionNetwork} />
 
             <div className="flex gap-2 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setShowRepairDialog(true)}
+                disabled={isLoading}
+                title="Point this request at a specific transaction when the database has fallen behind the chain"
+              >
+                Repair Request
+              </Button>
               {canRequestRefund(transaction) && transaction.type === 'purchase' && (
                 <Button
                   variant="secondary"
@@ -733,6 +709,17 @@ export default function TransactionDetailsDialog({
           }
         }}
         isLoading={isLoading}
+      />
+      <RequestRepairDialog
+        open={showRepairDialog}
+        onClose={() => setShowRepairDialog(false)}
+        kind={transaction.type === 'purchase' ? 'Purchase' : 'Payment'}
+        network={transactionNetwork}
+        blockchainIdentifier={transaction.blockchainIdentifier}
+        onRepaired={() => {
+          onRefresh();
+          onClose();
+        }}
       />
       <WalletDetailsDialog
         isOpen={!!selectedWalletForDetails}

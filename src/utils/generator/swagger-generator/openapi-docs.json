@@ -5958,6 +5958,104 @@
                     "network",
                     "Rails"
                 ]
+            },
+            "TxSyncQuarantineEntry": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "txHash": {
+                        "type": "string",
+                        "description": "The transaction the sync could not apply"
+                    },
+                    "blockHeight": {
+                        "type": "number",
+                        "nullable": true,
+                        "description": "Chain position, when known"
+                    },
+                    "txIndex": {
+                        "type": "number",
+                        "nullable": true
+                    },
+                    "reason": {
+                        "type": "string",
+                        "enum": [
+                            "ExtendedLookupFailed",
+                            "ProcessingFailed"
+                        ],
+                        "description": "Whether the lookup or the processing failed"
+                    },
+                    "attempts": {
+                        "type": "number",
+                        "description": "How many retries the reconciler has already made"
+                    },
+                    "lastError": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "nextRetryAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "The reconciler will not retry before this time"
+                    },
+                    "resolvedAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "date-time",
+                        "description": "Set once applied or discarded. Rows are retained for audit"
+                    },
+                    "needsOperator": {
+                        "type": "boolean",
+                        "description": "Retries stopped; a human needs to look at it"
+                    },
+                    "PaymentSource": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string"
+                            },
+                            "network": {
+                                "type": "string",
+                                "enum": [
+                                    "Preprod",
+                                    "Mainnet"
+                                ]
+                            },
+                            "smartContractAddress": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "network",
+                            "smartContractAddress"
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "createdAt",
+                    "updatedAt",
+                    "txHash",
+                    "blockHeight",
+                    "txIndex",
+                    "reason",
+                    "attempts",
+                    "lastError",
+                    "nextRetryAt",
+                    "resolvedAt",
+                    "needsOperator",
+                    "PaymentSource"
+                ]
             }
         },
         "parameters": {}
@@ -30317,6 +30415,683 @@
                     },
                     "401": {
                         "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/tx-sync-quarantine": {
+            "get": {
+                "description": "Lists transactions the chain sync could not apply. The checkpoint has already advanced past these, so anything still pending is chain state the database has NOT caught up with — some request is running on stale information until it is applied.",
+                "summary": "List quarantined sync transactions. (admin access required)",
+                "tags": [
+                    "tx-sync-quarantine"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Filter to a single network"
+                        },
+                        "required": false,
+                        "description": "Filter to a single network",
+                        "name": "network",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Filter to a single payment source"
+                        },
+                        "required": false,
+                        "description": "Filter to a single payment source",
+                        "name": "paymentSourceId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Pending",
+                                "NeedsOperator",
+                                "Resolved",
+                                "All"
+                            ],
+                            "default": "Pending",
+                            "description": "Pending: awaiting retry. NeedsOperator: retries exhausted or a non-retryable failure. Resolved: already applied or discarded."
+                        },
+                        "required": false,
+                        "description": "Pending: awaiting retry. NeedsOperator: retries exhausted or a non-retryable failure. Resolved: already applied or discarded.",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25,
+                            "description": "How many entries to return"
+                        },
+                        "required": false,
+                        "description": "How many entries to return",
+                        "name": "take",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Id of the last entry of the previous page"
+                        },
+                        "required": false,
+                        "description": "Id of the last entry of the previous page",
+                        "name": "cursorId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Quarantine entries",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "Quarantine": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/TxSyncQuarantineEntry"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "Quarantine"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "Quarantine": [
+                                                {
+                                                    "id": "quarantine_entry_id",
+                                                    "createdAt": "2024-01-01T00:00:00.000Z",
+                                                    "updatedAt": "2024-01-01T00:05:00.000Z",
+                                                    "txHash": "0000000000000000000000000000000000000000000000000000000000000000",
+                                                    "blockHeight": 10000000,
+                                                    "txIndex": 3,
+                                                    "reason": "ProcessingFailed",
+                                                    "attempts": 4,
+                                                    "lastError": "Could not decode the datum of output 0",
+                                                    "nextRetryAt": "2024-01-01T00:10:00.000Z",
+                                                    "resolvedAt": null,
+                                                    "needsOperator": true,
+                                                    "PaymentSource": {
+                                                        "id": "payment_source_id",
+                                                        "network": "Preprod",
+                                                        "smartContractAddress": "addr_test1..."
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            },
+            "delete": {
+                "description": "Permanently removes a quarantine entry. Deleting does NOT apply the transaction — the database stays behind the chain for whatever that transaction would have changed. Intended for entries that are genuinely irrelevant, or ones already repaired by hand.",
+                "summary": "Delete a quarantine entry without applying it. (admin access required)",
+                "tags": [
+                    "tx-sync-quarantine"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Quarantine entry to delete",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "description": "The quarantine entry to delete"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "quarantine_entry_id"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Quarantine entry deleted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "txHash": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "txHash"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "quarantine_entry_id",
+                                            "txHash": "0000000000000000000000000000000000000000000000000000000000000000"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Quarantine entry not found"
+                    }
+                }
+            }
+        },
+        "/tx-sync-quarantine/retry": {
+            "post": {
+                "description": "Schedules an immediate retry of a quarantined transaction and clears its operator flag. The retry itself is performed by the reconciler, not inline.",
+                "summary": "Retry a quarantined sync transaction. (admin access required)",
+                "tags": [
+                    "tx-sync-quarantine"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Quarantine entry to retry",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "description": "The quarantine entry to retry"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "quarantine_entry_id"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Quarantine entry re-queued",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/TxSyncQuarantineEntry"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "quarantine_entry_id",
+                                            "createdAt": "2024-01-01T00:00:00.000Z",
+                                            "updatedAt": "2024-01-01T00:05:00.000Z",
+                                            "txHash": "0000000000000000000000000000000000000000000000000000000000000000",
+                                            "blockHeight": 10000000,
+                                            "txIndex": 3,
+                                            "reason": "ProcessingFailed",
+                                            "attempts": 0,
+                                            "lastError": "Could not decode the datum of output 0",
+                                            "nextRetryAt": "2024-01-01T00:10:00.000Z",
+                                            "resolvedAt": null,
+                                            "needsOperator": false,
+                                            "PaymentSource": {
+                                                "id": "payment_source_id",
+                                                "network": "Preprod",
+                                                "smartContractAddress": "addr_test1..."
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Quarantine entry is already resolved"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Quarantine entry not found"
+                    }
+                }
+            }
+        },
+        "/request-repair/preview": {
+            "post": {
+                "description": "Dry run of a repair: validates the transaction against the request and reports what would change, without writing anything. A failed check returns 400 with the specific reason it failed.",
+                "summary": "Preview a manual request repair. (admin access required)",
+                "tags": [
+                    "request-repair"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Request and transaction to validate",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Purchase",
+                                            "Payment"
+                                        ],
+                                        "description": "Whether the blockchainIdentifier refers to a purchase or a payment"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The network the request belongs to"
+                                    },
+                                    "blockchainIdentifier": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The request to repair"
+                                    },
+                                    "txHash": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64,
+                                        "description": "The transaction that should become the request's CurrentTransaction"
+                                    }
+                                },
+                                "required": [
+                                    "kind",
+                                    "network",
+                                    "blockchainIdentifier",
+                                    "txHash"
+                                ],
+                                "example": {
+                                    "kind": "Purchase",
+                                    "network": "Preprod",
+                                    "blockchainIdentifier": "blockchain_identifier",
+                                    "txHash": "0000000000000000000000000000000000000000000000000000000000000000"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Repair preview",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "txHash": {
+                                                    "type": "string"
+                                                },
+                                                "outputIndex": {
+                                                    "type": "number"
+                                                },
+                                                "derivedOnChainState": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "FundsLocked",
+                                                        "FundsOrDatumInvalid",
+                                                        "ResultSubmitted",
+                                                        "RefundRequested",
+                                                        "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
+                                                        "Withdrawn",
+                                                        "RefundWithdrawn",
+                                                        "DisputedWithdrawn"
+                                                    ]
+                                                },
+                                                "resultHash": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "currentOnChainState": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "FundsLocked",
+                                                        "FundsOrDatumInvalid",
+                                                        "ResultSubmitted",
+                                                        "RefundRequested",
+                                                        "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
+                                                        "Withdrawn",
+                                                        "RefundWithdrawn",
+                                                        "DisputedWithdrawn",
+                                                        null
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "txHash",
+                                                "outputIndex",
+                                                "derivedOnChainState",
+                                                "resultHash",
+                                                "currentOnChainState"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "txHash": "0000000000000000000000000000000000000000000000000000000000000000",
+                                            "outputIndex": 0,
+                                            "derivedOnChainState": "FundsLocked",
+                                            "resultHash": null,
+                                            "currentOnChainState": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "The transaction does not validate against this request"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Request not found for the given blockchainIdentifier and network"
+                    }
+                }
+            }
+        },
+        "/request-repair": {
+            "post": {
+                "description": "Repoints a purchase or payment at a specific transaction and syncs its on-chain state. By default the transaction is fetched, confirmed to have an output at this payment source's contract address, its datum decoded and its blockchainIdentifier matched against the request — the resulting state comes from the datum, not from the caller. Passing force skips those checks and writes the supplied onChainState verbatim.",
+                "summary": "Repair a request by repointing it at a transaction. (admin access required)",
+                "tags": [
+                    "request-repair"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "description": "Request and transaction to repair with",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Purchase",
+                                            "Payment"
+                                        ],
+                                        "description": "Whether the blockchainIdentifier refers to a purchase or a payment"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ],
+                                        "description": "The network the request belongs to"
+                                    },
+                                    "blockchainIdentifier": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The request to repair"
+                                    },
+                                    "txHash": {
+                                        "type": "string",
+                                        "minLength": 64,
+                                        "maxLength": 64,
+                                        "description": "The transaction that should become the request's CurrentTransaction"
+                                    },
+                                    "force": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Skip chain validation and write the supplied onChainState verbatim. Only for cases validation cannot cover — a mistake here points the request at the wrong escrow and the automatic refund/withdraw logic will act on it."
+                                    },
+                                    "onChainState": {
+                                        "type": "string",
+                                        "enum": [
+                                            "FundsLocked",
+                                            "FundsOrDatumInvalid",
+                                            "ResultSubmitted",
+                                            "RefundRequested",
+                                            "Disputed",
+                                            "WithdrawAuthorized",
+                                            "RefundAuthorized",
+                                            "Withdrawn",
+                                            "RefundWithdrawn",
+                                            "DisputedWithdrawn"
+                                        ],
+                                        "description": "Required when force is true. Ignored otherwise — the state is read from the transaction datum."
+                                    }
+                                },
+                                "required": [
+                                    "kind",
+                                    "network",
+                                    "blockchainIdentifier",
+                                    "txHash"
+                                ],
+                                "example": {
+                                    "kind": "Purchase",
+                                    "network": "Preprod",
+                                    "blockchainIdentifier": "blockchain_identifier",
+                                    "txHash": "0000000000000000000000000000000000000000000000000000000000000000"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Request repaired",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "requestId": {
+                                                    "type": "string"
+                                                },
+                                                "txHash": {
+                                                    "type": "string"
+                                                },
+                                                "transactionId": {
+                                                    "type": "string"
+                                                },
+                                                "previousOnChainState": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "FundsLocked",
+                                                        "FundsOrDatumInvalid",
+                                                        "ResultSubmitted",
+                                                        "RefundRequested",
+                                                        "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
+                                                        "Withdrawn",
+                                                        "RefundWithdrawn",
+                                                        "DisputedWithdrawn",
+                                                        null
+                                                    ]
+                                                },
+                                                "newOnChainState": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "FundsLocked",
+                                                        "FundsOrDatumInvalid",
+                                                        "ResultSubmitted",
+                                                        "RefundRequested",
+                                                        "Disputed",
+                                                        "WithdrawAuthorized",
+                                                        "RefundAuthorized",
+                                                        "Withdrawn",
+                                                        "RefundWithdrawn",
+                                                        "DisputedWithdrawn"
+                                                    ]
+                                                },
+                                                "forced": {
+                                                    "type": "boolean",
+                                                    "description": "True when chain validation was skipped"
+                                                }
+                                            },
+                                            "required": [
+                                                "requestId",
+                                                "txHash",
+                                                "transactionId",
+                                                "previousOnChainState",
+                                                "newOnChainState",
+                                                "forced"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "requestId": "request_id",
+                                            "txHash": "0000000000000000000000000000000000000000000000000000000000000000",
+                                            "transactionId": "transaction_id",
+                                            "previousOnChainState": null,
+                                            "newOnChainState": "FundsLocked",
+                                            "forced": false
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "The transaction does not validate against this request"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Request not found for the given blockchainIdentifier and network"
                     }
                 }
             }

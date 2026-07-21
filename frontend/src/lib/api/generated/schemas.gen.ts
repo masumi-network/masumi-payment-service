@@ -5979,3 +5979,102 @@ export const RailReadinessSchema = {
         'Rails'
     ]
 } as const;
+
+export const TxSyncQuarantineEntrySchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        txHash: {
+            type: 'string',
+            description: 'The transaction the sync could not apply'
+        },
+        blockHeight: {
+            type: 'number',
+            nullable: true,
+            description: 'Chain position, when known'
+        },
+        txIndex: {
+            type: 'number',
+            nullable: true
+        },
+        reason: {
+            type: 'string',
+            enum: [
+                'ExtendedLookupFailed',
+                'ProcessingFailed'
+            ],
+            description: 'Whether the lookup or the processing failed'
+        },
+        attempts: {
+            type: 'number',
+            description: 'How many retries the reconciler has already made'
+        },
+        lastError: {
+            type: 'string',
+            nullable: true
+        },
+        nextRetryAt: {
+            type: 'string',
+            format: 'date-time',
+            description: 'The reconciler will not retry before this time'
+        },
+        resolvedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time',
+            description: 'Set once applied or discarded. Rows are retained for audit'
+        },
+        needsOperator: {
+            type: 'boolean',
+            description: 'Retries stopped; a human needs to look at it'
+        },
+        PaymentSource: {
+            type: 'object',
+            properties: {
+                id: {
+                    type: 'string'
+                },
+                network: {
+                    type: 'string',
+                    enum: [
+                        'Preprod',
+                        'Mainnet'
+                    ]
+                },
+                smartContractAddress: {
+                    type: 'string'
+                }
+            },
+            required: [
+                'id',
+                'network',
+                'smartContractAddress'
+            ]
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'txHash',
+        'blockHeight',
+        'txIndex',
+        'reason',
+        'attempts',
+        'lastError',
+        'nextRetryAt',
+        'resolvedAt',
+        'needsOperator',
+        'PaymentSource'
+    ]
+} as const;

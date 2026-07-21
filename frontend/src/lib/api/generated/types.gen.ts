@@ -3111,6 +3111,47 @@ export type RailReadiness = {
     }>;
 };
 
+export type TxSyncQuarantineEntry = {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    /**
+     * The transaction the sync could not apply
+     */
+    txHash: string;
+    /**
+     * Chain position, when known
+     */
+    blockHeight: number | null;
+    txIndex: number | null;
+    /**
+     * Whether the lookup or the processing failed
+     */
+    reason: 'ExtendedLookupFailed' | 'ProcessingFailed';
+    /**
+     * How many retries the reconciler has already made
+     */
+    attempts: number;
+    lastError: string | null;
+    /**
+     * The reconciler will not retry before this time
+     */
+    nextRetryAt: Date;
+    /**
+     * Set once applied or discarded. Rows are retained for audit
+     */
+    resolvedAt: Date | null;
+    /**
+     * Retries stopped; a human needs to look at it
+     */
+    needsOperator: boolean;
+    PaymentSource: {
+        id: string;
+        network: 'Preprod' | 'Mainnet';
+        smartContractAddress: string;
+    };
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -12826,3 +12867,267 @@ export type GetRailReadinessResponses = {
 };
 
 export type GetRailReadinessResponse = GetRailReadinessResponses[keyof GetRailReadinessResponses];
+
+export type DeleteTxSyncQuarantineData = {
+    /**
+     * Quarantine entry to delete
+     */
+    body?: {
+        /**
+         * The quarantine entry to delete
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/tx-sync-quarantine';
+};
+
+export type DeleteTxSyncQuarantineErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Quarantine entry not found
+     */
+    404: unknown;
+};
+
+export type DeleteTxSyncQuarantineResponses = {
+    /**
+     * Quarantine entry deleted
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            txHash: string;
+        };
+    };
+};
+
+export type DeleteTxSyncQuarantineResponse = DeleteTxSyncQuarantineResponses[keyof DeleteTxSyncQuarantineResponses];
+
+export type GetTxSyncQuarantineData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter to a single network
+         */
+        network?: 'Preprod' | 'Mainnet';
+        /**
+         * Filter to a single payment source
+         */
+        paymentSourceId?: string;
+        /**
+         * Pending: awaiting retry. NeedsOperator: retries exhausted or a non-retryable failure. Resolved: already applied or discarded.
+         */
+        status?: 'Pending' | 'NeedsOperator' | 'Resolved' | 'All';
+        /**
+         * How many entries to return
+         */
+        take?: number;
+        /**
+         * Id of the last entry of the previous page
+         */
+        cursorId?: string;
+    };
+    url: '/tx-sync-quarantine';
+};
+
+export type GetTxSyncQuarantineErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetTxSyncQuarantineResponses = {
+    /**
+     * Quarantine entries
+     */
+    200: {
+        status: 'success';
+        data: {
+            Quarantine: Array<TxSyncQuarantineEntry>;
+        };
+    };
+};
+
+export type GetTxSyncQuarantineResponse = GetTxSyncQuarantineResponses[keyof GetTxSyncQuarantineResponses];
+
+export type PostTxSyncQuarantineRetryData = {
+    /**
+     * Quarantine entry to retry
+     */
+    body?: {
+        /**
+         * The quarantine entry to retry
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/tx-sync-quarantine/retry';
+};
+
+export type PostTxSyncQuarantineRetryErrors = {
+    /**
+     * Quarantine entry is already resolved
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Quarantine entry not found
+     */
+    404: unknown;
+};
+
+export type PostTxSyncQuarantineRetryResponses = {
+    /**
+     * Quarantine entry re-queued
+     */
+    200: {
+        status: 'success';
+        data: TxSyncQuarantineEntry;
+    };
+};
+
+export type PostTxSyncQuarantineRetryResponse = PostTxSyncQuarantineRetryResponses[keyof PostTxSyncQuarantineRetryResponses];
+
+export type PostRequestRepairPreviewData = {
+    /**
+     * Request and transaction to validate
+     */
+    body?: {
+        /**
+         * Whether the blockchainIdentifier refers to a purchase or a payment
+         */
+        kind: 'Purchase' | 'Payment';
+        /**
+         * The network the request belongs to
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The request to repair
+         */
+        blockchainIdentifier: string;
+        /**
+         * The transaction that should become the request's CurrentTransaction
+         */
+        txHash: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/request-repair/preview';
+};
+
+export type PostRequestRepairPreviewErrors = {
+    /**
+     * The transaction does not validate against this request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Request not found for the given blockchainIdentifier and network
+     */
+    404: unknown;
+};
+
+export type PostRequestRepairPreviewResponses = {
+    /**
+     * Repair preview
+     */
+    200: {
+        status: 'success';
+        data: {
+            txHash: string;
+            outputIndex: number;
+            derivedOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+            resultHash: string | null;
+            currentOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+        };
+    };
+};
+
+export type PostRequestRepairPreviewResponse = PostRequestRepairPreviewResponses[keyof PostRequestRepairPreviewResponses];
+
+export type PostRequestRepairData = {
+    /**
+     * Request and transaction to repair with
+     */
+    body?: {
+        /**
+         * Whether the blockchainIdentifier refers to a purchase or a payment
+         */
+        kind: 'Purchase' | 'Payment';
+        /**
+         * The network the request belongs to
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The request to repair
+         */
+        blockchainIdentifier: string;
+        /**
+         * The transaction that should become the request's CurrentTransaction
+         */
+        txHash: string;
+        /**
+         * Skip chain validation and write the supplied onChainState verbatim. Only for cases validation cannot cover — a mistake here points the request at the wrong escrow and the automatic refund/withdraw logic will act on it.
+         */
+        force?: boolean;
+        /**
+         * Required when force is true. Ignored otherwise — the state is read from the transaction datum.
+         */
+        onChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+    };
+    path?: never;
+    query?: never;
+    url: '/request-repair';
+};
+
+export type PostRequestRepairErrors = {
+    /**
+     * The transaction does not validate against this request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Request not found for the given blockchainIdentifier and network
+     */
+    404: unknown;
+};
+
+export type PostRequestRepairResponses = {
+    /**
+     * Request repaired
+     */
+    200: {
+        status: 'success';
+        data: {
+            requestId: string;
+            txHash: string;
+            transactionId: string;
+            previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+            /**
+             * True when chain validation was skipped
+             */
+            forced: boolean;
+        };
+    };
+};
+
+export type PostRequestRepairResponse = PostRequestRepairResponses[keyof PostRequestRepairResponses];
