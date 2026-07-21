@@ -928,6 +928,7 @@ model PaymentSource {
   InboxAgentRegistrationRequests InboxAgentRegistrationRequest[]
   WalletBases                    WalletBase[]
   WebhookEndpoints               WebhookEndpoint[]
+  QuarantinedTransactions        TxSyncQuarantine[]
 
   @@unique([network, smartContractAddress])
   // Active-only uniqueness on (network, policyId) is enforced by the partial
@@ -1410,4 +1411,54 @@ enum WebhookDeliveryStatus {
   Failed
   Retrying
   Cancelled
+}
+
+/// A transaction the sync scanner saw at a payment source's contract address
+/// but could not fetch or process.
+///
+/// The scanner keeps a single `lastIdentifierChecked` cursor, which forces a
+/// choice between two bad options when one transaction fails: drop it and
+/// advance (silent, permanent data loss — a request frozen in a stale state
+/// forever) or halt and refuse to advance (one permanently-unfetchable tx,
+/// e.g. one rolled back mid-flight, stalls every later transaction for that
+/// payment source).
+///
+/// This table breaks that tie by separating "scanned" from "processed": the
+/// cursor may advance, and anything left behind is recorded here for the
+/// reconciler to retry independently. Nothing is skipped silently, and one bad
+/// transaction cannot block the rest.
+model TxSyncQuarantine {
+  id              String    @id @default(cuid())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  paymentSourceId String
+  txHash          String
+  /// Chain position, kept so the reconciler can replay in chain order.
+  blockHeight     Int?
+  txIndex         Int?
+  /// Why it was quarantined, for triage. Not parsed by the reconciler.
+  reason          TxSyncQuarantineReason
+  attempts        Int       @default(0)
+  lastError       String?
+  /// Retries are due when now() >= nextRetryAt. Backs off with attempts.
+  nextRetryAt     DateTime  @default(now())
+  /// Set once the tx is successfully processed, or determined to be rolled
+  /// back and therefore no longer applicable. Rows are retained for audit.
+  resolvedAt      DateTime?
+  /// Terminal failures (e.g. a deterministic parse error) stop being retried
+  /// and must be looked at by an operator.
+  needsOperator   Boolean   @default(false)
+
+  PaymentSource PaymentSource @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentSourceId, txHash])
+  @@index([resolvedAt, nextRetryAt])
+  @@index([needsOperator])
+}
+
+enum TxSyncQuarantineReason {
+  /// One of the Blockfrost lookups for the tx failed after retries.
+  ExtendedLookupFailed
+  /// The tx was fetched but processing threw.
+  ProcessingFailed
 }

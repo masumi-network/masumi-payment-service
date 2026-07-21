@@ -7,6 +7,7 @@ import {
 	Prisma,
 	PurchaseErrorType,
 	PurchasingAction,
+	TxSyncQuarantineReason,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
@@ -15,6 +16,7 @@ import { Mutex } from 'async-mutex';
 import { CONFIG, CONSTANTS } from '@masumi/payment-core/config';
 import { extractOnChainTransactionData } from './util';
 import { getExtendedTxInformation, getTxsFromCardanoAfterSpecificTx } from './blockchain';
+import { quarantineTransaction } from './quarantine';
 import {
 	updateInitialTransactions,
 	updateRolledBackTransaction,
@@ -103,7 +105,26 @@ async function processPaymentSource(
 		return;
 	}
 
-	const txData = await getExtendedTxInformation(latestTx, blockfrost, maxParallelTransactionsExtendedLookup);
+	const { txData, failures } = await getExtendedTxInformation(
+		latestTx,
+		blockfrost,
+		maxParallelTransactionsExtendedLookup,
+	);
+
+	// Record lookup failures BEFORE processing anything. The checkpoint is about
+	// to advance past these transactions, so if quarantining fails we must not
+	// start advancing at all — quarantineTransaction throws for exactly that
+	// reason and we let it propagate.
+	for (const failure of failures) {
+		await quarantineTransaction({
+			paymentSourceId: paymentContract.id,
+			txHash: failure.txHash,
+			blockHeight: failure.blockHeight,
+			txIndex: failure.txIndex,
+			reason: TxSyncQuarantineReason.ExtendedLookupFailed,
+			error: failure.error,
+		});
+	}
 
 	for (const tx of txData) {
 		if (tx.block.confirmations < CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD) {
@@ -112,17 +133,26 @@ async function processPaymentSource(
 
 		try {
 			await processTransactionData(tx, paymentContract, blockfrost);
-			await updateSyncCheckpoint(paymentContract, tx.tx.tx_hash, latestIdentifier);
-			latestIdentifier = tx.tx.tx_hash;
 		} catch (error) {
-			//If the error persists this will prevent a further sync
-			logger.error('-----------SYNC FAILED TO CONTINUE: Error updating sync checkpoint-----------');
-			logger.error('SYNC FAILED TO CONTINUE: Error processing transaction', {
-				error: error,
-				tx: tx,
+			// One transaction that cannot be processed must not stall every later
+			// transaction for this payment source, and it must not vanish either.
+			// Quarantine it and carry on; the reconciler owns the retry.
+			//
+			// If the quarantine write itself fails we deliberately do NOT advance
+			// the checkpoint — rethrowing halts this tick and the scanner will see
+			// the transaction again next time.
+			await quarantineTransaction({
+				paymentSourceId: paymentContract.id,
+				txHash: tx.tx.tx_hash,
+				blockHeight: tx.blockHeight,
+				txIndex: tx.txIndex,
+				reason: TxSyncQuarantineReason.ProcessingFailed,
+				error,
 			});
-			throw error;
 		}
+
+		await updateSyncCheckpoint(paymentContract, tx.tx.tx_hash, latestIdentifier);
+		latestIdentifier = tx.tx.tx_hash;
 	}
 }
 
@@ -266,7 +296,13 @@ async function invalidateTimedOutPaymentRequests() {
 	});
 }
 
-async function processTransactionData(
+/**
+ * Exported so the quarantine reconciler retries transactions through the exact
+ * same path the scanner uses — a divergent retry path would be a second
+ * implementation to keep in sync, and drift there is invisible until it
+ * matters.
+ */
+export async function processTransactionData(
 	tx: UpdateTransactionInput,
 	paymentContract: PaymentSourceWithConfig,
 	blockfrost: BlockFrostAPI,

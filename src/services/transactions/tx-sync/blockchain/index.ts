@@ -66,13 +66,15 @@ async function detectRollbackForTxPage(
 }
 
 export async function getExtendedTxInformation(
-	latestTxs: Array<{ tx_hash: string; block_time: number }>,
+	latestTxs: Array<{ tx_hash: string; block_time: number; block_height: number; tx_index: number }>,
 	blockfrost: BlockFrostAPI,
 	maxTransactionToProcessInParallel: number,
 ) {
 	const batchCount = Math.ceil(latestTxs.length / maxTransactionToProcessInParallel);
 	const txData: Array<{
 		blockTime: number;
+		blockHeight: number;
+		txIndex: number;
 		tx: { tx_hash: string };
 		block: { confirmations: number };
 		metadata: TransactionMetadata;
@@ -101,6 +103,12 @@ export async function getExtendedTxInformation(
 			}>;
 		};
 		transaction: Transaction;
+	}> = [];
+	const failures: Array<{
+		txHash: string;
+		blockHeight: number | null;
+		txIndex: number | null;
+		error: unknown;
 	}> = [];
 	for (let i = 0; i < batchCount; i++) {
 		const txBatch = latestTxs.slice(
@@ -141,6 +149,8 @@ export async function getExtendedTxInformation(
 					utxos: utxos,
 					transaction: transaction,
 					blockTime: tx.block_time,
+					blockHeight: tx.block_height,
+					txIndex: tx.tx_index,
 				};
 			}),
 			errorResolvers: [
@@ -154,29 +164,52 @@ export async function getExtendedTxInformation(
 				}),
 			],
 		});
-		const failedTxData = txDataBatch
-			.map((result, index) => ({ result, txHash: txBatch[index]?.tx_hash ?? `batch-index-${index}` }))
-			.filter(({ result }) => result.success == false);
-		if (failedTxData.length > 0) {
-			const failedTxHashes = failedTxData.map(({ txHash }) => txHash);
-			logger.error('Failed to get extended data for transactions; halting tx-sync checkpoint advance', {
-				txHashes: failedTxHashes,
-				failures: failedTxData,
+		// Report failures rather than dropping them or throwing.
+		//
+		// Dropping (the original behaviour) advanced the checkpoint past the tx,
+		// so a single failed lookup froze that request's state forever — silently,
+		// at log level `error`, with no way to revisit it.
+		//
+		// Throwing (the later fix) refused to advance at all, which trades silent
+		// data loss for head-of-line blocking: a tx that can never be fetched —
+		// one rolled back mid-flight, say — stalls every later transaction for
+		// that payment source indefinitely.
+		//
+		// Neither is acceptable, so the decision is handed to the caller, which
+		// records failures durably (TxSyncQuarantine) before letting the
+		// checkpoint move on.
+		txDataBatch.forEach((result, index) => {
+			const source = txBatch[index];
+			if (result.success == true && result.result != undefined) {
+				txData.push(result.result);
+				return;
+			}
+			failures.push({
+				txHash: source?.tx_hash ?? `batch-index-${index}`,
+				blockHeight: source?.block_height ?? null,
+				txIndex: source?.tx_index ?? null,
+				error: result.success == false ? result.error : new Error('extended lookup returned no result'),
 			});
-			throw new Error(
-				`Failed to get extended data for ${failedTxData.length} transaction(s): ${failedTxHashes.join(', ')}`,
-			);
-		}
-
-		const filteredTxData = txDataBatch.filter((x) => x.success == true && x.result != undefined).map((x) => x.result!);
-		filteredTxData.forEach((x) => txData.push(x));
+		});
 	}
 
-	//sort by smallest block time first
+	// Order by true chain position, oldest first. Sorting on blockTime alone
+	// leaves txs sharing a block in arbitrary order, because every tx in a block
+	// carries the same block_time — and the sync advances its checkpoint per tx,
+	// so processing them out of chain order can move the cursor past a tx that
+	// has not been handled yet.
 	txData.sort((a, b) => {
-		return a.blockTime - b.blockTime;
+		if (a.blockHeight !== b.blockHeight) return a.blockHeight - b.blockHeight;
+		return a.txIndex - b.txIndex;
 	});
-	return txData;
+
+	if (failures.length > 0) {
+		logger.error('Extended tx lookup failed; quarantining so the checkpoint can advance without losing them', {
+			txHashes: failures.map((x) => x.txHash),
+		});
+	}
+
+	return { txData, failures };
 }
 
 export async function getTxsFromCardanoAfterSpecificTx(
@@ -186,7 +219,11 @@ export async function getTxsFromCardanoAfterSpecificTx(
 	},
 	latestIdentifier: string | null,
 ) {
-	let latestTx: Array<{ tx_hash: string; block_time: number }> = [];
+	// block_height/tx_index come back from `addressesTransactions` and are the
+	// only way to order txs WITHIN a block — block_time is identical for all of
+	// them. Dropping these fields here is what left same-block ordering
+	// undefined downstream. See the sort in getExtendedTxInformation.
+	let latestTx: Array<{ tx_hash: string; block_time: number; block_height: number; tx_index: number }> = [];
 	let foundTx = -1;
 	let index = 0;
 	let rolledBackTx: Array<{ tx_hash: string }> = [];
