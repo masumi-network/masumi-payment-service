@@ -14,6 +14,7 @@ import { writePaymentErrorTransition } from '@/services/shared/error-transition'
 import { Mutex, tryAcquire, MutexInterface } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	assertEscrowUtxoUnspent,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPaymentAction,
@@ -137,6 +138,8 @@ export async function authorizeRefundV1() {
 						if (!utxo) {
 							throw new Error('UTXO not found');
 						}
+
+						await assertEscrowUtxoUnspent(blockchainProvider, smartContractAddress, utxo);
 
 						const buyerAddress = request.BuyerWallet!.walletAddress;
 						const sellerAddress = request.SmartContractWallet!.walletAddress;

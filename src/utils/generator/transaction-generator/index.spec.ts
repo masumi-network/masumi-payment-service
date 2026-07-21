@@ -27,7 +27,21 @@ class MockMeshTxBuilder {
 	requiredSignerHash = jest.fn(() => this);
 	setNetwork = jest.fn(() => this);
 	metadataValue = jest.fn(() => this);
-	complete = jest.fn(async () => `unsigned-tx-${builders.indexOf(this) + 1}`);
+	complete = jest.fn(async () => {
+		if (MockMeshTxBuilder.failWhenCollateralExcluded) {
+			const calls = this.selectUtxosFrom.mock.calls;
+			const offered = (calls.length > 0 ? calls[calls.length - 1][0] : undefined) as
+				| Array<{ input: { txHash: string } }>
+				| undefined;
+			const offeredCollateral = offered?.some((utxo) => utxo.input.txHash === 'collateral') ?? false;
+			if (!offeredCollateral) {
+				throw new Error('UTxO Balance Insufficient');
+			}
+		}
+		return `unsigned-tx-${builders.indexOf(this) + 1}`;
+	});
+
+	static failWhenCollateralExcluded = false;
 
 	constructor() {
 		builders.push(this);
@@ -100,7 +114,7 @@ describe('V1 automatic smart-contract input selection', () => {
 		builders.length = 0;
 	});
 
-	it('offers every wallet UTxO to Mesh in both fee passes, including collateral', async () => {
+	it('offers the spendable wallet UTxOs to Mesh in both fee passes, holding back collateral', async () => {
 		const collateralUtxo = createUtxo('collateral', '8281874');
 		const smallUtxo = createUtxo('small', '3336392');
 		const largeUtxo = createUtxo('large', '485435616');
@@ -138,7 +152,10 @@ describe('V1 automatic smart-contract input selection', () => {
 		expect(builders).toHaveLength(2);
 		for (const builder of builders) {
 			expect(builder.txInCollateral).toHaveBeenCalledWith('collateral', 0);
-			expect(builder.selectUtxosFrom).toHaveBeenCalledWith([collateralUtxo, smallUtxo, largeUtxo]);
+			// Mesh does not exclude `txInCollateral` UTxOs from `selectUtxosFrom`
+			// candidates, so coin selection would otherwise spend the collateral
+			// reserve and leave the wallet unable to fund the next escrow action.
+			expect(builder.selectUtxosFrom).toHaveBeenCalledWith([smallUtxo, largeUtxo]);
 			expect(builder.txIn).toHaveBeenCalledTimes(1);
 			expect(builder.txIn).toHaveBeenCalledWith(
 				'contract',
@@ -148,5 +165,81 @@ describe('V1 automatic smart-contract input selection', () => {
 				0,
 			);
 		}
+	});
+
+	// The whole point of the rework: a static exclusion turned a buildable tx
+	// into a hard failure whenever the collateral was the only funder big
+	// enough. Prefer holding it back, but never at the cost of not transacting.
+	it('retries with the collateral offered when the tx cannot balance without it', async () => {
+		const collateralUtxo = createUtxo('collateral', '8281874');
+		const dustUtxo = createUtxo('dust', '1500000');
+		const smartContractUtxo = {
+			...createUtxo('contract', '7331310'),
+			output: { ...createUtxo('contract', '7331310').output, address: 'addr_test1_contract' },
+		};
+		const blockchainProvider = {
+			fetchProtocolParameters: jest.fn(async () => ({ coinsPerUtxoSize: 4310 })),
+			evaluateTx: jest.fn<(tx: string) => Promise<Array<{ budget: { mem: number; steps: number } }>>>(async () => [
+				{ budget: { mem: 100, steps: 200 } },
+			]),
+		};
+
+		MockMeshTxBuilder.failWhenCollateralExcluded = true;
+		try {
+			const result = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+				'SubmitResult',
+				blockchainProvider as never,
+				'preprod',
+				{ version: 'V3', code: 'script-cbor' },
+				'addr_test1_wallet',
+				smartContractUtxo as never,
+				collateralUtxo as never,
+				[collateralUtxo, dustUtxo] as never,
+				{ alternative: 1, fields: [] },
+				100,
+				200,
+			);
+
+			expect(result).toBeDefined();
+			// First attempt held the collateral back and failed; the retry offered it.
+			expect(builders[0].selectUtxosFrom).toHaveBeenCalledWith([dustUtxo]);
+			expect(builders[builders.length - 1].selectUtxosFrom).toHaveBeenCalledWith([collateralUtxo, dustUtxo]);
+		} finally {
+			MockMeshTxBuilder.failWhenCollateralExcluded = false;
+		}
+	});
+
+	it('propagates a non-balance build failure instead of retrying with collateral', async () => {
+		const collateralUtxo = createUtxo('collateral', '8281874');
+		const otherUtxo = createUtxo('other', '9000000');
+		const smartContractUtxo = {
+			...createUtxo('contract', '7331310'),
+			output: { ...createUtxo('contract', '7331310').output, address: 'addr_test1_contract' },
+		};
+		const blockchainProvider = {
+			fetchProtocolParameters: jest.fn(async () => ({ coinsPerUtxoSize: 4310 })),
+			evaluateTx: jest.fn(async () => {
+				throw new Error('PPViewHashesDontMatch');
+			}),
+		};
+
+		await expect(
+			generateMasumiSmartContractInteractionTransactionAutomaticFees(
+				'SubmitResult',
+				blockchainProvider as never,
+				'preprod',
+				{ version: 'V3', code: 'script-cbor' },
+				'addr_test1_wallet',
+				smartContractUtxo as never,
+				collateralUtxo as never,
+				[collateralUtxo, otherUtxo] as never,
+				{ alternative: 1, fields: [] },
+				100,
+				200,
+			),
+		).rejects.toThrow('PPViewHashesDontMatch');
+
+		// One build only — no collateral retry for an unrelated failure.
+		expect(builders).toHaveLength(1);
 	});
 });

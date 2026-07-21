@@ -13,6 +13,7 @@ import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { purchaseResponseSchema } from '..';
 import { z } from '@masumi/payment-core/zod';
 import { getPurchaseRetryAction } from '@/utils/shared/error-recovery';
+import { selectRecoveryTransaction } from '@/routes/api/shared/recovery-transaction';
 
 export const purchaseErrorStateRecoverySchemaInput = z.object({
 	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier of the purchase request'),
@@ -116,21 +117,9 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 			throw createHttpError(400, 'The purchase is already completed and its previous action cannot be retried.');
 		}
 
-		// Find the most recent successful transaction (confirmed or pending)
-		// Priority 1: Most recent Confirmed transaction (fully successful)
-		const confirmedTransactions = purchaseRequest.TransactionHistory.filter(
-			(tx) => tx.status === TransactionStatus.Confirmed,
-		);
-		const mostRecentConfirmedTransaction = confirmedTransactions.length > 0 ? confirmedTransactions[0] : undefined;
-
-		// Priority 2: If no confirmed, get most recent Pending transaction (in progress)
-		const pendingTransactions = purchaseRequest.TransactionHistory.filter(
-			(tx) => tx.status === TransactionStatus.Pending,
-		);
-		const mostRecentPendingTransaction = pendingTransactions.length > 0 ? pendingTransactions[0] : undefined;
-
-		// Use the best available transaction
-		const lastSuccessfulTransaction = mostRecentConfirmedTransaction ?? mostRecentPendingTransaction;
+		// Selection lives in selectRecoveryTransaction so the hash-less-row rule
+		// is unit-tested; see src/routes/api/shared/recovery-transaction.spec.ts
+		const lastSuccessfulTransaction = selectRecoveryTransaction(purchaseRequest.TransactionHistory);
 
 		const transactionsToFail = purchaseRequest.TransactionHistory.filter((tx) => {
 			if (tx.status !== TransactionStatus.Pending) return false;

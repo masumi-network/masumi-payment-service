@@ -1,5 +1,5 @@
 import type { UTxO } from '@meshsdk/core';
-import { selectCollateralUtxo, sortAndLimitUtxos, sortUtxosByLovelaceDesc } from './index';
+import { getSpendableWalletUtxos, selectCollateralUtxo, sortAndLimitUtxos, sortUtxosByLovelaceDesc } from './index';
 
 type AssetSpec = { unit: string; quantity: string };
 
@@ -168,5 +168,33 @@ describe('selectCollateralUtxo', () => {
 		const dust = makeUtxo({ txHash: 'dust', amount: [lovelace(4_999_999)] });
 
 		expect(() => selectCollateralUtxo([dust])).toThrow('Collateral UTxO not found with at least 5000000 lovelace');
+	});
+});
+
+describe('getSpendableWalletUtxos', () => {
+	it('keeps the collateral reserve out of the coin-selection candidates', () => {
+		const collateral = makeUtxo({ txHash: 'collateral', amount: [lovelace(8_000_000)] });
+		const utxos = [
+			makeUtxo({ txHash: 'a', amount: [lovelace(10_000_000)] }),
+			collateral,
+			makeUtxo({ txHash: 'b', amount: [lovelace(20_000_000)] }),
+		];
+
+		expect(getSpendableWalletUtxos(utxos, collateral).map((utxo) => utxo.input.txHash)).toEqual(['a', 'b']);
+	});
+
+	it('matches the collateral on output index, not just tx hash', () => {
+		const collateral = makeUtxo({ txHash: 'shared', outputIndex: 1, amount: [lovelace(8_000_000)] });
+		const sibling = makeUtxo({ txHash: 'shared', outputIndex: 0, amount: [lovelace(9_000_000)] });
+
+		expect(getSpendableWalletUtxos([sibling, collateral], collateral).map((utxo) => utxo.input.outputIndex)).toEqual([
+			0,
+		]);
+	});
+
+	it('falls back to the unfiltered set when the collateral is the only UTxO', () => {
+		const collateral = makeUtxo({ txHash: 'collateral', amount: [lovelace(8_000_000)] });
+
+		expect(getSpendableWalletUtxos([collateral], collateral)).toEqual([collateral]);
 	});
 });

@@ -18,6 +18,7 @@
 		"./error-string-convert": "./src/error-string-convert.ts",
 		"./hex": "./src/hex.ts",
 		"./http-exists-error": "./src/http-exists-error.ts",
+		"./insufficient-balance-error": "./src/insufficient-balance-error.ts",
 		"./insufficient-funds-error": "./src/insufficient-funds-error.ts",
 		"./logger": "./src/logger.ts",
 		"./metrics": "./src/metrics.ts",

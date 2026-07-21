@@ -433,8 +433,9 @@ async function processWalletBatch(
 
 	// See ensureCollateralReady module note: Cardano allows VKey wallet
 	// collateral/input overlap. The readiness helper retains an additional
-	// confirmed UTxO for predictable next-tick readiness, while Mesh may use
-	// the declared collateral for regular funding. If the
+	// confirmed UTxO for predictable next-tick readiness, and the builders now
+	// hold that reserve back from Mesh's coin selection unless the tx cannot
+	// otherwise balance. If the
 	// wallet has collapsed to a single UTxO, submit a self-send prep tx and
 	// defer the batch to the next tick. The helper leaves the wallet locked via
 	// its shared Tx row when status != 'ready'; wallet-timeouts /
