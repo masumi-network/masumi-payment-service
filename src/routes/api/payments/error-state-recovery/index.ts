@@ -120,7 +120,15 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 		// is unit-tested; see src/routes/api/shared/recovery-transaction.spec.ts
 		const lastSuccessfulTransaction = selectRecoveryTransaction(paymentRequest.TransactionHistory);
 
+		// When no candidate qualifies AND an escrow exists, the pointer stays
+		// where it is (see below). In that case the row it points at must NOT be
+		// failed here, or the request ends up pointing at a row this same
+		// transaction marked FailedViaManualReset — reporting success while
+		// leaving the retry to throw 'Transaction hash not found'.
+		const willKeepCurrentPointer = lastSuccessfulTransaction == null && paymentRequest.onChainState != null;
+
 		const transactionsToFail = paymentRequest.TransactionHistory.filter((tx) => {
+			if (willKeepCurrentPointer && tx.id === paymentRequest.currentTransactionId) return false;
 			if (tx.status !== TransactionStatus.Pending) return false;
 
 			if (lastSuccessfulTransaction && tx.id === lastSuccessfulTransaction.id) {
@@ -152,18 +160,29 @@ export const paymentErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bui
 					});
 				}
 
-				// Only ever REPOINT, never detach. The previous `|| null` cleared
-				// currentTransactionId whenever no candidate qualified, which threw
-				// away the request's only link to its escrow transaction — the row
-				// still existed and was Confirmed, but nothing pointed at it any more,
-				// so every later retry failed with 'Transaction hash not found' and the
-				// link had to be restored by hand. Leaving the pointer alone loses
-				// nothing: the caller is no worse off than before the retry, and the
-				// information survives.
+				// Repoint when we have a candidate. When we do NOT, the right move
+				// depends on whether an escrow exists on chain yet:
+				//
+				//   onChainState != null — the pointer is the request's only link to
+				//     its escrow transaction. Clearing it strands the request: the row
+				//     stays Confirmed with its hash, but nothing references it, and
+				//     every later retry fails with 'Transaction hash not found' until
+				//     someone re-links it by hand. Leave it alone.
+				//
+				//   onChainState == null — pre-escrow (a funds-locking retry). There is
+				//     no escrow link worth keeping, and batch-payments re-selects
+				//     candidates with `CurrentTransaction: { is: null }`, so a row that
+				//     keeps its rolled-back tx would never re-batch — the endpoint would
+				//     return 200 and the request would stall forever. Clear it.
 				if (lastSuccessfulTransaction != null) {
 					await tx.paymentRequest.update({
 						where: { id: paymentRequest.id },
 						data: { currentTransactionId: lastSuccessfulTransaction.id },
+					});
+				} else if (paymentRequest.onChainState == null) {
+					await tx.paymentRequest.update({
+						where: { id: paymentRequest.id },
+						data: { currentTransactionId: null },
 					});
 				}
 				const updatedPaymentRequest = await tx.paymentRequest.update({

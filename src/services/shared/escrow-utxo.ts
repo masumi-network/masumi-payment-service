@@ -14,10 +14,13 @@ export const ESCROW_UTXO_SPENT_MESSAGE =
  * Blockfrost calls each. One fetch per address per short window collapses that
  * back to roughly one.
  *
- * Staleness is safe in one direction only, which is the direction that matters:
- * a stale set can make a just-spent UTxO still look unspent (we then build and
- * fail exactly as we did before this guard existed — no worse), but it can
- * never invent a spend. Kept short so the guard stays useful.
+ * A stale set is safe for a POSITIVE result (the UTxO is present, so it was
+ * unspent as of the fetch — at worst we proceed and the build fails as it did
+ * before this guard existed). It is NOT safe for a negative: a snapshot omits
+ * every UTxO created after it was taken, so a freshly-created continuation
+ * output looks 'missing' and would be reported as spent. assertEscrowUtxoUnspent
+ * therefore never concludes 'spent' from a cached set — it invalidates and
+ * refetches first.
  */
 const ADDRESS_UTXO_CACHE_TTL_MS = 15_000;
 
@@ -28,6 +31,13 @@ const addressUtxoCache = new Map<string, CachedAddressUtxos>();
 /** Test seam — the cache is module state and would otherwise leak across cases. */
 export function clearEscrowUtxoCache(): void {
 	addressUtxoCache.clear();
+}
+
+function containsUtxo(utxos: UTxO[], utxo: UTxO): boolean {
+	return utxos.some(
+		(candidate) =>
+			candidate.input.txHash === utxo.input.txHash && candidate.input.outputIndex === utxo.input.outputIndex,
+	);
 }
 
 async function fetchLiveAddressUtxos(
@@ -93,10 +103,27 @@ export async function assertEscrowUtxoUnspent(
 		return;
 	}
 
-	const isUnspent = liveUtxos.some(
-		(liveUtxo) => liveUtxo.input.txHash === utxo.input.txHash && liveUtxo.input.outputIndex === utxo.input.outputIndex,
-	);
-	if (!isUnspent) {
+	if (containsUtxo(liveUtxos, utxo)) {
+		return;
+	}
+
+	// Absent from a possibly-stale snapshot proves nothing: the set omits every
+	// UTxO created after it was fetched, which is exactly what a just-confirmed
+	// continuation output is. Only a FRESH set can justify the throw, so drop the
+	// entry and look again before concluding anything.
+	addressUtxoCache.delete(smartContractAddress);
+	const freshUtxos = await fetchLiveAddressUtxos(blockchainProvider, smartContractAddress, nowMs);
+
+	if (freshUtxos.length === 0) {
+		logger.warn('assertEscrowUtxoUnspent: contract address returned no UTxOs on refetch; skipping the spent check', {
+			smartContractAddress,
+			txHash: utxo.input.txHash,
+			outputIndex: utxo.input.outputIndex,
+		});
+		return;
+	}
+
+	if (!containsUtxo(freshUtxos, utxo)) {
 		throw new Error(`${ESCROW_UTXO_SPENT_MESSAGE} (${utxo.input.txHash}#${utxo.input.outputIndex})`);
 	}
 }
