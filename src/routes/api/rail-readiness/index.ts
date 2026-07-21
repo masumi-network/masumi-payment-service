@@ -10,10 +10,12 @@ export { railReadinessSchemaInput, railReadinessSchemaOutput };
 /**
  * One place that answers "is this rail actually set up?".
  *
- * Both the x402 setup wizard and the payment-sources card used to derive this
- * client-side from separate list endpoints, and disagreed with each other and
- * with the backend (e.g. whether a missing RPC URL still counted as a working
- * facilitator). Setup steps now only report complete when the server says so.
+ * The gap this closes is mostly on the Cardano side: the payment-sources card
+ * treated "a Web3CardanoV2 row exists" as "V2 is ready", so a source with no
+ * selling wallet, no Blockfrost key, or a retired contract policy id still
+ * rendered as configured. For x402 the win is narrower — see
+ * evaluateX402Readiness — but keeping both rails behind one definition stops
+ * the next consumer from inventing a third one.
  *
  * Read auth: this exposes configuration presence, not secrets — no keys,
  * addresses or URLs are returned, only booleans and short explanations.

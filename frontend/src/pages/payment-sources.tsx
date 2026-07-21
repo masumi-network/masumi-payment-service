@@ -202,10 +202,17 @@ export default function PaymentSourcesPage() {
   // wallet, no Blockfrost key or a retired contract would still have shown the
   // green "ready" banner. Readiness is the backend's call; the row count only
   // decides which copy to show while it is still incomplete.
-  const { cardano: cardanoReadiness, isLoading: isLoadingReadiness } = useRailReadiness();
-  const isV2Ready = cardanoReadiness?.isReady ?? false;
+  const {
+    cardano: cardanoReadiness,
+    isLoading: isLoadingReadiness,
+    isUnavailable: isReadinessUnavailable,
+  } = useRailReadiness();
+  // If readiness could not be fetched, fall back to the old row-exists
+  // heuristic rather than asserting either state: wrong in the same way it was
+  // before this endpoint existed, instead of newly alarming on every blip.
+  const isV2Ready = isReadinessUnavailable ? hasV2Source : (cardanoReadiness?.isReady ?? false);
   const firstBlockingCheck = cardanoReadiness?.Checks.find((check) => !check.isComplete) ?? null;
-  // Stay neutral rather than alarming while readiness is still unknown.
+  // Stay neutral rather than alarming while readiness is still resolving.
   const needsV2Setup = !isLoadingReadiness && !isV2Ready;
 
   const [sourceToSelect, setSourceToSelect] = useState<PaymentSourceExtended | undefined>(

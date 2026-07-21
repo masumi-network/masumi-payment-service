@@ -160,11 +160,18 @@ export function evaluateCardanoReadiness(input: CardanoReadinessInput): RailRead
 /**
  * x402 (EVM) readiness.
  *
- * Deliberately stricter than the backend's existing `canSettle`, which only
- * asks whether a facilitator is attached: a chain with a facilitator but no
- * RPC URL cannot actually settle. This matches the bar the admin UI already
- * used client-side (`isX402ChainUsable`) and makes the server the single
- * source of truth for it.
+ * The substantive check here is the facilitator MODE, not its presence. Both
+ * `canSettle` and the wizard ask `facilitatorWalletId || facilitatorUrl`, but
+ * `getFacilitatorForNetwork` throws when BOTH are set, so a both-set row reads
+ * as configured everywhere and then fails at settle time. Writes already reject
+ * that combination, so this only catches a legacy or hand-edited row — same
+ * defensive posture as the use-time guard in the facilitator itself.
+ *
+ * `x402.rpc_url` is defense-in-depth only: `X402Network.rpcUrl` is NOT NULL and
+ * validated as an http(s) URL on write, so it should never be blank. It is
+ * checked rather than assumed because a blank value would break balance reads
+ * and self-hosted settle alike — but it is NOT reconciling a disagreement
+ * between callers, and its passing tells you nothing you did not already know.
  *
  * `isReady` covers receiving only. Outbound spending (purchasing wallet +
  * funded budget) is reported as checks but is an optional step — an operator
@@ -189,9 +196,11 @@ export function evaluateX402Readiness(input: X402ReadinessInput): RailReadiness 
 	}
 
 	const evaluated = enabledChains.map((chain) => {
+		// Should always pass — see the note above; kept as a cheap guard, not a
+		// reconciliation of differing definitions.
 		const hasRpc = (chain.rpcUrl ?? '').trim().length > 0;
 		// Exactly one facilitator mode: self-hosted wallet XOR remote URL. Both
-		// set is rejected downstream by resolveFacilitatorData, so reporting it
+		// set is rejected downstream by getFacilitatorForNetwork, so reporting it
 		// as complete here would promise a rail that throws on first settle.
 		const hasWalletFacilitator = chain.facilitatorWalletId !== null;
 		const hasUrlFacilitator = chain.facilitatorUrl !== null;

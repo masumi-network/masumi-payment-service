@@ -1748,7 +1748,7 @@ export const postFundDistributionTrigger = <ThrowOnError extends boolean = false
 /**
  * Get payment rail readiness. (read access required)
  *
- * Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. isReady covers blocking checks only: for x402 that means receiving (enabled chain + RPC URL + exactly one facilitator), while purchasing wallet and budget are reported but optional. Only configuration presence is exposed — no keys, addresses or URLs.
+ * Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. isReady covers blocking checks only: for x402 that means an enabled chain with exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while purchasing wallet and budget are reported but optional. Only configuration presence is exposed — no keys, addresses or URLs.
  */
 export const getRailReadiness = <ThrowOnError extends boolean = false>(options: Options<GetRailReadinessData, ThrowOnError>): RequestResult<GetRailReadinessResponses, GetRailReadinessErrors, ThrowOnError> => (options.client ?? client).get<GetRailReadinessResponses, GetRailReadinessErrors, ThrowOnError>({
     responseType: 'json',

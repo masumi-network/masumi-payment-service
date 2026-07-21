@@ -155,8 +155,9 @@ describe('evaluateX402Readiness', () => {
 		expect(detailOf(rail, 'x402.facilitator')).toBe('Remote facilitator URL');
 	});
 
-	// This is the discrepancy the shared API exists to settle: the backend's
-	// canSettle ignored rpcUrl while the admin UI required it.
+	// Defense-in-depth only: rpcUrl is NOT NULL and URL-validated on write, so a
+	// blank value should be unreachable in practice. Asserted so the guard cannot
+	// silently rot, NOT because callers disagree about it.
 	it('is NOT ready when a facilitator is set but the RPC URL is blank', () => {
 		const rail = evaluateX402Readiness({ chains: [x402Chain({ rpcUrl: '   ' })] });
 

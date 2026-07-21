@@ -53,9 +53,11 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   // chain/wallet/budget lists are still read for the affordances below (which
   // chain to configure, which wallet addresses to show) — but whether a step
   // counts as DONE is the server's call.
-  const { x402: x402Readiness, isLoading: readinessLoading } = useRailReadiness({
-    network: networkType,
-  });
+  const {
+    x402: x402Readiness,
+    isLoading: readinessLoading,
+    isUnavailable: readinessUnavailable,
+  } = useRailReadiness({ network: networkType });
 
   const [currentStep, setCurrentStep] = useState(0);
   const [openDialog, setOpenDialog] = useState<DialogKind>(null);
@@ -248,9 +250,13 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
         </Button>
         <Button
           className="btn-hover-lift group gap-2"
-          disabled={!hasFacilitator}
+          // Gate on a KNOWN-incomplete rail only. If readiness could not be
+          // fetched the step still renders as not-done (never claim a green
+          // state we cannot verify), but the user must not be trapped in the
+          // wizard by a transient API failure on an already-working rail.
+          disabled={!hasFacilitator && !readinessUnavailable}
           title={
-            hasFacilitator
+            hasFacilitator || readinessUnavailable
               ? undefined
               : (facilitatorDetail ?? 'Assign a chain facilitator to continue')
           }
