@@ -1,5 +1,12 @@
 import type { UTxO } from '@meshsdk/core';
-import { getSpendableWalletUtxos, selectCollateralUtxo, sortAndLimitUtxos, sortUtxosByLovelaceDesc } from './index';
+import {
+	getSpendableWalletUtxos,
+	pickCollateralUtxo,
+	rankCollateralCandidates,
+	selectCollateralUtxo,
+	sortAndLimitUtxos,
+	sortUtxosByLovelaceDesc,
+} from './index';
 
 type AssetSpec = { unit: string; quantity: string };
 
@@ -196,5 +203,70 @@ describe('getSpendableWalletUtxos', () => {
 		const collateral = makeUtxo({ txHash: 'collateral', amount: [lovelace(8_000_000)] });
 
 		expect(getSpendableWalletUtxos([collateral], collateral)).toEqual([collateral]);
+	});
+});
+
+describe('collateral selection determinism', () => {
+	// Registry paths derive the MINTED ASSET NAME from the chosen UTxO, so an
+	// unstable order across builds would change the asset name. These lock the
+	// tie-breaks in place.
+	it('sortUtxosByLovelaceDesc breaks equal-lovelace ties by txHash#index', () => {
+		const a = makeUtxo({ txHash: 'aaaa', outputIndex: 1, amount: [lovelace(9_000_000)] });
+		const b = makeUtxo({ txHash: 'bbbb', outputIndex: 0, amount: [lovelace(9_000_000)] });
+
+		const forward = sortUtxosByLovelaceDesc([a, b]).map((u) => u.input.txHash);
+		const reversed = sortUtxosByLovelaceDesc([b, a]).map((u) => u.input.txHash);
+
+		expect(forward).toEqual(['aaaa', 'bbbb']);
+		// Same result regardless of the order the provider returned them in.
+		expect(reversed).toEqual(forward);
+	});
+
+	it('pickCollateralUtxo breaks equal-size ties deterministically', () => {
+		const a = makeUtxo({ txHash: 'aaaa', outputIndex: 0, amount: [lovelace(6_000_000)] });
+		const b = makeUtxo({ txHash: 'bbbb', outputIndex: 0, amount: [lovelace(6_000_000)] });
+
+		expect(pickCollateralUtxo([a, b])?.input.txHash).toBe('aaaa');
+		expect(pickCollateralUtxo([b, a])?.input.txHash).toBe('aaaa');
+	});
+
+	// Mixed collateral is VALID (Babbage/CIP-40 + collateral_return); pure ADA
+	// is only preferred. A token-bearing UTxO must be selected, not rejected,
+	// when it is the only qualifying candidate.
+	it('selects a token-bearing UTxO when no pure-ADA candidate qualifies', () => {
+		const mixed = makeUtxo({ txHash: 'mixed', amount: [lovelace(10_000_000), token(5)] });
+		const dust = makeUtxo({ txHash: 'dust', amount: [lovelace(1_000_000)] });
+
+		expect(pickCollateralUtxo([dust, mixed])?.input.txHash).toBe('mixed');
+	});
+
+	it('returns null instead of throwing when nothing qualifies', () => {
+		const dust = makeUtxo({ txHash: 'dust', amount: [lovelace(1_000_000)] });
+
+		expect(pickCollateralUtxo([dust])).toBeNull();
+	});
+
+	it('honours the exclusion list so a script input cannot become collateral', () => {
+		const scriptInput = makeUtxo({ txHash: 'script', outputIndex: 2, amount: [lovelace(6_000_000)] });
+		const wallet = makeUtxo({ txHash: 'wallet', outputIndex: 0, amount: [lovelace(7_000_000)] });
+
+		const picked = pickCollateralUtxo([scriptInput, wallet], 5_000_000n, [scriptInput.input]);
+
+		expect(picked?.input.txHash).toBe('wallet');
+	});
+
+	it('rankCollateralCandidates offers a usable second choice', () => {
+		const first = makeUtxo({ txHash: 'first', amount: [lovelace(6_000_000)] });
+		const second = makeUtxo({ txHash: 'second', amount: [lovelace(7_000_000)] });
+
+		expect(rankCollateralCandidates([second, first]).map((u) => u.input.txHash)).toEqual(['first', 'second']);
+	});
+
+	it('treats a malformed lovelace quantity as zero rather than throwing', () => {
+		const malformed = makeUtxo({ txHash: 'bad', amount: [{ unit: 'lovelace', quantity: 'not-a-number' }] });
+		const good = makeUtxo({ txHash: 'good', amount: [lovelace(6_000_000)] });
+
+		expect(() => pickCollateralUtxo([malformed, good])).not.toThrow();
+		expect(pickCollateralUtxo([malformed, good])?.input.txHash).toBe('good');
 	});
 });

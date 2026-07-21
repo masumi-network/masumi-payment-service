@@ -26,6 +26,7 @@ import {
 	deriveTotalCollateral,
 	getSpendableWalletUtxos,
 	lovelaceFromUtxo,
+	nativeAssetCount,
 	WALLET_SPLITTER_LOVELACE,
 } from './batch-helpers';
 import { isInsufficientBalanceBuildError } from '@masumi/payment-core/insufficient-balance-error';
@@ -453,6 +454,7 @@ async function buildBatchInteractionTx(
 		Array.from(exUnitsByIndex.values()),
 		protocolParameters,
 		lovelaceFromUtxo(collateralUtxo),
+		nativeAssetCount(collateralUtxo),
 	);
 	txBuilder
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
@@ -708,6 +710,7 @@ async function buildBatchWithdrawTx(
 		Array.from(exUnitsByIndex.values()),
 		protocolParameters,
 		lovelaceFromUtxo(collateralUtxo),
+		nativeAssetCount(collateralUtxo),
 	);
 	txBuilder
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)

@@ -1,4 +1,13 @@
-import { UTxO } from '@meshsdk/core';
+// Mesh SDK pinning (ADR 0005): this module lives in shared `src/`, which is
+// implicitly V1-pinned, yet the V2 builders consume it too. That is safe ONLY
+// because nothing here touches the mesh RUNTIME — `UTxO` is imported as a
+// TYPE, so the compiled output carries no `@meshsdk/core` import at all and
+// pkgroll cannot collapse the V2 bundle onto the V1 mesh line. Keep it that
+// way: if this file ever needs a mesh VALUE import, the collateral helpers
+// must be duplicated per rail instead (the precedent is
+// `getSpendableWalletUtxos`, which is duplicated in the V2 batch-helpers).
+import type { UTxO } from '@meshsdk/core';
+import { logger } from '@masumi/payment-core/logger';
 
 const DEFAULT_MIN_COLLATERAL_LOVELACE = 5_000_000n;
 
@@ -13,7 +22,25 @@ const DEFAULT_MIN_COLLATERAL_LOVELACE = 5_000_000n;
  * amounts; never use Number for lovelace values.
  */
 export function getLovelaceFromUtxo(utxo: UTxO): bigint {
-	return BigInt(utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '')?.quantity ?? '0');
+	const lovelaceAsset = utxo.output.amount.find((asset) => asset.unit === 'lovelace' || asset.unit === '');
+	if (lovelaceAsset == null) return 0n;
+	try {
+		return BigInt(lovelaceAsset.quantity);
+	} catch (parseError) {
+		// A malformed `quantity` means the provider returned data that violates
+		// our expectations. Stay total and return 0n (the UTxO simply drops out
+		// of collateral/selection candidacy) but log loudly so an operator can
+		// investigate — a bare `BigInt(...)` here would instead throw and abort
+		// the whole batch tick. Behaviour lifted from the V2 batch-helpers copy
+		// so both rails share it.
+		logger.warn('getLovelaceFromUtxo: malformed quantity string on UTxO; treating as 0', {
+			txHash: utxo.input.txHash,
+			outputIndex: utxo.input.outputIndex,
+			rawQuantity: lovelaceAsset.quantity,
+			error: parseError instanceof Error ? parseError.message : parseError,
+		});
+		return 0n;
+	}
 }
 
 function isSameUtxo(left: UTxO, right: UTxO): boolean {
@@ -40,32 +67,90 @@ export function getSpendableWalletUtxos(walletUtxos: UTxO[], collateralUtxo: UTx
 	return spendableUtxos.length > 0 ? spendableUtxos : walletUtxos;
 }
 
+/** Stable `txHash#index` key for a UTxO reference. */
+export function utxoRefKey(ref: { txHash: string; outputIndex: number }): string {
+	return `${ref.txHash}#${ref.outputIndex}`;
+}
+
+/** Whether a UTxO carries lovelace only (no native tokens). */
+export function isPureAdaUtxo(utxo: UTxO): boolean {
+	return utxo.output.amount.every((asset) => asset.unit === 'lovelace' || asset.unit === '');
+}
+
 /**
- * Selects a collateral input.
+ * Ranks the wallet's UTxOs by their suitability as a collateral input, best
+ * first. Every qualifying UTxO is returned, so callers that need a second
+ * choice (e.g. when the best one is already a spending input) can walk the
+ * list instead of re-implementing the ordering.
  *
- * Prefer the smallest qualifying pure-ADA UTxO so native tokens do not need
- * a collateral-return output. If none exists, fall back to the smallest
- * qualifying mixed-asset UTxO: Babbage/CIP-40 permits token-bearing
- * collateral, and Mesh emits the required collateral-return output.
+ * ORDERING — the single definition used by every rail and every action:
+ *
+ *  1. Pure-ADA before mixed. Multi-asset collateral is perfectly valid:
+ *     Babbage/CIP-40 permits it, and the builder declares `setTotalCollateral`
+ *     so a `collateral_return` output carries the balance (including the
+ *     native tokens) back to the wallet. Pure ADA is preferred only because it
+ *     keeps that return output smaller and the fee marginally lower — a
+ *     token-bearing UTxO is a fine collateral, never an error.
+ *  2. Smallest qualifying lovelace first, so a fat UTxO is not tied up as
+ *     collateral when a modest one would do.
+ *  3. `txHash#index` as the final tie-break. This is what makes selection
+ *     DETERMINISTIC: two UTxOs of equal size must not swap places between
+ *     builds, because registry paths derive the minted asset name from the
+ *     chosen input and a reordering there would change the asset name.
  */
-export function selectCollateralUtxo(utxos: UTxO[], minimumLovelace: bigint = DEFAULT_MIN_COLLATERAL_LOVELACE): UTxO {
-	const qualifyingUtxos = utxos
-		.filter((utxo) => utxo.output.amount.length > 0 && getLovelaceFromUtxo(utxo) >= minimumLovelace)
-		.map((utxo) => ({
-			utxo,
-			isPureAda: utxo.output.amount.every((asset) => asset.unit === 'lovelace' || asset.unit === ''),
-			lovelace: getLovelaceFromUtxo(utxo),
-		}))
+export function rankCollateralCandidates(
+	utxos: UTxO[],
+	minimumLovelace: bigint = DEFAULT_MIN_COLLATERAL_LOVELACE,
+	excludeRefs: Array<{ txHash: string; outputIndex: number }> = [],
+): UTxO[] {
+	const excluded = new Set(excludeRefs.map(utxoRefKey));
+
+	return utxos
+		.filter(
+			(utxo) =>
+				utxo.output.amount.length > 0 &&
+				!excluded.has(utxoRefKey(utxo.input)) &&
+				getLovelaceFromUtxo(utxo) >= minimumLovelace,
+		)
+		.map((utxo) => ({ utxo, isPureAda: isPureAdaUtxo(utxo), lovelace: getLovelaceFromUtxo(utxo) }))
 		.sort((left, right) => {
 			if (left.isPureAda !== right.isPureAda) {
 				return left.isPureAda ? -1 : 1;
 			}
 			if (left.lovelace < right.lovelace) return -1;
 			if (left.lovelace > right.lovelace) return 1;
-			return 0;
-		});
+			return utxoRefKey(left.utxo.input).localeCompare(utxoRefKey(right.utxo.input));
+		})
+		.map((entry) => entry.utxo);
+}
 
-	const collateralUtxo = qualifyingUtxos[0]?.utxo;
+/**
+ * Selects a collateral input, or null when the wallet has none big enough.
+ *
+ * See `rankCollateralCandidates` for the ordering. Returns null rather than
+ * throwing so batch callers can defer to the next tick; `selectCollateralUtxo`
+ * is the throwing variant for single-action paths that cannot defer.
+ */
+export function pickCollateralUtxo(
+	utxos: UTxO[],
+	minimumLovelace: bigint = DEFAULT_MIN_COLLATERAL_LOVELACE,
+	excludeRefs: Array<{ txHash: string; outputIndex: number }> = [],
+): UTxO | null {
+	return rankCollateralCandidates(utxos, minimumLovelace, excludeRefs)[0] ?? null;
+}
+
+/**
+ * Selects a collateral input, throwing when none qualifies.
+ *
+ * Same ordering as `pickCollateralUtxo` — this wrapper exists for the paths
+ * that treat "no collateral" as an immediate failure rather than a deferral.
+ */
+export function selectCollateralUtxo(
+	utxos: UTxO[],
+	minimumLovelace: bigint = DEFAULT_MIN_COLLATERAL_LOVELACE,
+	excludeRefs: Array<{ txHash: string; outputIndex: number }> = [],
+): UTxO {
+	const collateralUtxo = pickCollateralUtxo(utxos, minimumLovelace, excludeRefs);
 
 	if (collateralUtxo == null) {
 		throw new Error(`Collateral UTxO not found with at least ${minimumLovelace.toString()} lovelace`);
@@ -91,7 +176,13 @@ export function sortUtxosByLovelaceDesc(utxos: UTxO[]): UTxO[] {
 		.sort((a, b) => {
 			if (b.lovelace > a.lovelace) return 1;
 			if (b.lovelace < a.lovelace) return -1;
-			return 0;
+			// Deterministic tie-break. Registry paths take `[0]` as the tx's
+			// `firstUtxo` and derive the MINTED ASSET NAME from it, so two
+			// equal-lovelace UTxOs must not swap places between builds. Array
+			// sort is stable, but the provider's UTxO order is not guaranteed
+			// stable across calls, so equal sizes previously left the asset name
+			// dependent on whatever order Blockfrost happened to return.
+			return utxoRefKey(a.utxo.input).localeCompare(utxoRefKey(b.utxo.input));
 		})
 		.map((item) => item.utxo);
 }
@@ -100,7 +191,14 @@ function sortUtxosByBloatAsc(utxos: UTxO[]): UTxO[] {
 	// `.slice()` first so the in-place `.sort()` doesn't mutate the caller's
 	// array. `sortUtxosByLovelaceDesc` above already produces a fresh array via
 	// `.map(...).sort()`; mirror that immutability guarantee here.
-	return utxos.slice().sort((a, b) => a.output.amount.length - b.output.amount.length);
+	return utxos.slice().sort((a, b) => {
+		const byBloat = a.output.amount.length - b.output.amount.length;
+		if (byBloat !== 0) return byBloat;
+		// Same deterministic tie-break as `sortUtxosByLovelaceDesc`: callers take
+		// `[0]` off this list as the collateral, and equal-bloat UTxOs must not
+		// reorder between builds.
+		return utxoRefKey(a.input).localeCompare(utxoRefKey(b.input));
+	});
 }
 
 /**
