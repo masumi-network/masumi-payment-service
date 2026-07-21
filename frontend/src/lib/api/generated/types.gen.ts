@@ -3070,6 +3070,47 @@ export type FundDistributionTriggered = {
     alreadyRunning: boolean;
 };
 
+export type RailReadiness = {
+    /**
+     * The environment these results describe
+     */
+    network: 'Preprod' | 'Mainnet';
+    /**
+     * Readiness per payment rail
+     */
+    Rails: Array<{
+        /**
+         * Which payment rail this readiness block describes
+         */
+        rail: 'CardanoV2' | 'X402';
+        /**
+         * Whether the rail can actually take payments right now. True only when every blocking check is complete — optional checks (e.g. outbound spending) do not affect it
+         */
+        isReady: boolean;
+        /**
+         * Individual checks, in setup order
+         */
+        Checks: Array<{
+            /**
+             * Stable check identifier. The admin UI maps setup steps onto these
+             */
+            id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet' | 'x402.budget';
+            /**
+             * Short human-readable name for the check
+             */
+            label: string;
+            /**
+             * Whether the backend considers this check satisfied
+             */
+            isComplete: boolean;
+            /**
+             * Why the check is incomplete, or extra context when it passes. Null when there is nothing to add
+             */
+            detail: string | null;
+        }>;
+    }>;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -12754,3 +12795,34 @@ export type PostFundDistributionTriggerResponses = {
 };
 
 export type PostFundDistributionTriggerResponse = PostFundDistributionTriggerResponses[keyof PostFundDistributionTriggerResponses];
+
+export type GetRailReadinessData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Cardano environment to report on. x402 chains are grouped in by their testnet flag
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    url: '/rail-readiness';
+};
+
+export type GetRailReadinessErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetRailReadinessResponses = {
+    /**
+     * Rail readiness
+     */
+    200: {
+        status: 'success';
+        data: RailReadiness;
+    };
+};
+
+export type GetRailReadinessResponse = GetRailReadinessResponses[keyof GetRailReadinessResponses];

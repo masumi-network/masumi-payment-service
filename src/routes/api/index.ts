@@ -91,6 +91,7 @@ import {
 	deleteFundWalletEndpointDelete,
 } from './fund-wallet';
 import { getFundDistributionEndpointGet, triggerFundDistributionEndpointPost } from './fund-distribution';
+import { railReadinessEndpointGet } from './rail-readiness';
 import {
 	swapTokensEndpointPost,
 	getSwapConfirmEndpointGet,
@@ -443,6 +444,9 @@ export const apiRouter: Routing = {
 			trigger: {
 				post: triggerFundDistributionEndpointPost,
 			},
+		},
+		'rail-readiness': {
+			get: railReadinessEndpointGet,
 		},
 	},
 };
