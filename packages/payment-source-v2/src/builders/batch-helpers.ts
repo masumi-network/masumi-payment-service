@@ -10,8 +10,9 @@ import { logger } from '@masumi/payment-core/logger';
  * Lovelace amount routed into a CONDITIONAL "splitter" output that V2 batch
  * builders emit back to the funding wallet ONLY when the wallet has
  * exactly ONE non-collateral wallet UTxO after excluding forced script/asset
- * inputs. The collateral remains in Mesh's regular-input candidate list; it
- * is excluded here only when deciding whether the optional splitter is useful.
+ * inputs. The collateral is held back from Mesh's regular-input candidate
+ * list (see getSpendableWalletUtxos) and is excluded here too when deciding
+ * whether the optional splitter is useful.
  *
  * Per-length analysis — this is the non-collateral wallet UTxO count:
  *
@@ -55,9 +56,10 @@ import { logger } from '@masumi/payment-core/logger';
  * UTxOs across many txs — the splitter is a single-use second-UTxO
  * reservoir that fires only at the genuine trap-risk threshold.
  *
- * Splitter decisions deliberately count the collateral separately from
- * ordinary wallet candidates. Coin selection does not: payment interaction
- * builders pass the complete wallet list to Mesh.
+ * Splitter decisions count the collateral separately from ordinary wallet
+ * candidates, and so does coin selection: the builders hand Mesh the
+ * collateral-free candidate list first, offering the reserve only if the tx
+ * cannot otherwise balance (buildWithCollateralFallback).
  */
 export const WALLET_SPLITTER_LOVELACE = 5_000_000n;
 

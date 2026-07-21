@@ -51,4 +51,5 @@ export {
 	updateCurrentTransactionHash,
 	updateCurrentTransactionStatus,
 } from './transition-writer';
-export { assertEscrowUtxoUnspent, ESCROW_UTXO_SPENT_MESSAGE } from './escrow-utxo';
+export { assertEscrowUtxoUnspent, clearEscrowUtxoCache, ESCROW_UTXO_SPENT_MESSAGE } from './escrow-utxo';
+export { resolveEscrowSpendTransactionWrite } from './escrow-spend-transaction';

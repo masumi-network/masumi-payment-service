@@ -33,6 +33,7 @@ import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
 import { generateRedeemerData } from './redeemer-data';
 import { getSpendableWalletUtxos } from './batch-helpers';
+import { isInsufficientBalanceBuildError } from '@masumi/payment-core/insufficient-balance-error';
 
 // Mirrors `FALLBACK_COINS_PER_UTXO_SIZE` in @masumi/payment-core/config; kept
 // inline for the same test-mock reason documented in batch-interaction.ts (the
@@ -53,6 +54,29 @@ function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 			return 'Preprod';
 		default:
 			throw new Error(`Unsupported network: ${network}`);
+	}
+}
+
+/**
+ * Prefer building without the collateral reserve in the coin-selection
+ * candidate list; fall back to offering it if that made the tx unbuildable.
+ * See the twin in batch-interaction.ts for the full rationale.
+ */
+async function buildWithCollateralFallback(
+	label: string,
+	build: (allowSpendingCollateral: boolean) => Promise<string>,
+): Promise<string> {
+	try {
+		return await build(false);
+	} catch (error) {
+		if (!isInsufficientBalanceBuildError(error)) {
+			throw error;
+		}
+		logger.warn(
+			'V2 tx could not be balanced without the collateral reserve; retrying with collateral offered to coin selection',
+			{ label, error: error instanceof Error ? { name: error.name, message: error.message } : error },
+		);
+		return await build(true);
 	}
 }
 
@@ -105,45 +129,49 @@ export async function generateMasumiSmartContractInteractionTransactionAutomatic
 		});
 	}
 
-	const evaluationTx = await generateMasumiSmartContractInteractionTransactionCustomFee(
-		type,
-		blockchainProvider,
-		network,
-		script,
-		walletAddress,
-		smartContractUtxo,
-		collateralUtxo,
-		walletUtxos,
-		newInlineDatum,
-		invalidBefore,
-		invalidAfter,
-		undefined,
-		coinsPerUtxoSize,
-		rpcApiKey,
-		walletSplitterLovelace,
-	);
+	return await buildWithCollateralFallback('single-interaction', async (allowSpendingCollateral) => {
+		const evaluationTx = await generateMasumiSmartContractInteractionTransactionCustomFee(
+			type,
+			blockchainProvider,
+			network,
+			script,
+			walletAddress,
+			smartContractUtxo,
+			collateralUtxo,
+			walletUtxos,
+			newInlineDatum,
+			invalidBefore,
+			invalidAfter,
+			undefined,
+			coinsPerUtxoSize,
+			rpcApiKey,
+			walletSplitterLovelace,
+			allowSpendingCollateral,
+		);
 
-	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
-		budget: { mem: number; steps: number };
-	}>;
+		const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+			budget: { mem: number; steps: number };
+		}>;
 
-	return await generateMasumiSmartContractInteractionTransactionCustomFee(
-		type,
-		blockchainProvider,
-		network,
-		script,
-		walletAddress,
-		smartContractUtxo,
-		collateralUtxo,
-		walletUtxos,
-		newInlineDatum,
-		invalidBefore,
-		invalidAfter,
-		estimatedFee[0].budget,
-		coinsPerUtxoSize,
-		rpcApiKey,
-		walletSplitterLovelace,
-	);
+		return await generateMasumiSmartContractInteractionTransactionCustomFee(
+			type,
+			blockchainProvider,
+			network,
+			script,
+			walletAddress,
+			smartContractUtxo,
+			collateralUtxo,
+			walletUtxos,
+			newInlineDatum,
+			invalidBefore,
+			invalidAfter,
+			estimatedFee[0].budget,
+			coinsPerUtxoSize,
+			rpcApiKey,
+			walletSplitterLovelace,
+			allowSpendingCollateral,
+		);
+	});
 }
 
 async function generateMasumiSmartContractInteractionTransactionCustomFee(
@@ -172,6 +200,7 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	coinsPerUtxoSize: number = FALLBACK_COINS_PER_UTXO_SIZE,
 	rpcApiKey?: string,
 	walletSplitterLovelace?: bigint,
+	allowSpendingCollateral: boolean = false,
 ) {
 	// Pull live chain protocol params (incl. cost models) so the computed
 	// script_data_hash matches what the ledger expects. The outer Automatic
@@ -265,7 +294,9 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 	// Hold the collateral reserve back from coin selection — mesh does not
 	// exclude `txInCollateral` UTxOs from `selectUtxosFrom` candidates.
 	// See getSpendableWalletUtxos in batch-helpers.
-	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
+	txBuilder.selectUtxosFrom(
+		allowSpendingCollateral ? walletUtxos : getSpendableWalletUtxos(walletUtxos, collateralUtxo),
+	);
 
 	return await txBuilder
 		.changeAddress(walletAddress)
@@ -323,49 +354,53 @@ export async function generateMasumiSmartContractWithdrawTransactionAutomaticFee
 		// See cost-model sync comment in the interaction builder above.
 		await syncMeshCostModelsFromChainV2(rpcApiKey);
 	}
-	const evaluationTx = await generateMasumiSmartContractWithdrawTransactionCustomFee(
-		type,
-		blockchainProvider,
-		network,
-		script,
-		walletAddress,
-		smartContractUtxo,
-		collateralUtxo,
-		walletUtxos,
-		collection,
-		fee,
-		collateralReturn,
-		invalidBefore,
-		invalidAfter,
-		undefined,
-		tagMainOutputAsOwnRef,
-		rpcApiKey,
-		walletSplitterLovelace,
-	);
+	return await buildWithCollateralFallback('single-withdraw', async (allowSpendingCollateral) => {
+		const evaluationTx = await generateMasumiSmartContractWithdrawTransactionCustomFee(
+			type,
+			blockchainProvider,
+			network,
+			script,
+			walletAddress,
+			smartContractUtxo,
+			collateralUtxo,
+			walletUtxos,
+			collection,
+			fee,
+			collateralReturn,
+			invalidBefore,
+			invalidAfter,
+			undefined,
+			tagMainOutputAsOwnRef,
+			rpcApiKey,
+			walletSplitterLovelace,
+			allowSpendingCollateral,
+		);
 
-	const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
-		budget: { mem: number; steps: number };
-	}>;
+		const estimatedFee = (await blockchainProvider.evaluateTx(evaluationTx)) as Array<{
+			budget: { mem: number; steps: number };
+		}>;
 
-	return await generateMasumiSmartContractWithdrawTransactionCustomFee(
-		type,
-		blockchainProvider,
-		network,
-		script,
-		walletAddress,
-		smartContractUtxo,
-		collateralUtxo,
-		walletUtxos,
-		collection,
-		fee,
-		collateralReturn,
-		invalidBefore,
-		invalidAfter,
-		estimatedFee[0].budget,
-		tagMainOutputAsOwnRef,
-		rpcApiKey,
-		walletSplitterLovelace,
-	);
+		return await generateMasumiSmartContractWithdrawTransactionCustomFee(
+			type,
+			blockchainProvider,
+			network,
+			script,
+			walletAddress,
+			smartContractUtxo,
+			collateralUtxo,
+			walletUtxos,
+			collection,
+			fee,
+			collateralReturn,
+			invalidBefore,
+			invalidAfter,
+			estimatedFee[0].budget,
+			tagMainOutputAsOwnRef,
+			rpcApiKey,
+			walletSplitterLovelace,
+			allowSpendingCollateral,
+		);
+	});
 }
 
 async function generateMasumiSmartContractWithdrawTransactionCustomFee(
@@ -408,6 +443,7 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 	tagMainOutputAsOwnRef: boolean = false,
 	rpcApiKey?: string,
 	walletSplitterLovelace?: bigint,
+	allowSpendingCollateral: boolean = false,
 ) {
 	// See protocolParams comment in the interaction builder above. Reuse the
 	// cached chain params populated by syncMeshCostModelsFromChainV2 to avoid a
@@ -465,7 +501,9 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
-	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
+	txBuilder.selectUtxosFrom(
+		allowSpendingCollateral ? walletUtxos : getSpendableWalletUtxos(walletUtxos, collateralUtxo),
+	);
 
 	return await txBuilder
 		.changeAddress(walletAddress)

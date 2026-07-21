@@ -28,6 +28,7 @@ import {
 	lovelaceFromUtxo,
 	WALLET_SPLITTER_LOVELACE,
 } from './batch-helpers';
+import { isInsufficientBalanceBuildError } from '@masumi/payment-core/insufficient-balance-error';
 import { generateRedeemerData } from './redeemer-data';
 
 // Mirrors `FALLBACK_COINS_PER_UTXO_SIZE` in @masumi/payment-core/config.
@@ -185,6 +186,34 @@ function stringifyErrorForRetry(error: unknown): string {
 	return String(error);
 }
 
+/**
+ * Builds with the collateral reserve held back from coin selection, retrying
+ * with it offered if that made the tx unbuildable.
+ *
+ * Mesh does NOT exclude `txInCollateral` UTxOs from `selectUtxosFrom`
+ * candidates, so an unfiltered list lets coin selection spend the reserve and
+ * leave the wallet unable to fund the next escrow action. But holding it back
+ * unconditionally can leave nothing large enough to balance the tx — strictly
+ * worse. Prefer exclusion, fall back on a genuine balance failure.
+ */
+async function buildWithCollateralFallback(
+	label: string,
+	build: (allowSpendingCollateral: boolean) => Promise<string>,
+): Promise<string> {
+	try {
+		return await build(false);
+	} catch (error) {
+		if (!isInsufficientBalanceBuildError(error)) {
+			throw error;
+		}
+		logger.warn(
+			'V2 tx could not be balanced without the collateral reserve; retrying with collateral offered to coin selection',
+			{ label, error: error instanceof Error ? { name: error.name, message: error.message } : error },
+		);
+		return await build(true);
+	}
+}
+
 export function shouldRetryWithoutOptionalWalletSplitter(params: {
 	walletUtxoCount: number;
 	includeWalletSplitter: boolean;
@@ -276,7 +305,7 @@ export async function generateMasumiSmartContractBatchInteractionTransactionAuto
 	const sortedItems = sortItemsCanonical(items);
 	const nonCollateralWalletUtxoCount = countNonCollateralWalletUtxos(walletUtxos, collateralUtxo);
 
-	async function buildTwoPass(includeWalletSplitter: boolean): Promise<string> {
+	async function buildTwoPass(includeWalletSplitter: boolean, allowSpendingCollateral = false): Promise<string> {
 		const evaluationTx = await buildBatchInteractionTx(
 			blockchainProvider,
 			network,
@@ -292,6 +321,7 @@ export async function generateMasumiSmartContractBatchInteractionTransactionAuto
 			coinsPerUtxoSize,
 			rpcApiKey,
 			{ includeWalletSplitter },
+			allowSpendingCollateral,
 		);
 
 		const evaluated = (await blockchainProvider.evaluateTx(evaluationTx)) as EvalAction[];
@@ -321,11 +351,14 @@ export async function generateMasumiSmartContractBatchInteractionTransactionAuto
 			coinsPerUtxoSize,
 			rpcApiKey,
 			{ includeWalletSplitter },
+			allowSpendingCollateral,
 		);
 	}
 
 	try {
-		return await buildTwoPass(true);
+		return await buildWithCollateralFallback('batch-interaction', (allowSpendingCollateral) =>
+			buildTwoPass(true, allowSpendingCollateral),
+		);
 	} catch (error) {
 		if (
 			!shouldRetryWithoutOptionalWalletSplitter({
@@ -341,7 +374,9 @@ export async function generateMasumiSmartContractBatchInteractionTransactionAuto
 			itemCount: sortedItems.length,
 			error: error instanceof Error ? { name: error.name, message: error.message } : error,
 		});
-		return await buildTwoPass(false);
+		return await buildWithCollateralFallback('batch-interaction-no-splitter', (allowSpendingCollateral) =>
+			buildTwoPass(false, allowSpendingCollateral),
+		);
 	}
 }
 
@@ -359,6 +394,7 @@ async function buildBatchInteractionTx(
 	coinsPerUtxoSize: number,
 	rpcApiKey?: string,
 	options: { includeWalletSplitter?: boolean } = {},
+	allowSpendingCollateral: boolean = false,
 ): Promise<string> {
 	// Reuse the cached mesh-format chain params populated by
 	// syncMeshCostModelsFromChain (see comment in the outer Automatic builder).
@@ -487,9 +523,11 @@ async function buildBatchInteractionTx(
 	//     `[batch-fallback]` on dense batches (the regression that
 	//     surfaced the `<= 2` threshold being too loose).
 	//
-	// `walletUtxos` includes the declared collateral because CIP-40 permits a
-	// payment-key UTxO to appear in both input sets. Mesh performs the final
-	// regular-input selection from this complete candidate list.
+	// `walletUtxos` still includes the declared collateral — CIP-40 permits a
+	// payment-key UTxO in both input sets — but it is held back from the
+	// candidate list handed to Mesh below, and offered only if the tx cannot
+	// otherwise balance. `nonCollateralWalletUtxoCount` has always excluded it,
+	// so the splitter threshold is unaffected.
 	//
 	// See `batch-helpers.ts WALLET_SPLITTER_LOVELACE` for the lifecycle
 	// rationale and the cross-module invariant
@@ -503,7 +541,9 @@ async function buildBatchInteractionTx(
 	// wallets. The service layer only excludes script-spending refs, so the
 	// collateral is held back here instead. Mesh then picks only what's
 	// needed for fees + change.
-	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
+	txBuilder.selectUtxosFrom(
+		allowSpendingCollateral ? walletUtxos : getSpendableWalletUtxos(walletUtxos, collateralUtxo),
+	);
 
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)
@@ -574,46 +614,50 @@ export async function generateMasumiSmartContractBatchWithdrawTransactionAutomat
 
 	const sortedItems = sortItemsCanonical(items);
 
-	const evaluationTx = await buildBatchWithdrawTx(
-		blockchainProvider,
-		network,
-		script,
-		walletAddress,
-		collateralUtxo,
-		walletUtxos,
-		sortedItems,
-		invalidBefore,
-		invalidAfter,
-		new Map(sortedItems.map((_, idx) => [idx, { ...DEFAULT_EX_UNITS }])),
-		rpcApiKey,
-	);
+	return await buildWithCollateralFallback('batch-withdraw', async (allowSpendingCollateral) => {
+		const evaluationTx = await buildBatchWithdrawTx(
+			blockchainProvider,
+			network,
+			script,
+			walletAddress,
+			collateralUtxo,
+			walletUtxos,
+			sortedItems,
+			invalidBefore,
+			invalidAfter,
+			new Map(sortedItems.map((_, idx) => [idx, { ...DEFAULT_EX_UNITS }])),
+			rpcApiKey,
+			allowSpendingCollateral,
+		);
 
-	const evaluated = (await blockchainProvider.evaluateTx(evaluationTx)) as EvalAction[];
-	const spendBudgets = buildSpendBudgetMap(evaluated);
+		const evaluated = (await blockchainProvider.evaluateTx(evaluationTx)) as EvalAction[];
+		const spendBudgets = buildSpendBudgetMap(evaluated);
 
-	for (let idx = 0; idx < sortedItems.length; idx++) {
-		if (!spendBudgets.has(idx)) {
-			throw new Error(
-				`evaluateTx did not return a SPEND budget for batch withdraw index ${idx}; ` +
-					`got ${evaluated.length} action(s) of which ` +
-					`${evaluated.filter((a) => a.tag === 'SPEND').length} were SPEND`,
-			);
+		for (let idx = 0; idx < sortedItems.length; idx++) {
+			if (!spendBudgets.has(idx)) {
+				throw new Error(
+					`evaluateTx did not return a SPEND budget for batch withdraw index ${idx}; ` +
+						`got ${evaluated.length} action(s) of which ` +
+						`${evaluated.filter((a) => a.tag === 'SPEND').length} were SPEND`,
+				);
+			}
 		}
-	}
 
-	return await buildBatchWithdrawTx(
-		blockchainProvider,
-		network,
-		script,
-		walletAddress,
-		collateralUtxo,
-		walletUtxos,
-		sortedItems,
-		invalidBefore,
-		invalidAfter,
-		spendBudgets,
-		rpcApiKey,
-	);
+		return await buildBatchWithdrawTx(
+			blockchainProvider,
+			network,
+			script,
+			walletAddress,
+			collateralUtxo,
+			walletUtxos,
+			sortedItems,
+			invalidBefore,
+			invalidAfter,
+			spendBudgets,
+			rpcApiKey,
+			allowSpendingCollateral,
+		);
+	});
 }
 
 async function buildBatchWithdrawTx(
@@ -628,6 +672,7 @@ async function buildBatchWithdrawTx(
 	invalidAfter: number,
 	exUnitsByIndex: Map<number, ExUnits>,
 	rpcApiKey?: string,
+	allowSpendingCollateral: boolean = false,
 ): Promise<string> {
 	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
 	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
@@ -704,7 +749,9 @@ async function buildBatchWithdrawTx(
 
 	// See the matching note in buildBatchInteractionTx: hand the candidate
 	// wallet UTxOs to Mesh's coin selector instead of force-adding every one.
-	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
+	txBuilder.selectUtxosFrom(
+		allowSpendingCollateral ? walletUtxos : getSpendableWalletUtxos(walletUtxos, collateralUtxo),
+	);
 
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)
