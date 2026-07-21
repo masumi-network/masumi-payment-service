@@ -26,7 +26,20 @@ class MockMeshTxBuilder {
 	requiredSignerHash = jest.fn(() => this);
 	setNetwork = jest.fn(() => this);
 	metadataValue = jest.fn(() => this);
-	complete = jest.fn(async () => `unsigned-tx-${builders.indexOf(this) + 1}`);
+	complete = jest.fn(async () => {
+		if (MockMeshTxBuilder.failWhenCollateralExcluded) {
+			const calls = this.selectUtxosFrom.mock.calls;
+			const offered = (calls.length > 0 ? calls[calls.length - 1][0] : undefined) as
+				| Array<{ input: { txHash: string } }>
+				| undefined;
+			if (!(offered?.some((utxo) => utxo.input.txHash === 'collateral') ?? false)) {
+				throw new Error('UTxO Balance Insufficient');
+			}
+		}
+		return `unsigned-tx-${builders.indexOf(this) + 1}`;
+	});
+
+	static failWhenCollateralExcluded = false;
 
 	constructor() {
 		builders.push(this);
@@ -68,7 +81,10 @@ jest.unstable_mockModule('@/utils/logger', () => ({
 	},
 }));
 
-const { generateMasumiSmartContractInteractionTransactionAutomaticFees } = await import('./index');
+const {
+	generateMasumiSmartContractInteractionTransactionAutomaticFees,
+	generateMasumiSmartContractWithdrawTransactionAutomaticFees,
+} = await import('./index');
 
 function createUtxo(txHash: string, lovelace: string) {
 	return {
@@ -138,6 +154,119 @@ describe('automatic smart-contract transaction input selection', () => {
 				'addr_test1_contract',
 				0,
 			);
+		}
+	});
+
+	// The whole point of the rework: a static exclusion turned a buildable tx
+	// into a hard failure whenever the collateral was the only funder big
+	// enough. Prefer holding it back, but never at the cost of not transacting.
+	it('retries with the collateral offered when the tx cannot balance without it', async () => {
+		const collateralUtxo = createUtxo('collateral', '8281874');
+		const dustUtxo = createUtxo('dust', '1500000');
+		const smartContractUtxo = {
+			...createUtxo('contract', '7331310'),
+			output: { ...createUtxo('contract', '7331310').output, address: 'addr_test1_contract' },
+		};
+		const blockchainProvider = {
+			fetchProtocolParameters: jest.fn(async () => ({ coinsPerUtxoSize: 4310 })),
+			evaluateTx: jest.fn(async () => [{ budget: { mem: 100, steps: 200 } }]),
+		};
+
+		MockMeshTxBuilder.failWhenCollateralExcluded = true;
+		try {
+			const result = await generateMasumiSmartContractInteractionTransactionAutomaticFees(
+				'SubmitResult',
+				blockchainProvider as never,
+				'preprod',
+				{ version: 'V3', code: 'script-cbor' },
+				'addr_test1_wallet',
+				smartContractUtxo as never,
+				collateralUtxo as never,
+				[collateralUtxo, dustUtxo] as never,
+				{ alternative: 1, fields: [] },
+				100,
+				200,
+			);
+
+			expect(result).toBeDefined();
+			expect(builders[0].selectUtxosFrom).toHaveBeenCalledWith([dustUtxo]);
+			expect(builders[builders.length - 1].selectUtxosFrom).toHaveBeenCalledWith([collateralUtxo, dustUtxo]);
+		} finally {
+			MockMeshTxBuilder.failWhenCollateralExcluded = false;
+		}
+	});
+
+	it('propagates a non-balance build failure instead of retrying with collateral', async () => {
+		const collateralUtxo = createUtxo('collateral', '8281874');
+		const otherUtxo = createUtxo('other', '9000000');
+		const smartContractUtxo = {
+			...createUtxo('contract', '7331310'),
+			output: { ...createUtxo('contract', '7331310').output, address: 'addr_test1_contract' },
+		};
+		const blockchainProvider = {
+			fetchProtocolParameters: jest.fn(async () => ({ coinsPerUtxoSize: 4310 })),
+			evaluateTx: jest.fn(async () => {
+				throw new Error('PPViewHashesDontMatch');
+			}),
+		};
+
+		await expect(
+			generateMasumiSmartContractInteractionTransactionAutomaticFees(
+				'SubmitResult',
+				blockchainProvider as never,
+				'preprod',
+				{ version: 'V3', code: 'script-cbor' },
+				'addr_test1_wallet',
+				smartContractUtxo as never,
+				collateralUtxo as never,
+				[collateralUtxo, otherUtxo] as never,
+				{ alternative: 1, fields: [] },
+				100,
+				200,
+			),
+		).rejects.toThrow('PPViewHashesDontMatch');
+
+		expect(builders).toHaveLength(1);
+	});
+
+	// collect-refund — the path that wedged on the live server — goes through the
+	// WITHDRAW builder, not the interaction one. Its fallback is wired
+	// separately, so it needs its own coverage.
+	it('retries the withdraw build with collateral offered when it cannot balance without it', async () => {
+		const collateralUtxo = createUtxo('collateral', '8281874');
+		const dustUtxo = createUtxo('dust', '1500000');
+		const smartContractUtxo = {
+			...createUtxo('contract', '7331310'),
+			output: { ...createUtxo('contract', '7331310').output, address: 'addr_test1_contract' },
+		};
+		const blockchainProvider = {
+			fetchProtocolParameters: jest.fn(async () => ({ coinsPerUtxoSize: 4310 })),
+			evaluateTx: jest.fn(async () => [{ budget: { mem: 100, steps: 200 } }]),
+		};
+
+		MockMeshTxBuilder.failWhenCollateralExcluded = true;
+		try {
+			const result = await generateMasumiSmartContractWithdrawTransactionAutomaticFees(
+				'CollectRefund',
+				blockchainProvider as never,
+				'preprod',
+				{ version: 'V3', code: 'script-cbor' },
+				'addr_test1_wallet',
+				smartContractUtxo as never,
+				collateralUtxo as never,
+				[collateralUtxo, dustUtxo] as never,
+				{ collectAssets: smartContractUtxo.output.amount, collectionAddress: 'addr_test1_wallet' },
+				null,
+				null,
+				100,
+				200,
+			);
+
+			expect(result).toBeDefined();
+			expect(builders[0].selectUtxosFrom).toHaveBeenCalledWith([dustUtxo]);
+			expect(builders[builders.length - 1].selectUtxosFrom).toHaveBeenCalledWith([collateralUtxo, dustUtxo]);
+		} finally {
+			MockMeshTxBuilder.failWhenCollateralExcluded = false;
 		}
 	});
 });

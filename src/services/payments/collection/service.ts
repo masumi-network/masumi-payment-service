@@ -20,9 +20,9 @@ import {
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPaymentAction,
-	createPendingTransaction,
 	createTxWindow,
 	loadHotWalletSession,
+	resolveEscrowSpendTransactionWrite,
 	updateCurrentTransactionHash,
 	writePaymentErrorTransition,
 } from '@/services/shared';
@@ -235,21 +235,30 @@ async function processSinglePaymentCollection(
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
-	await prisma.paymentRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPaymentAction(PaymentAction.WithdrawInitiated),
-			// See purchases/collect-refund — blanking the current row in place
-			// destroyed the confirmed escrow tx hash whenever anything after
-			// this write failed. Create a new pending row instead.
-			...createPendingTransaction(request.SmartContractWallet.id),
-			TransactionHistory: {
-				connect: {
-					id: request.CurrentTransaction!.id,
-				},
+	// Record the outgoing tx WITHOUT touching the escrow row, and resolve the
+	// write shape from a FRESH read: advancedRetryAll replays this function and
+	// the closed-over `request` never refreshes, so unconditionally creating
+	// would mint an orphan pending row per attempt — unreachable by every
+	// reaper. See resolveEscrowSpendTransactionWrite.
+	const escrowTransactionId = request.CurrentTransaction!.id;
+	const started = await prisma.$transaction(async (tx) => {
+		const fresh = await tx.paymentRequest.findUniqueOrThrow({
+			where: { id: request.id },
+			select: { CurrentTransaction: { select: { id: true, txHash: true, status: true } } },
+		});
+		return await tx.paymentRequest.update({
+			where: { id: request.id },
+			data: {
+				...connectPreviousAction(request.nextActionId),
+				...createNextPaymentAction(PaymentAction.WithdrawInitiated),
+				...resolveEscrowSpendTransactionWrite(
+					fresh.CurrentTransaction,
+					request.SmartContractWallet!.id,
+					escrowTransactionId,
+				),
 			},
-		},
+			select: { currentTransactionId: true },
+		});
 	});
 	//submit the transaction to the blockchain
 	const newTxHash = await wallet.submitTx(signedTx);
@@ -257,7 +266,14 @@ async function processSinglePaymentCollection(
 
 	await prisma.paymentRequest.update({
 		where: { id: request.id },
-		data: updateCurrentTransactionHash(newTxHash),
+		data: {
+			...updateCurrentTransactionHash(newTxHash),
+			// Withdraw is terminal — nothing later archives this row, so connect it
+			// explicitly or the withdrawal tx never reaches TransactionHistory.
+			...(started.currentTransactionId != null
+				? { TransactionHistory: { connect: { id: started.currentTransactionId } } }
+				: {}),
+		},
 	});
 	logger.debug(`Created withdrawal transaction:
         Tx ID: ${newTxHash}

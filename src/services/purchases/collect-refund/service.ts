@@ -19,9 +19,9 @@ import {
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPurchaseAction,
-	createPendingTransaction,
 	createTxWindow,
 	loadHotWalletSession,
+	resolveEscrowSpendTransactionWrite,
 	updateCurrentTransactionHash,
 	writePurchaseErrorTransition,
 } from '@/services/shared';
@@ -159,26 +159,32 @@ async function processSingleRefundCollection(
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
-	await prisma.purchaseRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPurchaseAction(PurchasingAction.WithdrawRefundInitiated, {
-				submittedTxHash: null,
-			}),
-			// Create a NEW pending row rather than blanking the current one in
-			// place. The in-place update overwrote the confirmed escrow tx hash
-			// with null and downgraded its status, so any failure before
-			// `updateCurrentTransactionHash` below destroyed the only record of
-			// the UTxO this request depends on — leaving the request stuck on
-			// 'Transaction hash not found' with nothing to recover from.
-			...createPendingTransaction(request.SmartContractWallet.id),
-			TransactionHistory: {
-				connect: {
-					id: request.CurrentTransaction!.id,
-				},
+	// Record the outgoing tx WITHOUT touching the escrow row, and resolve the
+	// write shape from a FRESH read: advancedRetryAll replays this function and
+	// the closed-over `request` never refreshes, so unconditionally creating
+	// would mint an orphan pending row per attempt — unreachable by every
+	// reaper. See resolveEscrowSpendTransactionWrite.
+	const escrowTransactionId = request.CurrentTransaction!.id;
+	const started = await prisma.$transaction(async (tx) => {
+		const fresh = await tx.purchaseRequest.findUniqueOrThrow({
+			where: { id: request.id },
+			select: { CurrentTransaction: { select: { id: true, txHash: true, status: true } } },
+		});
+		return await tx.purchaseRequest.update({
+			where: { id: request.id },
+			data: {
+				...connectPreviousAction(request.nextActionId),
+				...createNextPurchaseAction(PurchasingAction.WithdrawRefundInitiated, {
+					submittedTxHash: null,
+				}),
+				...resolveEscrowSpendTransactionWrite(
+					fresh.CurrentTransaction,
+					request.SmartContractWallet!.id,
+					escrowTransactionId,
+				),
 			},
-		},
+			select: { currentTransactionId: true },
+		});
 	});
 
 	//submit the transaction to the blockchain
@@ -187,7 +193,14 @@ async function processSingleRefundCollection(
 
 	await prisma.purchaseRequest.update({
 		where: { id: request.id },
-		data: updateCurrentTransactionHash(newTxHash),
+		data: {
+			...updateCurrentTransactionHash(newTxHash),
+			// CollectRefund is terminal — nothing later archives this row, so connect it
+			// explicitly or the withdrawal tx never reaches TransactionHistory.
+			...(started.currentTransactionId != null
+				? { TransactionHistory: { connect: { id: started.currentTransactionId } } }
+				: {}),
+		},
 	});
 
 	logger.debug(`Created withdrawal transaction:
