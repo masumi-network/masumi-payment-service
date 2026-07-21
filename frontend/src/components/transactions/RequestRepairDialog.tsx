@@ -151,12 +151,16 @@ export function RequestRepairDialog({
       }
 
       const data = response.data?.data;
+      // The repair only repoints the transaction and syncs the on-chain state.
+      // It deliberately does not touch NextAction, so a request parked in an
+      // error state stays parked until Retry/Clear is used — say so, or the
+      // operator reasonably assumes the repair finished the job.
       toast.success(
         data
           ? `Request repaired — on-chain state is now ${formatOnChainState(data.newOnChainState)}${
               data.forced ? ' (forced)' : ''
-            }`
-          : 'Request repaired',
+            }. If the request is in an error state, use Retry or Clear to resume it.`
+          : 'Request repaired. If the request is in an error state, use Retry or Clear to resume it.',
       );
       onRepaired();
       onClose();

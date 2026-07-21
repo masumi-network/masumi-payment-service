@@ -310,6 +310,14 @@ export async function processTransactionData(
 	const extractedData = extractOnChainTransactionData(tx, paymentContract);
 
 	if (extractedData.type == 'Invalid') {
+		// KNOWN RESIDUAL SILENT PATH. 'Invalid' covers txs at the contract
+		// address that do not fit the expected 1-input/1-redeemer/1-output
+		// interaction shape. Most are spam or foreign txs and skipping is
+		// correct — but a parser gap (a tx shape this version cannot read)
+		// lands here too and is skipped WITHOUT quarantine, advancing the
+		// checkpoint past it. Quarantining these would let spam pile up
+		// indefinitely, so the trade-off is deliberate; if a legitimate tx is
+		// ever classified Invalid, this log line is the only trace.
 		logger.info('Skipping invalid tx: ', tx.tx.tx_hash, extractedData.error);
 		return;
 	} else if (extractedData.type == 'Initial') {

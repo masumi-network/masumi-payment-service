@@ -2,6 +2,7 @@ import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { createApiClient, withJobLock } from '@/services/shared';
+import { CONFIG } from '@masumi/payment-core/config';
 import { Mutex } from 'async-mutex';
 import { getExtendedTxInformation } from '../blockchain';
 import {
@@ -15,6 +16,9 @@ import { processTransactionData } from '../service';
 
 /** How many quarantined transactions one tick will attempt. */
 const MAX_PER_TICK = 25;
+
+/** Re-check cadence while waiting for a shallow tx to reach the threshold. */
+const CONFIRMATION_WAIT_MS = 60 * 1000;
 
 /**
  * A quarantined transaction is retried until it succeeds, is found to no longer
@@ -76,6 +80,10 @@ export async function reconcileQuarantinedTransactions(): Promise<void> {
 				resolvedAt: null,
 				needsOperator: false,
 				nextRetryAt: { lte: new Date() },
+				// Soft-deleted payment sources keep their rows (the FK cascade only
+				// fires on hard delete); without this filter their entries would
+				// cycle through the backoff ladder forever.
+				PaymentSource: { deletedAt: null },
 			},
 			orderBy: [{ blockHeight: 'asc' }, { txIndex: 'asc' }, { createdAt: 'asc' }],
 			take: MAX_PER_TICK,
@@ -136,6 +144,20 @@ async function retryQuarantinedTransaction(entry: QuarantineEntry): Promise<Quar
 
 	if (failures.length > 0) {
 		return await handleRetryFailure(entry, failures[0].error, blockfrost);
+	}
+
+	// The scanner refuses to process below BLOCK_CONFIRMATIONS_THRESHOLD — that
+	// is its rollback protection, and applying a still-shallow tx here would
+	// bypass it (a tx quarantined moments after landing can be retried within
+	// 30s, well before it is deep enough). Defer WITHOUT burning an attempt:
+	// waiting for confirmations is not a failure, and counting it as one would
+	// walk healthy entries toward needsOperator.
+	if (txData[0].block.confirmations < CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD) {
+		await prisma.txSyncQuarantine.update({
+			where: { id: entry.id },
+			data: { nextRetryAt: new Date(Date.now() + CONFIRMATION_WAIT_MS) },
+		});
+		return 'retry';
 	}
 
 	try {

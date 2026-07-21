@@ -148,9 +148,14 @@ export async function getExtendedTxInformation(
 					metadata: metadata,
 					utxos: utxos,
 					transaction: transaction,
-					blockTime: tx.block_time,
-					blockHeight: tx.block_height,
-					txIndex: tx.tx_index,
+					// From the FETCHED details, never the caller's enumeration input.
+					// The quarantine reconciler calls this with stub values (it only
+					// has a txHash), and blockTime feeds the pay-by-time timeout check
+					// in the tx handlers — a stubbed 0 there would make a timed-out
+					// funds-lock look valid.
+					blockTime: txDetails.block_time,
+					blockHeight: txDetails.block_height,
+					txIndex: txDetails.index,
 				};
 			}),
 			errorResolvers: [

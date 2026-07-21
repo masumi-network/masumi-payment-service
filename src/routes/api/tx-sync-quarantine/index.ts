@@ -107,6 +107,11 @@ export const retryTxSyncQuarantineSchemaOutput = txSyncQuarantineEntrySchema;
  * Does not perform the retry inline — the reconciler owns that path, and having
  * two implementations of "apply a transaction" is exactly the drift this whole
  * change is trying to avoid.
+ *
+ * `attempts` is reset to 0 DELIBERATELY: an operator pressing Retry usually
+ * means the underlying condition changed (key rotated, outage over), so the
+ * entry earns a fresh backoff ladder instead of resuming near the
+ * needsOperator ceiling it just came from.
  */
 export const retryTxSyncQuarantinePost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',

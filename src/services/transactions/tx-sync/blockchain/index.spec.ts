@@ -21,6 +21,19 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	},
 }));
 
+jest.unstable_mockModule('@emurgo/cardano-serialization-lib-nodejs', () => ({
+	Transaction: { from_bytes: jest.fn(() => ({})) },
+}));
+
+jest.unstable_mockModule('@masumi/payment-core/config', () => ({
+	CONFIG: { BLOCK_CONFIRMATIONS_THRESHOLD: 1 },
+	CONSTANTS: { MAX_DEFAULT_SMART_CONTRACT_HISTORY_LEVELS: 10 },
+}));
+
+jest.unstable_mockModule('@masumi/payment-core/db', () => ({
+	prisma: {},
+}));
+
 let getExtendedTxInformation!: typeof import('./index').getExtendedTxInformation;
 
 beforeAll(async () => {
@@ -142,5 +155,49 @@ describe('getExtendedTxInformation', () => {
 		);
 
 		expect(txData.map((x) => x.tx.tx_hash)).toEqual(['idx-3', 'idx-4', 'idx-5']);
+	});
+
+	// Exercises the REAL per-tx fetch closure (the mock below executes the
+	// operations instead of stubbing their results). The quarantine reconciler
+	// calls this function with stub enumeration values because it only has a
+	// txHash — blockTime feeds the pay-by-time timeout check in the tx handlers,
+	// so it must come from the fetched details, never from the caller's input.
+	it('takes blockTime and chain position from the fetched details, not the enumeration input', async () => {
+		mockAdvancedRetryAll.mockImplementationOnce(
+			async ({ operations }: { operations: Array<() => Promise<unknown>> }) => {
+				return await Promise.all(operations.map(async (operation) => ({ success: true, result: await operation() })));
+			},
+		);
+
+		const blockfrost = {
+			txs: jest.fn(async () => ({
+				block: 'block-hash',
+				fees: '1000',
+				block_height: 13705455,
+				block_time: 1_784_614_225,
+				index: 5,
+				output_amount: [],
+				utxo_count: 5,
+				withdrawal_count: 0,
+				asset_mint_or_burn_count: 0,
+				redeemer_count: 1,
+				valid_contract: true,
+			})),
+			blocks: jest.fn(async () => ({ confirmations: 10 })),
+			txsCbor: jest.fn(async () => ({ cbor: 'aa' })),
+			txsUtxos: jest.fn(async () => ({ inputs: [], outputs: [] })),
+		};
+
+		// Deliberately wrong stub values, as the reconciler supplies them.
+		const { txData } = await getExtendedTxInformation(
+			[{ tx_hash: 'quarantined-tx', block_time: 0, block_height: 0, tx_index: 0 }],
+			blockfrost as never,
+			1,
+		);
+
+		expect(txData).toHaveLength(1);
+		expect(txData[0].blockTime).toBe(1_784_614_225);
+		expect(txData[0].blockHeight).toBe(13705455);
+		expect(txData[0].txIndex).toBe(5);
 	});
 });

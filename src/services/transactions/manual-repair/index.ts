@@ -1,5 +1,6 @@
 import { OnChainState, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { logger } from '@masumi/payment-core/logger';
 import { convertNetwork } from '@masumi/payment-core/network';
 import { onChainStateFromSmartContractState } from '@masumi/payment-core/smart-contract-state';
@@ -161,76 +162,85 @@ export async function repairRequestTransaction(params: {
 		throw new RepairValidationError('An on-chain state must be supplied when validation is skipped');
 	}
 
-	return await prisma.$transaction(async (tx) => {
-		const request =
-			params.kind === 'purchase'
-				? await tx.purchaseRequest.findUnique({
-						where: { id: params.requestId },
-						select: {
-							id: true,
-							onChainState: true,
-							currentTransactionId: true,
-							TransactionHistory: { select: { id: true } },
-						},
-					})
-				: await tx.paymentRequest.findUnique({
-						where: { id: params.requestId },
-						select: {
-							id: true,
-							onChainState: true,
-							currentTransactionId: true,
-							TransactionHistory: { select: { id: true } },
-						},
-					});
+	// Serializable + conflict retry: this races tx-sync, which may be applying
+	// the very transaction being repaired. Without it a concurrent handler could
+	// interleave between our read and write and one of the two updates would be
+	// silently lost. Same pattern as error-state-recovery.
+	return await retryOnSerializationConflict(() =>
+		prisma.$transaction(
+			async (tx) => {
+				const request =
+					params.kind === 'purchase'
+						? await tx.purchaseRequest.findUnique({
+								where: { id: params.requestId },
+								select: {
+									id: true,
+									onChainState: true,
+									currentTransactionId: true,
+									TransactionHistory: { select: { id: true } },
+								},
+							})
+						: await tx.paymentRequest.findUnique({
+								where: { id: params.requestId },
+								select: {
+									id: true,
+									onChainState: true,
+									currentTransactionId: true,
+									TransactionHistory: { select: { id: true } },
+								},
+							});
 
-		if (request == null) {
-			throw new RepairValidationError(`${params.kind} request ${params.requestId} not found`);
-		}
+				if (request == null) {
+					throw new RepairValidationError(`${params.kind} request ${params.requestId} not found`);
+				}
 
-		const existingIds = [
-			...request.TransactionHistory.map((x) => x.id),
-			...(request.currentTransactionId != null ? [request.currentTransactionId] : []),
-		];
+				const existingIds = [
+					...request.TransactionHistory.map((x) => x.id),
+					...(request.currentTransactionId != null ? [request.currentTransactionId] : []),
+				];
 
-		const transactionId = await resolveTransactionRow(tx, {
-			txHash: params.txHash,
-			existingIds,
-			newOnChainState,
-		});
+				const transactionId = await resolveTransactionRow(tx, {
+					txHash: params.txHash,
+					existingIds,
+					newOnChainState,
+				});
 
-		// Connect to history as well as current. A terminal action has no later
-		// step to archive it, and an entry missing from history is invisible to
-		// error-state-recovery's candidate selection.
-		const data = {
-			currentTransactionId: transactionId,
-			onChainState: newOnChainState,
-			...(params.validation?.resultHash != null ? { resultHash: params.validation.resultHash } : {}),
-			TransactionHistory: { connect: { id: transactionId } },
-		};
+				// Connect to history as well as current. A terminal action has no later
+				// step to archive it, and an entry missing from history is invisible to
+				// error-state-recovery's candidate selection.
+				const data = {
+					currentTransactionId: transactionId,
+					onChainState: newOnChainState,
+					...(params.validation?.resultHash != null ? { resultHash: params.validation.resultHash } : {}),
+					TransactionHistory: { connect: { id: transactionId } },
+				};
 
-		if (params.kind === 'purchase') {
-			await tx.purchaseRequest.update({ where: { id: params.requestId }, data });
-		} else {
-			await tx.paymentRequest.update({ where: { id: params.requestId }, data });
-		}
+				if (params.kind === 'purchase') {
+					await tx.purchaseRequest.update({ where: { id: params.requestId }, data });
+				} else {
+					await tx.paymentRequest.update({ where: { id: params.requestId }, data });
+				}
 
-		logger.warn('Request transaction repaired manually', {
-			kind: params.kind,
-			requestId: params.requestId,
-			txHash: params.txHash,
-			transactionId,
-			previousOnChainState: request.onChainState,
-			newOnChainState,
-			forced,
-		});
+				logger.warn('Request transaction repaired manually', {
+					kind: params.kind,
+					requestId: params.requestId,
+					txHash: params.txHash,
+					transactionId,
+					previousOnChainState: request.onChainState,
+					newOnChainState,
+					forced,
+				});
 
-		return {
-			requestId: params.requestId,
-			txHash: params.txHash,
-			transactionId,
-			previousOnChainState: request.onChainState,
-			newOnChainState,
-			forced,
-		};
-	});
+				return {
+					requestId: params.requestId,
+					txHash: params.txHash,
+					transactionId,
+					previousOnChainState: request.onChainState,
+					newOnChainState,
+					forced,
+				};
+			},
+			{ isolationLevel: 'Serializable' },
+		),
+	);
 }
