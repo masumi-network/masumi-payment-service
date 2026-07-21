@@ -16,6 +16,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, getLovelaceFromAmounts, getNativeTokenCount, calculateTopUpAmount } from '@/utils/min-utxo';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
+import { getSpendableWalletUtxos } from '@/utils/utxo';
 
 function convertMeshNetworkToPrismaNetwork(network: Network): PrismaNetwork {
 	switch (network) {
@@ -230,11 +231,12 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		.txOut(smartContractAddress, outputAmount)
 		.txOutInlineDatumValue(newInlineDatum);
 
-	// Keep every wallet UTxO available to Mesh's final balancing pass. Declaring
-	// one UTxO as collateral does not require removing it from regular input
-	// selection, and doing so can hide the only input large enough to fund the
-	// outputs, fees, and minimum change.
-	txBuilder.selectUtxosFrom(walletUtxos);
+	// Keep the collateral reserve out of regular coin selection. Mesh does not
+	// exclude `txInCollateral` UTxOs from `selectUtxosFrom` candidates, so it
+	// otherwise spends the reserve and the next escrow action has no collateral
+	// left. `getSpendableWalletUtxos` falls back to the unfiltered set when the
+	// collateral is the only input available to balance with.
+	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
 
 	// Optional self-send splitter for V2 single-item callers. See docstring
 	// on the public AutomaticFees entry point. Emitted BEFORE
@@ -491,7 +493,9 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
-	txBuilder.selectUtxosFrom(walletUtxos);
+	// See the interaction builder above — the collateral reserve must stay out
+	// of regular coin selection.
+	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
 
 	return await txBuilder
 		.changeAddress(walletAddress)

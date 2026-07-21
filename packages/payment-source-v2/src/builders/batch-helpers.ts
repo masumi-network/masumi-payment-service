@@ -149,8 +149,9 @@ function refKey(input: { txHash: string; outputIndex: number }): string {
  * Keeps every payment-key wallet candidate available to Mesh while excluding
  * only inputs that the transaction already spends as scripts.
  *
- * In particular, callers must not exclude the declared collateral: CIP-40
- * allows a VKey UTxO to appear in both regular and collateral input sets.
+ * This does NOT exclude the declared collateral — see
+ * `getSpendableWalletUtxos`, which the builders apply immediately before
+ * handing the candidates to `selectUtxosFrom`.
  */
 export function getWalletUtxosForSelection(
 	utxos: UTxO[],
@@ -158,6 +159,33 @@ export function getWalletUtxosForSelection(
 ): UTxO[] {
 	const scriptInputKeys = new Set(scriptSpendingInputs.map(refKey));
 	return utxos.filter((utxo) => !scriptInputKeys.has(refKey(utxo.input)));
+}
+
+/**
+ * Returns the wallet UTxOs Mesh may consume as regular inputs.
+ *
+ * CIP-40 permits a VKey UTxO in both the regular and collateral input sets,
+ * and Mesh leans on that: `selectUtxosFrom` does NOT exclude UTxOs declared
+ * via `.txInCollateral(...)` — `getUtxosForSelection` only skips UTxOs
+ * already present in `meshTxBuilderBody.inputs`, never `collaterals`.
+ *
+ * Ledger-valid is not the same as operationally safe. Left unfiltered, coin
+ * selection spends the collateral reserve as a regular input (118 of 153
+ * sampled builds against the V1-pinned mesh line, which shares this
+ * selection code). The transaction confirms, but the wallet is left with no
+ * dedicated collateral and the NEXT escrow action fails to find one.
+ *
+ * The collateral is handed back to coin selection only when excluding it
+ * would leave nothing to balance with.
+ *
+ * Mirrors `getSpendableWalletUtxos` in `src/utils/utxo` — deliberately
+ * duplicated rather than shared, to keep the V1 and V2 mesh lines isolated
+ * per ADR 0005.
+ */
+export function getSpendableWalletUtxos(walletUtxos: UTxO[], collateralUtxo: UTxO): UTxO[] {
+	const collateralKey = refKey(collateralUtxo.input);
+	const spendableUtxos = walletUtxos.filter((utxo) => refKey(utxo.input) !== collateralKey);
+	return spendableUtxos.length > 0 ? spendableUtxos : walletUtxos;
 }
 
 /**

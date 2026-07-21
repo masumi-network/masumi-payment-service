@@ -1,4 +1,4 @@
-import { OnChainState, PaymentAction, PaymentSourceType, TransactionStatus, Prisma } from '@/generated/prisma/client';
+import { OnChainState, PaymentAction, PaymentSourceType, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { Asset, BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
@@ -14,9 +14,11 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import {
+	assertEscrowUtxoUnspent,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPaymentAction,
+	createPendingTransaction,
 	createTxWindow,
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
@@ -119,6 +121,8 @@ async function processSinglePaymentCollection(
 	if (!utxo) {
 		throw new Error('UTXO not found');
 	}
+
+	await assertEscrowUtxoUnspent(blockchainProvider, smartContractAddress, utxo);
 
 	const utxoDatum = utxo.output.plutusData;
 	if (!utxoDatum) {
@@ -256,17 +260,16 @@ async function processSinglePaymentCollection(
 		data: {
 			...connectPreviousAction(request.nextActionId),
 			...createNextPaymentAction(PaymentAction.WithdrawInitiated),
-			CurrentTransaction: {
-				update: {
-					txHash: null,
-					status: TransactionStatus.Pending,
-					BlocksWallet: {
-						connect: {
-							id: request.SmartContractWallet.id,
-						},
-					},
-				},
-			},
+			// Create a NEW pending row rather than blanking the current one in
+			// place. The in-place update overwrote the confirmed escrow tx hash
+			// with null and downgraded its status, so any failure before the
+			// post-submit `updateCurrentTransactionHash` destroyed the only
+			// record of the UTxO this request depends on — leaving the request
+			// stuck on 'Transaction hash not found' with nothing to recover
+			// from, since error-state-recovery then re-pinned that same
+			// hash-less row. V2 already does it this way; see
+			// packages/payment-source-v2/src/services/payments/collection/service.ts
+			...createPendingTransaction(request.SmartContractWallet.id),
 			TransactionHistory: {
 				connect: {
 					id: request.CurrentTransaction!.id,

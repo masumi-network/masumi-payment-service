@@ -32,6 +32,7 @@ import { calculateMinUtxo, calculateTopUpAmount, getLovelaceFromAmounts, getNati
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
 import { generateRedeemerData } from './redeemer-data';
+import { getSpendableWalletUtxos } from './batch-helpers';
 
 // Mirrors `FALLBACK_COINS_PER_UTXO_SIZE` in @masumi/payment-core/config; kept
 // inline for the same test-mock reason documented in batch-interaction.ts (the
@@ -261,10 +262,10 @@ async function generateMasumiSmartContractInteractionTransactionCustomFee(
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
-	// Keep every wallet UTxO available to Mesh's final balancing pass. The
-	// declared collateral may also be the input Mesh needs to cover the script
-	// continuation, splitter, fee, and change.
-	txBuilder.selectUtxosFrom(walletUtxos);
+	// Hold the collateral reserve back from coin selection — mesh does not
+	// exclude `txInCollateral` UTxOs from `selectUtxosFrom` candidates.
+	// See getSpendableWalletUtxos in batch-helpers.
+	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
 
 	return await txBuilder
 		.changeAddress(walletAddress)
@@ -464,7 +465,7 @@ async function generateMasumiSmartContractWithdrawTransactionCustomFee(
 		txBuilder.txOut(walletAddress, [{ unit: 'lovelace', quantity: walletSplitterLovelace.toString() }]);
 	}
 
-	txBuilder.selectUtxosFrom(walletUtxos);
+	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
 
 	return await txBuilder
 		.changeAddress(walletAddress)

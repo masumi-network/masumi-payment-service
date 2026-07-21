@@ -1,10 +1,4 @@
-import {
-	OnChainState,
-	PaymentSourceType,
-	PurchasingAction,
-	TransactionStatus,
-	Prisma,
-} from '@/generated/prisma/client';
+import { OnChainState, PaymentSourceType, PurchasingAction, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
@@ -19,9 +13,11 @@ import { writePurchaseErrorTransition } from '@/services/shared/error-transition
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	assertEscrowUtxoUnspent,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPurchaseAction,
+	createPendingTransaction,
 	createTxWindow,
 	loadHotWalletSession,
 	updateCurrentTransactionHash,
@@ -125,6 +121,8 @@ async function processSingleRefundCollection(
 		throw new Error('UTXO not found');
 	}
 
+	await assertEscrowUtxoUnspent(blockchainProvider, smartContractAddress, utxo);
+
 	const utxoDatum = utxo.output.plutusData;
 	if (!utxoDatum) {
 		throw new Error('No datum found in UTXO');
@@ -170,17 +168,16 @@ async function processSingleRefundCollection(
 			...createNextPurchaseAction(PurchasingAction.WithdrawRefundInitiated, {
 				submittedTxHash: null,
 			}),
-			CurrentTransaction: {
-				update: {
-					txHash: null,
-					status: TransactionStatus.Pending,
-					BlocksWallet: {
-						connect: {
-							id: request.SmartContractWallet.id,
-						},
-					},
-				},
-			},
+			// Create a NEW pending row rather than blanking the current one in
+			// place. The in-place update overwrote the confirmed escrow tx hash
+			// with null and downgraded its status, so any failure before the
+			// post-submit `updateCurrentTransactionHash` destroyed the only
+			// record of the UTxO this request depends on — leaving the request
+			// stuck on 'Transaction hash not found' with nothing to recover
+			// from, since error-state-recovery then re-pinned that same
+			// hash-less row. V2 already does it this way; see
+			// packages/payment-source-v2/src/services/payments/collection/service.ts
+			...createPendingTransaction(request.SmartContractWallet.id),
 			TransactionHistory: {
 				connect: {
 					id: request.CurrentTransaction!.id,

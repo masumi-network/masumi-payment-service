@@ -22,7 +22,12 @@ import { logger } from '@masumi/payment-core/logger';
 import { calculateMinUtxo, calculateTopUpAmount, getLovelaceFromAmounts, getNativeTokenCount } from '@/utils/min-utxo';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
-import { deriveTotalCollateral, lovelaceFromUtxo, WALLET_SPLITTER_LOVELACE } from './batch-helpers';
+import {
+	deriveTotalCollateral,
+	getSpendableWalletUtxos,
+	lovelaceFromUtxo,
+	WALLET_SPLITTER_LOVELACE,
+} from './batch-helpers';
 import { generateRedeemerData } from './redeemer-data';
 
 // Mirrors `FALLBACK_COINS_PER_UTXO_SIZE` in @masumi/payment-core/config.
@@ -495,10 +500,10 @@ async function buildBatchInteractionTx(
 
 	// Hand the candidate wallet UTxOs to Mesh's coin selector instead of
 	// force-adding every one. Force-adding blows tx size on fragmented
-	// wallets. The service layer only excludes script-spending refs; it keeps
-	// collateral available because the ledger allows regular VKey overlap.
-	// Mesh then picks only what's needed for fees + change.
-	txBuilder.selectUtxosFrom(walletUtxos);
+	// wallets. The service layer only excludes script-spending refs, so the
+	// collateral is held back here instead. Mesh then picks only what's
+	// needed for fees + change.
+	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
 
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)
@@ -699,7 +704,7 @@ async function buildBatchWithdrawTx(
 
 	// See the matching note in buildBatchInteractionTx: hand the candidate
 	// wallet UTxOs to Mesh's coin selector instead of force-adding every one.
-	txBuilder.selectUtxosFrom(walletUtxos);
+	txBuilder.selectUtxosFrom(getSpendableWalletUtxos(walletUtxos, collateralUtxo));
 
 	return await txBuilder
 		.requiredSignerHash(deserializedAddress.pubKeyHash)
