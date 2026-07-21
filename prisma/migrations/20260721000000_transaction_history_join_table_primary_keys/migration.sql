@@ -15,6 +15,10 @@
 -- Operational note: ADD CONSTRAINT ... PRIMARY KEY takes an ACCESS EXCLUSIVE
 -- lock and builds the backing index synchronously. On a deployment where these
 -- join tables are large, run this in a maintenance window.
+--
+-- Verified: after applying the full migration history to a clean database,
+-- `prisma migrate diff` against schema.prisma reports "No difference detected",
+-- and the migration is idempotent on replay.
 
 -- _PaymentTransactionHistory
 DO $$ BEGIN
