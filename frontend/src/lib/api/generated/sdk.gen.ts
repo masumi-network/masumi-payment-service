@@ -1806,7 +1806,7 @@ export const postTxSyncQuarantineRetry = <ThrowOnError extends boolean = false>(
 /**
  * Preview a manual request repair. (admin access required)
  *
- * Dry run of a repair: validates the transaction against the request and reports what would change, without writing anything. A failed check returns 400 with the specific reason it failed.
+ * Dry run of a repair: validates the contract version, confirmation depth, unspent output and immutable request fields, then reports what would change without writing. Pass the returned requestVersion to apply; apply returns 409 if tx-sync changes the request after preview. A failed transaction check returns 400; an inconclusive chain-provider lookup returns 502.
  */
 export const postRequestRepairPreview = <ThrowOnError extends boolean = false>(options?: Options<PostRequestRepairPreviewData, ThrowOnError>): RequestResult<PostRequestRepairPreviewResponses, PostRequestRepairPreviewErrors, ThrowOnError> => (options?.client ?? client).post<PostRequestRepairPreviewResponses, PostRequestRepairPreviewErrors, ThrowOnError>({
     responseType: 'json',
@@ -1822,7 +1822,7 @@ export const postRequestRepairPreview = <ThrowOnError extends boolean = false>(o
 /**
  * Repair a request by repointing it at a transaction. (admin access required)
  *
- * Repoints a purchase or payment at a specific transaction and syncs its on-chain state. By default the transaction is fetched, confirmed to have an output at this payment source's contract address, its datum decoded and its blockchainIdentifier matched against the request — the resulting state comes from the datum, not from the caller. Passing force skips those checks and writes the supplied onChainState verbatim.
+ * Repoints a purchase or payment at a specific transaction and syncs its on-chain state. By default the transaction is fetched, checked for confirmation depth and a unique unspent output at this payment source's contract address, then its versioned datum and immutable fields are matched against the request. Pass requestVersion from preview so a concurrent tx-sync update returns 409 instead of being overwritten. Force skips chain checks but still requires requestVersion or expectedRequestUpdatedAt from the operator dialog to prevent a stale forced write.
  */
 export const postRequestRepair = <ThrowOnError extends boolean = false>(options?: Options<PostRequestRepairData, ThrowOnError>): RequestResult<PostRequestRepairResponses, PostRequestRepairErrors, ThrowOnError> => (options?.client ?? client).post<PostRequestRepairResponses, PostRequestRepairErrors, ThrowOnError>({
     responseType: 'json',

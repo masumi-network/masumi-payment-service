@@ -43,7 +43,9 @@ export function registerTxSyncQuarantinePaths({ registry, apiKeyAuth }: SwaggerR
 		tags: ['tx-sync-quarantine'],
 		security: secured,
 		request: {
-			query: getTxSyncQuarantineSchemaInput.openapi({ example: { network: 'Preprod', status: 'Pending', take: 25 } }),
+			query: getTxSyncQuarantineSchemaInput.openapi({
+				example: { network: 'Preprod', status: 'Unresolved', take: 25 },
+			}),
 		},
 		responses: {
 			200: successResponse('Quarantine entries', getTxSyncQuarantineSchemaOutput, {
@@ -79,6 +81,7 @@ export function registerTxSyncQuarantinePaths({ registry, apiKeyAuth }: SwaggerR
 			}),
 			400: { description: 'Quarantine entry is already resolved' },
 			401: { description: 'Unauthorized' },
+			409: { description: 'Quarantine entry is currently being processed or changed concurrently' },
 			404: { description: 'Quarantine entry not found' },
 		},
 	});
@@ -107,6 +110,7 @@ export function registerTxSyncQuarantinePaths({ registry, apiKeyAuth }: SwaggerR
 				txHash: quarantineEntryExample.txHash,
 			}),
 			401: { description: 'Unauthorized' },
+			409: { description: 'Quarantine entry is currently being processed or changed concurrently' },
 			404: { description: 'Quarantine entry not found' },
 		},
 	});

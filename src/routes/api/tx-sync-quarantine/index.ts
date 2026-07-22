@@ -5,17 +5,16 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import createHttpError from 'http-errors';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
-
-const quarantineStatusSchema = z.enum(['Pending', 'NeedsOperator', 'Resolved', 'All']);
+import { DEFAULT_QUARANTINE_STATUS, getQuarantineStatusFilter, quarantineStatusSchema } from './status';
 
 export const getTxSyncQuarantineSchemaInput = z.object({
 	network: z.nativeEnum(Network).optional().describe('Filter to a single network'),
 	paymentSourceId: z.string().optional().describe('Filter to a single payment source'),
 	status: quarantineStatusSchema
-		.default('Pending')
 		.optional()
+		.default(DEFAULT_QUARANTINE_STATUS)
 		.describe(
-			'Pending: awaiting retry. NeedsOperator: retries exhausted or a non-retryable failure. Resolved: already applied or discarded.',
+			'Unresolved: every unapplied entry. Pending: awaiting retry. NeedsOperator: retries exhausted or a non-retryable failure. Resolved: successfully applied or independently confirmed rolled back.',
 		),
 	take: z.coerce.number().int().min(1).max(100).default(25).optional().describe('How many entries to return'),
 	cursorId: z.string().optional().describe('Id of the last entry of the previous page'),
@@ -29,11 +28,18 @@ export const txSyncQuarantineEntrySchema = z
 		txHash: z.string().describe('The transaction the sync could not apply'),
 		blockHeight: z.number().nullable().describe('Chain position, when known'),
 		txIndex: z.number().nullable(),
-		reason: z.nativeEnum(TxSyncQuarantineReason).describe('Whether the lookup or the processing failed'),
+		reason: z
+			.nativeEnum(TxSyncQuarantineReason)
+			.describe(
+				'Whether lookup/processing failed, processing was deferred behind a predecessor, or canonical rollback settlement is pending',
+			),
 		attempts: z.number().describe('How many retries the reconciler has already made'),
 		lastError: z.string().nullable(),
 		nextRetryAt: z.date().describe('The reconciler will not retry before this time'),
-		resolvedAt: z.date().nullable().describe('Set once applied or discarded. Rows are retained for audit'),
+		resolvedAt: z
+			.date()
+			.nullable()
+			.describe('Set once successfully applied or canonically confirmed rolled back. Rows are retained for audit'),
 		needsOperator: z.boolean().describe('Retries stopped; a human needs to look at it'),
 		PaymentSource: z.object({
 			id: z.string(),
@@ -63,15 +69,7 @@ export const queryTxSyncQuarantineGet = adminAuthenticatedEndpointFactory.build(
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 		}
 
-		const status = input.status ?? 'Pending';
-		const statusFilter =
-			status === 'Pending'
-				? { resolvedAt: null, needsOperator: false }
-				: status === 'NeedsOperator'
-					? { resolvedAt: null, needsOperator: true }
-					: status === 'Resolved'
-						? { resolvedAt: { not: null } }
-						: {};
+		const statusFilter = getQuarantineStatusFilter(input.status);
 
 		const entries = await prisma.txSyncQuarantine.findMany({
 			where: {
@@ -131,9 +129,28 @@ export const retryTxSyncQuarantinePost = adminAuthenticatedEndpointFactory.build
 			throw createHttpError(400, 'Quarantine entry is already resolved');
 		}
 
-		const updated = await prisma.txSyncQuarantine.update({
+		const now = new Date();
+		const requeued = await prisma.txSyncQuarantine.updateMany({
+			where: {
+				id: input.id,
+				updatedAt: existing.updatedAt,
+				resolvedAt: null,
+				OR: [{ processingLeaseId: null }, { processingLeaseExpiresAt: { lte: now } }],
+			},
+			data: {
+				nextRetryAt: now,
+				needsOperator: false,
+				attempts: 0,
+				processingLeaseId: null,
+				processingLeaseExpiresAt: null,
+			},
+		});
+		if (requeued.count !== 1) {
+			throw createHttpError(409, 'Quarantine entry is currently being processed or changed');
+		}
+
+		const updated = await prisma.txSyncQuarantine.findUniqueOrThrow({
 			where: { id: input.id },
-			data: { nextRetryAt: new Date(), needsOperator: false, attempts: 0 },
 			include: { PaymentSource: { select: { id: true, network: true, smartContractAddress: true } } },
 		});
 
@@ -174,7 +191,16 @@ export const deleteTxSyncQuarantineDelete = adminAuthenticatedEndpointFactory.bu
 		}
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, existing.PaymentSource.network);
 
-		await prisma.txSyncQuarantine.delete({ where: { id: input.id } });
+		const deleted = await prisma.txSyncQuarantine.deleteMany({
+			where: {
+				id: input.id,
+				updatedAt: existing.updatedAt,
+				OR: [{ processingLeaseId: null }, { processingLeaseExpiresAt: { lte: new Date() } }],
+			},
+		});
+		if (deleted.count !== 1) {
+			throw createHttpError(409, 'Quarantine entry is currently being processed or changed');
+		}
 
 		logger.warn('Quarantine entry deleted without being applied', {
 			id: input.id,

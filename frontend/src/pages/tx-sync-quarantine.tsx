@@ -2,7 +2,9 @@ import { useCallback, useState } from 'react';
 import Head from 'next/head';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AnimatedPage } from '@/components/ui/animated-page';
+import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Pagination } from '@/components/ui/pagination';
 import {
   Select,
@@ -14,6 +16,7 @@ import {
 import { RefreshButton } from '@/components/RefreshButton';
 import { QuarantineTable } from '@/components/tx-sync-quarantine/QuarantineTable';
 import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton';
+import { extractApiErrorMessage } from '@/lib/api-error';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   ALL_NETWORKS,
@@ -26,6 +29,7 @@ import {
 } from '@/lib/hooks/useTxSyncQuarantine';
 
 const STATUS_OPTIONS: { value: QuarantineStatus; label: string }[] = [
+  { value: 'Unresolved', label: 'Unresolved' },
   { value: 'Pending', label: 'Pending' },
   { value: 'NeedsOperator', label: 'Needs operator' },
   { value: 'Resolved', label: 'Resolved' },
@@ -33,9 +37,13 @@ const STATUS_OPTIONS: { value: QuarantineStatus; label: string }[] = [
 ];
 
 const EMPTY_COPY: Record<QuarantineStatus, { title: string; description: string }> = {
+  Unresolved: {
+    title: 'No unresolved transactions',
+    description: 'Nothing is waiting for an automatic retry or operator action.',
+  },
   Pending: {
     title: 'Nothing waiting to be retried',
-    description: 'Every transaction the scanner has seen has been applied.',
+    description: 'No transaction is currently queued for an automatic retry.',
   },
   NeedsOperator: {
     title: 'Nothing needs an operator',
@@ -53,17 +61,29 @@ const EMPTY_COPY: Record<QuarantineStatus, { title: string; description: string 
 
 export default function TxSyncQuarantinePage() {
   const { network } = useAppContext();
-  const [status, setStatus] = useState<QuarantineStatus>('Pending');
+  const [status, setStatus] = useState<QuarantineStatus>('Unresolved');
   const [networkFilter, setNetworkFilter] = useState<QuarantineNetworkFilter>(network);
   const [entryToDelete, setEntryToDelete] = useState<QuarantineEntry | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
-  const { entries, isLoading, isFetching, isFetchingNextPage, hasMore, loadMore, refetch } =
-    useTxSyncQuarantine({ status, network: networkFilter });
+  const {
+    entries,
+    isLoading,
+    isError,
+    error,
+    isFetching,
+    isFetchingNextPage,
+    hasMore,
+    loadMore,
+    refetch,
+  } = useTxSyncQuarantine({ status, network: networkFilter });
   const retryEntry = useRetryQuarantineEntry();
   const deleteEntry = useDeleteQuarantineEntry();
 
   const isInitialLoading = isLoading && entries.length === 0;
+  const errorMessage = isError
+    ? extractApiErrorMessage(error, 'Failed to load the quarantine queue')
+    : null;
 
   const handleRetry = useCallback(
     async (entry: QuarantineEntry) => {
@@ -101,9 +121,9 @@ export default function TxSyncQuarantinePage() {
               <h1 className="text-2xl font-semibold tracking-tight">Sync Quarantine</h1>
               <p className="text-sm text-muted-foreground max-w-3xl">
                 Transactions the chain scanner could not apply. The sync checkpoint has already
-                moved past them, so anything still pending here is chain state the database has not
+                moved past them, so anything unresolved here is chain state the database has not
                 caught up with — the affected request is running on stale information until the
-                transaction is applied.
+                transaction is applied or reviewed.
               </p>
             </div>
             <RefreshButton onRefresh={() => void refetch()} isRefreshing={isFetching} />
@@ -146,6 +166,19 @@ export default function TxSyncQuarantinePage() {
                 </tbody>
               </table>
             </div>
+          ) : isError ? (
+            <div className="rounded-lg border">
+              <EmptyState
+                icon="search"
+                title="Could not load the quarantine queue"
+                description={errorMessage ?? undefined}
+                action={
+                  <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
+                    Try again
+                  </Button>
+                }
+              />
+            </div>
           ) : (
             <QuarantineTable
               entries={entries}
@@ -159,7 +192,7 @@ export default function TxSyncQuarantinePage() {
           )}
 
           <div className="flex flex-col gap-4 items-center">
-            {!isInitialLoading && (
+            {!isInitialLoading && !isError && (
               <Pagination hasMore={hasMore} isLoading={isFetchingNextPage} onLoadMore={loadMore} />
             )}
           </div>

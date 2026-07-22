@@ -6011,9 +6011,11 @@ export const TxSyncQuarantineEntrySchema = {
             type: 'string',
             enum: [
                 'ExtendedLookupFailed',
-                'ProcessingFailed'
+                'ProcessingFailed',
+                'PredecessorPending',
+                'CanonicalRollback'
             ],
-            description: 'Whether the lookup or the processing failed'
+            description: 'Whether lookup/processing failed, processing was deferred behind a predecessor, or canonical rollback settlement is pending'
         },
         attempts: {
             type: 'number',
@@ -6032,7 +6034,7 @@ export const TxSyncQuarantineEntrySchema = {
             type: 'string',
             nullable: true,
             format: 'date-time',
-            description: 'Set once applied or discarded. Rows are retained for audit'
+            description: 'Set once successfully applied or canonically confirmed rolled back. Rows are retained for audit'
         },
         needsOperator: {
             type: 'boolean',

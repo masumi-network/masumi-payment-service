@@ -6,13 +6,22 @@ import { CONFIG } from '@masumi/payment-core/config';
 import { Mutex } from 'async-mutex';
 import { getExtendedTxInformation } from '../blockchain';
 import {
-	discardQuarantinedTransaction,
+	claimQuarantinedTransaction,
+	compareQuarantineChainPosition,
+	deferClaimedQuarantine,
 	errorToText,
+	fenceQuarantineClaimWrite,
 	getQuarantineHealth,
+	isQuarantineLeaseLostError,
+	markClaimedQuarantineNeedsOperator,
+	QuarantineClaim,
+	QUARANTINE_CHAIN_ORDER,
 	recordQuarantineAttempt,
+	releaseQuarantineClaim,
 	resolveQuarantinedTransaction,
 } from './index';
 import { processTransactionData } from '../service';
+import { getChainErrorStatus } from '@/services/shared/chain-tx-lookup';
 
 /** How many quarantined transactions one tick will attempt. */
 const MAX_PER_TICK = 25;
@@ -25,19 +34,27 @@ const CONFIRMATION_WAIT_MS = 60 * 1000;
  * exist on chain, or is classified terminal. Deciding which is which is the
  * whole job — "retry forever" and "give up immediately" are both wrong.
  */
-export type QuarantineOutcome = 'resolved' | 'discarded' | 'retry' | 'terminal';
+export type QuarantineOutcome = 'resolved' | 'retry' | 'terminal';
+
+export function isBlockingQuarantineOutcome(outcome: QuarantineOutcome): boolean {
+	return outcome === 'retry' || outcome === 'terminal';
+}
 
 /**
  * Classifies a failure into what should happen next.
  *
- * The hard case is 404. Blockfrost returns it both for a transaction it has not
- * indexed yet (transient — retry) and for one that no longer exists because the
- * chain rolled back (terminal — there is nothing left to apply). They are
- * indistinguishable from the error alone, so the caller disambiguates by asking
- * whether the transaction is still on chain; this function only decides when
- * that question needs asking.
+ * Blockfrost returns 404 both for indexing lag and for a transaction absent
+ * after rollback. Repeated responses from the same provider are not independent
+ * rollback evidence, so callers always retry them and eventually escalate.
  */
 export function classifyQuarantineError(error: unknown): 'not-found' | 'transient' | 'terminal' {
+	const status = getChainErrorStatus(error);
+	if (status === 404) return 'not-found';
+	if (status === 408 || status === 425 || status === 429 || (status != null && status >= 500)) {
+		return 'transient';
+	}
+	if (status != null) return 'terminal';
+
 	const text = errorToText(error).toLowerCase();
 
 	if (text.includes('404') || text.includes('not found')) {
@@ -75,22 +92,33 @@ const quarantineMutex = new Mutex();
  */
 export async function reconcileQuarantinedTransactions(): Promise<void> {
 	await withJobLock(quarantineMutex, 'tx-sync-quarantine-reconciler', async () => {
-		const due = await prisma.txSyncQuarantine.findMany({
+		// Pick one head per source BEFORE applying due/operator filters. Filtering
+		// first lets 25 due descendants of one backed-off predecessor fill the
+		// batch forever and starve every other payment source.
+		const sourceHeads = await prisma.txSyncQuarantine.findMany({
 			where: {
 				resolvedAt: null,
-				needsOperator: false,
-				nextRetryAt: { lte: new Date() },
 				// Soft-deleted payment sources keep their rows (the FK cascade only
 				// fires on hard delete); without this filter their entries would
 				// cycle through the backoff ladder forever.
 				PaymentSource: { deletedAt: null },
 			},
-			orderBy: [{ blockHeight: 'asc' }, { txIndex: 'asc' }, { createdAt: 'asc' }],
-			take: MAX_PER_TICK,
+			distinct: ['paymentSourceId'],
+			orderBy: [{ paymentSourceId: 'asc' as const }, ...QUARANTINE_CHAIN_ORDER],
 			include: {
 				PaymentSource: { include: { PaymentSourceConfig: true } },
 			},
 		});
+		const now = Date.now();
+		const due = sourceHeads
+			// Canonical markers are scanner-owned barriers, not completed
+			// rollbacks. Their unresolved source stays blocked until the scanner
+			// applies DB rollback state and settles the marker.
+			.filter(
+				(entry) => entry.canonicalRollbackAt == null && !entry.needsOperator && entry.nextRetryAt.getTime() <= now,
+			)
+			.sort(compareQuarantineChainPosition)
+			.slice(0, MAX_PER_TICK);
 
 		if (due.length === 0) {
 			await reportQuarantineHealth();
@@ -99,17 +127,51 @@ export async function reconcileQuarantinedTransactions(): Promise<void> {
 
 		logger.info('Reconciling quarantined transactions', { count: due.length });
 
+		const blockedPaymentSourceIds = new Set<string>();
 		for (const entry of due) {
+			if (blockedPaymentSourceIds.has(entry.paymentSourceId)) continue;
+
+			// Claim performs the earliest-unresolved check in the same serializable
+			// transaction as its CAS, including predecessors in backoff/operator
+			// states that the `due` query intentionally omitted.
+			let claim: QuarantineClaim | null;
 			try {
-				const outcome = await retryQuarantinedTransaction(entry);
+				claim = await claimQuarantinedTransaction(entry);
+			} catch (error) {
+				blockedPaymentSourceIds.add(entry.paymentSourceId);
+				logger.error('Failed to claim quarantined transaction', {
+					txHash: entry.txHash,
+					error,
+				});
+				continue;
+			}
+			if (claim == null) {
+				// Another instance claimed (or changed) the predecessor. Do not let
+				// this instance skip ahead to its descendants.
+				blockedPaymentSourceIds.add(entry.paymentSourceId);
+				continue;
+			}
+
+			try {
+				const outcome = await retryQuarantinedTransaction(entry, claim);
 				logger.info('Quarantined transaction outcome', {
 					txHash: entry.txHash,
 					attempts: entry.attempts,
 					outcome,
 				});
+				if (isBlockingQuarantineOutcome(outcome)) {
+					blockedPaymentSourceIds.add(entry.paymentSourceId);
+				}
 			} catch (error) {
-				// The retry machinery itself failed (DB down, etc). Leave the row
-				// untouched so it is picked up again rather than losing its place.
+				// Release only our own claim. If the CAS fails, a newer owner already
+				// controls the row and this worker must not overwrite it.
+				await releaseQuarantineClaim(claim).catch((releaseError) => {
+					logger.error('Failed to release quarantine processing lease', {
+						txHash: entry.txHash,
+						error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+					});
+				});
+				blockedPaymentSourceIds.add(entry.paymentSourceId);
 				logger.error('Failed to reconcile quarantined transaction', {
 					txHash: entry.txHash,
 					error,
@@ -125,7 +187,7 @@ type QuarantineEntry = Prisma.TxSyncQuarantineGetPayload<{
 	include: { PaymentSource: { include: { PaymentSourceConfig: true } } };
 }>;
 
-async function retryQuarantinedTransaction(entry: QuarantineEntry): Promise<QuarantineOutcome> {
+async function retryQuarantinedTransaction(entry: QuarantineEntry, claim: QuarantineClaim): Promise<QuarantineOutcome> {
 	const paymentContract = entry.PaymentSource;
 	const blockfrost = createApiClient(paymentContract.network, paymentContract.PaymentSourceConfig.rpcProviderApiKey);
 
@@ -143,7 +205,14 @@ async function retryQuarantinedTransaction(entry: QuarantineEntry): Promise<Quar
 	);
 
 	if (failures.length > 0) {
-		return await handleRetryFailure(entry, failures[0].error, blockfrost);
+		return await handleRetryFailure(entry, claim, failures[0].error);
+	}
+	if (txData.length === 0) {
+		return await handleRetryFailure(
+			entry,
+			claim,
+			new Error('Extended lookup returned neither transaction data nor a failure'),
+		);
 	}
 
 	// The scanner refuses to process below BLOCK_CONFIRMATIONS_THRESHOLD — that
@@ -153,49 +222,33 @@ async function retryQuarantinedTransaction(entry: QuarantineEntry): Promise<Quar
 	// waiting for confirmations is not a failure, and counting it as one would
 	// walk healthy entries toward needsOperator.
 	if (txData[0].block.confirmations < CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD) {
-		await prisma.txSyncQuarantine.update({
-			where: { id: entry.id },
-			data: { nextRetryAt: new Date(Date.now() + CONFIRMATION_WAIT_MS) },
-		});
+		await deferClaimedQuarantine(claim, new Date(Date.now() + CONFIRMATION_WAIT_MS));
 		return 'retry';
 	}
 
 	try {
-		await processTransactionData(txData[0], paymentContract, blockfrost);
+		await processTransactionData(txData[0], paymentContract, blockfrost, {
+			beforeWrite: async (txdb) => await fenceQuarantineClaimWrite(txdb, claim),
+		});
 	} catch (error) {
-		return await handleRetryFailure(entry, error, blockfrost);
+		if (isQuarantineLeaseLostError(error)) throw error;
+		return await handleRetryFailure(entry, claim, error);
 	}
 
-	await resolveQuarantinedTransaction(entry.id);
+	await resolveQuarantinedTransaction(claim);
 	return 'resolved';
 }
 
 async function handleRetryFailure(
 	entry: QuarantineEntry,
+	claim: QuarantineClaim,
 	error: unknown,
-	blockfrost: ReturnType<typeof createApiClient>,
 ): Promise<QuarantineOutcome> {
+	if (isQuarantineLeaseLostError(error)) throw error;
 	const classification = classifyQuarantineError(error);
 
-	if (classification === 'not-found') {
-		// Disambiguate "not indexed yet" from "rolled back" by asking the chain
-		// directly. If the transaction genuinely no longer exists there is nothing
-		// to apply and retrying forever would be a slow leak.
-		const stillOnChain = await isTransactionOnChain(blockfrost, entry.txHash);
-		if (!stillOnChain) {
-			await discardQuarantinedTransaction(
-				entry.id,
-				'Transaction is no longer on chain (rolled back); nothing to apply',
-			);
-			return 'discarded';
-		}
-	}
-
 	if (classification === 'terminal') {
-		await prisma.txSyncQuarantine.update({
-			where: { id: entry.id },
-			data: { needsOperator: true, lastError: errorToText(error).slice(0, 2000) },
-		});
+		await markClaimedQuarantineNeedsOperator(claim, error);
 		logger.error('Quarantined transaction failed with a non-retryable error; operator attention required', {
 			txHash: entry.txHash,
 			error,
@@ -203,20 +256,12 @@ async function handleRetryFailure(
 		return 'terminal';
 	}
 
-	await recordQuarantineAttempt({ id: entry.id, attempts: entry.attempts, error });
+	await recordQuarantineAttempt({
+		claim,
+		attempts: entry.attempts,
+		error,
+	});
 	return 'retry';
-}
-
-async function isTransactionOnChain(blockfrost: ReturnType<typeof createApiClient>, txHash: string): Promise<boolean> {
-	try {
-		await blockfrost.txs(txHash);
-		return true;
-	} catch (error) {
-		// Only a definitive 404 proves absence. Anything else (rate limit, 5xx) is
-		// inconclusive, and we must not discard a transaction on inconclusive
-		// evidence — assume it is still there and retry later.
-		return classifyQuarantineError(error) !== 'not-found';
-	}
 }
 
 async function reportQuarantineHealth(): Promise<void> {

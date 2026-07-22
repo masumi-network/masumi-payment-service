@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import {
   deleteTxSyncQuarantine,
   getTxSyncQuarantine,
@@ -7,10 +7,15 @@ import {
   type TxSyncQuarantineEntry,
 } from '@/lib/api/generated';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
-import { handleApiCall } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 
-export const QUARANTINE_STATUSES = ['Pending', 'NeedsOperator', 'Resolved', 'All'] as const;
+export const QUARANTINE_STATUSES = [
+  'Unresolved',
+  'Pending',
+  'NeedsOperator',
+  'Resolved',
+  'All',
+] as const;
 export type QuarantineStatus = (typeof QUARANTINE_STATUSES)[number];
 
 /** Sentinel for the network filter: the query param is omitted entirely. */
@@ -32,21 +37,26 @@ export function useTxSyncQuarantine(params: {
   const query = useInfiniteQuery({
     queryKey: [QUARANTINE_QUERY_KEY, params.status, params.network],
     queryFn: async ({ pageParam }) => {
-      const response = await handleApiCall(
-        () =>
-          getTxSyncQuarantine({
-            client: apiClient,
-            query: {
-              status: params.status,
-              network: params.network === ALL_NETWORKS ? undefined : params.network,
-              take: QUARANTINE_PAGE_SIZE,
-              cursorId: pageParam as string | undefined,
-            },
-          }),
-        { errorMessage: 'Failed to load the quarantine queue' },
-      );
+      const response = await getTxSyncQuarantine({
+        client: apiClient,
+        query: {
+          status: params.status,
+          network: params.network === ALL_NETWORKS ? undefined : params.network,
+          take: QUARANTINE_PAGE_SIZE,
+          cursorId: pageParam as string | undefined,
+        },
+      });
 
-      return response?.data?.data?.Quarantine ?? [];
+      if (response.error) {
+        throw response.error;
+      }
+
+      const entries = response.data?.data?.Quarantine;
+      if (entries == null) {
+        throw new Error('The quarantine request returned no data');
+      }
+
+      return entries;
     },
     initialPageParam: undefined as string | undefined,
     // The cursor row is returned again on the next page (server-side cursors are
@@ -56,7 +66,6 @@ export function useTxSyncQuarantine(params: {
       lastPage.length === QUARANTINE_PAGE_SIZE ? lastPage[lastPage.length - 1]?.id : undefined,
     enabled: !!apiClient && authorized,
     staleTime: 15000,
-    placeholderData: keepPreviousData,
   });
 
   const entries = useMemo(() => {
@@ -77,6 +86,8 @@ export function useTxSyncQuarantine(params: {
   return {
     entries,
     isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
     isFetching: query.isFetching,
     isFetchingNextPage: query.isFetchingNextPage,
     hasMore: Boolean(query.hasNextPage),

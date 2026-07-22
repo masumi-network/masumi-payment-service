@@ -21,13 +21,12 @@ jest.unstable_mockModule('../blockchain', () => ({
 	getExtendedTxInformation: jest.fn(),
 }));
 
-const { classifyQuarantineError } = await import('./reconciler');
+const { classifyQuarantineError, isBlockingQuarantineOutcome } = await import('./reconciler');
 
 describe('classifyQuarantineError', () => {
 	// 404 is deliberately NOT terminal on its own: Blockfrost returns it both
-	// for a tx it has not indexed yet and for one that was rolled back. Only a
-	// live chain lookup can tell those apart, so this returns 'not-found' and
-	// leaves the decision to the caller.
+	// for indexing lag and rollback absence. Same-provider retries cannot prove
+	// which one happened, so the reconciler backs off and eventually escalates.
 	it.each(['Request failed with status code 404', 'Not Found', 'ERR: 404 not found'])(
 		'classifies %p as not-found rather than terminal',
 		(message) => {
@@ -62,5 +61,27 @@ describe('classifyQuarantineError', () => {
 		expect(classifyQuarantineError('timeout')).toBe('transient');
 		expect(classifyQuarantineError(undefined)).toBe('terminal');
 		expect(classifyQuarantineError({ status: 429 })).toBe('transient');
+	});
+
+	it('uses Blockfrost structured status even when its message has no numeric code', () => {
+		expect(
+			classifyQuarantineError({
+				status_code: 404,
+				message: 'The requested component has not been found.',
+			}),
+		).toBe('not-found');
+		expect(classifyQuarantineError({ status_code: 503, message: 'Service unavailable' })).toBe('transient');
+	});
+
+	it('does not let error text override a structured terminal status', () => {
+		expect(classifyQuarantineError({ status_code: 400, message: 'header fragment 404' })).toBe('terminal');
+	});
+});
+
+describe('ordered reconciliation', () => {
+	it('blocks descendants after an unresolved outcome', () => {
+		expect(isBlockingQuarantineOutcome('retry')).toBe(true);
+		expect(isBlockingQuarantineOutcome('terminal')).toBe(true);
+		expect(isBlockingQuarantineOutcome('resolved')).toBe(false);
 	});
 });

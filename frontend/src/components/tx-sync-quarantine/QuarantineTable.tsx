@@ -22,6 +22,8 @@ interface QuarantineTableProps {
 const REASON_LABELS: Record<QuarantineEntry['reason'], string> = {
   ExtendedLookupFailed: 'Lookup failed',
   ProcessingFailed: 'Processing failed',
+  PredecessorPending: 'Predecessor pending',
+  CanonicalRollback: 'Canonical rollback',
 };
 
 /** Compact elapsed time, e.g. `4m`, `3h`, `2d`. */

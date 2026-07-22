@@ -716,6 +716,7 @@ export default function TransactionDetailsDialog({
         kind={transaction.type === 'purchase' ? 'Purchase' : 'Payment'}
         network={transactionNetwork}
         blockchainIdentifier={transaction.blockchainIdentifier}
+        requestUpdatedAt={transaction.updatedAt}
         onRepaired={() => {
           onRefresh();
           onClose();

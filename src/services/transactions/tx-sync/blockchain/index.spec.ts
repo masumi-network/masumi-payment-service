@@ -6,6 +6,8 @@ type AnyMock = Mock<(...args: any[]) => any>;
 const mockAdvancedRetryAll = jest.fn() as AnyMock;
 const mockDelayErrorResolver = jest.fn(() => ({}));
 const mockLoggerError = jest.fn();
+const mockIdentifierFindUnique = jest.fn() as AnyMock;
+const mockIdentifierFindMany = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('advanced-retry', () => ({
 	advancedRetryAll: mockAdvancedRetryAll,
@@ -31,17 +33,25 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
-	prisma: {},
+	prisma: {
+		paymentSourceIdentifiers: {
+			findUnique: mockIdentifierFindUnique,
+			findMany: mockIdentifierFindMany,
+		},
+	},
 }));
 
 let getExtendedTxInformation!: typeof import('./index').getExtendedTxInformation;
+let getTxsFromCardanoAfterSpecificTx!: typeof import('./index').getTxsFromCardanoAfterSpecificTx;
 
 beforeAll(async () => {
-	({ getExtendedTxInformation } = await import('./index'));
+	({ getExtendedTxInformation, getTxsFromCardanoAfterSpecificTx } = await import('./index'));
 });
 
 beforeEach(() => {
 	jest.clearAllMocks();
+	mockIdentifierFindUnique.mockResolvedValue(null);
+	mockIdentifierFindMany.mockResolvedValue([]);
 });
 
 function enumeratedTx(txHash: string, blockHeight: number, txIndex: number, blockTime = 1_784_614_225) {
@@ -199,5 +209,48 @@ describe('getExtendedTxInformation', () => {
 		expect(txData[0].blockTime).toBe(1_784_614_225);
 		expect(txData[0].blockHeight).toBe(13705455);
 		expect(txData[0].txIndex).toBe(5);
+	});
+});
+
+describe('getTxsFromCardanoAfterSpecificTx rollback cursor', () => {
+	it('reports disappearance of the first and only transaction from an empty address history', async () => {
+		const addressesTransactions = jest.fn() as AnyMock;
+		addressesTransactions.mockResolvedValue([]);
+
+		const result = await getTxsFromCardanoAfterSpecificTx(
+			{ addressesTransactions } as never,
+			{ smartContractAddress: 'addr_test1_contract' },
+			'only-tx',
+		);
+
+		expect(result).toEqual({
+			latestTx: [],
+			rolledBackTx: [{ tx_hash: 'only-tx' }],
+			rollbackAnchor: null,
+		});
+		expect(mockIdentifierFindMany).toHaveBeenCalledWith({
+			where: { PaymentSource: { smartContractAddress: 'addr_test1_contract' } },
+			select: { txHash: true },
+			orderBy: { createdAt: 'asc' },
+		});
+	});
+
+	it('returns the complete canonical history when no stored predecessor survives', async () => {
+		const addressesTransactions = (jest.fn() as AnyMock)
+			.mockResolvedValueOnce([{ tx_hash: 'canonical-new', block_time: 20, block_height: 200, tx_index: 0 }])
+			.mockResolvedValueOnce([]);
+		mockIdentifierFindMany.mockResolvedValueOnce([{ txHash: 'orphaned-predecessor' }]);
+
+		const result = await getTxsFromCardanoAfterSpecificTx(
+			{ addressesTransactions } as never,
+			{ smartContractAddress: 'addr_test1_contract' },
+			'orphaned-tip',
+		);
+
+		expect(result).toEqual({
+			latestTx: [{ tx_hash: 'canonical-new', block_time: 20, block_height: 200, tx_index: 0 }],
+			rolledBackTx: [{ tx_hash: 'orphaned-predecessor' }, { tx_hash: 'orphaned-tip' }],
+			rollbackAnchor: null,
+		});
 	});
 });

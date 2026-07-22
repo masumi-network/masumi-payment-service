@@ -1,13 +1,18 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { Network, OnChainState } from '@/generated/prisma/client';
+import { Network, OnChainState, PaymentSourceType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { createHash } from 'node:crypto';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import {
+	RepairConflictError,
+	RepairChainLookupError,
 	RepairValidationError,
 	repairRequestTransaction,
 	validateRepairTransaction,
+	type RepairExpectedRequest,
+	type RepairExpectedVersion,
 	type RepairTargetKind,
 } from '@/services/transactions/manual-repair';
 
@@ -27,6 +32,19 @@ export const repairRequestSchemaInput = z.object({
 		.nativeEnum(OnChainState)
 		.optional()
 		.describe('Required when force is true. Ignored otherwise — the state is read from the transaction datum.'),
+	requestVersion: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			'Opaque request version returned by preview. Required unless force is true; rejects an apply when tx-sync changed the request after preview.',
+		),
+	expectedRequestUpdatedAt: z.iso
+		.datetime()
+		.optional()
+		.describe(
+			'Required for force when requestVersion is unavailable. Pass the request updatedAt shown in the operator dialog to reject stale forced writes.',
+		),
 });
 
 export const repairRequestSchemaOutput = z.object({
@@ -37,6 +55,168 @@ export const repairRequestSchemaOutput = z.object({
 	newOnChainState: z.nativeEnum(OnChainState),
 	forced: z.boolean().describe('True when chain validation was skipped'),
 });
+
+const commonRepairRequestSelect = {
+	id: true,
+	updatedAt: true,
+	blockchainIdentifier: true,
+	inputHash: true,
+	payByTime: true,
+	submitResultTime: true,
+	unlockTime: true,
+	externalDisputeUnlockTime: true,
+	collateralReturnLovelace: true,
+	buyerReturnAddress: true,
+	sellerReturnAddress: true,
+	onChainState: true,
+	resultHash: true,
+	currentTransactionId: true,
+	CurrentTransaction: { select: { txHash: true } },
+	TransactionHistory: { select: { txHash: true } },
+	SmartContractWallet: { select: { walletVkey: true, walletAddress: true } },
+	PaymentSource: {
+		select: {
+			network: true,
+			paymentSourceType: true,
+			smartContractAddress: true,
+			PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
+		},
+	},
+} as const;
+
+type RepairRequestContext = {
+	id: string;
+	blockchainIdentifier: string;
+	onChainState: OnChainState | null;
+	paymentSource: {
+		network: Network;
+		paymentSourceType: PaymentSourceType;
+		smartContractAddress: string;
+		rpcProviderApiKey: string;
+	};
+	expectedRequest: RepairExpectedRequest;
+	expectedVersion: RepairExpectedVersion;
+};
+
+async function findRepairRequest(params: {
+	kind: RepairTargetKind;
+	network: Network;
+	blockchainIdentifier: string;
+}): Promise<RepairRequestContext | null> {
+	const where = {
+		blockchainIdentifier: params.blockchainIdentifier,
+		PaymentSource: { network: params.network, deletedAt: null },
+	};
+
+	if (params.kind === 'purchase') {
+		const request = await prisma.purchaseRequest.findFirst({
+			where,
+			select: {
+				...commonRepairRequestSelect,
+				SellerWallet: { select: { walletVkey: true, walletAddress: true } },
+				PaidFunds: { select: { unit: true, amount: true } },
+			},
+		});
+		if (request == null) return null;
+
+		return {
+			id: request.id,
+			blockchainIdentifier: request.blockchainIdentifier,
+			onChainState: request.onChainState,
+			paymentSource: {
+				network: request.PaymentSource.network,
+				paymentSourceType: request.PaymentSource.paymentSourceType,
+				smartContractAddress: request.PaymentSource.smartContractAddress,
+				rpcProviderApiKey: request.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+			},
+			expectedRequest: {
+				kind: params.kind,
+				inputHash: request.inputHash,
+				payByTime: request.payByTime,
+				submitResultTime: request.submitResultTime,
+				unlockTime: request.unlockTime,
+				externalDisputeUnlockTime: request.externalDisputeUnlockTime,
+				collateralReturnLovelace: request.collateralReturnLovelace,
+				buyerReturnAddress: request.buyerReturnAddress,
+				sellerReturnAddress: request.sellerReturnAddress,
+				buyerWallet: null,
+				sellerWallet: request.SellerWallet,
+				smartContractWallet: request.SmartContractWallet,
+				amounts: request.PaidFunds,
+				knownTransactionHashes: [
+					request.CurrentTransaction?.txHash,
+					...request.TransactionHistory.map((transaction) => transaction.txHash),
+				].filter((txHash): txHash is string => txHash != null),
+			},
+			expectedVersion: {
+				updatedAt: request.updatedAt,
+				currentTransactionId: request.currentTransactionId,
+				onChainState: request.onChainState,
+				resultHash: request.resultHash,
+			},
+		};
+	}
+
+	const request = await prisma.paymentRequest.findFirst({
+		where,
+		select: {
+			...commonRepairRequestSelect,
+			BuyerWallet: { select: { walletVkey: true, walletAddress: true } },
+			RequestedFunds: { select: { unit: true, amount: true } },
+		},
+	});
+	if (request == null) return null;
+
+	return {
+		id: request.id,
+		blockchainIdentifier: request.blockchainIdentifier,
+		onChainState: request.onChainState,
+		paymentSource: {
+			network: request.PaymentSource.network,
+			paymentSourceType: request.PaymentSource.paymentSourceType,
+			smartContractAddress: request.PaymentSource.smartContractAddress,
+			rpcProviderApiKey: request.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+		},
+		expectedRequest: {
+			kind: params.kind,
+			inputHash: request.inputHash,
+			payByTime: request.payByTime,
+			submitResultTime: request.submitResultTime,
+			unlockTime: request.unlockTime,
+			externalDisputeUnlockTime: request.externalDisputeUnlockTime,
+			collateralReturnLovelace: request.collateralReturnLovelace,
+			buyerReturnAddress: request.buyerReturnAddress,
+			sellerReturnAddress: request.sellerReturnAddress,
+			buyerWallet: request.BuyerWallet,
+			sellerWallet: null,
+			smartContractWallet: request.SmartContractWallet,
+			amounts: request.RequestedFunds,
+			knownTransactionHashes: [
+				request.CurrentTransaction?.txHash,
+				...request.TransactionHistory.map((transaction) => transaction.txHash),
+			].filter((txHash): txHash is string => txHash != null),
+		},
+		expectedVersion: {
+			updatedAt: request.updatedAt,
+			currentTransactionId: request.currentTransactionId,
+			onChainState: request.onChainState,
+			resultHash: request.resultHash,
+		},
+	};
+}
+
+function encodeRepairRequestVersion(version: RepairExpectedVersion): string {
+	return createHash('sha256')
+		.update(
+			JSON.stringify([
+				version.updatedAt.toISOString(),
+				version.currentTransactionId,
+				version.onChainState,
+				version.resultHash,
+			]),
+		)
+		.digest('base64url');
+}
 
 /**
  * Repoints a purchase or payment at a specific transaction.
@@ -64,30 +244,34 @@ export const repairRequestPost = adminAuthenticatedEndpointFactory.build({
 		if (force && input.onChainState == null) {
 			throw createHttpError(400, 'onChainState is required when force is true');
 		}
+		if (!force && input.requestVersion == null) {
+			throw createHttpError(400, 'requestVersion from a successful preview is required when force is false');
+		}
+		if (force && input.requestVersion == null && input.expectedRequestUpdatedAt == null) {
+			throw createHttpError(
+				400,
+				'expectedRequestUpdatedAt from the operator dialog is required when force is true and requestVersion is unavailable',
+			);
+		}
 
-		const where = {
+		const request = await findRepairRequest({
+			kind,
+			network: input.network,
 			blockchainIdentifier: input.blockchainIdentifier,
-			PaymentSource: { network: input.network, deletedAt: null },
-		};
-		const select = {
-			id: true,
-			blockchainIdentifier: true,
-			PaymentSource: {
-				select: {
-					network: true,
-					smartContractAddress: true,
-					PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
-				},
-			},
-		};
-
-		const request =
-			kind === 'purchase'
-				? await prisma.purchaseRequest.findFirst({ where, select })
-				: await prisma.paymentRequest.findFirst({ where, select });
+		});
 
 		if (request == null) {
 			throw createHttpError(404, `${input.kind} request not found for the given blockchainIdentifier and network`);
+		}
+		if (input.requestVersion != null && input.requestVersion !== encodeRepairRequestVersion(request.expectedVersion)) {
+			throw createHttpError(409, 'Request changed after preview; preview the repair again');
+		}
+		if (
+			input.requestVersion == null &&
+			input.expectedRequestUpdatedAt != null &&
+			input.expectedRequestUpdatedAt !== request.expectedVersion.updatedAt.toISOString()
+		) {
+			throw createHttpError(409, 'Request changed after the operator dialog loaded; reload before forcing repair');
 		}
 
 		try {
@@ -96,9 +280,11 @@ export const repairRequestPost = adminAuthenticatedEndpointFactory.build({
 				: await validateRepairTransaction({
 						txHash: input.txHash,
 						blockchainIdentifier: request.blockchainIdentifier,
-						smartContractAddress: request.PaymentSource.smartContractAddress,
-						network: request.PaymentSource.network,
-						rpcProviderApiKey: request.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+						smartContractAddress: request.paymentSource.smartContractAddress,
+						network: request.paymentSource.network,
+						rpcProviderApiKey: request.paymentSource.rpcProviderApiKey,
+						paymentSourceType: request.paymentSource.paymentSourceType,
+						expectedRequest: request.expectedRequest,
 					});
 
 			return await repairRequestTransaction({
@@ -107,8 +293,15 @@ export const repairRequestPost = adminAuthenticatedEndpointFactory.build({
 				txHash: input.txHash,
 				validation,
 				forcedOnChainState: force ? (input.onChainState ?? null) : null,
+				expectedVersion: request.expectedVersion,
 			});
 		} catch (error) {
+			if (error instanceof RepairConflictError) {
+				throw createHttpError(409, error.message);
+			}
+			if (error instanceof RepairChainLookupError) {
+				throw createHttpError(502, 'Chain provider could not complete repair validation; retry later');
+			}
 			if (error instanceof RepairValidationError) {
 				// A validation failure is the caller's problem to fix (wrong hash,
 				// wrong request), not a server fault — and the detail is the whole
@@ -133,6 +326,7 @@ export const previewRepairRequestSchemaOutput = z.object({
 	derivedOnChainState: z.nativeEnum(OnChainState),
 	resultHash: z.string().nullable(),
 	currentOnChainState: z.nativeEnum(OnChainState).nullable(),
+	requestVersion: z.string().describe('Opaque version to pass to the apply endpoint as requestVersion'),
 });
 
 /**
@@ -147,27 +341,11 @@ export const previewRepairRequestPost = adminAuthenticatedEndpointFactory.build(
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const kind: RepairTargetKind = input.kind === 'Purchase' ? 'purchase' : 'payment';
-		const where = {
+		const request = await findRepairRequest({
+			kind,
+			network: input.network,
 			blockchainIdentifier: input.blockchainIdentifier,
-			PaymentSource: { network: input.network, deletedAt: null },
-		};
-		const select = {
-			id: true,
-			blockchainIdentifier: true,
-			onChainState: true,
-			PaymentSource: {
-				select: {
-					network: true,
-					smartContractAddress: true,
-					PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
-				},
-			},
-		};
-
-		const request =
-			kind === 'purchase'
-				? await prisma.purchaseRequest.findFirst({ where, select })
-				: await prisma.paymentRequest.findFirst({ where, select });
+		});
 
 		if (request == null) {
 			throw createHttpError(404, `${input.kind} request not found for the given blockchainIdentifier and network`);
@@ -177,9 +355,11 @@ export const previewRepairRequestPost = adminAuthenticatedEndpointFactory.build(
 			const validation = await validateRepairTransaction({
 				txHash: input.txHash,
 				blockchainIdentifier: request.blockchainIdentifier,
-				smartContractAddress: request.PaymentSource.smartContractAddress,
-				network: request.PaymentSource.network,
-				rpcProviderApiKey: request.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+				smartContractAddress: request.paymentSource.smartContractAddress,
+				network: request.paymentSource.network,
+				rpcProviderApiKey: request.paymentSource.rpcProviderApiKey,
+				paymentSourceType: request.paymentSource.paymentSourceType,
+				expectedRequest: request.expectedRequest,
 			});
 
 			return {
@@ -188,8 +368,12 @@ export const previewRepairRequestPost = adminAuthenticatedEndpointFactory.build(
 				derivedOnChainState: validation.derivedOnChainState,
 				resultHash: validation.resultHash,
 				currentOnChainState: request.onChainState,
+				requestVersion: encodeRepairRequestVersion(request.expectedVersion),
 			};
 		} catch (error) {
+			if (error instanceof RepairChainLookupError) {
+				throw createHttpError(502, 'Chain provider could not complete repair validation; retry later');
+			}
 			if (error instanceof RepairValidationError) {
 				throw createHttpError(400, error.detail);
 			}

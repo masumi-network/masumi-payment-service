@@ -48,6 +48,7 @@ interface RequestRepairDialogProps {
   kind: 'Purchase' | 'Payment';
   network: NetworkType;
   blockchainIdentifier: string;
+  requestUpdatedAt: Date;
   onRepaired: () => void;
 }
 
@@ -69,6 +70,7 @@ export function RequestRepairDialog({
   kind,
   network,
   blockchainIdentifier,
+  requestUpdatedAt,
   onRepaired,
 }: RequestRepairDialogProps) {
   const { apiClient } = useAppContext();
@@ -96,7 +98,9 @@ export function RequestRepairDialog({
 
   const trimmedHash = txHash.trim();
   const isHashValid = TX_HASH_PATTERN.test(trimmedHash);
-  const isPreviewCurrent = preview != null && previewedHash === trimmedHash;
+  const currentRequestVersion =
+    preview != null && previewedHash === trimmedHash ? preview.requestVersion : undefined;
+  const isPreviewCurrent = currentRequestVersion != null;
 
   const handlePreview = useCallback(async () => {
     setIsPreviewing(true);
@@ -122,6 +126,11 @@ export function RequestRepairDialog({
         return;
       }
 
+      if (data.requestVersion.length === 0) {
+        setPreviewError('The repair preview returned no request version');
+        return;
+      }
+
       setPreview(data);
       setPreviewedHash(trimmedHash);
     } catch (error) {
@@ -132,17 +141,26 @@ export function RequestRepairDialog({
   }, [apiClient, blockchainIdentifier, kind, network, trimmedHash]);
 
   const handleApply = useCallback(async () => {
+    if (!force && currentRequestVersion == null) {
+      toast.error('Preview the current transaction hash before applying the repair');
+      return;
+    }
+
     setIsApplying(true);
     try {
+      const body = {
+        kind,
+        network,
+        blockchainIdentifier,
+        txHash: trimmedHash,
+        ...(currentRequestVersion != null
+          ? { requestVersion: currentRequestVersion }
+          : { expectedRequestUpdatedAt: requestUpdatedAt }),
+        ...(force ? { force: true, onChainState: forcedState as OnChainState } : {}),
+      };
       const response = await postRequestRepair({
         client: apiClient,
-        body: {
-          kind,
-          network,
-          blockchainIdentifier,
-          txHash: trimmedHash,
-          ...(force ? { force: true, onChainState: forcedState as OnChainState } : {}),
-        },
+        body,
       });
 
       if (response.error) {
@@ -172,12 +190,14 @@ export function RequestRepairDialog({
   }, [
     apiClient,
     blockchainIdentifier,
+    currentRequestVersion,
     force,
     forcedState,
     kind,
     network,
     onClose,
     onRepaired,
+    requestUpdatedAt,
     trimmedHash,
   ]);
 

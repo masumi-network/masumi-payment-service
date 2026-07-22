@@ -3125,9 +3125,9 @@ export type TxSyncQuarantineEntry = {
     blockHeight: number | null;
     txIndex: number | null;
     /**
-     * Whether the lookup or the processing failed
+     * Whether lookup/processing failed, processing was deferred behind a predecessor, or canonical rollback settlement is pending
      */
-    reason: 'ExtendedLookupFailed' | 'ProcessingFailed';
+    reason: 'ExtendedLookupFailed' | 'ProcessingFailed' | 'PredecessorPending' | 'CanonicalRollback';
     /**
      * How many retries the reconciler has already made
      */
@@ -3138,7 +3138,7 @@ export type TxSyncQuarantineEntry = {
      */
     nextRetryAt: Date;
     /**
-     * Set once applied or discarded. Rows are retained for audit
+     * Set once successfully applied or canonically confirmed rolled back. Rows are retained for audit
      */
     resolvedAt: Date | null;
     /**
@@ -12892,6 +12892,10 @@ export type DeleteTxSyncQuarantineErrors = {
      * Quarantine entry not found
      */
     404: unknown;
+    /**
+     * Quarantine entry is currently being processed or changed concurrently
+     */
+    409: unknown;
 };
 
 export type DeleteTxSyncQuarantineResponses = {
@@ -12922,9 +12926,9 @@ export type GetTxSyncQuarantineData = {
          */
         paymentSourceId?: string;
         /**
-         * Pending: awaiting retry. NeedsOperator: retries exhausted or a non-retryable failure. Resolved: already applied or discarded.
+         * Unresolved: every unapplied entry. Pending: awaiting retry. NeedsOperator: retries exhausted or a non-retryable failure. Resolved: successfully applied or independently confirmed rolled back.
          */
-        status?: 'Pending' | 'NeedsOperator' | 'Resolved' | 'All';
+        status?: 'Unresolved' | 'Pending' | 'NeedsOperator' | 'Resolved' | 'All';
         /**
          * How many entries to return
          */
@@ -12986,6 +12990,10 @@ export type PostTxSyncQuarantineRetryErrors = {
      * Quarantine entry not found
      */
     404: unknown;
+    /**
+     * Quarantine entry is currently being processed or changed concurrently
+     */
+    409: unknown;
 };
 
 export type PostTxSyncQuarantineRetryResponses = {
@@ -13040,6 +13048,10 @@ export type PostRequestRepairPreviewErrors = {
      * Request not found for the given blockchainIdentifier and network
      */
     404: unknown;
+    /**
+     * Chain provider could not complete validation; retry later
+     */
+    502: unknown;
 };
 
 export type PostRequestRepairPreviewResponses = {
@@ -13054,6 +13066,10 @@ export type PostRequestRepairPreviewResponses = {
             derivedOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
             resultHash: string | null;
             currentOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            /**
+             * Opaque version to pass to the apply endpoint as requestVersion
+             */
+            requestVersion: string;
         };
     };
 };
@@ -13089,6 +13105,14 @@ export type PostRequestRepairData = {
          * Required when force is true. Ignored otherwise — the state is read from the transaction datum.
          */
         onChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        /**
+         * Opaque request version returned by preview. Required unless force is true; rejects an apply when tx-sync changed the request after preview.
+         */
+        requestVersion?: string;
+        /**
+         * Required for force when requestVersion is unavailable. Pass the request updatedAt shown in the operator dialog to reject stale forced writes.
+         */
+        expectedRequestUpdatedAt?: Date;
     };
     path?: never;
     query?: never;
@@ -13108,6 +13132,14 @@ export type PostRequestRepairErrors = {
      * Request not found for the given blockchainIdentifier and network
      */
     404: unknown;
+    /**
+     * Request changed after preview or after the force dialog loaded
+     */
+    409: unknown;
+    /**
+     * Chain provider could not complete validation; retry later
+     */
+    502: unknown;
 };
 
 export type PostRequestRepairResponses = {

@@ -59,7 +59,7 @@ async function detectRollbackForTxPage(
 			rolledBackTx = rolledBackTx.reverse();
 
 			const foundIndex = latestTx.findIndex((x) => x.tx_hash == txs[i].tx_hash);
-			return { rolledBackTx, foundIndex };
+			return { rolledBackTx, foundIndex, rollbackAnchor: txs[i].tx_hash };
 		}
 	}
 	return null;
@@ -232,6 +232,7 @@ export async function getTxsFromCardanoAfterSpecificTx(
 	let foundTx = -1;
 	let index = 0;
 	let rolledBackTx: Array<{ tx_hash: string }> = [];
+	let rollbackAnchor: string | null = null;
 	do {
 		index++;
 		const txs = await blockfrost.addressesTransactions(paymentContract.smartContractAddress, {
@@ -263,6 +264,7 @@ export async function getTxsFromCardanoAfterSpecificTx(
 			);
 			if (rollbackInfo != null) {
 				rolledBackTx = rollbackInfo.rolledBackTx;
+				rollbackAnchor = rollbackInfo.rollbackAnchor;
 				foundTx = rollbackInfo.foundIndex;
 				latestTx = latestTx.slice(0, rollbackInfo.foundIndex);
 			}
@@ -273,9 +275,31 @@ export async function getTxsFromCardanoAfterSpecificTx(
 		}
 	} while (foundTx == -1);
 
+	if (latestIdentifier != null && foundTx == -1) {
+		// The cursor is absent from the complete canonical address history and
+		// none of our stored predecessors survived either. Every stored cursor is
+		// therefore on the orphaned branch. Rewind to null and return the complete
+		// canonical history so the caller can perform a full resync. This also
+		// covers an empty address history, including disappearance of the source's
+		// first and only transaction.
+		const orphanedIdentifiers = await prisma.paymentSourceIdentifiers.findMany({
+			where: {
+				PaymentSource: {
+					smartContractAddress: paymentContract.smartContractAddress,
+				},
+			},
+			select: { txHash: true },
+			orderBy: { createdAt: 'asc' },
+		});
+		rolledBackTx = [...new Set([...orphanedIdentifiers.map((identifier) => identifier.txHash), latestIdentifier])].map(
+			(txHash) => ({ tx_hash: txHash }),
+		);
+		rollbackAnchor = null;
+	}
+
 	//invert to get oldest first
 	latestTx = latestTx.reverse();
-	return { latestTx, rolledBackTx };
+	return { latestTx, rolledBackTx, rollbackAnchor };
 }
 
 //returns all tx hashes that are part of the smart contract interaction, excluding the initial purchase tx hash
