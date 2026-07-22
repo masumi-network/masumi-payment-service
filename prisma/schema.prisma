@@ -894,6 +894,10 @@ model PaymentSource {
   lastCheckedAt                  DateTime?
   lastIdentifierChecked          String?
   syncInProgress                 Boolean                         @default(false)
+  /// Monotonic source-wide tx-sync epoch. Scanner quarantine/rollback markers
+  /// increment it; reconciler and scanner business writes must hold this row's
+  /// lock and match the captured value before changing request state.
+  txSyncFenceVersion             Int                             @default(0)
   paymentSourceType              PaymentSourceType               @default(Web3CardanoV1)
   /// Required for Web3CardanoV2 (must be >= 1) and forbidden for Web3CardanoV1.
   /// Enforced at the DB layer by a CHECK constraint defined in migration
@@ -928,6 +932,7 @@ model PaymentSource {
   InboxAgentRegistrationRequests InboxAgentRegistrationRequest[]
   WalletBases                    WalletBase[]
   WebhookEndpoints               WebhookEndpoint[]
+  QuarantinedTransactions        TxSyncQuarantine[]
 
   @@unique([network, smartContractAddress])
   // Active-only uniqueness on (network, policyId) is enforced by the partial
@@ -1410,4 +1415,70 @@ enum WebhookDeliveryStatus {
   Failed
   Retrying
   Cancelled
+}
+
+/// A transaction the sync scanner saw at a payment source's contract address
+/// but could not fetch or process.
+///
+/// The scanner keeps a single `lastIdentifierChecked` cursor, which forces a
+/// choice between two bad options when one transaction fails: drop it and
+/// advance (silent, permanent data loss — a request frozen in a stale state
+/// forever) or halt and refuse to advance (one permanently-unfetchable tx,
+/// e.g. one rolled back mid-flight, stalls every later transaction for that
+/// payment source).
+///
+/// This table breaks that tie by separating "scanned" from "processed": the
+/// cursor may advance, and the unresolved transaction plus its chain-order
+/// suffix are recorded here for ordered replay. Nothing is skipped silently;
+/// one bad transaction does not stop scanning, while descendants cannot apply
+/// ahead of it and regress request state.
+model TxSyncQuarantine {
+  id                       String                 @id @default(cuid())
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  paymentSourceId          String
+  txHash                   String
+  /// Chain position, kept so the reconciler can replay in chain order.
+  blockHeight              Int?
+  txIndex                  Int?
+  /// Why it was quarantined, for triage. Not parsed by the reconciler.
+  reason                   TxSyncQuarantineReason
+  attempts                 Int                    @default(0)
+  lastError                String?
+  /// Retries are due when now() >= nextRetryAt. Backs off with attempts.
+  nextRetryAt              DateTime               @default(now())
+  /// Set once successfully processed or independently confirmed rolled back.
+  /// Rows are retained for audit.
+  resolvedAt               DateTime?
+  /// Terminal failures (e.g. a deterministic parse error) stop being retried
+  /// and must be looked at by an operator.
+  needsOperator            Boolean                @default(false)
+  /// Cross-process claim. Every worker mutation compares processingLeaseId so
+  /// an expired worker cannot overwrite a newer retry/delete/claim decision.
+  processingLeaseId        String?
+  processingLeaseExpiresAt DateTime?
+  /// Set only by canonical address-history rollback detection. The unresolved
+  /// row blocks descendants until scanner rollback business writes commit.
+  canonicalRollbackAt      DateTime?
+
+  PaymentSource PaymentSource @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentSourceId, txHash])
+  @@index([resolvedAt, nextRetryAt])
+  @@index([needsOperator])
+  @@index([processingLeaseExpiresAt])
+  @@index([canonicalRollbackAt])
+}
+
+enum TxSyncQuarantineReason {
+  /// One of the Blockfrost lookups for the tx failed after retries.
+  ExtendedLookupFailed
+  /// The tx was fetched but processing threw.
+  ProcessingFailed
+  /// Processing was deliberately deferred until an earlier chain transaction
+  /// for the same payment source has been resolved or removed by an operator.
+  PredecessorPending
+  /// Canonical address history observed this tx roll back; the row remains an
+  /// ordering barrier until scanner rollback business writes have committed.
+  CanonicalRollback
 }

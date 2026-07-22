@@ -41,6 +41,12 @@ import {
 } from './wallet/low-balance';
 import { queryRpcProviderKeysEndpointGet } from './rpc-api-keys';
 import { queryUTXOEndpointGet } from './utxos';
+import {
+	deleteTxSyncQuarantineDelete,
+	queryTxSyncQuarantineGet,
+	retryTxSyncQuarantinePost,
+} from './tx-sync-quarantine';
+import { previewRepairRequestPost, repairRequestPost } from './request-repair';
 import { queryBalanceEndpointGet } from './balance';
 import { paymentSourceEndpointGet } from './payment-source';
 import { submitPaymentResultEndpointPost } from './payments/submit-result';
@@ -297,6 +303,19 @@ export const apiRouter: Routing = {
 		},
 		utxos: {
 			get: queryUTXOEndpointGet,
+		},
+		'tx-sync-quarantine': {
+			get: queryTxSyncQuarantineGet,
+			delete: deleteTxSyncQuarantineDelete,
+			retry: {
+				post: retryTxSyncQuarantinePost,
+			},
+		},
+		'request-repair': {
+			post: repairRequestPost,
+			preview: {
+				post: previewRepairRequestPost,
+			},
 		},
 		balance: {
 			get: queryBalanceEndpointGet,
