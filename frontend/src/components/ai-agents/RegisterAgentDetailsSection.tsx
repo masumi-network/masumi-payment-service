@@ -60,16 +60,11 @@ export function RegisterAgentDetailsSection({
         <label className="text-sm font-medium">
           Agent Type <span className="text-destructive">*</span>
         </label>
+        {/* No field-clearing on change: only the active type's endpoint field is
+            sent in the payload, so a hidden value from another type is harmless
+            and keeping it preserves input if the user toggles back. */}
         <select
-          {...register('agentType', {
-            onChange: () => {
-              // Clear the other endpoint fields so a stale value from a previous
-              // type can't linger in the (hidden) form state.
-              setValue('apiUrl', '');
-              setValue('openApiSpecUrl', '');
-              setValue('x402ResourcesUrl', '');
-            },
-          })}
+          {...register('agentType')}
           disabled={typeLocked}
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >

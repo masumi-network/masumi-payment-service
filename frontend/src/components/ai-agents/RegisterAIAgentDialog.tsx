@@ -459,7 +459,7 @@ export function RegisterAIAgentDialog({
               description: data.description,
               // Update route is Standard-only for now (type-aware update is a
               // backend follow-up); apiUrl is populated for existing entries.
-              apiBaseUrl: data.apiUrl ?? '',
+              apiBaseUrl: data.apiUrl || undefined,
               Tags: data.tags,
               Capability: capability,
               Author: author,
