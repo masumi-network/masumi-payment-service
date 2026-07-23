@@ -19,6 +19,7 @@ import {
   PaymentFormFields,
   useInputDataHash,
   paymentFormSchema,
+  forceLayerToApi,
   type PaymentFormValues,
 } from './PaymentFormFields';
 
@@ -50,6 +51,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
       inputHash: '',
       identifierFromPurchaser: '',
       metadata: '',
+      forceLayer: 'Auto',
     },
   });
 
@@ -124,6 +126,9 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
           externalDisputeUnlockTime: times.externalDisputeUnlockTime,
           metadata: data.metadata || undefined,
           ...(requestedFunds ? { RequestedFunds: requestedFunds } : {}),
+          ...(forceLayerToApi(data.forceLayer)
+            ? { forceLayer: forceLayerToApi(data.forceLayer) }
+            : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';

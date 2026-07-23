@@ -1,4 +1,4 @@
-import { PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
+import { PurchasingAction, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
@@ -76,6 +76,7 @@ export type ReconcileCandidate = {
 	id: string;
 	intendedTxHash: string;
 	invalidHereafterSlot: bigint | null;
+	layer: TransactionLayer;
 	BlocksWallet: {
 		id: string;
 		PaymentSource: { network: 'Mainnet' | 'Preprod'; PaymentSourceConfig: { rpcProviderApiKey: string } };
@@ -86,6 +87,7 @@ export async function reconcileAmbiguousFundingV2(): Promise<void> {
 	const candidates = await prisma.transaction.findMany({
 		where: {
 			status: TransactionStatus.Pending,
+			layer: TransactionLayer.L1,
 			txHash: null,
 			intendedTxHash: { not: null },
 			createdAt: { lt: new Date(Date.now() - RECONCILE_MIN_AGE_MS) },
@@ -135,6 +137,13 @@ export async function reconcileAmbiguousFundingV2(): Promise<void> {
  * `(walletId, pendingTransactionId)`, so a duplicate revert is a no-op.
  */
 export async function reconcileOne(tx: ReconcileCandidate): Promise<void> {
+	if (tx.layer !== TransactionLayer.L1) {
+		logger.warn('funding-reconciliation: refusing to query Blockfrost for a non-L1 transaction', {
+			txId: tx.id,
+			layer: tx.layer,
+		});
+		return;
+	}
 	// Resolve network + Blockfrost key. Preferred path is the direct
 	// BlocksWallet → PaymentSource walk. If BlocksWallet was orphaned by a
 	// defensive cleanup elsewhere (e.g. the invalid-state branch in

@@ -21,10 +21,10 @@ validating L2 changes — not on every push. The committed Jest suites
 
 The seven escrow operations, across three flows:
 
-| Flow    | Path                                                              | Waits        |
-| ------- | ---------------------------------------------------------------- | ------------ |
-| `flow1` | lock → submit-result → **collection** (seller paid)              | ~13 min      |
-| `flow2` | lock → request-refund → authorize-refund → **collect-refund**    | none         |
+| Flow    | Path                                                                        | Waits   |
+| ------- | --------------------------------------------------------------------------- | ------- |
+| `flow1` | lock → submit-result → **collection** (seller paid)                         | ~13 min |
+| `flow2` | lock → request-refund → authorize-refund → **collect-refund**               | none    |
 | `flow3` | lock → submit-result → request-refund(→Disputed) → **authorize-withdrawal** | ~16 min |
 
 The waits in flow1/flow3 are the payment contract's own seller/buyer cooldowns —
@@ -111,12 +111,22 @@ and runs Prisma migrate + seed against it. Your dev DB on 5432 is untouched.
 
 ### Useful env overrides
 
-| Var              | Default                  | Purpose                                  |
-| ---------------- | ------------------------ | ---------------------------------------- |
-| `HYDRA_DEMO_DIR` | sibling hydra checkout   | location of the external hydra devnet    |
-| `DB_CONTAINER`   | `masumi-hydra-test-db`   | test Postgres container name             |
-| `NODE1`          | `http://127.0.0.1:4001`  | head node HTTP API (127.0.0.1, not localhost: native node binds IPv4) |
-| `RUN_TIMEOUT`    | `120`                    | per-step tsx timeout (seconds)           |
+| Var              | Default                 | Purpose                                                               |
+| ---------------- | ----------------------- | --------------------------------------------------------------------- |
+| `HYDRA_DEMO_DIR` | sibling hydra checkout  | location of the external hydra devnet                                 |
+| `DB_CONTAINER`   | `masumi-hydra-test-db`  | test Postgres container name                                          |
+| `NODE1`          | `http://127.0.0.1:4001` | head node HTTP API (127.0.0.1, not localhost: native node binds IPv4) |
+| `RUN_TIMEOUT`    | `120`                   | per-step tsx timeout (seconds)                                        |
+
+Hydra persistence event-log rotation is deliberately unsupported. Do not set
+`PERSISTENCE_ROTATE_AFTER` or add `--persistence-rotate-after` to the external
+demo compose file: both supported launch paths reject that configuration. A
+compacted replay can omit the original Open and signed-snapshot anchors, while
+the remaining `Greetings`, side-loaded snapshot, and current `/snapshot/utxo`
+data are not sufficient authentication. The service therefore also latches
+fail-closed if a node emits `EventLogRotated` or an Open replay reaches
+`Greetings` without a restored Open/signed-snapshot anchor. Use an unrotated
+persistence tree; recover or settle an already-rotated head manually.
 
 ## Notes
 

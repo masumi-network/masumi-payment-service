@@ -36,6 +36,7 @@ export async function resolveUsableHydraHead(
 				where: {
 					isEnabled: true,
 					headIdentifier: { not: null },
+					initTxHash: { not: null },
 					status: 'Open',
 				},
 				include: {
@@ -52,7 +53,12 @@ export async function resolveUsableHydraHead(
 	}
 
 	const head = relation.Heads[0];
-	if (!head.LocalParticipant) {
+	if (
+		!head.LocalParticipant ||
+		head.LocalParticipant.walletId !== localHotWalletId ||
+		head.RemoteParticipants.length !== 1 ||
+		head.RemoteParticipants[0]?.walletId !== remoteWalletId
+	) {
 		return null;
 	}
 
@@ -80,12 +86,14 @@ export async function resolveUsableHydraHeadForPurchase(
 		where: {
 			isEnabled: true,
 			headIdentifier: { not: null },
+			initTxHash: { not: null },
 			status: HydraHeadStatus.Open,
 			LocalParticipant: {
 				walletId: buyerHotWalletId,
 			},
 			HydraRelation: {
 				network,
+				localHotWalletId: buyerHotWalletId,
 				remoteWalletId: sellerWalletBaseId,
 			},
 		},
@@ -95,7 +103,13 @@ export async function resolveUsableHydraHeadForPurchase(
 		},
 	});
 
-	if (!head || !head.LocalParticipant) {
+	if (
+		!head ||
+		!head.LocalParticipant ||
+		head.LocalParticipant.walletId !== buyerHotWalletId ||
+		head.RemoteParticipants.length !== 1 ||
+		head.RemoteParticipants[0]?.walletId !== sellerWalletBaseId
+	) {
 		return null;
 	}
 

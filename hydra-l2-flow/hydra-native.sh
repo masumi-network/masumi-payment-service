@@ -90,6 +90,14 @@ c_grn(){ printf '\033[32m%s\033[0m\n' "$*"; }
 c_red(){ printf '\033[31m%s\033[0m\n' "$*"; }
 c_blu(){ printf '\033[36m%s\033[0m\n' "$*"; }
 
+assert_persistence_rotation_disabled(){
+  if [ -n "${PERSISTENCE_ROTATE_AFTER:-}" ]; then
+    c_red "PERSISTENCE_ROTATE_AFTER is unsupported: rotated Hydra logs cannot restore Masumi's authenticated replay anchors"
+    c_red "Unset it and use an unrotated persistence tree; an already-rotated head requires manual recovery or settlement"
+    return 1
+  fi
+}
+
 mkdir -p "$STATE" "$BIN_DIR"
 
 # ── native binary ────────────────────────────────────────────────────────────
@@ -270,12 +278,12 @@ start_node_preprod(){
       --deposit-period "${DEPOSIT_PERIOD:-300s}" \
       --unsynced-period "${UNSYNCED_PERIOD:-1800s}" \
       ${START_CHAIN_FROM:+--start-chain-from "${START_CHAIN_FROM//\//.}"} \
-      ${PERSISTENCE_ROTATE_AFTER:+--persistence-rotate-after "$PERSISTENCE_ROTATE_AFTER"} \
       >>"$STATE/node$idx.log" 2>&1 ) &
   echo $! > "$STATE/node$idx.pid"
 }
 
 nodes_up(){
+  assert_persistence_rotation_disabled || return 1
   ensure_bin
   if [ "$NETWORK" = preprod ]; then
     for f in blockfrost.txt protocol-parameters.json purchasing-cardano.sk purchasing-hydra.sk selling-cardano.sk selling-hydra.sk; do
@@ -450,6 +458,7 @@ wait_no_inflight(){
 # restarted follower re-runs its catch-up burst).
 nodes_restart(){
   local try
+  assert_persistence_rotation_disabled || return 1
   wait_no_inflight
   for try in 1 2 3; do
     nodes_down

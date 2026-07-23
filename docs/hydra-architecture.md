@@ -147,14 +147,14 @@ stateDiagram-v2
 - **On-chain phase** — the DB status is updated from hydra-node WS events, mapped
   in `src/lib/hydra/hydra/node.ts`:
 
-  | hydra-node event | resulting status |
-  | --- | --- |
+  | hydra-node event                   | resulting status                            |
+  | ---------------------------------- | ------------------------------------------- |
   | `Greetings` (carries `headStatus`) | that status (e.g. Idle / Open on reconnect) |
-  | `HeadIsInitializing` | Initializing |
-  | `HeadIsOpen` | Open |
-  | `HeadIsClosed` | Closed |
-  | `ReadyToFanout` | FanoutPossible |
-  | `HeadIsFinalized` | Final |
+  | `HeadIsInitializing`               | Initializing                                |
+  | `HeadIsOpen`                       | Open                                        |
+  | `HeadIsClosed`                     | Closed                                      |
+  | `ReadyToFanout`                    | FanoutPossible                              |
+  | `HeadIsFinalized`                  | Final                                       |
 
 ### Committing / funding a head
 
@@ -162,7 +162,7 @@ Funds enter the head via **commits**. The `commit` endpoint drafts a commit tx
 for the local participant's wallet UTxOs (hydra-node `/commit`), signs it, and
 submits through the node's `/cardano-transaction`. Commits are accepted while the
 head is **Initializing** (the initial commit) **or Open** (an incremental
-*deposit*), so a head can open with empty commits and be funded later. On preprod
+_deposit_), so a head can open with empty commits and be funded later. On preprod
 a deposit incorporates only after the node's `deposit-period` (and lags further
 behind real time by the Blockfrost chain-follower drift), so committed funds
 appear in the in-head snapshot minutes after the deposit lands on L1.
@@ -172,15 +172,62 @@ appear in the in-head snapshot minutes after the deposit lands on L1.
 > chain backend (a known Blockfrost silent-drop) is never resubmitted by the node
 > and would otherwise hang the request forever.
 
+The API stores the exact signed commit body hash and validity upper bound before
+submission. A hydra-node success response is not confirmation: only an
+independent Blockfrost lookup of that exact hash promotes the participant to
+committed. An absent body remains reserved through its validity bound plus a
+rollback/indexer grace window, preventing an ambiguous submission from being
+signed and sent twice. Mainnet and Preprod use Blockfrost for this evidence;
+private devnets require a separately trusted L1 observer and otherwise remain
+fail-closed rather than accepting the hydra-node's own claim.
+
+Each `HydraRelation` is a singular two-party channel. Head creation requires the
+local and remote participant wallets to match that relation exactly, claims both
+participants in one Serializable transaction, and permits only one non-final
+head per relation. A partial unique index enforces sequential heads, while
+head-row-locking assignment/status triggers enforce one remote participant on
+non-final heads across replicas; the next head can be created only after the
+previous head is `Final`.
+
+Before the service signs a commit, it independently reads the head state token's
+earliest L1 transaction and verifies the official Hydra `vHead` output. The Open
+datum must bind the exact head ID, two-party Hydra verification-key set, and
+configured contestation period. A node-reported head that does not match
+those on-chain values is disabled and cannot receive a wallet signature.
+
+For an established head, the service replays the unrotated Hydra event log on a
+dedicated evidence socket. A usable replay must bind the configured parties and
+head ID and restore an Open-state or signed-snapshot anchor before its terminal
+`Greetings`; unsigned `Greetings`, snapshot side-load notifications, and the
+current `/snapshot/utxo` response never establish that anchor. Persistence
+event-log rotation is unsupported because compaction can discard the causal
+anchors needed to verify later snapshot transitions. The bundled native launcher
+and E2E preflight reject `PERSISTENCE_ROTATE_AFTER` /
+`--persistence-rotate-after`, and the runtime permanently rejects a session that
+emits `EventLogRotated`. An already-rotated head requires manual recovery or
+settlement using independently verified state.
+
+An expired L2 reservation is not released merely because its transaction is
+absent from replay: `TxValid` can accept a body into the live ledger before that
+body reaches a signed snapshot. The reconciler reports these reservations but
+keeps their request and wallet ownership fail-closed until explicit invalidity
+or a recovery protocol can resolve all competing outcomes atomically.
+
+Close admission is likewise fail-closed. Once a `Close` command may have been
+dispatched, `isClosing` remains set until an authenticated lifecycle frame
+converges the durable status. A crash or ambiguous response can therefore
+require operator reconciliation; elapsed time alone is never used to reopen L2
+admission because the original close transaction may still land.
+
 ## What Runs Where
 
-| Flow | Provider | UTxO source | Submission target | Confirmation source | Transaction row |
-| --- | --- | --- | --- | --- | --- |
-| Normal payment tx | Blockfrost / L1 provider | L1 wallet and contract UTxOs | Cardano L1 | L1 tx sync | `layer=L1` |
-| Hydra lifecycle init | Hydra node | Hydra protocol state | Cardano L1 through Hydra node | Hydra status event | Hydra head fields |
-| Hydra commit | L1 wallet plus Hydra node draft | L1 wallet UTxOs | Cardano L1 through Hydra node `/cardano-transaction` | Hydra observes commit | participant `commitTxHash` |
-| Hydra in-head escrow tx | `HydraProvider` | Hydra snapshot UTxOs | Hydra node `/newTx` | `TxValid` / `SnapshotConfirmed` | `layer=L2`, `hydraHeadId` |
-| Hydra close/fanout | Hydra node | Latest head snapshot | Cardano L1 through Hydra node | Hydra status event | Hydra head fields |
+| Flow                    | Provider                        | UTxO source                  | Submission target                                    | Confirmation source                                     | Transaction row                                   |
+| ----------------------- | ------------------------------- | ---------------------------- | ---------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------- |
+| Normal payment tx       | Blockfrost / L1 provider        | L1 wallet and contract UTxOs | Cardano L1                                           | L1 tx sync                                              | `layer=L1`                                        |
+| Hydra lifecycle init    | Hydra node                      | Hydra protocol state         | Cardano L1 through Hydra node                        | Hydra status event                                      | Hydra head fields                                 |
+| Hydra commit            | L1 wallet plus Hydra node draft | L1 wallet UTxOs              | Cardano L1 through Hydra node `/cardano-transaction` | Independent Blockfrost lookup of exact signed body hash | participant `commitTxHash` + validity upper bound |
+| Hydra in-head escrow tx | `HydraProvider`                 | Hydra snapshot UTxOs         | Hydra node `/newTx`                                  | `TxValid` / `SnapshotConfirmed`                         | `layer=L2`, `hydraHeadId`                         |
+| Hydra close/fanout      | Hydra node                      | Latest head snapshot         | Cardano L1 through Hydra node                        | Hydra status event                                      | Hydra head fields                                 |
 
 ## Implementation Map
 

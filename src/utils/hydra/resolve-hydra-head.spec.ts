@@ -79,6 +79,36 @@ describe('resolveUsableHydraHead', () => {
 		expect(result).toBeNull();
 	});
 
+	it('returns null when stored participants do not match the relation wallets', async () => {
+		mockFindUnique.mockResolvedValue(
+			makeRelation({
+				Heads: [
+					makeHead({
+						LocalParticipant: makeLocalParticipant({ walletId: 'other-local-wallet' }),
+					}),
+				],
+			}),
+		);
+
+		await expect(resolveUsableHydraHead('hot-wallet-1', 'remote-wallet-1', NETWORK)).resolves.toBeNull();
+	});
+
+	it('returns null unless the two-party head has exactly the relation remote participant', async () => {
+		mockFindUnique.mockResolvedValue(makeRelation({ Heads: [makeHead({ RemoteParticipants: [] })] }));
+		await expect(resolveUsableHydraHead('hot-wallet-1', 'remote-wallet-1', NETWORK)).resolves.toBeNull();
+
+		mockFindUnique.mockResolvedValue(
+			makeRelation({
+				Heads: [
+					makeHead({
+						RemoteParticipants: [makeRemoteParticipant(), makeRemoteParticipant({ id: 'remote-2' })],
+					}),
+				],
+			}),
+		);
+		await expect(resolveUsableHydraHead('hot-wallet-1', 'remote-wallet-1', NETWORK)).resolves.toBeNull();
+	});
+
 	it('returns a UsableHydraHead on the happy path', async () => {
 		const relation = makeRelation();
 		mockFindUnique.mockResolvedValue(relation);
@@ -111,6 +141,7 @@ describe('resolveUsableHydraHead', () => {
 						where: expect.objectContaining({
 							isEnabled: true,
 							headIdentifier: { not: null },
+							initTxHash: { not: null },
 							status: 'Open',
 						}),
 					}),
@@ -154,7 +185,10 @@ describe('resolveUsableHydraHeadForPurchase', () => {
 	});
 
 	it('returns a UsableHydraHead on the happy path', async () => {
-		const head = makeHead();
+		const head = makeHead({
+			LocalParticipant: makeLocalParticipant({ walletId: 'buyer-wallet-1' }),
+			RemoteParticipants: [makeRemoteParticipant({ walletId: 'seller-wallet-1' })],
+		});
 		mockFindFirst.mockResolvedValue(head);
 
 		const result = await resolveUsableHydraHeadForPurchase('buyer-wallet-1', 'seller-wallet-1', NETWORK);
@@ -176,12 +210,14 @@ describe('resolveUsableHydraHeadForPurchase', () => {
 				where: expect.objectContaining({
 					isEnabled: true,
 					headIdentifier: { not: null },
+					initTxHash: { not: null },
 					status: HydraHeadStatus.Open,
 					LocalParticipant: {
 						walletId: 'buyer-wallet-1',
 					},
 					HydraRelation: {
 						network: NETWORK,
+						localHotWalletId: 'buyer-wallet-1',
 						remoteWalletId: 'seller-wallet-1',
 					},
 				}),
@@ -190,11 +226,21 @@ describe('resolveUsableHydraHeadForPurchase', () => {
 	});
 
 	it('uses hydraRelationId from the head record', async () => {
-		const head = makeHead({ hydraRelationId: 'relation-from-head' });
+		const head = makeHead({
+			hydraRelationId: 'relation-from-head',
+			LocalParticipant: makeLocalParticipant({ walletId: 'buyer-wallet-1' }),
+			RemoteParticipants: [makeRemoteParticipant({ walletId: 'seller-wallet-1' })],
+		});
 		mockFindFirst.mockResolvedValue(head);
 
 		const result = await resolveUsableHydraHeadForPurchase('buyer-wallet-1', 'seller-wallet-1', NETWORK);
 
 		expect(result?.hydraRelationId).toBe('relation-from-head');
+	});
+
+	it('returns null for a legacy head whose participants do not match its relation query', async () => {
+		mockFindFirst.mockResolvedValue(makeHead());
+
+		await expect(resolveUsableHydraHeadForPurchase('buyer-wallet-1', 'seller-wallet-1', NETWORK)).resolves.toBeNull();
 	});
 });

@@ -57,6 +57,8 @@ interface ExtractedPaymentFields {
   formFields: Partial<MockPurchaseFormValues>;
   pricingType?: string;
   amounts?: Array<{ amount: string; unit: string }>;
+  /** Seller-signed routing choice from the payment response; must be round-tripped. */
+  paymentForceLayer?: 'L1' | 'Hydra' | null;
 }
 
 function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
@@ -92,8 +94,19 @@ function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
             unit: f.unit,
           }))
         : undefined;
+    // A payment response carries the seller's signed routing choice as
+    // `forceLayer`; a purchase response carries it as `paymentForceLayer` (its
+    // own `forceLayer` is the BUYER override). Prefer the explicit field so a
+    // pasted purchase response doesn't misread the buyer's choice as the seller's.
+    const rawSellerForce =
+      obj.paymentForceLayer !== undefined ? obj.paymentForceLayer : obj.forceLayer;
+    const paymentForceLayer =
+      rawSellerForce === 'L1' || rawSellerForce === 'Hydra'
+        ? (rawSellerForce as 'L1' | 'Hydra')
+        : null;
     // Only return if we got at least blockchainIdentifier
-    if (fields.blockchainIdentifier) return { formFields: fields, pricingType, amounts };
+    if (fields.blockchainIdentifier)
+      return { formFields: fields, pricingType, amounts, paymentForceLayer };
     return null;
   } catch {
     return null;
@@ -116,6 +129,11 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   const [extractedAmounts, setExtractedAmounts] = useState<
     Array<{ amount: string; unit: string }> | undefined
   >(undefined);
+  // Seller-signed routing choice from the payment (paste/lookup). Non-null values
+  // are part of the signed identifier and MUST be sent back on the purchase.
+  const [paymentForceLayer, setPaymentForceLayer] = useState<'L1' | 'Hydra' | null>(null);
+  // The buyer's own optional routing override ('Auto' omits the field).
+  const [buyerForceLayer, setBuyerForceLayer] = useState<'Auto' | 'L1' | 'Hydra'>('Auto');
 
   const availableBuyerWallets = useMemo(
     () => wallets.filter((wallet) => wallet.type === 'Purchasing'),
@@ -201,6 +219,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setPasteError(null);
 
         setExtractedAmounts(undefined);
+        setPaymentForceLayer(null);
         return;
       }
       const result = tryExtractPaymentFields(value);
@@ -209,6 +228,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         applyFields(result.formFields);
 
         setExtractedAmounts(result.amounts);
+        setPaymentForceLayer(result.paymentForceLayer ?? null);
         if (result.formFields.identifierFromPurchaser) {
           toast.success('Fields populated from pasted response');
         } else {
@@ -266,6 +286,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
             ? payment.RequestedFunds.map((f) => ({ amount: f.amount, unit: f.unit }))
             : undefined,
         );
+        setPaymentForceLayer(payment.forceLayer ?? null);
 
         if (decoded) {
           setValue('identifierFromPurchaser', decoded.purchaserId);
@@ -310,6 +331,10 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
           externalDisputeUnlockTime: data.externalDisputeUnlockTime,
           metadata: data.metadata || undefined,
           ...(extractedAmounts && extractedAmounts.length > 0 ? { Amounts: extractedAmounts } : {}),
+          // The seller's routing choice is signed into the identifier; a non-null
+          // value must be round-tripped or the signature check rejects the purchase.
+          ...(paymentForceLayer != null ? { paymentForceLayer } : {}),
+          ...(buyerForceLayer !== 'Auto' ? { forceLayer: buyerForceLayer } : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
@@ -340,7 +365,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setIsLoading(false);
       }
     },
-    [apiClient, apiKey, network, extractedAmounts],
+    [apiClient, apiKey, network, extractedAmounts, paymentForceLayer, buyerForceLayer],
   );
 
   const handleClose = () => {
@@ -349,6 +374,8 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
     setPasteValue('');
     setPasteError(null);
     setExtractedAmounts(undefined);
+    setPaymentForceLayer(null);
+    setBuyerForceLayer('Auto');
     setResponse(null);
     setError(null);
     setCurlCommand('');
@@ -613,6 +640,29 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                   rows={2}
                   className="resize-none"
                 />
+              </div>
+
+              {/* Layer Routing (forceLayer) */}
+              <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-5">
+                <Label>Layer Routing</Label>
+                <Select
+                  value={buyerForceLayer}
+                  onValueChange={(value) => setBuyerForceLayer(value as 'Auto' | 'L1' | 'Hydra')}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Auto (recommended)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Auto">Auto (recommended)</SelectItem>
+                    <SelectItem value="L1">Force L1</SelectItem>
+                    <SelectItem value="Hydra">Force Hydra (Beta)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {paymentForceLayer != null
+                    ? `The seller signed "${paymentForceLayer === 'Hydra' ? 'Force Hydra' : 'Force L1'}" into the payment terms; it is sent automatically and your choice must not conflict with it.`
+                    : 'Auto uses Hydra when an open head is available, otherwise L1. Force Hydra fails the funds-lock instead of falling back to L1.'}
+                </p>
               </div>
 
               <Separator />

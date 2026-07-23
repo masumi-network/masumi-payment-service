@@ -5,6 +5,7 @@ import {
 	PurchaseErrorType,
 	PurchasingAction,
 	Prisma,
+	TransactionLayer,
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
@@ -656,12 +657,13 @@ export async function batchLatestPaymentEntriesV2() {
 		// L2 (Hydra head) funds-lock pass FIRST: route eligible requests into an
 		// open head and stamp them with an L2 CurrentTransaction, so the L1
 		// lock-and-query below (which filters `CurrentTransaction: { is: null }`)
-		// naturally skips them. Non-fatal: any failure leaves the request for the
-		// L1 path / next tick.
+		// naturally skips them. Any failure after the L2 pre-submit reservation is
+		// fail-closed by that durable row; only failures before reservation remain
+		// eligible for this tick's L1 pass / a later retry.
 		try {
 			await processL2PurchaseLocks();
 		} catch (l2Error) {
-			logger.error('L2 funds-lock pass failed (non-fatal; falling through to L1)', { error: l2Error });
+			logger.error('L2 funds-lock pass failed; unreserved requests may continue to L1', { error: l2Error });
 		}
 
 		// Gate Serializable $transaction through the shared semaphore so the pg
@@ -695,6 +697,16 @@ export async function batchLatestPaymentEntriesV2() {
 											CurrentTransaction: { is: null },
 											onChainState: null,
 											payByTime: { gte: payByTime },
+											// Filter forced-Hydra and conflicting requests BEFORE `take`, or a
+											// full first page of L2-owned rows can starve later L1 work forever.
+											// Both nullable terms must independently permit L1: forceLayer is
+											// the buyer override; paymentForceLayer is the seller-signed choice.
+											AND: [
+												{ OR: [{ forceLayer: null }, { forceLayer: TransactionLayer.L1 }] },
+												{
+													OR: [{ paymentForceLayer: null }, { paymentForceLayer: TransactionLayer.L1 }],
+												},
+											],
 										},
 										include: {
 											PaidFunds: true,

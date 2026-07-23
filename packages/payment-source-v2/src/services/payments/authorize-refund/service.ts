@@ -63,6 +63,7 @@ import {
 	generateMasumiSmartContractBatchInteractionTransactionAutomaticFees,
 } from '../../../builders/batch-interaction';
 import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import { submitReservedL2Action } from '../../l2-submission';
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
 import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
@@ -1080,44 +1081,22 @@ async function processL2AuthorizeRefund(
 		return await wallet.signTx(unsignedTx);
 	});
 
-	let newTxHash: string;
-	try {
-		newTxHash = await hydraProvider.submitTx(signedTx);
-	} catch (error) {
-		logger.error('L2 authorize-refund: error submitting to head', { error, headId });
-		await prisma.paymentRequest.update({
-			where: { id: request.id },
-			data: {
-				...connectPreviousAction(request.nextActionId),
-				...createNextPaymentAction(PaymentAction.AuthorizeRefundRequested, {
-					errorType: null,
-					errorNote: null,
-				}),
-				SmartContractWallet: { update: { lockedAt: null } },
-			},
-		});
-		return false;
-	}
+	const outcome = await submitReservedL2Action({
+		requestKind: 'payment',
+		operation: 'authorize-refund',
+		requestId: request.id,
+		nextActionId: request.nextActionId,
+		previousTransactionId: request.CurrentTransaction!.id,
+		walletId: request.SmartContractWallet!.id,
+		walletLockedAt: request.SmartContractWallet!.lockedAt!,
+		hydraHeadId: headId,
+		signedTx,
+		initiatedAction: PaymentAction.AuthorizeRefundInitiated,
+		retryAction: PaymentAction.AuthorizeRefundRequested,
+		submitTx: async (transaction) => await hydraProvider.submitTx(transaction),
+	});
 
-	await retryOnSerializationConflict(
-		() =>
-			prisma.paymentRequest.update({
-				where: { id: request.id },
-				data: {
-					...connectPreviousAction(request.nextActionId),
-					...createNextPaymentAction(PaymentAction.AuthorizeRefundInitiated),
-					...createPendingTransaction(request.SmartContractWallet!.id, newTxHash, {
-						layer: TransactionLayer.L2,
-						hydraHeadId: headId,
-					}),
-					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
-				},
-			}),
-		{ label: 'v2-authorize-refund-l2-post-submit' },
-	);
-
-	logger.info('L2 authorize-refund submitted to head', { txHash: newTxHash, headId, smartContractAddress });
-	return true;
+	return outcome.status !== 'definitively-rejected';
 }
 
 function groupRequestsByWallet(requests: PaymentRequestWithRelations[]): Map<string, PaymentRequestWithRelations[]> {
@@ -1190,7 +1169,8 @@ export async function authorizeRefundV2() {
 		const l2PaymentContracts = await lockAndQueryPayments({
 			paymentStatus: PaymentAction.AuthorizeRefundRequested,
 			onChainState: { in: [OnChainState.Disputed, OnChainState.RefundRequested] },
-			maxBatchSize: AUTHORIZE_REFUND_BATCH_SIZE,
+			// One wallet can own only one durable L2 reservation at a time.
+			maxBatchSize: 1,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 			layer: TransactionLayer.L2,
 		});
@@ -1208,6 +1188,11 @@ export async function authorizeRefundV2() {
 							} else {
 								logger.error('L2 authorize-refund failed', { requestId: request.id, error });
 							}
+							await unlockHotWalletIfNoPendingTransaction(
+								request.SmartContractWallet!.id,
+								'authorize-refund-l2-pre-reservation',
+								request.SmartContractWallet!.lockedAt!,
+							);
 						}
 					}),
 				);

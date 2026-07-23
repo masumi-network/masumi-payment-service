@@ -25,6 +25,7 @@ import {
   PaymentFormFields,
   useInputDataHash,
   paymentFormSchema,
+  forceLayerToApi,
   type PaymentFormValues,
 } from './PaymentFormFields';
 import { Badge } from '@/components/ui/badge';
@@ -84,6 +85,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
       inputHash: '',
       identifierFromPurchaser: '',
       metadata: '',
+      forceLayer: 'Auto',
     },
   });
 
@@ -149,6 +151,9 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           externalDisputeUnlockTime: payment.externalDisputeUnlockTime || '',
           metadata: originalFormData.metadata || undefined,
           ...(amounts ? { Amounts: amounts } : {}),
+          // The seller's routing choice is signed into the payment terms; the
+          // purchase must round-trip it or the identifier signature check fails.
+          ...(payment.forceLayer != null ? { paymentForceLayer: payment.forceLayer } : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';

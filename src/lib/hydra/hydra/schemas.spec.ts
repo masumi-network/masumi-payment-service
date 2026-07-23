@@ -118,25 +118,36 @@ describe('hydraTransactionSchema', () => {
 });
 
 describe('snapshotConfirmedMessageSchema', () => {
+	const headId = 'ab'.repeat(28);
+	const makeSnapshotConfirmed = (confirmed: Array<Record<string, string>>) => ({
+		tag: 'SnapshotConfirmed' as const,
+		headId,
+		signatures: { multiSignature: ['cd'.repeat(64)] },
+		snapshot: {
+			headId,
+			version: 0,
+			number: 1,
+			accumulator: 'ef'.repeat(32),
+			confirmed,
+			utxo: {},
+			utxoToCommit: {},
+			utxoToDecommit: {},
+		},
+	});
+
 	it('parses a SnapshotConfirmed message with confirmed txs', () => {
-		const result = snapshotConfirmedMessageSchema.parse({
-			tag: 'SnapshotConfirmed',
-			snapshot: {
-				confirmed: [
-					{ type: 'Tx ConwayEra', cborHex: 'cafe', description: '', txId: 'tx001' },
-					{ type: 'Tx ConwayEra', cborHex: 'babe', description: '', txId: 'tx002' },
-				],
-			},
-		});
+		const result = snapshotConfirmedMessageSchema.parse(
+			makeSnapshotConfirmed([
+				{ type: 'Tx ConwayEra', cborHex: 'cafe', description: '', txId: 'tx001' },
+				{ type: 'Tx ConwayEra', cborHex: 'babe', description: '', txId: 'tx002' },
+			]),
+		);
 		expect(result.snapshot.confirmed).toHaveLength(2);
 		expect(result.snapshot.confirmed[0].txId).toBe('tx001');
 	});
 
 	it('parses with empty confirmed array', () => {
-		const result = snapshotConfirmedMessageSchema.parse({
-			tag: 'SnapshotConfirmed',
-			snapshot: { confirmed: [] },
-		});
+		const result = snapshotConfirmedMessageSchema.parse(makeSnapshotConfirmed([]));
 		expect(result.snapshot.confirmed).toHaveLength(0);
 	});
 

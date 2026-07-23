@@ -9,19 +9,35 @@ import {
 	HydraNodeConfig,
 	StatusChangeData,
 } from './types';
+import { HydraTransportError } from './errors';
 
 export class CustomHydraHead extends HydraHead<HydraNode> {
-	constructor(nodeConfigs: HydraNodeConfig[]) {
+	private readonly _isMutationAllowed: () => boolean;
+
+	constructor(nodeConfigs: HydraNodeConfig[], options: { isMutationAllowed?: () => boolean } = {}) {
 		super(nodeConfigs);
+		this._isMutationAllowed = options.isMutationAllowed ?? (() => true);
 
 		this.initializeNodes(nodeConfigs);
 		this.setupStatusChangeHandler();
+	}
+
+	private assertMutationAllowed(): void {
+		if (!this._isMutationAllowed()) {
+			throw new HydraTransportError('Hydra head is no longer admitted for mutating commands');
+		}
 	}
 
 	protected initializeNodes(nodeConfigs: HydraNodeConfig[]): void {
 		for (const nodeConfig of nodeConfigs) {
 			const node = new HydraNode({
 				httpUrl: nodeConfig.httpUrl,
+				wsUrl: nodeConfig.wsUrl,
+				expectedHeadId: nodeConfig.expectedHeadId,
+				reconciledHistoryCursor: nodeConfig.reconciledHistoryCursor,
+				snapshotVerificationKeys: nodeConfig.snapshotVerificationKeys,
+				expectedNodeVerificationKey: nodeConfig.expectedNodeVerificationKey,
+				trustLocalNodeSnapshotMetadata: nodeConfig.trustLocalNodeSnapshotMetadata,
 			});
 			this._nodes[nodeConfig.walletId] = node;
 			this._connected[nodeConfig.walletId] = false;
@@ -36,6 +52,7 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 	}
 
 	async init(timeoutMs?: number): Promise<void> {
+		this.assertMutationAllowed();
 		if (!this.mainNodeConnected) {
 			throw new Error('Main node not connected');
 		}
@@ -47,6 +64,7 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 		blueprintTx?: HydraTransactionType | null,
 		participant?: string | null,
 	): Promise<HydraTransaction> {
+		this.assertMutationAllowed();
 		if (!participant) {
 			participant = this.mainNodeName;
 		}
@@ -60,14 +78,17 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 	}
 
 	async close(): Promise<void> {
+		this.assertMutationAllowed();
 		await this.mainNode.close();
 	}
 
 	async fanout(): Promise<void> {
+		this.assertMutationAllowed();
 		await this.mainNode.fanout();
 	}
 
 	async cardanoTransaction(transaction: HydraTransaction, participant?: string | null): Promise<unknown> {
+		this.assertMutationAllowed();
 		if (!participant) {
 			participant = this.mainNodeName;
 		}
@@ -80,6 +101,7 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 	}
 
 	async newTx(transaction: HydraTransaction, participant?: string | null): Promise<string> {
+		this.assertMutationAllowed();
 		if (!participant) {
 			participant = this.mainNodeName;
 		}

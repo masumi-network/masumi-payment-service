@@ -112,6 +112,30 @@ describe('CustomHydraHead', () => {
 			expect(head.getHydraNode('wallet-a')).toBe(nodeInstances[0]);
 			expect(head.getHydraNode('wallet-b')).toBe(nodeInstances[1]);
 		});
+
+		it('revokes captured heads at every mutating command boundary without blocking connect or reads', async () => {
+			const isMutationAllowed = jest.fn(() => false);
+			const head = new CustomHydraHead(singleConfig, { isMutationAllowed });
+
+			await head.connect('wallet-a');
+			await expect(head.awaitTx('read-only')).resolves.toBe(true);
+			await expect(head.init()).rejects.toThrow('no longer admitted');
+			await expect(head.commit([], null, null)).rejects.toThrow('no longer admitted');
+			await expect(head.close()).rejects.toThrow('no longer admitted');
+			await expect(head.fanout()).rejects.toThrow('no longer admitted');
+			await expect(head.cardanoTransaction(mockTx, null)).rejects.toThrow('no longer admitted');
+			await expect(head.newTx(mockTx, null)).rejects.toThrow('no longer admitted');
+
+			expect(nodeInstances[0].connect).toHaveBeenCalledTimes(1);
+			expect(nodeInstances[0].awaitTx).toHaveBeenCalledTimes(1);
+			expect(nodeInstances[0].init).not.toHaveBeenCalled();
+			expect(nodeInstances[0].commit).not.toHaveBeenCalled();
+			expect(nodeInstances[0].close).not.toHaveBeenCalled();
+			expect(nodeInstances[0].fanout).not.toHaveBeenCalled();
+			expect(nodeInstances[0].cardanoTransaction).not.toHaveBeenCalled();
+			expect(nodeInstances[0].newTx).not.toHaveBeenCalled();
+			expect(isMutationAllowed).toHaveBeenCalledTimes(6);
+		});
 	});
 
 	// -------------------------------------------------------------------------
@@ -166,8 +190,14 @@ describe('CustomHydraHead', () => {
 			nodeInstances[0].connect.mockImplementation(() => {
 				throw new Error('connection refused');
 			});
-			await head.connect('wallet-a');
+			await expect(head.connect('wallet-a')).rejects.toThrow('connection refused');
 			expect(head.connected('wallet-a')).toBe(false);
+		});
+
+		it('rejects an unknown wallet instead of marking it connected', async () => {
+			const head = new CustomHydraHead(singleConfig);
+			await expect(head.connect('wallet-missing')).rejects.toThrow('is not configured');
+			expect(head.connected('wallet-missing')).toBe(false);
 		});
 	});
 

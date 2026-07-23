@@ -23,6 +23,7 @@
 		"./metrics": "./src/metrics.ts",
 		"./network": "./src/network.ts",
 		"./object-properties": "./src/object-properties.ts",
+		"./payment-amounts": "./src/payment-amounts.ts",
 		"./payment-source": "./src/payment-source.ts",
 		"./permissions": "./src/permissions.ts",
 		"./pre-submit-error": "./src/pre-submit-error.ts",

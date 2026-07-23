@@ -63,6 +63,7 @@ import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
 import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
+import { submitReservedL2Action } from '../../l2-submission';
 
 const AUTHORIZE_WITHDRAWAL_BATCH_SIZE = 7;
 
@@ -1099,41 +1100,22 @@ async function processL2AuthorizeWithdrawal(
 		return await wallet.signTx(unsignedTx);
 	});
 
-	let newTxHash: string;
-	try {
-		newTxHash = await hydraProvider.submitTx(signedTx);
-	} catch (error) {
-		logger.error('L2 authorize-withdrawal: error submitting to head', { error, headId });
-		await prisma.purchaseRequest.update({
-			where: { id: request.id },
-			data: {
-				...connectPreviousAction(request.nextActionId),
-				...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalRequested),
-				SmartContractWallet: { update: { lockedAt: null } },
-			},
-		});
-		return false;
-	}
+	const outcome = await submitReservedL2Action({
+		requestKind: 'purchase',
+		operation: 'authorize-withdrawal',
+		requestId: request.id,
+		nextActionId: request.nextActionId,
+		previousTransactionId: request.CurrentTransaction!.id,
+		walletId: purchasingWallet.id,
+		walletLockedAt: purchasingWallet.lockedAt!,
+		hydraHeadId: headId,
+		signedTx,
+		initiatedAction: PurchasingAction.AuthorizeWithdrawalInitiated,
+		retryAction: PurchasingAction.AuthorizeWithdrawalRequested,
+		submitTx: async (transaction) => await hydraProvider.submitTx(transaction),
+	});
 
-	await retryOnSerializationConflict(
-		() =>
-			prisma.purchaseRequest.update({
-				where: { id: request.id },
-				data: {
-					...connectPreviousAction(request.nextActionId),
-					...createNextPurchaseAction(PurchasingAction.AuthorizeWithdrawalInitiated),
-					...createPendingTransaction(purchasingWallet.id, newTxHash, {
-						layer: TransactionLayer.L2,
-						hydraHeadId: headId,
-					}),
-					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
-				},
-			}),
-		{ label: 'v2-authorize-withdrawal-l2-post-submit' },
-	);
-
-	logger.info('L2 authorize-withdrawal submitted to head', { txHash: newTxHash, headId, smartContractAddress });
-	return true;
+	return outcome.status !== 'definitively-rejected';
 }
 
 export async function authorizeWithdrawalsV2() {
@@ -1188,7 +1170,8 @@ export async function authorizeWithdrawalsV2() {
 		const l2PaymentContracts = await lockAndQueryPurchases({
 			purchasingAction: PurchasingAction.AuthorizeWithdrawalRequested,
 			onChainState: { in: [OnChainState.Disputed] },
-			maxBatchSize: AUTHORIZE_WITHDRAWAL_BATCH_SIZE,
+			// One wallet can own only one durable L2 reservation at a time.
+			maxBatchSize: 1,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 			layer: TransactionLayer.L2,
 		});
@@ -1206,6 +1189,11 @@ export async function authorizeWithdrawalsV2() {
 							} else {
 								logger.error('L2 authorize-withdrawal failed', { requestId: request.id, error });
 							}
+							await unlockHotWalletIfNoPendingTransaction(
+								request.SmartContractWallet!.id,
+								'authorize-withdrawal-l2-pre-reservation',
+								request.SmartContractWallet!.lockedAt!,
+							);
 						}
 					}),
 				);

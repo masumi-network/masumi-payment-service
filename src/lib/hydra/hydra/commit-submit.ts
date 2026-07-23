@@ -15,21 +15,19 @@
 export type CardanoTxSubmitResult = { ok: true } | { ok: false; reason: string };
 
 const SUCCESS_TAG = 'TransactionSubmitted';
+const MAX_FAILURE_REASON_LENGTH = 512;
+const SENSITIVE_FAILURE_KEY = /(?:cbor|transaction|witness|secret|mnemonic|private|signing.?key)/i;
 
 export function interpretCardanoTxSubmitResult(result: unknown): CardanoTxSubmitResult {
-	// Only an explicit non-success tag is treated as a failure. The node always
-	// returns a tagged object for this endpoint; a tagless / non-object reply is
-	// treated as success to preserve the original handler's behaviour (the node
-	// contract guarantees a tag, so that branch is purely defensive).
-	if (result && typeof result === 'object' && 'tag' in result && (result as { tag: unknown }).tag !== SUCCESS_TAG) {
-		const reason =
-			'failureReason' in result
-				? stringifyReason((result as { failureReason: unknown }).failureReason)
-				: JSON.stringify(result);
-		return { ok: false, reason };
+	if (result && typeof result === 'object' && 'tag' in result && (result as { tag: unknown }).tag === SUCCESS_TAG) {
+		return { ok: true };
 	}
 
-	return { ok: true };
+	const reason =
+		result && typeof result === 'object' && 'failureReason' in result
+			? stringifyReason((result as { failureReason: unknown }).failureReason)
+			: stringifyReason(result);
+	return { ok: false, reason };
 }
 
 /**
@@ -39,11 +37,21 @@ export function interpretCardanoTxSubmitResult(result: unknown): CardanoTxSubmit
  */
 function stringifyReason(reason: unknown): string {
 	if (typeof reason === 'string') {
-		return reason;
+		return sanitizeReasonText(reason);
 	}
 	try {
-		return JSON.stringify(reason);
+		const serialized = JSON.stringify(reason, (key, value: unknown) =>
+			key && SENSITIVE_FAILURE_KEY.test(key) ? '[redacted]' : value,
+		);
+		return sanitizeReasonText(serialized ?? String(reason));
 	} catch {
-		return String(reason);
+		return sanitizeReasonText(String(reason));
 	}
+}
+
+function sanitizeReasonText(reason: string): string {
+	const withoutLongHex = reason.replace(/[0-9a-fA-F]{128,}/g, '[redacted hex]');
+	return withoutLongHex.length <= MAX_FAILURE_REASON_LENGTH
+		? withoutLongHex
+		: `${withoutLongHex.slice(0, MAX_FAILURE_REASON_LENGTH - 1)}…`;
 }

@@ -2,8 +2,19 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { HydraHeadStatus } from '@/generated/prisma/client';
+import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { encrypt } from '@/utils/security/encryption';
+import { getHydraPlaintextHosts, validateHydraNodeUrls } from '@/lib/hydra';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
+import {
+	quiesceHydraHeadsForDeletion,
+	reconciledFinalHeadFilter,
+	unsettledL2TransactionWhere,
+} from '../deletion-guard';
+import {
+	normalizeHydraSigningKeyCborHex,
+	normalizeHydraVerificationKeyCborHex,
+} from '@/lib/hydra/hydra/snapshot-verification';
 
 // --- Shared schemas ---
 
@@ -58,6 +69,13 @@ export const createLocalParticipantPost = adminAuthenticatedEndpointFactory.buil
 	input: createLocalParticipantInput,
 	output: createLocalParticipantOutput,
 	handler: async ({ input }) => {
+		const nodeUrls = validateParticipantNodeUrls(input.nodeHttpUrl, input.nodeUrl);
+		let hydraSigningKey: string;
+		try {
+			hydraSigningKey = normalizeHydraSigningKeyCborHex(input.hydraSK);
+		} catch {
+			throw createHttpError(400, 'hydraSK must be a Hydra Ed25519 signing key or text envelope');
+		}
 		const wallet = await prisma.hotWallet.findFirst({
 			where: { id: input.walletId, deletedAt: null },
 		});
@@ -68,11 +86,11 @@ export const createLocalParticipantPost = adminAuthenticatedEndpointFactory.buil
 		const participant = await prisma.hydraLocalParticipant.create({
 			data: {
 				Wallet: { connect: { id: input.walletId } },
-				nodeUrl: input.nodeUrl,
-				nodeHttpUrl: input.nodeHttpUrl,
+				nodeUrl: nodeUrls.wsUrl,
+				nodeHttpUrl: nodeUrls.httpUrl,
 				HydraSecretKey: {
 					create: {
-						hydraSK: encrypt(input.hydraSK),
+						hydraSK: encrypt(hydraSigningKey),
 					},
 				},
 			},
@@ -133,14 +151,6 @@ export const getLocalParticipantGet = adminAuthenticatedEndpointFactory.build({
 
 // --- DELETE: delete local participant ---
 
-const NON_FINAL_STATUSES: HydraHeadStatus[] = [
-	HydraHeadStatus.Idle,
-	HydraHeadStatus.Initializing,
-	HydraHeadStatus.Open,
-	HydraHeadStatus.Closed,
-	HydraHeadStatus.FanoutPossible,
-];
-
 const deleteLocalParticipantInput = z.object({
 	id: z.string().min(1).describe('ID of the local participant to delete'),
 });
@@ -155,26 +165,136 @@ export const deleteLocalParticipantDelete = adminAuthenticatedEndpointFactory.bu
 	input: deleteLocalParticipantInput,
 	output: deleteLocalParticipantOutput,
 	handler: async ({ input }) => {
-		const participant = await prisma.hydraLocalParticipant.findUnique({
-			where: { id: input.id },
-			include: {
-				HydraHead: { select: { id: true, status: true } },
-			},
-		});
-
-		if (!participant) {
-			throw createHttpError(404, 'Local participant not found');
-		}
-
-		if (participant.HydraHead && NON_FINAL_STATUSES.includes(participant.HydraHead.status)) {
-			throw createHttpError(409, 'Cannot delete: participant is assigned to a non-final head');
-		}
-
-		await prisma.hydraLocalParticipant.delete({ where: { id: input.id } });
-
+		await deleteHydraLocalParticipant(input.id);
 		return { id: input.id, deleted: true };
 	},
 });
+
+export async function deleteHydraLocalParticipant(id: string): Promise<void> {
+	const deletionPlan = await prisma.hydraLocalParticipant.findUnique({
+		where: { id },
+		select: {
+			hydraHeadId: true,
+			HydraHead: { select: { hydraRelationId: true } },
+		},
+	});
+	if (!deletionPlan) throw createHttpError(404, 'Local participant not found');
+	if ((deletionPlan.hydraHeadId == null) !== (deletionPlan.HydraHead == null)) {
+		throw createHttpError(409, 'Cannot delete: participant head relation is inconsistent');
+	}
+	if (deletionPlan.hydraHeadId) await quiesceHydraHeadsForDeletion([deletionPlan.hydraHeadId]);
+
+	await withSerializableSlotRetry(
+		() =>
+			prisma.$transaction(
+				async (tx) => {
+					if (deletionPlan.HydraHead) {
+						// Rollback persistence, replacement creation and relation deletion
+						// all lock the relation before its heads. Join that order before
+						// consuming a Final marker so a rollback already invalidating the
+						// relation cannot lose a race to participant/key deletion.
+						const lockedRelations = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+							SELECT "id"
+							FROM "HydraRelation"
+							WHERE "id" = ${deletionPlan.HydraHead.hydraRelationId}
+							FOR UPDATE
+						`);
+						if (lockedRelations.length !== 1) {
+							throw createHttpError(409, 'Cannot delete: participant Hydra relation changed concurrently');
+						}
+					}
+					await tx.$queryRaw(Prisma.sql`
+							SELECT "id" FROM "HydraLocalParticipant" WHERE "id" = ${id} FOR UPDATE
+						`);
+					let participant = await tx.hydraLocalParticipant.findUnique({
+						where: { id },
+						select: {
+							hydraHeadId: true,
+							hydraSecretKeyId: true,
+							HydraHead: {
+								select: {
+									status: true,
+									isEnabled: true,
+									fanoutTxHash: true,
+									reconciliationCompletedAt: true,
+									_count: {
+										select: { Transactions: { where: unsettledL2TransactionWhere } },
+									},
+								},
+							},
+						},
+					});
+					if (!participant) throw createHttpError(404, 'Local participant not found');
+					if (participant.hydraHeadId !== deletionPlan.hydraHeadId) {
+						throw createHttpError(409, 'Cannot delete: participant head assignment changed concurrently');
+					}
+					if (participant.hydraHeadId) {
+						const lockedHeads = await tx.$queryRaw<Array<{ id: string; hydraRelationId: string }>>(Prisma.sql`
+							SELECT "id", "hydraRelationId"
+							FROM "HydraHead"
+							WHERE "id" = ${participant.hydraHeadId}
+							FOR UPDATE
+						`);
+						if (
+							lockedHeads.length !== 1 ||
+							lockedHeads[0]?.hydraRelationId !== deletionPlan.HydraHead?.hydraRelationId
+						) {
+							throw createHttpError(409, 'Cannot delete: participant Hydra head changed concurrently');
+						}
+						participant = await tx.hydraLocalParticipant.findUnique({
+							where: { id },
+							select: {
+								hydraHeadId: true,
+								hydraSecretKeyId: true,
+								HydraHead: {
+									select: {
+										status: true,
+										isEnabled: true,
+										fanoutTxHash: true,
+										reconciliationCompletedAt: true,
+										_count: {
+											select: { Transactions: { where: unsettledL2TransactionWhere } },
+										},
+									},
+								},
+							},
+						});
+						if (!participant) throw createHttpError(404, 'Local participant not found');
+						if (participant.hydraHeadId !== deletionPlan.hydraHeadId) {
+							throw createHttpError(409, 'Cannot delete: participant head assignment changed concurrently');
+						}
+					}
+					if (
+						participant.HydraHead &&
+						(participant.HydraHead.status !== HydraHeadStatus.Final ||
+							participant.HydraHead.isEnabled ||
+							participant.HydraHead.fanoutTxHash == null ||
+							participant.HydraHead.reconciliationCompletedAt == null ||
+							participant.HydraHead._count.Transactions !== 0)
+					) {
+						throw createHttpError(409, 'Cannot delete: participant head cleanup is not complete');
+					}
+
+					const deleted = await tx.hydraLocalParticipant.deleteMany({
+						where: {
+							id,
+							OR: [{ hydraHeadId: null }, { HydraHead: { is: reconciledFinalHeadFilter } }],
+						},
+					});
+					if (deleted.count !== 1) {
+						throw createHttpError(409, 'Cannot delete: participant cleanup eligibility changed concurrently');
+					}
+					await tx.hydraSecretKey.delete({ where: { id: participant.hydraSecretKeyId } });
+				},
+				{
+					isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+					maxWait: 10_000,
+					timeout: 10_000,
+				},
+			),
+		{ label: 'hydra-local-participant-delete' },
+	);
+}
 
 // ============================================================
 // REMOTE PARTICIPANT ENDPOINTS
@@ -198,6 +318,13 @@ export const createRemoteParticipantPost = adminAuthenticatedEndpointFactory.bui
 	input: createRemoteParticipantInput,
 	output: createRemoteParticipantOutput,
 	handler: async ({ input }) => {
+		const nodeUrls = validateParticipantNodeUrls(input.nodeHttpUrl, input.nodeUrl);
+		let hydraVerificationKey: string;
+		try {
+			hydraVerificationKey = normalizeHydraVerificationKeyCborHex(input.hydraVK);
+		} catch {
+			throw createHttpError(400, 'hydraVK must be a Hydra Ed25519 verification key or text envelope');
+		}
 		const wallet = await prisma.walletBase.findUnique({
 			where: { id: input.walletId },
 		});
@@ -208,10 +335,10 @@ export const createRemoteParticipantPost = adminAuthenticatedEndpointFactory.bui
 		const participant = await prisma.hydraRemoteParticipant.create({
 			data: {
 				Wallet: { connect: { id: input.walletId } },
-				nodeUrl: input.nodeUrl,
-				nodeHttpUrl: input.nodeHttpUrl,
+				nodeUrl: nodeUrls.wsUrl,
+				nodeHttpUrl: nodeUrls.httpUrl,
 				HydraVerificationKey: {
-					create: { hydraVK: input.hydraVK },
+					create: { hydraVK: hydraVerificationKey },
 				},
 			},
 		});
@@ -285,23 +412,142 @@ export const deleteRemoteParticipantDelete = adminAuthenticatedEndpointFactory.b
 	input: deleteRemoteParticipantInput,
 	output: deleteRemoteParticipantOutput,
 	handler: async ({ input }) => {
-		const participant = await prisma.hydraRemoteParticipant.findUnique({
-			where: { id: input.id },
-			include: {
-				HydraHead: { select: { id: true, status: true } },
-			},
-		});
-
-		if (!participant) {
-			throw createHttpError(404, 'Remote participant not found');
-		}
-
-		if (participant.HydraHead && NON_FINAL_STATUSES.includes(participant.HydraHead.status)) {
-			throw createHttpError(409, 'Cannot delete: participant is assigned to a non-final head');
-		}
-
-		await prisma.hydraRemoteParticipant.delete({ where: { id: input.id } });
-
+		await deleteHydraRemoteParticipant(input.id);
 		return { id: input.id, deleted: true };
 	},
 });
+
+export async function deleteHydraRemoteParticipant(id: string): Promise<void> {
+	const deletionPlan = await prisma.hydraRemoteParticipant.findUnique({
+		where: { id },
+		select: {
+			hydraHeadId: true,
+			HydraHead: { select: { hydraRelationId: true } },
+		},
+	});
+	if (!deletionPlan) throw createHttpError(404, 'Remote participant not found');
+	if ((deletionPlan.hydraHeadId == null) !== (deletionPlan.HydraHead == null)) {
+		throw createHttpError(409, 'Cannot delete: participant head relation is inconsistent');
+	}
+	if (deletionPlan.hydraHeadId) await quiesceHydraHeadsForDeletion([deletionPlan.hydraHeadId]);
+
+	await withSerializableSlotRetry(
+		() =>
+			prisma.$transaction(
+				async (tx) => {
+					if (deletionPlan.HydraHead) {
+						// Serialize destructive key cleanup with authenticated rollback
+						// invalidation using the relation-first lock order shared by every
+						// other Hydra lifecycle writer.
+						const lockedRelations = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+							SELECT "id"
+							FROM "HydraRelation"
+							WHERE "id" = ${deletionPlan.HydraHead.hydraRelationId}
+							FOR UPDATE
+						`);
+						if (lockedRelations.length !== 1) {
+							throw createHttpError(409, 'Cannot delete: participant Hydra relation changed concurrently');
+						}
+					}
+					await tx.$queryRaw(Prisma.sql`
+							SELECT "id" FROM "HydraRemoteParticipant" WHERE "id" = ${id} FOR UPDATE
+						`);
+					let participant = await tx.hydraRemoteParticipant.findUnique({
+						where: { id },
+						select: {
+							hydraHeadId: true,
+							hydraVerificationKeyId: true,
+							HydraHead: {
+								select: {
+									status: true,
+									isEnabled: true,
+									fanoutTxHash: true,
+									reconciliationCompletedAt: true,
+									_count: {
+										select: { Transactions: { where: unsettledL2TransactionWhere } },
+									},
+								},
+							},
+						},
+					});
+					if (!participant) throw createHttpError(404, 'Remote participant not found');
+					if (participant.hydraHeadId !== deletionPlan.hydraHeadId) {
+						throw createHttpError(409, 'Cannot delete: participant head assignment changed concurrently');
+					}
+					if (participant.hydraHeadId) {
+						const lockedHeads = await tx.$queryRaw<Array<{ id: string; hydraRelationId: string }>>(Prisma.sql`
+							SELECT "id", "hydraRelationId"
+							FROM "HydraHead"
+							WHERE "id" = ${participant.hydraHeadId}
+							FOR UPDATE
+						`);
+						if (
+							lockedHeads.length !== 1 ||
+							lockedHeads[0]?.hydraRelationId !== deletionPlan.HydraHead?.hydraRelationId
+						) {
+							throw createHttpError(409, 'Cannot delete: participant Hydra head changed concurrently');
+						}
+						participant = await tx.hydraRemoteParticipant.findUnique({
+							where: { id },
+							select: {
+								hydraHeadId: true,
+								hydraVerificationKeyId: true,
+								HydraHead: {
+									select: {
+										status: true,
+										isEnabled: true,
+										fanoutTxHash: true,
+										reconciliationCompletedAt: true,
+										_count: {
+											select: { Transactions: { where: unsettledL2TransactionWhere } },
+										},
+									},
+								},
+							},
+						});
+						if (!participant) throw createHttpError(404, 'Remote participant not found');
+						if (participant.hydraHeadId !== deletionPlan.hydraHeadId) {
+							throw createHttpError(409, 'Cannot delete: participant head assignment changed concurrently');
+						}
+					}
+					if (
+						participant.HydraHead &&
+						(participant.HydraHead.status !== HydraHeadStatus.Final ||
+							participant.HydraHead.isEnabled ||
+							participant.HydraHead.fanoutTxHash == null ||
+							participant.HydraHead.reconciliationCompletedAt == null ||
+							participant.HydraHead._count.Transactions !== 0)
+					) {
+						throw createHttpError(409, 'Cannot delete: participant head cleanup is not complete');
+					}
+
+					const deleted = await tx.hydraRemoteParticipant.deleteMany({
+						where: {
+							id,
+							OR: [{ hydraHeadId: null }, { HydraHead: { is: reconciledFinalHeadFilter } }],
+						},
+					});
+					if (deleted.count !== 1) {
+						throw createHttpError(409, 'Cannot delete: participant cleanup eligibility changed concurrently');
+					}
+					await tx.hydraVerificationKey.delete({ where: { id: participant.hydraVerificationKeyId } });
+				},
+				{
+					isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+					maxWait: 10_000,
+					timeout: 10_000,
+				},
+			),
+		{ label: 'hydra-remote-participant-delete' },
+	);
+}
+
+function validateParticipantNodeUrls(nodeHttpUrl: string, nodeUrl: string) {
+	try {
+		return validateHydraNodeUrls(nodeHttpUrl, nodeUrl, {
+			plaintextHosts: getHydraPlaintextHosts(),
+		});
+	} catch (error) {
+		throw createHttpError(400, error instanceof Error ? error.message : 'Invalid Hydra node URLs');
+	}
+}

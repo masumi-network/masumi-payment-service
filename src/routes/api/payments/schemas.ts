@@ -11,6 +11,7 @@ import {
 } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import { isCardanoAddressForNetwork } from '@/types/payment-source';
+import { FORCE_LAYER_API_VALUES } from '@/utils/logic/force-layer';
 
 const paymentTimeSchema = ez.dateIn();
 
@@ -142,6 +143,12 @@ export const paymentResponseSchema = z
 			.nativeEnum(OnChainState)
 			.nullable()
 			.describe('Current state of the payment on the blockchain. Null if not yet on-chain'),
+		forceLayer: z
+			.enum(FORCE_LAYER_API_VALUES)
+			.nullable()
+			.describe(
+				'Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).',
+			),
 		NextAction: z
 			.object({
 				requestedAction: z.nativeEnum(PaymentAction).describe('Next action required for this payment'),
@@ -346,6 +353,12 @@ export const createPaymentsSchemaInput = z
 			.min(14)
 			.max(26)
 			.describe('A unique nonce from the purchaser. It must be in hex format'),
+		forceLayer: z
+			.enum(FORCE_LAYER_API_VALUES)
+			.optional()
+			.describe(
+				'Optional seller layer override. For V2 this choice is signed into the purchase terms: "Hydra" requires an open head, "L1" forces L1, and a conflict with the buyer\'s forceLayer is rejected. Hydra is not supported for V1. Omit for automatic routing.',
+			),
 	})
 	.refine(
 		(value) =>

@@ -1,6 +1,12 @@
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { HotWalletType, PaymentAction, PaymentSourceType, PricingType } from '@/generated/prisma/client';
+import {
+	HotWalletType,
+	PaymentAction,
+	PaymentSourceType,
+	PricingType,
+	TransactionLayer,
+} from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { HttpExistsError } from '@masumi/payment-core/http-exists-error';
@@ -20,6 +26,7 @@ import { validateHexString } from '@/utils/validator/hex';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPaymentGetAmounts, transformPaymentGetTimestamps } from '@/utils/shared/transformers';
 import { resolveTransactionAgentName } from '@/utils/shared/resolve-transaction-agent-name';
+import { forceLayerApiToTransactionLayer } from '@/utils/logic/force-layer';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
@@ -112,6 +119,13 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		});
 		if (specifiedPaymentContract == null) {
 			throw createHttpError(404, 'Network and policyId combination not supported');
+		}
+		const forceLayer = forceLayerApiToTransactionLayer(input.forceLayer);
+		if (
+			forceLayer === TransactionLayer.L2 &&
+			specifiedPaymentContract.paymentSourceType !== PaymentSourceType.Web3CardanoV2
+		) {
+			throw createHttpError(400, 'forceLayer="Hydra" is supported only for Web3CardanoV2 payment sources');
 		}
 		// No post-fetch paymentSourceType guard needed: when the caller supplies
 		// `input.paymentSourceType`, the `findFirst` above already filters by
@@ -260,6 +274,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 			sellerAddress: sellingWallet.walletAddress,
 			sellerReturnAddress,
 			smartContractAddress: isV2 ? specifiedPaymentContract.smartContractAddress : null,
+			paymentForceLayer: input.forceLayer ?? null,
 			paymentSourceType: specifiedPaymentContract.paymentSourceType,
 		});
 
@@ -343,13 +358,24 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 		});
 		if (existingPaymentRequest != null) {
 			const decoded = decodeBlockchainIdentifier(existingPaymentRequest.blockchainIdentifier);
+			const {
+				currentHydraUtxoTxHash: _currentHydraUtxoTxHash,
+				currentHydraUtxoOutputIndex: _currentHydraUtxoOutputIndex,
+				currentHydraUtxoValue: _currentHydraUtxoValue,
+				unresolvedHydraTerminalTxHash: _unresolvedHydraTerminalTxHash,
+				unresolvedHydraTerminalReason: _unresolvedHydraTerminalReason,
+				hydraFanoutHandoffHeadId: _hydraFanoutHandoffHeadId,
+				hydraFanoutHandoffTxHash: _hydraFanoutHandoffTxHash,
+				hydraFanoutHandoffOutputIndex: _hydraFanoutHandoffOutputIndex,
+				...existingPaymentResponse
+			} = existingPaymentRequest;
 			// Spread + transformer overrides produce a JSON-safe shape (BigInt
 			// fields converted to strings). HttpExistsError's `allowedObject`
 			// type is too narrow to express the structural-merge result, so
 			// cast to `any` (same pattern used by the purchase route's
 			// HttpExistsError call at purchases/index.ts:132).
 			const serialized = {
-				...existingPaymentRequest,
+				...existingPaymentResponse,
 				...transformPaymentGetTimestamps(existingPaymentRequest),
 				...transformPaymentGetAmounts(existingPaymentRequest),
 				// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
@@ -401,6 +427,7 @@ export const paymentInitPost = payAuthenticatedEndpointFactory.build({
 					},
 				},
 				inputHash: input.inputHash,
+				forceLayer,
 				resultHash: '',
 				SmartContractWallet: {
 					connect: { id: sellingWallet.id, deletedAt: null },

@@ -4,7 +4,7 @@ import { mapAmountToHydraValue, mapHydraValueToAmount, mapUTxOToHydraUTxO, mapHy
 describe('mapAmountToHydraValue', () => {
 	it('converts lovelace-only amount', () => {
 		const result = mapAmountToHydraValue([{ unit: 'lovelace', quantity: '5000000' }]);
-		expect(result).toEqual({ lovelace: 5000000 });
+		expect(result).toEqual({ lovelace: 5000000n });
 	});
 
 	it('converts multi-asset amount', () => {
@@ -12,11 +12,27 @@ describe('mapAmountToHydraValue', () => {
 			{ unit: 'lovelace', quantity: '2000000' },
 			{ unit: 'abc123policy001tokenName', quantity: '42' },
 		]);
-		expect(result).toEqual({ lovelace: 2000000, abc123policy001tokenName: { '': 42 } });
+		expect(result).toEqual({ lovelace: 2000000n, abc123policy001tokenName: { '': 42n } });
 	});
 
 	it('returns empty object for empty array', () => {
 		expect(mapAmountToHydraValue([])).toEqual({});
+	});
+
+	it('preserves quantities above the JavaScript safe integer range', () => {
+		expect(
+			mapAmountToHydraValue([{ unit: 'lovelace', quantity: (BigInt(Number.MAX_SAFE_INTEGER) + 1n).toString() }]),
+		).toEqual({ lovelace: 9007199254740992n });
+	});
+
+	it('rejects quantities above the Cardano uint64 range', () => {
+		expect(() => mapAmountToHydraValue([{ unit: 'lovelace', quantity: (1n << 64n).toString() }])).toThrow(
+			'outside the Cardano uint64 range',
+		);
+	});
+
+	it('rejects invalid integer strings', () => {
+		expect(() => mapAmountToHydraValue([{ unit: 'lovelace', quantity: '1.5' }])).toThrow('Invalid Hydra quantity');
 	});
 });
 
@@ -42,6 +58,12 @@ describe('mapHydraValueToAmount', () => {
 		expect(roundTripped).toEqual(expect.arrayContaining(original));
 		expect(roundTripped).toHaveLength(original.length);
 	});
+
+	it('rejects unsafe quantities returned by hydra-node', () => {
+		expect(() => mapHydraValueToAmount({ lovelace: Number.MAX_SAFE_INTEGER + 1 })).toThrow(
+			'is not an exact JSON integer',
+		);
+	});
 });
 
 describe('mapUTxOToHydraUTxO', () => {
@@ -58,7 +80,7 @@ describe('mapUTxOToHydraUTxO', () => {
 		const result = mapUTxOToHydraUTxO(utxo);
 		expect(result).toMatchObject({
 			address: 'addr_test1abc',
-			value: { lovelace: 5000000 },
+			value: { lovelace: 5000000n },
 			datumhash: null,
 			inlineDatumRaw: null,
 			inlineDatum: null,
@@ -93,6 +115,19 @@ describe('mapUTxOToHydraUTxO', () => {
 		};
 		const result = mapUTxOToHydraUTxO(utxo);
 		expect(result.inlineDatumRaw).toBe('d87980');
+	});
+
+	it('rejects a reference script instead of silently dropping it', () => {
+		const utxo = {
+			input: { txHash: 'dddd', outputIndex: 0 },
+			output: {
+				address: 'addr_test1',
+				amount: [{ unit: 'lovelace', quantity: '1000000' }],
+				scriptRef: '4e4d010000332222',
+			},
+		};
+
+		expect(() => mapUTxOToHydraUTxO(utxo)).toThrow('Cannot map reference-script UTxO dddd#0');
 	});
 });
 

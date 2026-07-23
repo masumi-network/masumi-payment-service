@@ -65,6 +65,7 @@ import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
 import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
+import { submitReservedL2Action } from '../../l2-submission';
 
 // V2 submit-result sizing. Each leg evaluates the Aiken `SubmitResult` redeemer
 // over the same script; per-input ex-units run ~mem 4M / steps 1.5B in practice,
@@ -637,45 +638,23 @@ async function processL2SubmitResult(
 		return await wallet.signTx(unsignedTx);
 	});
 
-	let newTxHash: string;
-	try {
-		newTxHash = await hydraProvider.submitTx(signedTx);
-	} catch (error) {
-		logger.error('L2 submit-result: error submitting to head', { error, headId });
-		await prisma.paymentRequest.update({
-			where: { id: request.id },
-			data: {
-				...connectPreviousAction(request.nextActionId),
-				...createNextPaymentAction(PaymentAction.SubmitResultRequested, {
-					errorType: null,
-					errorNote: null,
-					resultHash: request.NextAction.resultHash,
-				}),
-				SmartContractWallet: { update: { lockedAt: null } },
-			},
-		});
-		return false;
-	}
+	const outcome = await submitReservedL2Action({
+		requestKind: 'payment',
+		operation: 'submit-result',
+		requestId: request.id,
+		nextActionId: request.nextActionId,
+		previousTransactionId: request.CurrentTransaction!.id,
+		walletId: request.SmartContractWallet!.id,
+		walletLockedAt: request.SmartContractWallet!.lockedAt!,
+		hydraHeadId: headId,
+		signedTx,
+		initiatedAction: PaymentAction.SubmitResultInitiated,
+		retryAction: PaymentAction.SubmitResultRequested,
+		retryActionData: { resultHash: request.NextAction.resultHash },
+		submitTx: async (transaction) => await hydraProvider.submitTx(transaction),
+	});
 
-	await retryOnSerializationConflict(
-		() =>
-			prisma.paymentRequest.update({
-				where: { id: request.id },
-				data: {
-					...connectPreviousAction(request.nextActionId),
-					...createNextPaymentAction(PaymentAction.SubmitResultInitiated),
-					...createPendingTransaction(request.SmartContractWallet!.id, newTxHash, {
-						layer: TransactionLayer.L2,
-						hydraHeadId: headId,
-					}),
-					TransactionHistory: { connect: { id: request.CurrentTransaction!.id } },
-				},
-			}),
-		{ label: 'v2-submit-result-l2-post-submit' },
-	);
-
-	logger.info('L2 submit-result submitted to head', { txHash: newTxHash, headId, smartContractAddress });
-	return true;
+	return outcome.status !== 'definitively-rejected';
 }
 
 async function fallbackToSingleItems(
@@ -1443,7 +1422,10 @@ export async function submitResultV2() {
 					OnChainState.Disputed,
 				],
 			},
-			maxBatchSize: SUBMIT_RESULT_BATCH_SIZE,
+			// The L2 path reserves one body against one wallet. Selecting multiple
+			// requests for the same locked wallet would build them concurrently even
+			// though only one can atomically claim pendingTransactionId.
+			maxBatchSize: 1,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 			layer: TransactionLayer.L2,
 		});
@@ -1461,6 +1443,11 @@ export async function submitResultV2() {
 							} else {
 								logger.error('L2 submit-result failed', { requestId: request.id, error });
 							}
+							await unlockHotWalletIfNoPendingTransaction(
+								request.SmartContractWallet!.id,
+								'submit-result-l2-pre-reservation',
+								request.SmartContractWallet!.lockedAt!,
+							);
 						}
 					}),
 				);

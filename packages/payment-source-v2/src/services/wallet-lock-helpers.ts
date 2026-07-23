@@ -20,10 +20,19 @@
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 
-export async function unlockHotWalletIfNoPendingTransaction(walletId: string, serviceLabel: string): Promise<void> {
+export async function unlockHotWalletIfNoPendingTransaction(
+	walletId: string,
+	serviceLabel: string,
+	expectedLockedAt?: Date,
+): Promise<void> {
 	try {
 		const result = await prisma.hotWallet.updateMany({
-			where: { id: walletId, deletedAt: null, pendingTransactionId: null },
+			where: {
+				id: walletId,
+				deletedAt: null,
+				pendingTransactionId: null,
+				...(expectedLockedAt == null ? {} : { lockedAt: expectedLockedAt }),
+			},
 			data: { lockedAt: null },
 		});
 		if (result.count === 0) {

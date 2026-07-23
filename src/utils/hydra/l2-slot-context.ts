@@ -15,7 +15,23 @@
  * providers (the hydra-node API does not expose it), so the override is supplied
  * out-of-band via env. Production preprod heads need none of this.
  */
-import type { SlotConfig } from '@meshsdk/core';
+import { SLOT_CONFIG_NETWORK, type SlotConfig } from '@meshsdk/core';
+
+const HYDRA_L2_SLOT_CONTEXT_ENV_KEYS = [
+	'HYDRA_L2_SLOT_ZERO_TIME_MS',
+	'HYDRA_L2_SLOT_LENGTH_MS',
+	'HYDRA_L2_CURRENT_SLOT',
+] as const;
+
+function parseNonNegativeSafeInteger(raw: string | undefined): number | undefined {
+	if (raw == null || !/^\d+$/.test(raw)) return undefined;
+	const value = Number(raw);
+	return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function hasHydraL2SlotContextOverride(): boolean {
+	return HYDRA_L2_SLOT_CONTEXT_ENV_KEYS.some((key) => process.env[key] != null);
+}
 
 export interface HydraL2SlotContext {
 	/** Slot config of the head's L1 (zeroTime/zeroSlot in ms / slotLength in ms). */
@@ -55,28 +71,50 @@ export function getHydraL2SlotContext(): HydraL2SlotContext | undefined {
 		return undefined;
 	}
 
-	const zeroTime = Number(zeroTimeRaw);
-	const slotLength = Number(slotLengthRaw);
-	const currentSlot = Number(currentSlotRaw);
-	if (!Number.isFinite(zeroTime) || !Number.isFinite(slotLength) || !Number.isFinite(currentSlot) || slotLength <= 0) {
+	const zeroTime = parseNonNegativeSafeInteger(zeroTimeRaw);
+	const slotLength = parseNonNegativeSafeInteger(slotLengthRaw);
+	const currentSlot = parseNonNegativeSafeInteger(currentSlotRaw);
+	if (zeroTime == null || slotLength == null || slotLength === 0 || currentSlot == null) {
 		return undefined;
 	}
 
 	// Small defaults keep the window within a stalled/slow head's forecast
 	// horizon; overridable via env for other head configs.
-	const beforeBufferMs = Number(process.env.HYDRA_L2_BEFORE_BUFFER_MS ?? 20_000);
-	const afterBufferMs = Number(process.env.HYDRA_L2_AFTER_BUFFER_MS ?? 30_000);
-	const validitySlotBuffer = Number(process.env.HYDRA_L2_VALIDITY_SLOT_BUFFER ?? 50);
+	const beforeBufferMs = parseNonNegativeSafeInteger(process.env.HYDRA_L2_BEFORE_BUFFER_MS ?? '20000');
+	const afterBufferMs = parseNonNegativeSafeInteger(process.env.HYDRA_L2_AFTER_BUFFER_MS ?? '30000');
+	const validitySlotBuffer = parseNonNegativeSafeInteger(process.env.HYDRA_L2_VALIDITY_SLOT_BUFFER ?? '50');
+	if (beforeBufferMs == null || afterBufferMs == null || validitySlotBuffer == null) {
+		return undefined;
+	}
+	const nowMs = zeroTime + currentSlot * slotLength;
+	if (!Number.isSafeInteger(nowMs) || nowMs < 0) return undefined;
 
 	return {
 		// startEpoch/epochLength are unused by unixTimeToEnclosingSlot but required
 		// by the SlotConfig type; placeholders are fine for slot↔time conversion.
 		slotConfig: { zeroTime, zeroSlot: 0, slotLength, startEpoch: 0, epochLength: 432000 },
-		nowMs: zeroTime + currentSlot * slotLength,
+		nowMs,
 		beforeBufferMs,
 		afterBufferMs,
 		validitySlotBuffer,
 	};
+}
+
+/**
+ * Resolve the slot timeline used to interpret signed in-head validity bounds.
+ * A partially configured devnet override must not silently fall back to the
+ * public network timeline: that could make the same signed slot appear to end
+ * before payByTime under the wrong genesis. `null` means callers must fail
+ * closed until the override is corrected.
+ */
+export function resolveHydraL2EvidenceSlotConfig(network: 'mainnet' | 'preprod'): SlotConfig | null {
+	const hasAnyDevnetSlotOverride = hasHydraL2SlotContextOverride();
+	if (hasAnyDevnetSlotOverride) {
+		const context = getHydraL2SlotContext();
+		if (!context) return null;
+		return context.slotConfig;
+	}
+	return SLOT_CONFIG_NETWORK[network];
 }
 
 /** Options spreadable directly into `createTxWindow` for a Hydra L2 build. */
@@ -114,6 +152,9 @@ export function resolveHydraL2WindowOptions(provider: {
 			validitySlotBuffer: envCtx.validitySlotBuffer,
 		};
 	}
+	if (hasHydraL2SlotContextOverride()) {
+		throw new Error('Hydra L2 slot context override is incomplete or invalid');
+	}
 	// In-head txs confirm in ~1s, so the L1-minded +5min after-buffer only
 	// pushes the window upper bound (and every upper-bound-derived datum
 	// cooldown) needlessly far out. Test harnesses may shrink it via env;
@@ -123,7 +164,10 @@ export function resolveHydraL2WindowOptions(provider: {
 	// datum that stalls the NEXT step (seen 2026-07-16: submit-result datum at
 	// Date.now()+361s → collection OutsideValidityIntervalUTxO).
 	const afterBufferRaw = process.env.HYDRA_L2_AFTER_BUFFER_MS;
-	const afterBufferMs = afterBufferRaw != null && /^\d+$/.test(afterBufferRaw) ? Number(afterBufferRaw) : undefined;
+	const afterBufferMs = parseNonNegativeSafeInteger(afterBufferRaw);
+	if (afterBufferRaw != null && afterBufferMs == null) {
+		throw new Error('HYDRA_L2_AFTER_BUFFER_MS must be a non-negative safe integer');
+	}
 	const afterBufferOverride = afterBufferMs != null ? { afterBufferMs } : {};
 	const headClock = provider.getHeadClock();
 	if (headClock) {

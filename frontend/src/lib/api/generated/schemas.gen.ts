@@ -657,6 +657,16 @@ export const PaymentSchema = {
             ],
             description: 'Current state of the payment on the blockchain. Null if not yet on-chain'
         },
+        forceLayer: {
+            type: 'string',
+            nullable: true,
+            enum: [
+                'L1',
+                'Hydra',
+                null
+            ],
+            description: 'Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).'
+        },
         NextAction: {
             type: 'object',
             properties: {
@@ -1201,6 +1211,7 @@ export const PaymentSchema = {
         'cooldownTime',
         'cooldownTimeOtherParty',
         'onChainState',
+        'forceLayer',
         'NextAction',
         'ActionHistory',
         'CurrentTransaction',
@@ -1322,6 +1333,26 @@ export const PurchaseSchema = {
                 null
             ],
             description: 'Current state of the purchase on the blockchain. Null if not yet on-chain'
+        },
+        forceLayer: {
+            type: 'string',
+            nullable: true,
+            enum: [
+                'L1',
+                'Hydra',
+                null
+            ],
+            description: 'Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.'
+        },
+        paymentForceLayer: {
+            type: 'string',
+            nullable: true,
+            enum: [
+                'L1',
+                'Hydra',
+                null
+            ],
+            description: 'Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.'
         },
         collateralReturnLovelace: {
             type: 'string',
@@ -1871,6 +1902,8 @@ export const PurchaseSchema = {
         'onChainStateOrResultLastChangedAt',
         'requestedById',
         'onChainState',
+        'forceLayer',
+        'paymentForceLayer',
         'collateralReturnLovelace',
         'buyerReturnAddress',
         'sellerReturnAddress',

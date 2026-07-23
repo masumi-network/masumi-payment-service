@@ -43,6 +43,7 @@ import {
 	handleV2PaymentTransaction,
 	handleV2PurchasingTransaction,
 } from '@masumi/payment-source-v2/services/tx-sync/handlers';
+import { canL1ObservationOwnPaymentRequest, canL1ObservationOwnPurchaseRequest } from '@/utils/logic/force-layer';
 
 export type UpdateTransactionInput = {
 	blockTime: number;
@@ -466,6 +467,13 @@ async function updateInitialPurchaseTransaction(
 						});
 						return;
 					}
+					if (!canL1ObservationOwnPurchaseRequest(dbEntry)) {
+						logger.info('tx-sync: ignoring L1 initial output for Hydra-owned or Hydra-forced purchase', {
+							txHash: tx.tx.tx_hash,
+							purchaseRequestId: dbEntry.id,
+						});
+						return;
+					}
 					const isInitialFundsLockAction =
 						dbEntry.NextAction.requestedAction === PurchasingAction.FundsLockingInitiated ||
 						dbEntry.NextAction.requestedAction === PurchasingAction.FundsLockingRequested;
@@ -869,6 +877,13 @@ async function updateInitialPaymentTransaction(
 					});
 					if (dbEntry == null) {
 						//transaction is not registered with us or duplicated (therefore invalid)
+						return;
+					}
+					if (!canL1ObservationOwnPaymentRequest(dbEntry)) {
+						logger.info('tx-sync: ignoring L1 initial output for Hydra-owned or Hydra-forced payment', {
+							txHash: tx.tx.tx_hash,
+							paymentRequestId: dbEntry.id,
+						});
 						return;
 					}
 					if (dbEntry.BuyerWallet != null) {

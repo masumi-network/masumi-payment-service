@@ -12,6 +12,7 @@ import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } f
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withSerializableSlot } from '@masumi/payment-core/serializable-semaphore';
 import { TransactionMetadata } from '@/services/transactions/tx-sync/blockchain';
+import { canL1ObservationOwnPaymentRequest, canL1ObservationOwnPurchaseRequest } from '@/utils/logic/force-layer';
 
 export async function handleV2PaymentTransaction(
 	tx_hash: string,
@@ -49,6 +50,9 @@ export async function handleV2PaymentTransaction(
 
 						if (paymentRequest == null) {
 							//transaction is not registered with us or a payment transaction
+							return;
+						}
+						if (!canL1ObservationOwnPaymentRequest(paymentRequest)) {
 							return;
 						}
 
@@ -167,6 +171,11 @@ export async function handleV2PaymentTransaction(
 									: undefined,
 								buyerCoolDownTime: buyerCooldownTime,
 								sellerCoolDownTime: sellerCooldownTime,
+								currentHydraUtxoTxHash: null,
+								currentHydraUtxoOutputIndex: null,
+								currentHydraUtxoValue: Prisma.DbNull,
+								unresolvedHydraTerminalTxHash: null,
+								unresolvedHydraTerminalReason: null,
 								onChainState: newState,
 								resultHash: resultHash,
 							},
@@ -237,6 +246,9 @@ export async function handleV2PurchasingTransaction(
 
 						if (purchasingRequest == null) {
 							//transaction is not registered with us as a purchasing transaction
+							return;
+						}
+						if (!canL1ObservationOwnPurchaseRequest(purchasingRequest)) {
 							return;
 						}
 
@@ -346,6 +358,11 @@ export async function handleV2PurchasingTransaction(
 									: undefined,
 								buyerCoolDownTime: buyerCooldownTime,
 								sellerCoolDownTime: sellerCooldownTime,
+								currentHydraUtxoTxHash: null,
+								currentHydraUtxoOutputIndex: null,
+								currentHydraUtxoValue: Prisma.DbNull,
+								unresolvedHydraTerminalTxHash: null,
+								unresolvedHydraTerminalReason: null,
 								onChainState: newStatus,
 								resultHash: resultHash,
 							},

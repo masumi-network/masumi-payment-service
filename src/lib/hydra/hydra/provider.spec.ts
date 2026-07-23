@@ -114,6 +114,12 @@ describe('HydraProvider', () => {
 			expect(result[0].input.outputIndex).toBe(1);
 		});
 
+		it('filters output index zero instead of treating it as absent', async () => {
+			const result = await provider.fetchUTxOs('tx001', 0);
+			expect(result).toHaveLength(1);
+			expect(result[0].input.outputIndex).toBe(0);
+		});
+
 		it('returns empty array when hash matches nothing', async () => {
 			const result = await provider.fetchUTxOs('nonexistent');
 			expect(result).toHaveLength(0);
@@ -236,6 +242,17 @@ describe('HydraProvider', () => {
 			expect(txArg.cborHex).toBe(cborHex);
 			expect(txArg.description).toBe('');
 			expect(result).toBe('confirmedTxHash');
+		});
+
+		it('revokes an already-captured provider before it can queue transaction bytes', async () => {
+			const isSubmissionAllowed = jest.fn(() => false);
+			provider = new HydraProvider({ node, isSubmissionAllowed });
+
+			await expect(provider.submitTx('deadbeef')).rejects.toThrow(
+				'Hydra provider is no longer admitted for transaction submission',
+			);
+			expect(isSubmissionAllowed).toHaveBeenCalledTimes(1);
+			expect(node.newTx).not.toHaveBeenCalled();
 		});
 	});
 

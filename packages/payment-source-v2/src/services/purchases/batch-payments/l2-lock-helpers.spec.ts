@@ -2,12 +2,195 @@ import { describe, it, expect } from '@jest/globals';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import {
 	buildL2LockDatumParams,
+	createTrustedL2LockWindow,
+	isHotWalletEligibleForL2Lock,
+	L2_LOCK_HEAD_CLOCK_MAX_AGE_MS,
 	mapPaidFundsToAssets,
+	planL2LockValue,
+	requireFreshL2LockHeadClock,
+	retainInitialL2LockAfterSubmitFailure,
 	resolveL2BuyerReturnAddress,
 	selectInHeadFundingUtxos,
 	type L2FundingUtxo,
 	type L2LockRequestFields,
 } from './l2-lock-helpers';
+
+describe('L2 lock minimum-ADA value planning', () => {
+	it('adds minimum ADA for a token-only lock and records it for buyer return', () => {
+		const plan = planL2LockValue([{ unit: 'policy.asset', amount: 7n }], () => 3_000_000n);
+
+		expect(plan.collateralReturnLovelace).toBe(3_000_000n);
+		expect(plan.outputFunds).toEqual([
+			{ unit: 'policy.asset', amount: 7n },
+			{ unit: '', amount: 3_000_000n },
+		]);
+	});
+
+	it('does not add collateral when requested ADA already covers the minimum', () => {
+		const plan = planL2LockValue([{ unit: '', amount: 5_000_000n }], () => 3_000_000n);
+
+		expect(plan.collateralReturnLovelace).toBe(0n);
+		expect(plan.outputFunds).toEqual([{ unit: '', amount: 5_000_000n }]);
+	});
+
+	it('raises a small top-up to the contract minimum collateral return', () => {
+		const plan = planL2LockValue([{ unit: 'lovelace', amount: 2_500_000n }], () => 3_000_000n);
+
+		expect(plan.collateralReturnLovelace).toBe(1_435_230n);
+		expect(plan.outputFunds).toEqual([{ unit: '', amount: 3_935_230n }]);
+	});
+
+	it('recomputes the minimum after the collateral integer changes datum size', () => {
+		const seen: bigint[] = [];
+		const plan = planL2LockValue([{ unit: 'policy.asset', amount: 1n }], (collateral) => {
+			seen.push(collateral);
+			return collateral === 0n ? 3_000_000n : 3_010_000n;
+		});
+
+		expect(plan.collateralReturnLovelace).toBe(3_010_000n);
+		expect(seen).toEqual([0n, 3_000_000n, 3_010_000n, 3_010_000n]);
+	});
+
+	it('rejects non-positive requested amounts', () => {
+		expect(() => planL2LockValue([{ unit: 'policy.asset', amount: 0n }], () => 3_000_000n)).toThrow(
+			/positive amounts/i,
+		);
+	});
+});
+
+describe('L2 initial-lock deadline safety', () => {
+	const observedAtMs = 1_751_959_200_000;
+	const payByTime = BigInt(observedAtMs + 90_000);
+	const freshClock = {
+		chainTimeMs: observedAtMs,
+		receivedAtMs: observedAtMs - 20_000,
+	};
+
+	it('rejects when no live head clock has been observed', () => {
+		expect(() =>
+			requireFreshL2LockHeadClock({
+				headClock: undefined,
+				payByTime,
+				observedAtMs,
+			}),
+		).toThrow(/requires a live Hydra head clock/i);
+	});
+
+	it('rejects a stale cached head clock', () => {
+		expect(() =>
+			requireFreshL2LockHeadClock({
+				headClock: {
+					chainTimeMs: observedAtMs - 120_000,
+					receivedAtMs: observedAtMs - L2_LOCK_HEAD_CLOCK_MAX_AGE_MS - 1,
+				},
+				payByTime,
+				observedAtMs,
+			}),
+		).toThrow(/clock is stale/i);
+	});
+
+	it('rejects a request whose deadline has passed on the head clock', () => {
+		const deadlineMs = Number(payByTime);
+		expect(() =>
+			requireFreshL2LockHeadClock({
+				headClock: { chainTimeMs: deadlineMs, receivedAtMs: deadlineMs },
+				payByTime,
+				observedAtMs: deadlineMs,
+			}),
+		).toThrow(/request has expired/i);
+	});
+
+	it('rejects a future-dated receipt timestamp instead of treating it as fresh', () => {
+		expect(() =>
+			requireFreshL2LockHeadClock({
+				headClock: { chainTimeMs: observedAtMs, receivedAtMs: observedAtMs + 5_001 },
+				payByTime,
+				observedAtMs,
+			}),
+		).toThrow(/clock from the future/i);
+	});
+
+	it('rejects a materially future chain time even when its receipt timestamp is fresh', () => {
+		expect(() =>
+			requireFreshL2LockHeadClock({
+				headClock: { chainTimeMs: observedAtMs + 5_001, receivedAtMs: observedAtMs },
+				payByTime,
+				observedAtMs,
+			}),
+		).toThrow(/chain time from the future/i);
+	});
+
+	it('binds the transaction upper validity time no later than payByTime', () => {
+		const window = createTrustedL2LockWindow({
+			network: 'preprod',
+			payByTime,
+			headClock: freshClock,
+			observedAtMs,
+			windowOptions: {
+				beforeBufferMs: 20_000,
+				afterBufferMs: 300_000,
+				validitySlotBuffer: 50,
+			},
+		});
+
+		expect(window.trustedHeadTimeMs).toBe(freshClock.chainTimeMs);
+		expect(window.invalidBefore).toBeLessThan(window.invalidAfter);
+		expect(BigInt(window.invalidAfterMs)).toBeLessThanOrEqual(payByTime);
+	});
+
+	it('overrides an untrusted stale window anchor with the live head clock', () => {
+		const window = createTrustedL2LockWindow({
+			network: 'preprod',
+			payByTime,
+			headClock: freshClock,
+			observedAtMs,
+			windowOptions: {
+				nowMs: observedAtMs + 10_000_000,
+				afterBufferMs: 30_000,
+			},
+		});
+
+		expect(window.trustedHeadTimeMs).toBe(observedAtMs);
+		expect(BigInt(window.invalidAfterMs)).toBeLessThanOrEqual(payByTime);
+	});
+});
+
+describe('L2 wallet routing safety', () => {
+	it('allows every wallet when the request is not limited', () => {
+		expect(
+			isHotWalletEligibleForL2Lock({ isLimitedToHotWallets: false, HotWalletLimit: [{ id: 'wallet-a' }] }, 'wallet-b'),
+		).toBe(true);
+	});
+
+	it('allows only an explicitly listed wallet when the request is limited', () => {
+		const request = { isLimitedToHotWallets: true, HotWalletLimit: [{ id: 'wallet-a' }] };
+		expect(isHotWalletEligibleForL2Lock(request, 'wallet-a')).toBe(true);
+		expect(isHotWalletEligibleForL2Lock(request, 'wallet-b')).toBe(false);
+	});
+
+	it('allows no wallets when a limited request has an empty limit', () => {
+		expect(isHotWalletEligibleForL2Lock({ isLimitedToHotWallets: true, HotWalletLimit: [] }, 'wallet-a')).toBe(false);
+	});
+
+	it('has no post-reservation outcome that authorizes another-wallet retry', () => {
+		const outcomes = [
+			{ status: 'accepted', txHash: 'tx-1' },
+			{ status: 'accepted-db-pending', txHash: 'tx-1', error: new Error('db') },
+			{ status: 'ambiguous', intendedTxHash: 'tx-1', error: new Error('rejected-or-lost') },
+		] satisfies import('./l2-lock-helpers').L2LockAttemptOutcome[];
+
+		expect(outcomes.map(({ status }) => status)).toEqual(['accepted', 'accepted-db-pending', 'ambiguous']);
+	});
+
+	it('treats an explicit Hydra TxInvalid response as ambiguous and retains the initial lock', () => {
+		const rejection = new Error('HydraTransactionRejectedError: Transaction is invalid');
+		expect(retainInitialL2LockAfterSubmitFailure('tx-1', rejection)).toEqual({
+			status: 'ambiguous',
+			intendedTxHash: 'tx-1',
+			error: rejection,
+		});
+	});
+});
 
 describe('resolveL2BuyerReturnAddress', () => {
 	it('uses the request buyer return address when present', () => {
@@ -69,6 +252,7 @@ describe('buildL2LockDatumParams', () => {
 		buyerAddress: 'addr_buyer',
 		sellerAddress: 'addr_seller',
 		buyerReturnAddress: 'addr_buyer_return',
+		collateralReturnLovelace: 2_000_000n,
 	};
 
 	it('produces the initial FundsLocked state with no result', () => {
@@ -77,9 +261,9 @@ describe('buildL2LockDatumParams', () => {
 		expect(params.resultHash).toBeNull();
 	});
 
-	it('zeroes collateral return (head is zero-fee) and both cooldowns', () => {
+	it('carries the calculated collateral return and zeroes both cooldowns', () => {
 		const params = buildL2LockDatumParams(baseArgs);
-		expect(params.collateralReturnLovelace).toBe(0n);
+		expect(params.collateralReturnLovelace).toBe(2_000_000n);
 		expect(params.newCooldownTimeSeller).toBe(0n);
 		expect(params.newCooldownTimeBuyer).toBe(0n);
 	});
@@ -193,5 +377,55 @@ describe('selectInHeadFundingUtxos', () => {
 				MIN_CHANGE,
 			),
 		).toThrow(/insufficient in-head funds/i);
+	});
+
+	it('tops up with a pure-ADA UTxO when asset-heavy change needs more than the static floor', () => {
+		// tx0 covers the base target (5 paid + 5 splitter + 2 floor = 12 < 13) but its
+		// leftover tokens push the change output's real min-UTxO to 4 ADA. The
+		// selector must add the pure-ADA tx1 rather than fail later at submitTx.
+		const utxos = [
+			utxo(0, [ada(13_000_000n), asset(TOKEN, 5n), asset(`${TOKEN}beef`, 7n)]),
+			utxo(1, [ada(10_000_000n)]),
+		];
+		const selected = selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE, (changeAssets) =>
+			changeAssets.length > 0 ? 4_000_000n : 0n,
+		);
+		expect(selected.map((u) => u.input.txHash).sort()).toEqual(['tx0', 'tx1']);
+	});
+
+	it('keeps the static floor when the change carries no assets', () => {
+		const utxos = [utxo(0, [ada(20_000_000n)])];
+		const selected = selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE, (changeAssets) =>
+			changeAssets.length > 0 ? 4_000_000n : 0n,
+		);
+		expect(selected).toHaveLength(1);
+	});
+
+	it('throws with the change min-UTxO shortfall when no top-up UTxO exists', () => {
+		const utxos = [utxo(0, [ada(13_000_000n), asset(TOKEN, 5n)])];
+		expect(() =>
+			selectInHeadFundingUtxos(utxos, lovelacePaid(5_000_000n), SPLITTER, MIN_CHANGE, () => 4_000_000n),
+		).toThrow(/change output needs/i);
+	});
+});
+
+describe('planL2LockValue duplicate-unit aggregation', () => {
+	const TOKEN = '16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde0014df10745553444d';
+
+	it('aggregates duplicate-unit PaidFunds rows into one output asset entry', () => {
+		const plan = planL2LockValue(
+			[
+				{ unit: TOKEN, amount: 40n },
+				{ unit: TOKEN, amount: 60n },
+				{ unit: '', amount: 5_000_000n },
+			],
+			() => 1_000_000n,
+		);
+		const tokenEntries = plan.outputFunds.filter((f) => f.unit === TOKEN);
+		expect(tokenEntries).toHaveLength(1);
+		expect(tokenEntries[0].amount).toBe(100n);
+		// mapPaidFundsToAssets over the plan therefore yields one row per unit.
+		const units = mapPaidFundsToAssets(plan.outputFunds).map((a) => a.unit);
+		expect(new Set(units).size).toBe(units.length);
 	});
 });

@@ -1,4 +1,6 @@
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
+import { TransactionLayer } from '@/generated/prisma/client';
+import { transactionLayerToForceLayerApi } from '@/utils/logic/force-layer';
 
 /** Serialize a transaction record for API responses: BigInt fees → string. */
 function transformTransactionWithFees<T extends { fees: bigint | null }>(
@@ -86,6 +88,7 @@ export function transformPaymentGetTimestamps(payment: {
 	collateralReturnLovelace?: bigint | null;
 	sellerCoolDownTime: bigint;
 	buyerCoolDownTime: bigint;
+	forceLayer: TransactionLayer | null;
 }) {
 	return {
 		submitResultTime: payment.submitResultTime.toString(),
@@ -95,6 +98,10 @@ export function transformPaymentGetTimestamps(payment: {
 		collateralReturnLovelace: payment.collateralReturnLovelace?.toString() ?? null,
 		cooldownTime: Number(payment.sellerCoolDownTime),
 		cooldownTimeOtherParty: Number(payment.buyerCoolDownTime),
+		// Map the stored DB layer (L1/L2) back to the API vocabulary (L1/Hydra).
+		// Folded into this shared transformer so every payment-returning endpoint
+		// exposes forceLayer consistently.
+		forceLayer: transactionLayerToForceLayerApi(payment.forceLayer),
 	};
 }
 
@@ -106,6 +113,8 @@ export function transformPurchaseGetTimestamps(purchase: {
 	collateralReturnLovelace?: bigint | null;
 	buyerCoolDownTime: bigint;
 	sellerCoolDownTime: bigint;
+	forceLayer: TransactionLayer | null;
+	paymentForceLayer: TransactionLayer | null;
 }) {
 	return {
 		submitResultTime: purchase.submitResultTime.toString(),
@@ -115,5 +124,10 @@ export function transformPurchaseGetTimestamps(purchase: {
 		collateralReturnLovelace: purchase.collateralReturnLovelace?.toString() ?? null,
 		cooldownTime: Number(purchase.buyerCoolDownTime),
 		cooldownTimeOtherParty: Number(purchase.sellerCoolDownTime),
+		// Map the stored DB layer (L1/L2) back to the API vocabulary (L1/Hydra).
+		// Folded into this shared transformer so every purchase-returning endpoint
+		// exposes forceLayer consistently.
+		forceLayer: transactionLayerToForceLayerApi(purchase.forceLayer),
+		paymentForceLayer: transactionLayerToForceLayerApi(purchase.paymentForceLayer),
 	};
 }

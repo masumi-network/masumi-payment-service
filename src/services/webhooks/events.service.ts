@@ -5,6 +5,7 @@ import { WebhookEventType } from '@/generated/prisma/client';
 import type { Prisma } from '@/generated/prisma/client';
 import type { WebhookPayloadDataByEvent } from '@/types/webhook-payloads';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
+import { transactionLayerToForceLayerApi } from '@/utils/logic/force-layer';
 
 type PaymentWebhookEvent = 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_ERROR';
 type PurchaseWebhookEvent = 'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR';
@@ -17,6 +18,42 @@ type X402WalletLowBalanceWebhookData = WebhookPayloadDataByEvent<'X402_WALLET_LO
 type PaymentWebhookQueryClient = Pick<Prisma.TransactionClient, 'paymentRequest'>;
 type PurchaseWebhookQueryClient = Pick<Prisma.TransactionClient, 'purchaseRequest'>;
 
+const publicWebhookTransactionSelect = {
+	id: true,
+	createdAt: true,
+	updatedAt: true,
+	txHash: true,
+	layer: true,
+	hydraHeadId: true,
+	status: true,
+	fees: true,
+	blockHeight: true,
+	blockTime: true,
+	previousOnChainState: true,
+	newOnChainState: true,
+	confirmations: true,
+} satisfies Prisma.TransactionSelect;
+
+type PublicWebhookTransaction = Prisma.TransactionGetPayload<{
+	select: typeof publicWebhookTransactionSelect;
+}>;
+
+const formatPublicWebhookTransaction = (transaction: PublicWebhookTransaction) => ({
+	id: transaction.id,
+	createdAt: transaction.createdAt,
+	updatedAt: transaction.updatedAt,
+	txHash: transaction.txHash,
+	layer: transaction.layer,
+	hydraHeadId: transaction.hydraHeadId,
+	status: transaction.status,
+	fees: transaction.fees?.toString() ?? null,
+	blockHeight: transaction.blockHeight,
+	blockTime: transaction.blockTime,
+	previousOnChainState: transaction.previousOnChainState,
+	newOnChainState: transaction.newOnChainState,
+	confirmations: transaction.confirmations,
+});
+
 class WebhookEventsService {
 	private async queryPurchaseForWebhook(purchaseId: string, client: PurchaseWebhookQueryClient = prisma) {
 		return client.purchaseRequest.findUnique({
@@ -27,11 +64,14 @@ class WebhookEventsService {
 				PaidFunds: true,
 				NextAction: true,
 				PaymentSource: true,
-				CurrentTransaction: true,
+				CurrentTransaction: { select: publicWebhookTransactionSelect },
 				WithdrawnForSeller: true,
 				WithdrawnForBuyer: true,
 				ActionHistory: { orderBy: { createdAt: 'desc' } },
-				TransactionHistory: { orderBy: { createdAt: 'desc' } },
+				TransactionHistory: {
+					select: publicWebhookTransactionSelect,
+					orderBy: { createdAt: 'desc' },
+				},
 			},
 		});
 	}
@@ -45,11 +85,14 @@ class WebhookEventsService {
 				PaymentSource: true,
 				RequestedFunds: { include: { AgentFixedPricing: true } },
 				NextAction: true,
-				CurrentTransaction: true,
+				CurrentTransaction: { select: publicWebhookTransactionSelect },
 				WithdrawnForSeller: true,
 				WithdrawnForBuyer: true,
 				ActionHistory: { orderBy: { createdAt: 'desc' } },
-				TransactionHistory: { orderBy: { createdAt: 'desc' } },
+				TransactionHistory: {
+					select: publicWebhookTransactionSelect,
+					orderBy: { createdAt: 'desc' },
+				},
 			},
 		});
 	}
@@ -57,8 +100,22 @@ class WebhookEventsService {
 	private formatPurchaseForWebhook(
 		purchase: NonNullable<Awaited<ReturnType<typeof this.queryPurchaseForWebhook>>>,
 	): PurchaseWebhookData {
+		const {
+			currentHydraUtxoTxHash: _currentHydraUtxoTxHash,
+			currentHydraUtxoOutputIndex: _currentHydraUtxoOutputIndex,
+			currentHydraUtxoValue: _currentHydraUtxoValue,
+			unresolvedHydraTerminalTxHash: _unresolvedHydraTerminalTxHash,
+			unresolvedHydraTerminalReason: _unresolvedHydraTerminalReason,
+			hydraFanoutHandoffHeadId: _hydraFanoutHandoffHeadId,
+			hydraFanoutHandoffTxHash: _hydraFanoutHandoffTxHash,
+			hydraFanoutHandoffOutputIndex: _hydraFanoutHandoffOutputIndex,
+			...publicPurchase
+		} = purchase;
 		return {
-			...purchase,
+			...publicPurchase,
+			// Map the stored DB layer (L1/L2) back to the API vocabulary (L1/Hydra).
+			forceLayer: transactionLayerToForceLayerApi(purchase.forceLayer),
+			paymentForceLayer: transactionLayerToForceLayerApi(purchase.paymentForceLayer),
 			agentIdentifier: decodeBlockchainIdentifier(purchase.blockchainIdentifier)?.agentIdentifier ?? null,
 			totalBuyerCardanoFees: Number(purchase.totalBuyerCardanoFees.toString()) / 1_000_000,
 			totalSellerCardanoFees: Number(purchase.totalSellerCardanoFees.toString()) / 1_000_000,
@@ -75,18 +132,10 @@ class WebhookEventsService {
 				amount: amount.amount.toString(),
 			})),
 			CurrentTransaction: purchase.CurrentTransaction
-				? {
-						...purchase.CurrentTransaction,
-						fees: purchase.CurrentTransaction.fees?.toString() ?? null,
-					}
+				? formatPublicWebhookTransaction(purchase.CurrentTransaction)
 				: null,
 			TransactionHistory:
-				purchase.TransactionHistory != null
-					? purchase.TransactionHistory.map((transaction) => ({
-							...transaction,
-							fees: transaction.fees?.toString() ?? null,
-						}))
-					: null,
+				purchase.TransactionHistory != null ? purchase.TransactionHistory.map(formatPublicWebhookTransaction) : null,
 			collateralReturnLovelace: purchase.collateralReturnLovelace?.toString() ?? null,
 			payByTime: purchase.payByTime?.toString() ?? null,
 			submitResultTime: purchase.submitResultTime.toString(),
@@ -100,8 +149,21 @@ class WebhookEventsService {
 	private formatPaymentForWebhook(
 		payment: NonNullable<Awaited<ReturnType<typeof this.queryPaymentForWebhook>>>,
 	): PaymentWebhookData {
+		const {
+			currentHydraUtxoTxHash: _currentHydraUtxoTxHash,
+			currentHydraUtxoOutputIndex: _currentHydraUtxoOutputIndex,
+			currentHydraUtxoValue: _currentHydraUtxoValue,
+			unresolvedHydraTerminalTxHash: _unresolvedHydraTerminalTxHash,
+			unresolvedHydraTerminalReason: _unresolvedHydraTerminalReason,
+			hydraFanoutHandoffHeadId: _hydraFanoutHandoffHeadId,
+			hydraFanoutHandoffTxHash: _hydraFanoutHandoffTxHash,
+			hydraFanoutHandoffOutputIndex: _hydraFanoutHandoffOutputIndex,
+			...publicPayment
+		} = payment;
 		return {
-			...payment,
+			...publicPayment,
+			// Map the stored DB layer (L1/L2) back to the API vocabulary (L1/Hydra).
+			forceLayer: transactionLayerToForceLayerApi(payment.forceLayer),
 			agentIdentifier: decodeBlockchainIdentifier(payment.blockchainIdentifier)?.agentIdentifier ?? null,
 			totalBuyerCardanoFees: Number(payment.totalBuyerCardanoFees.toString()) / 1_000_000,
 			totalSellerCardanoFees: Number(payment.totalSellerCardanoFees.toString()) / 1_000_000,
@@ -125,18 +187,10 @@ class WebhookEventsService {
 				amount: amount.amount.toString(),
 			})),
 			CurrentTransaction: payment.CurrentTransaction
-				? {
-						...payment.CurrentTransaction,
-						fees: payment.CurrentTransaction.fees?.toString() ?? null,
-					}
+				? formatPublicWebhookTransaction(payment.CurrentTransaction)
 				: null,
 			TransactionHistory:
-				payment.TransactionHistory != null
-					? payment.TransactionHistory.map((transaction) => ({
-							...transaction,
-							fees: transaction.fees?.toString() ?? null,
-						}))
-					: null,
+				payment.TransactionHistory != null ? payment.TransactionHistory.map(formatPublicWebhookTransaction) : null,
 		};
 	}
 

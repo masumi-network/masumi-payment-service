@@ -671,6 +671,16 @@
                         ],
                         "description": "Current state of the payment on the blockchain. Null if not yet on-chain"
                     },
+                    "forceLayer": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                            "L1",
+                            "Hydra",
+                            null
+                        ],
+                        "description": "Caller-specified layer override recorded on this payment. \"L1\" or \"Hydra\", or null for automatic routing (Hydra if available, else L1)."
+                    },
                     "NextAction": {
                         "type": "object",
                         "properties": {
@@ -1215,6 +1225,7 @@
                     "cooldownTime",
                     "cooldownTimeOtherParty",
                     "onChainState",
+                    "forceLayer",
                     "NextAction",
                     "ActionHistory",
                     "CurrentTransaction",
@@ -1335,6 +1346,26 @@
                             null
                         ],
                         "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
+                    },
+                    "forceLayer": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                            "L1",
+                            "Hydra",
+                            null
+                        ],
+                        "description": "Buyer-specified layer override recorded on this purchase. \"L1\" or \"Hydra\", or null for automatic routing."
+                    },
+                    "paymentForceLayer": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                            "L1",
+                            "Hydra",
+                            null
+                        ],
+                        "description": "Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant \"L1\". Null means automatic routing."
                     },
                     "collateralReturnLovelace": {
                         "type": "string",
@@ -1884,6 +1915,8 @@
                     "onChainStateOrResultLastChangedAt",
                     "requestedById",
                     "onChainState",
+                    "forceLayer",
+                    "paymentForceLayer",
                     "collateralReturnLovelace",
                     "buyerReturnAddress",
                     "sellerReturnAddress",
@@ -8522,6 +8555,7 @@
                                                     "requestedById": "requester_id",
                                                     "resultHash": "result_hash",
                                                     "onChainState": null,
+                                                    "forceLayer": null,
                                                     "inputHash": "input_hash",
                                                     "NextAction": {
                                                         "requestedAction": "AuthorizeRefundRequested",
@@ -8726,6 +8760,14 @@
                                         "minLength": 14,
                                         "maxLength": 26,
                                         "description": "A unique nonce from the purchaser. It must be in hex format"
+                                    },
+                                    "forceLayer": {
+                                        "type": "string",
+                                        "enum": [
+                                            "L1",
+                                            "Hydra"
+                                        ],
+                                        "description": "Optional seller layer override. For V2 this choice is signed into the purchase terms: \"Hydra\" requires an open head, \"L1\" forces L1, and a conflict with the buyer's forceLayer is rejected. Hydra is not supported for V1. Omit for automatic routing."
                                     }
                                 },
                                 "required": [
@@ -8895,6 +8937,16 @@
                                                         null
                                                     ],
                                                     "description": "Current state of the payment on the blockchain. Null if not yet on-chain"
+                                                },
+                                                "forceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Caller-specified layer override recorded on this payment. \"L1\" or \"Hydra\", or null for automatic routing (Hydra if available, else L1)."
                                                 },
                                                 "NextAction": {
                                                     "type": "object",
@@ -9242,6 +9294,7 @@
                                                 "cooldownTime",
                                                 "cooldownTimeOtherParty",
                                                 "onChainState",
+                                                "forceLayer",
                                                 "NextAction",
                                                 "CurrentTransaction",
                                                 "RequestedFunds",
@@ -9284,6 +9337,7 @@
                                             "requestedById": "requester_id",
                                             "resultHash": "result_hash",
                                             "onChainState": null,
+                                            "forceLayer": null,
                                             "inputHash": "input_hash",
                                             "NextAction": {
                                                 "requestedAction": "AuthorizeRefundRequested",
@@ -9499,6 +9553,7 @@
                                                     "requestedById": "requester_id",
                                                     "resultHash": "result_hash",
                                                     "onChainState": null,
+                                                    "forceLayer": null,
                                                     "inputHash": "input_hash",
                                                     "NextAction": {
                                                         "requestedAction": "AuthorizeRefundRequested",
@@ -9717,6 +9772,7 @@
                                                     "requestedById": "requester_id",
                                                     "resultHash": "result_hash",
                                                     "onChainState": null,
+                                                    "forceLayer": null,
                                                     "inputHash": "input_hash",
                                                     "NextAction": {
                                                         "requestedAction": "AuthorizeRefundRequested",
@@ -10143,6 +10199,7 @@
                                                     "requestedById": "requester_id",
                                                     "resultHash": "result_hash",
                                                     "onChainState": null,
+                                                    "forceLayer": null,
                                                     "inputHash": "input_hash",
                                                     "NextAction": {
                                                         "requestedAction": "AuthorizeRefundRequested",
@@ -10399,6 +10456,16 @@
                                                     ],
                                                     "description": "Current state of the payment on the blockchain. Null if not yet on-chain"
                                                 },
+                                                "forceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Caller-specified layer override recorded on this payment. \"L1\" or \"Hydra\", or null for automatic routing (Hydra if available, else L1)."
+                                                },
                                                 "NextAction": {
                                                     "type": "object",
                                                     "properties": {
@@ -10745,6 +10812,7 @@
                                                 "cooldownTime",
                                                 "cooldownTimeOtherParty",
                                                 "onChainState",
+                                                "forceLayer",
                                                 "NextAction",
                                                 "CurrentTransaction",
                                                 "RequestedFunds",
@@ -10787,6 +10855,7 @@
                                             "requestedById": "requester_id",
                                             "resultHash": "result_hash",
                                             "onChainState": null,
+                                            "forceLayer": null,
                                             "inputHash": "input_hash",
                                             "NextAction": {
                                                 "requestedAction": "AuthorizeRefundRequested",
@@ -11036,6 +11105,16 @@
                                                     ],
                                                     "description": "Current state of the payment on the blockchain. Null if not yet on-chain"
                                                 },
+                                                "forceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Caller-specified layer override recorded on this payment. \"L1\" or \"Hydra\", or null for automatic routing (Hydra if available, else L1)."
+                                                },
                                                 "NextAction": {
                                                     "type": "object",
                                                     "properties": {
@@ -11382,6 +11461,7 @@
                                                 "cooldownTime",
                                                 "cooldownTimeOtherParty",
                                                 "onChainState",
+                                                "forceLayer",
                                                 "NextAction",
                                                 "CurrentTransaction",
                                                 "RequestedFunds",
@@ -11424,6 +11504,7 @@
                                             "requestedById": "requester_id",
                                             "resultHash": "result_hash",
                                             "onChainState": null,
+                                            "forceLayer": null,
                                             "inputHash": "input_hash",
                                             "NextAction": {
                                                 "requestedAction": "AuthorizeRefundRequested",
@@ -11700,6 +11781,16 @@
                                                     ],
                                                     "description": "Current state of the payment on the blockchain. Null if not yet on-chain"
                                                 },
+                                                "forceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Caller-specified layer override recorded on this payment. \"L1\" or \"Hydra\", or null for automatic routing (Hydra if available, else L1)."
+                                                },
                                                 "NextAction": {
                                                     "type": "object",
                                                     "properties": {
@@ -12046,6 +12137,7 @@
                                                 "cooldownTime",
                                                 "cooldownTimeOtherParty",
                                                 "onChainState",
+                                                "forceLayer",
                                                 "NextAction",
                                                 "CurrentTransaction",
                                                 "RequestedFunds",
@@ -12340,6 +12432,26 @@
                                                         null
                                                     ],
                                                     "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
+                                                },
+                                                "forceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Buyer-specified layer override recorded on this purchase. \"L1\" or \"Hydra\", or null for automatic routing."
+                                                },
+                                                "paymentForceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant \"L1\". Null means automatic routing."
                                                 },
                                                 "collateralReturnLovelace": {
                                                     "type": "string",
@@ -12698,6 +12810,8 @@
                                                 "onChainStateOrResultLastChangedAt",
                                                 "requestedById",
                                                 "onChainState",
+                                                "forceLayer",
+                                                "paymentForceLayer",
                                                 "collateralReturnLovelace",
                                                 "buyerReturnAddress",
                                                 "sellerReturnAddress",
@@ -15014,6 +15128,24 @@
                                         "minLength": 14,
                                         "maxLength": 26,
                                         "description": "The nonce of the purchaser. It must be in hex format"
+                                    },
+                                    "forceLayer": {
+                                        "type": "string",
+                                        "enum": [
+                                            "L1",
+                                            "Hydra"
+                                        ],
+                                        "description": "Optional buyer layer override. \"L1\" forces L1; \"Hydra\" requires an open head and is supported only for V2. It must not conflict with the signed paymentForceLayer. Omit for automatic routing."
+                                    },
+                                    "paymentForceLayer": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "enum": [
+                                            "L1",
+                                            "Hydra",
+                                            null
+                                        ],
+                                        "description": "Seller layer override copied from the payment response. For V2, a non-null value is part of the signed payment terms and cannot be changed or omitted without invalidating the identifier. V1 accepts only the redundant \"L1\" value for response round-tripping. Omit or pass null when the seller selected automatic routing."
                                     }
                                 },
                                 "required": [
@@ -15159,6 +15291,26 @@
                                                         null
                                                     ],
                                                     "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
+                                                },
+                                                "forceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Buyer-specified layer override recorded on this purchase. \"L1\" or \"Hydra\", or null for automatic routing."
+                                                },
+                                                "paymentForceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant \"L1\". Null means automatic routing."
                                                 },
                                                 "collateralReturnLovelace": {
                                                     "type": "string",
@@ -15517,6 +15669,8 @@
                                                 "onChainStateOrResultLastChangedAt",
                                                 "requestedById",
                                                 "onChainState",
+                                                "forceLayer",
+                                                "paymentForceLayer",
                                                 "collateralReturnLovelace",
                                                 "buyerReturnAddress",
                                                 "sellerReturnAddress",
@@ -15560,6 +15714,8 @@
                                             "externalDisputeUnlockTime": "0",
                                             "requestedById": "requester_id",
                                             "onChainState": null,
+                                            "forceLayer": null,
+                                            "paymentForceLayer": null,
                                             "collateralReturnLovelace": null,
                                             "buyerReturnAddress": null,
                                             "sellerReturnAddress": null,
@@ -15740,6 +15896,26 @@
                                                     ],
                                                     "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
                                                 },
+                                                "forceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Buyer-specified layer override recorded on this purchase. \"L1\" or \"Hydra\", or null for automatic routing."
+                                                },
+                                                "paymentForceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant \"L1\". Null means automatic routing."
+                                                },
                                                 "collateralReturnLovelace": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -16097,6 +16273,8 @@
                                                 "onChainStateOrResultLastChangedAt",
                                                 "requestedById",
                                                 "onChainState",
+                                                "forceLayer",
+                                                "paymentForceLayer",
                                                 "collateralReturnLovelace",
                                                 "buyerReturnAddress",
                                                 "sellerReturnAddress",
@@ -16144,6 +16322,8 @@
                                         "externalDisputeUnlockTime": "0",
                                         "requestedById": "requester_id",
                                         "onChainState": null,
+                                        "forceLayer": null,
+                                        "paymentForceLayer": null,
                                         "collateralReturnLovelace": null,
                                         "buyerReturnAddress": null,
                                         "sellerReturnAddress": null,
@@ -16906,6 +17086,26 @@
                                                     ],
                                                     "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
                                                 },
+                                                "forceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Buyer-specified layer override recorded on this purchase. \"L1\" or \"Hydra\", or null for automatic routing."
+                                                },
+                                                "paymentForceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant \"L1\". Null means automatic routing."
+                                                },
                                                 "collateralReturnLovelace": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -17263,6 +17463,8 @@
                                                 "onChainStateOrResultLastChangedAt",
                                                 "requestedById",
                                                 "onChainState",
+                                                "forceLayer",
+                                                "paymentForceLayer",
                                                 "collateralReturnLovelace",
                                                 "buyerReturnAddress",
                                                 "sellerReturnAddress",
@@ -17306,6 +17508,8 @@
                                             "externalDisputeUnlockTime": "0",
                                             "requestedById": "requester_id",
                                             "onChainState": null,
+                                            "forceLayer": null,
+                                            "paymentForceLayer": null,
                                             "collateralReturnLovelace": null,
                                             "buyerReturnAddress": null,
                                             "sellerReturnAddress": null,
@@ -17527,6 +17731,26 @@
                                                     ],
                                                     "description": "Current state of the purchase on the blockchain. Null if not yet on-chain"
                                                 },
+                                                "forceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Buyer-specified layer override recorded on this purchase. \"L1\" or \"Hydra\", or null for automatic routing."
+                                                },
+                                                "paymentForceLayer": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                        "L1",
+                                                        "Hydra",
+                                                        null
+                                                    ],
+                                                    "description": "Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant \"L1\". Null means automatic routing."
+                                                },
                                                 "collateralReturnLovelace": {
                                                     "type": "string",
                                                     "nullable": true,
@@ -17884,6 +18108,8 @@
                                                 "onChainStateOrResultLastChangedAt",
                                                 "requestedById",
                                                 "onChainState",
+                                                "forceLayer",
+                                                "paymentForceLayer",
                                                 "collateralReturnLovelace",
                                                 "buyerReturnAddress",
                                                 "sellerReturnAddress",
@@ -17927,6 +18153,8 @@
                                             "externalDisputeUnlockTime": "0",
                                             "requestedById": "requester_id",
                                             "onChainState": null,
+                                            "forceLayer": null,
+                                            "paymentForceLayer": null,
                                             "collateralReturnLovelace": null,
                                             "buyerReturnAddress": null,
                                             "sellerReturnAddress": null,

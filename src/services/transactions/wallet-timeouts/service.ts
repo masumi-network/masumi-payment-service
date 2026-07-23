@@ -8,6 +8,8 @@ import {
 	PaymentErrorType,
 	PurchasingAction,
 	PurchaseErrorType,
+	TransactionLayer,
+	type Prisma,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
@@ -35,6 +37,33 @@ import {
 import { classifyUnseenPendingTx } from './dead-tx';
 
 const mutex = new Mutex();
+
+export function isL1PendingTransaction(
+	pendingTransaction: { layer: TransactionLayer } | null,
+): pendingTransaction is { layer: typeof TransactionLayer.L1 } {
+	return pendingTransaction?.layer === TransactionLayer.L1;
+}
+
+export function buildInvalidPendingWalletSweepWhere(): Prisma.HotWalletWhereInput {
+	return {
+		PendingTransaction: { layer: TransactionLayer.L1 },
+		lockedAt: null,
+		deletedAt: null,
+	};
+}
+
+export function buildInvalidPendingWalletReleaseWhere(
+	walletId: string,
+	pendingTransactionId: string,
+): Prisma.HotWalletWhereInput {
+	return {
+		id: walletId,
+		deletedAt: null,
+		lockedAt: null,
+		pendingTransactionId,
+		PendingTransaction: { layer: TransactionLayer.L1 },
+	};
+}
 
 export async function updateWalletTransactionHash() {
 	let release: MutexInterface.Releaser | null;
@@ -88,6 +117,7 @@ export async function updateWalletTransactionHash() {
 					async (prisma) => {
 						const result = await prisma.paymentRequest.findMany({
 							where: {
+								layer: TransactionLayer.L1,
 								NextAction: {
 									requestedAction: {
 										in: [
@@ -234,6 +264,7 @@ export async function updateWalletTransactionHash() {
 					async (prisma) => {
 						const result = await prisma.purchaseRequest.findMany({
 							where: {
+								layer: TransactionLayer.L1,
 								NextAction: {
 									requestedAction: {
 										in: [
@@ -607,7 +638,7 @@ export async function updateWalletTransactionHash() {
 						PendingTransaction: {
 							// L2 (Hydra) pending transactions are reconciled by the hydra-tx-handler,
 							// not this L1 wallet-timeout reaper — keep this branch scoped to L1.
-							layer: 'L1',
+							layer: TransactionLayer.L1,
 							// Prisma `lte` does NOT match NULL — without the explicit null branch
 							// below, a PendingTransaction whose lastCheckedAt is NULL (any historical
 							// row predating `createPendingTransaction`'s mandatory seed, plus any
@@ -718,6 +749,7 @@ export async function updateWalletTransactionHash() {
 									id: wallet.PendingTransaction.id,
 									intendedTxHash,
 									invalidHereafterSlot: wallet.PendingTransaction.invalidHereafterSlot,
+									layer: TransactionLayer.L1,
 									BlocksWallet: {
 										id: wallet.id,
 										PaymentSource: {
@@ -785,7 +817,11 @@ export async function updateWalletTransactionHash() {
 								id: wallet.id,
 								deletedAt: null,
 								pendingTransactionId: wallet.PendingTransaction.id,
-								PendingTransaction: { intendedTxHash: null, txHash: null },
+								PendingTransaction: {
+									layer: TransactionLayer.L1,
+									intendedTxHash: null,
+									txHash: null,
+								},
 							},
 							data: {
 								pendingTransactionId: null,
@@ -1329,11 +1365,7 @@ export async function updateWalletTransactionHash() {
 		}
 		try {
 			const errorHotWallets = await prisma.hotWallet.findMany({
-				where: {
-					PendingTransaction: { isNot: null },
-					lockedAt: null,
-					deletedAt: null,
-				},
+				where: buildInvalidPendingWalletSweepWhere(),
 				include: {
 					PendingTransaction: true,
 					PaymentSource: {
@@ -1343,6 +1375,12 @@ export async function updateWalletTransactionHash() {
 			});
 			for (const hotWallet of errorHotWallets) {
 				const pendingTransaction = hotWallet.PendingTransaction;
+				if (!isL1PendingTransaction(pendingTransaction)) {
+					logger.warn('wallet-timeouts: refusing to detach a non-L1 pending transaction', {
+						walletId: hotWallet.id,
+					});
+					continue;
+				}
 				// Ambiguous-funding guard — mirrors the `txHash == null && intendedTxHash != null`
 				// branch in the lockedHotWallets loop above. A V2 collateral-prep / batch-payments
 				// tx records `intendedTxHash` BEFORE broadcast; on an ambiguous submit the row stays
@@ -1367,6 +1405,7 @@ export async function updateWalletTransactionHash() {
 							id: pendingTransaction.id,
 							intendedTxHash: pendingTransaction.intendedTxHash,
 							invalidHereafterSlot: pendingTransaction.invalidHereafterSlot,
+							layer: TransactionLayer.L1,
 							BlocksWallet: {
 								id: hotWallet.id,
 								PaymentSource: {
@@ -1396,13 +1435,19 @@ export async function updateWalletTransactionHash() {
 				logger.error(
 					`Hot wallet ${hotWallet.id} was in an invalid locked state, Pending transaction is not null, wallet is not locked (this is likely a bug please report it with the following transaction hash): ${hotWallet.PendingTransaction?.txHash} ; transaction id: ${hotWallet.PendingTransaction?.id}`,
 				);
-				await prisma.hotWallet.update({
-					where: { id: hotWallet.id, deletedAt: null },
+				const disconnected = await prisma.hotWallet.updateMany({
+					where: buildInvalidPendingWalletReleaseWhere(hotWallet.id, pendingTransaction.id),
 					data: {
 						lockedAt: null,
-						PendingTransaction: { disconnect: true },
+						pendingTransactionId: null,
 					},
 				});
+				if (disconnected.count !== 1) {
+					logger.info('wallet-timeouts: invalid half-state advanced before guarded disconnect; leaving it', {
+						walletId: hotWallet.id,
+						transactionId: pendingTransaction.id,
+					});
+				}
 			}
 		} catch (error) {
 			logger.error(`Error updating wallet transaction hash`, { error: error });

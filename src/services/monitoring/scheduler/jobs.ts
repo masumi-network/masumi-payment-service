@@ -17,6 +17,7 @@ import { webhookQueueService } from '@/services/webhooks';
 import { runX402LowBalanceMonitoringCycle } from '@/services/x402/low-balance-monitor';
 import type { JobDefinition } from '@/services/shared';
 import { checkHydraTransactions } from '@/services/hydra-tx-handler';
+import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
 
 export const scheduledJobs: JobDefinition[] = [
 	{
@@ -51,6 +52,13 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting to check for refunds',
 		finishMessage: 'Finished to check for refunds',
 		run: web3CardanoV1.collectRefund,
+	},
+	{
+		initialDelayMs: 12000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting pending Hydra L1 commit reconciliation',
+		finishMessage: 'Finished pending Hydra L1 commit reconciliation',
+		run: reconcilePendingHydraCommits,
 	},
 	{
 		initialDelayMs: 15000,
@@ -335,5 +343,16 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting L2 hydra transaction polling',
 		finishMessage: 'Finished L2 hydra transaction polling',
 		run: checkHydraTransactions,
+	},
+	{
+		// L2 mirror of L1 tx-sync: reads each enabled head's in-head escrow UTxOs and
+		// advances this node's own payment/purchase rows to the observed state, so a
+		// counterparty-driven in-head transition is not missed (payment/purchase
+		// onChainState divergence). Idempotent; runs on the hydra cadence.
+		initialDelayMs: 20000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting L2 hydra escrow-state reconcile',
+		finishMessage: 'Finished L2 hydra escrow-state reconcile',
+		run: web3CardanoV2.reconcileHydraHeadEscrowStates,
 	},
 ];

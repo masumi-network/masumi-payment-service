@@ -107,6 +107,17 @@ c_blu(){ printf '\033[36m%s\033[0m\n' "$*"; }
 # Fail fast with actionable guidance if the environment isn't ready.
 preflight(){
   local ok=1
+  if [ -n "${PERSISTENCE_ROTATE_AFTER:-}" ]; then
+    c_red "PERSISTENCE_ROTATE_AFTER is unsupported: rotated Hydra logs cannot restore Masumi's authenticated replay anchors"
+    ok=0
+  fi
+  if [ "$NETWORK" != preprod ] && [ "$HYDRA_NATIVE" != 1 ] \
+     && [ -f "$DEMO/docker-compose.yaml" ] \
+     && grep -q -- '--persistence-rotate-after' "$DEMO/docker-compose.yaml"; then
+    c_red "The external Hydra docker-compose enables --persistence-rotate-after, which this integration does not support"
+    c_red "  Remove that option and use an unrotated persistence tree before starting the harness"
+    ok=0
+  fi
   # NETWORK trap: with live native preprod nodes, an invocation that forgot
   # NETWORK=preprod silently takes devnet branches (tiny settle timeouts, no
   # drift restart) — 2026-07-16 this killed 13-settle mid-Close. Fail loudly.

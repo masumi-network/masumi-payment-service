@@ -46,6 +46,7 @@ export enum HydraHeadEvent {
 export enum HydraNodeEvent {
 	StatusChange = 'StatusChange',
 	TxConfirmed = 'TxConfirmed',
+	HistoryReplayFailed = 'HistoryReplayFailed',
 }
 
 export interface StatusChangeData {
@@ -68,6 +69,18 @@ export type HydraTransaction = {
 	txId?: string;
 };
 
+export type HydraConfirmedTransaction = HydraTransaction & {
+	txId: string;
+	/** Tx/reference metadata is attested by the configured local node, not Hydra's signed accumulator. */
+	metadataSource?: 'ConfiguredLocalHydraNode';
+	/** Hydra frame time; null when the confirmation timestamp is unproven. */
+	confirmedAtMs: number | null;
+	/** TimedServerOutput sequence; null only for live frames (history requires it). */
+	snapshotSequence: number | null;
+	/** Position inside one SnapshotConfirmed frame. */
+	snapshotTransactionIndex: number;
+};
+
 export enum HydraScriptLanguage {
 	SimpleScript = 'SimpleScript',
 	PlutusScriptV1 = 'PlutusScriptV1',
@@ -86,9 +99,11 @@ export type HydraReferenceScript = {
 	script: HydraScript;
 };
 
+export type HydraQuantity = number | bigint;
+
 export type HydraValue = {
-	lovelace?: number;
-	[policyId: string]: number | Record<string, number> | undefined;
+	lovelace?: HydraQuantity;
+	[policyId: string]: HydraQuantity | Record<string, HydraQuantity> | undefined;
 };
 
 export type HydraUTxO = {
@@ -112,5 +127,11 @@ export type HydraWallet = {
  */
 export type HydraNodeConfig = {
 	httpUrl: string;
+	wsUrl?: string;
+	expectedHeadId?: string;
+	reconciledHistoryCursor?: { snapshotSequence: number; snapshotTransactionIndex: number };
+	snapshotVerificationKeys?: string[];
+	expectedNodeVerificationKey?: string;
+	trustLocalNodeSnapshotMetadata?: boolean;
 	walletId: string;
 };

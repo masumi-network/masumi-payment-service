@@ -62,11 +62,15 @@ export abstract class HydraHead<TNode extends IHydraNode = IHydraNode> extends E
 			return;
 		}
 		try {
-			await this.getHydraNode(walletId)?.connect();
+			const node = this.getHydraNode(walletId);
+			if (!node) {
+				throw new Error(`Hydra node for wallet ${walletId} is not configured`);
+			}
+			await node.connect();
 			this._connected[walletId] = true;
-		} catch {
+		} catch (error) {
 			this._connected[walletId] = false;
-			console.error(`Failed to connect to node whose wallet id is ${walletId}!\n`);
+			throw error;
 		}
 	}
 

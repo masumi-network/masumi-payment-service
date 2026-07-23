@@ -1,7 +1,7 @@
 import { runPurchaseCreditInitTransaction } from './credit-init-transaction';
 import { InsufficientFundsError } from '@masumi/payment-core/insufficient-funds-error';
 import { logger } from '@masumi/payment-core/logger';
-import { Network, PricingType } from '@/generated/prisma/client';
+import { Network, PricingType, TransactionLayer } from '@/generated/prisma/client';
 import createHttpError from 'http-errors';
 
 export async function handlePurchaseCreditInit({
@@ -24,6 +24,8 @@ export async function handlePurchaseCreditInit({
 	buyerReturnAddress,
 	sellerReturnAddress,
 	agentName,
+	forceLayer,
+	paymentForceLayer,
 }: {
 	id: string;
 	walletScopeIds: string[] | null;
@@ -44,6 +46,8 @@ export async function handlePurchaseCreditInit({
 	buyerReturnAddress?: string | null;
 	sellerReturnAddress?: string | null;
 	agentName?: string | null;
+	forceLayer?: TransactionLayer | null;
+	paymentForceLayer?: TransactionLayer | null;
 }) {
 	let remainingAttempts = 5;
 	while (remainingAttempts > 0) {
@@ -68,6 +72,8 @@ export async function handlePurchaseCreditInit({
 				buyerReturnAddress,
 				sellerReturnAddress,
 				agentName,
+				forceLayer,
+				paymentForceLayer,
 			});
 		} catch (error) {
 			if (error instanceof InsufficientFundsError) {

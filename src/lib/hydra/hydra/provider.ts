@@ -15,14 +15,35 @@ import type { IFetcher, ISubmitter } from '@meshsdk/core';
 import type { HydraHeadClock, HydraRawCostModels, IHydraNode } from './node';
 import { HydraTransactionType } from './types';
 import type { HydraTransaction } from './types';
+import { logger } from '@masumi/payment-core/logger';
+import { HydraTransportError } from './errors';
 
 export class HydraProvider implements IFetcher, ISubmitter {
 	private readonly _node: IHydraNode;
+	private readonly _isSubmissionAllowed: () => boolean;
 
-	constructor({ node }: { node: IHydraNode }) {
+	constructor({
+		node,
+		autoConnect = true,
+		isSubmissionAllowed = () => true,
+	}: {
+		node: IHydraNode;
+		autoConnect?: boolean;
+		isSubmissionAllowed?: () => boolean;
+	}) {
 		this._node = node;
+		this._isSubmissionAllowed = isSubmissionAllowed;
 
-		void this._node.connect();
+		if (autoConnect) {
+			const connection = this._node.connect();
+			if (connection instanceof Promise) {
+				void connection.catch((error: unknown) => {
+					logger.error('[HydraProvider] Automatic node connection failed', {
+						error: error instanceof Error ? error.message : 'Unknown connection failure',
+					});
+				});
+			}
+		}
 	}
 
 	async fetchAddressUTxOs(address: string, asset?: string): Promise<UTxO[]> {
@@ -72,7 +93,7 @@ export class HydraProvider implements IFetcher, ISubmitter {
 		const snapshotUTxOs = await this._node.snapshotUTxO();
 		const results = hash ? snapshotUTxOs.filter((utxo) => utxo.input.txHash === hash) : snapshotUTxOs;
 
-		return index ? results.filter((utxo) => utxo.input.outputIndex === index) : results;
+		return index !== undefined ? results.filter((utxo) => utxo.input.outputIndex === index) : results;
 	}
 
 	async fetchAssetAddresses(asset: string): Promise<Array<{ address: string; quantity: string }>> {
@@ -118,6 +139,13 @@ export class HydraProvider implements IFetcher, ISubmitter {
 	}
 
 	async submitTx(cborHex: string): Promise<string> {
+		// The callback is evaluated in the same synchronous turn that invokes
+		// newTx, before HydraNode can queue bytes. Connection-manager providers use
+		// it to revoke already-captured references immediately on local quarantine
+		// or transport replacement.
+		if (!this._isSubmissionAllowed()) {
+			throw new HydraTransportError('Hydra provider is no longer admitted for transaction submission');
+		}
 		const transaction: HydraTransaction = {
 			type: HydraTransactionType.TxConwayEra,
 			description: '',

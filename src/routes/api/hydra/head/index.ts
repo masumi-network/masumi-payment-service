@@ -1,16 +1,56 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { CONFIG } from '@masumi/payment-core/config';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { HydraHeadStatus, HydraErrorType, Prisma } from '@/generated/prisma/client';
+import WebSocket, { type RawData } from 'ws';
+import {
+	HydraHeadStatus,
+	HydraErrorType,
+	Network,
+	Prisma,
+	TransactionLayer,
+	TransactionStatus,
+} from '@/generated/prisma/client';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { logger } from '@masumi/payment-core/logger';
-import { resolveTxHash } from '@meshsdk/core';
-import { HydraTransactionType, interpretCardanoTxSubmitResult } from '@/lib/hydra';
+import {
+	assertHydraCommitSignedBody,
+	buildHydraHttpEndpoint,
+	deriveHydraVerificationKeyCborHex,
+	getHydraPlaintextHosts,
+	HydraHeadInitObservationError,
+	HydraTransactionType,
+	HydraTransportError,
+	interpretCardanoTxSubmitResult,
+	MAX_HYDRA_WS_FRAME_BYTES,
+	normalizeHydraVerificationKeyCborHex,
+	parseHydraWebSocketProbeFrame,
+	resolveHydraDepositScriptHash,
+	selectCommitUtxosWithFuelReserve,
+	validateHydraHttpUrl,
+	validateHydraCommitDraft,
+	validateHydraNodeUrls,
+	verifyHydraHeadInitOnChain,
+	withHydraHistoryDisabled,
+} from '@/lib/hydra';
 import { toPrismaJsonValue } from '@/utils/json-value';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { convertNetwork } from '@/utils/converter/network-convert';
+import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
+import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
+import {
+	HydraCommitReservationConflictError,
+	reconcilePendingHydraCommit,
+	reserveAndSubmitHydraCommit,
+	type HydraCommitReconciliationResult,
+} from '@/services/hydra-commit-reconciliation';
+import { decrypt } from '@/utils/security/encryption';
+import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
+import { hasUnsettledHydraRequestState, unsettledL2TransactionWhere } from '../deletion-guard';
 
 // --- Shared schemas ---
 
@@ -51,6 +91,15 @@ const hydraHeadSchema = z
 		contestationDeadline: z.string().nullable(),
 		latestActivityAt: z.string().nullable(),
 		latestSnapshotNumber: z.string(),
+		reconciliationStalledTxId: z
+			.string()
+			.nullable()
+			.describe('Confirmed in-head tx the ordered replay is stuck on (fail-closed stall); null when replay is healthy'),
+		reconciliationStalledReason: z
+			.string()
+			.nullable()
+			.describe('Why replay is stalled: evidence-parse-failed | replay-apply-retry'),
+		reconciliationStalledSince: z.string().nullable().describe('When the current stall was first observed'),
 		initTxHash: z.string().nullable(),
 		closeTxHash: z.string().nullable(),
 		fanoutTxHash: z.string().nullable(),
@@ -131,69 +180,136 @@ const headInclude = {
 
 type HydraHeadRecord = Prisma.HydraHeadGetPayload<{ include: typeof headInclude }>;
 
-const HYDRA_HEAD_V2_ASSET_NAME_HEX = '4879647261486561645632';
-
 function serializeHydraHead(head: HydraHeadRecord) {
 	const { HydraRelation: _HydraRelation, ...publicHead } = head;
 	return toPrismaJsonValue(publicHead);
 }
 
-async function enrichHydraHeadLifecycleTxs(head: HydraHeadRecord): Promise<HydraHeadRecord> {
-	if (head.initTxHash || !head.headIdentifier) {
-		return head;
-	}
+const hydraHeadOnChainVerificationSelect = {
+	id: true,
+	isEnabled: true,
+	headIdentifier: true,
+	contestationPeriod: true,
+	LocalParticipant: {
+		select: {
+			walletId: true,
+			HydraSecretKey: { select: { hydraSK: true } },
+		},
+	},
+	RemoteParticipants: {
+		select: {
+			walletId: true,
+			HydraVerificationKey: { select: { hydraVK: true } },
+		},
+	},
+	HydraRelation: {
+		select: {
+			network: true,
+			localHotWalletId: true,
+			remoteWalletId: true,
+			LocalHotWallet: {
+				select: {
+					walletVkey: true,
+					deletedAt: true,
+					PaymentSource: {
+						select: {
+							network: true,
+							deletedAt: true,
+							disableSyncAt: true,
+							PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
+						},
+					},
+				},
+			},
+			RemoteWallet: {
+				select: {
+					walletVkey: true,
+					PaymentSource: {
+						select: { network: true, deletedAt: true, disableSyncAt: true },
+					},
+				},
+			},
+		},
+	},
+} as const;
 
-	const rpcProviderApiKey = head.HydraRelation.LocalHotWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
-	if (!rpcProviderApiKey) {
-		return head;
-	}
-
-	const initTxHash = await resolveHydraInitTxHash(head.HydraRelation.network, rpcProviderApiKey, head.headIdentifier);
-	if (!initTxHash) {
-		return head;
-	}
-
-	return prisma.hydraHead.update({
-		where: { id: head.id },
-		data: { initTxHash },
-		include: headInclude,
+/** Independently bind the DB/node head identity to its Hydra 2.3 InitTx. */
+async function verifyPersistedHydraHeadOnChain(
+	headId: string,
+	options: { allowDisabled?: boolean; persist?: boolean } = {},
+): Promise<{ headIdentifier: string; initTxHash: string }> {
+	const head = await prisma.hydraHead.findUnique({
+		where: { id: headId },
+		select: hydraHeadOnChainVerificationSelect,
 	});
-}
-
-async function resolveHydraInitTxHash(
-	network: HydraHeadRecord['HydraRelation']['network'],
-	rpcProviderApiKey: string,
-	headIdentifier: string,
-): Promise<string | null> {
-	if (!/^[0-9a-fA-F]{56}$/.test(headIdentifier)) {
-		return null;
+	if (!head) throw createHttpError(404, 'Hydra head not found');
+	if (!head.isEnabled && options.allowDisabled !== true) throw createHttpError(409, 'Hydra head is disabled');
+	if (!head.headIdentifier) throw createHttpError(409, 'Hydra head identifier has not been observed');
+	if (
+		!head.LocalParticipant ||
+		head.LocalParticipant.walletId !== head.HydraRelation.localHotWalletId ||
+		head.RemoteParticipants.length !== 1 ||
+		head.RemoteParticipants[0]?.walletId !== head.HydraRelation.remoteWalletId
+	) {
+		throw createHttpError(409, 'Hydra head participants no longer match their relation');
 	}
+	const localPaymentSource = head.HydraRelation.LocalHotWallet.PaymentSource;
+	const remotePaymentSource = head.HydraRelation.RemoteWallet.PaymentSource;
+	if (
+		head.HydraRelation.LocalHotWallet.deletedAt !== null ||
+		localPaymentSource.deletedAt !== null ||
+		remotePaymentSource.deletedAt !== null ||
+		localPaymentSource.disableSyncAt !== null ||
+		remotePaymentSource.disableSyncAt !== null
+	) {
+		throw createHttpError(409, 'Hydra head payment sources must be active and sync-enabled');
+	}
+	if (
+		localPaymentSource.network !== head.HydraRelation.network ||
+		remotePaymentSource.network !== head.HydraRelation.network
+	) {
+		throw createHttpError(409, 'Hydra head participants are on the wrong Cardano network');
+	}
+	const rpcProviderApiKey = localPaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
+	if (!rpcProviderApiKey) throw createHttpError(500, 'Hydra head has no independent L1 observer configured');
 
-	const blockfrost = getBlockfrostInstance(network, rpcProviderApiKey);
-	const hydraHeadAsset = `${headIdentifier}${HYDRA_HEAD_V2_ASSET_NAME_HEX}`;
-
+	const localVerificationKey = deriveHydraVerificationKeyCborHex(decrypt(head.LocalParticipant.HydraSecretKey.hydraSK));
+	const storedRemoteVerificationKey = head.RemoteParticipants[0].HydraVerificationKey.hydraVK;
+	let remoteVerificationKey: string;
 	try {
-		const transactions = await blockfrost.assetsTransactions(hydraHeadAsset, {
-			page: 1,
-			order: 'asc',
-			count: 1,
-		});
-		return transactions[0]?.tx_hash ?? null;
-	} catch (error) {
-		if (
-			error instanceof Error &&
-			(error.message.includes('404') || error.message.toLowerCase().includes('not found'))
-		) {
-			return null;
+		remoteVerificationKey = normalizeHydraVerificationKeyCborHex(storedRemoteVerificationKey);
+	} catch (plaintextError) {
+		try {
+			remoteVerificationKey = normalizeHydraVerificationKeyCborHex(decrypt(storedRemoteVerificationKey));
+		} catch {
+			throw plaintextError;
 		}
-
-		logger.warn('[HydraAPI] Failed to resolve Hydra init tx hash from Blockfrost', {
-			network,
-			headIdentifier,
-			error,
-		});
-		return null;
 	}
+
+	const verified = await verifyHydraHeadInitOnChain({
+		observer: getBlockfrostInstance(head.HydraRelation.network, rpcProviderApiKey),
+		headId: head.headIdentifier,
+		expectedVerificationKeys: [localVerificationKey, remoteVerificationKey],
+		expectedParticipantVkeys: [
+			head.HydraRelation.LocalHotWallet.walletVkey,
+			head.HydraRelation.RemoteWallet.walletVkey,
+		],
+		contestationPeriodSeconds: head.contestationPeriod,
+	});
+	if (options.persist === false) {
+		return { headIdentifier: head.headIdentifier, initTxHash: verified.initTxHash };
+	}
+	const persisted = await prisma.hydraHead.updateMany({
+		where: {
+			id: head.id,
+			isEnabled: true,
+			headIdentifier: head.headIdentifier,
+			contestationPeriod: head.contestationPeriod,
+		},
+		data: { initTxHash: verified.initTxHash },
+	});
+	if (persisted.count !== 1) throw createHttpError(409, 'Hydra head changed during on-chain verification');
+	return { headIdentifier: head.headIdentifier, initTxHash: verified.initTxHash };
 }
 
 export const getOrListHeadsGet = adminAuthenticatedEndpointFactory.build({
@@ -211,8 +327,7 @@ export const getOrListHeadsGet = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(404, 'Hydra head not found');
 			}
 
-			const enrichedHead = await enrichHydraHeadLifecycleTxs(head);
-			return { heads: [serializeHydraHead(enrichedHead)] };
+			return { heads: [serializeHydraHead(head)] };
 		}
 
 		const heads = await prisma.hydraHead.findMany({
@@ -225,25 +340,22 @@ export const getOrListHeadsGet = adminAuthenticatedEndpointFactory.build({
 			orderBy: { createdAt: 'desc' },
 			take: input.limit,
 			cursor: input.cursorId ? { id: input.cursorId } : undefined,
-			...(input.cursorId ? { skip: 1 } : {}),
 		});
 
-		const enrichedHeads = await Promise.all(heads.map(enrichHydraHeadLifecycleTxs));
-		return { heads: enrichedHeads.map(serializeHydraHead) };
+		return { heads: heads.map(serializeHydraHead) };
 	},
 });
 
 // --- POST: create head (links pre-existing participants) ---
 
-const createHeadSchemaInput = z.object({
+export const createHeadSchemaInput = z.object({
 	hydraRelationId: z.string().min(1).describe('The HydraRelation this head belongs to'),
 	contestationPeriod: z.coerce.number().int().min(1).default(86400).describe('Contestation period in seconds'),
 	localParticipantId: z.string().min(1).describe('ID of a pre-existing HydraLocalParticipant'),
 	remoteParticipantIds: z
 		.array(z.string().min(1))
-		.min(1)
-		.max(9)
-		.describe('IDs of pre-existing HydraRemoteParticipants'),
+		.length(1)
+		.describe('Exactly one pre-existing HydraRemoteParticipant for the relation counterparty'),
 });
 
 const createHeadSchemaOutput = hydraHeadSchema;
@@ -253,60 +365,329 @@ export const createHeadPost = adminAuthenticatedEndpointFactory.build({
 	input: createHeadSchemaInput,
 	output: createHeadSchemaOutput,
 	handler: async ({ input }) => {
-		const relation = await prisma.hydraRelation.findUnique({
-			where: { id: input.hydraRelationId },
+		const head = await createBoundHydraHead({
+			hydraRelationId: input.hydraRelationId,
+			contestationPeriod: BigInt(input.contestationPeriod),
+			localParticipantId: input.localParticipantId,
+			remoteParticipantId: input.remoteParticipantIds[0],
 		});
-		if (!relation) {
-			throw createHttpError(404, 'Hydra relation not found');
-		}
-
-		const localParticipant = await prisma.hydraLocalParticipant.findUnique({
-			where: { id: input.localParticipantId },
-		});
-		if (!localParticipant) {
-			throw createHttpError(404, `HydraLocalParticipant ${input.localParticipantId} not found`);
-		}
-		if (localParticipant.hydraHeadId !== null) {
-			throw createHttpError(409, 'Local participant is already assigned to a head');
-		}
-
-		const uniqueRemoteIds = new Set(input.remoteParticipantIds);
-		if (uniqueRemoteIds.size !== input.remoteParticipantIds.length) {
-			throw createHttpError(400, 'Duplicate IDs in remoteParticipantIds');
-		}
-
-		const remoteParticipants = await prisma.hydraRemoteParticipant.findMany({
-			where: { id: { in: input.remoteParticipantIds } },
-		});
-		if (remoteParticipants.length !== input.remoteParticipantIds.length) {
-			const foundIds = new Set(remoteParticipants.map((rp) => rp.id));
-			const missing = input.remoteParticipantIds.filter((id) => !foundIds.has(id));
-			throw createHttpError(404, `HydraRemoteParticipant(s) not found: ${missing.join(', ')}`);
-		}
-
-		const alreadyAssigned = remoteParticipants.filter((rp) => rp.hydraHeadId !== null);
-		if (alreadyAssigned.length > 0) {
-			throw createHttpError(
-				409,
-				`Remote participant(s) already assigned to a head: ${alreadyAssigned.map((rp) => rp.id).join(', ')}`,
-			);
-		}
-
-		const head = await prisma.hydraHead.create({
-			data: {
-				HydraRelation: { connect: { id: input.hydraRelationId } },
-				contestationPeriod: BigInt(input.contestationPeriod),
-				LocalParticipant: { connect: { id: input.localParticipantId } },
-				RemoteParticipants: {
-					connect: input.remoteParticipantIds.map((id) => ({ id })),
-				},
-			},
-			include: headInclude,
-		});
-
 		return serializeHydraHead(head);
 	},
 });
+
+type VerifiedPriorHydraFanouts = {
+	network: Network;
+	fanoutTxHashByHeadId: ReadonlyMap<string, string>;
+};
+
+/**
+ * Re-observe every completed predecessor immediately before replacement.
+ * Completion disconnects its Hydra evidence sockets, so the old DB marker is
+ * not enough to detect a later L1 rollback. Network I/O stays outside the
+ * Serializable transaction; createBoundHydraHead then locks the relation/head
+ * rows and requires this exact head/hash set before creating anything.
+ */
+async function verifyPriorHydraFanouts(hydraRelationId: string): Promise<VerifiedPriorHydraFanouts> {
+	const relation = await prisma.hydraRelation.findUnique({
+		where: { id: hydraRelationId },
+		select: {
+			network: true,
+			LocalHotWallet: {
+				select: {
+					PaymentSource: {
+						select: {
+							network: true,
+							PaymentSourceConfig: { select: { rpcProviderApiKey: true } },
+						},
+					},
+				},
+			},
+			Heads: {
+				where: { status: HydraHeadStatus.Final },
+				select: { id: true, fanoutTxHash: true, reconciliationCompletedAt: true },
+			},
+		},
+	});
+	if (!relation) throw createHttpError(404, 'Hydra relation not found');
+	if (relation.Heads.length === 0) {
+		return { network: relation.network, fanoutTxHashByHeadId: new Map() };
+	}
+	if (relation.LocalHotWallet.PaymentSource.network !== relation.network) {
+		throw createHttpError(409, 'Hydra relation and observer payment source use different networks');
+	}
+	const rpcProviderApiKey = relation.LocalHotWallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
+	if (!rpcProviderApiKey) throw createHttpError(503, 'Cannot independently re-confirm previous Hydra fanout');
+
+	const fanoutTxHashByHeadId = new Map<string, string>();
+	for (const head of relation.Heads) {
+		if (
+			head.reconciliationCompletedAt == null ||
+			head.fanoutTxHash == null ||
+			!/^[0-9a-f]{64}$/.test(head.fanoutTxHash) ||
+			fanoutTxHashByHeadId.has(head.id)
+		) {
+			throw createHttpError(
+				409,
+				'Previous Hydra head fanout is not independently confirmed or its L2 state is not fully adopted',
+			);
+		}
+		let result: Awaited<ReturnType<typeof lookupConfirmedChainTx>>;
+		try {
+			result = await lookupConfirmedChainTx({
+				network: relation.network,
+				rpcProviderApiKey,
+				txHash: head.fanoutTxHash,
+				requiredConfirmations: CONFIG.BLOCK_CONFIRMATIONS_THRESHOLD,
+			});
+		} catch {
+			throw createHttpError(503, 'Cannot independently re-confirm previous Hydra fanout');
+		}
+		if (result === 'transient-error') {
+			throw createHttpError(503, 'Cannot independently re-confirm previous Hydra fanout');
+		}
+		if (result !== 'confirmed-valid') {
+			throw createHttpError(409, 'Previous Hydra head fanout is no longer durably confirmed on L1');
+		}
+		fanoutTxHashByHeadId.set(head.id, head.fanoutTxHash);
+	}
+	return { network: relation.network, fanoutTxHashByHeadId };
+}
+
+/**
+ * Bind the singular relation participants and create the head in one guarded
+ * Serializable transaction. The relation is the authorization boundary: a
+ * caller cannot attach a different wallet or expand the two-party head with
+ * unrelated participants. Guarded claims, the relation's partial unique index,
+ * and the remote-assignment trigger make concurrent requests safe across API
+ * replicas.
+ */
+export async function createBoundHydraHead(input: {
+	hydraRelationId: string;
+	contestationPeriod: bigint;
+	localParticipantId: string;
+	remoteParticipantId: string;
+}): Promise<HydraHeadRecord> {
+	const verifiedPriorFanouts = await verifyPriorHydraFanouts(input.hydraRelationId);
+	try {
+		return await withSerializableSlotRetry(
+			() =>
+				prisma.$transaction(
+					async (tx) => {
+						const lockedRelation = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+							SELECT "id"
+							FROM "HydraRelation"
+							WHERE "id" = ${input.hydraRelationId}
+							FOR UPDATE
+						`);
+						if (lockedRelation.length !== 1) {
+							throw createHttpError(404, 'Hydra relation not found');
+						}
+						const relation = await tx.hydraRelation.findUnique({
+							where: { id: input.hydraRelationId },
+							select: {
+								id: true,
+								network: true,
+								localHotWalletId: true,
+								remoteWalletId: true,
+							},
+						});
+						if (!relation) {
+							throw createHttpError(404, 'Hydra relation not found');
+						}
+						if (relation.network !== verifiedPriorFanouts.network) {
+							throw createHttpError(409, 'Hydra relation network changed during replacement verification');
+						}
+						if (relation.network === Network.Mainnet && input.contestationPeriod < 43_200n) {
+							throw createHttpError(400, 'Mainnet Hydra heads require a contestation period of at least 43200 seconds');
+						}
+
+						// Serialize replacement with rollback invalidation and fanout
+						// adoption. Once these rows are locked, no previous Final head
+						// may lose its durable proof while this replacement is created.
+						await tx.$queryRaw(Prisma.sql`
+							SELECT "id"
+							FROM "HydraHead"
+							WHERE "hydraRelationId" = ${relation.id}
+							ORDER BY "id"
+							FOR UPDATE
+						`);
+						const activeHead = await tx.hydraHead.findFirst({
+							where: {
+								hydraRelationId: relation.id,
+								status: { not: HydraHeadStatus.Final },
+							},
+							select: { id: true },
+						});
+						if (activeHead) {
+							throw createHttpError(409, 'Hydra relation already has a non-final head');
+						}
+
+						const priorFinalHeads = await tx.hydraHead.findMany({
+							where: {
+								hydraRelationId: relation.id,
+								status: HydraHeadStatus.Final,
+							},
+							select: {
+								id: true,
+								fanoutTxHash: true,
+								reconciliationCompletedAt: true,
+								_count: { select: { Transactions: { where: unsettledL2TransactionWhere } } },
+							},
+						});
+						if (
+							priorFinalHeads.length !== verifiedPriorFanouts.fanoutTxHashByHeadId.size ||
+							priorFinalHeads.some(
+								(head) => verifiedPriorFanouts.fanoutTxHashByHeadId.get(head.id) !== head.fanoutTxHash,
+							)
+						) {
+							throw createHttpError(409, 'Previous Hydra head fanout evidence changed during replacement verification');
+						}
+						const unsafePriorHead = priorFinalHeads.find(
+							(head) =>
+								head.fanoutTxHash == null || head.reconciliationCompletedAt == null || head._count.Transactions !== 0,
+						);
+						if (unsafePriorHead) {
+							throw createHttpError(
+								409,
+								'Previous Hydra head fanout is not independently confirmed or its L2 state is not fully adopted',
+							);
+						}
+						const priorHeadIds = priorFinalHeads.map(({ id }) => id);
+						if (priorHeadIds.length > 0) {
+							const [paymentHandoffs, purchaseHandoffs] = await Promise.all([
+								tx.paymentRequest.count({
+									where: { hydraFanoutHandoffHeadId: { in: priorHeadIds } },
+								}),
+								tx.purchaseRequest.count({
+									where: { hydraFanoutHandoffHeadId: { in: priorHeadIds } },
+								}),
+							]);
+							const hasUnsettledRequests = await hasUnsettledHydraRequestState(tx, priorHeadIds);
+							if (paymentHandoffs !== 0 || purchaseHandoffs !== 0 || hasUnsettledRequests) {
+								throw createHttpError(409, 'Previous Hydra head still has unadopted fanout handoffs');
+							}
+						}
+
+						const localParticipant = await tx.hydraLocalParticipant.findUnique({
+							where: { id: input.localParticipantId },
+							select: {
+								id: true,
+								walletId: true,
+								hydraHeadId: true,
+								Wallet: {
+									select: {
+										deletedAt: true,
+										PaymentSource: { select: { id: true, network: true, deletedAt: true } },
+									},
+								},
+							},
+						});
+						if (!localParticipant) {
+							throw createHttpError(404, `HydraLocalParticipant ${input.localParticipantId} not found`);
+						}
+						if (localParticipant.hydraHeadId !== null) {
+							throw createHttpError(409, 'Local participant is already assigned to a head');
+						}
+						if (localParticipant.walletId !== relation.localHotWalletId) {
+							throw createHttpError(400, 'Local participant does not belong to the Hydra relation wallet');
+						}
+						if (
+							localParticipant.Wallet.deletedAt !== null ||
+							localParticipant.Wallet.PaymentSource.deletedAt !== null
+						) {
+							throw createHttpError(409, 'Local participant wallet or payment source is inactive');
+						}
+						if (localParticipant.Wallet.PaymentSource.network !== relation.network) {
+							throw createHttpError(400, 'Local participant wallet is on the wrong Cardano network');
+						}
+
+						const remoteParticipant = await tx.hydraRemoteParticipant.findUnique({
+							where: { id: input.remoteParticipantId },
+							select: {
+								id: true,
+								walletId: true,
+								hydraHeadId: true,
+								Wallet: {
+									select: {
+										PaymentSource: { select: { id: true, network: true, deletedAt: true } },
+									},
+								},
+							},
+						});
+						if (!remoteParticipant) {
+							throw createHttpError(404, `HydraRemoteParticipant ${input.remoteParticipantId} not found`);
+						}
+						if (remoteParticipant.hydraHeadId !== null) {
+							throw createHttpError(409, 'Remote participant is already assigned to a head');
+						}
+						if (remoteParticipant.walletId !== relation.remoteWalletId) {
+							throw createHttpError(400, 'Remote participant does not belong to the Hydra relation wallet');
+						}
+						if (remoteParticipant.Wallet.PaymentSource.deletedAt !== null) {
+							throw createHttpError(409, 'Remote participant payment source is inactive');
+						}
+						if (remoteParticipant.Wallet.PaymentSource.network !== relation.network) {
+							throw createHttpError(400, 'Remote participant wallet is on the wrong Cardano network');
+						}
+						if (remoteParticipant.Wallet.PaymentSource.id !== localParticipant.Wallet.PaymentSource.id) {
+							throw createHttpError(400, 'Hydra relation wallets must belong to the same payment source');
+						}
+
+						const head = await tx.hydraHead.create({
+							data: {
+								hydraRelationId: relation.id,
+								contestationPeriod: input.contestationPeriod,
+							},
+							select: { id: true },
+						});
+
+						const localClaim = await tx.hydraLocalParticipant.updateMany({
+							where: {
+								id: localParticipant.id,
+								walletId: relation.localHotWalletId,
+								hydraHeadId: null,
+							},
+							data: { hydraHeadId: head.id },
+						});
+						if (localClaim.count !== 1) {
+							throw createHttpError(409, 'Local participant was concurrently assigned to another head');
+						}
+
+						const remoteClaim = await tx.hydraRemoteParticipant.updateMany({
+							where: {
+								id: remoteParticipant.id,
+								walletId: relation.remoteWalletId,
+								hydraHeadId: null,
+							},
+							data: { hydraHeadId: head.id },
+						});
+						if (remoteClaim.count !== 1) {
+							throw createHttpError(409, 'Remote participant was concurrently assigned to another head');
+						}
+
+						return await tx.hydraHead.findUniqueOrThrow({
+							where: { id: head.id },
+							include: headInclude,
+						});
+					},
+					{
+						isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+						maxWait: 10_000,
+						timeout: 10_000,
+					},
+				),
+			{ label: 'hydra-head-create' },
+		);
+	} catch (error) {
+		if (createHttpError.isHttpError(error)) {
+			throw error;
+		}
+		if (isUniqueConstraintError(error)) {
+			throw createHttpError(409, 'Hydra relation or participant was concurrently assigned to another head');
+		}
+		throw error;
+	}
+}
 
 // --- PATCH: update isEnabled ---
 
@@ -322,20 +703,83 @@ export const updateHeadPatch = adminAuthenticatedEndpointFactory.build({
 	input: updateHeadSchemaInput,
 	output: updateHeadSchemaOutput,
 	handler: async ({ input }) => {
-		const existing = await prisma.hydraHead.findUnique({ where: { id: input.id } });
-		if (!existing) {
-			throw createHttpError(404, 'Hydra head not found');
-		}
-
-		const head = await prisma.hydraHead.update({
-			where: { id: input.id },
-			data: { isEnabled: input.isEnabled },
-			include: headInclude,
-		});
-
-		return serializeHydraHead(head);
+		return serializeHydraHead(await updateHydraHeadEnabledState(input.id, input.isEnabled));
 	},
 });
+
+type VerifyHeadForEnable = (headId: string) => Promise<{ headIdentifier: string; initTxHash: string }>;
+
+export async function updateHydraHeadEnabledState(
+	id: string,
+	isEnabled: boolean,
+	verifyHeadForEnable: VerifyHeadForEnable = async (headId) =>
+		await verifyPersistedHydraHeadOnChain(headId, { allowDisabled: true, persist: false }),
+): Promise<HydraHeadRecord> {
+	const existing = await prisma.hydraHead.findUnique({ where: { id } });
+	if (!existing) throw createHttpError(404, 'Hydra head not found');
+
+	const manager = getHydraConnectionManager();
+	const quarantined = await prisma.hydraHead.update({
+		where: { id },
+		// A disabled head's prior InitTx binding is no longer an admission token.
+		// Re-enable always proves the current head/participants/configuration again.
+		data: { isEnabled: false, initTxHash: null },
+		include: headInclude,
+	});
+	await manager.reconcileEnabledState(id);
+	if (!isEnabled) return quarantined;
+
+	const preInitStatuses = new Set<HydraHeadStatus>([
+		HydraHeadStatus.Disconnected,
+		HydraHeadStatus.Connecting,
+		HydraHeadStatus.Connected,
+		HydraHeadStatus.Idle,
+	]);
+	const requiresFreshVerification = quarantined.headIdentifier != null || !preInitStatuses.has(quarantined.status);
+	let verifiedInitTxHash: string | null = null;
+	if (requiresFreshVerification) {
+		try {
+			const verified = await verifyHeadForEnable(id);
+			if (verified.headIdentifier !== quarantined.headIdentifier) {
+				throw new Error('Hydra on-chain verification returned a different head identifier');
+			}
+			verifiedInitTxHash = verified.initTxHash;
+		} catch (error) {
+			if (error instanceof HydraHeadInitObservationError) {
+				throw createHttpError(
+					503,
+					`Hydra head remains disabled until independent L1 evidence is available: ${getErrorMessage(error)}`,
+				);
+			}
+			if (createHttpError.isHttpError(error)) throw error;
+			throw createHttpError(
+				502,
+				`Hydra head remains disabled because independent L1 verification failed: ${getErrorMessage(error)}`,
+			);
+		}
+	}
+
+	const enabled = await prisma.hydraHead.updateMany({
+		where: {
+			id,
+			isEnabled: false,
+			initTxHash: null,
+			updatedAt: quarantined.updatedAt,
+			headIdentifier: quarantined.headIdentifier,
+			contestationPeriod: quarantined.contestationPeriod,
+		},
+		data: { isEnabled: true, initTxHash: verifiedInitTxHash },
+	});
+	if (enabled.count !== 1) {
+		await manager.reconcileEnabledState(id);
+		throw createHttpError(409, 'Hydra head configuration or enable state changed during verification');
+	}
+
+	await manager.reconcileEnabledState(id);
+	const head = await prisma.hydraHead.findUnique({ where: { id }, include: headInclude });
+	if (!head) throw createHttpError(404, 'Hydra head not found');
+	return head;
+}
 
 // --- POST: check node reachability/status ---
 
@@ -366,9 +810,24 @@ export const checkHeadNodePost = adminAuthenticatedEndpointFactory.build({
 	input: checkHeadNodeSchemaInput,
 	output: checkHeadNodeSchemaOutput,
 	handler: async ({ input }) => {
-		const httpProbe = await probeHydraHttpNode(input.nodeHttpUrl, input.timeoutMs);
-		const websocketProbe = input.nodeUrl
-			? await probeHydraWebSocketNode(input.nodeUrl, input.timeoutMs)
+		let nodeHttpUrl: string;
+		let nodeUrl: string | undefined;
+		try {
+			const validationOptions = { plaintextHosts: getHydraPlaintextHosts() };
+			if (input.nodeUrl) {
+				const validated = validateHydraNodeUrls(input.nodeHttpUrl, input.nodeUrl, validationOptions);
+				nodeHttpUrl = validated.httpUrl;
+				nodeUrl = validated.wsUrl;
+			} else {
+				nodeHttpUrl = validateHydraHttpUrl(input.nodeHttpUrl, validationOptions);
+			}
+		} catch (error) {
+			throw createHttpError(400, getErrorMessage(error));
+		}
+
+		const httpProbe = await probeHydraHttpNode(nodeHttpUrl, input.timeoutMs);
+		const websocketProbe = nodeUrl
+			? await probeHydraWebSocketNode(nodeUrl, input.timeoutMs)
 			: { websocketReachable: false, status: null, error: null };
 
 		const errors = [httpProbe.error, websocketProbe.error].filter((error): error is string => Boolean(error));
@@ -423,7 +882,6 @@ export const listHeadErrorsGet = adminAuthenticatedEndpointFactory.build({
 			orderBy: { errorAt: 'desc' },
 			take: input.limit,
 			cursor: input.cursorId ? { id: input.cursorId } : undefined,
-			...(input.cursorId ? { skip: 1 } : {}),
 		});
 
 		return { errors };
@@ -453,6 +911,9 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 
 		if (!head) {
 			throw createHttpError(404, 'Hydra head not found');
+		}
+		if (!head.isEnabled) {
+			throw createHttpError(409, 'Cannot init a disabled Hydra head');
 		}
 
 		if (head.status !== HydraHeadStatus.Idle) {
@@ -487,16 +948,41 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				);
 			}
 
-			await prisma.hydraHead.update({
+			// Hydra 2.3 can advance directly to Open before init() resolves. Drain
+			// observed status frames and return the durable state instead of blindly
+			// regressing it to Initializing.
+			await cm.flushHeadStatus(head.id);
+			try {
+				await verifyPersistedHydraHeadOnChain(head.id);
+			} catch (verificationError) {
+				if (verificationError instanceof HydraHeadInitObservationError) {
+					// The Init command is irreversible, while the independent index is
+					// eventually consistent. Keep the authenticated node session alive and
+					// quarantine L2 routing via the still-null initTxHash until a later
+					// commit/lifecycle verification observes the InitTx.
+					throw createHttpError(
+						503,
+						`Hydra head initialized, but independent L1 evidence is not available yet: ${getErrorMessage(verificationError)}`,
+					);
+				}
+				// An initialized-but-unverified head must not remain eligible for sync or
+				// lifecycle actions. Re-enabling is an explicit operator decision after
+				// fixing the L1 observer or node configuration.
+				await prisma.hydraHead.updateMany({ where: { id: head.id }, data: { isEnabled: false } });
+				await cm.disconnect(head.id);
+				throw createHttpError(
+					502,
+					`Hydra InitTx configuration could not be verified independently: ${getErrorMessage(verificationError)}`,
+				);
+			}
+			const persistedHead = await prisma.hydraHead.findUnique({
 				where: { id: head.id },
-				data: {
-					status: HydraHeadStatus.Initializing,
-					latestActivityAt: new Date(),
-				},
+				select: { status: true },
 			});
+			if (!persistedHead) throw createHttpError(404, 'Hydra head not found');
 
-			logger.info(`[HydraAPI] Head ${head.id} initialized`);
-			return { headId: head.id, status: HydraHeadStatus.Initializing };
+			logger.info(`[HydraAPI] Head ${head.id} initialized`, { status: persistedHead.status });
+			return { headId: head.id, status: persistedHead.status };
 		} catch (error) {
 			if (createHttpError.isHttpError(error)) {
 				throw error;
@@ -532,6 +1018,9 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 		if (!head) {
 			throw createHttpError(404, 'Hydra head not found');
 		}
+		if (!head.isEnabled) {
+			throw createHttpError(409, 'Cannot commit to a disabled Hydra head');
+		}
 
 		if (head.status !== HydraHeadStatus.Initializing && head.status !== HydraHeadStatus.Open) {
 			throw createHttpError(409, `Cannot commit: head status is ${head.status}, expected Initializing or Open`);
@@ -545,6 +1034,9 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 		if (localParticipant.hasCommitted) {
 			throw createHttpError(409, 'Local participant has already committed');
 		}
+		if (!head.headIdentifier) {
+			throw createHttpError(409, 'Cannot commit before the Hydra head identifier has been observed');
+		}
 
 		const cm = getHydraConnectionManager();
 		const hydraHead = cm.getHead(head.id);
@@ -553,6 +1045,16 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 		}
 
 		try {
+			let verifiedHead: Awaited<ReturnType<typeof verifyPersistedHydraHeadOnChain>>;
+			try {
+				verifiedHead = await verifyPersistedHydraHeadOnChain(head.id);
+			} catch (verificationError) {
+				if (createHttpError.isHttpError(verificationError)) throw verificationError;
+				throw createHttpError(
+					502,
+					`Refusing to sign for an unverified Hydra head: ${getErrorMessage(verificationError)}`,
+				);
+			}
 			// Load the local participant's hot wallet + its L1 provider so we can
 			// fund the head with REAL UTxOs. A commit must spend the committing
 			// wallet's L1 UTxOs and be signed + submitted to L1 (the hydra-node only
@@ -567,6 +1069,39 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(500, 'Payment source has no RPC provider configured for the L1 commit');
 			}
 
+			const reconcileCommit = async (): Promise<HydraCommitReconciliationResult> =>
+				await reconcilePendingHydraCommit({
+					id: localParticipant.id,
+					hasCommitted: localParticipant.hasCommitted,
+					commitTxHash: localParticipant.commitTxHash,
+					commitInvalidHereafterSlot: localParticipant.commitInvalidHereafterSlot,
+					network: hotWallet.PaymentSource.network,
+					rpcProviderApiKey,
+				});
+
+			// A prior request may have lost the Hydra submit response or died after
+			// broadcast. Never sign a replacement while that exact TTL-bearing body
+			// can still land. Resolve it against trusted L1 evidence first.
+			if (localParticipant.commitTxHash != null || localParticipant.commitInvalidHereafterSlot != null) {
+				const reconciliation = await reconcileCommit();
+				if (reconciliation === 'confirmed') {
+					return {
+						headId: head.id,
+						committed: true,
+						commitTxHash: localParticipant.commitTxHash,
+					};
+				}
+				if (reconciliation !== 'cleared' && reconciliation !== 'none') {
+					const status = reconciliation === 'transient-error' ? 503 : 409;
+					throw createHttpError(
+						status,
+						reconciliation === 'malformed'
+							? 'Pending Hydra commit evidence is incomplete; refusing an unsafe retry'
+							: 'A prior Hydra commit remains pending independent L1 confirmation',
+					);
+				}
+			}
+
 			const { wallet, utxos } = await generateWalletExtended(
 				hotWallet.PaymentSource.network,
 				rpcProviderApiKey,
@@ -576,59 +1111,144 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(400, 'Local participant wallet has no L1 UTxOs available to commit');
 			}
 
-			// Commit all of the wallet's L1 UTxOs into the head (funds the buyer's
-			// in-head balance that the escrow lock will later spend). Committing the
-			// full balance is the simplest correct funding model for a dedicated
-			// head wallet; selecting a subset is a future optimization.
-			const commitDraftTx = await hydraHead.commit(utxos, null, localParticipant.walletId);
+			// Datum and reference-script outputs cannot be represented faithfully by
+			// the commit codec. Also reserve the largest plain output(s): hydra-node
+			// uses this same participant key as its fee wallet and selects its largest
+			// UTxO as fuel. Committing that input makes deposit submission fail with
+			// NotEnoughFuel.
+			const { commitUtxos, fuelUtxos, excludedUtxos } = selectCommitUtxosWithFuelReserve(utxos);
+			if (fuelUtxos.length === 0) {
+				throw createHttpError(
+					400,
+					'Local participant wallet has no plain (datum- and reference-script-free) L1 UTxOs available',
+				);
+			}
+			if (commitUtxos.length === 0) {
+				throw createHttpError(
+					400,
+					'Local participant wallet needs a plain L1 UTxO strictly smaller than its largest UTxO so the largest can remain available for Hydra fee fuel',
+				);
+			}
+
+			logger.info(`[HydraAPI] Selected L1 UTxOs for head ${head.id} commit`, {
+				commitUtxoCount: commitUtxos.length,
+				fuelUtxoCount: fuelUtxos.length,
+				excludedUtxoCount: excludedUtxos.length,
+			});
+
+			const commitDraftTx = await hydraHead.commit(commitUtxos, null, localParticipant.walletId);
 
 			// hydra-node returns an UNSIGNED commit tx spending the wallet's L1
-			// UTxOs. Sign (partial — the draft may already carry node witnesses).
-			const signedCommitTx = await wallet.signTx(commitDraftTx.cborHex, true);
-			// resolveTxHash is typed `any` upstream; coerce to a concrete string.
-			const commitTxHash: string = String(resolveTxHash(signedCommitTx));
+			// UTxOs. A missing cborHex means the node rejected the draft (returns an
+			// error object, not a tx) — surface it instead of passing undefined to
+			// signTx (which throws an opaque "reading 'length'" TypeError).
+			if (!commitDraftTx?.cborHex) {
+				throw createHttpError(502, 'Hydra node did not return a valid commit transaction draft');
+			}
 
-			// Submit the signed commit tx to L1 through the hydra-node's own
-			// `/cardano-transaction` endpoint rather than the wallet's L1 provider.
-			// The hydra-node is always connected to the exact L1 the head lives on,
-			// so this works in every environment — including a local devnet whose
-			// network magic Blockfrost cannot see (the L1-provider mismatch that
-			// previously made a real commit impossible on devnet). The node then
-			// observes the commit on-chain and moves the funds into the head.
-			const submitResult = await hydraHead.cardanoTransaction(
-				{
-					type: HydraTransactionType.TxConwayEra,
-					description: '',
-					cborHex: signedCommitTx,
-				},
-				localParticipant.walletId,
-			);
+			let validatedDraft: ReturnType<typeof validateHydraCommitDraft>;
+			try {
+				const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(hotWallet.PaymentSource.network));
+				if (!slotConfig) {
+					throw new Error('Hydra L1 slot configuration is incomplete or invalid');
+				}
+				validatedDraft = validateHydraCommitDraft({
+					draft: commitDraftTx,
+					commitUtxos,
+					fuelUtxos,
+					walletUtxos: utxos,
+					expectedHeadId: verifiedHead.headIdentifier,
+					depositScriptHash: resolveHydraDepositScriptHash(),
+					slotConfig,
+				});
+			} catch (validationError) {
+				throw createHttpError(502, `Refusing unsafe Hydra commit draft: ${getErrorMessage(validationError)}`);
+			}
+
+			// Sign (partial — the draft may already carry node witnesses).
+			const signedCommitTx = await wallet.signTx(commitDraftTx.cborHex, true);
+			assertHydraCommitSignedBody(signedCommitTx, validatedDraft.txId);
+			const commitTxHash = validatedDraft.txId;
+
+			// Submit the signed commit tx through the hydra-node connected to the
+			// head's L1. Promotion still requires independent Blockfrost evidence;
+			// private devnets therefore need a separately trusted L1 observer and
+			// otherwise remain fail-closed until the signed validity window expires.
+			let submitResult: unknown;
+			try {
+				submitResult = await reserveAndSubmitHydraCommit(
+					{
+						participantId: localParticipant.id,
+						commitTxHash,
+						invalidHereafterSlot: validatedDraft.invalidHereafterSlot,
+					},
+					async () =>
+						await hydraHead.cardanoTransaction(
+							{
+								type: HydraTransactionType.TxConwayEra,
+								description: '',
+								cborHex: signedCommitTx,
+							},
+							localParticipant.walletId,
+						),
+				);
+			} catch (error) {
+				if (error instanceof HydraCommitReservationConflictError) {
+					throw createHttpError(409, error.message);
+				}
+				throw error;
+			}
 
 			// hydra-node replies `{ tag: 'TransactionSubmitted' }` on success or
 			// `{ tag: 'FailedToPostTx', failureReason }` on rejection. Fail loudly so
 			// the caller knows the commit never reached L1.
 			const interpreted = interpretCardanoTxSubmitResult(submitResult);
-			if (!interpreted.ok) {
-				throw createHttpError(502, `Hydra node rejected the commit tx submission: ${interpreted.reason}`);
-			}
-
-			await prisma.hydraLocalParticipant.update({
-				where: { id: localParticipant.id },
-				data: {
-					hasCommitted: true,
-					commitTxHash,
-				},
+			const reconciliation = await reconcilePendingHydraCommit({
+				id: localParticipant.id,
+				hasCommitted: false,
+				commitTxHash,
+				commitInvalidHereafterSlot: validatedDraft.invalidHereafterSlot,
+				network: hotWallet.PaymentSource.network,
+				rpcProviderApiKey,
 			});
+			if (reconciliation === 'confirmed') {
+				await prisma.hydraHead.update({
+					where: { id: head.id },
+					data: { latestActivityAt: new Date() },
+				});
+				logger.info(`[HydraAPI] Local participant commit confirmed on L1 for head ${head.id}`, { commitTxHash });
+				return {
+					headId: head.id,
+					committed: true,
+					commitTxHash,
+				};
+			}
+			if (reconciliation === 'cleared') {
+				throw createHttpError(502, 'Hydra commit was absent after its validity deadline; retry is now safe');
+			}
+			if (!interpreted.ok) {
+				// The node's rejection is not independent proof that the transaction was
+				// never relayed. Keep the exact hash + TTL reserved for reconciliation.
+				throw createHttpError(
+					502,
+					`Hydra node rejected the commit tx submission; L1 reconciliation remains pending: ${interpreted.reason}`,
+				);
+			}
+			if (reconciliation === 'malformed' || reconciliation === 'none') {
+				throw createHttpError(500, 'Hydra commit pending evidence could not be reconciled safely');
+			}
 
 			await prisma.hydraHead.update({
 				where: { id: head.id },
 				data: { latestActivityAt: new Date() },
 			});
-
-			logger.info(`[HydraAPI] Local participant committed to head ${head.id}`, { commitTxHash });
+			logger.info(`[HydraAPI] Local participant commit submitted; awaiting independent L1 confirmation`, {
+				headId: head.id,
+				commitTxHash,
+			});
 			return {
 				headId: head.id,
-				committed: true,
+				committed: false,
 				commitTxHash,
 			};
 		} catch (error) {
@@ -640,6 +1260,110 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 
 // --- Lifecycle: POST close ---
 
+export async function beginHydraHeadClose(headId: string): Promise<void> {
+	await withSerializableSlotRetry(
+		() =>
+			prisma.$transaction(
+				async (tx) => {
+					// Reservation writers take this same row lock before creating Pending
+					// work. Whichever side wins becomes visible to the other before it can
+					// proceed, closing the close-vs-submit race.
+					const rows = await tx.$queryRaw<
+						Array<{
+							id: string;
+							status: HydraHeadStatus;
+							isEnabled: boolean;
+							isClosing: boolean;
+							initTxHash: string | null;
+						}>
+					>(Prisma.sql`
+						SELECT "id", "status", "isEnabled", "isClosing", "initTxHash"
+						FROM "HydraHead"
+						WHERE "id" = ${headId}
+						FOR UPDATE
+					`);
+					const head = rows[0];
+					if (!head) throw createHttpError(404, 'Hydra head not found');
+					if (!head.isEnabled) throw createHttpError(409, 'Cannot close a disabled Hydra head');
+					if (head.initTxHash == null) {
+						throw createHttpError(409, 'Cannot close a Hydra head without verified InitTx evidence');
+					}
+					if (head.status !== HydraHeadStatus.Open) {
+						throw createHttpError(409, `Cannot close: head status is ${head.status}, expected Open`);
+					}
+					if (head.isClosing) throw createHttpError(409, 'Hydra head close is already in progress');
+
+					const pendingL2Transactions = await tx.transaction.count({
+						where: {
+							hydraHeadId: headId,
+							layer: TransactionLayer.L2,
+							status: TransactionStatus.Pending,
+						},
+					});
+					const activePaymentEscrows = await tx.paymentRequest.count({
+						where: {
+							layer: TransactionLayer.L2,
+							CurrentTransaction: { is: { hydraHeadId: headId, layer: TransactionLayer.L2 } },
+							OR: [
+								{
+									currentHydraUtxoTxHash: { not: null },
+									currentHydraUtxoOutputIndex: { not: null },
+								},
+								{ unresolvedHydraTerminalTxHash: { not: null } },
+							],
+						},
+					});
+					const activePurchaseEscrows = await tx.purchaseRequest.count({
+						where: {
+							layer: TransactionLayer.L2,
+							CurrentTransaction: { is: { hydraHeadId: headId, layer: TransactionLayer.L2 } },
+							OR: [
+								{
+									currentHydraUtxoTxHash: { not: null },
+									currentHydraUtxoOutputIndex: { not: null },
+								},
+								{ unresolvedHydraTerminalTxHash: { not: null } },
+							],
+						},
+					});
+					if (pendingL2Transactions > 0 || activePaymentEscrows > 0 || activePurchaseEscrows > 0) {
+						throw createHttpError(
+							409,
+							`Cannot close Hydra head with ${pendingL2Transactions} pending L2 transaction(s) and ${
+								activePaymentEscrows + activePurchaseEscrows
+							} active escrow output(s)`,
+						);
+					}
+
+					const claimed = await tx.hydraHead.updateMany({
+						where: {
+							id: headId,
+							status: HydraHeadStatus.Open,
+							isEnabled: true,
+							isClosing: false,
+							initTxHash: { not: null },
+						},
+						data: { isClosing: true },
+					});
+					if (claimed.count !== 1) throw createHttpError(409, 'Hydra head close eligibility changed concurrently');
+				},
+				{
+					isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+					maxWait: 10_000,
+					timeout: 10_000,
+				},
+			),
+		{ label: 'hydra-head-close-admission' },
+	);
+}
+
+async function releaseHydraHeadCloseAdmission(headId: string): Promise<void> {
+	await prisma.hydraHead.updateMany({
+		where: { id: headId, status: HydraHeadStatus.Open, isClosing: true },
+		data: { isClosing: false },
+	});
+}
+
 export const closeHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: lifecycleInput,
@@ -649,6 +1373,9 @@ export const closeHeadPost = adminAuthenticatedEndpointFactory.build({
 
 		if (!head) {
 			throw createHttpError(404, 'Hydra head not found');
+		}
+		if (!head.isEnabled) {
+			throw createHttpError(409, 'Cannot close a disabled Hydra head');
 		}
 
 		if (head.status !== HydraHeadStatus.Open) {
@@ -662,20 +1389,24 @@ export const closeHeadPost = adminAuthenticatedEndpointFactory.build({
 		}
 
 		try {
+			await beginHydraHeadClose(head.id);
 			await hydraHead.close();
-
-			await prisma.hydraHead.update({
+			await cm.flushHeadStatus(head.id);
+			const persistedHead = await prisma.hydraHead.findUnique({
 				where: { id: head.id },
-				data: {
-					status: HydraHeadStatus.Closed,
-					closedAt: new Date(),
-					latestActivityAt: new Date(),
-				},
+				select: { status: true },
 			});
+			if (!persistedHead) throw createHttpError(404, 'Hydra head not found');
 
-			logger.info(`[HydraAPI] Head ${head.id} closed`);
-			return { headId: head.id, status: HydraHeadStatus.Closed };
+			logger.info(`[HydraAPI] Head ${head.id} close completed`, { status: persistedHead.status });
+			return { headId: head.id, status: persistedHead.status };
 		} catch (error) {
+			// Only a pre-send transport failure proves that neither this node nor a
+			// concurrent party could have moved the head out of Open. Any response after
+			// dispatch stays fail-closed until an authenticated status frame converges DB.
+			if (error instanceof HydraTransportError) {
+				await releaseHydraHeadCloseAdmission(head.id);
+			}
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Close');
 			throw error;
 		}
@@ -694,6 +1425,9 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 		if (!head) {
 			throw createHttpError(404, 'Hydra head not found');
 		}
+		if (!head.isEnabled) {
+			throw createHttpError(409, 'Cannot fanout a disabled Hydra head');
+		}
 
 		if (head.status !== HydraHeadStatus.FanoutPossible) {
 			throw createHttpError(409, `Cannot fanout: head status is ${head.status}, expected FanoutPossible`);
@@ -707,20 +1441,15 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 
 		try {
 			await hydraHead.fanout();
-
-			await prisma.hydraHead.update({
+			await cm.flushHeadStatus(head.id);
+			const persistedHead = await prisma.hydraHead.findUnique({
 				where: { id: head.id },
-				data: {
-					status: HydraHeadStatus.Final,
-					finalizedAt: new Date(),
-					latestActivityAt: new Date(),
-				},
+				select: { status: true },
 			});
+			if (!persistedHead) throw createHttpError(404, 'Hydra head not found');
 
-			cm.disconnect(head.id);
-
-			logger.info(`[HydraAPI] Head ${head.id} finalized via fanout`);
-			return { headId: head.id, status: HydraHeadStatus.Final };
+			logger.info(`[HydraAPI] Head ${head.id} fanout completed`, { status: persistedHead.status });
+			return { headId: head.id, status: persistedHead.status };
 		} catch (error) {
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Fanout');
 			throw error;
@@ -754,16 +1483,6 @@ async function recordHeadError(
 	}
 }
 
-function buildProtocolParametersUrl(nodeHttpUrl: string): string {
-	const baseUrl = nodeHttpUrl.replace(/\/+$/, '');
-	return `${baseUrl}/protocol-parameters`;
-}
-
-function appendHistoryNo(nodeUrl: string): string {
-	const separator = nodeUrl.includes('?') ? '&' : '?';
-	return `${nodeUrl}${separator}history=no`;
-}
-
 function getErrorMessage(error: unknown): string {
 	if (error instanceof Error) {
 		return error.message;
@@ -779,10 +1498,14 @@ async function probeHydraHttpNode(
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
 	try {
-		const response = await fetch(buildProtocolParametersUrl(nodeHttpUrl), {
+		const response = await fetch(buildHydraHttpEndpoint(nodeHttpUrl, 'protocol-parameters'), {
 			method: 'GET',
 			signal: controller.signal,
+			redirect: 'error',
 		});
+		// Reachability needs only the status line. Stop an untrusted endpoint from
+		// retaining the probe with an arbitrarily large or never-ending body.
+		await response.body?.cancel().catch(() => undefined);
 
 		return {
 			protocolParametersOk: response.ok,
@@ -824,31 +1547,10 @@ function parseHydraStatusMessage(value: unknown): HydraHeadStatus | null {
 	return null;
 }
 
-function normalizeWebSocketData(data: unknown): string | null {
-	if (typeof data === 'string') {
-		return data;
-	}
-	if (data instanceof ArrayBuffer) {
-		return Buffer.from(data).toString('utf8');
-	}
-	if (ArrayBuffer.isView(data)) {
-		return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString('utf8');
-	}
-	return null;
-}
-
 async function probeHydraWebSocketNode(
 	nodeUrl: string,
 	timeoutMs: number,
 ): Promise<{ websocketReachable: boolean; status: HydraHeadStatus | null; error: string | null }> {
-	if (!globalThis.WebSocket) {
-		return {
-			websocketReachable: false,
-			status: null,
-			error: 'WebSocket is not available in this runtime',
-		};
-	}
-
 	return new Promise((resolve) => {
 		let websocket: WebSocket | null = null;
 		let didOpen = false;
@@ -877,33 +1579,40 @@ async function probeHydraWebSocketNode(
 		}
 
 		try {
-			websocket = new WebSocket(appendHistoryNo(nodeUrl));
-			websocket.addEventListener('open', () => {
+			websocket = new WebSocket(withHydraHistoryDisabled(nodeUrl), {
+				// Enforce the limit in the receiver before an attacker-controlled
+				// status frame is assembled in application memory.
+				maxPayload: MAX_HYDRA_WS_FRAME_BYTES,
+				perMessageDeflate: false,
+			});
+			websocket.on('open', () => {
 				didOpen = true;
 			});
-			websocket.addEventListener('message', (event) => {
-				const rawMessage = normalizeWebSocketData(event.data);
-				if (!rawMessage) {
-					return;
-				}
-
+			websocket.on('message', (data: RawData, isBinary: boolean) => {
 				try {
-					const parsed = JSON.parse(rawMessage) as unknown;
+					const parsed = parseHydraWebSocketProbeFrame(isBinary ? data : rawWebSocketProbeDataToText(data));
 					const status = parseHydraStatusMessage(parsed);
 					finish({ websocketReachable: true, status, error: null });
 				} catch (error) {
 					finish({
 						websocketReachable: true,
 						status: null,
-						error: `Hydra status message was not valid JSON: ${getErrorMessage(error)}`,
+						error: getErrorMessage(error),
 					});
 				}
 			});
-			websocket.addEventListener('error', () => {
+			websocket.on('error', () => {
 				finish({
 					websocketReachable: didOpen,
 					status: null,
 					error: 'WebSocket probe failed',
+				});
+			});
+			websocket.on('close', () => {
+				finish({
+					websocketReachable: didOpen,
+					status: null,
+					error: didOpen ? 'WebSocket probe closed before Hydra status' : 'WebSocket probe failed to open',
 				});
 			});
 		} catch (error) {
@@ -914,4 +1623,10 @@ async function probeHydraWebSocketNode(
 			});
 		}
 	});
+}
+
+function rawWebSocketProbeDataToText(data: RawData): string {
+	if (Buffer.isBuffer(data)) return data.toString('utf8');
+	if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
+	return Buffer.concat(data).toString('utf8');
 }

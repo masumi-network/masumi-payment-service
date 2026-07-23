@@ -1,4 +1,5 @@
 import { PaymentSourceType } from '@/generated/prisma/client';
+import type { ForceLayerApi } from '@/utils/logic/force-layer';
 
 export type SignedBlockchainIdentifierPayloadInput = {
 	inputHash: string;
@@ -13,6 +14,7 @@ export type SignedBlockchainIdentifierPayloadInput = {
 	sellerAddress: string;
 	sellerReturnAddress?: string | null;
 	smartContractAddress?: string | null;
+	paymentForceLayer?: ForceLayerApi | null;
 	paymentSourceType: PaymentSourceType;
 };
 
@@ -32,6 +34,10 @@ export function buildSignedBlockchainIdentifierPayload(input: SignedBlockchainId
 			? {
 					sellerReturnAddress: input.sellerReturnAddress ?? null,
 					smartContractAddress: input.smartContractAddress ?? null,
+					// Keep the absent case out of the payload so existing V2 identifiers
+					// remain verifiable. When present, the seller signs the routing choice,
+					// allowing a purchase created on another server to authenticate it.
+					...(input.paymentForceLayer != null ? { paymentForceLayer: input.paymentForceLayer } : {}),
 				}
 			: {}),
 	};

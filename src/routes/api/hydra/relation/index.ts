@@ -2,7 +2,13 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import { Network, HydraHeadStatus } from '@/generated/prisma/client';
+import { Network, HydraHeadStatus, Prisma } from '@/generated/prisma/client';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
+import {
+	quiesceHydraHeadsForDeletion,
+	reconciledFinalHeadFilter,
+	unsettledL2TransactionWhere,
+} from '../deletion-guard';
 
 const hydraRelationSchema = z
 	.object({
@@ -129,7 +135,6 @@ export const getOrListRelationsGet = adminAuthenticatedEndpointFactory.build({
 			orderBy: { createdAt: 'desc' },
 			take: input.limit,
 			cursor: input.cursorId ? { id: input.cursorId } : undefined,
-			...(input.cursorId ? { skip: 1 } : {}),
 		});
 
 		return { relations };
@@ -212,36 +217,107 @@ const deleteRelationSchemaOutput = z.object({
 	deleted: z.boolean(),
 });
 
-const NON_FINAL_STATUSES: HydraHeadStatus[] = [
-	HydraHeadStatus.Idle,
-	HydraHeadStatus.Initializing,
-	HydraHeadStatus.Open,
-	HydraHeadStatus.Closed,
-	HydraHeadStatus.FanoutPossible,
-];
-
 export const deleteRelationDelete = adminAuthenticatedEndpointFactory.build({
 	method: 'delete',
 	input: deleteRelationSchemaInput,
 	output: deleteRelationSchemaOutput,
 	handler: async ({ input }) => {
-		const relation = await prisma.hydraRelation.findUnique({
-			where: { id: input.id },
-			include: {
-				Heads: { where: { status: { in: NON_FINAL_STATUSES } }, select: { id: true } },
-			},
-		});
-
-		if (!relation) {
-			throw createHttpError(404, 'Hydra relation not found');
-		}
-
-		if (relation.Heads.length > 0) {
-			throw createHttpError(409, `Cannot delete relation: ${relation.Heads.length} head(s) in non-final state`);
-		}
-
-		await prisma.hydraRelation.delete({ where: { id: input.id } });
-
+		await deleteHydraRelation(input.id);
 		return { id: input.id, deleted: true };
 	},
 });
+
+export async function deleteHydraRelation(id: string): Promise<void> {
+	const deletionPlan = await prisma.hydraRelation.findUnique({
+		where: { id },
+		select: { Heads: { select: { id: true } } },
+	});
+	if (!deletionPlan) throw createHttpError(404, 'Hydra relation not found');
+	await quiesceHydraHeadsForDeletion(deletionPlan.Heads.map(({ id: headId }) => headId));
+
+	await withSerializableSlotRetry(
+		() =>
+			prisma.$transaction(
+				async (tx) => {
+					// Lock the relation first so no new head can acquire its FK while the
+					// exact current head set is locked and rechecked for deletion.
+					await tx.$queryRaw(Prisma.sql`
+						SELECT "id" FROM "HydraRelation" WHERE "id" = ${id} FOR UPDATE
+					`);
+					await tx.$queryRaw(Prisma.sql`
+						SELECT "id"
+						FROM "HydraHead"
+						WHERE "hydraRelationId" = ${id}
+						ORDER BY "id"
+						FOR UPDATE
+					`);
+					const relation = await tx.hydraRelation.findUnique({
+						where: { id },
+						select: {
+							Heads: {
+								select: {
+									status: true,
+									isEnabled: true,
+									fanoutTxHash: true,
+									reconciliationCompletedAt: true,
+									_count: {
+										select: {
+											Transactions: {
+												where: unsettledL2TransactionWhere,
+											},
+										},
+									},
+									LocalParticipant: { select: { hydraSecretKeyId: true } },
+									RemoteParticipants: { select: { hydraVerificationKeyId: true } },
+								},
+							},
+						},
+					});
+					if (!relation) throw createHttpError(404, 'Hydra relation not found');
+
+					const unsafeHeadCount = relation.Heads.filter(
+						(head) =>
+							head.status !== HydraHeadStatus.Final ||
+							head.isEnabled ||
+							head.fanoutTxHash == null ||
+							head.reconciliationCompletedAt == null ||
+							head._count.Transactions !== 0,
+					).length;
+					if (unsafeHeadCount > 0) {
+						throw createHttpError(
+							409,
+							`Cannot delete relation: ${unsafeHeadCount} head(s) have incomplete reconciliation or pending L2 work`,
+						);
+					}
+
+					const secretKeyIds = relation.Heads.flatMap(({ LocalParticipant }) =>
+						LocalParticipant ? [LocalParticipant.hydraSecretKeyId] : [],
+					);
+					const verificationKeyIds = relation.Heads.flatMap(({ RemoteParticipants }) =>
+						RemoteParticipants.map(({ hydraVerificationKeyId }) => hydraVerificationKeyId),
+					);
+					const deleted = await tx.hydraRelation.deleteMany({
+						where: {
+							id,
+							Heads: { every: reconciledFinalHeadFilter },
+						},
+					});
+					if (deleted.count !== 1) {
+						throw createHttpError(409, 'Cannot delete relation: Hydra cleanup eligibility changed concurrently');
+					}
+					if (secretKeyIds.length > 0) {
+						await tx.hydraSecretKey.deleteMany({ where: { id: { in: secretKeyIds } } });
+					}
+					if (verificationKeyIds.length > 0) {
+						await tx.hydraVerificationKey.deleteMany({ where: { id: { in: verificationKeyIds } } });
+					}
+				},
+				{
+					isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+					maxWait: 10_000,
+					timeout: 10_000,
+				},
+			),
+		{ label: 'hydra-relation-delete' },
+	);
+}

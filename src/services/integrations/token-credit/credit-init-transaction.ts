@@ -3,7 +3,14 @@ import { cardanoNetworkToCaip2 } from '@masumi/payment-core/network';
 import createHttpError from 'http-errors';
 import { InsufficientFundsError } from '@masumi/payment-core/insufficient-funds-error';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
-import { Network, PricingType, PurchasingAction, WalletBase, WalletType } from '@/generated/prisma/client';
+import {
+	Network,
+	PricingType,
+	PurchasingAction,
+	TransactionLayer,
+	WalletBase,
+	WalletType,
+} from '@/generated/prisma/client';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 
 export async function runPurchaseCreditInitTransaction({
@@ -26,6 +33,8 @@ export async function runPurchaseCreditInitTransaction({
 	buyerReturnAddress,
 	sellerReturnAddress,
 	agentName,
+	forceLayer,
+	paymentForceLayer,
 }: {
 	id: string;
 	walletScopeIds: string[] | null;
@@ -46,6 +55,8 @@ export async function runPurchaseCreditInitTransaction({
 	buyerReturnAddress?: string | null;
 	sellerReturnAddress?: string | null;
 	agentName?: string | null;
+	forceLayer?: TransactionLayer | null;
+	paymentForceLayer?: TransactionLayer | null;
 }) {
 	// Gate Serializable $transaction through the shared semaphore so concurrent
 	// HTTP requests don't exhaust the pg connection pool. See
@@ -184,6 +195,8 @@ export async function runPurchaseCreditInitTransaction({
 							agentName: agentName ?? null,
 							agentNameSyncedAt: new Date(),
 							inputHash: inputHash,
+							forceLayer: forceLayer ?? null,
+							paymentForceLayer: paymentForceLayer ?? null,
 							NextAction: {
 								create: {
 									requestedAction: PurchasingAction.FundsLockingRequested,

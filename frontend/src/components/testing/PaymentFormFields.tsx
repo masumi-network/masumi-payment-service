@@ -87,9 +87,17 @@ export const paymentFormSchema = z.object({
   metadata: z.string().optional(),
   requestedFundsAmount: z.string().optional(),
   requestedFundsUnit: z.string().optional(),
+  forceLayer: z.enum(['Auto', 'L1', 'Hydra']),
 });
 
 export type PaymentFormValues = z.infer<typeof paymentFormSchema>;
+
+/** Map the form's routing choice to the API field: 'Auto' means omit (automatic routing). */
+export function forceLayerToApi(
+  value: PaymentFormValues['forceLayer'],
+): 'L1' | 'Hydra' | undefined {
+  return value === 'Auto' ? undefined : value;
+}
 
 export interface PaidAgent {
   id: string;
@@ -346,6 +354,32 @@ export function PaymentFormFields({
           rows={2}
           className="resize-none"
         />
+      </div>
+
+      {/* Layer Routing (forceLayer) */}
+      <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-4">
+        <Label>Layer Routing</Label>
+        <Controller
+          control={control}
+          name="forceLayer"
+          render={({ field }) => (
+            <Select value={field.value} onValueChange={field.onChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Auto (recommended)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Auto">Auto (recommended)</SelectItem>
+                <SelectItem value="L1">Force L1</SelectItem>
+                <SelectItem value="Hydra">Force Hydra (Beta)</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        />
+        <p className="text-xs text-muted-foreground">
+          Auto uses Hydra when an open head is available, otherwise L1. Force Hydra fails the
+          funds-lock instead of falling back to L1; the choice is signed into the payment terms.
+          Hydra requires a V2 payment source.
+        </p>
       </div>
 
       {/* Simulate Dynamic Price */}

@@ -10,6 +10,7 @@ import {
 } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import { isCardanoAddressForNetwork } from '@/types/payment-source';
+import { FORCE_LAYER_API_VALUES } from '@/utils/logic/force-layer';
 
 export const queryPurchaseRequestSchemaInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(10).describe('The number of purchases to return'),
@@ -129,6 +130,18 @@ export const purchaseResponseSchema = z
 			.nativeEnum(OnChainState)
 			.nullable()
 			.describe('Current state of the purchase on the blockchain. Null if not yet on-chain'),
+		forceLayer: z
+			.enum(FORCE_LAYER_API_VALUES)
+			.nullable()
+			.describe(
+				'Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.',
+			),
+		paymentForceLayer: z
+			.enum(FORCE_LAYER_API_VALUES)
+			.nullable()
+			.describe(
+				'Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.',
+			),
 		collateralReturnLovelace: z
 			.string()
 			.nullable()
@@ -329,6 +342,18 @@ export const createPurchaseInitSchemaInput = z
 			.min(14)
 			.max(26)
 			.describe('The nonce of the purchaser. It must be in hex format'),
+		forceLayer: z
+			.enum(FORCE_LAYER_API_VALUES)
+			.optional()
+			.describe(
+				'Optional buyer layer override. "L1" forces L1; "Hydra" requires an open head and is supported only for V2. It must not conflict with the signed paymentForceLayer. Omit for automatic routing.',
+			),
+		paymentForceLayer: z
+			.enum(FORCE_LAYER_API_VALUES)
+			.nullish()
+			.describe(
+				'Seller layer override copied from the payment response. For V2, a non-null value is part of the signed payment terms and cannot be changed or omitted without invalidating the identifier. V1 accepts only the redundant "L1" value for response round-tripping. Omit or pass null when the seller selected automatic routing.',
+			),
 	})
 	.refine(
 		(value) => value.buyerReturnAddress == null || isCardanoAddressForNetwork(value.buyerReturnAddress, value.network),

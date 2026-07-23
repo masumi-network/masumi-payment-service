@@ -35,20 +35,23 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 }));
 
 let PricingType: typeof import('@/generated/prisma/client').PricingType;
+let TransactionLayer: typeof import('@/generated/prisma/client').TransactionLayer;
 let TransactionStatus: typeof import('@/generated/prisma/client').TransactionStatus;
 let generateBlockchainIdentifier: typeof import('@masumi/payment-core/blockchain-identifier').generateBlockchainIdentifier;
 let serializePaymentSourceEntry: typeof import('./payment-source/serializers').serializePaymentSourceEntry;
 let serializePaymentListEntry: typeof import('./payments/serializers').serializePaymentListEntry;
+let serializePurchasesResponse: typeof import('./purchases/serializers').serializePurchasesResponse;
 let serializeRegistryEntry: typeof import('./registry/serializers').serializeRegistryEntry;
 let serializeInboxRegistryEntry: typeof import('./registry-inbox/serializers').serializeInboxRegistryEntry;
 let serializeSwapTransaction: typeof import('./swap/serializers').serializeSwapTransaction;
 
 describe('route serializers', () => {
 	beforeAll(async () => {
-		({ PricingType, TransactionStatus } = await import('@/generated/prisma/client'));
+		({ PricingType, TransactionLayer, TransactionStatus } = await import('@/generated/prisma/client'));
 		({ generateBlockchainIdentifier } = await import('@masumi/payment-core/blockchain-identifier'));
 		({ serializePaymentSourceEntry } = await import('./payment-source/serializers'));
 		({ serializePaymentListEntry } = await import('./payments/serializers'));
+		({ serializePurchasesResponse } = await import('./purchases/serializers'));
 		({ serializeRegistryEntry } = await import('./registry/serializers'));
 		({ serializeInboxRegistryEntry } = await import('./registry-inbox/serializers'));
 		({ serializeSwapTransaction } = await import('./swap/serializers'));
@@ -105,6 +108,7 @@ describe('route serializers', () => {
 				},
 			],
 			ActionHistory: [],
+			forceLayer: TransactionLayer.L2,
 		} as unknown as Parameters<typeof serializePaymentListEntry>[0];
 
 		const serialized = serializePaymentListEntry(payment);
@@ -116,6 +120,37 @@ describe('route serializers', () => {
 		expect(serialized.TransactionHistory?.[0]?.fees).toBe('654321');
 		expect(serialized.totalBuyerCardanoFees).toBe(2.5);
 		expect(serialized.totalSellerCardanoFees).toBe(1.5);
+		expect(serialized.forceLayer).toBe('Hydra');
+	});
+
+	it('maps internal purchase layer overrides to the public API vocabulary', () => {
+		const purchase = {
+			id: 'purchase-1',
+			blockchainIdentifier: 'identifier',
+			agentIdentifier: 'agent',
+			submitResultTime: 10n,
+			payByTime: 20n,
+			unlockTime: 30n,
+			externalDisputeUnlockTime: 40n,
+			collateralReturnLovelace: null,
+			sellerCoolDownTime: 50n,
+			buyerCoolDownTime: 60n,
+			totalBuyerCardanoFees: 0n,
+			totalSellerCardanoFees: 0n,
+			PaidFunds: [],
+			WithdrawnForSeller: [],
+			WithdrawnForBuyer: [],
+			CurrentTransaction: null,
+			TransactionHistory: [],
+			ActionHistory: [],
+			forceLayer: TransactionLayer.L2,
+			paymentForceLayer: TransactionLayer.L1,
+		} as unknown as Parameters<typeof serializePurchasesResponse>[0][number];
+
+		const serialized = serializePurchasesResponse([purchase]).Purchases[0]!;
+
+		expect(serialized.forceLayer).toBe('Hydra');
+		expect(serialized.paymentForceLayer).toBe('L1');
 	});
 
 	it('prefers persisted agentIdentifier over decoding blockchain identifier', () => {

@@ -27,3 +27,7 @@ export { getDefaultSupportedPaymentSources } from './registry/supported-payment-
 
 export { fetchUTxOsWithDeferOnEmpty } from './utxo-fetch-helpers';
 export { asV2Provider } from './provider-cast';
+
+// L2 (in-head) escrow-state reconciler — the Hydra mirror of L1 tx-sync, so a
+// counterparty-driven in-head transition advances this node's own request rows.
+export { reconcileHydraHeadEscrowStates } from './hydra-reconcile';

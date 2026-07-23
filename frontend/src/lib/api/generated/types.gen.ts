@@ -414,6 +414,10 @@ export type Payment = {
      */
     onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
     /**
+     * Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).
+     */
+    forceLayer: 'L1' | 'Hydra' | null;
+    /**
      * Next action required for this payment
      */
     NextAction: {
@@ -756,6 +760,14 @@ export type Purchase = {
      * Current state of the purchase on the blockchain. Null if not yet on-chain
      */
     onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+    /**
+     * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+     */
+    forceLayer: 'L1' | 'Hydra' | null;
+    /**
+     * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+     */
+    paymentForceLayer: 'L1' | 'Hydra' | null;
     /**
      * Amount of collateral to return in lovelace. Null if no collateral
      */
@@ -4448,6 +4460,10 @@ export type PostPaymentData = {
          * A unique nonce from the purchaser. It must be in hex format
          */
         identifierFromPurchaser: string;
+        /**
+         * Optional seller layer override. For V2 this choice is signed into the purchase terms: "Hydra" requires an open head, "L1" forces L1, and a conflict with the buyer's forceLayer is rejected. Hydra is not supported for V1. Omit for automatic routing.
+         */
+        forceLayer?: 'L1' | 'Hydra';
     };
     path?: never;
     query?: never;
@@ -4579,6 +4595,10 @@ export type PostPaymentResponses = {
              * Current state of the payment on the blockchain. Null if not yet on-chain
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            /**
+             * Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
             /**
              * Next action required for this payment
              */
@@ -5187,6 +5207,10 @@ export type PostPaymentSubmitResultResponses = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Next action required for this payment
              */
             NextAction: {
@@ -5512,6 +5536,10 @@ export type PostPaymentAuthorizeRefundResponses = {
              * Current state of the payment on the blockchain. Null if not yet on-chain
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            /**
+             * Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
             /**
              * Next action required for this payment
              */
@@ -5859,6 +5887,10 @@ export type PostPaymentErrorStateRecoveryResponses = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Next action required for this payment
              */
             NextAction: {
@@ -6175,6 +6207,14 @@ export type PostPurchaseErrorStateRecoveryResponses = {
              * Current state of the purchase on the blockchain. Null if not yet on-chain
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            /**
+             * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
+             * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+             */
+            paymentForceLayer: 'L1' | 'Hydra' | null;
             /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
@@ -7215,6 +7255,14 @@ export type PostPurchaseData = {
          * The nonce of the purchaser. It must be in hex format
          */
         identifierFromPurchaser: string;
+        /**
+         * Optional buyer layer override. "L1" forces L1; "Hydra" requires an open head and is supported only for V2. It must not conflict with the signed paymentForceLayer. Omit for automatic routing.
+         */
+        forceLayer?: 'L1' | 'Hydra';
+        /**
+         * Seller layer override copied from the payment response. For V2, a non-null value is part of the signed payment terms and cannot be changed or omitted without invalidating the identifier. V1 accepts only the redundant "L1" value for response round-tripping. Omit or pass null when the seller selected automatic routing.
+         */
+        paymentForceLayer?: 'L1' | 'Hydra' | null;
     };
     path?: never;
     query?: never;
@@ -7316,6 +7364,14 @@ export type PostPurchaseErrors = {
              * Current state of the purchase on the blockchain. Null if not yet on-chain
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            /**
+             * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
+             * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+             */
+            paymentForceLayer: 'L1' | 'Hydra' | null;
             /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
@@ -7563,6 +7619,14 @@ export type PostPurchaseResponses = {
              * Current state of the purchase on the blockchain. Null if not yet on-chain
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            /**
+             * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
+             * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+             */
+            paymentForceLayer: 'L1' | 'Hydra' | null;
             /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
@@ -8090,6 +8154,14 @@ export type PostPurchaseRequestRefundResponses = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
+             * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+             */
+            paymentForceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
             collateralReturnLovelace: string | null;
@@ -8372,6 +8444,14 @@ export type PostPurchaseCancelRefundRequestResponses = {
              * Current state of the purchase on the blockchain. Null if not yet on-chain
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            /**
+             * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
+             * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+             */
+            paymentForceLayer: 'L1' | 'Hydra' | null;
             /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
