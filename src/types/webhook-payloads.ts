@@ -175,6 +175,20 @@ const x402WalletLowBalancePayloadSchema = createWebhookPayloadSchema(
 	'Emitted when a monitored managed EVM wallet transitions into low balance',
 );
 
+const hydraHeadLowBalancePayloadSchema = createWebhookPayloadSchema(
+	z.literal('HYDRA_HEAD_LOW_BALANCE'),
+	z.object({
+		ruleId: z.string().describe('Low-balance rule id'),
+		hydraLocalParticipantId: z.string().describe('Local participant whose in-head balance is monitored'),
+		hydraHeadId: z.string().describe('The open head the balance was read from'),
+		assetUnit: z.string().describe('Monitored asset: "lovelace" or policyId+assetName hex'),
+		thresholdAmount: z.string().describe('Configured threshold in the asset base unit'),
+		currentAmount: z.string().describe('Observed own in-head balance in the asset base unit'),
+		checkedAt: z.string().datetime().describe('Timestamp when the in-head balance was evaluated'),
+	}),
+	'Emitted when a local participant’s own in-head balance transitions into low balance',
+);
+
 // Union schema for all webhook payloads
 const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	purchaseOnChainStatusChangedPayloadSchema,
@@ -188,6 +202,7 @@ const _webhookPayloadSchema = z.discriminatedUnion('event_type', [
 	x402PaymentSettledPayloadSchema,
 	x402PaymentFailedPayloadSchema,
 	x402WalletLowBalancePayloadSchema,
+	hydraHeadLowBalancePayloadSchema,
 ]);
 
 type WebhookPayload = z.infer<typeof _webhookPayloadSchema>;

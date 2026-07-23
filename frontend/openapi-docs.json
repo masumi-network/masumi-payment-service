@@ -5742,6 +5742,74 @@
                     "fanoutTxHash"
                 ]
             },
+            "HydraLowBalanceRule": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string"
+                    },
+                    "updatedAt": {
+                        "type": "string"
+                    },
+                    "hydraLocalParticipantId": {
+                        "type": "string"
+                    },
+                    "assetUnit": {
+                        "type": "string"
+                    },
+                    "thresholdAmount": {
+                        "type": "string"
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "topupEnabled": {
+                        "type": "boolean"
+                    },
+                    "topupAmount": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "Unknown",
+                            "Healthy",
+                            "Low"
+                        ]
+                    },
+                    "lastKnownAmount": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "lastCheckedAt": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "lastAlertedAt": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "id",
+                    "createdAt",
+                    "updatedAt",
+                    "hydraLocalParticipantId",
+                    "assetUnit",
+                    "thresholdAmount",
+                    "enabled",
+                    "topupEnabled",
+                    "topupAmount",
+                    "status",
+                    "lastKnownAmount",
+                    "lastCheckedAt",
+                    "lastAlertedAt"
+                ]
+            },
             "HydraLocalParticipant": {
                 "type": "object",
                 "properties": {
@@ -24015,7 +24083,8 @@
                                                                         "FUND_DISTRIBUTION_FAILED",
                                                                         "X402_PAYMENT_SETTLED",
                                                                         "X402_PAYMENT_FAILED",
-                                                                        "X402_WALLET_LOW_BALANCE"
+                                                                        "X402_WALLET_LOW_BALANCE",
+                                                                        "HYDRA_HEAD_LOW_BALANCE"
                                                                     ]
                                                                 }
                                                             },
@@ -24192,7 +24261,8 @@
                                                 "FUND_DISTRIBUTION_FAILED",
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
-                                                "X402_WALLET_LOW_BALANCE"
+                                                "X402_WALLET_LOW_BALANCE",
+                                                "HYDRA_HEAD_LOW_BALANCE"
                                             ]
                                         },
                                         "minItems": 1,
@@ -24272,7 +24342,8 @@
                                                             "FUND_DISTRIBUTION_FAILED",
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
-                                                            "X402_WALLET_LOW_BALANCE"
+                                                            "X402_WALLET_LOW_BALANCE",
+                                                            "HYDRA_HEAD_LOW_BALANCE"
                                                         ]
                                                     }
                                                 },
@@ -24404,7 +24475,8 @@
                                                 "FUND_DISTRIBUTION_FAILED",
                                                 "X402_PAYMENT_SETTLED",
                                                 "X402_PAYMENT_FAILED",
-                                                "X402_WALLET_LOW_BALANCE"
+                                                "X402_WALLET_LOW_BALANCE",
+                                                "HYDRA_HEAD_LOW_BALANCE"
                                             ]
                                         },
                                         "minItems": 1,
@@ -24482,7 +24554,8 @@
                                                             "FUND_DISTRIBUTION_FAILED",
                                                             "X402_PAYMENT_SETTLED",
                                                             "X402_PAYMENT_FAILED",
-                                                            "X402_WALLET_LOW_BALANCE"
+                                                            "X402_WALLET_LOW_BALANCE",
+                                                            "HYDRA_HEAD_LOW_BALANCE"
                                                         ]
                                                     }
                                                 },
@@ -31687,6 +31760,273 @@
                     },
                     "404": {
                         "description": "Hydra head not found"
+                    }
+                }
+            }
+        },
+        "/hydra/low-balance": {
+            "get": {
+                "summary": "List Hydra in-head low-balance rules. (admin access required)",
+                "description": "Lists low-balance monitoring rules for local participants' own in-head balances.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Filter rules by local participant"
+                        },
+                        "required": false,
+                        "description": "Filter rules by local participant",
+                        "name": "hydraLocalParticipantId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Hydra low-balance rules",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "rules": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/HydraLowBalanceRule"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "rules"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "rules": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            },
+            "post": {
+                "summary": "Create or update a Hydra in-head low-balance rule. (admin access required)",
+                "description": "Upserts a rule (keyed by participant + asset) that alerts when the participant's own in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "hydraLocalParticipantId": {
+                                        "type": "string",
+                                        "description": "Local participant whose in-head balance to monitor"
+                                    },
+                                    "assetUnit": {
+                                        "type": "string",
+                                        "description": "\"lovelace\" or a policyId+assetName hex unit"
+                                    },
+                                    "thresholdAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$",
+                                        "description": "Alert when the in-head balance falls below this"
+                                    },
+                                    "enabled": {
+                                        "type": "boolean",
+                                        "default": true
+                                    },
+                                    "topupEnabled": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Auto top-up from the assigned funding wallet when low"
+                                    },
+                                    "topupAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$",
+                                        "description": "Target amount an auto top-up tries to reach (whole-UTxO bounded)"
+                                    }
+                                },
+                                "required": [
+                                    "hydraLocalParticipantId",
+                                    "assetUnit",
+                                    "thresholdAmount"
+                                ],
+                                "example": {
+                                    "hydraLocalParticipantId": "cuid_v2_auto_generated",
+                                    "assetUnit": "lovelace",
+                                    "thresholdAmount": "50000000",
+                                    "enabled": true,
+                                    "topupEnabled": false
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Upserted rule",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "rule": {
+                                                    "$ref": "#/components/schemas/HydraLowBalanceRule"
+                                                }
+                                            },
+                                            "required": [
+                                                "rule"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "rule": {
+                                                "id": "cuid_v2_auto_generated",
+                                                "createdAt": "1970-01-01T00:00:00.000Z",
+                                                "updatedAt": "1970-01-01T00:00:00.000Z",
+                                                "hydraLocalParticipantId": "cuid_v2_auto_generated",
+                                                "assetUnit": "lovelace",
+                                                "thresholdAmount": "50000000",
+                                                "enabled": true,
+                                                "topupEnabled": false,
+                                                "topupAmount": null,
+                                                "status": "Unknown",
+                                                "lastKnownAmount": null,
+                                                "lastCheckedAt": null,
+                                                "lastAlertedAt": null
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra local participant not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Delete a Hydra in-head low-balance rule. (admin access required)",
+                "description": "Removes a low-balance rule by id.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Low-balance rule id"
+                        },
+                        "required": true,
+                        "description": "Low-balance rule id",
+                        "name": "id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deleted rule",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra low-balance rule not found"
                     }
                 }
             }

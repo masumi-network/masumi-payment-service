@@ -19,6 +19,7 @@ import type { JobDefinition } from '@/services/shared';
 import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
+import { runHydraLowBalanceMonitoringCycle } from '@/services/hydra-low-balance/monitor';
 
 export const scheduledJobs: JobDefinition[] = [
 	{
@@ -67,6 +68,13 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting pending Hydra L1 top-up reconciliation',
 		finishMessage: 'Finished pending Hydra L1 top-up reconciliation',
 		run: reconcilePendingHydraTopups,
+	},
+	{
+		initialDelayMs: 14000,
+		intervalMs: CONFIG.LOW_BALANCE_CHECK_INTERVAL * 1000,
+		startMessage: 'Starting Hydra in-head low-balance monitoring',
+		finishMessage: 'Finished Hydra in-head low-balance monitoring',
+		run: runHydraLowBalanceMonitoringCycle,
 	},
 	{
 		initialDelayMs: 15000,

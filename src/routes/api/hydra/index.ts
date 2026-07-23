@@ -16,6 +16,12 @@ export {
 export { topupHeadPost } from './head/topup';
 
 export {
+	listHydraLowBalanceRulesGet,
+	setHydraLowBalanceRulePost,
+	deleteHydraLowBalanceRuleDelete,
+} from './low-balance';
+
+export {
 	createLocalParticipantPost,
 	getLocalParticipantGet,
 	deleteLocalParticipantDelete,

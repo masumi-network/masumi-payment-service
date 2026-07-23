@@ -22,6 +22,14 @@ import {
 } from '@/routes/api/hydra/head';
 import { topupInput, topupOutput } from '@/routes/api/hydra/head/topup';
 import {
+	listHydraLowBalanceRulesSchemaInput,
+	listHydraLowBalanceRulesSchemaOutput,
+	setHydraLowBalanceRuleSchemaInput,
+	setHydraLowBalanceRuleSchemaOutput,
+	deleteHydraLowBalanceRuleSchemaInput,
+	deleteHydraLowBalanceRuleSchemaOutput,
+} from '@/routes/api/hydra/low-balance';
+import {
 	createLocalParticipantInput,
 	createLocalParticipantOutput,
 	getLocalParticipantInput,
@@ -292,6 +300,74 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			200: successResponse('Hydra head errors', listHeadErrorsSchemaOutput, { errors: [] }),
 			...unauthorized,
 			...notFound,
+		},
+	});
+
+	// ---- low-balance rules ----
+	registry.registerPath({
+		method: 'get',
+		path: '/hydra/low-balance',
+		summary: 'List Hydra in-head low-balance rules. (admin access required)',
+		description: "Lists low-balance monitoring rules for local participants' own in-head balances.",
+		tags: TAG,
+		security: secured,
+		request: { query: listHydraLowBalanceRulesSchemaInput },
+		responses: {
+			200: successResponse('Hydra low-balance rules', listHydraLowBalanceRulesSchemaOutput, { rules: [] }),
+			...unauthorized,
+		},
+	});
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/low-balance',
+		summary: 'Create or update a Hydra in-head low-balance rule. (admin access required)',
+		description:
+			"Upserts a rule (keyed by participant + asset) that alerts when the participant's own in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.",
+		tags: TAG,
+		security: secured,
+		request: {
+			body: jsonBody(setHydraLowBalanceRuleSchemaInput, {
+				hydraLocalParticipantId: HEAD_ID,
+				assetUnit: 'lovelace',
+				thresholdAmount: '50000000',
+				enabled: true,
+				topupEnabled: false,
+			}),
+		},
+		responses: {
+			200: successResponse('Upserted rule', setHydraLowBalanceRuleSchemaOutput, {
+				rule: {
+					id: HEAD_ID,
+					createdAt: new Date(0).toISOString(),
+					updatedAt: new Date(0).toISOString(),
+					hydraLocalParticipantId: HEAD_ID,
+					assetUnit: 'lovelace',
+					thresholdAmount: '50000000',
+					enabled: true,
+					topupEnabled: false,
+					topupAmount: null,
+					status: 'Unknown',
+					lastKnownAmount: null,
+					lastCheckedAt: null,
+					lastAlertedAt: null,
+				},
+			}),
+			...unauthorized,
+			404: { description: 'Hydra local participant not found' },
+		},
+	});
+	registry.registerPath({
+		method: 'delete',
+		path: '/hydra/low-balance',
+		summary: 'Delete a Hydra in-head low-balance rule. (admin access required)',
+		description: 'Removes a low-balance rule by id.',
+		tags: TAG,
+		security: secured,
+		request: { query: deleteHydraLowBalanceRuleSchemaInput },
+		responses: {
+			200: successResponse('Deleted rule', deleteHydraLowBalanceRuleSchemaOutput, { id: HEAD_ID }),
+			...unauthorized,
+			404: { description: 'Hydra low-balance rule not found' },
 		},
 	});
 

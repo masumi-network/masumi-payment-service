@@ -121,6 +121,9 @@ import {
 	listHydraWalletBasesGet,
 	listHeadErrorsGet,
 	topupHeadPost,
+	listHydraLowBalanceRulesGet,
+	setHydraLowBalanceRulePost,
+	deleteHydraLowBalanceRuleDelete,
 	updateHeadPatch,
 } from './hydra';
 import {
@@ -502,6 +505,11 @@ export const apiRouter: Routing = {
 					post: createRemoteParticipantPost,
 					delete: deleteRemoteParticipantDelete,
 				},
+			},
+			'low-balance': {
+				get: listHydraLowBalanceRulesGet,
+				post: setHydraLowBalanceRulePost,
+				delete: deleteHydraLowBalanceRuleDelete,
 			},
 		},
 	},

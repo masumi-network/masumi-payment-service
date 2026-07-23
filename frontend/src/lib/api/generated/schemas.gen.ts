@@ -5765,6 +5765,75 @@ export const HydraHeadSchema = {
     ]
 } as const;
 
+export const HydraLowBalanceRuleSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string'
+        },
+        updatedAt: {
+            type: 'string'
+        },
+        hydraLocalParticipantId: {
+            type: 'string'
+        },
+        assetUnit: {
+            type: 'string'
+        },
+        thresholdAmount: {
+            type: 'string'
+        },
+        enabled: {
+            type: 'boolean'
+        },
+        topupEnabled: {
+            type: 'boolean'
+        },
+        topupAmount: {
+            type: 'string',
+            nullable: true
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'Unknown',
+                'Healthy',
+                'Low'
+            ]
+        },
+        lastKnownAmount: {
+            type: 'string',
+            nullable: true
+        },
+        lastCheckedAt: {
+            type: 'string',
+            nullable: true
+        },
+        lastAlertedAt: {
+            type: 'string',
+            nullable: true
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'hydraLocalParticipantId',
+        'assetUnit',
+        'thresholdAmount',
+        'enabled',
+        'topupEnabled',
+        'topupAmount',
+        'status',
+        'lastKnownAmount',
+        'lastCheckedAt',
+        'lastAlertedAt'
+    ]
+} as const;
+
 export const HydraLocalParticipantSchema = {
     type: 'object',
     properties: {

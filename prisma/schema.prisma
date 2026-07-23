@@ -1465,6 +1465,7 @@ enum WebhookEventType {
   X402_PAYMENT_SETTLED
   X402_PAYMENT_FAILED
   X402_WALLET_LOW_BALANCE
+  HYDRA_HEAD_LOW_BALANCE
 }
 
 // Critical is retained for historical rows only: the dispatcher creates
@@ -1700,8 +1701,43 @@ model HydraLocalParticipant {
   /// Incremental-commit top-ups performed by this participant
   Topups HydraTopup[]
 
+  /// Low in-head-balance monitoring rules for this participant
+  LowBalanceRules HydraLowBalanceRule[]
+
   @@index([walletId])
   @@index([hasCommitted, updatedAt])
+}
+
+/// Low-balance monitoring for a local participant's OWN funds inside its head.
+/// Mirrors HotWalletLowBalanceRule but the monitored balance is the L2 in-head
+/// balance (read from the live head snapshot) rather than an L1 address balance.
+/// When the in-head balance for `assetUnit` falls below `thresholdAmount` the
+/// rule fires a low-balance alert; if `topupEnabled` is set it additionally
+/// performs an incremental-commit top-up from the participant's OWN assigned
+/// funding wallet (never a third-party wallet — a top-up from another wallet
+/// would not be creditable to this participant in the head).
+model HydraLowBalanceRule {
+  id                      String                @id @default(cuid())
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  hydraLocalParticipantId String
+  assetUnit               String
+  thresholdAmount         BigInt
+  enabled                 Boolean               @default(true)
+  topupEnabled            Boolean               @default(false)
+  /// Target amount the auto top-up tries to reach by committing the minimal set
+  /// of whole matching wallet UTxOs (Hydra commits whole UTxOs; the committed
+  /// amount is therefore >= this target, not exact).
+  topupAmount             BigInt?
+  status                  LowBalanceStatus      @default(Unknown)
+  lastKnownAmount         BigInt?
+  lastCheckedAt           DateTime?
+  lastAlertedAt           DateTime?
+  LocalParticipant        HydraLocalParticipant @relation(fields: [hydraLocalParticipantId], references: [id], onDelete: Cascade)
+
+  @@unique([hydraLocalParticipantId, assetUnit])
+  @@index([hydraLocalParticipantId, enabled])
+  @@index([enabled, status])
 }
 
 /// A remote participant — a counterparty whose public info we know.

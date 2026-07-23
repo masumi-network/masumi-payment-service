@@ -15,6 +15,7 @@ type WalletLowBalanceWebhookData = WebhookPayloadDataByEvent<'WALLET_LOW_BALANCE
 type X402PaymentWebhookEvent = 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED';
 type X402PaymentWebhookData = WebhookPayloadDataByEvent<X402PaymentWebhookEvent>;
 type X402WalletLowBalanceWebhookData = WebhookPayloadDataByEvent<'X402_WALLET_LOW_BALANCE'>;
+type HydraHeadLowBalanceWebhookData = WebhookPayloadDataByEvent<'HYDRA_HEAD_LOW_BALANCE'>;
 type PaymentWebhookQueryClient = Pick<Prisma.TransactionClient, 'paymentRequest'>;
 type PurchaseWebhookQueryClient = Pick<Prisma.TransactionClient, 'purchaseRequest'>;
 
@@ -387,6 +388,22 @@ class WebhookEventsService {
 		} catch (error) {
 			logger.error('Failed to trigger X402_WALLET_LOW_BALANCE webhook', {
 				evmWalletId: payload.evmWalletId,
+				error: error instanceof Error ? error.message : 'Unknown error',
+			});
+		}
+	}
+
+	async triggerHydraHeadLowBalance(payload: HydraHeadLowBalanceWebhookData): Promise<void> {
+		try {
+			await webhookQueueService.queueWebhook(
+				WebhookEventType.HYDRA_HEAD_LOW_BALANCE,
+				payload,
+				payload.hydraLocalParticipantId,
+				undefined,
+			);
+		} catch (error) {
+			logger.error('Failed to trigger HYDRA_HEAD_LOW_BALANCE webhook', {
+				hydraLocalParticipantId: payload.hydraLocalParticipantId,
 				error: error instanceof Error ? error.message : 'Unknown error',
 			});
 		}

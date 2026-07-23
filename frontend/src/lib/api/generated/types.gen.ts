@@ -2983,6 +2983,22 @@ export type HydraHead = {
     };
 };
 
+export type HydraLowBalanceRule = {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    hydraLocalParticipantId: string;
+    assetUnit: string;
+    thresholdAmount: string;
+    enabled: boolean;
+    topupEnabled: boolean;
+    topupAmount: string | null;
+    status: 'Unknown' | 'Healthy' | 'Low';
+    lastKnownAmount: string | null;
+    lastCheckedAt: string | null;
+    lastAlertedAt: string | null;
+};
+
 export type HydraLocalParticipant = {
     id: string;
     createdAt: Date;
@@ -10626,7 +10642,7 @@ export type GetWebhooksResponses = {
                 id: string;
                 url: string;
                 format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -10670,7 +10686,7 @@ export type PatchWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -10718,7 +10734,7 @@ export type PatchWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -10750,7 +10766,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -10798,7 +10814,7 @@ export type PostWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -13429,6 +13445,130 @@ export type GetHydraHeadErrorsResponses = {
 };
 
 export type GetHydraHeadErrorsResponse = GetHydraHeadErrorsResponses[keyof GetHydraHeadErrorsResponses];
+
+export type DeleteHydraLowBalanceData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Low-balance rule id
+         */
+        id: string;
+    };
+    url: '/hydra/low-balance';
+};
+
+export type DeleteHydraLowBalanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra low-balance rule not found
+     */
+    404: unknown;
+};
+
+export type DeleteHydraLowBalanceResponses = {
+    /**
+     * Deleted rule
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+        };
+    };
+};
+
+export type DeleteHydraLowBalanceResponse = DeleteHydraLowBalanceResponses[keyof DeleteHydraLowBalanceResponses];
+
+export type GetHydraLowBalanceData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter rules by local participant
+         */
+        hydraLocalParticipantId?: string;
+    };
+    url: '/hydra/low-balance';
+};
+
+export type GetHydraLowBalanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetHydraLowBalanceResponses = {
+    /**
+     * Hydra low-balance rules
+     */
+    200: {
+        status: 'success';
+        data: {
+            rules: Array<HydraLowBalanceRule>;
+        };
+    };
+};
+
+export type GetHydraLowBalanceResponse = GetHydraLowBalanceResponses[keyof GetHydraLowBalanceResponses];
+
+export type PostHydraLowBalanceData = {
+    body?: {
+        /**
+         * Local participant whose in-head balance to monitor
+         */
+        hydraLocalParticipantId: string;
+        /**
+         * "lovelace" or a policyId+assetName hex unit
+         */
+        assetUnit: string;
+        /**
+         * Alert when the in-head balance falls below this
+         */
+        thresholdAmount: string;
+        enabled?: boolean;
+        /**
+         * Auto top-up from the assigned funding wallet when low
+         */
+        topupEnabled?: boolean;
+        /**
+         * Target amount an auto top-up tries to reach (whole-UTxO bounded)
+         */
+        topupAmount?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/low-balance';
+};
+
+export type PostHydraLowBalanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra local participant not found
+     */
+    404: unknown;
+};
+
+export type PostHydraLowBalanceResponses = {
+    /**
+     * Upserted rule
+     */
+    200: {
+        status: 'success';
+        data: {
+            rule: HydraLowBalanceRule;
+        };
+    };
+};
+
+export type PostHydraLowBalanceResponse = PostHydraLowBalanceResponses[keyof PostHydraLowBalanceResponses];
 
 export type DeleteHydraParticipantLocalData = {
     body?: {
