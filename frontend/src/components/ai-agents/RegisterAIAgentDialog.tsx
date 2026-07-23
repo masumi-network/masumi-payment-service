@@ -626,6 +626,7 @@ export function RegisterAIAgentDialog({
             errors={errors}
             watch={watch}
             setValue={setValue}
+            typeLocked={isUpdateMode}
           />
 
           <RegisterAgentWalletSection

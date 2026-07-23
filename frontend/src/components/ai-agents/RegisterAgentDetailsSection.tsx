@@ -21,11 +21,15 @@ export function RegisterAgentDetailsSection({
   errors,
   watch,
   setValue,
+  typeLocked = false,
 }: {
   register: UseFormRegister<AgentFormValues>;
   errors: FieldErrors<AgentFormValues>;
   watch: UseFormWatch<AgentFormValues>;
   setValue: UseFormSetValue<AgentFormValues>;
+  // Update mode: the agent type is fixed (the update route is Standard-only for
+  // now), so the selector is disabled to avoid an unsupported type change.
+  typeLocked?: boolean;
 }) {
   const tags = watch('tags');
   const agentType = watch('agentType');
@@ -57,8 +61,17 @@ export function RegisterAgentDetailsSection({
           Agent Type <span className="text-destructive">*</span>
         </label>
         <select
-          {...register('agentType')}
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          {...register('agentType', {
+            onChange: () => {
+              // Clear the other endpoint fields so a stale value from a previous
+              // type can't linger in the (hidden) form state.
+              setValue('apiUrl', '');
+              setValue('openApiSpecUrl', '');
+              setValue('x402ResourcesUrl', '');
+            },
+          })}
+          disabled={typeLocked}
+          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
           <option value="Standard">Standard — single API base URL</option>
           <option value="OpenApi">OpenAPI — link to a spec document</option>

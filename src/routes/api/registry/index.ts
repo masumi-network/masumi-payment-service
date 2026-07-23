@@ -27,6 +27,7 @@ import {
 	FilterStatus,
 	queryRegistryCountSchemaInput,
 	queryRegistryCountSchemaOutput,
+	getRegistryEndpointError,
 	queryRegistryRequestSchemaInput,
 	queryRegistryRequestSchemaOutput,
 	registerAgentSchemaInput,
@@ -118,6 +119,13 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				operation: 'register_agent',
 			});
 			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
+			// Per-type endpoint descriptor (Standard=apiBaseUrl, OpenApi=openApiSpecUrl,
+			// X402=x402ResourcesUrl). Enforced here, not in the schema, so the update
+			// route can `.omit()` the register input (see getRegistryEndpointError).
+			const endpointError = getRegistryEndpointError(input);
+			if (endpointError != null) {
+				throw createHttpError(400, endpointError);
+			}
 			const isV2Registration = sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2;
 			if (isV2Registration && input.AgentPricing != null) {
 				throw createHttpError(

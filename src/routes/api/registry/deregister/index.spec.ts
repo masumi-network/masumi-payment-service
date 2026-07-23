@@ -1,7 +1,13 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
-import { ApiKeyStatus, Network, PricingType, RegistrationState } from '@/generated/prisma/enums';
+import {
+	ApiKeyStatus,
+	Network,
+	PricingType,
+	RegistrationState,
+	RegistryEntryType,
+} from '@/generated/prisma/enums';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -154,7 +160,10 @@ function buildRegistryUpdateResponse() {
 		error: null,
 		name: 'Test Agent',
 		description: 'Agent description',
+		type: RegistryEntryType.Standard,
 		apiBaseUrl: 'https://example.com/agent',
+		openApiSpecUrl: null,
+		x402ResourcesUrl: null,
 		capabilityName: 'demo',
 		capabilityVersion: '1.0.0',
 		authorName: 'Author',

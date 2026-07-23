@@ -367,34 +367,36 @@ export const registerAgentSchemaInput = z.object({
 			organization: z.string().max(250).optional().describe('Organization of the author'),
 		})
 		.describe('Author information about the agent'),
-}).superRefine((input, ctx) => {
-	// Endpoint descriptor is per-type and mutually exclusive. Absent type ==
-	// Standard. The V1/V2 pricing rules are an orthogonal axis enforced in the
-	// route handler — payment is decoupled from the API access model.
+});
+
+// Per-type endpoint validation, run in the route handler rather than as a schema
+// `.superRefine`. Keeping `registerAgentSchemaInput` a plain ZodObject is what
+// lets the update route do `.omit({ sellingWalletVkey: true })` — `.omit()`
+// throws on a refined schema. Absent type == Standard; payment is a separate
+// axis. Returns an error message or null.
+export function getRegistryEndpointError(input: {
+	type?: RegistryEntryType | null;
+	apiBaseUrl?: string | null;
+	openApiSpecUrl?: string | null;
+	x402ResourcesUrl?: string | null;
+}): string | null {
 	const entryType = input.type ?? RegistryEntryType.Standard;
-	// [required endpoint field, the two that must be absent] per type.
-	const endpointRules: Record<
-		RegistryEntryType,
-		{ required: 'apiBaseUrl' | 'openApiSpecUrl' | 'x402ResourcesUrl'; requiredLabel: string }
-	> = {
-		[RegistryEntryType.Standard]: { required: 'apiBaseUrl', requiredLabel: 'Standard agents require apiBaseUrl' },
-		[RegistryEntryType.OpenApi]: { required: 'openApiSpecUrl', requiredLabel: 'OpenApi agents require openApiSpecUrl' },
-		[RegistryEntryType.X402]: { required: 'x402ResourcesUrl', requiredLabel: 'X402 agents require x402ResourcesUrl' },
-	};
-	const { required, requiredLabel } = endpointRules[entryType];
+	const requiredByType = {
+		[RegistryEntryType.Standard]: 'apiBaseUrl',
+		[RegistryEntryType.OpenApi]: 'openApiSpecUrl',
+		[RegistryEntryType.X402]: 'x402ResourcesUrl',
+	} as const;
+	const required = requiredByType[entryType];
 	if (input[required] == null) {
-		ctx.addIssue({ code: z.ZodIssueCode.custom, path: [required], message: requiredLabel });
+		return `${entryType} agents require ${required}`;
 	}
 	for (const field of ['apiBaseUrl', 'openApiSpecUrl', 'x402ResourcesUrl'] as const) {
 		if (field !== required && input[field] != null) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				path: [field],
-				message: `${field} is not valid for a ${entryType} agent; use ${required}`,
-			});
+			return `${field} is not valid for a ${entryType} agent; use ${required}`;
 		}
 	}
-});
+	return null;
+}
 
 export const registerAgentSchemaOutput = registryRequestOutputSchema;
 

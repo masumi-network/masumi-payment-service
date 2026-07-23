@@ -995,7 +995,7 @@ export type AgentMetadata = {
         /**
          * Base URL of the agent API for interactions
          */
-        apiBaseUrl?: string;
+        apiBaseUrl: string;
         /**
          * List of example outputs from the agent
          */
@@ -1321,9 +1321,6 @@ export type AgentMetadata = {
              */
             baseUrl?: string;
         }> | null;
-        type?: 'Standard' | 'OpenApi' | 'X402';
-        openApiSpecUrl?: string | null;
-        x402ResourcesUrl?: string | null;
     };
 };
 
@@ -1355,7 +1352,7 @@ export type AgentIdentifierMetadata = {
         /**
          * Base URL of the agent API for interactions
          */
-        apiBaseUrl?: string;
+        apiBaseUrl: string;
         /**
          * List of example outputs from the agent
          */
@@ -1681,9 +1678,6 @@ export type AgentIdentifierMetadata = {
              */
             baseUrl?: string;
         }> | null;
-        type?: 'Standard' | 'OpenApi' | 'X402';
-        openApiSpecUrl?: string | null;
-        x402ResourcesUrl?: string | null;
     };
 };
 
@@ -1705,9 +1699,21 @@ export type RegistryEntry = {
      */
     description: string | null;
     /**
-     * Base URL of the agent API for interactions
+     * The agent access model. Standard for legacy/untyped entries; OpenApi or X402 otherwise
      */
-    apiBaseUrl?: string;
+    type: 'Standard' | 'OpenApi' | 'X402';
+    /**
+     * Base URL of the agent API for interactions. Null for OpenApi/X402 agents
+     */
+    apiBaseUrl: string | null;
+    /**
+     * URL to the agent OpenAPI specification document. Null unless the agent is OpenApi-type
+     */
+    openApiSpecUrl: string | null;
+    /**
+     * URL to the agent x402 resource manifest JSON. Null unless the agent is X402-type
+     */
+    x402ResourcesUrl: string | null;
     /**
      * Information about the AI model and version used by the agent
      */
@@ -2101,9 +2107,6 @@ export type RegistryEntry = {
          */
         blockTime: number | null;
     } | null;
-    type?: 'Standard' | 'OpenApi' | 'X402';
-    openApiSpecUrl?: string | null;
-    x402ResourcesUrl?: string | null;
 };
 
 export type PaymentSource = {
@@ -9079,6 +9082,10 @@ export type PostRegistryData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
+         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.
+         */
+        type?: 'Standard' | 'OpenApi' | 'X402';
+        /**
          * The payment key of a specific wallet used for the registration
          */
         sellingWalletVkey: string;
@@ -9329,9 +9336,17 @@ export type PostRegistryData = {
          */
         name: string;
         /**
-         * Base URL of the agent, to request interactions
+         * Base URL of the agent, to request interactions. Required for Standard-type agents; omit for OpenApi/X402.
          */
         apiBaseUrl?: string;
+        /**
+         * URL to the agent OpenAPI 3.1.x specification document (JSON or YAML). Required for OpenApi-type agents; omit for others.
+         */
+        openApiSpecUrl?: string;
+        /**
+         * URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others.
+         */
+        x402ResourcesUrl?: string;
         /**
          * Description of the agent
          */
@@ -9419,9 +9434,6 @@ export type PostRegistryData = {
              */
             organization?: string;
         };
-        type?: 'Standard' | 'OpenApi' | 'X402';
-        openApiSpecUrl?: string | null;
-        x402ResourcesUrl?: string | null;
     };
     path?: never;
     query?: never;
@@ -9539,6 +9551,10 @@ export type PostRegistryUpdateData = {
          * The Cardano network used to register the agent on
          */
         network: 'Preprod' | 'Mainnet';
+        /**
+         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.
+         */
+        type?: 'Standard' | 'OpenApi' | 'X402';
         /**
          * Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.
          */
@@ -9786,9 +9802,17 @@ export type PostRegistryUpdateData = {
          */
         name: string;
         /**
-         * Base URL of the agent, to request interactions
+         * Base URL of the agent, to request interactions. Required for Standard-type agents; omit for OpenApi/X402.
          */
         apiBaseUrl?: string;
+        /**
+         * URL to the agent OpenAPI 3.1.x specification document (JSON or YAML). Required for OpenApi-type agents; omit for others.
+         */
+        openApiSpecUrl?: string;
+        /**
+         * URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others.
+         */
+        x402ResourcesUrl?: string;
         /**
          * Description of the agent
          */
@@ -9884,9 +9908,6 @@ export type PostRegistryUpdateData = {
          * The smart contract address of the payment source the registration belongs to
          */
         smartContractAddress?: string;
-        type?: 'Standard' | 'OpenApi' | 'X402';
-        openApiSpecUrl?: string | null;
-        x402ResourcesUrl?: string | null;
     };
     path?: never;
     query?: never;
