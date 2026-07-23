@@ -41,14 +41,31 @@ export const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
   const priceSchema = createPriceSchema(network);
   return z
     .object({
+      // Agent access model. Standard uses apiUrl; OpenApi points to an OpenAPI
+      // spec document; X402 points to a self-hosted x402 resource manifest. The
+      // required endpoint field is enforced per-type in the superRefine below.
+      agentType: z.enum(['Standard', 'OpenApi', 'X402']),
       apiUrl: z
         .string()
         .url('API URL must be a valid URL')
         .max(REGISTRY_LIMITS.apiBaseUrl, 'API URL must be less than 250 characters')
-        .min(1, 'API URL is required')
         .refine((val) => val.startsWith('http://') || val.startsWith('https://'), {
           message: 'API URL must start with http:// or https://',
-        }),
+        })
+        .optional()
+        .or(z.literal('')),
+      openApiSpecUrl: z
+        .string()
+        .url('OpenAPI spec URL must be a valid URL')
+        .max(REGISTRY_LIMITS.apiBaseUrl, 'OpenAPI spec URL must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      x402ResourcesUrl: z
+        .string()
+        .url('x402 manifest URL must be a valid URL')
+        .max(REGISTRY_LIMITS.apiBaseUrl, 'x402 manifest URL must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
       name: z
         .string()
         .min(1, 'Name is required')
@@ -151,6 +168,26 @@ export const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
           message: 'At least one price is required for fixed pricing',
         });
       }
+      // Per-type endpoint descriptor is required. Payment stays a separate axis.
+      const endpointField = (
+        {
+          Standard: 'apiUrl',
+          OpenApi: 'openApiSpecUrl',
+          X402: 'x402ResourcesUrl',
+        } as const
+      )[data.agentType];
+      if (!data[endpointField]) {
+        const label = {
+          Standard: 'API URL',
+          OpenApi: 'OpenAPI spec URL',
+          X402: 'x402 manifest URL',
+        }[data.agentType];
+        ctx.addIssue({
+          code: 'custom',
+          path: [endpointField],
+          message: `${label} is required`,
+        });
+      }
     });
 };
 
@@ -158,7 +195,10 @@ export type AgentFormValues = z.infer<ReturnType<typeof createAgentSchema>>;
 
 export function createAgentDefaultValues(defaultPriceUnit: MasumiPriceUnit): AgentFormValues {
   return {
+    agentType: 'Standard',
     apiUrl: '',
+    openApiSpecUrl: '',
+    x402ResourcesUrl: '',
     name: '',
     description: '',
     selectedWallet: '',

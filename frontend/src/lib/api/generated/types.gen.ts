@@ -995,7 +995,7 @@ export type AgentMetadata = {
         /**
          * Base URL of the agent API for interactions
          */
-        apiBaseUrl: string;
+        apiBaseUrl?: string;
         /**
          * List of example outputs from the agent
          */
@@ -1321,6 +1321,9 @@ export type AgentMetadata = {
              */
             baseUrl?: string;
         }> | null;
+        type?: 'Standard' | 'OpenApi' | 'X402';
+        openApiSpecUrl?: string | null;
+        x402ResourcesUrl?: string | null;
     };
 };
 
@@ -1352,7 +1355,7 @@ export type AgentIdentifierMetadata = {
         /**
          * Base URL of the agent API for interactions
          */
-        apiBaseUrl: string;
+        apiBaseUrl?: string;
         /**
          * List of example outputs from the agent
          */
@@ -1678,6 +1681,9 @@ export type AgentIdentifierMetadata = {
              */
             baseUrl?: string;
         }> | null;
+        type?: 'Standard' | 'OpenApi' | 'X402';
+        openApiSpecUrl?: string | null;
+        x402ResourcesUrl?: string | null;
     };
 };
 
@@ -1701,7 +1707,7 @@ export type RegistryEntry = {
     /**
      * Base URL of the agent API for interactions
      */
-    apiBaseUrl: string;
+    apiBaseUrl?: string;
     /**
      * Information about the AI model and version used by the agent
      */
@@ -2095,6 +2101,9 @@ export type RegistryEntry = {
          */
         blockTime: number | null;
     } | null;
+    type?: 'Standard' | 'OpenApi' | 'X402';
+    openApiSpecUrl?: string | null;
+    x402ResourcesUrl?: string | null;
 };
 
 export type PaymentSource = {
@@ -9322,7 +9331,7 @@ export type PostRegistryData = {
         /**
          * Base URL of the agent, to request interactions
          */
-        apiBaseUrl: string;
+        apiBaseUrl?: string;
         /**
          * Description of the agent
          */
@@ -9410,6 +9419,9 @@ export type PostRegistryData = {
              */
             organization?: string;
         };
+        type?: 'Standard' | 'OpenApi' | 'X402';
+        openApiSpecUrl?: string | null;
+        x402ResourcesUrl?: string | null;
     };
     path?: never;
     query?: never;
@@ -9776,7 +9788,7 @@ export type PostRegistryUpdateData = {
         /**
          * Base URL of the agent, to request interactions
          */
-        apiBaseUrl: string;
+        apiBaseUrl?: string;
         /**
          * Description of the agent
          */
@@ -9872,6 +9884,9 @@ export type PostRegistryUpdateData = {
          * The smart contract address of the payment source the registration belongs to
          */
         smartContractAddress?: string;
+        type?: 'Standard' | 'OpenApi' | 'X402';
+        openApiSpecUrl?: string | null;
+        x402ResourcesUrl?: string | null;
     };
     path?: never;
     query?: never;

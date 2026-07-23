@@ -2529,11 +2529,26 @@ export const AgentMetadataSchema = {
                     },
                     maxItems: 10,
                     description: 'KERI/Veridian verification claims advertised by this registry entry. Null when none.'
+                },
+                type: {
+                    type: 'string',
+                    enum: [
+                        'Standard',
+                        'OpenApi',
+                        'X402'
+                    ]
+                },
+                openApiSpecUrl: {
+                    type: 'string',
+                    nullable: true
+                },
+                x402ResourcesUrl: {
+                    type: 'string',
+                    nullable: true
                 }
             },
             required: [
                 'name',
-                'apiBaseUrl',
                 'ExampleOutputs',
                 'Tags',
                 'Author',
@@ -3243,11 +3258,26 @@ export const AgentIdentifierMetadataSchema = {
                     },
                     maxItems: 10,
                     description: 'KERI/Veridian verification claims advertised by this registry entry. Null when none.'
+                },
+                type: {
+                    type: 'string',
+                    enum: [
+                        'Standard',
+                        'OpenApi',
+                        'X402'
+                    ]
+                },
+                openApiSpecUrl: {
+                    type: 'string',
+                    nullable: true
+                },
+                x402ResourcesUrl: {
+                    type: 'string',
+                    nullable: true
                 }
             },
             required: [
                 'name',
-                'apiBaseUrl',
                 'ExampleOutputs',
                 'Tags',
                 'Author',
@@ -4070,6 +4100,22 @@ export const RegistryEntrySchema = {
                 'blockHeight',
                 'blockTime'
             ]
+        },
+        type: {
+            type: 'string',
+            enum: [
+                'Standard',
+                'OpenApi',
+                'X402'
+            ]
+        },
+        openApiSpecUrl: {
+            type: 'string',
+            nullable: true
+        },
+        x402ResourcesUrl: {
+            type: 'string',
+            nullable: true
         }
     },
     required: [
@@ -4077,7 +4123,6 @@ export const RegistryEntrySchema = {
         'id',
         'name',
         'description',
-        'apiBaseUrl',
         'Capability',
         'Author',
         'Legal',
