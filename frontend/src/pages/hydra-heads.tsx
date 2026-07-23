@@ -19,6 +19,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import { AddHydraHeadDialog } from '@/components/hydra/AddHydraHeadDialog';
 import { HydraHeadInHeadBalance } from '@/components/hydra/HydraHeadInHeadBalance';
+import { HydraHeadTopupButton } from '@/components/hydra/HydraHeadTopupButton';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -602,6 +603,12 @@ function HydraHeadDetailsDialog({
             headId={head.id}
             isOpen={head.status === 'Open'}
             network={network}
+          />
+
+          <HydraHeadTopupButton
+            headId={head.id}
+            isOpen={head.status === 'Open'}
+            hasCommitted={head.LocalParticipant?.hasCommitted ?? false}
           />
 
           <div className="space-y-3">

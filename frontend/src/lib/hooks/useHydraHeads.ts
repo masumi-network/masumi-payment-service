@@ -202,6 +202,27 @@ type HydraHeadCommitResponse = {
   }>;
 };
 
+export type HydraTopupResult = {
+  headId: string;
+  topupId: string;
+  depositTxHash: string;
+  confirmed: boolean;
+  committedLovelace: string;
+  committedAssets: Record<string, string>;
+};
+
+export type HydraTopupRequest = {
+  headId: string;
+  /** Ignored when assetUnit is set. */
+  assetFilter?: 'all' | 'ada-only';
+  /** policyId+assetName hex; commit only UTxOs containing this token. */
+  assetUnit?: string;
+};
+
+type HydraHeadTopupResponse = {
+  200: ApiEnvelope<HydraTopupResult>;
+};
+
 type HydraNodeCheckResponse = {
   200: ApiEnvelope<HydraNodeCheckResult>;
 };
@@ -516,6 +537,20 @@ export async function commitHydraHead(apiClient: Client, payload: { headId: stri
   );
 
   return ensureData(response?.data?.data, 'Hydra head commit response was not returned by the API');
+}
+
+export async function topupHydraHead(apiClient: Client, payload: HydraTopupRequest) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.post<HydraHeadTopupResponse>({
+        responseType: 'json',
+        url: '/hydra/head/topup',
+        body: payload,
+      }),
+    { errorMessage: 'Failed to top up Hydra head' },
+  );
+
+  return ensureData(response?.data?.data, 'Hydra head top-up response was not returned by the API');
 }
 
 export async function closeHydraHead(apiClient: Client, payload: { headId: string }) {
