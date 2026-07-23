@@ -33,6 +33,7 @@ export function HydraHeadTopupButton({ headId, isOpen, hasCommitted }: HydraHead
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<FilterMode>('all');
   const [assetUnit, setAssetUnit] = useState('');
+  const [exactAmount, setExactAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen || !hasCommitted) return null;
@@ -43,11 +44,17 @@ export function HydraHeadTopupButton({ headId, isOpen, hasCommitted }: HydraHead
       toast.error('Enter a valid asset unit (policyId + assetName hex) to top up a specific token');
       return;
     }
+    const trimmedExact = exactAmount.trim();
+    if (trimmedExact && !/^\d+$/.test(trimmedExact)) {
+      toast.error('Exact amount must be a whole number in the base unit (lovelace for ADA)');
+      return;
+    }
 
     const payload: HydraTopupRequest =
       mode === 'token'
         ? { headId, assetUnit: trimmedUnit }
         : { headId, assetFilter: mode === 'ada-only' ? 'ada-only' : 'all' };
+    if (trimmedExact) payload.exactAmount = trimmedExact;
 
     setIsSubmitting(true);
     try {
@@ -89,6 +96,12 @@ export function HydraHeadTopupButton({ headId, isOpen, hasCommitted }: HydraHead
             className="flex h-9 w-[280px] rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
         )}
+        <input
+          value={exactAmount}
+          onChange={(event) => setExactAmount(event.target.value)}
+          placeholder="exact amount (optional)"
+          className="flex h-9 w-[180px] rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
         <Button onClick={() => void handleTopup()} disabled={isSubmitting} size="sm">
           {isSubmitting ? (
             <>

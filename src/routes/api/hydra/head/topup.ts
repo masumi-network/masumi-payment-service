@@ -15,6 +15,13 @@ export const topupInput = z.object({
 		.regex(/^[0-9a-fA-F]{56,120}$/)
 		.optional()
 		.describe('Commit only UTxOs containing this native-asset unit (policyId + assetName hex)'),
+	exactAmount: z
+		.string()
+		.regex(/^\d+$/)
+		.optional()
+		.describe(
+			'Exact top-up amount (base unit) of assetUnit (or lovelace). Pre-splits a dedicated L1 UTxO first, then commits it — adds an L1 confirmation wait.',
+		),
 });
 
 export const topupOutput = z.object({
@@ -37,7 +44,8 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 	output: topupOutput,
 	handler: async ({ input }) => {
 		const filter: CommitUtxoFilter = input.assetUnit ? { unit: input.assetUnit } : input.assetFilter;
-		const result = await executeHydraTopup({ headId: input.headId, filter });
+		const exact = input.exactAmount ? { unit: input.assetUnit ?? 'lovelace', amount: BigInt(input.exactAmount) } : null;
+		const result = await executeHydraTopup({ headId: input.headId, filter, exact });
 		return {
 			headId: result.headId,
 			topupId: result.topupId,

@@ -22,6 +22,7 @@ import {
 } from '@/services/hydra-topup-reconciliation';
 import { buildHydraCommitFlowDeps } from '@/routes/api/hydra/head/commit-flow-deps';
 import { recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
+import { carveExactUtxo, HydraPreSplitError } from './pre-split';
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -36,6 +37,12 @@ export type ExecuteHydraTopupParams = {
 	 * given asset (auto-topup). Omit to commit every matching UTxO (manual top-up).
 	 */
 	target?: { unit: string; amount: bigint } | null;
+	/**
+	 * Exact-amount top-up: first carve a dedicated wallet UTxO of exactly this
+	 * amount via an L1 self-payment (pre-split), then commit only that UTxO.
+	 * Takes precedence over `filter`/`target`. Adds an L1 confirmation wait.
+	 */
+	exact?: { unit: string; amount: bigint } | null;
 };
 
 export type ExecuteHydraTopupResult = {
@@ -123,25 +130,51 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(hotWallet.PaymentSource.network));
 		if (!slotConfig) throw createHttpError(500, 'Hydra L1 slot configuration is incomplete or invalid');
 
-		const { wallet, utxos, vKey, blockchainProvider } = await generateWalletExtended(
+		const { wallet, address, utxos, vKey, blockchainProvider } = await generateWalletExtended(
 			hotWallet.PaymentSource.network,
 			rpcProviderApiKey,
 			hotWallet.Secret.encryptedMnemonic,
 		);
 		if (utxos.length === 0) throw createHttpError(400, 'Local participant wallet has no L1 UTxOs available to top up');
 
-		const { commitUtxos } = params.target
-			? selectCommitUtxosUpToTarget(utxos, params.filter, params.target)
-			: selectCommitUtxos(utxos, params.filter);
-		if (commitUtxos.length === 0) {
-			throw createHttpError(400, 'No plain wallet UTxOs match the requested top-up asset filter');
+		// Exact-amount top-up: carve a dedicated UTxO on L1 first (pre-split), then
+		// commit exactly that UTxO. Otherwise select whole UTxOs (optionally bounded).
+		let walletUtxos = utxos;
+		let commitUtxos;
+		if (params.exact) {
+			let carved;
+			try {
+				carved = await carveExactUtxo({
+					wallet,
+					blockchainProvider,
+					walletAddress: address,
+					unit: params.exact.unit,
+					amount: params.exact.amount,
+					network: hotWallet.PaymentSource.network,
+					rpcProviderApiKey,
+				});
+			} catch (error) {
+				if (error instanceof HydraPreSplitError) throw createHttpError(502, `Pre-split failed: ${error.message}`);
+				throw error;
+			}
+			// Refresh the wallet view so the input-safety snapshot reflects the carve.
+			walletUtxos = await wallet.getUtxos();
+			commitUtxos = [carved];
+		} else {
+			const selection = params.target
+				? selectCommitUtxosUpToTarget(utxos, params.filter, params.target)
+				: selectCommitUtxos(utxos, params.filter);
+			commitUtxos = selection.commitUtxos;
+			if (commitUtxos.length === 0) {
+				throw createHttpError(400, 'No plain wallet UTxOs match the requested top-up asset filter');
+			}
 		}
 
 		let validatedDraft: Awaited<ReturnType<typeof buildValidatedHydraCommit>>;
 		try {
 			validatedDraft = await buildValidatedHydraCommit({
 				commitUtxos,
-				walletUtxos: utxos,
+				walletUtxos,
 				walletPaymentKeyHash: vKey,
 				expectedHeadId: verifiedHead.headIdentifier,
 				slotConfig,

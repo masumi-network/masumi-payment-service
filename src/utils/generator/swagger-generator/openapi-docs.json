@@ -31386,6 +31386,11 @@
                                         "type": "string",
                                         "pattern": "^[0-9a-fA-F]{56,120}$",
                                         "description": "Commit only UTxOs containing this native-asset unit (policyId + assetName hex)"
+                                    },
+                                    "exactAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$",
+                                        "description": "Exact top-up amount (base unit) of assetUnit (or lovelace). Pre-splits a dedicated L1 UTxO first, then commits it — adds an L1 confirmation wait."
                                     }
                                 },
                                 "required": [

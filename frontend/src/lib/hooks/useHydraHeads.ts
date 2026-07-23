@@ -217,6 +217,8 @@ export type HydraTopupRequest = {
   assetFilter?: 'all' | 'ada-only';
   /** policyId+assetName hex; commit only UTxOs containing this token. */
   assetUnit?: string;
+  /** Exact amount (base unit) to pre-split then commit; overrides the filter. */
+  exactAmount?: string;
 };
 
 type HydraHeadTopupResponse = {

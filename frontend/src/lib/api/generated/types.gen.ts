@@ -13274,6 +13274,10 @@ export type PostHydraHeadTopupData = {
          * Commit only UTxOs containing this native-asset unit (policyId + assetName hex)
          */
         assetUnit?: string;
+        /**
+         * Exact top-up amount (base unit) of assetUnit (or lovelace). Pre-splits a dedicated L1 UTxO first, then commits it — adds an L1 confirmation wait.
+         */
+        exactAmount?: string;
     };
     path?: never;
     query?: never;
