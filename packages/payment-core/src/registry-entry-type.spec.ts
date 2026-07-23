@@ -1,8 +1,5 @@
 import { RegistryEntryType } from '@prisma/client';
-import {
-	REGISTRY_ENTRY_ON_CHAIN_TYPE,
-	registryEntryTypeFromOnChain,
-} from './registry-entry-type';
+import { REGISTRY_ENTRY_ON_CHAIN_TYPE, registryEntryTypeFromOnChain } from './registry-entry-type';
 
 describe('registry entry type on-chain mapping', () => {
 	it('Standard emits no on-chain type (byte-identical to pre-feature mints)', () => {

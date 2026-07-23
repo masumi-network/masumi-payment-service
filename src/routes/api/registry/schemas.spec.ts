@@ -11,15 +11,11 @@ describe('getRegistryEndpointError', () => {
 		expect(
 			getRegistryEndpointError({ type: RegistryEntryType.OpenApi, openApiSpecUrl: 'https://a/oapi.json' }),
 		).toBeNull();
-		expect(getRegistryEndpointError({ type: RegistryEntryType.OpenApi })).toBe(
-			'OpenApi agents require openApiSpecUrl',
-		);
+		expect(getRegistryEndpointError({ type: RegistryEntryType.OpenApi })).toBe('OpenApi agents require openApiSpecUrl');
 		expect(
 			getRegistryEndpointError({ type: RegistryEntryType.X402, x402ResourcesUrl: 'https://a/x402.json' }),
 		).toBeNull();
-		expect(getRegistryEndpointError({ type: RegistryEntryType.X402 })).toBe(
-			'X402 agents require x402ResourcesUrl',
-		);
+		expect(getRegistryEndpointError({ type: RegistryEntryType.X402 })).toBe('X402 agents require x402ResourcesUrl');
 	});
 
 	it('forbids an endpoint field that belongs to another type', () => {
