@@ -1,16 +1,14 @@
 import {
 	Address,
-	BaseAddress,
 	EnterpriseAddress,
+	FixedTransaction,
 	NetworkInfo,
 	PlutusData,
 	Transaction,
 	type PlutusMap,
-	type TransactionOutput,
 	type Value,
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import type { SlotConfig, UTxO } from '@meshsdk/core';
-import { blake2b } from 'ethereum-cryptography/blake2b';
 import { HydraTransactionType, type HydraTransaction } from './types';
 
 /** Script hash from the Hydra script catalogue bundled with this deployment. */
@@ -31,9 +29,14 @@ class HydraCommitDraftValidationError extends Error {
 export type ValidateHydraCommitDraftOptions = {
 	draft: HydraTransaction;
 	commitUtxos: UTxO[];
-	/** UTxOs deliberately left available for the node's L1 fee input. */
-	fuelUtxos: UTxO[];
-	/** Complete wallet view, used to reject any unapproved wallet input. */
+	/**
+	 * Local wallet UTxO snapshot. Used as a cheap first-pass reject of any
+	 * non-committed input already known to belong to this wallet. It is NOT
+	 * authoritative on its own — a vkey witness signs every input under the
+	 * wallet key hash, including UTxOs absent from this snapshot — so the caller
+	 * additionally resolves each non-committed input on-chain (see
+	 * `readHydraCommitDraftInputReferences`) and rejects wallet-key-owned ones.
+	 */
 	walletUtxos: UTxO[];
 	expectedHeadId: string;
 	depositScriptHash?: string;
@@ -58,7 +61,6 @@ export type ValidatedHydraCommitDraft = {
 export function validateHydraCommitDraft({
 	draft,
 	commitUtxos,
-	fuelUtxos,
 	walletUtxos,
 	expectedHeadId,
 	depositScriptHash = DEFAULT_HYDRA_DEPOSIT_SCRIPT_HASH,
@@ -100,32 +102,48 @@ export function validateHydraCommitDraft({
 
 	const body = transaction.body();
 	assertNoUnexpectedBodyFeatures(body);
-	const txId = hashTransactionBody(transaction);
+	const txId = hashTransactionBody(cborHex);
 	if (draft.txId !== undefined && normalizeHash(draft.txId, 'advertised transaction id') !== txId) {
 		fail('advertised transaction id does not match the transaction body');
 	}
 
 	const commitByReference = mapUtxosByReference(commitUtxos, 'commit');
-	const fuelReferences = new Set(mapUtxosByReference(fuelUtxos, 'fuel').keys());
 	const walletByReference = mapUtxosByReference(walletUtxos, 'wallet');
 	const inputReferences = readInputReferences(body.inputs());
 
+	// Every committed UTxO must be spent into the deposit.
 	for (const reference of commitByReference.keys()) {
 		if (!inputReferences.includes(reference)) {
 			fail(`transaction does not spend requested commit input ${reference}`);
 		}
 	}
-	const extraInputs = inputReferences.filter((reference) => !commitByReference.has(reference));
-	if (extraInputs.length !== 1) {
-		fail(`transaction must contain exactly one L1 fee input; received ${extraInputs.length}`);
+	// Decoupled node-key model: the hydra-node funds the deposit's fee, collateral
+	// and change from its OWN dedicated Cardano key, which is deliberately NOT this
+	// participant's funding wallet. The wallet adds only a PARTIAL witness set, so
+	// the buyer-safety requirement is precisely that NO non-committed input belongs
+	// to the funding wallet — the wallet must never sign anything beyond its
+	// committed UTxOs. This snapshot pass is a cheap first line; because a vkey
+	// witness authorises every input under the wallet key hash (not only the
+	// fetched snapshot), the caller ALSO resolves each non-committed input on-chain
+	// and rejects wallet-key-owned ones. Fee/change/(inert) collateral are the
+	// node's own inputs/outputs; the ledger enforces overall balance and the node
+	// signs its own parts. Buyer value is protected by (a) every committed UTxO
+	// being spent, (b) the deposit output value equalling the committed value, and
+	// (c) the deposit datum binding to the buyer's exact committed UTxO references +
+	// outputs (validateDepositDatum).
+	const nonCommitInputs = inputReferences.filter((reference) => !commitByReference.has(reference));
+	for (const reference of nonCommitInputs) {
+		if (walletByReference.has(reference)) {
+			fail(`transaction spends non-committed wallet input ${reference}; the wallet must sign only its committed UTxOs`);
+		}
 	}
-	const extraInput = extraInputs[0];
-	if (!fuelReferences.has(extraInput)) {
-		fail(`transaction fee input ${extraInput} was not explicitly reserved`);
-	}
-	const fuelUtxo = walletByReference.get(extraInput);
-	if (!fuelUtxo) {
-		fail(`reserved fee input ${extraInput} is absent from the complete wallet view`);
+	const collateralInputs = body.collateral();
+	if (collateralInputs) {
+		for (const reference of readInputReferences(collateralInputs)) {
+			if (walletByReference.has(reference)) {
+				fail(`transaction uses wallet UTxO ${reference} as collateral; collateral must be the node's own input`);
+			}
+		}
 	}
 
 	const firstCommitAddress = parseAddress(commitUtxos[0].output.address, 'commit UTxO address');
@@ -171,22 +189,18 @@ export function validateHydraCommitDraft({
 	if (depositOutput.data_hash() !== undefined || depositOutput.script_ref() !== undefined) {
 		fail('deposit output must use only an inline datum and no reference script');
 	}
+	// Deposit output value must equal exactly the committed value. Together with
+	// the datum binding below this is what protects the buyer: the funds it signs
+	// away land, in full, in a deposit that credits its own committed UTxOs. The
+	// node's separate change output is not constrained here — it holds only the
+	// node's own leftover fuel, which the buyer never signs for.
 	const expectedDepositValue = normalizeMeshAmounts(commitUtxos.flatMap((utxo) => utxo.output.amount));
 	assertValueMapEquals(normalizeCardanoValue(depositOutput.amount()), expectedDepositValue, 'deposit output value');
-	const changeOutputIndex = depositOutputIndex === 0 ? 1 : 0;
-	const changeOutput = outputs.get(changeOutputIndex);
-	assertSafeFuelChangeOutput(changeOutput, fuelUtxo);
 
 	const fee = BigInt(body.fee().to_str());
 	if (fee > maxFeeLovelace) {
 		fail(`commit transaction fee ${fee.toString()} exceeds the ${maxFeeLovelace.toString()} lovelace limit`);
 	}
-	const totalInputValue = normalizeMeshAmounts([...commitUtxos, fuelUtxo].flatMap((utxo) => utxo.output.amount));
-	const totalOutputValue = sumValueMaps(
-		Array.from({ length: outputs.len() }, (_, index) => normalizeCardanoValue(outputs.get(index).amount())),
-	);
-	totalOutputValue.set('lovelace', (totalOutputValue.get('lovelace') ?? 0n) + fee);
-	assertValueMapEquals(totalOutputValue, totalInputValue, 'transaction input/output value balance');
 
 	const inlineDatum = depositOutput.plutus_data();
 	if (!inlineDatum) {
@@ -212,13 +226,13 @@ export function validateHydraCommitDraft({
 /** Ensure wallet signing only added witnesses and did not replace the body. */
 export function assertHydraCommitSignedBody(signedCborHex: string, expectedTxId: string): void {
 	const cborHex = normalizeHex(signedCborHex, 'signed commit transaction CBOR');
-	let transaction: Transaction;
 	try {
-		transaction = Transaction.from_hex(cborHex);
+		// Parse purely to reject malformed CBOR; the id is hashed from the raw hex.
+		Transaction.from_hex(cborHex);
 	} catch {
 		fail('signed commit transaction CBOR is not a valid Cardano transaction');
 	}
-	if (hashTransactionBody(transaction) !== normalizeHash(expectedTxId, 'expected transaction id')) {
+	if (hashTransactionBody(cborHex) !== normalizeHash(expectedTxId, 'expected transaction id')) {
 		fail('wallet signing changed the validated commit transaction body');
 	}
 }
@@ -226,6 +240,30 @@ export function assertHydraCommitSignedBody(signedCborHex: string, expectedTxId:
 export function resolveHydraDepositScriptHash(configuredHash = process.env.HYDRA_DEPOSIT_SCRIPT_HASH): string {
 	const scriptHash = configuredHash?.trim() || DEFAULT_HYDRA_DEPOSIT_SCRIPT_HASH;
 	return normalizeHash(scriptHash, 'Hydra deposit script hash', 56);
+}
+
+/**
+ * Every input reference (regular + collateral) a commit draft spends, as
+ * `txHash#index` strings. The caller resolves these on-chain to enforce the
+ * key-scoped wallet-input safety invariant that the pure validator cannot: a
+ * Cardano vkey witness authorises EVERY input under the wallet's payment key
+ * hash, not only the fetched UTxO snapshot, so the wallet-owned inputs must be
+ * checked against on-chain ownership rather than a possibly-stale local view.
+ */
+export function readHydraCommitDraftInputReferences(cborHex: string): { inputs: string[]; collateral: string[] } {
+	const normalized = normalizeHex(cborHex, 'commit transaction CBOR');
+	let transaction: Transaction;
+	try {
+		transaction = Transaction.from_hex(normalized);
+	} catch {
+		fail('commit transaction CBOR is not a valid Cardano transaction');
+	}
+	const body = transaction.body();
+	const collateral = body.collateral();
+	return {
+		inputs: readInputReferences(body.inputs()),
+		collateral: collateral ? readInputReferences(collateral) : [],
+	};
 }
 
 function validateDepositDatum({
@@ -315,6 +353,14 @@ function validateSerializedCommitOutput(bytes: Buffer, expectedUtxo: UTxO, netwo
 }
 
 function assertNoUnexpectedBodyFeatures(body: ReturnType<Transaction['body']>): void {
+	// `script data hash` / `mint` / `reference inputs` stay rejected below: their
+	// presence is the ledger's signal of Plutus script execution. Collateral is
+	// therefore INERT here — a Conway tx can only ever consume collateral when a
+	// Plutus script fails phase-2, which requires a script_data_hash. hydra-node
+	// 2.3.0 attaches a collateral input (+ optional return) to its deposit draft
+	// even though the deposit spends no scripts; rejecting it blocked every commit.
+	// We allow collateral ONLY while the script-execution features remain absent,
+	// so the signer's collateral can never actually be taken.
 	const unexpectedFeatures: Array<[string, unknown]> = [
 		['certificates', body.certs()],
 		['withdrawals', body.withdrawals()],
@@ -323,9 +369,6 @@ function assertNoUnexpectedBodyFeatures(body: ReturnType<Transaction['body']>): 
 		['mint', body.mint()],
 		['reference inputs', body.reference_inputs()],
 		['script data hash', body.script_data_hash()],
-		['collateral', body.collateral()],
-		['collateral return', body.collateral_return()],
-		['total collateral', body.total_collateral()],
 		['voting procedures', body.voting_procedures()],
 		['voting proposals', body.voting_proposals()],
 		['treasury donation', body.donation()],
@@ -388,41 +431,11 @@ function normalizeCardanoValue(value: Value): Map<string, bigint> {
 			const name = names.get(nameIndex);
 			const quantity = assets.get(name);
 			if (!quantity) fail('transaction value contains a missing asset quantity');
-			result.set(`${policy.to_hex()}${name.to_hex()}`.toLowerCase(), BigInt(quantity.to_str()));
-		}
-	}
-	return result;
-}
-
-function assertSafeFuelChangeOutput(output: TransactionOutput, fuelUtxo: UTxO): void {
-	if (output.data_hash() !== undefined || output.plutus_data() !== undefined || output.script_ref() !== undefined) {
-		fail('fee change output must be a plain public-key output');
-	}
-	const fuelAddress = parseAddress(fuelUtxo.output.address, `fuel UTxO ${utxoReference(fuelUtxo)} address`);
-	const fuelPaymentKey = fuelAddress.payment_cred()?.to_keyhash()?.to_hex();
-	const changePaymentKey = output.address().payment_cred()?.to_keyhash()?.to_hex();
-	const fuelBaseAddress = BaseAddress.from_address(fuelAddress);
-	const fuelEnterpriseAddress = EnterpriseAddress.from_address(fuelAddress);
-	const changeBaseAddress = BaseAddress.from_address(output.address());
-	const changeEnterpriseAddress = EnterpriseAddress.from_address(output.address());
-	if (
-		!fuelPaymentKey ||
-		changePaymentKey !== fuelPaymentKey ||
-		output.address().network_id() !== fuelAddress.network_id() ||
-		(!fuelBaseAddress && !fuelEnterpriseAddress) ||
-		(!changeBaseAddress && !changeEnterpriseAddress) ||
-		(changeBaseAddress != null &&
-			(fuelBaseAddress == null || changeBaseAddress.stake_cred().to_hex() !== fuelBaseAddress.stake_cred().to_hex()))
-	) {
-		fail('fee change output does not return control to the reserved fuel wallet');
-	}
-}
-
-function sumValueMaps(values: Array<Map<string, bigint>>): Map<string, bigint> {
-	const result = new Map<string, bigint>();
-	for (const value of values) {
-		for (const [unit, quantity] of value) {
-			result.set(unit, (result.get(unit) ?? 0n) + quantity);
+			// AssetName.to_hex() returns the CBOR-wrapped bytestring (header + body),
+			// e.g. a 9-byte name gains a leading `49`. Mesh keys assets by the raw
+			// policyId+assetName hex, so use AssetName.name() (raw bytes) to match.
+			const assetNameHex = Buffer.from(name.name()).toString('hex');
+			result.set(`${policy.to_hex()}${assetNameHex}`.toLowerCase(), BigInt(quantity.to_str()));
 		}
 	}
 	return result;
@@ -555,8 +568,13 @@ function parseAddress(address: string, label: string): Address {
 	}
 }
 
-function hashTransactionBody(transaction: Transaction): string {
-	return Buffer.from(blake2b(transaction.body().to_bytes(), 32)).toString('hex');
+// Compute the real transaction id from the ORIGINAL body bytes. Using
+// `Transaction.from_hex(...).body().to_bytes()` re-canonicalises the CBOR, so its
+// hash diverges from hydra-node's advertised id whenever the node's encoding is
+// not byte-identical to CSL's (e.g. Conway deposit drafts that carry collateral).
+// `FixedTransaction` preserves the exact serialized body, matching the ledger id.
+function hashTransactionBody(cborHex: string): string {
+	return FixedTransaction.from_hex(cborHex).transaction_hash().to_hex();
 }
 
 function normalizeHex(value: string, label: string): string {

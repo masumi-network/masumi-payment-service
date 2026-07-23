@@ -112,6 +112,7 @@ import {
 	fanoutHeadPost,
 	getLocalParticipantGet,
 	getOrListHeadsGet,
+	getHeadBalanceGet,
 	getOrListRelationsGet,
 	getRemoteParticipantGet,
 	initHeadPost,
@@ -485,6 +486,7 @@ export const apiRouter: Routing = {
 				commit: { post: commitHeadPost },
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
+				balance: { get: getHeadBalanceGet },
 				errors: { get: listHeadErrorsGet },
 			},
 			participant: {

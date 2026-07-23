@@ -1648,9 +1648,20 @@ model HydraLocalParticipant {
   hydraHeadId String?    @unique
   HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
 
-  /// The HotWallet this participant operates with (has secret mnemonic)
+  /// The HotWallet this participant operates with (has secret mnemonic). This is
+  /// the FUNDING wallet — the source of the buyer's committed escrow funds — NOT
+  /// the head's on-chain identity (see cardanoVkey).
   walletId String
   Wallet   HotWallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
+
+  /// The Hydra NODE's own Cardano verification-key HASH (28-byte hex). This is the
+  /// on-chain participant identity: Hydra mints the InitTx participant token for
+  /// this key and head verification checks the token against it. It is
+  /// deliberately SEPARATE from the funding HotWallet (walletId) so the node's
+  /// infrastructure key is never the custodial fund wallet — a node-host
+  /// compromise cannot reach escrowed funds, and node keys rotate independently.
+  /// (Set to the funding wallet's vkey only for legacy coupled heads.)
+  cardanoVkey String
 
   /// WebSocket URL for this participant's Hydra node (e.g. ws://127.0.0.1:4001)
   nodeUrl String
@@ -1689,9 +1700,17 @@ model HydraRemoteParticipant {
   hydraHeadId String?
   HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
 
-  /// The counterparty's wallet (public info only — vkey, address)
+  /// The counterparty's wallet (public info only — vkey, address). Funding
+  /// identity of the remote escrow party, NOT the remote head participant token
+  /// identity (see cardanoVkey).
   walletId String
   Wallet   WalletBase @relation(fields: [walletId], references: [id], onDelete: Restrict)
+
+  /// The remote Hydra NODE's Cardano verification-key HASH (28-byte hex) — the
+  /// on-chain participant identity the InitTx mints the remote participant token
+  /// for. Separate from the counterparty funding wallet (walletId); see the local
+  /// participant's cardanoVkey for the rationale.
+  cardanoVkey String
 
   /// WebSocket URL for this participant's Hydra node
   nodeUrl String

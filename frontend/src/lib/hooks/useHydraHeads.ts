@@ -282,6 +282,64 @@ export function useHydraHeads() {
   };
 }
 
+// --- Own in-head balance (this node's committed funds in the head) ---
+
+export type HydraHeadBalanceAsset = {
+  /** Empty string for ADA/lovelace; otherwise policyId+assetName hex. */
+  unit: string;
+  quantity: string;
+};
+
+export type HydraHeadBalance = {
+  hydraHeadId: string;
+  address: string;
+  /** False when the head has no live connection (balance unknown, not zero). */
+  connected: boolean;
+  utxoCount: number;
+  balance: HydraHeadBalanceAsset[];
+};
+
+type HydraHeadBalanceResponse = {
+  200: ApiEnvelope<HydraHeadBalance>;
+};
+
+export async function fetchHydraHeadBalance(
+  apiClient: Client,
+  headId: string,
+): Promise<HydraHeadBalance | null> {
+  const response = await handleApiCall(
+    () =>
+      apiClient.get<HydraHeadBalanceResponse>({
+        responseType: 'json',
+        url: '/hydra/head/balance',
+        query: { headId },
+      }),
+    {
+      onError: (error: unknown) => {
+        console.error('Failed to fetch Hydra head balance:', error);
+      },
+      errorMessage: 'Failed to load Hydra head balance',
+    },
+  );
+  return response?.data?.data ?? null;
+}
+
+/**
+ * Poll this node's own in-head balance for an OPEN head. Only enabled for open
+ * heads (a live snapshot read requires an active connection).
+ */
+export function useHydraHeadBalance(headId: string | null, isOpen: boolean) {
+  const { apiClient } = useAppContext();
+
+  return useQuery<HydraHeadBalance | null>({
+    queryKey: ['hydra-head-balance', headId],
+    queryFn: async () => (headId ? fetchHydraHeadBalance(apiClient, headId) : null),
+    enabled: !!apiClient && !!headId && isOpen,
+    staleTime: 10000,
+    refetchInterval: 15000,
+  });
+}
+
 export function useHydraRelations(network?: 'Preprod' | 'Mainnet') {
   const { apiClient } = useAppContext();
 

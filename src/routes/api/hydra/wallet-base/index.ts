@@ -5,7 +5,7 @@ import createHttpError from 'http-errors';
 import { HotWalletType, Network, WalletType } from '@/generated/prisma/client';
 import { buildHotWalletScopeFilter } from '@/utils/shared/wallet-scope';
 
-const walletBaseOptionSchema = z.object({
+export const walletBaseOptionSchema = z.object({
 	id: z.string(),
 	createdAt: z.string(),
 	updatedAt: z.string(),
@@ -21,7 +21,7 @@ const walletBaseOptionSchema = z.object({
 	}),
 });
 
-const listWalletBaseSchemaInput = z.object({
+export const listWalletBaseSchemaInput = z.object({
 	network: z.nativeEnum(Network).optional().describe('Filter wallet bases by Cardano network'),
 	paymentSourceId: z.string().optional().describe('Filter wallet bases by payment source'),
 	walletVkey: z.string().optional().describe('Filter wallet bases by payment key hash'),
@@ -29,15 +29,15 @@ const listWalletBaseSchemaInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(100).describe('Number of results'),
 });
 
-const listWalletBaseSchemaOutput = z.object({
+export const listWalletBaseSchemaOutput = z.object({
 	wallets: z.array(walletBaseOptionSchema),
 });
 
-const ensureWalletBaseSchemaInput = z.object({
+export const ensureWalletBaseSchemaInput = z.object({
 	hotWalletId: z.string().min(1).describe('HotWallet to expose as a public WalletBase option'),
 });
 
-const ensureWalletBaseSchemaOutput = walletBaseOptionSchema;
+export const ensureWalletBaseSchemaOutput = walletBaseOptionSchema;
 
 export const listHydraWalletBasesGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',

@@ -10,7 +10,7 @@ import {
 	unsettledL2TransactionWhere,
 } from '../deletion-guard';
 
-const hydraRelationSchema = z
+export const hydraRelationSchema = z
 	.object({
 		id: z.string(),
 		createdAt: z.date(),
@@ -44,7 +44,7 @@ const hydraRelationSchema = z
 	})
 	.openapi('HydraRelation');
 
-const hydraRelationDetailSchema = hydraRelationSchema
+export const hydraRelationDetailSchema = hydraRelationSchema
 	.extend({
 		Heads: z
 			.array(
@@ -68,14 +68,14 @@ const hydraRelationDetailSchema = hydraRelationSchema
 
 // --- GET: list or get by ID ---
 
-const getRelationSchemaInput = z.object({
+export const getRelationSchemaInput = z.object({
 	id: z.string().optional().describe('Get a single relation by ID'),
 	network: z.nativeEnum(Network).optional().describe('Filter by Cardano network'),
 	cursorId: z.string().optional().describe('Cursor ID for pagination'),
 	limit: z.coerce.number().min(1).max(100).default(25).describe('Number of results'),
 });
 
-const getRelationSchemaOutput = z.object({
+export const getRelationSchemaOutput = z.object({
 	relations: z.array(hydraRelationDetailSchema),
 });
 
@@ -143,13 +143,13 @@ export const getOrListRelationsGet = adminAuthenticatedEndpointFactory.build({
 
 // --- POST: create relation ---
 
-const createRelationSchemaInput = z.object({
+export const createRelationSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('Cardano network for this relation'),
 	localHotWalletId: z.string().min(1).describe('HotWallet ID for the local participant'),
 	remoteWalletId: z.string().min(1).describe('WalletBase ID for the remote counterparty'),
 });
 
-const createRelationSchemaOutput = hydraRelationSchema;
+export const createRelationSchemaOutput = hydraRelationSchema;
 
 export const createRelationPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -208,11 +208,11 @@ export const createRelationPost = adminAuthenticatedEndpointFactory.build({
 
 // --- DELETE: delete relation ---
 
-const deleteRelationSchemaInput = z.object({
+export const deleteRelationSchemaInput = z.object({
 	id: z.string().min(1).describe('ID of the HydraRelation to delete'),
 });
 
-const deleteRelationSchemaOutput = z.object({
+export const deleteRelationSchemaOutput = z.object({
 	id: z.string(),
 	deleted: z.boolean(),
 });

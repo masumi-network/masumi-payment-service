@@ -13,11 +13,14 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
 import { logger } from '@masumi/payment-core/logger';
 import {
 	assertHydraCommitSignedBody,
+	assertCommitDraftInputsAreNodeFunded,
 	buildHydraHttpEndpoint,
 	deriveHydraVerificationKeyCborHex,
+	HydraCommitInputSafetyError,
 	getHydraPlaintextHosts,
 	HydraHeadInitObservationError,
 	HydraTransactionType,
@@ -26,14 +29,16 @@ import {
 	MAX_HYDRA_WS_FRAME_BYTES,
 	normalizeHydraVerificationKeyCborHex,
 	parseHydraWebSocketProbeFrame,
+	readHydraCommitDraftInputReferences,
 	resolveHydraDepositScriptHash,
-	selectCommitUtxosWithFuelReserve,
+	selectCommitUtxos,
 	validateHydraHttpUrl,
 	validateHydraCommitDraft,
 	validateHydraNodeUrls,
 	verifyHydraHeadInitOnChain,
 	withHydraHistoryDisabled,
 } from '@/lib/hydra';
+import { resolvePaymentKeyHash } from '@meshsdk/core';
 import { toPrismaJsonValue } from '@/utils/json-value';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
@@ -54,7 +59,7 @@ import { hasUnsettledHydraRequestState, unsettledL2TransactionWhere } from '../d
 
 // --- Shared schemas ---
 
-const localParticipantSchema = z.object({
+export const localParticipantSchema = z.object({
 	id: z.string(),
 	createdAt: z.string(),
 	walletId: z.string(),
@@ -64,7 +69,7 @@ const localParticipantSchema = z.object({
 	commitTxHash: z.string().nullable(),
 });
 
-const remoteParticipantSchema = z.object({
+export const remoteParticipantSchema = z.object({
 	id: z.string(),
 	createdAt: z.string(),
 	walletId: z.string(),
@@ -75,7 +80,7 @@ const remoteParticipantSchema = z.object({
 	hydraVerificationKeyId: z.string(),
 });
 
-const hydraHeadSchema = z
+export const hydraHeadSchema = z
 	.object({
 		id: z.string(),
 		createdAt: z.string(),
@@ -116,7 +121,7 @@ const hydraHeadSchema = z
 
 // --- GET: list or get by ID ---
 
-const getHeadSchemaInput = z.object({
+export const getHeadSchemaInput = z.object({
 	id: z.string().optional().describe('Get a single head by ID'),
 	relationId: z.string().optional().describe('Filter by HydraRelation ID'),
 	status: z.nativeEnum(HydraHeadStatus).optional().describe('Filter by head status'),
@@ -129,7 +134,7 @@ const getHeadSchemaInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(25).describe('Number of results'),
 });
 
-const getHeadSchemaOutput = z.object({
+export const getHeadSchemaOutput = z.object({
 	heads: z.array(hydraHeadSchema),
 });
 
@@ -193,12 +198,14 @@ const hydraHeadOnChainVerificationSelect = {
 	LocalParticipant: {
 		select: {
 			walletId: true,
+			cardanoVkey: true,
 			HydraSecretKey: { select: { hydraSK: true } },
 		},
 	},
 	RemoteParticipants: {
 		select: {
 			walletId: true,
+			cardanoVkey: true,
 			HydraVerificationKey: { select: { hydraVK: true } },
 		},
 	},
@@ -290,10 +297,10 @@ async function verifyPersistedHydraHeadOnChain(
 		observer: getBlockfrostInstance(head.HydraRelation.network, rpcProviderApiKey),
 		headId: head.headIdentifier,
 		expectedVerificationKeys: [localVerificationKey, remoteVerificationKey],
-		expectedParticipantVkeys: [
-			head.HydraRelation.LocalHotWallet.walletVkey,
-			head.HydraRelation.RemoteWallet.walletVkey,
-		],
+		// On-chain participant tokens are minted for each node's OWN Cardano key,
+		// which is decoupled from the funding hot wallet. Verify against the
+		// participants' cardanoVkey, not LocalHotWallet/RemoteWallet.walletVkey.
+		expectedParticipantVkeys: [head.LocalParticipant.cardanoVkey, head.RemoteParticipants[0].cardanoVkey],
 		contestationPeriodSeconds: head.contestationPeriod,
 	});
 	if (options.persist === false) {
@@ -358,7 +365,7 @@ export const createHeadSchemaInput = z.object({
 		.describe('Exactly one pre-existing HydraRemoteParticipant for the relation counterparty'),
 });
 
-const createHeadSchemaOutput = hydraHeadSchema;
+export const createHeadSchemaOutput = hydraHeadSchema;
 
 export const createHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -691,12 +698,12 @@ export async function createBoundHydraHead(input: {
 
 // --- PATCH: update isEnabled ---
 
-const updateHeadSchemaInput = z.object({
+export const updateHeadSchemaInput = z.object({
 	id: z.string().min(1).describe('ID of the HydraHead to update'),
 	isEnabled: z.boolean().describe('Whether the head should be enabled'),
 });
 
-const updateHeadSchemaOutput = hydraHeadSchema;
+export const updateHeadSchemaOutput = hydraHeadSchema;
 
 export const updateHeadPatch = adminAuthenticatedEndpointFactory.build({
 	method: 'patch',
@@ -783,7 +790,7 @@ export async function updateHydraHeadEnabledState(
 
 // --- POST: check node reachability/status ---
 
-const checkHeadNodeSchemaInput = z.object({
+export const checkHeadNodeSchemaInput = z.object({
 	nodeHttpUrl: z.string().min(1).describe('HTTP URL for the Hydra node'),
 	nodeUrl: z.string().min(1).optional().describe('Optional WebSocket URL for the Hydra node'),
 	timeoutMs: z.coerce
@@ -795,7 +802,7 @@ const checkHeadNodeSchemaInput = z.object({
 		.describe('Maximum probe duration in milliseconds'),
 });
 
-const checkHeadNodeSchemaOutput = z.object({
+export const checkHeadNodeSchemaOutput = z.object({
 	reachable: z.boolean(),
 	protocolParametersOk: z.boolean(),
 	websocketReachable: z.boolean(),
@@ -846,7 +853,7 @@ export const checkHeadNodePost = adminAuthenticatedEndpointFactory.build({
 
 // --- GET errors ---
 
-const headErrorSchema = z.object({
+export const headErrorSchema = z.object({
 	id: z.string(),
 	createdAt: z.date(),
 	errorType: z.nativeEnum(HydraErrorType),
@@ -857,13 +864,13 @@ const headErrorSchema = z.object({
 	errorAt: z.date(),
 });
 
-const listHeadErrorsSchemaInput = z.object({
+export const listHeadErrorsSchemaInput = z.object({
 	headId: z.string().min(1).describe('ID of the HydraHead'),
 	cursorId: z.string().optional().describe('Cursor ID for pagination'),
 	limit: z.coerce.number().min(1).max(100).default(25).describe('Number of results'),
 });
 
-const listHeadErrorsSchemaOutput = z.object({
+export const listHeadErrorsSchemaOutput = z.object({
 	errors: z.array(headErrorSchema),
 });
 
@@ -888,13 +895,49 @@ export const listHeadErrorsGet = adminAuthenticatedEndpointFactory.build({
 	},
 });
 
-// --- Lifecycle: POST init ---
+// --- GET: own in-head balance (local participant only) ---
 
-const lifecycleInput = z.object({
+export const headBalanceSchemaInput = z.object({
 	headId: z.string().min(1).describe('ID of the HydraHead'),
 });
 
-const lifecycleOutput = z.object({
+export const headBalanceSchemaOutput = z.object({
+	hydraHeadId: z.string(),
+	address: z.string().describe('The local participant wallet address whose in-head funds are reported'),
+	connected: z
+		.boolean()
+		.describe('True when a live head snapshot was read; false when the head has no active connection'),
+	utxoCount: z.number().describe('Number of in-head UTxOs held by the local address'),
+	balance: z
+		.array(
+			z.object({
+				unit: z.string().describe('Empty string for ADA/lovelace; otherwise policyId+assetName hex'),
+				quantity: z.string().describe('Aggregate quantity across the local address in-head UTxOs'),
+			}),
+		)
+		.describe("This node's own funds currently inside the head (ADA + native tokens). Excludes the counterparty."),
+});
+
+export const getHeadBalanceGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: headBalanceSchemaInput,
+	output: headBalanceSchemaOutput,
+	handler: async ({ input }) => {
+		const balance = await getOwnInHeadBalance(input.headId);
+		if (balance == null) {
+			throw createHttpError(404, 'Hydra head or its local participant wallet not found');
+		}
+		return balance;
+	},
+});
+
+// --- Lifecycle: POST init ---
+
+export const lifecycleInput = z.object({
+	headId: z.string().min(1).describe('ID of the HydraHead'),
+});
+
+export const lifecycleOutput = z.object({
 	headId: z.string(),
 	status: z.nativeEnum(HydraHeadStatus),
 });
@@ -995,11 +1038,11 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 
 // --- Lifecycle: POST commit (local participant only) ---
 
-const commitInput = z.object({
+export const commitInput = z.object({
 	headId: z.string().min(1).describe('ID of the HydraHead'),
 });
 
-const commitOutput = z.object({
+export const commitOutput = z.object({
 	headId: z.string(),
 	committed: z.boolean(),
 	commitTxHash: z.string().nullable(),
@@ -1102,7 +1145,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				}
 			}
 
-			const { wallet, utxos } = await generateWalletExtended(
+			const { wallet, utxos, vKey, blockchainProvider } = await generateWalletExtended(
 				hotWallet.PaymentSource.network,
 				rpcProviderApiKey,
 				hotWallet.Secret.encryptedMnemonic,
@@ -1112,27 +1155,21 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			}
 
 			// Datum and reference-script outputs cannot be represented faithfully by
-			// the commit codec. Also reserve the largest plain output(s): hydra-node
-			// uses this same participant key as its fee wallet and selects its largest
-			// UTxO as fuel. Committing that input makes deposit submission fail with
-			// NotEnoughFuel.
-			const { commitUtxos, fuelUtxos, excludedUtxos } = selectCommitUtxosWithFuelReserve(utxos);
-			if (fuelUtxos.length === 0) {
-				throw createHttpError(
-					400,
-					'Local participant wallet has no plain (datum- and reference-script-free) L1 UTxOs available',
-				);
-			}
+			// the commit codec, so only plain pubkey UTxOs may be committed. Under the
+			// decoupled node-key model the hydra-node funds the deposit's L1 fee,
+			// collateral and change from its OWN dedicated cardano key (not this
+			// participant's funding wallet), so every plain wallet UTxO can be
+			// committed and no fee-fuel input needs to be reserved.
+			const { commitUtxos, excludedUtxos } = selectCommitUtxos(utxos);
 			if (commitUtxos.length === 0) {
 				throw createHttpError(
 					400,
-					'Local participant wallet needs a plain L1 UTxO strictly smaller than its largest UTxO so the largest can remain available for Hydra fee fuel',
+					'Local participant wallet has no plain (datum- and reference-script-free) L1 UTxOs available to commit',
 				);
 			}
 
 			logger.info(`[HydraAPI] Selected L1 UTxOs for head ${head.id} commit`, {
 				commitUtxoCount: commitUtxos.length,
-				fuelUtxoCount: fuelUtxos.length,
 				excludedUtxoCount: excludedUtxos.length,
 			});
 
@@ -1146,6 +1183,37 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(502, 'Hydra node did not return a valid commit transaction draft');
 			}
 
+			// Authoritative, key-scoped wallet-input safety. A Cardano vkey witness
+			// signs EVERY input under this wallet's payment key hash — not only the
+			// UTxOs in the fetched snapshot — so the pure validator's snapshot check is
+			// not sufficient on its own. Resolve every non-committed input the untrusted
+			// draft spends against the L1 observer and refuse if any is spendable by
+			// this wallet key (see assertCommitDraftInputsAreNodeFunded).
+			try {
+				const { inputs: draftInputs, collateral: draftCollateral } = readHydraCommitDraftInputReferences(
+					commitDraftTx.cborHex,
+				);
+				await assertCommitDraftInputsAreNodeFunded({
+					inputReferences: draftInputs,
+					collateralReferences: draftCollateral,
+					commitReferences: commitUtxos.map((utxo) => `${utxo.input.txHash}#${utxo.input.outputIndex}`),
+					walletPaymentKeyHash: vKey,
+					resolveOutput: async (inputTxHash, inputIndex) =>
+						(await blockchainProvider.fetchUTxOs(inputTxHash, inputIndex)).find(
+							(utxo) => utxo.input.outputIndex === inputIndex,
+						)?.output ?? null,
+					paymentKeyHashOf: resolvePaymentKeyHash,
+				});
+			} catch (inputSafetyError) {
+				if (inputSafetyError instanceof HydraCommitInputSafetyError) {
+					throw createHttpError(502, `Refusing unsafe Hydra commit draft: ${inputSafetyError.message}`);
+				}
+				throw createHttpError(
+					502,
+					`Refusing Hydra commit draft: could not verify funding-input ownership: ${getErrorMessage(inputSafetyError)}`,
+				);
+			}
+
 			let validatedDraft: ReturnType<typeof validateHydraCommitDraft>;
 			try {
 				const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(hotWallet.PaymentSource.network));
@@ -1155,7 +1223,6 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				validatedDraft = validateHydraCommitDraft({
 					draft: commitDraftTx,
 					commitUtxos,
-					fuelUtxos,
 					walletUtxos: utxos,
 					expectedHeadId: verifiedHead.headIdentifier,
 					depositScriptHash: resolveHydraDepositScriptHash(),

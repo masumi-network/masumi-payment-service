@@ -18,6 +18,7 @@ import { toast } from 'react-toastify';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import { AddHydraHeadDialog } from '@/components/hydra/AddHydraHeadDialog';
+import { HydraHeadInHeadBalance } from '@/components/hydra/HydraHeadInHeadBalance';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -596,6 +597,12 @@ function HydraHeadDetailsDialog({
               <TransactionHashRow label="Fanout tx" hash={head.fanoutTxHash} network={network} />
             </div>
           </div>
+
+          <HydraHeadInHeadBalance
+            headId={head.id}
+            isOpen={head.status === 'Open'}
+            network={network}
+          />
 
           <div className="space-y-3">
             <h3 className="font-medium">Participants</h3>

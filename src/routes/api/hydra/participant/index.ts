@@ -18,13 +18,14 @@ import {
 
 // --- Shared schemas ---
 
-const localParticipantSchema = z
+export const localParticipantSchema = z
 	.object({
 		id: z.string(),
 		createdAt: z.date(),
 		updatedAt: z.date(),
 		hydraHeadId: z.string().nullable(),
 		walletId: z.string(),
+		cardanoVkey: z.string(),
 		nodeUrl: z.string(),
 		nodeHttpUrl: z.string(),
 		hasCommitted: z.boolean(),
@@ -32,13 +33,14 @@ const localParticipantSchema = z
 	})
 	.openapi('HydraLocalParticipant');
 
-const remoteParticipantSchema = z
+export const remoteParticipantSchema = z
 	.object({
 		id: z.string(),
 		createdAt: z.date(),
 		updatedAt: z.date(),
 		hydraHeadId: z.string().nullable(),
 		walletId: z.string(),
+		cardanoVkey: z.string(),
 		nodeUrl: z.string(),
 		nodeHttpUrl: z.string(),
 		hasCommitted: z.boolean(),
@@ -53,14 +55,21 @@ const remoteParticipantSchema = z
 
 // --- POST: create local participant ---
 
-const createLocalParticipantInput = z.object({
-	walletId: z.string().min(1).describe('HotWallet ID for the local participant'),
+export const createLocalParticipantInput = z.object({
+	walletId: z.string().min(1).describe('HotWallet ID for the local participant (funding wallet)'),
 	nodeUrl: z.string().min(1).describe('WebSocket URL for the local Hydra node'),
 	nodeHttpUrl: z.string().min(1).describe('HTTP URL for the local Hydra node'),
 	hydraSK: z.string().min(1).describe('Hydra signing key (will be encrypted)'),
+	cardanoVkey: z
+		.string()
+		.regex(/^[0-9a-fA-F]{56}$/)
+		.optional()
+		.describe(
+			"The Hydra node's own Cardano verification-key HASH (28-byte hex) — the on-chain participant identity. Omit to reuse the funding wallet's vkey (legacy coupled behaviour).",
+		),
 });
 
-const createLocalParticipantOutput = z.object({
+export const createLocalParticipantOutput = z.object({
 	participant: localParticipantSchema,
 });
 
@@ -86,6 +95,9 @@ export const createLocalParticipantPost = adminAuthenticatedEndpointFactory.buil
 		const participant = await prisma.hydraLocalParticipant.create({
 			data: {
 				Wallet: { connect: { id: input.walletId } },
+				// Node's own on-chain identity; defaults to the funding wallet's vkey
+				// only when the caller opts into the legacy coupled model.
+				cardanoVkey: (input.cardanoVkey ?? wallet.walletVkey).toLowerCase(),
 				nodeUrl: nodeUrls.wsUrl,
 				nodeHttpUrl: nodeUrls.httpUrl,
 				HydraSecretKey: {
@@ -102,7 +114,7 @@ export const createLocalParticipantPost = adminAuthenticatedEndpointFactory.buil
 
 // --- GET: list or get local participants ---
 
-const getLocalParticipantInput = z.object({
+export const getLocalParticipantInput = z.object({
 	id: z.string().optional().describe('Get a single participant by ID'),
 	walletId: z.string().optional().describe('Filter by HotWallet ID'),
 	unassigned: z
@@ -114,7 +126,7 @@ const getLocalParticipantInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(25).describe('Number of results'),
 });
 
-const getLocalParticipantOutput = z.object({
+export const getLocalParticipantOutput = z.object({
 	participants: z.array(localParticipantSchema),
 });
 
@@ -151,11 +163,11 @@ export const getLocalParticipantGet = adminAuthenticatedEndpointFactory.build({
 
 // --- DELETE: delete local participant ---
 
-const deleteLocalParticipantInput = z.object({
+export const deleteLocalParticipantInput = z.object({
 	id: z.string().min(1).describe('ID of the local participant to delete'),
 });
 
-const deleteLocalParticipantOutput = z.object({
+export const deleteLocalParticipantOutput = z.object({
 	id: z.string(),
 	deleted: z.boolean(),
 });
@@ -302,14 +314,21 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 
 // --- POST: create remote participant ---
 
-const createRemoteParticipantInput = z.object({
-	walletId: z.string().min(1).describe('WalletBase ID for the remote counterparty'),
+export const createRemoteParticipantInput = z.object({
+	walletId: z.string().min(1).describe('WalletBase ID for the remote counterparty (funding wallet)'),
 	nodeUrl: z.string().min(1).describe('WebSocket URL for the remote Hydra node'),
 	nodeHttpUrl: z.string().min(1).describe('HTTP URL for the remote Hydra node'),
 	hydraVK: z.string().min(1).describe('Hydra verification key (cborHex)'),
+	cardanoVkey: z
+		.string()
+		.regex(/^[0-9a-fA-F]{56}$/)
+		.optional()
+		.describe(
+			"The remote Hydra node's own Cardano verification-key HASH (28-byte hex) — the on-chain participant identity. Omit to reuse the counterparty wallet's vkey (legacy coupled behaviour).",
+		),
 });
 
-const createRemoteParticipantOutput = z.object({
+export const createRemoteParticipantOutput = z.object({
 	participant: remoteParticipantSchema,
 });
 
@@ -335,6 +354,7 @@ export const createRemoteParticipantPost = adminAuthenticatedEndpointFactory.bui
 		const participant = await prisma.hydraRemoteParticipant.create({
 			data: {
 				Wallet: { connect: { id: input.walletId } },
+				cardanoVkey: (input.cardanoVkey ?? wallet.walletVkey).toLowerCase(),
 				nodeUrl: nodeUrls.wsUrl,
 				nodeHttpUrl: nodeUrls.httpUrl,
 				HydraVerificationKey: {
@@ -349,7 +369,7 @@ export const createRemoteParticipantPost = adminAuthenticatedEndpointFactory.bui
 
 // --- GET: list or get remote participants ---
 
-const getRemoteParticipantInput = z.object({
+export const getRemoteParticipantInput = z.object({
 	id: z.string().optional().describe('Get a single participant by ID'),
 	walletId: z.string().optional().describe('Filter by WalletBase ID'),
 	unassigned: z
@@ -361,7 +381,7 @@ const getRemoteParticipantInput = z.object({
 	limit: z.coerce.number().min(1).max(100).default(25).describe('Number of results'),
 });
 
-const getRemoteParticipantOutput = z.object({
+export const getRemoteParticipantOutput = z.object({
 	participants: z.array(remoteParticipantSchema),
 });
 
@@ -398,11 +418,11 @@ export const getRemoteParticipantGet = adminAuthenticatedEndpointFactory.build({
 
 // --- DELETE: delete remote participant ---
 
-const deleteRemoteParticipantInput = z.object({
+export const deleteRemoteParticipantInput = z.object({
 	id: z.string().min(1).describe('ID of the remote participant to delete'),
 });
 
-const deleteRemoteParticipantOutput = z.object({
+export const deleteRemoteParticipantOutput = z.object({
 	id: z.string(),
 	deleted: z.boolean(),
 });

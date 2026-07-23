@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import type { Asset, UTxO } from '@meshsdk/core';
-import { isPlainCommitUtxo, selectCommitUtxosWithFuelReserve } from './commit-utxos';
+import { isPlainCommitUtxo, selectCommitUtxos } from './commit-utxos';
 
 function utxo(index: number, lovelace: string, output: Partial<UTxO['output']> = {}): UTxO {
 	const amount: Asset[] = [{ unit: 'lovelace', quantity: lovelace }];
@@ -28,62 +28,45 @@ describe('isPlainCommitUtxo', () => {
 	});
 });
 
-describe('selectCommitUtxosWithFuelReserve', () => {
-	it('commits only UTxOs strictly smaller than the largest fee-fuel UTxO', () => {
+describe('selectCommitUtxos', () => {
+	it('commits every plain wallet UTxO without reserving fuel', () => {
 		const small = utxo(0, '10000000');
 		const medium = utxo(1, '20000000');
-		const fuel = utxo(2, '100000000');
+		const large = utxo(2, '100000000');
 
-		expect(selectCommitUtxosWithFuelReserve([medium, fuel, small])).toEqual({
-			commitUtxos: [medium, small],
-			fuelUtxos: [fuel],
+		expect(selectCommitUtxos([medium, large, small])).toEqual({
+			commitUtxos: [medium, large, small],
 			excludedUtxos: [],
 		});
 	});
 
-	it('reserves all largest ties so fee selection cannot collide with a commit input', () => {
-		const commit = utxo(0, '10000000');
-		const fuelA = utxo(1, '100000000');
-		const fuelB = utxo(2, '100000000');
-
-		expect(selectCommitUtxosWithFuelReserve([fuelA, commit, fuelB])).toEqual({
-			commitUtxos: [commit],
-			fuelUtxos: [fuelA, fuelB],
-			excludedUtxos: [],
-		});
-	});
-
-	it('excludes datum and reference-script outputs before selecting fuel', () => {
-		const commit = utxo(0, '10000000');
-		const fuel = utxo(1, '20000000');
+	it('excludes datum and reference-script outputs', () => {
+		const commitA = utxo(0, '10000000');
+		const commitB = utxo(1, '20000000');
 		const datum = utxo(2, '30000000', { plutusData: 'd87980' });
 		const referenceScript = utxo(3, '40000000', { scriptRef: '4e4d010000332222' });
 
-		expect(selectCommitUtxosWithFuelReserve([commit, datum, fuel, referenceScript])).toEqual({
-			commitUtxos: [commit],
-			fuelUtxos: [fuel],
+		expect(selectCommitUtxos([commitA, datum, commitB, referenceScript])).toEqual({
+			commitUtxos: [commitA, commitB],
 			excludedUtxos: [datum, referenceScript],
 		});
 	});
 
-	it('returns no commit candidate when no strictly larger fuel UTxO exists', () => {
+	it('commits a single plain UTxO (the node funds fees from its own key)', () => {
 		const only = utxo(0, '10000000');
 
-		expect(selectCommitUtxosWithFuelReserve([only])).toEqual({
-			commitUtxos: [],
-			fuelUtxos: [only],
+		expect(selectCommitUtxos([only])).toEqual({
+			commitUtxos: [only],
 			excludedUtxos: [],
 		});
 	});
 
-	it('compares lovelace losslessly above the JavaScript safe-integer limit', () => {
-		const commit = utxo(0, '9007199254740993');
-		const fuel = utxo(1, '9007199254740994');
+	it('returns no commit candidate when every UTxO is non-plain', () => {
+		const datum = utxo(0, '10000000', { plutusData: 'd87980' });
 
-		expect(selectCommitUtxosWithFuelReserve([fuel, commit])).toEqual({
-			commitUtxos: [commit],
-			fuelUtxos: [fuel],
-			excludedUtxos: [],
+		expect(selectCommitUtxos([datum])).toEqual({
+			commitUtxos: [],
+			excludedUtxos: [datum],
 		});
 	});
 });

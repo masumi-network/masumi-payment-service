@@ -3,6 +3,7 @@ export { getOrListRelationsGet, createRelationPost, deleteRelationDelete } from 
 export {
 	checkHeadNodePost,
 	getOrListHeadsGet,
+	getHeadBalanceGet,
 	createHeadPost,
 	updateHeadPatch,
 	listHeadErrorsGet,

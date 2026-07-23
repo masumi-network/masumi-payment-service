@@ -5364,3 +5364,511 @@ export const FundDistributionTriggeredSchema = {
         'alreadyRunning'
     ]
 } as const;
+
+export const HydraRelationDetailSchema = {
+    allOf: [
+        {
+            $ref: '#/components/schemas/HydraRelation'
+        },
+        {
+            type: 'object',
+            properties: {
+                Heads: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            id: {
+                                type: 'string'
+                            },
+                            status: {
+                                type: 'string',
+                                enum: [
+                                    'Disconnected',
+                                    'Connected',
+                                    'Connecting',
+                                    'Idle',
+                                    'Initializing',
+                                    'Open',
+                                    'Closed',
+                                    'FanoutPossible',
+                                    'Final'
+                                ]
+                            },
+                            headIdentifier: {
+                                type: 'string',
+                                nullable: true
+                            },
+                            isEnabled: {
+                                type: 'boolean'
+                            },
+                            createdAt: {
+                                type: 'string',
+                                format: 'date-time'
+                            },
+                            openedAt: {
+                                type: 'string',
+                                nullable: true,
+                                format: 'date-time'
+                            },
+                            closedAt: {
+                                type: 'string',
+                                nullable: true,
+                                format: 'date-time'
+                            },
+                            finalizedAt: {
+                                type: 'string',
+                                nullable: true,
+                                format: 'date-time'
+                            },
+                            _count: {
+                                type: 'object',
+                                properties: {
+                                    RemoteParticipants: {
+                                        type: 'number'
+                                    }
+                                },
+                                required: [
+                                    'RemoteParticipants'
+                                ]
+                            }
+                        },
+                        required: [
+                            'id',
+                            'status',
+                            'headIdentifier',
+                            'isEnabled',
+                            'createdAt',
+                            'openedAt',
+                            'closedAt',
+                            'finalizedAt',
+                            '_count'
+                        ]
+                    }
+                }
+            }
+        }
+    ]
+} as const;
+
+export const HydraRelationSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        network: {
+            type: 'string',
+            enum: [
+                'Preprod',
+                'Mainnet'
+            ]
+        },
+        localHotWalletId: {
+            type: 'string'
+        },
+        remoteWalletId: {
+            type: 'string'
+        },
+        LocalHotWallet: {
+            type: 'object',
+            properties: {
+                id: {
+                    type: 'string'
+                },
+                walletVkey: {
+                    type: 'string'
+                },
+                walletAddress: {
+                    type: 'string'
+                },
+                type: {
+                    type: 'string'
+                },
+                note: {
+                    type: 'string',
+                    nullable: true
+                }
+            },
+            required: [
+                'id',
+                'walletVkey',
+                'walletAddress',
+                'type',
+                'note'
+            ]
+        },
+        RemoteWallet: {
+            type: 'object',
+            properties: {
+                id: {
+                    type: 'string'
+                },
+                walletVkey: {
+                    type: 'string'
+                },
+                walletAddress: {
+                    type: 'string'
+                },
+                type: {
+                    type: 'string'
+                },
+                note: {
+                    type: 'string',
+                    nullable: true
+                }
+            },
+            required: [
+                'id',
+                'walletVkey',
+                'walletAddress',
+                'type',
+                'note'
+            ]
+        },
+        _count: {
+            type: 'object',
+            properties: {
+                Heads: {
+                    type: 'number'
+                }
+            },
+            required: [
+                'Heads'
+            ]
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'network',
+        'localHotWalletId',
+        'remoteWalletId'
+    ]
+} as const;
+
+export const HydraHeadSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string'
+        },
+        updatedAt: {
+            type: 'string'
+        },
+        hydraRelationId: {
+            type: 'string'
+        },
+        headIdentifier: {
+            type: 'string',
+            nullable: true
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'Disconnected',
+                'Connected',
+                'Connecting',
+                'Idle',
+                'Initializing',
+                'Open',
+                'Closed',
+                'FanoutPossible',
+                'Final'
+            ]
+        },
+        contestationPeriod: {
+            type: 'string'
+        },
+        isEnabled: {
+            type: 'boolean'
+        },
+        openedAt: {
+            type: 'string',
+            nullable: true
+        },
+        closedAt: {
+            type: 'string',
+            nullable: true
+        },
+        finalizedAt: {
+            type: 'string',
+            nullable: true
+        },
+        contestationDeadline: {
+            type: 'string',
+            nullable: true
+        },
+        latestActivityAt: {
+            type: 'string',
+            nullable: true
+        },
+        latestSnapshotNumber: {
+            type: 'string'
+        },
+        reconciliationStalledTxId: {
+            type: 'string',
+            nullable: true,
+            description: 'Confirmed in-head tx the ordered replay is stuck on (fail-closed stall); null when replay is healthy'
+        },
+        reconciliationStalledReason: {
+            type: 'string',
+            nullable: true,
+            description: 'Why replay is stalled: evidence-parse-failed | replay-apply-retry'
+        },
+        reconciliationStalledSince: {
+            type: 'string',
+            nullable: true,
+            description: 'When the current stall was first observed'
+        },
+        initTxHash: {
+            type: 'string',
+            nullable: true
+        },
+        closeTxHash: {
+            type: 'string',
+            nullable: true
+        },
+        fanoutTxHash: {
+            type: 'string',
+            nullable: true
+        },
+        LocalParticipant: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                id: {
+                    type: 'string'
+                },
+                createdAt: {
+                    type: 'string'
+                },
+                walletId: {
+                    type: 'string'
+                },
+                nodeUrl: {
+                    type: 'string'
+                },
+                nodeHttpUrl: {
+                    type: 'string'
+                },
+                hasCommitted: {
+                    type: 'boolean'
+                },
+                commitTxHash: {
+                    type: 'string',
+                    nullable: true
+                }
+            },
+            required: [
+                'id',
+                'createdAt',
+                'walletId',
+                'nodeUrl',
+                'nodeHttpUrl',
+                'hasCommitted',
+                'commitTxHash'
+            ]
+        },
+        RemoteParticipants: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    id: {
+                        type: 'string'
+                    },
+                    createdAt: {
+                        type: 'string'
+                    },
+                    walletId: {
+                        type: 'string'
+                    },
+                    nodeUrl: {
+                        type: 'string'
+                    },
+                    nodeHttpUrl: {
+                        type: 'string'
+                    },
+                    hasCommitted: {
+                        type: 'boolean'
+                    },
+                    commitTxHash: {
+                        type: 'string',
+                        nullable: true
+                    },
+                    hydraVerificationKeyId: {
+                        type: 'string'
+                    }
+                },
+                required: [
+                    'id',
+                    'createdAt',
+                    'walletId',
+                    'nodeUrl',
+                    'nodeHttpUrl',
+                    'hasCommitted',
+                    'commitTxHash',
+                    'hydraVerificationKeyId'
+                ]
+            }
+        },
+        _count: {
+            type: 'object',
+            properties: {
+                Errors: {
+                    type: 'number'
+                },
+                Transactions: {
+                    type: 'number'
+                }
+            },
+            required: [
+                'Errors',
+                'Transactions'
+            ]
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'hydraRelationId',
+        'headIdentifier',
+        'status',
+        'contestationPeriod',
+        'isEnabled',
+        'openedAt',
+        'closedAt',
+        'finalizedAt',
+        'contestationDeadline',
+        'latestActivityAt',
+        'latestSnapshotNumber',
+        'reconciliationStalledTxId',
+        'reconciliationStalledReason',
+        'reconciliationStalledSince',
+        'initTxHash',
+        'closeTxHash',
+        'fanoutTxHash'
+    ]
+} as const;
+
+export const HydraLocalParticipantSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        hydraHeadId: {
+            type: 'string',
+            nullable: true
+        },
+        walletId: {
+            type: 'string'
+        },
+        cardanoVkey: {
+            type: 'string'
+        },
+        nodeUrl: {
+            type: 'string'
+        },
+        nodeHttpUrl: {
+            type: 'string'
+        },
+        hasCommitted: {
+            type: 'boolean'
+        },
+        commitTxHash: {
+            type: 'string',
+            nullable: true
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'hydraHeadId',
+        'walletId',
+        'cardanoVkey',
+        'nodeUrl',
+        'nodeHttpUrl',
+        'hasCommitted',
+        'commitTxHash'
+    ]
+} as const;
+
+export const HydraRemoteParticipantSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        hydraHeadId: {
+            type: 'string',
+            nullable: true
+        },
+        walletId: {
+            type: 'string'
+        },
+        cardanoVkey: {
+            type: 'string'
+        },
+        nodeUrl: {
+            type: 'string'
+        },
+        nodeHttpUrl: {
+            type: 'string'
+        },
+        hasCommitted: {
+            type: 'boolean'
+        },
+        commitTxHash: {
+            type: 'string',
+            nullable: true
+        },
+        hydraVerificationKeyId: {
+            type: 'string'
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'hydraHeadId',
+        'walletId',
+        'cardanoVkey',
+        'nodeUrl',
+        'nodeHttpUrl',
+        'hasCommitted',
+        'commitTxHash',
+        'hydraVerificationKeyId'
+    ]
+} as const;

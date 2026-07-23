@@ -2,7 +2,6 @@ import type { UTxO } from '@meshsdk/core';
 
 export type CommitUtxoSelection = {
 	commitUtxos: UTxO[];
-	fuelUtxos: UTxO[];
 	excludedUtxos: UTxO[];
 };
 
@@ -15,38 +14,15 @@ export function isPlainCommitUtxo(utxo: UTxO): boolean {
 }
 
 /**
- * The bundled hydra-node uses the participant key as its L1 fee wallet and
- * selects that wallet's largest UTxO as fuel. Never include an equally large
- * input in the commit: ties make the node's choice ambiguous and can produce
- * NotEnoughFuel when it selects an input the deposit already spends.
+ * Decoupled node-key model: the hydra-node funds L1 fees, collateral and change
+ * from its OWN dedicated Cardano signing key — deliberately NOT this
+ * participant's funding wallet. No wallet fuel input therefore needs to be
+ * reserved, and every plain (datum- and reference-script-free) wallet UTxO may
+ * be committed into the head.
  */
-export function selectCommitUtxosWithFuelReserve(utxos: UTxO[]): CommitUtxoSelection {
-	const plainUtxos = utxos.filter(isPlainCommitUtxo);
-	const excludedUtxos = utxos.filter((utxo) => !isPlainCommitUtxo(utxo));
-
-	if (plainUtxos.length === 0) {
-		return { commitUtxos: [], fuelUtxos: [], excludedUtxos };
-	}
-
-	const largestLovelace = plainUtxos.reduce((largest, utxo) => {
-		const lovelace = getLovelace(utxo);
-		return lovelace > largest ? lovelace : largest;
-	}, 0n);
-
+export function selectCommitUtxos(utxos: UTxO[]): CommitUtxoSelection {
 	return {
-		commitUtxos: plainUtxos.filter((utxo) => getLovelace(utxo) < largestLovelace),
-		fuelUtxos: plainUtxos.filter((utxo) => getLovelace(utxo) === largestLovelace),
-		excludedUtxos,
+		commitUtxos: utxos.filter(isPlainCommitUtxo),
+		excludedUtxos: utxos.filter((utxo) => !isPlainCommitUtxo(utxo)),
 	};
-}
-
-function getLovelace(utxo: UTxO): bigint {
-	const quantity = utxo.output.amount.find((asset) => asset.unit === 'lovelace')?.quantity ?? '0';
-	try {
-		return BigInt(quantity);
-	} catch {
-		throw new Error(
-			`Invalid lovelace quantity ${JSON.stringify(quantity)} on ${utxo.input.txHash}#${utxo.input.outputIndex}`,
-		);
-	}
 }
