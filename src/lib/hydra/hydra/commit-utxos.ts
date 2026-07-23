@@ -59,3 +59,42 @@ export function selectCommitUtxos(utxos: UTxO[], filter: CommitUtxoFilter = 'all
 	}
 	return { commitUtxos, excludedUtxos };
 }
+
+function unitAmount(utxo: UTxO, unit: string): bigint {
+	const target = unit.toLowerCase();
+	let total = 0n;
+	for (const asset of utxo.output.amount) {
+		if (asset.unit.toLowerCase() === target) total += BigInt(asset.quantity);
+	}
+	return total;
+}
+
+/**
+ * Select the MINIMAL set of matching plain UTxOs whose combined `target.unit`
+ * amount reaches `target.amount` (largest-first, so the fewest inputs are
+ * committed). Used to bound an automatic top-up to roughly its target: because
+ * Hydra commits whole UTxOs the committed amount is >= the target, never split.
+ * If the wallet cannot reach the target, every matching UTxO is committed (best
+ * effort). Non-matching and unused matching UTxOs are returned as excluded.
+ */
+export function selectCommitUtxosUpToTarget(
+	utxos: UTxO[],
+	filter: CommitUtxoFilter,
+	target: { unit: string; amount: bigint },
+): CommitUtxoSelection {
+	const { commitUtxos: matching, excludedUtxos } = selectCommitUtxos(utxos, filter);
+	const sorted = [...matching].sort((a, b) => {
+		const diff = unitAmount(b, target.unit) - unitAmount(a, target.unit);
+		return diff > 0n ? 1 : diff < 0n ? -1 : 0;
+	});
+
+	const commitUtxos: UTxO[] = [];
+	let accumulated = 0n;
+	for (const utxo of sorted) {
+		if (accumulated >= target.amount) break;
+		commitUtxos.push(utxo);
+		accumulated += unitAmount(utxo, target.unit);
+	}
+	const chosen = new Set(commitUtxos);
+	return { commitUtxos, excludedUtxos: [...excludedUtxos, ...matching.filter((utxo) => !chosen.has(utxo))] };
+}

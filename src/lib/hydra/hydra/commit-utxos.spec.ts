@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import type { Asset, UTxO } from '@meshsdk/core';
-import { isPlainCommitUtxo, selectCommitUtxos } from './commit-utxos';
+import { isPlainCommitUtxo, selectCommitUtxos, selectCommitUtxosUpToTarget } from './commit-utxos';
 
 function utxo(index: number, lovelace: string, output: Partial<UTxO['output']> = {}): UTxO {
 	const amount: Asset[] = [{ unit: 'lovelace', quantity: lovelace }];
@@ -101,5 +101,73 @@ describe('selectCommitUtxos', () => {
 		it('all (default) commits both', () => {
 			expect(selectCommitUtxos([adaOnly, withToken], 'all').commitUtxos).toEqual([adaOnly, withToken]);
 		});
+	});
+});
+
+describe('selectCommitUtxosUpToTarget', () => {
+	const target = (amount: bigint) => ({ unit: 'lovelace', amount });
+
+	it('commits the minimal largest-first set reaching the target', () => {
+		const small = utxo(0, '10000000');
+		const medium = utxo(1, '20000000');
+		const large = utxo(2, '100000000');
+
+		const result = selectCommitUtxosUpToTarget([small, medium, large], 'all', target(30_000_000n));
+
+		// large (100M) alone already reaches 30M
+		expect(result.commitUtxos).toEqual([large]);
+		expect(result.excludedUtxos).toEqual(expect.arrayContaining([small, medium]));
+	});
+
+	it('accumulates multiple UTxOs when one is not enough', () => {
+		const a = utxo(0, '10000000');
+		const b = utxo(1, '9000000');
+		const c = utxo(2, '8000000');
+
+		const result = selectCommitUtxosUpToTarget([a, b, c], 'all', target(18_000_000n));
+
+		// 10M + 9M = 19M >= 18M
+		expect(result.commitUtxos).toEqual([a, b]);
+	});
+
+	it('commits everything matching (best effort) when the target is unreachable', () => {
+		const a = utxo(0, '10000000');
+		const b = utxo(1, '5000000');
+
+		const result = selectCommitUtxosUpToTarget([a, b], 'all', target(1_000_000_000n));
+
+		expect(result.commitUtxos).toEqual(expect.arrayContaining([a, b]));
+		expect(result.commitUtxos).toHaveLength(2);
+	});
+
+	it('bounds by a token unit and excludes non-matching UTxOs', () => {
+		const USDM = 'bb'.repeat(28) + '0014df10';
+		const adaOnly = utxo(0, '10000000');
+		const tokenA: UTxO = {
+			input: { txHash: 'tok-a', outputIndex: 0 },
+			output: {
+				address: 'addr_test1participant',
+				amount: [
+					{ unit: 'lovelace', quantity: '2000000' },
+					{ unit: USDM, quantity: '600' },
+				],
+			},
+		};
+		const tokenB: UTxO = {
+			input: { txHash: 'tok-b', outputIndex: 0 },
+			output: {
+				address: 'addr_test1participant',
+				amount: [
+					{ unit: 'lovelace', quantity: '2000000' },
+					{ unit: USDM, quantity: '500' },
+				],
+			},
+		};
+
+		const result = selectCommitUtxosUpToTarget([adaOnly, tokenA, tokenB], { unit: USDM }, { unit: USDM, amount: 550n });
+
+		// tokenA (600) alone reaches 550; ada-only excluded by the filter
+		expect(result.commitUtxos).toEqual([tokenA]);
+		expect(result.excludedUtxos).toEqual(expect.arrayContaining([adaOnly, tokenB]));
 	});
 });
