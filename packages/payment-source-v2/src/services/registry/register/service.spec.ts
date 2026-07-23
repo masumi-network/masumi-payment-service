@@ -1,5 +1,11 @@
 import { MeshTxBuilder } from '@meshsdk/core';
-import { Network, PaymentSourceType, PricingType, RegistryEntryType, X402PaymentScheme } from '@/generated/prisma/client';
+import {
+	Network,
+	PaymentSourceType,
+	PricingType,
+	RegistryEntryType,
+	X402PaymentScheme,
+} from '@/generated/prisma/client';
 import { parseSupportedPaymentSourcesFromMetadata } from '@/types/payment-source';
 import { buildAgentMetadata } from './service';
 

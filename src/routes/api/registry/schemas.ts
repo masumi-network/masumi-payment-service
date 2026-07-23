@@ -286,7 +286,9 @@ export const registerAgentSchemaInput = z.object({
 		.url()
 		.max(250)
 		.optional()
-		.describe('Base URL of the agent, to request interactions. Required for Standard-type agents; omit for OpenApi/X402.'),
+		.describe(
+			'Base URL of the agent, to request interactions. Required for Standard-type agents; omit for OpenApi/X402.',
+		),
 	openApiSpecUrl: z
 		.string()
 		.url()

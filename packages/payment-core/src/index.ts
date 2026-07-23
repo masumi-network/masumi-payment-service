@@ -25,10 +25,7 @@ export {
 	type SupportedPaymentSource,
 	type SupportedPaymentSourcePricing,
 } from './payment-source';
-export {
-	REGISTRY_ENTRY_ON_CHAIN_TYPE,
-	registryEntryTypeFromOnChain,
-} from './registry-entry-type';
+export { REGISTRY_ENTRY_ON_CHAIN_TYPE, registryEntryTypeFromOnChain } from './registry-entry-type';
 export { SmartContractState, smartContractStateEqualsOnChainState } from './smart-contract-state';
 export {
 	VerificationMethod,

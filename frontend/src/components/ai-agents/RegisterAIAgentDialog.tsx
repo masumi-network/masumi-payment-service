@@ -534,12 +534,8 @@ export function RegisterAIAgentDialog({
             // Endpoint descriptor is per agent type; payment is a separate axis.
             type: data.agentType,
             ...(data.agentType === 'Standard' ? { apiBaseUrl: data.apiUrl } : {}),
-            ...(data.agentType === 'OpenApi'
-              ? { openApiSpecUrl: data.openApiSpecUrl }
-              : {}),
-            ...(data.agentType === 'X402'
-              ? { x402ResourcesUrl: data.x402ResourcesUrl }
-              : {}),
+            ...(data.agentType === 'OpenApi' ? { openApiSpecUrl: data.openApiSpecUrl } : {}),
+            ...(data.agentType === 'X402' ? { x402ResourcesUrl: data.x402ResourcesUrl } : {}),
             Tags: data.tags,
             Capability: capability,
             Author: author,
