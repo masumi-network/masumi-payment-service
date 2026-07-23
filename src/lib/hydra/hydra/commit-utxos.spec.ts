@@ -69,4 +69,37 @@ describe('selectCommitUtxos', () => {
 			excludedUtxos: [datum],
 		});
 	});
+
+	describe('asset filter', () => {
+		const USDM = 'aa'.repeat(28) + '0014df10';
+		const adaOnly = utxo(0, '10000000');
+		const withToken: UTxO = {
+			input: { txHash: 'tx-1', outputIndex: 1 },
+			output: {
+				address: 'addr_test1participant',
+				amount: [
+					{ unit: 'lovelace', quantity: '5000000' },
+					{ unit: USDM, quantity: '2000000000' },
+				],
+			},
+		};
+
+		it('ada-only commits only pure-lovelace UTxOs', () => {
+			expect(selectCommitUtxos([adaOnly, withToken], 'ada-only')).toEqual({
+				commitUtxos: [adaOnly],
+				excludedUtxos: [withToken],
+			});
+		});
+
+		it('{ unit } commits only UTxOs containing that asset (case-insensitive)', () => {
+			expect(selectCommitUtxos([adaOnly, withToken], { unit: USDM.toUpperCase() })).toEqual({
+				commitUtxos: [withToken],
+				excludedUtxos: [adaOnly],
+			});
+		});
+
+		it('all (default) commits both', () => {
+			expect(selectCommitUtxos([adaOnly, withToken], 'all').commitUtxos).toEqual([adaOnly, withToken]);
+		});
+	});
 });

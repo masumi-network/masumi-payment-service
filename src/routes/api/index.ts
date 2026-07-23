@@ -120,6 +120,7 @@ import {
 	ensureHydraWalletBasePost,
 	listHydraWalletBasesGet,
 	listHeadErrorsGet,
+	topupHeadPost,
 	updateHeadPatch,
 } from './hydra';
 import {
@@ -484,6 +485,7 @@ export const apiRouter: Routing = {
 				check: { post: checkHeadNodePost },
 				init: { post: initHeadPost },
 				commit: { post: commitHeadPost },
+				topup: { post: topupHeadPost },
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
 				balance: { get: getHeadBalanceGet },

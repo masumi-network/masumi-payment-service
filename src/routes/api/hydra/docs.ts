@@ -20,6 +20,7 @@ import {
 	listHeadErrorsSchemaInput,
 	listHeadErrorsSchemaOutput,
 } from '@/routes/api/hydra/head';
+import { topupInput, topupOutput } from '@/routes/api/hydra/head/topup';
 import {
 	createLocalParticipantInput,
 	createLocalParticipantOutput,
@@ -231,6 +232,31 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			...notFound,
 			409: { description: 'Head not committable, or the local participant already committed' },
 			502: { description: 'The node returned an unsafe or invalid commit draft' },
+		},
+	});
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/head/topup',
+		summary: 'Top up additional funds into an open head. (admin access required)',
+		description:
+			"Repeatable incremental commit into an already-Open head. Commits more of the local participant's L1 wallet UTxOs (optionally filtered to ADA-only or a specific native-asset unit), reusing the same draft/validate/sign safety path as the initial commit. Each top-up is its own L1 deposit.",
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(topupInput, { headId: HEAD_ID, assetFilter: 'all' }) },
+		responses: {
+			200: successResponse('Top-up result', topupOutput, {
+				headId: HEAD_ID,
+				topupId: 'cuid_v2_auto_generated',
+				depositTxHash: 'a'.repeat(64),
+				confirmed: false,
+				committedLovelace: '10000000',
+				committedAssets: {},
+			}),
+			...unauthorized,
+			...notFound,
+			400: { description: 'No plain wallet UTxOs match the requested asset filter' },
+			409: { description: 'Head not open, initial commit missing, or a prior top-up is still pending' },
+			502: { description: 'The node returned an unsafe or invalid top-up draft' },
 		},
 	});
 	registry.registerPath({

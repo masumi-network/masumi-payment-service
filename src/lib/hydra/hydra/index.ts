@@ -1,5 +1,6 @@
 export * from './commit-submit';
 export * from './commit-draft-validation';
+export * from './commit-flow';
 export * from './commit-input-safety';
 export * from './commit-utxos';
 export * from './custom-head';

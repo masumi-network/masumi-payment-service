@@ -31278,6 +31278,142 @@
                 }
             }
         },
+        "/hydra/head/topup": {
+            "post": {
+                "summary": "Top up additional funds into an open head. (admin access required)",
+                "description": "Repeatable incremental commit into an already-Open head. Commits more of the local participant's L1 wallet UTxOs (optionally filtered to ADA-only or a specific native-asset unit), reusing the same draft/validate/sign safety path as the initial commit. Each top-up is its own L1 deposit.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "headId": {
+                                        "type": "string",
+                                        "description": "The Hydra head to top up"
+                                    },
+                                    "assetFilter": {
+                                        "type": "string",
+                                        "enum": [
+                                            "all",
+                                            "ada-only"
+                                        ],
+                                        "default": "all",
+                                        "description": "Which plain wallet UTxOs to commit: all, or ADA-only (ignored when assetUnit is set)"
+                                    },
+                                    "assetUnit": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-fA-F]{56,120}$",
+                                        "description": "Commit only UTxOs containing this native-asset unit (policyId + assetName hex)"
+                                    }
+                                },
+                                "required": [
+                                    "headId"
+                                ],
+                                "example": {
+                                    "headId": "cuid_v2_auto_generated",
+                                    "assetFilter": "all"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Top-up result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "headId": {
+                                                    "type": "string"
+                                                },
+                                                "topupId": {
+                                                    "type": "string"
+                                                },
+                                                "depositTxHash": {
+                                                    "type": "string"
+                                                },
+                                                "confirmed": {
+                                                    "type": "boolean",
+                                                    "description": "Whether the deposit is already confirmed on L1 by the independent observer"
+                                                },
+                                                "committedLovelace": {
+                                                    "type": "string"
+                                                },
+                                                "committedAssets": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "string"
+                                                    },
+                                                    "description": "Committed native-asset amounts keyed by unit"
+                                                }
+                                            },
+                                            "required": [
+                                                "headId",
+                                                "topupId",
+                                                "depositTxHash",
+                                                "confirmed",
+                                                "committedLovelace",
+                                                "committedAssets"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "headId": "cuid_v2_auto_generated",
+                                            "topupId": "cuid_v2_auto_generated",
+                                            "depositTxHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                            "confirmed": false,
+                                            "committedLovelace": "10000000",
+                                            "committedAssets": {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "No plain wallet UTxOs match the requested asset filter"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "Head not open, initial commit missing, or a prior top-up is still pending"
+                    },
+                    "502": {
+                        "description": "The node returned an unsafe or invalid top-up draft"
+                    }
+                }
+            }
+        },
         "/hydra/head/balance": {
             "get": {
                 "summary": "Read this node's own in-head balance. (admin access required)",

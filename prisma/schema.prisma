@@ -1523,6 +1523,16 @@ enum HydraErrorType {
   InvalidInput
 }
 
+/// Lifecycle of a single incremental-commit (top-up) deposit into an Open head.
+enum HydraTopupStatus {
+  /// Deposit submitted to L1; awaiting independent confirmation + head finalization.
+  Pending
+  /// Deposit confirmed on L1 by the independent observer.
+  Confirmed
+  /// Deposit was rejected/absent past its validity window; retry is safe.
+  Failed
+}
+
 /// Persistent relation between a local wallet and a remote counterparty for Hydra L2.
 /// Each agent runs their own server, so this is stored from the local agent's perspective.
 /// The local side is a HotWallet (we have the secret), the remote side is a WalletBase (public info only).
@@ -1616,6 +1626,9 @@ model HydraHead {
   /// Errors that have occurred during the head's lifecycle
   Errors HydraHeadError[]
 
+  /// Incremental-commit top-ups into this head
+  Topups HydraTopup[]
+
   /// The local participant in this head (this server's wallet + node)
   LocalParticipant HydraLocalParticipant?
 
@@ -1683,6 +1696,9 @@ model HydraLocalParticipant {
   /// Encrypted Hydra signing key (1:1)
   hydraSecretKeyId String         @unique
   HydraSecretKey   HydraSecretKey @relation(fields: [hydraSecretKeyId], references: [id], onDelete: Restrict)
+
+  /// Incremental-commit top-ups performed by this participant
+  Topups HydraTopup[]
 
   @@index([walletId])
   @@index([hasCommitted, updatedAt])
@@ -1760,6 +1776,46 @@ model HydraHeadError {
 
   @@index([hydraHeadId])
   @@index([hydraHeadId, errorAt])
+}
+
+/// A single repeatable incremental-commit (top-up) of additional funds by the
+/// local participant into an already-Open head. Distinct from the one-shot
+/// initial commit tracked on HydraLocalParticipant: each top-up is its own L1
+/// deposit with its own validity window, so a fresh row keeps double-submit
+/// reconciliation per-deposit. At most one Pending row per participant is
+/// allowed at a time (enforced by the endpoint under serializable isolation).
+model HydraTopup {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The head the funds are being topped up into.
+  hydraHeadId String
+  HydraHead   HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// The local participant performing the top-up.
+  hydraLocalParticipantId String
+  LocalParticipant        HydraLocalParticipant @relation(fields: [hydraLocalParticipantId], references: [id], onDelete: Cascade)
+
+  /// The incremental-commit deposit L1 transaction hash (64 hex).
+  depositTxHash String
+
+  /// Signed invalid-hereafter slot retained with the deposit hash. A retry is
+  /// safe only after this slot plus the rollback/indexer grace window has passed
+  /// with the hash absent from the trusted L1 observer.
+  invalidHereafterSlot BigInt
+
+  /// Lovelace committed by this top-up (sum of the committed UTxOs), for display.
+  committedLovelace BigInt
+
+  /// Committed native-asset amounts as { unit: quantityString }, for display.
+  committedAssets Json
+
+  status HydraTopupStatus @default(Pending)
+
+  @@index([hydraLocalParticipantId, status])
+  @@index([status, updatedAt])
+  @@index([hydraHeadId])
 }
 
 /// Encrypted Hydra signing key for the local participant (1:1 with HydraLocalParticipant).

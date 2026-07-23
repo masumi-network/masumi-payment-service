@@ -16,11 +16,11 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
 import { logger } from '@masumi/payment-core/logger';
 import {
-	assertHydraCommitSignedBody,
-	assertCommitDraftInputsAreNodeFunded,
 	buildHydraHttpEndpoint,
+	buildValidatedHydraCommit,
 	deriveHydraVerificationKeyCborHex,
-	HydraCommitInputSafetyError,
+	HydraCommitFlowError,
+	type ValidatedHydraCommit,
 	getHydraPlaintextHosts,
 	HydraHeadInitObservationError,
 	HydraTransactionType,
@@ -29,18 +29,15 @@ import {
 	MAX_HYDRA_WS_FRAME_BYTES,
 	normalizeHydraVerificationKeyCborHex,
 	parseHydraWebSocketProbeFrame,
-	readHydraCommitDraftInputReferences,
-	resolveHydraDepositScriptHash,
 	selectCommitUtxos,
 	validateHydraHttpUrl,
-	validateHydraCommitDraft,
 	validateHydraNodeUrls,
 	verifyHydraHeadInitOnChain,
 	withHydraHistoryDisabled,
 } from '@/lib/hydra';
-import { resolvePaymentKeyHash } from '@meshsdk/core';
 import { toPrismaJsonValue } from '@/utils/json-value';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
+import { buildHydraCommitFlowDeps } from './commit-flow-deps';
 import { getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { convertNetwork } from '@/utils/converter/network-convert';
@@ -241,7 +238,7 @@ const hydraHeadOnChainVerificationSelect = {
 } as const;
 
 /** Independently bind the DB/node head identity to its Hydra 2.3 InitTx. */
-async function verifyPersistedHydraHeadOnChain(
+export async function verifyPersistedHydraHeadOnChain(
 	headId: string,
 	options: { allowDisabled?: boolean; persist?: boolean } = {},
 ): Promise<{ headIdentifier: string; initTxHash: string }> {
@@ -1173,68 +1170,35 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				excludedUtxoCount: excludedUtxos.length,
 			});
 
-			const commitDraftTx = await hydraHead.commit(commitUtxos, null, localParticipant.walletId);
-
-			// hydra-node returns an UNSIGNED commit tx spending the wallet's L1
-			// UTxOs. A missing cborHex means the node rejected the draft (returns an
-			// error object, not a tx) — surface it instead of passing undefined to
-			// signTx (which throws an opaque "reading 'length'" TypeError).
-			if (!commitDraftTx?.cborHex) {
-				throw createHttpError(502, 'Hydra node did not return a valid commit transaction draft');
+			const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(hotWallet.PaymentSource.network));
+			if (!slotConfig) {
+				throw createHttpError(500, 'Hydra L1 slot configuration is incomplete or invalid');
 			}
 
-			// Authoritative, key-scoped wallet-input safety. A Cardano vkey witness
-			// signs EVERY input under this wallet's payment key hash — not only the
-			// UTxOs in the fetched snapshot — so the pure validator's snapshot check is
-			// not sufficient on its own. Resolve every non-committed input the untrusted
-			// draft spends against the L1 observer and refuse if any is spendable by
-			// this wallet key (see assertCommitDraftInputsAreNodeFunded).
+			// Draft → key-scoped input safety → validate → partial-sign, all against
+			// the untrusted node draft. Shared with the repeatable top-up endpoint.
+			let validatedDraft: ValidatedHydraCommit;
 			try {
-				const { inputs: draftInputs, collateral: draftCollateral } = readHydraCommitDraftInputReferences(
-					commitDraftTx.cborHex,
-				);
-				await assertCommitDraftInputsAreNodeFunded({
-					inputReferences: draftInputs,
-					collateralReferences: draftCollateral,
-					commitReferences: commitUtxos.map((utxo) => `${utxo.input.txHash}#${utxo.input.outputIndex}`),
-					walletPaymentKeyHash: vKey,
-					resolveOutput: async (inputTxHash, inputIndex) =>
-						(await blockchainProvider.fetchUTxOs(inputTxHash, inputIndex)).find(
-							(utxo) => utxo.input.outputIndex === inputIndex,
-						)?.output ?? null,
-					paymentKeyHashOf: resolvePaymentKeyHash,
-				});
-			} catch (inputSafetyError) {
-				if (inputSafetyError instanceof HydraCommitInputSafetyError) {
-					throw createHttpError(502, `Refusing unsafe Hydra commit draft: ${inputSafetyError.message}`);
-				}
-				throw createHttpError(
-					502,
-					`Refusing Hydra commit draft: could not verify funding-input ownership: ${getErrorMessage(inputSafetyError)}`,
-				);
-			}
-
-			let validatedDraft: ReturnType<typeof validateHydraCommitDraft>;
-			try {
-				const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(hotWallet.PaymentSource.network));
-				if (!slotConfig) {
-					throw new Error('Hydra L1 slot configuration is incomplete or invalid');
-				}
-				validatedDraft = validateHydraCommitDraft({
-					draft: commitDraftTx,
+				validatedDraft = await buildValidatedHydraCommit({
 					commitUtxos,
 					walletUtxos: utxos,
+					walletPaymentKeyHash: vKey,
 					expectedHeadId: verifiedHead.headIdentifier,
-					depositScriptHash: resolveHydraDepositScriptHash(),
 					slotConfig,
+					deps: buildHydraCommitFlowDeps({
+						hydraHead,
+						wallet,
+						blockchainProvider,
+						walletId: localParticipant.walletId,
+					}),
 				});
-			} catch (validationError) {
-				throw createHttpError(502, `Refusing unsafe Hydra commit draft: ${getErrorMessage(validationError)}`);
+			} catch (flowError) {
+				if (flowError instanceof HydraCommitFlowError) {
+					throw createHttpError(502, `Refusing unsafe Hydra commit draft: ${flowError.message}`);
+				}
+				throw flowError;
 			}
-
-			// Sign (partial — the draft may already carry node witnesses).
-			const signedCommitTx = await wallet.signTx(commitDraftTx.cborHex, true);
-			assertHydraCommitSignedBody(signedCommitTx, validatedDraft.txId);
+			const signedCommitTx = validatedDraft.signedCommitTx;
 			const commitTxHash = validatedDraft.txId;
 
 			// Submit the signed commit tx through the hydra-node connected to the
@@ -1526,7 +1490,7 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 
 // --- Helpers ---
 
-async function recordHeadError(
+export async function recordHeadError(
 	hydraHeadId: string,
 	headStatus: HydraHeadStatus,
 	errorType: HydraErrorType,

@@ -13244,6 +13244,76 @@ export type PostHydraHeadCommitResponses = {
 
 export type PostHydraHeadCommitResponse = PostHydraHeadCommitResponses[keyof PostHydraHeadCommitResponses];
 
+export type PostHydraHeadTopupData = {
+    body?: {
+        /**
+         * The Hydra head to top up
+         */
+        headId: string;
+        /**
+         * Which plain wallet UTxOs to commit: all, or ADA-only (ignored when assetUnit is set)
+         */
+        assetFilter?: 'all' | 'ada-only';
+        /**
+         * Commit only UTxOs containing this native-asset unit (policyId + assetName hex)
+         */
+        assetUnit?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/topup';
+};
+
+export type PostHydraHeadTopupErrors = {
+    /**
+     * No plain wallet UTxOs match the requested asset filter
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head not open, initial commit missing, or a prior top-up is still pending
+     */
+    409: unknown;
+    /**
+     * The node returned an unsafe or invalid top-up draft
+     */
+    502: unknown;
+};
+
+export type PostHydraHeadTopupResponses = {
+    /**
+     * Top-up result
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            topupId: string;
+            depositTxHash: string;
+            /**
+             * Whether the deposit is already confirmed on L1 by the independent observer
+             */
+            confirmed: boolean;
+            committedLovelace: string;
+            /**
+             * Committed native-asset amounts keyed by unit
+             */
+            committedAssets: {
+                [key: string]: string;
+            };
+        };
+    };
+};
+
+export type PostHydraHeadTopupResponse = PostHydraHeadTopupResponses[keyof PostHydraHeadTopupResponses];
+
 export type GetHydraHeadBalanceData = {
     body?: never;
     path?: never;

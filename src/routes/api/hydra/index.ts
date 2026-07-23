@@ -13,6 +13,8 @@ export {
 	fanoutHeadPost,
 } from './head';
 
+export { topupHeadPost } from './head/topup';
+
 export {
 	createLocalParticipantPost,
 	getLocalParticipantGet,
