@@ -1,5 +1,5 @@
 import { MeshTxBuilder } from '@meshsdk/core';
-import { Network, PaymentSourceType, PricingType, X402PaymentScheme } from '@/generated/prisma/client';
+import { Network, PaymentSourceType, PricingType, RegistryEntryType, X402PaymentScheme } from '@/generated/prisma/client';
 import { parseSupportedPaymentSourcesFromMetadata } from '@/types/payment-source';
 import { buildAgentMetadata } from './service';
 
@@ -24,7 +24,10 @@ describe('V2 registry metadata', () => {
 	const baseRequest = {
 		name: 'x402 Agent',
 		description: null,
+		type: RegistryEntryType.Standard,
 		apiBaseUrl: 'https://agent.example',
+		openApiSpecUrl: null,
+		x402ResourcesUrl: null,
 		ExampleOutputs: [],
 		capabilityName: null,
 		capabilityVersion: null,

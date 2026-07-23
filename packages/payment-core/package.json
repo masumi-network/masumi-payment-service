@@ -27,6 +27,7 @@
 		"./payment-source": "./src/payment-source.ts",
 		"./permissions": "./src/permissions.ts",
 		"./pre-submit-error": "./src/pre-submit-error.ts",
+		"./registry-entry-type": "./src/registry-entry-type.ts",
 		"./serializable-semaphore": "./src/serializable-semaphore.ts",
 		"./smart-contract-state": "./src/smart-contract-state.ts",
 		"./submit-error-classifier": "./src/submit-error-classifier.ts",

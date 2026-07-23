@@ -3,6 +3,7 @@ import {
 	PaymentSourceType,
 	PricingType,
 	RegistrationState,
+	RegistryEntryType,
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { atomicAmountSchema, supportedPaymentSourcesSchema } from '@/types/payment-source';
@@ -68,7 +69,21 @@ export const registryRequestOutputSchema = z
 		id: z.string().describe('Unique identifier for the registry request'),
 		name: z.string().describe('Name of the agent'),
 		description: z.string().nullable().describe('Description of the agent. Null if not provided'),
-		apiBaseUrl: z.string().describe('Base URL of the agent API for interactions'),
+		type: z
+			.nativeEnum(RegistryEntryType)
+			.describe('The agent access model. Standard for legacy/untyped entries; OpenApi or X402 otherwise'),
+		apiBaseUrl: z
+			.string()
+			.nullable()
+			.describe('Base URL of the agent API for interactions. Null for OpenApi/X402 agents'),
+		openApiSpecUrl: z
+			.string()
+			.nullable()
+			.describe('URL to the agent OpenAPI specification document. Null unless the agent is OpenApi-type'),
+		x402ResourcesUrl: z
+			.string()
+			.nullable()
+			.describe('URL to the agent x402 resource manifest JSON. Null unless the agent is X402-type'),
 		Capability: z
 			.object({
 				name: z.string().nullable().describe('Name of the AI model/capability. Null if not provided'),
@@ -215,6 +230,12 @@ export const queryRegistryCountSchemaOutput = z.object({
 
 export const registerAgentSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
+	type: z
+		.nativeEnum(RegistryEntryType)
+		.optional()
+		.describe(
+			'The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.',
+		),
 	sellingWalletVkey: z
 		.string()
 		.length(56)
@@ -260,7 +281,28 @@ export const registerAgentSchemaInput = z.object({
 		.describe('List of example outputs from the agent'),
 	Tags: z.array(z.string().max(63)).min(1).max(15).describe('Tags used in the registry metadata'),
 	name: z.string().max(250).describe('Name of the agent'),
-	apiBaseUrl: z.string().url().max(250).describe('Base URL of the agent, to request interactions'),
+	apiBaseUrl: z
+		.string()
+		.url()
+		.max(250)
+		.optional()
+		.describe('Base URL of the agent, to request interactions. Required for Standard-type agents; omit for OpenApi/X402.'),
+	openApiSpecUrl: z
+		.string()
+		.url()
+		.max(250)
+		.optional()
+		.describe(
+			'URL to the agent OpenAPI 3.1.x specification document (JSON or YAML). Required for OpenApi-type agents; omit for others.',
+		),
+	x402ResourcesUrl: z
+		.string()
+		.url()
+		.max(250)
+		.optional()
+		.describe(
+			'URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others.',
+		),
 	description: z.string().max(250).describe('Description of the agent'),
 	Capability: z
 		.object({
@@ -325,6 +367,33 @@ export const registerAgentSchemaInput = z.object({
 			organization: z.string().max(250).optional().describe('Organization of the author'),
 		})
 		.describe('Author information about the agent'),
+}).superRefine((input, ctx) => {
+	// Endpoint descriptor is per-type and mutually exclusive. Absent type ==
+	// Standard. The V1/V2 pricing rules are an orthogonal axis enforced in the
+	// route handler — payment is decoupled from the API access model.
+	const entryType = input.type ?? RegistryEntryType.Standard;
+	// [required endpoint field, the two that must be absent] per type.
+	const endpointRules: Record<
+		RegistryEntryType,
+		{ required: 'apiBaseUrl' | 'openApiSpecUrl' | 'x402ResourcesUrl'; requiredLabel: string }
+	> = {
+		[RegistryEntryType.Standard]: { required: 'apiBaseUrl', requiredLabel: 'Standard agents require apiBaseUrl' },
+		[RegistryEntryType.OpenApi]: { required: 'openApiSpecUrl', requiredLabel: 'OpenApi agents require openApiSpecUrl' },
+		[RegistryEntryType.X402]: { required: 'x402ResourcesUrl', requiredLabel: 'X402 agents require x402ResourcesUrl' },
+	};
+	const { required, requiredLabel } = endpointRules[entryType];
+	if (input[required] == null) {
+		ctx.addIssue({ code: z.ZodIssueCode.custom, path: [required], message: requiredLabel });
+	}
+	for (const field of ['apiBaseUrl', 'openApiSpecUrl', 'x402ResourcesUrl'] as const) {
+		if (field !== required && input[field] != null) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: [field],
+				message: `${field} is not valid for a ${entryType} agent; use ${required}`,
+			});
+		}
+	}
 });
 
 export const registerAgentSchemaOutput = registryRequestOutputSchema;

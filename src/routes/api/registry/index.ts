@@ -1,7 +1,7 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, PricingType, RegistrationState, RegistryEntryType } from '@/generated/prisma/client';
 import type { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
@@ -194,7 +194,10 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				data: {
 					name: input.name,
 					description: input.description,
-					apiBaseUrl: input.apiBaseUrl,
+					type: input.type ?? RegistryEntryType.Standard,
+					apiBaseUrl: input.apiBaseUrl ?? null,
+					openApiSpecUrl: input.openApiSpecUrl ?? null,
+					x402ResourcesUrl: input.x402ResourcesUrl ?? null,
 					capabilityName: input.Capability.name,
 					capabilityVersion: input.Capability.version,
 					other: input.Legal?.other,
