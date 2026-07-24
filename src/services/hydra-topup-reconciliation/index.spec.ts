@@ -41,9 +41,8 @@ let reserveAndSubmitHydraTopup: typeof import('./index').reserveAndSubmitHydraTo
 let HydraTopupReservationConflictError: typeof import('./index').HydraTopupReservationConflictError;
 
 beforeAll(async () => {
-	({ reconcilePendingHydraTopup, reserveAndSubmitHydraTopup, HydraTopupReservationConflictError } = await import(
-		'./index'
-	));
+	({ reconcilePendingHydraTopup, reserveAndSubmitHydraTopup, HydraTopupReservationConflictError } =
+		await import('./index'));
 });
 
 const DEPOSIT_TX_HASH = 'a'.repeat(64);
@@ -100,9 +99,9 @@ describe('reserveAndSubmitHydraTopup', () => {
 	it('maps a unique-index violation to a reservation conflict', async () => {
 		mockCreate.mockRejectedValue(new Error('unique'));
 		mockIsUniqueConstraintError.mockReturnValue(true);
-		await expect(
-			reserveAndSubmitHydraTopup(reservation, jest.fn<() => Promise<unknown>>()),
-		).rejects.toBeInstanceOf(HydraTopupReservationConflictError);
+		await expect(reserveAndSubmitHydraTopup(reservation, jest.fn<() => Promise<unknown>>())).rejects.toBeInstanceOf(
+			HydraTopupReservationConflictError,
+		);
 	});
 });
 
