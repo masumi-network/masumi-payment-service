@@ -89,8 +89,17 @@ export type VerifiedHydraSnapshot = {
 	version: number;
 	/** Canonical Plutus `TxOut` bytes, keyed by `tx-id#index`. */
 	outputs: Map<string, string>;
-	/** The only UTxO state committed by Hydra 2.3's accumulator. */
+	/** The only UTxO state committed by Hydra 2.3's accumulator (utxo ∪ commit ∪ decommit). */
 	outputMultiset: Map<string, number>;
+	/**
+	 * Value-multiset of this snapshot's PENDING incremental-commit deposits
+	 * (`utxoToCommit`). Signature-authenticated (part of the accumulator) and
+	 * L1-backed; the transition check treats these as legitimate injections so a
+	 * topped-up head still replays. Empty when no commit is pending.
+	 */
+	committedMultiset: Map<string, number>;
+	/** Value-multiset of this snapshot's pending decommits (`utxoToDecommit`). */
+	decommitMultiset: Map<string, number>;
 };
 
 export type VerifiedHydraFanoutReference = {
@@ -671,7 +680,19 @@ export function verifyHydraSnapshot(
 		version: frame.snapshot.version,
 		outputs,
 		outputMultiset: outputMultiset(outputs.values()),
+		committedMultiset: partitionOutputMultiset(frame.snapshot.utxoToCommit),
+		decommitMultiset: partitionOutputMultiset(frame.snapshot.utxoToDecommit),
 	};
+}
+
+/** Value-multiset of one signed snapshot partition (utxoToCommit/utxoToDecommit). */
+function partitionOutputMultiset(partition: SnapshotUtxo | null | undefined): Map<string, number> {
+	if (!partition) return new Map();
+	const serialized: string[] = [];
+	for (const output of Object.values(partition)) {
+		serialized.push(serializeHydraSnapshotOutput(output));
+	}
+	return outputMultiset(serialized);
 }
 
 /**
@@ -725,18 +746,38 @@ export function doesHydraTransactionTransitionReachSnapshot(
 		}
 
 		const survivingCreated = outputMultiset(createdOutputs.values());
+		// Incremental commits inject value into the head and decommits remove it,
+		// both OUTSIDE the confirmed-tx list. Each is authenticated by the
+		// multi-signature over the accumulator (and, for commits, an on-chain L1
+		// deposit), so a snapshot's own pending-commit outputs are legitimate
+		// injections and the previous snapshot's pending-decommit outputs are
+		// legitimate removals. Value still cannot appear or vanish through the
+		// (unauthenticated) confirmed-tx list — that path stays bound by strict
+		// created/consumed conservation and the externalInputCount tie below.
+		const injectionAllowance = current.committedMultiset;
+		const removalAllowance = previous.decommitMultiset;
 		const allOutputs = new Set([
 			...previous.outputMultiset.keys(),
 			...current.outputMultiset.keys(),
 			...survivingCreated.keys(),
+			...injectionAllowance.keys(),
+			...removalAllowance.keys(),
 		]);
 		let derivedConsumedOutputCount = 0;
 		for (const output of allOutputs) {
-			const consumed =
-				(previous.outputMultiset.get(output) ?? 0) +
-				(survivingCreated.get(output) ?? 0) -
-				(current.outputMultiset.get(output) ?? 0);
-			if (!Number.isSafeInteger(consumed) || consumed < 0 || consumed > (previous.outputMultiset.get(output) ?? 0)) {
+			const previousCount = previous.outputMultiset.get(output) ?? 0;
+			const createdCount = survivingCreated.get(output) ?? 0;
+			const currentCount = current.outputMultiset.get(output) ?? 0;
+			// Any surplus of `current` beyond what the previous state plus confirmed-tx
+			// outputs can supply must be an authenticated incremental-commit deposit.
+			const injectionNeeded = Math.max(0, currentCount - previousCount - createdCount);
+			if (injectionNeeded > (injectionAllowance.get(output) ?? 0)) return false;
+			// The remaining shortfall is confirmed-tx consumption from the previous
+			// state, less any authenticated decommit removal (not a transaction input,
+			// so it must not count toward externalInputCount).
+			let consumed = previousCount + createdCount + injectionNeeded - currentCount;
+			consumed -= Math.min(consumed, removalAllowance.get(output) ?? 0);
+			if (!Number.isSafeInteger(consumed) || consumed < 0 || consumed > previousCount) {
 				return false;
 			}
 			derivedConsumedOutputCount += consumed;

@@ -186,6 +186,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 				[`${txId}#0`, nextOutput],
 			]),
 			outputMultiset: outputMultiset([otherOutput, nextOutput]),
+			committedMultiset: new Map<string, number>(),
+			decommitMultiset: new Map<string, number>(),
 		};
 		const honestMapping = {
 			headId: HEAD_ID,
@@ -196,6 +198,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 				[otherReference, otherOutput],
 			]),
 			outputMultiset: outputMultiset([priorOutput, otherOutput]),
+			committedMultiset: new Map<string, number>(),
+			decommitMultiset: new Map<string, number>(),
 		};
 		const permutedMapping = {
 			...honestMapping,
@@ -209,6 +213,75 @@ describe('Hydra 2.3 snapshot verification', () => {
 		expect(doesHydraTransactionTransitionReachSnapshot(permutedMapping, current, confirmed)).toBe(true);
 	});
 
+	it('accepts an incremental-commit transition (top-up absorbed + new deposit pending)', () => {
+		// Ground truth from a live head: snapshot N has the initial deposit pending
+		// in utxoToCommit; snapshot N+1 absorbs it into utxo AND records a new
+		// top-up deposit pending in utxoToCommit. No confirmed L2 txs.
+		const deposit = serializeHydraSnapshotOutput(output({ lovelace: 5_000_000 }));
+		const newDeposit = serializeHydraSnapshotOutput(output({ lovelace: 40_000_000 }));
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 1,
+			version: 0,
+			outputs: new Map([[`${'aa'.repeat(32)}#0`, deposit]]),
+			outputMultiset: new Map([[deposit, 1]]), // combined = the pending deposit
+			committedMultiset: new Map([[deposit, 1]]), // it is pending in utxoToCommit
+			decommitMultiset: new Map<string, number>(),
+		};
+		const current = {
+			headId: HEAD_ID,
+			number: 2,
+			version: 1,
+			outputs: new Map([
+				[`${'aa'.repeat(32)}#0`, deposit],
+				[`${'bb'.repeat(32)}#0`, newDeposit],
+			]),
+			outputMultiset: new Map([
+				[deposit, 1], // now absorbed into utxo (still in the combined set)
+				[newDeposit, 1], // new top-up deposit, pending
+			]),
+			committedMultiset: new Map([[newDeposit, 1]]), // the new deposit is what's pending now
+			decommitMultiset: new Map<string, number>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(true);
+	});
+
+	it('rejects an injected output not authenticated by the snapshot commit partition', () => {
+		// Same transition, but the new output is NOT declared in utxoToCommit — i.e.
+		// value that would appear from nowhere. The guard must still fail closed.
+		const deposit = serializeHydraSnapshotOutput(output({ lovelace: 5_000_000 }));
+		const forged = serializeHydraSnapshotOutput(output({ lovelace: 40_000_000 }));
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 1,
+			version: 0,
+			outputs: new Map([[`${'aa'.repeat(32)}#0`, deposit]]),
+			outputMultiset: new Map([[deposit, 1]]),
+			committedMultiset: new Map([[deposit, 1]]),
+			decommitMultiset: new Map<string, number>(),
+		};
+		const current = {
+			headId: HEAD_ID,
+			number: 2,
+			version: 1,
+			outputs: new Map([
+				[`${'aa'.repeat(32)}#0`, deposit],
+				[`${'bb'.repeat(32)}#0`, forged],
+			]),
+			outputMultiset: new Map([
+				[deposit, 1],
+				[forged, 1],
+			]),
+			committedMultiset: new Map<string, number>(), // forged output is NOT authenticated
+			decommitMultiset: new Map<string, number>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(false);
+	});
+
 	it('maps a unique producer-CBOR output to its exact observed L1 fanout reference', () => {
 		const hydraReference = `${'11'.repeat(32)}#3`;
 		const fanoutReference = `${'22'.repeat(32)}#7`;
@@ -219,6 +292,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 			version: 0,
 			outputs: new Map([[hydraReference, serializedOutput]]),
 			outputMultiset: new Map([[serializedOutput, 1]]),
+			committedMultiset: new Map<string, number>(),
+			decommitMultiset: new Map<string, number>(),
 		};
 
 		expect(
@@ -252,6 +327,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 				[firstOutput, 1],
 				[secondOutput, 1],
 			]),
+			committedMultiset: new Map<string, number>(),
+			decommitMultiset: new Map<string, number>(),
 		};
 		const fanoutOutputs = new Map([
 			[firstFanoutReference, firstOutput],
@@ -282,6 +359,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 				[serializedOutput, 1],
 				[otherOutput, 1],
 			]),
+			committedMultiset: new Map<string, number>(),
+			decommitMultiset: new Map<string, number>(),
 		};
 
 		expect(

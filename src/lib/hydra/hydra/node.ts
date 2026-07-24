@@ -688,6 +688,10 @@ export class HydraNode extends EventEmitter {
 			version: 0,
 			outputs,
 			outputMultiset,
+			// HeadIsOpen carries only the collected ledger UTxO; there is no pending
+			// incremental commit/decommit at open.
+			committedMultiset: new Map(),
+			decommitMultiset: new Map(),
 		};
 	}
 
