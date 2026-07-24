@@ -79,6 +79,7 @@ export default function AIAgentsPage() {
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
 
   const [activeTab, setActiveTab] = useState('All');
+  const [typeFilter, setTypeFilter] = useState<'All' | 'Standard' | 'OpenApi' | 'X402'>('All');
 
   const filterStatus = useMemo(() => {
     if (activeTab === 'All') return undefined;
@@ -132,35 +133,44 @@ export default function AIAgentsPage() {
   // Mirrors the backend Prisma OR filter in src/routes/api/registry/index.ts
   // to avoid items appearing/disappearing when the server responds.
   const displayAgents = useMemo(() => {
+    // Type filter is a plain client-side facet (not a separate tab): absent
+    // type is Standard, matching the on-chain default.
+    const byType = (list: typeof agents) =>
+      typeFilter === 'All'
+        ? list
+        : list.filter((agent) => (agent.type ?? 'Standard') === typeFilter);
+
     const query = searchQuery.toLowerCase().trim();
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
-      return agents;
+      return byType(agents);
 
     const amountRange = parseAmountSearchRange(query);
 
-    return agents.filter((agent) => {
-      const pricing = getPrimaryCardanoPricing(agent);
-      if (agent.name?.toLowerCase().includes(query)) return true;
-      if (agent.description?.toLowerCase().includes(query)) return true;
-      // Backend uses hasSome (exact match against tag array), not partial
-      if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
-      if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (agent.state?.toLowerCase().includes(query)) return true;
-      if (pricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
-      if (pricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
-      if (
-        amountRange &&
-        pricing?.pricingType === 'Fixed' &&
-        pricing.Pricing.some((p) => {
-          const amt = parseAmountToBigInt(p.amount);
-          return amt != null && amt >= amountRange.min && amt <= amountRange.max;
-        })
-      )
-        return true;
-      return false;
-    });
-  }, [agents, searchQuery, debouncedSearchQuery, isPlaceholderData]);
+    return byType(
+      agents.filter((agent) => {
+        const pricing = getPrimaryCardanoPricing(agent);
+        if (agent.name?.toLowerCase().includes(query)) return true;
+        if (agent.description?.toLowerCase().includes(query)) return true;
+        // Backend uses hasSome (exact match against tag array), not partial
+        if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
+        if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+        if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+        if (agent.state?.toLowerCase().includes(query)) return true;
+        if (pricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
+        if (pricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
+        if (
+          amountRange &&
+          pricing?.pricingType === 'Fixed' &&
+          pricing.Pricing.some((p) => {
+            const amt = parseAmountToBigInt(p.amount);
+            return amt != null && amt >= amountRange.min && amt <= amountRange.max;
+          })
+        )
+          return true;
+        return false;
+      }),
+    );
+  }, [agents, searchQuery, debouncedSearchQuery, isPlaceholderData, typeFilter]);
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
@@ -474,6 +484,19 @@ export default function AIAgentsPage() {
                   isLoading={isSearchPending && !!searchQuery}
                 />
               </div>
+              <select
+                value={typeFilter}
+                onChange={(event) =>
+                  setTypeFilter(event.target.value as 'All' | 'Standard' | 'OpenApi' | 'X402')
+                }
+                className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label="Filter agents by type"
+              >
+                <option value="All">All types</option>
+                <option value="Standard">Standard</option>
+                <option value="OpenApi">OpenAPI</option>
+                <option value="X402">x402</option>
+              </select>
             </div>
 
             {truncated && !isLoading && (

@@ -298,7 +298,29 @@ model RegistryRequest {
   deregistrationHotWalletId      String?
   sendFundingLovelace            BigInt?
   name                           String
-  apiBaseUrl                     String
+  // Discriminates the agent access model advertised on chain. Standard is the
+  // implicit legacy type: rows created before this column existed, and any
+  // on-chain metadata with no `type` field, resolve to Standard. OpenApi and
+  // X402 add alternative endpoint descriptors (openApiSpecUrl / X402Resources)
+  // while sharing every other registry field.
+  type                           RegistryEntryType        @default(Standard)
+  // Base URL of the agent API. Required for Standard entries; null for OpenApi
+  // (see openApiSpecUrl) and X402 (see X402Resources) entries which describe
+  // their endpoints differently. Enforced per-type at the API boundary.
+  apiBaseUrl                     String?
+  // URL of the agent's OpenAPI 3.1.x specification document (JSON or YAML).
+  // Set only for OpenApi-type entries.
+  openApiSpecUrl                 String?
+  // URL of the agent's self-hosted x402 resource manifest (e.g. the emerging
+  // /.well-known/x402.json convention): a JSON document listing this agent's
+  // resources, each { resource(url), type(http|mcp), inputSchema?, outputSchema? }
+  // aligned to the x402 Bazaar DiscoveryResource shape but WITHOUT per-resource
+  // pricing (payment is agent-level via SupportedPaymentSources). x402 has no
+  // native agent grouping, so this declared set IS the grouping. Only the URL is
+  // stored on chain (a manifest can list far more resources than tx-size limits
+  // would allow inline); the indexer fetches + parses it into Masumi's catalog
+  // grouped by agent. Set only for X402-type entries.
+  x402ResourcesUrl               String?
   capabilityName                 String?
   capabilityVersion              String?
   description                    String?
@@ -1074,6 +1096,17 @@ enum PricingType {
   Fixed
   Free
   Dynamic
+}
+
+/// Agent access model advertised in the registry metadata. Standard is the
+/// implicit default: absent on-chain `type` and pre-existing rows map here.
+/// The on-chain string values differ from these identifiers (Standard emits no
+/// `type`; OpenApi emits "OpenAPI"; X402 emits "x402V1") — the mapping lives in
+/// the metadata builder/parser, not the DB.
+enum RegistryEntryType {
+  Standard
+  OpenApi
+  X402
 }
 
 enum PaymentErrorType {

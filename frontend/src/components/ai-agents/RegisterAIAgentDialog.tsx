@@ -219,7 +219,10 @@ export function RegisterAIAgentDialog({
         pricingType: 'Free' as const,
       };
       reset({
-        apiUrl: editingAgent.apiBaseUrl,
+        agentType: editingAgent.type ?? 'Standard',
+        apiUrl: editingAgent.apiBaseUrl ?? '',
+        openApiSpecUrl: editingAgent.openApiSpecUrl ?? '',
+        x402ResourcesUrl: editingAgent.x402ResourcesUrl ?? '',
         name: editingAgent.name,
         description: editingAgent.description ?? '',
         // Selling wallet is fixed in update mode — the asset's managed
@@ -454,7 +457,9 @@ export function RegisterAIAgentDialog({
               sendFundingLovelace,
               name: data.name,
               description: data.description,
-              apiBaseUrl: data.apiUrl,
+              // Update route is Standard-only for now (type-aware update is a
+              // backend follow-up); apiUrl is populated for existing entries.
+              apiBaseUrl: data.apiUrl || undefined,
               Tags: data.tags,
               Capability: capability,
               Author: author,
@@ -526,7 +531,11 @@ export function RegisterAIAgentDialog({
             sendFundingLovelace,
             name: data.name,
             description: data.description,
-            apiBaseUrl: data.apiUrl,
+            // Endpoint descriptor is per agent type; payment is a separate axis.
+            type: data.agentType,
+            ...(data.agentType === 'Standard' ? { apiBaseUrl: data.apiUrl } : {}),
+            ...(data.agentType === 'OpenApi' ? { openApiSpecUrl: data.openApiSpecUrl } : {}),
+            ...(data.agentType === 'X402' ? { x402ResourcesUrl: data.x402ResourcesUrl } : {}),
             Tags: data.tags,
             Capability: capability,
             Author: author,
@@ -613,6 +622,7 @@ export function RegisterAIAgentDialog({
             errors={errors}
             watch={watch}
             setValue={setValue}
+            typeLocked={isUpdateMode}
           />
 
           <RegisterAgentWalletSection
