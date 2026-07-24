@@ -32,6 +32,10 @@ import {
 } from './hydra-datum-sync';
 import { parseHydraTransactionEvidence } from './hydra-transaction-evidence';
 import { decrypt } from '@/utils/security/encryption';
+import WebSocket, { type RawData } from 'ws';
+import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
+import { convertNetwork } from '@/utils/converter/network-convert';
+import { getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 
 interface ManagedHead {
 	head: CustomHydraHead;
@@ -153,6 +157,7 @@ export class HydraConnectionManager {
 	private _headStatusQueues: Map<string, Promise<void>> = new Map();
 	private _statusPersistenceQuarantine: Map<string, CustomHydraHead> = new Map();
 	private _commandRevokedHeads: Map<string, CustomHydraHead> = new Map();
+	private _headClockRefreshers: Map<string, ReturnType<typeof setInterval>> = new Map();
 
 	async initialize(): Promise<void> {
 		const enabledHeads = await prisma.hydraHead.findMany({
@@ -421,6 +426,107 @@ export class HydraConnectionManager {
 			throw error;
 		}
 		logger.info(`[HydraConnectionManager] Connected to head ${head.id}` + ` via local node at ${nodeUrls.httpUrl}`);
+		// Hydra 2.3 does not stream Tick/SyncedStatusReport over the API on a quiet
+		// head, so the streamed head clock would only be set at connect and then go
+		// stale — permanently fail-closing initial funds-lock. Keep it fresh by
+		// periodically probing the node's Greetings currentSlot.
+		this.startHeadClockRefresh(
+			head.id,
+			hydraHead.mainNode,
+			nodeUrls.wsUrl,
+			configuredHead.headIdentifier,
+			relation.network,
+		);
+	}
+
+	private static readonly HEAD_CLOCK_REFRESH_INTERVAL_MS = 25_000;
+
+	/**
+	 * Periodically refresh a connected head's clock from a fresh Greetings
+	 * `currentSlot` (converted to chain time via the L1 slot config). This is a
+	 * short-lived probe socket, independent of the main transport, so it never
+	 * disturbs history replay or the live session. No-op when the head's L1 slot
+	 * config is unavailable.
+	 */
+	private startHeadClockRefresh(
+		hydraHeadId: string,
+		node: HydraNode,
+		wsUrl: string,
+		expectedHeadId: string | null,
+		network: Network,
+	): void {
+		this.stopHeadClockRefresh(hydraHeadId);
+		const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(network));
+		if (!slotConfig) return;
+		const refresh = async (): Promise<void> => {
+			try {
+				const currentSlot = await this.probeHeadCurrentSlot(wsUrl, expectedHeadId);
+				if (currentSlot == null) return;
+				const chainTimeMs = slotConfig.zeroTime + (currentSlot - slotConfig.zeroSlot) * slotConfig.slotLength;
+				node.applyObservedHeadClock(chainTimeMs, currentSlot);
+			} catch {
+				// Probe failures are non-fatal; the next tick retries and the lock
+				// stays fail-closed until a fresh clock lands.
+			}
+		};
+		void refresh();
+		const timer = setInterval(() => void refresh(), HydraConnectionManager.HEAD_CLOCK_REFRESH_INTERVAL_MS);
+		timer.unref?.();
+		this._headClockRefreshers.set(hydraHeadId, timer);
+	}
+
+	private stopHeadClockRefresh(hydraHeadId: string): void {
+		const timer = this._headClockRefreshers.get(hydraHeadId);
+		if (timer) {
+			clearInterval(timer);
+			this._headClockRefreshers.delete(hydraHeadId);
+		}
+	}
+
+	/**
+	 * Open a short-lived probe socket and read the head's current L1 slot from the
+	 * Greetings frame the node sends on connect. Returns null if the head does not
+	 * match, the node is not synced, or the probe times out.
+	 */
+	private probeHeadCurrentSlot(wsUrl: string, expectedHeadId: string | null): Promise<number | null> {
+		return new Promise<number | null>((resolve) => {
+			let settled = false;
+			const finish = (value: number | null) => {
+				if (settled) return;
+				settled = true;
+				try {
+					socket.close();
+				} catch {
+					// ignore
+				}
+				resolve(value);
+			};
+			const socket = new WebSocket(`${wsUrl}?history=no`);
+			const timeout = setTimeout(() => finish(null), 8000);
+			timeout.unref?.();
+			socket.on('message', (data: RawData) => {
+				const text = Buffer.isBuffer(data)
+					? data.toString('utf8')
+					: Array.isArray(data)
+						? Buffer.concat(data).toString('utf8')
+						: Buffer.from(data).toString('utf8');
+				let parsed: unknown;
+				try {
+					parsed = JSON.parse(text);
+				} catch {
+					return; // keep waiting for a valid Greetings until the timeout
+				}
+				if (!isPlainObject(parsed)) return;
+				if (getOwnValue(parsed, 'tag') !== 'Greetings') return;
+				const headId = getOwnValue(parsed, 'hydraHeadId') ?? getOwnValue(parsed, 'headId');
+				if (expectedHeadId != null && headId !== expectedHeadId) return finish(null);
+				if (getOwnValue(parsed, 'chainSyncedStatus') !== 'InSync') return finish(null);
+				const slot = getOwnValue(parsed, 'currentSlot');
+				finish(typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= 0 ? slot : null);
+			});
+			socket.on('error', () => finish(null));
+			socket.on('close', () => finish(null));
+		});
 	}
 
 	async disconnect(hydraHeadId: string): Promise<void> {
@@ -429,6 +535,7 @@ export class HydraConnectionManager {
 		// generation bump is followed by the exact-instance command fence below.
 		this._transportGeneration.set(hydraHeadId, (this._transportGeneration.get(hydraHeadId) ?? 0) + 1);
 		this.clearReconnect(hydraHeadId);
+		this.stopHeadClockRefresh(hydraHeadId);
 		const managed = this._heads.get(hydraHeadId);
 		if (!managed) {
 			return;
@@ -539,6 +646,9 @@ export class HydraConnectionManager {
 		logger.info('[HydraConnectionManager] Shutting down all connections');
 		for (const [headId] of this._heads) {
 			await this.disconnect(headId);
+		}
+		for (const [headId] of this._headClockRefreshers) {
+			this.stopHeadClockRefresh(headId);
 		}
 	}
 

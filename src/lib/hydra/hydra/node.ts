@@ -1017,6 +1017,30 @@ export class HydraNode extends EventEmitter {
 		return this._headClock;
 	}
 
+	/**
+	 * Apply a head clock observed out-of-band — used by the connection manager's
+	 * periodic Greetings `currentSlot` probe. Hydra 2.3 does NOT stream
+	 * Tick/SyncedStatusReport over the API on a quiet head, so without this the
+	 * cached clock would only ever be set at connect and go stale within
+	 * L2_LOCK_HEAD_CLOCK_MAX_AGE_MS, making initial funds-lock permanently
+	 * fail-closed. The caller converts an authenticated, head-reported slot to
+	 * chain time; the same plausibility bounds as the streamed path apply, and
+	 * `receivedAtMs` stays the real observation time so the freshness guard is not
+	 * weakened.
+	 */
+	applyObservedHeadClock(chainTimeMs: number, chainSlot: number): void {
+		if (
+			!Number.isSafeInteger(chainTimeMs) ||
+			chainTimeMs < EARLIEST_PLAUSIBLE_HEAD_CLOCK_MS ||
+			chainTimeMs > Date.now() + MAX_HEAD_CLOCK_FUTURE_SKEW_MS ||
+			!Number.isSafeInteger(chainSlot) ||
+			chainSlot < 0
+		) {
+			return;
+		}
+		this._headClock = { chainTimeMs, chainSlot, receivedAtMs: Date.now() };
+	}
+
 	get confirmedTransactionHistoryReady(): boolean {
 		return this._unsupportedPersistenceRotationError == null && this._historyReplayComplete;
 	}

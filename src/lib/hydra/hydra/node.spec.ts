@@ -1752,5 +1752,38 @@ describe('HydraNode', () => {
 			node.connect();
 			expect(node.headClock).toBeUndefined();
 		});
+
+		describe('applyObservedHeadClock()', () => {
+			it('sets a fresh clock from an authenticated probed slot', () => {
+				const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+				const chainTimeMs = Date.parse('2026-07-08T07:19:17Z');
+				node.applyObservedHeadClock(chainTimeMs, 127811957);
+				expect(node.headClock).toBeDefined();
+				expect(node.headClock!.chainTimeMs).toBe(chainTimeMs);
+				expect(node.headClock!.chainSlot).toBe(127811957);
+				expect(node.headClock!.receivedAtMs).toBeGreaterThan(0);
+			});
+
+			it('rejects an implausibly future-skewed chain time', () => {
+				const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+				node.applyObservedHeadClock(Date.now() + 60 * 60 * 1000, 1);
+				expect(node.headClock).toBeUndefined();
+			});
+
+			it('rejects a chain time before the earliest plausible bound', () => {
+				const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+				node.applyObservedHeadClock(Date.parse('2000-01-01T00:00:00Z'), 1);
+				expect(node.headClock).toBeUndefined();
+			});
+
+			it('rejects a negative or non-integer slot', () => {
+				const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+				const chainTimeMs = Date.parse('2026-07-08T07:19:17Z');
+				node.applyObservedHeadClock(chainTimeMs, -1);
+				expect(node.headClock).toBeUndefined();
+				node.applyObservedHeadClock(chainTimeMs, 1.5);
+				expect(node.headClock).toBeUndefined();
+			});
+		});
 	});
 });
