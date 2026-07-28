@@ -14,8 +14,6 @@ import { SidebarProvider } from '@/lib/contexts/SidebarContext';
 import { QueryProvider } from '@/lib/contexts/QueryProvider';
 import { AgentDetailsDialogProvider } from '@/lib/contexts/AgentDetailsDialogContext';
 import { Spinner } from '@/components/ui/spinner';
-import { Header } from '@/components/Header';
-import { Footer } from '@/components/Footer';
 import { RouteProgressBar } from '@/components/layout/RouteProgressBar';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -64,6 +62,7 @@ function ToastWrapper() {
 function ThemedApp({ Component, pageProps, router }: AppProps) {
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [isMobileWarningDismissed, setIsMobileWarningDismissed] = useState(false);
   const [mounted, setMounted] = useState(false);
   const {
     apiClient,
@@ -292,30 +291,38 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     );
   }
 
-  if (isMobile) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <Header />
-        <div className="flex-1 flex items-center justify-center bg-background text-foreground">
-          <div className="text-center space-y-4 p-4">
-            <div className="text-lg text-muted-foreground">
-              Please use a desktop device to <br /> access the Masumi Admin Interface
-            </div>
-            <Button variant="muted">
-              <Link href="https://docs.masumi.io" target="_blank" rel="noopener noreferrer">
-                Learn more
-              </Link>
-            </Button>
-          </div>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
-
   return (
     <>
       <RouteProgressBar />
+      {isMobile && !isMobileWarningDismissed && (
+        <div
+          role="status"
+          className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100"
+        >
+          <div className="flex-1">
+            The admin interface is designed for desktop. On a narrow screen some tables and dialogs
+            may be hard to use.{' '}
+            <Link
+              href="https://docs.masumi.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              Learn more
+            </Link>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-label="Dismiss small screen warning"
+            className="shrink-0 -my-1 text-amber-950/70 hover:bg-amber-100 hover:text-amber-950 dark:text-amber-100/70 dark:hover:bg-amber-900/30 dark:hover:text-amber-100"
+            onClick={() => setIsMobileWarningDismissed(true)}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
       {apiKey ? (
         <AgentDetailsDialogProvider>
           <Component {...pageProps} />

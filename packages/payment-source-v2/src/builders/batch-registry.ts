@@ -15,6 +15,7 @@ import { SERVICE_CONSTANTS } from '@masumi/payment-core/config';
 import { logger } from '@masumi/payment-core/logger';
 import { getCachedChainProtocolParameters } from '@/utils/mesh-cost-model-sync';
 import { syncMeshCostModelsFromChainV2 } from '../utils/mesh-cost-model-sync';
+import { nativeAssetCount } from './batch-helpers';
 import { deriveTotalCollateral, lovelaceFromUtxo, WALLET_SPLITTER_LOVELACE } from './batch-helpers';
 
 // V2 mint contract `Action` enum: MintAction=0, UpdateAction=1, BurnAction=2.
@@ -269,7 +270,12 @@ export async function generateRegistryBatchMintTransaction(
 	// budget. `exUnits` is either the default (first pass) or the chain-
 	// evaluated MINT budget from `evaluateTx` (subsequent calls). See
 	// `deriveTotalCollateral` for the math.
-	const totalCollateral = deriveTotalCollateral([exUnits], protocolParameters, lovelaceFromUtxo(collateralUtxo));
+	const totalCollateral = deriveTotalCollateral(
+		[exUnits],
+		protocolParameters,
+		lovelaceFromUtxo(collateralUtxo),
+		nativeAssetCount(collateralUtxo),
+	);
 	txBuilder
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral(totalCollateral);
@@ -445,7 +451,12 @@ async function buildBatchDeregisterTx(
 
 	// Conway phase-1 collateral derived from the shared BurnAction MINT-tag
 	// budget. See `deriveTotalCollateral` for the math.
-	const totalCollateral = deriveTotalCollateral([exUnits], protocolParameters, lovelaceFromUtxo(collateralUtxo));
+	const totalCollateral = deriveTotalCollateral(
+		[exUnits],
+		protocolParameters,
+		lovelaceFromUtxo(collateralUtxo),
+		nativeAssetCount(collateralUtxo),
+	);
 	txBuilder
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral(totalCollateral);
@@ -624,7 +635,12 @@ async function buildBatchUpdateTx(
 		txBuilder.selectUtxosFrom(walletUtxosForSelection);
 	}
 
-	const totalCollateral = deriveTotalCollateral([exUnits], protocolParameters, lovelaceFromUtxo(collateralUtxo));
+	const totalCollateral = deriveTotalCollateral(
+		[exUnits],
+		protocolParameters,
+		lovelaceFromUtxo(collateralUtxo),
+		nativeAssetCount(collateralUtxo),
+	);
 	txBuilder
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.setTotalCollateral(totalCollateral);

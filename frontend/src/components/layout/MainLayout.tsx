@@ -296,6 +296,15 @@ export function MainLayout({ children }: MainLayoutProps) {
         group: 0,
       },
       {
+        // Chain sync failures the reconciler parked. Sits with Transactions
+        // because that is what a pending entry is holding back.
+        href: '/tx-sync-quarantine',
+        name: 'Sync Quarantine',
+        icon: <AlertTriangle className="h-4 w-4" />,
+        badge: null,
+        group: 0,
+      },
+      {
         href: '/invoices',
         name: 'Invoices',
         icon: <Receipt className="h-4 w-4" />,

@@ -1,4 +1,4 @@
-import { OnChainState, PaymentAction, PaymentSourceType, TransactionStatus, Prisma } from '@/generated/prisma/client';
+import { OnChainState, PaymentAction, PaymentSourceType, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { Asset, BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
@@ -14,11 +14,13 @@ import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import { CONSTANTS } from '@masumi/payment-core/config';
 import {
+	assertEscrowUtxoUnspent,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPaymentAction,
 	createTxWindow,
 	loadHotWalletSession,
+	resolveEscrowSpendTransactionWrite,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
 import { getPaymentScriptFromPaymentSourceV1 } from '@masumi/payment-source-v1';
@@ -119,6 +121,8 @@ async function processSinglePaymentCollection(
 	if (!utxo) {
 		throw new Error('UTXO not found');
 	}
+
+	await assertEscrowUtxoUnspent(blockchainProvider, smartContractAddress, utxo);
 
 	const utxoDatum = utxo.output.plutusData;
 	if (!utxoDatum) {
@@ -251,28 +255,28 @@ async function processSinglePaymentCollection(
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
-	await prisma.paymentRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPaymentAction(PaymentAction.WithdrawInitiated),
-			CurrentTransaction: {
-				update: {
-					txHash: null,
-					status: TransactionStatus.Pending,
-					BlocksWallet: {
-						connect: {
-							id: request.SmartContractWallet.id,
-						},
-					},
-				},
+	// See purchases/collect-refund for the full rationale: never mutate the
+	// escrow row, and resolve the write shape from a FRESH read because
+	// advancedRetryAll replays this function with a stale `request`.
+	const escrowTransactionId = request.CurrentTransaction!.id;
+	const started = await prisma.$transaction(async (tx) => {
+		const fresh = await tx.paymentRequest.findUniqueOrThrow({
+			where: { id: request.id },
+			select: { CurrentTransaction: { select: { id: true, txHash: true, status: true } } },
+		});
+		return await tx.paymentRequest.update({
+			where: { id: request.id },
+			data: {
+				...connectPreviousAction(request.nextActionId),
+				...createNextPaymentAction(PaymentAction.WithdrawInitiated),
+				...resolveEscrowSpendTransactionWrite(
+					fresh.CurrentTransaction,
+					request.SmartContractWallet!.id,
+					escrowTransactionId,
+				),
 			},
-			TransactionHistory: {
-				connect: {
-					id: request.CurrentTransaction!.id,
-				},
-			},
-		},
+			select: { currentTransactionId: true },
+		});
 	});
 	//submit the transaction to the blockchain
 	const newTxHash = await wallet.submitTx(signedTx);
@@ -280,7 +284,14 @@ async function processSinglePaymentCollection(
 
 	await prisma.paymentRequest.update({
 		where: { id: request.id },
-		data: updateCurrentTransactionHash(newTxHash),
+		data: {
+			...updateCurrentTransactionHash(newTxHash),
+			// Withdraw is terminal — nothing later archives this row, so connect it
+			// explicitly or the withdrawal tx never reaches TransactionHistory.
+			...(started.currentTransactionId != null
+				? { TransactionHistory: { connect: { id: started.currentTransactionId } } }
+				: {}),
+		},
 	});
 	logger.debug(`Created withdrawal transaction:
         Tx ID: ${newTxHash}

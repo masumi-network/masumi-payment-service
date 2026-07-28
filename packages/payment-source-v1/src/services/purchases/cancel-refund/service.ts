@@ -14,6 +14,7 @@ import { writePurchaseErrorTransition } from '@/services/shared/error-transition
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	assertEscrowUtxoUnspent,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPurchaseAction,
@@ -168,6 +169,8 @@ export async function cancelRefundsV1() {
 						if (!utxo) {
 							throw new Error('UTXO not found');
 						}
+
+						await assertEscrowUtxoUnspent(blockchainProvider, smartContractAddress, utxo);
 
 						const decodedContract = decodeAndValidateUtxoDatum({ utxo, network });
 						// V1 Aiken cancel-refund requires new_datum.buyer/seller to equal the

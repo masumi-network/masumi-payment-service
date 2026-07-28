@@ -35,6 +35,7 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { getDatumNetwork, getPaymentSourceContractAdapter } from '@/services/payment-source-adapters';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
+import { TxSyncBeforeWrite } from '../quarantine/fenced-write';
 import {
 	handleV1PaymentTransaction,
 	handleV1PurchasingTransaction,
@@ -216,19 +217,16 @@ function v2ReturnAddressesMatch(left: DecodedV1ContractDatum, right: DecodedV1Co
 	);
 }
 
-export async function updateRolledBackTransaction(rolledBackTx: Array<{ tx_hash: string }>) {
+export async function updateRolledBackTransaction(
+	rolledBackTx: Array<{ tx_hash: string }>,
+	beforeWrite?: TxSyncBeforeWrite,
+) {
 	for (const tx of rolledBackTx) {
 		const foundTransaction = await prisma.transaction.findMany({
 			where: {
 				txHash: tx.tx_hash,
 			},
-			include: {
-				PaymentRequestCurrent: true,
-				PaymentRequestHistory: true,
-				PurchaseRequestCurrent: true,
-				PurchaseRequestHistory: true,
-				BlocksWallet: true,
-			},
+			select: { id: true },
 		});
 		for (const transaction of foundTransaction) {
 			// Atomic rollback for one Transaction: mark it `RolledBack`, unlock
@@ -245,16 +243,27 @@ export async function updateRolledBackTransaction(rolledBackTx: Array<{ tx_hash:
 				() =>
 					prisma.$transaction(
 						async (innerTx) => {
+							await beforeWrite?.(innerTx);
+							const freshTransaction = await innerTx.transaction.findUniqueOrThrow({
+								where: { id: transaction.id },
+								include: {
+									PaymentRequestCurrent: true,
+									PaymentRequestHistory: true,
+									PurchaseRequestCurrent: true,
+									PurchaseRequestHistory: true,
+									BlocksWallet: true,
+								},
+							});
 							await innerTx.transaction.update({
 								where: { id: transaction.id },
 								data: {
 									status: TransactionStatus.RolledBack,
-									BlocksWallet: transaction.BlocksWallet ? { disconnect: true } : undefined,
+									BlocksWallet: freshTransaction.BlocksWallet ? { disconnect: true } : undefined,
 								},
 							});
-							if (transaction.BlocksWallet != null) {
+							if (freshTransaction.BlocksWallet != null) {
 								await innerTx.hotWallet.update({
-									where: { id: transaction.BlocksWallet.id },
+									where: { id: freshTransaction.BlocksWallet.id },
 									data: {
 										lockedAt: null,
 									},
@@ -270,11 +279,11 @@ export async function updateRolledBackTransaction(rolledBackTx: Array<{ tx_hash:
 							// signal datum drift or external double-spends, neither of which
 							// is safe to retry without operator review.
 							const paymentRequestsToFlag = [
-								...transaction.PaymentRequestCurrent.map((pr) => ({
+								...freshTransaction.PaymentRequestCurrent.map((pr) => ({
 									id: pr.id,
 									nextActionId: pr.nextActionId,
 								})),
-								...transaction.PaymentRequestHistory.map((pr) => ({
+								...freshTransaction.PaymentRequestHistory.map((pr) => ({
 									id: pr.id,
 									nextActionId: pr.nextActionId,
 								})),
@@ -304,11 +313,11 @@ export async function updateRolledBackTransaction(rolledBackTx: Array<{ tx_hash:
 								});
 							}
 							const purchaseRequestsToFlag = [
-								...transaction.PurchaseRequestCurrent.map((pr) => ({
+								...freshTransaction.PurchaseRequestCurrent.map((pr) => ({
 									id: pr.id,
 									nextActionId: pr.nextActionId,
 								})),
-								...transaction.PurchaseRequestHistory.map((pr) => ({
+								...freshTransaction.PurchaseRequestHistory.map((pr) => ({
 									id: pr.id,
 									nextActionId: pr.nextActionId,
 								})),
@@ -355,6 +364,7 @@ export async function updateInitialTransactions(
 	},
 	tx: UpdateTransactionInput,
 	rpcProviderApiKey: string,
+	beforeWrite?: TxSyncBeforeWrite,
 ) {
 	// Pre-filter to valid initial outputs (datum present AND decodes against the
 	// payment-source adapter). V2 batch txs emit one continuation output per
@@ -405,6 +415,7 @@ export async function updateInitialTransactions(
 			tx.metadata,
 			buyerCardanoFees,
 			sellerCardanoFees,
+			beforeWrite,
 		);
 
 		await updateInitialPaymentTransaction(
@@ -416,6 +427,7 @@ export async function updateInitialTransactions(
 			buyerCardanoFees,
 			sellerCardanoFees,
 			rpcProviderApiKey,
+			beforeWrite,
 		);
 	}
 }
@@ -427,6 +439,7 @@ async function updateInitialPurchaseTransaction(
 	metadata: TransactionMetadata,
 	buyerCardanoFees: bigint,
 	sellerCardanoFees: bigint,
+	beforeWrite?: TxSyncBeforeWrite,
 ) {
 	// Gate Serializable $transaction through the shared semaphore so the pg
 	// connection pool isn't exhausted when scheduler ticks fan out across
@@ -435,6 +448,7 @@ async function updateInitialPurchaseTransaction(
 		() =>
 			prisma.$transaction(
 				async (prisma) => {
+					await beforeWrite?.(prisma);
 					const dbEntry = await prisma.purchaseRequest.findUnique({
 						where: {
 							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
@@ -841,6 +855,7 @@ async function updateInitialPaymentTransaction(
 	buyerCardanoFees: bigint,
 	sellerCardanoFees: bigint,
 	rpcProviderApiKey: string,
+	beforeWrite?: TxSyncBeforeWrite,
 ) {
 	// Gate Serializable $transaction through the shared semaphore so the pg
 	// connection pool isn't exhausted when scheduler ticks fan out across
@@ -849,6 +864,7 @@ async function updateInitialPaymentTransaction(
 		() =>
 			prisma.$transaction(
 				async (prisma) => {
+					await beforeWrite?.(prisma);
 					const dbEntry = await prisma.paymentRequest.findUnique({
 						where: {
 							blockchainIdentifier: decodedNewContract.blockchainIdentifier,
@@ -1276,6 +1292,7 @@ export async function updateTransaction(
 	entry: ExtractedTransactionEntry,
 	blockfrost: BlockFrostAPI,
 	tx: UpdateTransactionInput,
+	beforeWrite?: TxSyncBeforeWrite,
 ) {
 	// Look up the request by `blockchainIdentifier` only (single-field @unique).
 	// Time-window and party-vkey fields are verified post-fetch with
@@ -1514,6 +1531,7 @@ export async function updateTransaction(
 				tx.metadata,
 				buyerCardanoFees,
 				sellerCardanoFees,
+				beforeWrite,
 			);
 		}
 	} catch (error) {
@@ -1538,6 +1556,7 @@ export async function updateTransaction(
 				tx.metadata,
 				buyerCardanoFees,
 				sellerCardanoFees,
+				beforeWrite,
 			);
 		}
 	} catch (error) {

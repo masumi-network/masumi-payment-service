@@ -1,4 +1,5 @@
-import { PaymentSourceType, RegistrationState, PricingType } from '@/generated/prisma/client';
+import { PaymentSourceType, RegistrationState, PricingType, RegistryEntryType } from '@/generated/prisma/client';
+import { REGISTRY_ENTRY_ON_CHAIN_TYPE } from '@masumi/payment-core/registry-entry-type';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { convertNetwork } from '@masumi/payment-core/network';
@@ -63,7 +64,10 @@ function validateRegistrationPricing(request: {
 export function buildAgentMetadata(request: {
 	name: string;
 	description: string | null;
+	type: RegistryEntryType;
 	apiBaseUrl: string | null;
+	openApiSpecUrl: string | null;
+	x402ResourcesUrl: string | null;
 	ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
 	capabilityName?: string | null;
 	capabilityVersion?: string | null;
@@ -101,9 +105,17 @@ export function buildAgentMetadata(request: {
 			? verificationsToMetadata(verificationRows.map(verificationRowToApi), stringToMetadata)
 			: undefined;
 	const metadata = {
+		// Standard entries emit no `type` (undefined -> stripped by cleanMetadata)
+		// so their metadata stays byte-identical to pre-type-discriminator mints.
+		type: REGISTRY_ENTRY_ON_CHAIN_TYPE[request.type],
 		name: stringToMetadata(request.name),
 		description: stringToMetadata(request.description),
+		// Null for OpenApi entries -> omitted by cleanMetadata.
 		api_base_url: stringToMetadata(request.apiBaseUrl),
+		// Set only for OpenApi entries; null otherwise -> omitted by cleanMetadata.
+		openapi_spec_url: stringToMetadata(request.openApiSpecUrl),
+		// Set only for X402 entries; null otherwise -> omitted by cleanMetadata.
+		x402_resources_url: stringToMetadata(request.x402ResourcesUrl),
 		example_output: request.ExampleOutputs.map((exampleOutput) => ({
 			name: stringToMetadata(exampleOutput.name),
 			mime_type: stringToMetadata(exampleOutput.mimeType),

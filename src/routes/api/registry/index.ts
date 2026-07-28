@@ -1,7 +1,7 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, PricingType, RegistrationState, RegistryEntryType } from '@/generated/prisma/client';
 import type { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
@@ -27,6 +27,7 @@ import {
 	FilterStatus,
 	queryRegistryCountSchemaInput,
 	queryRegistryCountSchemaOutput,
+	getRegistryEndpointError,
 	queryRegistryRequestSchemaInput,
 	queryRegistryRequestSchemaOutput,
 	registerAgentSchemaInput,
@@ -118,6 +119,13 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				operation: 'register_agent',
 			});
 			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
+			// Per-type endpoint descriptor (Standard=apiBaseUrl, OpenApi=openApiSpecUrl,
+			// X402=x402ResourcesUrl). Enforced here, not in the schema, so the update
+			// route can `.omit()` the register input (see getRegistryEndpointError).
+			const endpointError = getRegistryEndpointError(input);
+			if (endpointError != null) {
+				throw createHttpError(400, endpointError);
+			}
 			const isV2Registration = sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2;
 			if (isV2Registration && input.AgentPricing != null) {
 				throw createHttpError(
@@ -194,7 +202,10 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				data: {
 					name: input.name,
 					description: input.description,
-					apiBaseUrl: input.apiBaseUrl,
+					type: input.type ?? RegistryEntryType.Standard,
+					apiBaseUrl: input.apiBaseUrl ?? null,
+					openApiSpecUrl: input.openApiSpecUrl ?? null,
+					x402ResourcesUrl: input.x402ResourcesUrl ?? null,
 					capabilityName: input.Capability.name,
 					capabilityVersion: input.Capability.version,
 					other: input.Legal?.other,

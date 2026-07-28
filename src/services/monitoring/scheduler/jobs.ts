@@ -4,6 +4,7 @@ import {
 	checkLatestTransactions,
 	cleanupOrphanActionData,
 	reconcileAmbiguousFundingV2,
+	reconcileQuarantinedTransactions,
 	unlockStaleOrphanWalletLocks,
 	updateWalletTransactionHash,
 } from '@/services/transactions';
@@ -161,6 +162,17 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting to sync cardano payment entries',
 		finishMessage: 'Finished to sync cardano payment entries',
 		run: checkLatestTransactions,
+	},
+	{
+		// Offset from the scanner so the two are not contending for Blockfrost
+		// quota in the same instant — the quarantine exists largely because of
+		// rate-limited lookups, and having the drain compete with the scanner
+		// would be self-defeating.
+		initialDelayMs: 55000,
+		intervalMs: CONFIG.CHECK_TX_INTERVAL * 1000,
+		startMessage: 'Starting tx-sync quarantine reconciliation',
+		finishMessage: 'Finished tx-sync quarantine reconciliation',
+		run: reconcileQuarantinedTransactions,
 	},
 	{
 		initialDelayMs: 45000,

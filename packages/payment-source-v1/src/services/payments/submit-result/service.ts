@@ -16,6 +16,7 @@ import { advancedRetryAll } from 'advanced-retry';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	assertEscrowUtxoUnspent,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPaymentAction,
@@ -208,6 +209,8 @@ async function processSinglePaymentRequest(
 	}
 
 	const { utxo, decodedContract } = matchResult;
+
+	await assertEscrowUtxoUnspent(blockchainProvider, smartContractAddress, utxo);
 
 	const datum = createDatumFromDecodedContractV1({
 		decodedContract,
