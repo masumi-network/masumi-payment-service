@@ -15,6 +15,14 @@ export type RailReadiness = {
 	rail: 'CardanoV2' | 'X402';
 	isReady: boolean;
 	Checks: RailReadinessCheck[];
+	PurchaseSources?: CardanoPurchaseSourceReadiness[];
+};
+
+export type CardanoPurchaseSourceReadiness = {
+	policyId: string | null;
+	smartContractAddress: string;
+	isPurchaseReady: boolean;
+	Checks: RailReadinessCheck[];
 };
 
 /** Plain shapes so the rules stay unit-testable without a database. */
@@ -66,6 +74,7 @@ export function evaluateCardanoReadiness(input: CardanoReadinessInput): RailRead
 		return {
 			rail: 'CardanoV2',
 			isReady: false,
+			PurchaseSources: [],
 			Checks: [
 				check(
 					'cardano.payment_source',
@@ -145,7 +154,20 @@ export function evaluateCardanoReadiness(input: CardanoReadinessInput): RailRead
 			),
 		];
 
-		return { checks, passed: checks.filter((entry) => entry.isComplete).length };
+		const purchaseChecks = checks.filter((entry) => entry.id !== 'cardano.selling_wallet');
+		return {
+			checks,
+			passed: checks.filter((entry) => entry.isComplete).length,
+			purchaseSource: {
+				policyId: source.policyId,
+				smartContractAddress: source.smartContractAddress,
+				isPurchaseReady:
+					typeof source.policyId === 'string' &&
+					/^[0-9a-f]{56}$/.test(source.policyId) &&
+					purchaseChecks.every((entry) => entry.isComplete),
+				Checks: purchaseChecks,
+			},
+		};
 	});
 
 	// A source is ready only if every check passes; selling and purchasing are
@@ -154,7 +176,12 @@ export function evaluateCardanoReadiness(input: CardanoReadinessInput): RailRead
 	const readySource = evaluated.find((entry) => entry.checks.every((c) => c.isComplete));
 	const best = readySource ?? evaluated.reduce((a, b) => (b.passed > a.passed ? b : a));
 
-	return { rail: 'CardanoV2', isReady: readySource !== undefined, Checks: best.checks };
+	return {
+		rail: 'CardanoV2',
+		isReady: readySource !== undefined,
+		Checks: best.checks,
+		PurchaseSources: evaluated.map((entry) => entry.purchaseSource),
+	};
 }
 
 /**

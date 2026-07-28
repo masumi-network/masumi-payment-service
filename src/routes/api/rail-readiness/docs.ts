@@ -10,6 +10,26 @@ const railReadinessExample = {
 		{
 			rail: 'CardanoV2',
 			isReady: false,
+			PurchaseSources: [
+				{
+					policyId: 'f'.repeat(56),
+					smartContractAddress: 'addr_test1_v2_contract',
+					isPurchaseReady: true,
+					Checks: [
+						{
+							id: 'cardano.payment_source',
+							label: 'Payment source',
+							isComplete: true,
+							detail: 'Active Web3CardanoV2 source found',
+						},
+						{ id: 'cardano.contract_current', label: 'Current contract', isComplete: true, detail: null },
+						{ id: 'cardano.rpc_provider', label: 'Blockfrost API key', isComplete: true, detail: null },
+						{ id: 'cardano.admin_signatures', label: 'Admin wallets', isComplete: true, detail: null },
+						{ id: 'cardano.purchasing_wallet', label: 'Purchasing wallet', isComplete: true, detail: null },
+						{ id: 'cardano.payments_enabled', label: 'Payments enabled', isComplete: true, detail: null },
+					],
+				},
+			],
 			Checks: [
 				{
 					id: 'cardano.payment_source',
@@ -62,7 +82,7 @@ export function registerRailReadinessPaths({ registry, apiKeyAuth }: SwaggerRegi
 		method: 'get',
 		path: '/rail-readiness',
 		description:
-			'Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. isReady covers blocking checks only: for x402 that means an enabled chain with exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while purchasing wallet and budget are reported but optional. Only configuration presence is exposed — no keys, addresses or URLs.',
+			'Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. CardanoV2 also returns per-policy/contract PurchaseSources so read-auth consumers can gate outbound purchases against the exact source; these identifiers are public on-chain values. isReady covers blocking checks only: for x402 that means an enabled chain with exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while purchasing wallet and budget are reported but optional. Only configuration presence is exposed — no keys or private wallet data.',
 		summary: 'Get payment rail readiness. (read access required)',
 		tags: ['rail-readiness'],
 		security: secured,
