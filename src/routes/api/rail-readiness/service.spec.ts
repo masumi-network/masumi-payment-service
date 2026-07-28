@@ -57,6 +57,13 @@ describe('evaluateCardanoReadiness', () => {
 
 		expect(rail.isReady).toBe(true);
 		expect(rail.Checks.every((check) => check.isComplete)).toBe(true);
+		expect(rail.PurchaseSources).toEqual([
+			expect.objectContaining({
+				policyId: DEFAULTS.REGISTRY_POLICY_ID_V2_PREPROD,
+				smartContractAddress: DEFAULTS.PAYMENT_SMART_CONTRACT_ADDRESS_V2_PREPROD,
+				isPurchaseReady: true,
+			}),
+		]);
 	});
 
 	it('blocks on a retired contract policy id', () => {
@@ -93,7 +100,6 @@ describe('evaluateCardanoReadiness', () => {
 	it.each([
 		['blank rpc key', { rpcProviderApiKey: '   ' }, 'cardano.rpc_provider'],
 		['missing rpc key', { rpcProviderApiKey: null }, 'cardano.rpc_provider'],
-		['no selling wallet', { sellingWalletCount: 0 }, 'cardano.selling_wallet'],
 		['no purchasing wallet', { purchasingWalletCount: 0 }, 'cardano.purchasing_wallet'],
 		['payments disabled', { disablePaymentAt: new Date() }, 'cardano.payments_enabled'],
 	])('blocks on %s', (_name, overrides, expectedFailingCheck) => {
@@ -101,6 +107,28 @@ describe('evaluateCardanoReadiness', () => {
 
 		expect(rail.isReady).toBe(false);
 		expect(isComplete(rail, expectedFailingCheck)).toBe(false);
+		expect(rail.PurchaseSources?.[0]?.isPurchaseReady).toBe(false);
+	});
+
+	it('keeps a buyer-ready source purchasable without a selling wallet', () => {
+		const rail = evaluateCardanoReadiness({
+			network: Network.Preprod,
+			sources: [cardanoSource({ sellingWalletCount: 0 })],
+		});
+
+		expect(rail.isReady).toBe(false);
+		expect(isComplete(rail, 'cardano.selling_wallet')).toBe(false);
+		expect(rail.PurchaseSources?.[0]?.isPurchaseReady).toBe(true);
+		expect(rail.PurchaseSources?.[0]?.Checks.some((check) => check.id === 'cardano.selling_wallet')).toBe(false);
+	});
+
+	it('does not expose a source without a valid registry policy as purchase-ready', () => {
+		const rail = evaluateCardanoReadiness({
+			network: Network.Preprod,
+			sources: [cardanoSource({ policyId: null })],
+		});
+
+		expect(rail.PurchaseSources?.[0]?.isPurchaseReady).toBe(false);
 	});
 
 	it('stays ready when one good source sits alongside a broken one', () => {
@@ -111,6 +139,7 @@ describe('evaluateCardanoReadiness', () => {
 
 		expect(rail.isReady).toBe(true);
 		expect(rail.Checks.every((check) => check.isComplete)).toBe(true);
+		expect(rail.PurchaseSources?.map((source) => source.isPurchaseReady)).toEqual([false, true]);
 	});
 
 	it('reports the closest-to-done source when none is ready', () => {
