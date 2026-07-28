@@ -5966,6 +5966,81 @@
                                         ]
                                     },
                                     "description": "Individual checks, in setup order"
+                                },
+                                "PurchaseSources": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "policyId": {
+                                                "type": "string",
+                                                "nullable": true,
+                                                "description": "Registry policy id this configured V2 source can purchase from"
+                                            },
+                                            "smartContractAddress": {
+                                                "type": "string",
+                                                "description": "V2 escrow contract address this configured source can purchase through"
+                                            },
+                                            "isPurchaseReady": {
+                                                "type": "boolean",
+                                                "description": "Whether this exact policy and contract source can execute outbound purchases"
+                                            },
+                                            "Checks": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {
+                                                            "type": "string",
+                                                            "enum": [
+                                                                "cardano.payment_source",
+                                                                "cardano.contract_current",
+                                                                "cardano.rpc_provider",
+                                                                "cardano.admin_signatures",
+                                                                "cardano.selling_wallet",
+                                                                "cardano.purchasing_wallet",
+                                                                "cardano.payments_enabled",
+                                                                "x402.enabled_chain",
+                                                                "x402.rpc_url",
+                                                                "x402.facilitator",
+                                                                "x402.selling_wallet",
+                                                                "x402.purchasing_wallet",
+                                                                "x402.budget"
+                                                            ],
+                                                            "description": "Stable check identifier. The admin UI maps setup steps onto these"
+                                                        },
+                                                        "label": {
+                                                            "type": "string",
+                                                            "description": "Short human-readable name for the check"
+                                                        },
+                                                        "isComplete": {
+                                                            "type": "boolean",
+                                                            "description": "Whether the backend considers this check satisfied"
+                                                        },
+                                                        "detail": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Why the check is incomplete, or extra context when it passes. Null when there is nothing to add"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "id",
+                                                        "label",
+                                                        "isComplete",
+                                                        "detail"
+                                                    ]
+                                                },
+                                                "description": "Buyer-direction checks for this source; selling-wallet readiness is intentionally excluded"
+                                            }
+                                        },
+                                        "required": [
+                                            "policyId",
+                                            "smartContractAddress",
+                                            "isPurchaseReady",
+                                            "Checks"
+                                        ]
+                                    },
+                                    "description": "Per-source outbound purchase readiness for CardanoV2. Policy ids and contract addresses are public on-chain identifiers; secrets are never returned"
                                 }
                             },
                             "required": [
@@ -30340,7 +30415,7 @@
         },
         "/rail-readiness": {
             "get": {
-                "description": "Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. isReady covers blocking checks only: for x402 that means an enabled chain with exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while purchasing wallet and budget are reported but optional. Only configuration presence is exposed — no keys, addresses or URLs.",
+                "description": "Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. CardanoV2 also returns per-policy/contract PurchaseSources so read-auth consumers can gate outbound purchases against the exact source; these identifiers are public on-chain values. isReady covers blocking checks only: for x402 that means an enabled chain with exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while purchasing wallet and budget are reported but optional. Only configuration presence is exposed — no keys or private wallet data.",
                 "summary": "Get payment rail readiness. (read access required)",
                 "tags": [
                     "rail-readiness"
@@ -30396,6 +30471,51 @@
                                                 {
                                                     "rail": "CardanoV2",
                                                     "isReady": false,
+                                                    "PurchaseSources": [
+                                                        {
+                                                            "policyId": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                                                            "smartContractAddress": "addr_test1_v2_contract",
+                                                            "isPurchaseReady": true,
+                                                            "Checks": [
+                                                                {
+                                                                    "id": "cardano.payment_source",
+                                                                    "label": "Payment source",
+                                                                    "isComplete": true,
+                                                                    "detail": "Active Web3CardanoV2 source found"
+                                                                },
+                                                                {
+                                                                    "id": "cardano.contract_current",
+                                                                    "label": "Current contract",
+                                                                    "isComplete": true,
+                                                                    "detail": null
+                                                                },
+                                                                {
+                                                                    "id": "cardano.rpc_provider",
+                                                                    "label": "Blockfrost API key",
+                                                                    "isComplete": true,
+                                                                    "detail": null
+                                                                },
+                                                                {
+                                                                    "id": "cardano.admin_signatures",
+                                                                    "label": "Admin wallets",
+                                                                    "isComplete": true,
+                                                                    "detail": null
+                                                                },
+                                                                {
+                                                                    "id": "cardano.purchasing_wallet",
+                                                                    "label": "Purchasing wallet",
+                                                                    "isComplete": true,
+                                                                    "detail": null
+                                                                },
+                                                                {
+                                                                    "id": "cardano.payments_enabled",
+                                                                    "label": "Payments enabled",
+                                                                    "isComplete": true,
+                                                                    "detail": null
+                                                                }
+                                                            ]
+                                                        }
+                                                    ],
                                                     "Checks": [
                                                         {
                                                             "id": "cardano.payment_source",

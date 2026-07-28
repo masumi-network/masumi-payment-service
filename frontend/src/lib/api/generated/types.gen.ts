@@ -3120,6 +3120,44 @@ export type RailReadiness = {
              */
             detail: string | null;
         }>;
+        /**
+         * Per-source outbound purchase readiness for CardanoV2. Policy ids and contract addresses are public on-chain identifiers; secrets are never returned
+         */
+        PurchaseSources?: Array<{
+            /**
+             * Registry policy id this configured V2 source can purchase from
+             */
+            policyId: string | null;
+            /**
+             * V2 escrow contract address this configured source can purchase through
+             */
+            smartContractAddress: string;
+            /**
+             * Whether this exact policy and contract source can execute outbound purchases
+             */
+            isPurchaseReady: boolean;
+            /**
+             * Buyer-direction checks for this source; selling-wallet readiness is intentionally excluded
+             */
+            Checks: Array<{
+                /**
+                 * Stable check identifier. The admin UI maps setup steps onto these
+                 */
+                id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet' | 'x402.budget';
+                /**
+                 * Short human-readable name for the check
+                 */
+                label: string;
+                /**
+                 * Whether the backend considers this check satisfied
+                 */
+                isComplete: boolean;
+                /**
+                 * Why the check is incomplete, or extra context when it passes. Null when there is nothing to add
+                 */
+                detail: string | null;
+            }>;
+        }>;
     }>;
 };
 
