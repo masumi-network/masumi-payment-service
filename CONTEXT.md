@@ -162,3 +162,78 @@ standard x402 rail. Managed EVM wallets are separate from Cardano
 wallets, network configuration, and budgets; API keys with `canPay` can
 spend through a managed wallet only when their CAIP-2 chain limit and
 wallet budget allow it.
+
+### Hydra Head
+
+One instance of the Hydra Head protocol: an L2 ledger opened, funded, closed
+and finalised through L1 transactions. Belongs to exactly one
+[[Hydra Relation]], and only one non-`Final` Head may exist per Relation at a
+time, so Heads within a Relation are strictly sequential.
+
+Avoid: channel, hydra channel (that is the Relation), L2 (that is the layer,
+not the instance).
+
+### Hydra Relation
+
+The singular two-party channel between one local hot wallet and one remote
+wallet, per network. A Relation is long-lived and outlives the individual
+[[Hydra Head]]s opened under it.
+
+Avoid: head, pair, counterparty (the counterparty is a participant, not the
+relation).
+
+### Local Participant
+
+The party to a [[Hydra Head]] whose Hydra signing key this service holds.
+"Local" denotes **custody of the secret**, not network locality.
+
+Avoid: our node, nearby node, localhost node.
+
+### Remote Participant
+
+The counterparty to a [[Hydra Head]], known only by public material — Hydra
+verification key, [[Node Cardano Key]] hash and advertised node URLs. The
+service never dials a Remote Participant's node; its URLs are recorded but
+unused, because peer traffic is exclusively the hydra-node's own business.
+
+Avoid: peer node (ambiguous with the etcd peer link), external node.
+
+### Node Cardano Key
+
+The Cardano key pair a hydra-node uses to authorise Hydra protocol
+transactions and to pay its own fees, collateral and change. Deliberately
+distinct from the funding hot wallet: only its 28-byte verification-key hash
+is stored by the service, so that compromise of a node host cannot reach
+escrowed funds or wallet balances.
+
+Avoid: wallet key, walletVkey, fuel wallet — `cardanoVkey` and `walletVkey`
+are different keys and are equal only in the explicitly-named legacy coupled
+mode.
+
+### Hydra Host
+
+A deployment that supervises hydra-node processes and exposes a token-gated
+API for provisioning and operating them. Several Hosts may serve one payment
+service; each [[Hydra Head]] is placed on exactly one Host at provisioning
+time and stays there for its whole life, because its persistence directory is
+not relocatable.
+
+Avoid: hydra server, node pool, cluster (a Host is not a cluster; the etcd
+cluster belongs to a single Head).
+
+### Control Plane
+
+The authenticated surface of a [[Hydra Host]]: fleet management plus the
+proxied hydra-node client API. Reached only by the owning payment service,
+never by a counterparty.
+
+Avoid: admin api (only one of its two token tiers is administrative).
+
+### Peer Plane
+
+The direct node-to-node link between the two participants of a [[Hydra Head]],
+carrying etcd raft traffic on a per-Head port. Public by necessity, bypasses
+the [[Control Plane]] proxy, and is the only Hydra channel a counterparty ever
+touches.
+
+Avoid: peer websocket, p2p api — it is neither a WebSocket nor an HTTP API.
