@@ -269,9 +269,16 @@ Settled in the grilling session; recorded in
    capabilities. User: operate an existing node, whole proxied API and WS. No
    WS tag-gating, because lifecycle commands share the one long-lived socket
    with the event stream; residual risk is a close, not a fund loss.
-6. **Capacity** — no fixed ceiling. Ports are allocated durably per Head and
-   **released on removal**. Production uses `--network host` so publishing
-   imposes no limit; a published range is the dev fallback.
+6. **Capacity** — no operator-facing limit; ports are allocated durably per
+   Head and **released on removal**. Production uses `--network host` so
+   publishing imposes no limit; a published range is the dev fallback. One
+   ceiling is inherent rather than chosen: the etcd client port is derived as
+   `listenPort - 2622` with no override, so within a network namespace the peer
+   range must satisfy `end - start < 2622` — at most 2621 concurrent nodes per
+   Host. The allocator enforces this instead of hitting it as a bind failure.
+   The peer port is immutable for a Head's life, because the etcd data dir is
+   content-addressed by the cluster configuration and the advertise string is a
+   participant identity (`msg-<advertise>` / `alive-<advertise>`).
 7. **Ledger protocol parameters** — baked into the image, built from this repo
    so they stay pinned to the `packages/payment-source-v2` Mesh line, guarded
    in CI, and verified at provision time via a `/v1/capabilities` hash.
