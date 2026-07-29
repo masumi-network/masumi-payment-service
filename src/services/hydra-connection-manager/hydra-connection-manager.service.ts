@@ -164,7 +164,7 @@ export class HydraConnectionManager {
 		const enabledHeads = await prisma.hydraHead.findMany({
 			where: { isEnabled: true },
 			include: {
-				LocalParticipant: { include: { HydraSecretKey: true } },
+				LocalParticipant: { include: { HydraSecretKey: true, HydraHost: true } },
 				RemoteParticipants: { include: { HydraVerificationKey: true } },
 				HydraRelation: { select: hydraRelationSecuritySelect },
 			},
@@ -290,7 +290,7 @@ export class HydraConnectionManager {
 		const configuredHead = await prisma.hydraHead.findUnique({
 			where: { id: head.id },
 			include: {
-				LocalParticipant: { include: { HydraSecretKey: true } },
+				LocalParticipant: { include: { HydraSecretKey: true, HydraHost: true } },
 				RemoteParticipants: { include: { HydraVerificationKey: true } },
 				HydraRelation: { select: hydraRelationSecuritySelect },
 			},
@@ -354,7 +354,7 @@ export class HydraConnectionManager {
 				plaintextHosts: getHydraPlaintextHosts(),
 			},
 		);
-		const nodeAuthToken = this.resolveNodeAuthToken(head.id);
+		const nodeAuthToken = this.resolveNodeAuthToken(configuredHead.LocalParticipant.HydraHost);
 		const isReachable = await this.probeNode(nodeUrls.httpUrl, nodeAuthToken);
 		if (!isReachable) {
 			throw new Error(`Local Hydra node unreachable for head ${head.id}`);
@@ -667,14 +667,17 @@ export class HydraConnectionManager {
 	/**
 	 * The bearer token for reaching this head's node.
 	 *
-	 * A node on loopback has nothing in front of it, so there is nothing to
-	 * authenticate to and this is undefined. When a head is placed on a Hydra
-	 * Host, the Host's decrypted user token is returned here — the single seam
-	 * every caller reads, so the credential cannot be threaded correctly in one
-	 * place and forgotten in another.
+	 * A node configured by hand on loopback has nothing in front of it, so there
+	 * is nothing to authenticate to and this is undefined. A node placed on a
+	 * Hydra Host is reachable only through that Host's proxy, so its user token
+	 * is decrypted here — the single seam every caller reads, so the credential
+	 * cannot be threaded correctly in one place and forgotten in another.
 	 */
-	private resolveNodeAuthToken(_hydraHeadId: string): string | undefined {
-		return undefined;
+	private resolveNodeAuthToken(host: { encryptedUserToken: string } | null | undefined): string | undefined {
+		if (host == null) {
+			return undefined;
+		}
+		return decrypt(host.encryptedUserToken);
 	}
 
 	private async probeNode(httpUrl: string, authToken?: string, timeoutMs = 5000): Promise<boolean> {
