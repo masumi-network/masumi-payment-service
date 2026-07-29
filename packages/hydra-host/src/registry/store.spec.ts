@@ -169,3 +169,75 @@ describe('NodeRegistryStore.update', () => {
 		);
 	});
 });
+
+describe('NodeRegistryStore concurrency', () => {
+	// Found by running a real host: a node exited while its state was being
+	// reconciled, both writers used the same temp filename, and the second
+	// rename failed with ENOENT — losing that update.
+	it('survives many concurrent updates without a rename race', async () => {
+		await store.write(record());
+
+		const results = await Promise.all(
+			Array.from({ length: 40 }, (_unused, index) =>
+				store.update('node-1', (current) => ({ ...current, restartCount: current.restartCount + 1, apiPort: 4001 + index })),
+			),
+		);
+
+		expect(results.every((result) => result !== null)).toBe(true);
+		// Every increment must be visible: a lost update would leave this short.
+		expect((await store.read('node-1'))?.restartCount).toBe(40);
+	});
+
+	// The two writers in the observed failure were doing different things, so
+	// the danger is not just a rename clash but one update discarding the other.
+	it('does not let concurrent updates discard each other', async () => {
+		await store.write(record());
+
+		await Promise.all([
+			store.update('node-1', (current) => ({ ...current, lastStopUndrained: true })),
+			store.update('node-1', (current) => ({ ...current, state: 'Running' })),
+			store.update('node-1', (current) => ({ ...current, desired: 'Running' })),
+		]);
+
+		const final = await store.read('node-1');
+		expect(final?.lastStopUndrained).toBe(true);
+		expect(final?.state).toBe('Running');
+		expect(final?.desired).toBe('Running');
+	});
+
+	it('leaves no temp files behind after concurrent writes', async () => {
+		await store.write(record());
+		await Promise.all(
+			Array.from({ length: 20 }, () => store.update('node-1', (current) => ({ ...current }))),
+		);
+		const entries = await fs.readdir(store.nodeDir('node-1'));
+		expect(entries.filter((entry) => entry.includes('.tmp'))).toEqual([]);
+	});
+
+	it('keeps one failing update from cascading into the others', async () => {
+		await store.write(record());
+		const outcomes = await Promise.allSettled([
+			store.update('node-1', (current) => ({ ...current, nodeId: 'hijacked' })),
+			store.update('node-1', (current) => ({ ...current, restartCount: 7 })),
+		]);
+
+		expect(outcomes[0]?.status).toBe('rejected');
+		expect(outcomes[1]?.status).toBe('fulfilled');
+		expect((await store.read('node-1'))?.restartCount).toBe(7);
+	});
+});
+
+// update() is serialised, so the shared-temp-name race is unreachable through
+// it. write() is public and has no queue, so it still needs a unique temp name.
+describe('NodeRegistryStore.write concurrency', () => {
+	it('tolerates concurrent direct writes', async () => {
+		await store.write(record());
+		await expect(
+			Promise.all(Array.from({ length: 25 }, (_unused, i) => store.write(record({ restartCount: i })))),
+		).resolves.toBeDefined();
+
+		const entries = await fs.readdir(store.nodeDir('node-1'));
+		expect(entries.filter((entry) => entry.includes('.tmp'))).toEqual([]);
+		expect(await store.read('node-1')).not.toBeNull();
+	});
+});

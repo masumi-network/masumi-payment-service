@@ -38,9 +38,15 @@ async function fsyncDir(dir: string): Promise<void> {
 	}
 }
 
+let tempCounter = 0;
+
 async function writeFileAtomic(filePath: string, contents: string): Promise<void> {
 	const dir = path.dirname(filePath);
-	const tmp = path.join(dir, `.${path.basename(filePath)}.tmp`);
+	// The temp name must be unique per write. A shared name lets two concurrent
+	// writers race: the first rename consumes the file and the second fails with
+	// ENOENT, losing that update. Observed in a running host when a node exited
+	// while its state was being reconciled.
+	const tmp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${tempCounter++}.tmp`);
 	let handle: FileHandle | undefined;
 	try {
 		handle = await fs.open(tmp, 'w');
@@ -76,9 +82,31 @@ function parseNodeRecord(raw: string, source: string): NodeRecord {
 
 export class NodeRegistryStore {
 	private readonly nodesDir: string;
+	/**
+	 * Serialises mutations per node.
+	 *
+	 * `update` is a read-modify-write, so two overlapping calls would both read
+	 * the same record and the later write would silently discard the earlier
+	 * one — the exact loss the helper exists to prevent. Chaining per node makes
+	 * each read-modify-write atomic with respect to the others.
+	 */
+	private readonly writeQueues = new Map<string, Promise<unknown>>();
 
 	constructor(dataDir: string) {
 		this.nodesDir = path.join(dataDir, 'nodes');
+	}
+
+	/** Run `task` after any in-flight mutation for this node has settled. */
+	private enqueue<T>(nodeId: string, task: () => Promise<T>): Promise<T> {
+		const previous = this.writeQueues.get(nodeId) ?? Promise.resolve();
+		// Swallow the predecessor's rejection here so one failed update does not
+		// cascade into every queued one; the original caller still sees its error.
+		const next = previous.then(task, task);
+		this.writeQueues.set(
+			nodeId,
+			next.catch(() => undefined),
+		);
+		return next;
 	}
 
 	nodeDir(nodeId: string): string {
@@ -119,16 +147,18 @@ export class NodeRegistryStore {
 	 * Returns the written record, or null when the node no longer exists.
 	 */
 	async update(nodeId: string, mutate: (current: NodeRecord) => NodeRecord): Promise<NodeRecord | null> {
-		const current = await this.read(nodeId);
-		if (current === null) {
-			return null;
-		}
-		const next = mutate(current);
-		if (next.nodeId !== nodeId) {
-			throw new RegistryError(`a mutator may not change nodeId (${nodeId} -> ${next.nodeId})`);
-		}
-		await this.write(next);
-		return next;
+		return this.enqueue(nodeId, async () => {
+			const current = await this.read(nodeId);
+			if (current === null) {
+				return null;
+			}
+			const next = mutate(current);
+			if (next.nodeId !== nodeId) {
+				throw new RegistryError(`a mutator may not change nodeId (${nodeId} -> ${next.nodeId})`);
+			}
+			await this.write(next);
+			return next;
+		});
 	}
 
 	async read(nodeId: string): Promise<NodeRecord | null> {

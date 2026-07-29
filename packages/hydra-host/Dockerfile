@@ -31,13 +31,20 @@ RUN apt-get update \
 
 WORKDIR /out
 
-# hydra-node publishes static builds per platform; map Docker's TARGETARCH onto
-# the release asset names.
+# hydra-node publishes exactly two static builds: x86_64-linux and
+# aarch64-darwin. There is NO linux/arm64 release, so this image is
+# linux/amd64 only — build it with `--platform linux/amd64`.
+#
+# Note for local testing on an arm64 Mac: the image builds and the control
+# plane runs, but hydra-node dies with SIGILL (exit 132, "Illegal instruction")
+# the moment it touches its crypto path under Docker Desktop's emulation —
+# `--version` succeeds, `--hydra-script-catalogue` does not. Observed directly,
+# and it is why hydra-l2-flow runs the binary natively on Darwin. Anything that
+# spawns a real node must be tested on amd64 hardware.
 RUN set -eux; \
 	case "${TARGETARCH}" in \
 		amd64) HYDRA_ASSET="hydra-x86_64-linux-${HYDRA_VERSION}.zip"; ETCD_ARCH="amd64" ;; \
-		arm64) HYDRA_ASSET="hydra-aarch64-linux-${HYDRA_VERSION}.zip"; ETCD_ARCH="arm64" ;; \
-		*) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+		*) echo "hydra-node publishes no linux/${TARGETARCH} build; this image is linux/amd64 only" >&2; exit 1 ;; \
 	esac; \
 	curl -fsSL -o hydra.zip \
 		"https://github.com/cardano-scaling/hydra/releases/download/${HYDRA_VERSION}/${HYDRA_ASSET}"; \
@@ -57,6 +64,10 @@ FROM node:20-slim AS control-plane
 WORKDIR /build
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# pnpm-workspace.yaml declares patchedDependencies, and pnpm hashes those patch
+# files during install even for an unrelated filtered package. Without them the
+# install fails with ENOENT on the patch.
+COPY patches ./patches
 COPY packages/hydra-host/package.json packages/hydra-host/
 RUN pnpm install --filter @masumi/hydra-host --frozen-lockfile
 COPY packages/hydra-host ./packages/hydra-host
