@@ -12,6 +12,7 @@
  * process-exit handler's, which is the one that remembers a stop was undrained.
  */
 
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { HostConfig } from '../config.js';
 import { NodeClient } from '../node-client.js';
@@ -243,7 +244,16 @@ export class Supervisor {
 			contestationPeriodSeconds: record.contestationPeriodSeconds,
 			depositPeriodSeconds: record.depositPeriodSeconds,
 			unsyncedPeriodSeconds: record.unsyncedPeriodSeconds,
+			useSystemEtcd: this.config.useSystemEtcd,
 		});
+
+		if (!this.config.useSystemEtcd) {
+			// hydra-node re-extracts its embedded etcd on every boot. Rewriting the
+			// binary in place while the previous one is still exiting gets the new
+			// process killed by macOS's code-signature cache, so the stale copy is
+			// removed first — the same guard the native launcher uses.
+			await fs.rm(path.join(nodeDir, 'persistence', 'bin', 'etcd'), { force: true }).catch(() => undefined);
+		}
 
 		// Count the attempt and mark it running BEFORE spawning. Writing after the
 		// spawn would race the exit handler for a node that dies immediately, and

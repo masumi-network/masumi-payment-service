@@ -29,6 +29,14 @@ export type HostConfig = {
 	/** How long a provisioned-but-unacknowledged node survives before the reaper removes it. */
 	escrowTtlSeconds: number;
 	drainTimeoutMs: number;
+	/**
+	 * Use an etcd from PATH instead of the copy hydra-node extracts.
+	 *
+	 * True in the image, which bakes a matching etcd. False when running the
+	 * Host natively on a machine with no system etcd — notably macOS, where the
+	 * native hydra-node is the only build that executes at all.
+	 */
+	useSystemEtcd: boolean;
 };
 
 export class ConfigError extends Error {
@@ -130,6 +138,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		defaultUnsyncedPeriodSeconds,
 		escrowTtlSeconds: integer(env, 'HYDRA_HOST_ESCROW_TTL_SECONDS', 3600),
 		drainTimeoutMs: integer(env, 'HYDRA_HOST_DRAIN_TIMEOUT_MS', 120_000),
+		useSystemEtcd: optional(env, 'HYDRA_HOST_USE_SYSTEM_ETCD', 'true') !== 'false',
 	};
 }
 
