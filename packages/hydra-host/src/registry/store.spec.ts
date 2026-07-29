@@ -130,3 +130,42 @@ describe('NodeRegistryStore', () => {
 		expect(await store.list()).toEqual([]);
 	});
 });
+
+describe('NodeRegistryStore.update', () => {
+	it('applies a mutator to the record as it is on disk', async () => {
+		await store.write(record());
+		const updated = await store.update('node-1', (current) => ({ ...current, state: 'Running' }));
+
+		expect(updated?.state).toBe('Running');
+		expect((await store.read('node-1'))?.state).toBe('Running');
+	});
+
+	// This is the whole point of update(): a caller holding a snapshot captured
+	// before someone else's write must not be able to resurrect the stale value.
+	it('does not let a caller persist a stale snapshot', async () => {
+		await store.write(record());
+		const stale = await store.read('node-1');
+
+		// Someone else records an undrained stop.
+		await store.update('node-1', (current) => ({ ...current, lastStopUndrained: true }));
+
+		// The holder of the stale snapshot now updates a different field.
+		await store.update('node-1', (current) => ({ ...current, state: 'Running' }));
+
+		const final = await store.read('node-1');
+		expect(final?.state).toBe('Running');
+		expect(final?.lastStopUndrained).toBe(true);
+		expect(stale?.lastStopUndrained).toBe(false);
+	});
+
+	it('returns null for a node that no longer exists', async () => {
+		expect(await store.update('missing', (current) => current)).toBeNull();
+	});
+
+	it('refuses a mutator that rewrites nodeId', async () => {
+		await store.write(record());
+		await expect(store.update('node-1', (current) => ({ ...current, nodeId: 'node-2' }))).rejects.toThrow(
+			/may not change nodeId/,
+		);
+	});
+});

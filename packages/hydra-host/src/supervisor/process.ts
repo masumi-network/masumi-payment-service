@@ -8,7 +8,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 
 export type SpawnRequest = {
@@ -48,23 +48,23 @@ export class NodeProcessManager {
 		return [...this.running.values()];
 	}
 
-	start(
+	async start(
 		request: SpawnRequest,
 		onExit: (nodeId: string, code: number | null, signal: NodeJS.Signals | null) => void,
-	): RunningNode {
+	): Promise<RunningNode> {
 		if (this.isRunning(request.nodeId)) {
 			throw new Error(`node ${request.nodeId} is already running`);
 		}
 
 		const logDir = path.join(request.nodeDir, 'logs');
-		fs.mkdirSync(logDir, { recursive: true });
+		await fs.mkdir(logDir, { recursive: true });
 		// Logs go to a file for operator forensics only. Nothing in the supervisor
 		// parses them: drift comes from the API, not from stdout.
-		const out = fs.openSync(path.join(logDir, 'node.log'), 'a');
+		const handle = await fs.open(path.join(logDir, 'node.log'), 'a');
 
 		const child = spawn(request.binary, request.args, {
 			cwd: request.nodeDir,
-			stdio: ['ignore', out, out],
+			stdio: ['ignore', handle.fd, handle.fd],
 			detached: false,
 		});
 
@@ -78,11 +78,7 @@ export class NodeProcessManager {
 
 		child.once('exit', (code, signal) => {
 			this.running.delete(request.nodeId);
-			try {
-				fs.closeSync(out);
-			} catch {
-				// already closed
-			}
+			void handle.close().catch(() => undefined);
 			onExit(request.nodeId, code, signal);
 		});
 

@@ -5,6 +5,11 @@
  * executes them. Restart policy belongs here rather than to Docker, because a
  * stop must drain a snapshot round first and a container runtime cannot know to
  * do that.
+ *
+ * Every mutation goes through `store.update`, never `store.write`: the record
+ * on disk is the source of truth, and a caller that persisted a snapshot
+ * captured earlier would silently discard concurrent updates — notably the
+ * process-exit handler's, which is the one that remembers a stop was undrained.
  */
 
 import path from 'node:path';
@@ -15,13 +20,21 @@ import type { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
 import { buildHydraNodeArgs } from './args.js';
 import { waitForDrain } from './drain.js';
-import { classifyDrift, measureDrift, type SlotConfig } from './drift.js';
+import { classifyDrift, measureDrift, validateDriftThresholds, type SlotConfig } from './drift.js';
 import { planNodeAction, type NodeObservation, type PlanLimits } from './plan.js';
 import { NodeProcessManager } from './process.js';
 import { unwedgeNode } from './unwedge.js';
 
 const MAX_CONSECUTIVE_RESTARTS = 5;
 const STRANDED_SETTLE_WAIT_MS = 30_000;
+const SIGKILL_GRACE_MS = 30_000;
+/**
+ * Nodes are reconciled concurrently because a single stop can block for the
+ * whole drain timeout plus the SIGKILL grace. Serialising would let one
+ * draining node delay drift observation for every other node by minutes — and
+ * drift is precisely what makes a node reject all client input.
+ */
+const RECONCILE_CONCURRENCY = 8;
 
 export type SupervisorLogger = {
 	info: (message: string) => void;
@@ -35,10 +48,25 @@ const sleep = (ms: number): Promise<void> =>
 		timer.unref?.();
 	});
 
+async function mapWithConcurrency<T>(items: T[], limit: number, run: (item: T) => Promise<void>): Promise<void> {
+	let cursor = 0;
+	const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+		for (;;) {
+			const index = cursor++;
+			if (index >= items.length) {
+				return;
+			}
+			await run(items[index]);
+		}
+	});
+	await Promise.all(workers);
+}
+
 export class Supervisor {
 	private readonly processes = new NodeProcessManager();
 	private readonly clients = new Map<string, NodeClient>();
-	private readonly responsive = new Set<string>();
+	/** Nodes currently being reconciled, so overlapping ticks cannot double-act. */
+	private readonly inFlight = new Set<string>();
 	private ticking = false;
 	private stopped = false;
 
@@ -71,10 +99,19 @@ export class Supervisor {
 		const records = await this.store.list();
 		this.logger.info(`[supervisor] loaded ${records.length} node record(s) from ${this.config.dataDir}`);
 		for (const record of records) {
-			// A node that was running before the restart is still marked Running on
-			// disk; the process is gone, so reset it to a state the planner will act on.
 			if (record.state === 'Running' || record.state === 'Starting' || record.state === 'Draining') {
-				await this.store.write({ ...record, state: 'Stopped' });
+				// The process is gone but the record still says it was up, so the host
+				// died without draining — an OOM kill, host failure or eviction. That
+				// is exactly the case the unwedge check exists for, so flag it;
+				// otherwise a round stranded by the kill is never detected.
+				this.logger.warn(
+					`[supervisor] ${record.nodeId} was ${record.state} at shutdown; treating as an undrained stop`,
+				);
+				await this.store.update(record.nodeId, (current) => ({
+					...current,
+					state: 'Stopped',
+					lastStopUndrained: true,
+				}));
 			}
 		}
 		await this.tick();
@@ -86,9 +123,21 @@ export class Supervisor {
 		}
 		this.ticking = true;
 		try {
-			for (const record of await this.store.list()) {
-				await this.reconcile(record);
-			}
+			const records = await this.store.list();
+			await mapWithConcurrency(records, RECONCILE_CONCURRENCY, async (record) => {
+				if (this.inFlight.has(record.nodeId)) {
+					return;
+				}
+				this.inFlight.add(record.nodeId);
+				try {
+					await this.reconcile(record);
+				} catch (error) {
+					// Isolated per node: one node's failure must not skip the rest.
+					this.logger.error(`[supervisor] reconciling ${record.nodeId} failed: ${(error as Error).message}`);
+				} finally {
+					this.inFlight.delete(record.nodeId);
+				}
+			});
 		} catch (error) {
 			this.logger.error(`[supervisor] tick failed: ${(error as Error).message}`);
 		} finally {
@@ -97,28 +146,47 @@ export class Supervisor {
 	}
 
 	private async observe(record: NodeRecord): Promise<NodeObservation> {
-		const processRunning = this.processes.isRunning(record.nodeId);
-		if (!processRunning) {
-			this.responsive.delete(record.nodeId);
+		if (!this.processes.isRunning(record.nodeId)) {
 			return { processRunning: false, drift: null, responsive: false, nowMs: Date.now() };
 		}
 
 		const client = this.client(record);
-		const responsive = await client.isResponsive();
-		if (!responsive) {
+		if (!(await client.isResponsive())) {
 			return { processRunning: true, drift: null, responsive: false, nowMs: Date.now() };
 		}
-		this.responsive.add(record.nodeId);
 
 		const slot = await client.probeCurrentSlot();
-		const drift =
-			slot === null ? null : classifyDrift(measureDrift(slot, this.slotConfig, Date.now()), this.config.drift);
+		let drift: NodeObservation['drift'] = null;
+		if (slot !== null) {
+			// Validate against THIS node's unsynced period, not the host default: a
+			// node provisioned with a shorter period needs a guard that still fires
+			// before the node starts refusing input.
+			const thresholds = this.config.drift;
+			try {
+				validateDriftThresholds(thresholds, record.unsyncedPeriodSeconds * 1000);
+			} catch (error) {
+				this.logger.warn(`[supervisor] ${record.nodeId}: ${(error as Error).message}`);
+			}
+			drift = classifyDrift(measureDrift(slot, this.slotConfig, Date.now()), thresholds);
+		}
 
 		return { processRunning: true, drift, responsive: true, nowMs: Date.now() };
 	}
 
 	private async reconcile(record: NodeRecord): Promise<void> {
 		const observation = await this.observe(record);
+
+		// A node that is up, answering and in sync has demonstrably started, so
+		// clear the restart budget. Without this, routine drift restarts — which
+		// are expected and recurring on the Blockfrost backend — accumulate until
+		// a perfectly healthy node is marked Failed.
+		if (observation.responsive && observation.drift === 'Healthy' && record.restartCount !== 0) {
+			const updated = await this.store.update(record.nodeId, (current) => ({ ...current, restartCount: 0 }));
+			if (updated !== null) {
+				record = updated;
+			}
+		}
+
 		const action = planNodeAction(record, observation, this.limits);
 
 		switch (action.kind) {
@@ -140,7 +208,11 @@ export class Supervisor {
 				return;
 			case 'Fail':
 				this.logger.error(`[supervisor] ${record.nodeId} failed: ${action.reason}`);
-				await this.store.write({ ...record, state: 'Failed', failureReason: action.reason });
+				await this.store.update(record.nodeId, (current) => ({
+					...current,
+					state: 'Failed',
+					failureReason: action.reason,
+				}));
 				return;
 			case 'Remove':
 				await this.remove(record, action.reason);
@@ -170,31 +242,35 @@ export class Supervisor {
 			unsyncedPeriodSeconds: record.unsyncedPeriodSeconds,
 		});
 
-		await this.store.write({ ...record, state: 'Starting' });
-		this.logger.info(`[supervisor] starting ${record.nodeId} (peer ${record.peerPort}, api ${record.apiPort})`);
+		// Count the attempt and mark it running BEFORE spawning. Writing after the
+		// spawn would race the exit handler for a node that dies immediately, and
+		// the later write would clobber the undrained flag the handler just set.
+		await this.store.update(record.nodeId, (current) => ({
+			...current,
+			state: 'Running',
+			restartCount: current.restartCount + 1,
+		}));
 
-		this.processes.start(
+		this.logger.info(`[supervisor] starting ${record.nodeId} (peer ${record.peerPort}, api ${record.apiPort})`);
+		await this.processes.start(
 			{ nodeId: record.nodeId, binary: this.config.hydraNodeBin, args, nodeDir },
 			(nodeId, code, signal) => {
 				void this.onExit(nodeId, code, signal);
 			},
 		);
-
-		await this.store.write({ ...record, state: 'Running', restartCount: record.restartCount + 1 });
 	}
 
 	private async onExit(nodeId: string, code: number | null, signal: NodeJS.Signals | null): Promise<void> {
-		this.responsive.delete(nodeId);
 		this.logger.warn(`[supervisor] ${nodeId} exited (code=${String(code)} signal=${String(signal)})`);
-		const record = await this.store.read(nodeId);
-		if (record === null || record.state === 'Removing') {
-			return;
-		}
-		if (record.state === 'Running' || record.state === 'Starting') {
-			// An exit we did not ask for. Mark it stopped so the next tick restarts
-			// it, and remember that the stop was not drained.
-			await this.store.write({ ...record, state: 'Stopped', lastStopUndrained: true });
-		}
+		await this.store.update(nodeId, (current) => {
+			if (current.state !== 'Running' && current.state !== 'Starting') {
+				// A stop we asked for already recorded the outcome.
+				return current;
+			}
+			// An exit we did not ask for: nothing drained it, so the next tick must
+			// check for a stranded round before trusting this node.
+			return { ...current, state: 'Stopped', lastStopUndrained: true };
+		});
 	}
 
 	private async stop(record: NodeRecord, reason: string): Promise<void> {
@@ -202,7 +278,7 @@ export class Supervisor {
 			return;
 		}
 		this.logger.info(`[supervisor] draining ${record.nodeId} before stop: ${reason}`);
-		await this.store.write({ ...record, state: 'Draining' });
+		await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Draining' }));
 
 		const client = this.client(record);
 		const outcome = await waitForDrain({
@@ -220,16 +296,17 @@ export class Supervisor {
 			);
 		}
 
-		const stopResult = await this.processes.stop(record.nodeId, 30_000);
+		const stopResult = await this.processes.stop(record.nodeId, SIGKILL_GRACE_MS);
 		if (!stopResult.graceful) {
 			this.logger.warn(`[supervisor] ${record.nodeId} required SIGKILL`);
 		}
 
-		await this.store.write({
-			...record,
+		const undrained = !outcome.drained || !stopResult.graceful;
+		await this.store.update(record.nodeId, (current) => ({
+			...current,
 			state: 'Stopped',
-			lastStopUndrained: !outcome.drained || !stopResult.graceful,
-		});
+			lastStopUndrained: undrained,
+		}));
 	}
 
 	private async unwedge(record: NodeRecord, reason: string): Promise<void> {
@@ -247,15 +324,23 @@ export class Supervisor {
 		switch (outcome.kind) {
 			case 'Healthy':
 			case 'Progressing':
-				await this.store.write({ ...record, lastStopUndrained: false, restartCount: 0 });
-				return;
 			case 'Recovered':
-				this.logger.info(`[supervisor] ${record.nodeId} recovered a stranded round by side-loading`);
-				await this.store.write({ ...record, lastStopUndrained: false, restartCount: 0 });
+				if (outcome.kind === 'Recovered') {
+					this.logger.info(`[supervisor] ${record.nodeId} recovered a stranded round by side-loading`);
+				}
+				await this.store.update(record.nodeId, (current) => ({
+					...current,
+					lastStopUndrained: false,
+					restartCount: 0,
+				}));
 				return;
 			case 'Unrecovered':
 				this.logger.error(`[supervisor] ${record.nodeId} could not be unwedged: ${outcome.reason}`);
-				await this.store.write({ ...record, state: 'Failed', failureReason: outcome.reason });
+				await this.store.update(record.nodeId, (current) => ({
+					...current,
+					state: 'Failed',
+					failureReason: outcome.reason,
+				}));
 				return;
 		}
 	}
@@ -265,20 +350,30 @@ export class Supervisor {
 		if (this.processes.isRunning(record.nodeId)) {
 			await this.stop(record, reason);
 		}
-		await this.store.remove(record.nodeId);
-		this.ports.release(record.peerPort);
-		this.clients.delete(record.nodeId);
-		this.responsive.delete(record.nodeId);
+		try {
+			await this.store.remove(record.nodeId);
+		} finally {
+			// Release the slot even if the directory could not be deleted; a leaked
+			// port would otherwise persist until the next boot rebuilds from disk.
+			this.ports.release(record.peerPort);
+			this.clients.delete(record.nodeId);
+		}
 	}
 
 	/** Drain and stop every node. Called on SIGTERM. */
 	async shutdown(): Promise<void> {
 		this.stopped = true;
 		this.logger.info('[supervisor] shutting down; draining all nodes');
-		for (const record of await this.store.list()) {
-			if (this.processes.isRunning(record.nodeId)) {
-				await this.stop(record, 'host shutting down');
+		const records = await this.store.list();
+		await mapWithConcurrency(records, RECONCILE_CONCURRENCY, async (record) => {
+			if (!this.processes.isRunning(record.nodeId)) {
+				return;
 			}
-		}
+			try {
+				await this.stop(record, 'host shutting down');
+			} catch (error) {
+				this.logger.error(`[supervisor] stopping ${record.nodeId} failed: ${(error as Error).message}`);
+			}
+		});
 	}
 }

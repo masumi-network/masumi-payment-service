@@ -11,6 +11,8 @@
  * path rather than relied on for correctness.
  */
 
+import { NodeUnreachableError } from '../errors.js';
+
 /**
  * Tags that mean no snapshot round is in flight. Anything else — including a
  * tag we do not recognise — is treated as unsafe, because the cost of guessing
@@ -61,10 +63,20 @@ export async function waitForDrain(options: DrainOptions): Promise<DrainOutcome>
 		let response: LastSeenSnapshotResponse | null = null;
 		try {
 			response = await fetchLastSeen();
-		} catch {
-			// An unreachable API means the node is already gone or wedged; there is
-			// nothing left to drain, so stop waiting rather than burn the timeout.
-			return { drained: true, lastTag, waitedMs: now() - startedAt };
+		} catch (error) {
+			if (error instanceof NodeUnreachableError) {
+				// The node is already gone; there is nothing left to drain, so stop
+				// waiting rather than burn the timeout.
+				return { drained: true, lastTag, waitedMs: now() - startedAt };
+			}
+			// It answered with something unusable. That is NOT the same as being
+			// gone — the node is live and may have a round in flight — so keep
+			// polling and let the timeout decide.
+			if (now() - startedAt >= timeoutMs) {
+				return { drained: false, lastTag, waitedMs: now() - startedAt };
+			}
+			await sleep(pollIntervalMs);
+			continue;
 		}
 
 		lastTag = readTag(response) ?? lastTag;

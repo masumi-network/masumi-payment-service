@@ -96,11 +96,39 @@ export class NodeRegistryStore {
 		return dir;
 	}
 
+	/**
+	 * Persist a record wholesale.
+	 *
+	 * Prefer {@link update} for anything that changes an existing node: writing a
+	 * snapshot captured earlier silently discards whatever else touched the
+	 * record in between, and process-exit handlers do exactly that.
+	 */
 	async write(record: NodeRecord): Promise<void> {
 		const dir = this.nodeDir(record.nodeId);
 		await fs.mkdir(dir, { recursive: true });
 		const next = { ...record, updatedAt: new Date().toISOString() };
 		await writeFileAtomic(path.join(dir, NODE_FILE), `${JSON.stringify(next, null, 2)}\n`);
+	}
+
+	/**
+	 * Read-modify-write. The mutator receives the record as it is on disk *now*,
+	 * so no caller can persist a stale snapshot — which is the whole class of bug
+	 * that lets an async exit handler's update be overwritten by an in-flight
+	 * start.
+	 *
+	 * Returns the written record, or null when the node no longer exists.
+	 */
+	async update(nodeId: string, mutate: (current: NodeRecord) => NodeRecord): Promise<NodeRecord | null> {
+		const current = await this.read(nodeId);
+		if (current === null) {
+			return null;
+		}
+		const next = mutate(current);
+		if (next.nodeId !== nodeId) {
+			throw new RegistryError(`a mutator may not change nodeId (${nodeId} -> ${next.nodeId})`);
+		}
+		await this.write(next);
+		return next;
 	}
 
 	async read(nodeId: string): Promise<NodeRecord | null> {

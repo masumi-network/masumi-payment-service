@@ -1,4 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
+import { NodeResponseError, NodeUnreachableError } from '../errors.js';
 import { isSafeToStop, waitForDrain, type LastSeenSnapshotResponse } from './drain.js';
 
 function clock(start = 0) {
@@ -75,17 +76,43 @@ describe('waitForDrain', () => {
 		expect(outcome.waitedMs).toBeGreaterThanOrEqual(5_000);
 	});
 
-	// A node that cannot answer is already down or wedged; blocking the full
-	// timeout would only delay a stop that has nothing left to protect.
-	it('stops waiting when the API is unreachable', async () => {
+	// A node that cannot be reached is already down; blocking the full timeout
+	// would only delay a stop that has nothing left to protect.
+	it('stops waiting when the node is unreachable', async () => {
 		const { now, sleep } = clock();
 		const fetchLastSeen = jest
 			.fn<() => Promise<LastSeenSnapshotResponse>>()
-			.mockRejectedValue(new Error('ECONNREFUSED'));
+			.mockRejectedValue(new NodeUnreachableError('ECONNREFUSED'));
 
 		const outcome = await waitForDrain({ fetchLastSeen, timeoutMs: 60_000, pollIntervalMs: 1_000, sleep, now });
 
 		expect(outcome.drained).toBe(true);
 		expect(fetchLastSeen).toHaveBeenCalledTimes(1);
+	});
+
+	// Answering badly is NOT the same as being gone: the node is live and may
+	// have a round in flight, so we must not report it as drained.
+	it('keeps polling when the node answers with something unusable', async () => {
+		const { now, sleep } = clock();
+		const fetchLastSeen = jest
+			.fn<() => Promise<LastSeenSnapshotResponse>>()
+			.mockRejectedValueOnce(new NodeResponseError('body is not JSON'))
+			.mockResolvedValue({ tag: 'LastSeenSnapshot' });
+
+		const outcome = await waitForDrain({ fetchLastSeen, timeoutMs: 60_000, pollIntervalMs: 1_000, sleep, now });
+
+		expect(outcome.drained).toBe(true);
+		expect(fetchLastSeen).toHaveBeenCalledTimes(2);
+	});
+
+	it('times out as undrained when the node only ever answers badly', async () => {
+		const { now, sleep } = clock();
+		const fetchLastSeen = jest
+			.fn<() => Promise<LastSeenSnapshotResponse>>()
+			.mockRejectedValue(new NodeResponseError('500'));
+
+		const outcome = await waitForDrain({ fetchLastSeen, timeoutMs: 3_000, pollIntervalMs: 1_000, sleep, now });
+
+		expect(outcome.drained).toBe(false);
 	});
 });

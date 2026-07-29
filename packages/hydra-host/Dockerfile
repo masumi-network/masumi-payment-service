@@ -92,6 +92,13 @@ ENV NODE_ENV=production \
 	HYDRA_VERSION=${HYDRA_VERSION} \
 	ETCD_VERSION=${ETCD_VERSION}
 
+# Run unprivileged: the supervisor and every hydra-node it spawns write keys and
+# persistence into /data, and there is no reason for any of that to be uid 0.
+RUN groupadd --system --gid 10001 hydra \
+	&& useradd --system --uid 10001 --gid hydra --home-dir /app --shell /usr/sbin/nologin hydra \
+	&& mkdir -p /data \
+	&& chown -R hydra:hydra /data /app
+
 # Durable state lives here and nowhere else, so the image stays
 # orchestrator-agnostic: a droplet bind mount today, a PVC under DOKS later.
 VOLUME ["/data"]
@@ -102,4 +109,5 @@ EXPOSE 8443
 # SIGKILL mid-drain).
 STOPSIGNAL SIGTERM
 WORKDIR /app
+USER hydra
 ENTRYPOINT ["node", "dist/index.js"]

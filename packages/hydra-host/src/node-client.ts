@@ -8,17 +8,11 @@
  */
 
 import WebSocket, { type RawData } from 'ws';
+import { NodeResponseError, NodeUnreachableError } from './errors.js';
 import { getOwnValue, isPlainObject } from './registry/json.js';
 import type { LastSeenSnapshotResponse } from './supervisor/drain.js';
 
 const LOOPBACK = '127.0.0.1';
-
-export class NodeClientError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'NodeClientError';
-	}
-}
 
 function decode(data: RawData): string {
 	if (Buffer.isBuffer(data)) {
@@ -39,18 +33,37 @@ export class NodeClient {
 		this.wsUrl = `ws://${LOOPBACK}:${apiPort}`;
 	}
 
+	/**
+	 * Errors are split deliberately: a transport failure means the node is gone,
+	 * while a bad status or unparseable body means it is alive and answering
+	 * badly. Draining branches on that difference.
+	 */
 	private async request(path: string, init?: RequestInit, timeoutMs = 10_000): Promise<unknown> {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+		let response: Response;
 		try {
-			const response = await fetch(`${this.base}${path}`, { ...init, signal: controller.signal });
-			if (!response.ok) {
-				throw new NodeClientError(`${init?.method ?? 'GET'} ${path} returned ${response.status}`);
-			}
-			const text = await response.text();
-			return text.length === 0 ? null : JSON.parse(text);
+			response = await fetch(`${this.base}${path}`, { ...init, signal: controller.signal });
+		} catch (error) {
+			throw new NodeUnreachableError(
+				`${init?.method ?? 'GET'} ${path} could not reach the node: ${(error as Error).message}`,
+			);
 		} finally {
 			clearTimeout(timer);
+		}
+
+		if (!response.ok) {
+			throw new NodeResponseError(`${init?.method ?? 'GET'} ${path} returned ${response.status}`);
+		}
+		const text = await response.text();
+		if (text.length === 0) {
+			return null;
+		}
+		try {
+			return JSON.parse(text);
+		} catch {
+			throw new NodeResponseError(`${init?.method ?? 'GET'} ${path} returned a body that is not JSON`);
 		}
 	}
 

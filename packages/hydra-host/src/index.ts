@@ -7,7 +7,9 @@
  * the image ships with no restart policy of its own.
  */
 
+import os from 'node:os';
 import { loadHostConfig } from './config.js';
+import { HostLock } from './registry/host-lock.js';
 import { PortAllocator } from './registry/ports.js';
 import { NodeRegistryStore } from './registry/store.js';
 import { resolveSlotConfig } from './slot-config.js';
@@ -24,6 +26,13 @@ const logger: SupervisorLogger = {
 
 async function main(): Promise<void> {
 	const config = loadHostConfig();
+
+	// Refuse to boot if another Host already owns this volume: both would spawn a
+	// process per node, giving duplicate hydra-nodes and two etcd members
+	// claiming one participant identity.
+	const lock = new HostLock(config.dataDir, os.hostname());
+	await lock.acquire();
+
 	const store = new NodeRegistryStore(config.dataDir);
 
 	// Port allocation is rebuilt from the durable registry rather than kept in
@@ -60,7 +69,8 @@ async function main(): Promise<void> {
 
 		void supervisor
 			.shutdown()
-			.then(() => {
+			.then(async () => {
+				await lock.release();
 				logger.info('[host] all nodes drained; exiting');
 				process.exit(0);
 			})
