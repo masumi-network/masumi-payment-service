@@ -79,6 +79,13 @@ export type NodeRecord = {
 	restartCount: number;
 	/** True when the last stop could not be drained, so the unwedge check looks harder on the way up. */
 	lastStopUndrained: boolean;
+	/**
+	 * Set by an explicit restart request and cleared once the supervisor has
+	 * performed it. Without this an operator's restart of an already-running node
+	 * would be indistinguishable from "desired state is Running", and therefore a
+	 * silent no-op.
+	 */
+	restartRequested?: boolean;
 };
 
 export function isKeyMaterialReadable(record: NodeRecord): boolean {

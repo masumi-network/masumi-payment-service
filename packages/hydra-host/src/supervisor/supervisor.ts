@@ -201,6 +201,9 @@ export class Supervisor {
 			case 'Restart':
 				this.logger.warn(`[supervisor] restarting ${record.nodeId}: ${action.reason}`);
 				await this.stop(record, action.reason);
+				// Clear the request before starting, so a restart that fails partway
+				// is retried by the normal Start path rather than looping here.
+				await this.store.update(record.nodeId, (current) => ({ ...current, restartRequested: false }));
 				await this.start(record);
 				return;
 			case 'Unwedge':

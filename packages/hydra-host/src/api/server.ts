@@ -19,7 +19,9 @@ import type { PeerRecord } from '../registry/types.js';
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate } from './auth.js';
+import { isHostApiError, HostApiError } from './http-error.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
+import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
 import { matchRoute } from './routes.js';
 import { toPublicNode } from './serialize.js';
 
@@ -87,7 +89,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 	const { config, store, ports, supervisor, provision, logger } = deps;
 	const tokens = { adminToken: config.adminToken, userToken: config.userToken };
 
-	return createServer((request, response) => {
+	const server = createServer((request, response) => {
 		void (async () => {
 			const method = request.method ?? 'GET';
 			const pathname = new URL(request.url ?? '/', 'http://placeholder').pathname;
@@ -110,7 +112,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 			try {
 				await handle(route.kind, route.nodeId, request, response);
 			} catch (error) {
-				if (error instanceof ProvisionError) {
+				if (isHostApiError(error)) {
 					send(response, error.status, { error: error.message });
 					return;
 				}
@@ -119,6 +121,13 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 		})();
 	});
+
+	// Bound how long a connection may occupy the control plane. It normally sits
+	// behind a load balancer, but the peer plane is public and there is no reason
+	// to assume this port never will be.
+	server.headersTimeout = 15_000;
+	server.requestTimeout = 30_000;
+	server.keepAliveTimeout = 10_000;
 
 	async function handle(
 		kind: string,
@@ -195,29 +204,35 @@ export function createControlPlane(deps: ServerDeps): Server {
 				return;
 			}
 
-			case 'startNode':
-			case 'stopNode':
-			case 'restartNode': {
-				const desired = kind === 'stopNode' ? 'Stopped' : 'Running';
-				const updated = await store.update(nodeId ?? '', (current) => ({ ...current, desired }));
-				if (updated === null) {
-					send(response, 404, { error: 'no such node' });
-					return;
-				}
-				// The supervisor performs the transition, including the drain.
+			// Lifecycle endpoints express intent; the guarded transitions validate
+			// the precondition and the supervisor performs the work, including the
+			// drain. No handler writes `state` or `desired` directly.
+			case 'startNode': {
+				const record = await requestStart(store, nodeId ?? '');
 				void supervisor.tick();
-				send(response, 202, toPublicNode(updated));
+				send(response, 202, toPublicNode(record));
+				return;
+			}
+
+			case 'stopNode': {
+				const record = await requestStop(store, nodeId ?? '');
+				void supervisor.tick();
+				send(response, 202, toPublicNode(record));
+				return;
+			}
+
+			case 'restartNode': {
+				const record = await requestRestart(store, nodeId ?? '');
+				void supervisor.tick();
+				send(response, 202, toPublicNode(record));
 				return;
 			}
 
 			case 'removeNode': {
-				const updated = await store.update(nodeId ?? '', (current) => ({ ...current, state: 'Removing' }));
-				if (updated === null) {
-					send(response, 404, { error: 'no such node' });
-					return;
-				}
+				const force = new URL(request.url ?? '/', 'http://placeholder').searchParams.get('force') === 'true';
+				const record = await requestRemoval(store, nodeId ?? '', { force });
 				void supervisor.tick();
-				send(response, 202, toPublicNode(updated));
+				send(response, 202, toPublicNode(record));
 				return;
 			}
 
@@ -242,12 +257,27 @@ export function createControlPlane(deps: ServerDeps): Server {
 				send(response, 404, { error: 'not found' });
 		}
 	}
+
+	return server;
 }
 
+/**
+ * Read an optional positive-integer field.
+ *
+ * A present-but-invalid value is rejected rather than silently replaced by the
+ * default: quietly provisioning a node with a contestation period the caller
+ * never asked for is worse than refusing the request.
+ */
 function numberOr(body: unknown, key: string, fallback: number): number {
 	if (!isPlainObject(body)) {
 		return fallback;
 	}
 	const value = getOwnValue(body, key);
-	return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : fallback;
+	if (value === undefined || value === null) {
+		return fallback;
+	}
+	if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+		throw new HostApiError(`${key} must be a positive whole number of seconds`, 400);
+	}
+	return value;
 }

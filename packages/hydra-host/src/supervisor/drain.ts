@@ -20,7 +20,20 @@ import { NodeUnreachableError } from '../errors.js';
  */
 const SAFE_TO_STOP_TAGS = new Set(['LastSeenSnapshot', 'NoSeenSnapshot']);
 
-export type LastSeenSnapshotResponse = { tag?: unknown };
+/**
+ * The subset of `GET /snapshot/last-seen` this Host depends on.
+ *
+ * The sequence fields are listed explicitly because `roundSignature` reads them
+ * to tell a stuck round from an advancing one. Modelling only `tag` would have
+ * left that dependency invisible to the type checker.
+ */
+export type LastSeenSnapshotResponse = {
+	tag?: unknown;
+	number?: number | string;
+	snapshotNumber?: number | string;
+	seq?: number | string;
+	sequence?: number | string;
+};
 
 export type DrainOutcome = {
 	drained: boolean;

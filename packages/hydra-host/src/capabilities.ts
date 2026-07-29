@@ -25,6 +25,8 @@ export type Capabilities = {
 	hydraVersion: string;
 	/** Raw `--hydra-script-catalogue` output, parsed if it is JSON. */
 	scriptCatalogue: unknown;
+	/** Set when probing the binary failed, so a broken Host is visible rather than reported as empty. */
+	probeError: string | null;
 	/** SHA-256 of the ledger protocol parameters file, for drift detection. */
 	ledgerParamsHash: string | null;
 	network: string;
@@ -51,11 +53,22 @@ async function hashFile(filePath: string): Promise<string | null> {
 }
 
 export async function readCapabilities(deps: CapabilitiesDeps): Promise<Capabilities> {
-	const exec = deps.exec ?? ((file, args) => run(file, args));
+	// A hung binary must not hang the capabilities request.
+	const exec = deps.exec ?? ((file, args) => run(file, args, { timeout: 5_000 }));
+
+	const probeErrors: string[] = [];
+	const probe = async (args: string[]): Promise<{ stdout: string }> => {
+		try {
+			return await exec(deps.hydraNodeBin, args);
+		} catch (error) {
+			probeErrors.push(`${args.join(' ')}: ${(error as Error).message}`);
+			return { stdout: '' };
+		}
+	};
 
 	const [versionResult, catalogueResult, ledgerParamsHash] = await Promise.all([
-		exec(deps.hydraNodeBin, ['--version']).catch(() => ({ stdout: '' })),
-		exec(deps.hydraNodeBin, ['--hydra-script-catalogue']).catch(() => ({ stdout: '' })),
+		probe(['--version']),
+		probe(['--hydra-script-catalogue']),
 		hashFile(deps.ledgerProtocolParametersFile),
 	]);
 
@@ -72,6 +85,7 @@ export async function readCapabilities(deps: CapabilitiesDeps): Promise<Capabili
 	return {
 		hydraVersion: versionResult.stdout.trim(),
 		scriptCatalogue,
+		probeError: probeErrors.length === 0 ? null : probeErrors.join('; '),
 		ledgerParamsHash,
 		network: deps.network,
 		nodeSlots: deps.slots(),

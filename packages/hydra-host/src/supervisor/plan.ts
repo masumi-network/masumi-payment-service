@@ -109,6 +109,13 @@ export function planNodeAction(record: NodeRecord, observation: NodeObservation,
 		return { kind: 'Unwedge', reason: 'previous stop could not be drained' };
 	}
 
+	// An explicit operator restart. Checked before drift so the request is
+	// honoured even when the node looks healthy — otherwise it would be
+	// indistinguishable from the steady state and silently ignored.
+	if (record.restartRequested === true) {
+		return { kind: 'Restart', reason: 'restart requested through the API' };
+	}
+
 	if (observation.drift === 'Unsynced') {
 		return {
 			kind: 'Restart',

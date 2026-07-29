@@ -31,8 +31,13 @@ const isObject = (value: unknown): value is object => typeof value === 'object' 
 
 export const isPlainObject = (value: unknown): value is RuntimeObject => isObject(value) && !Array.isArray(value);
 
+// Object.prototype.hasOwnProperty.call rather than Object.hasOwn: the latter is
+// ES2022 lib, and this package is compiled standalone for the container against
+// the repo's es2021 target.
+const hasOwn = (value: object, key: string): boolean => Object.prototype.hasOwnProperty.call(value, key);
+
 export const getOwnValue = (value: object, key: string): RuntimePropertyValue | undefined =>
-	Object.hasOwn(value, key) ? (value as RuntimeObject)[key] : undefined;
+	hasOwn(value, key) ? (value as RuntimeObject)[key] : undefined;
 
 export const getOwnString = (value: object, key: string): string | undefined => {
 	const property = getOwnValue(value, key);

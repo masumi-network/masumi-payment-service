@@ -22,13 +22,12 @@ import { generateCardanoKeyPair, generateHydraKeyPair, serializeEnvelope } from 
 import type { PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord, PeerRecord } from '../registry/types.js';
+import { HostApiError, type HttpErrorStatus } from './http-error.js';
+import { requireQuiescentForPeerChange } from './transitions.js';
 
-export class ProvisionError extends Error {
-	constructor(
-		message: string,
-		readonly status: 400 | 404 | 409 | 507,
-	) {
-		super(message);
+export class ProvisionError extends HostApiError {
+	constructor(message: string, status: HttpErrorStatus) {
+		super(message, status);
 		this.name = 'ProvisionError';
 	}
 }
@@ -81,9 +80,33 @@ export async function provisionNode(request: ProvisionRequest, deps: ProvisionDe
 		throw new ProvisionError('an Idempotency-Key header is required so a lost response can be retried safely', 400);
 	}
 
-	// Replay: same key, node still un-acked -> return the same material.
+	// The scan below deliberately uses the strict listing, which throws on a
+	// damaged record. Failing closed is correct here: if we cannot read every
+	// record we cannot prove this idempotency key is unused, and guessing would
+	// double-allocate a node and its port.
 	const existing = (await deps.store.list()).find((record) => record.idempotencyKey === request.idempotencyKey);
 	if (existing !== undefined) {
+		// A replay must be a replay of the *same* request. Silently returning a
+		// node provisioned with different periods would leave the caller believing
+		// it configured something it did not.
+		const mismatched = (
+			[
+				['network', existing.network, request.network],
+				['contestationPeriodSeconds', existing.contestationPeriodSeconds, request.contestationPeriodSeconds],
+				['depositPeriodSeconds', existing.depositPeriodSeconds, request.depositPeriodSeconds],
+				['unsyncedPeriodSeconds', existing.unsyncedPeriodSeconds, request.unsyncedPeriodSeconds],
+			] as const
+		).filter(([, stored, requested]) => stored !== requested);
+
+		if (mismatched.length > 0) {
+			const fields = mismatched.map(([field]) => field).join(', ');
+			throw new ProvisionError(
+				`idempotency key ${request.idempotencyKey} was already used with different parameters (${fields}); ` +
+					'use a fresh key for a different request',
+				409,
+			);
+		}
+
 		if (!mayDiscloseSecrets(existing)) {
 			// Already acknowledged. The node is real, but its keys are sealed.
 			return { record: existing, secrets: null, replayed: true };
@@ -142,7 +165,10 @@ export async function provisionNode(request: ProvisionRequest, deps: ProvisionDe
 			replayed: false,
 		};
 	} catch (error) {
-		// Never leak a port on a failed provision.
+		// Never leave key material behind for a node that does not exist, and
+		// never leak the port. Cleanup order matters: remove the directory (which
+		// holds hydra.sk / cardano.sk) before releasing the slot.
+		await deps.store.remove(nodeId).catch(() => undefined);
 		deps.ports.release(triple.peerPort);
 		throw error;
 	}
@@ -182,10 +208,10 @@ export async function acknowledgeEscrow(nodeId: string, deps: ProvisionDeps): Pr
  * peer set becomes etcd's `--initial-cluster`, which is fixed at process start.
  */
 export async function setPeers(nodeId: string, peers: PeerRecord[], deps: ProvisionDeps): Promise<NodeRecord> {
-	const record = await deps.store.read(nodeId);
-	if (record === null) {
-		throw new ProvisionError(`no such node: ${nodeId}`, 404);
-	}
+	// Enforced, not merely documented: the peer set becomes --initial-cluster,
+	// which is fixed at process start and determines the content-addressed etcd
+	// data directory.
+	const record = await requireQuiescentForPeerChange(deps.store, nodeId);
 	if (peers.length === 0) {
 		throw new ProvisionError('at least one peer is required', 400);
 	}
@@ -199,6 +225,12 @@ export async function setPeers(nodeId: string, peers: PeerRecord[], deps: Provis
 	const nodeDir = deps.store.nodeDir(nodeId);
 	const peersDir = path.join(nodeDir, 'peers');
 	await fs.mkdir(peersDir, { recursive: true });
+	// Clear any files from a previous, larger peer set. They are unreferenced —
+	// the launcher only reads indices below the peer count — but leaving stale
+	// verification keys on disk is misleading during an incident.
+	for (const entry of await fs.readdir(peersDir).catch(() => [])) {
+		await fs.rm(path.join(peersDir, entry), { force: true });
+	}
 	await Promise.all(
 		peers.flatMap((peer, index) => [
 			fs.writeFile(

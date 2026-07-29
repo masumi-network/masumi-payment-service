@@ -11,6 +11,12 @@ import type { Supervisor } from '../supervisor/supervisor.js';
 import { createControlPlane } from './server.js';
 import type { ProvisionDeps } from './provision.js';
 
+const PEER = {
+	advertise: 'hydra2.example.com:5001',
+	hydraVerificationKey: `5820${'ab'.repeat(32)}`,
+	cardanoVerificationKey: `5820${'cd'.repeat(32)}`,
+};
+
 const ADMIN = 'a'.repeat(40);
 const USER = 'u'.repeat(40);
 
@@ -182,5 +188,78 @@ describe('provisioning over HTTP', () => {
 
 	it('404s health for an unknown node', async () => {
 		expect((await call('GET', '/v1/nodes/missing/health', { token: USER })).status).toBe(404);
+	});
+});
+
+describe('lifecycle guards over HTTP', () => {
+	const provisionAndAck = async (key = 'idem-1'): Promise<string> => {
+		const created = (await (await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: key })).json()) as {
+			nodeId: string;
+		};
+		await call('POST', `/v1/nodes/${created.nodeId}/escrow-ack`, { token: ADMIN });
+		return created.nodeId;
+	};
+
+	// Removal destroys the persistence dir — the only copy of head state here.
+	it('refuses to delete a live node without force, and allows it with force', async () => {
+		const nodeId = await provisionAndAck();
+		expect((await call('DELETE', `/v1/nodes/${nodeId}`, { token: ADMIN })).status).toBe(409);
+		expect((await call('DELETE', `/v1/nodes/${nodeId}?force=true`, { token: ADMIN })).status).toBe(202);
+	});
+
+	it('deletes a never-acknowledged node without force', async () => {
+		const created = (await (
+			await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-unacked' })
+		).json()) as { nodeId: string };
+		expect((await call('DELETE', `/v1/nodes/${created.nodeId}`, { token: ADMIN })).status).toBe(202);
+	});
+
+	// Peers become --initial-cluster, fixed at process start.
+	it('refuses a peer change once the node is no longer quiescent', async () => {
+		const nodeId = await provisionAndAck();
+		await call('PATCH', `/v1/nodes/${nodeId}`, { token: ADMIN, body: { peers: [PEER] } });
+		await call('POST', `/v1/nodes/${nodeId}/start`, { token: ADMIN });
+		// The record is Stopped until the supervisor acts, so force it live.
+		const store = new NodeRegistryStore(dataDir);
+		await store.update(nodeId, (current) => ({ ...current, state: 'Running' }));
+
+		const patched = await call('PATCH', `/v1/nodes/${nodeId}`, { token: ADMIN, body: { peers: [PEER] } });
+		expect(patched.status).toBe(409);
+	});
+
+	it('refuses to start a node before peers are configured', async () => {
+		const nodeId = await provisionAndAck();
+		const started = await call('POST', `/v1/nodes/${nodeId}/start`, { token: ADMIN });
+		expect(started.status).toBe(409);
+	});
+
+	// The bug this replaces: restart set desired='Running', which the planner
+	// reads as Idle for an already-running node, so the request did nothing.
+	it('records an explicit restart rather than silently doing nothing', async () => {
+		const nodeId = await provisionAndAck();
+		await call('PATCH', `/v1/nodes/${nodeId}`, { token: ADMIN, body: { peers: [PEER] } });
+
+		expect((await call('POST', `/v1/nodes/${nodeId}/restart`, { token: ADMIN })).status).toBe(202);
+		const store = new NodeRegistryStore(dataDir);
+		expect((await store.read(nodeId))?.restartRequested).toBe(true);
+	});
+
+	it('409s a replayed idempotency key carrying different parameters', async () => {
+		await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-x', body: { depositPeriodSeconds: 300 } });
+		const clash = await call('POST', '/v1/nodes', {
+			token: ADMIN,
+			idempotencyKey: 'idem-x',
+			body: { depositPeriodSeconds: 600 },
+		});
+		expect(clash.status).toBe(409);
+	});
+
+	it('400s a present-but-invalid period instead of silently defaulting', async () => {
+		const bad = await call('POST', '/v1/nodes', {
+			token: ADMIN,
+			idempotencyKey: 'idem-bad',
+			body: { contestationPeriodSeconds: -5 },
+		});
+		expect(bad.status).toBe(400);
 	});
 });
