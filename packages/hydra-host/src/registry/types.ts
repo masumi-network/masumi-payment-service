@@ -28,8 +28,14 @@ export type NodeDesiredState = 'Running' | 'Stopped';
 export type PeerRecord = {
 	/** Publicly reachable `host:port`, exactly as the counterparty advertises it. */
 	advertise: string;
+	/** Envelope `cborHex` of the peer's Hydra verification key. */
 	hydraVerificationKey: string;
-	cardanoVkey: string;
+	/**
+	 * Envelope `cborHex` of the peer's node Cardano *verification key* — not the
+	 * 28-byte blake2b-224 hash the payment service keeps in its `cardanoVkey`
+	 * column. hydra-node needs the key itself for `--cardano-verification-key`.
+	 */
+	cardanoVerificationKey: string;
 };
 
 export type NodeRecord = {
@@ -51,9 +57,13 @@ export type NodeRecord = {
 	depositPeriodSeconds: number;
 	unsyncedPeriodSeconds: number;
 
-	/** Public material, safe to return from the API at any time. */
+	/**
+	 * Public material, safe to return from the API at any time. Both are
+	 * envelope `cborHex` values; the payment service derives the key hash it
+	 * stores as `cardanoVkey` from `cardanoVerificationKey`.
+	 */
 	hydraVerificationKey: string;
-	cardanoVkey: string;
+	cardanoVerificationKey: string;
 
 	/** Set by escrow-ack; once set, key material is never returned again. */
 	escrowAckedAt: string | null;

@@ -7,8 +7,10 @@
  * the image ships with no restart policy of its own.
  */
 
+import { randomUUID } from 'node:crypto';
 import os from 'node:os';
-import { loadHostConfig } from './config.js';
+import { createControlPlane } from './api/server.js';
+import { advertiseAddress, loadHostConfig } from './config.js';
 import { HostLock } from './registry/host-lock.js';
 import { PortAllocator } from './registry/ports.js';
 import { NodeRegistryStore } from './registry/store.js';
@@ -47,6 +49,24 @@ async function main(): Promise<void> {
 	const supervisor = new Supervisor(config, store, allocator, resolveSlotConfig(config.network), logger);
 	await supervisor.boot();
 
+	const server = createControlPlane({
+		config,
+		store,
+		ports: allocator,
+		supervisor,
+		provision: {
+			store,
+			ports: allocator,
+			advertiseFor: (peerPort) => advertiseAddress(config, peerPort),
+			newNodeId: () => randomUUID(),
+			now: () => new Date(),
+		},
+		logger,
+	});
+	server.listen(config.listenPort, () => {
+		logger.info(`[host] control plane listening on :${config.listenPort}`);
+	});
+
 	const timer = setInterval(() => void supervisor.tick(), TICK_INTERVAL_MS);
 
 	let shuttingDown = false;
@@ -57,6 +77,7 @@ async function main(): Promise<void> {
 		shuttingDown = true;
 		logger.info(`[host] received ${signal}`);
 		clearInterval(timer);
+		server.close();
 
 		// Bound the drain so a stuck node cannot hold the container open past the
 		// platform's own kill timeout; losing the race just means the next boot

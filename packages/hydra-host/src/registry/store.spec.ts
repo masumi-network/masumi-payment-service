@@ -20,7 +20,7 @@ function record(overrides: Partial<NodeRecord> = {}): NodeRecord {
 		depositPeriodSeconds: 300,
 		unsyncedPeriodSeconds: 1800,
 		hydraVerificationKey: '5820aa',
-		cardanoVkey: 'bb'.repeat(28),
+		cardanoVerificationKey: 'bb'.repeat(28),
 		escrowAckedAt: null,
 		idempotencyKey: 'idem-1',
 		createdAt: '2026-07-28T00:00:00.000Z',
