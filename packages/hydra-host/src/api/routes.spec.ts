@@ -28,9 +28,10 @@ describe('matchRoute', () => {
 		expect(matchRoute('GET', '/v1/nodes/abc/health')).toEqual({ kind: 'nodeHealth', tier: 'user', nodeId: 'abc' });
 	});
 
-	// There is no proxy entry in this table, so GET /config — which discloses
-	// signing-key paths and the persistence directory — is unreachable here.
-	it('does not expose the node API through the control plane', () => {
+	// The control-plane table deliberately owns none of the node API. Those paths
+	// fall through to the proxy, which applies its own allow-list — see
+	// proxy-path.spec.ts, where /config is asserted unreachable.
+	it('leaves the node API to the proxy rather than routing it here', () => {
 		expect(matchRoute('GET', '/v1/nodes/abc/config')).toBeNull();
 		expect(matchRoute('GET', '/v1/nodes/abc/api')).toBeNull();
 		expect(matchRoute('POST', '/v1/nodes/abc/api/snapshot')).toBeNull();

@@ -25,4 +25,13 @@ declare module 'ws' {
 		terminate(): void;
 		send(data: string | Buffer): void;
 	}
+
+	/**
+	 * Only used by tests, which stand up a WebSocket-capable stand-in for
+	 * hydra-node to prove the tunnel really upgrades rather than assuming it.
+	 */
+	export class WebSocketServer extends EventEmitter {
+		constructor(options: { server?: unknown; port?: number; noServer?: boolean });
+		close(callback?: () => void): void;
+	}
 }

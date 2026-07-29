@@ -22,6 +22,8 @@ import { authenticate } from './auth.js';
 import { isHostApiError, HostApiError } from './http-error.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
+import { isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
+import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { matchRoute } from './routes.js';
 import { toPublicNode } from './serialize.js';
 
@@ -96,7 +98,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 
 			const route = matchRoute(method, pathname);
 			if (route === null) {
-				send(response, 404, { error: 'not found' });
+				await handleNodeApiProxy(method, pathname, request, response);
 				return;
 			}
 
@@ -124,10 +126,50 @@ export function createControlPlane(deps: ServerDeps): Server {
 
 	// Bound how long a connection may occupy the control plane. It normally sits
 	// behind a load balancer, but the peer plane is public and there is no reason
-	// to assume this port never will be.
+	// to assume this port never will be. Proxied WebSockets opt out of this
+	// per-socket, since a quiet head is legitimately silent for long stretches.
 	server.headersTimeout = 15_000;
 	server.requestTimeout = 30_000;
 	server.keepAliveTimeout = 10_000;
+
+	// WebSocket upgrades never reach the request handler, so they are
+	// authenticated and authorised here on their own path.
+	server.on('upgrade', (request, socket, head) => {
+		void (async () => {
+			const rejectUpgrade = (status: number, reason: string): void => {
+				logger.warn(`[api] websocket upgrade rejected: ${reason}`);
+				socket.write(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\n\r\n`);
+				socket.destroy();
+			};
+
+			const pathname = new URL(request.url ?? '/', 'http://placeholder').pathname;
+			const target = matchNodeApiProxy(pathname);
+			if (target === null || !isProxyableWebSocketPath(target.subPath)) {
+				rejectUpgrade(404, 'Not Found');
+				return;
+			}
+
+			const auth = authenticate(request.headers.authorization, tokens, 'user');
+			if (!auth.ok) {
+				rejectUpgrade(auth.status, auth.status === 403 ? 'Forbidden' : 'Unauthorized');
+				return;
+			}
+
+			const record = await store.read(target.nodeId).catch(() => null);
+			if (record === null) {
+				rejectUpgrade(404, 'Not Found');
+				return;
+			}
+			if (record.state !== 'Running') {
+				rejectUpgrade(409, 'Conflict');
+				return;
+			}
+
+			proxyWebSocket(request, socket, head, record.apiPort, target.subPath, (message) =>
+				logger.error(`[api] ${message}`),
+			);
+		})();
+	});
 
 	async function handle(
 		kind: string,
@@ -256,6 +298,45 @@ export function createControlPlane(deps: ServerDeps): Server {
 			default:
 				send(response, 404, { error: 'not found' });
 		}
+	}
+
+	/**
+	 * Forward an HTTP request to the node's own API.
+	 *
+	 * Reached only when the control-plane table did not match, and gated by its
+	 * own allow-list rather than by whatever the node happens to expose.
+	 */
+	async function handleNodeApiProxy(
+		method: string,
+		pathname: string,
+		request: IncomingMessage,
+		response: ServerResponse,
+	): Promise<void> {
+		const target = matchNodeApiProxy(pathname);
+		if (target === null || !isProxyableHttpPath(method, target.subPath)) {
+			send(response, 404, { error: 'not found' });
+			return;
+		}
+
+		const auth = authenticate(request.headers.authorization, tokens, 'user');
+		if (!auth.ok) {
+			send(response, auth.status, { error: auth.message });
+			return;
+		}
+
+		const record = await store.read(target.nodeId);
+		if (record === null) {
+			send(response, 404, { error: 'no such node' });
+			return;
+		}
+		if (record.state !== 'Running') {
+			// Proxying to a node that is not up would surface as a connection
+			// refused; saying so plainly is more useful than a 502.
+			send(response, 409, { error: `node is ${record.state}, not Running` });
+			return;
+		}
+
+		proxyHttp(request, response, record.apiPort, target.subPath, (message) => logger.error(`[api] ${message}`));
 	}
 
 	return server;
