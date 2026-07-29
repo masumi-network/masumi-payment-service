@@ -6,6 +6,7 @@ import { FixedTransaction } from '@emurgo/cardano-serialization-lib-nodejs';
 import { castProtocol, Protocol, resolveTxHash, UTxO } from '@meshsdk/core';
 
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
+import { hydraAuthHeaders } from './auth';
 import { Connection } from './connection';
 import {
 	canonicalHydraHeadIdSchema,
@@ -199,6 +200,8 @@ export interface HydraNodeClientConfig {
 	 * `snapshot.confirmed` metadata. Hydra signatures commit only TxOut values.
 	 */
 	trustLocalNodeSnapshotMetadata?: boolean;
+	/** Bearer token when the node sits behind a Hydra Host; omitted on loopback. */
+	authToken?: string;
 	/** Bounds websocket-open and pinned Greetings authentication. */
 	connectTimeoutMs?: number;
 	/** Bounds every Hydra HTTP request. */
@@ -267,6 +270,7 @@ export class HydraNode extends EventEmitter {
 	private readonly _maxUnreconciledTransactions: number;
 	private readonly _maxRetainedTransactionCborBytes: number;
 	private _reconciledHistoryCursor: { snapshotSequence: number; snapshotTransactionIndex: number } | undefined;
+	private readonly _authHeaders: Record<string, string>;
 
 	constructor(config: HydraNodeClientConfig) {
 		super();
@@ -277,8 +281,11 @@ export class HydraNode extends EventEmitter {
 		// status or command listeners, which could regress head state or stampede
 		// handlers out of order. Construct the live socket last so existing test
 		// harnesses that capture the latest Connection still exercise live events.
-		this._historyConnection = new Connection(withHistorySetting(this._wsUrl, true));
-		this._connection = new Connection(withHistorySetting(this._wsUrl, false));
+		this._authHeaders = hydraAuthHeaders(config.authToken);
+		// Both sockets need the credential: the evidence socket replays history and
+		// the live socket carries commands, and a Host authenticates each upgrade.
+		this._historyConnection = new Connection(withHistorySetting(this._wsUrl, true), config.authToken);
+		this._connection = new Connection(withHistorySetting(this._wsUrl, false), config.authToken);
 		this._txCircularBuffer = new CircularBuffer(10000);
 		this._connectTimeoutMs = config.connectTimeoutMs ?? HydraNode.CONNECTION_TIMEOUT_MS;
 		this._httpTimeoutMs = config.httpTimeoutMs ?? HydraNode.HTTP_TIMEOUT_MS;
@@ -1572,7 +1579,7 @@ export class HydraNode extends EventEmitter {
 		try {
 			const response = await fetch(this._httpUrl + url, {
 				method,
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...this._authHeaders },
 				redirect: 'error',
 				signal: abortController.signal,
 				...(serializedPayload === undefined ? {} : { body: serializedPayload }),

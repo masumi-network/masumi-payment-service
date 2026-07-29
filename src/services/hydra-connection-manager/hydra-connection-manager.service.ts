@@ -33,6 +33,7 @@ import {
 import { parseHydraTransactionEvidence } from './hydra-transaction-evidence';
 import { decrypt } from '@/utils/security/encryption';
 import WebSocket, { type RawData } from 'ws';
+import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
@@ -353,7 +354,8 @@ export class HydraConnectionManager {
 				plaintextHosts: getHydraPlaintextHosts(),
 			},
 		);
-		const isReachable = await this.probeNode(nodeUrls.httpUrl);
+		const nodeAuthToken = this.resolveNodeAuthToken(head.id);
+		const isReachable = await this.probeNode(nodeUrls.httpUrl, nodeAuthToken);
 		if (!isReachable) {
 			throw new Error(`Local Hydra node unreachable for head ${head.id}`);
 		}
@@ -372,6 +374,7 @@ export class HydraConnectionManager {
 			// Hydra 2.3 signs the TxOut multiset, not reference mappings or the
 			// confirmed CBOR list. This opt-in names the remaining local-node trust.
 			trustLocalNodeSnapshotMetadata: true,
+			authToken: nodeAuthToken,
 		};
 
 		const hydraHead: CustomHydraHead = new CustomHydraHead([nodeConfig], {
@@ -436,6 +439,7 @@ export class HydraConnectionManager {
 			nodeUrls.wsUrl,
 			configuredHead.headIdentifier,
 			relation.network,
+			nodeAuthToken,
 		);
 	}
 
@@ -454,13 +458,14 @@ export class HydraConnectionManager {
 		wsUrl: string,
 		expectedHeadId: string | null,
 		network: Network,
+		authToken?: string,
 	): void {
 		this.stopHeadClockRefresh(hydraHeadId);
 		const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(network));
 		if (!slotConfig) return;
 		const refresh = async (): Promise<void> => {
 			try {
-				const currentSlot = await this.probeHeadCurrentSlot(wsUrl, expectedHeadId);
+				const currentSlot = await this.probeHeadCurrentSlot(wsUrl, expectedHeadId, authToken);
 				if (currentSlot == null) return;
 				const chainTimeMs = slotConfig.zeroTime + (currentSlot - slotConfig.zeroSlot) * slotConfig.slotLength;
 				node.applyObservedHeadClock(chainTimeMs, currentSlot);
@@ -488,7 +493,11 @@ export class HydraConnectionManager {
 	 * Greetings frame the node sends on connect. Returns null if the head does not
 	 * match, the node is not synced, or the probe times out.
 	 */
-	private probeHeadCurrentSlot(wsUrl: string, expectedHeadId: string | null): Promise<number | null> {
+	private probeHeadCurrentSlot(
+		wsUrl: string,
+		expectedHeadId: string | null,
+		authToken?: string,
+	): Promise<number | null> {
 		return new Promise<number | null>((resolve) => {
 			let settled = false;
 			const finish = (value: number | null) => {
@@ -501,7 +510,10 @@ export class HydraConnectionManager {
 				}
 				resolve(value);
 			};
-			const socket = new WebSocket(`${wsUrl}?history=no`);
+			const authHeaders = hydraAuthHeaders(authToken);
+			const socket = new WebSocket(`${wsUrl}?history=no`, {
+				...(Object.keys(authHeaders).length === 0 ? {} : { headers: authHeaders }),
+			});
 			const timeout = setTimeout(() => finish(null), 8000);
 			timeout.unref?.();
 			socket.on('message', (data: RawData) => {
@@ -652,13 +664,28 @@ export class HydraConnectionManager {
 		}
 	}
 
-	private async probeNode(httpUrl: string, timeoutMs = 5000): Promise<boolean> {
+	/**
+	 * The bearer token for reaching this head's node.
+	 *
+	 * A node on loopback has nothing in front of it, so there is nothing to
+	 * authenticate to and this is undefined. When a head is placed on a Hydra
+	 * Host, the Host's decrypted user token is returned here — the single seam
+	 * every caller reads, so the credential cannot be threaded correctly in one
+	 * place and forgotten in another.
+	 */
+	private resolveNodeAuthToken(_hydraHeadId: string): string | undefined {
+		return undefined;
+	}
+
+	private async probeNode(httpUrl: string, authToken?: string, timeoutMs = 5000): Promise<boolean> {
 		const controller = new AbortController();
 		const timeout = setTimeout(() => controller.abort(), timeoutMs);
 		try {
 			const response = await fetch(buildHydraHttpEndpoint(httpUrl, 'protocol-parameters'), {
 				signal: controller.signal,
-				headers: { 'Content-Type': 'application/json' },
+				// A Host rejects an unauthenticated probe, which would otherwise look
+				// exactly like an unreachable node and disable a healthy head.
+				headers: { 'Content-Type': 'application/json', ...hydraAuthHeaders(authToken) },
 				redirect: 'error',
 			});
 			await response.body?.cancel().catch(() => undefined);

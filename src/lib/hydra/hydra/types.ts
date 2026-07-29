@@ -133,5 +133,11 @@ export type HydraNodeConfig = {
 	snapshotVerificationKeys?: string[];
 	expectedNodeVerificationKey?: string;
 	trustLocalNodeSnapshotMetadata?: boolean;
+	/**
+	 * Bearer token for a node reached through a Hydra Host. Absent for a node on
+	 * loopback, which has nothing in front of it to authenticate to. Travels as a
+	 * header only — `node-url.ts` rejects credentials embedded in the URL.
+	 */
+	authToken?: string;
 	walletId: string;
 };

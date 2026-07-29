@@ -6,6 +6,11 @@ declare module 'ws' {
 	export interface ClientOptions {
 		maxPayload?: number;
 		perMessageDeflate?: boolean;
+		/**
+		 * Sent on the upgrade request. Needed when a node sits behind a Hydra
+		 * Host, which authenticates the upgrade itself.
+		 */
+		headers?: Record<string, string>;
 	}
 
 	export default class WebSocket extends EventEmitter {

@@ -3,6 +3,7 @@ import { errorToString } from '@masumi/payment-core/error-string-convert';
 import { logger } from '@masumi/payment-core/logger';
 import WebSocket, { type RawData } from 'ws';
 import { stringifyHydraJson } from './json';
+import { hydraAuthHeaders } from './auth';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraProtocolError, HydraTransportError } from './errors';
 import { MAX_HYDRA_WS_FRAME_BYTES } from './schemas';
@@ -25,10 +26,17 @@ export class Connection extends EventEmitter {
 	private _disconnectPromise: Promise<void> | undefined;
 	private _socketGeneration = 0;
 	private _reconnectAttempt = 0;
+	/**
+	 * Sent on every upgrade, including reconnects: a Hydra Host authenticates the
+	 * upgrade itself, so a socket that reconnects without the credential would be
+	 * refused and the head would look permanently disconnected.
+	 */
+	private readonly _authHeaders: Record<string, string>;
 
-	constructor(url: string) {
+	constructor(url: string, authToken?: string) {
 		super();
 		this._url = url;
+		this._authHeaders = hydraAuthHeaders(authToken);
 		this._status = HydraHeadStatus.Disconnected;
 	}
 
@@ -45,6 +53,7 @@ export class Connection extends EventEmitter {
 		const websocket = new WebSocket(this._url.replace('http', 'ws'), {
 			maxPayload: MAX_HYDRA_WS_FRAME_BYTES,
 			perMessageDeflate: false,
+			...(Object.keys(this._authHeaders).length === 0 ? {} : { headers: this._authHeaders }),
 		});
 		this._websocket = websocket;
 		this._status = HydraHeadStatus.Connecting;
