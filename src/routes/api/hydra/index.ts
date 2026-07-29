@@ -1,3 +1,11 @@
+export {
+	listHydraHostsGet,
+	registerHydraHostPost,
+	updateHydraHostPatch,
+	deleteHydraHostDelete,
+	checkHydraHostPost,
+} from './host';
+
 export { getOrListRelationsGet, createRelationPost, deleteRelationDelete } from './relation';
 
 export {

@@ -5345,6 +5345,88 @@
                     "alreadyRunning"
                 ]
             },
+            "HydraHost": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string"
+                    },
+                    "updatedAt": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "network": {
+                        "type": "string",
+                        "enum": [
+                            "Preprod",
+                            "Mainnet"
+                        ]
+                    },
+                    "baseUrl": {
+                        "type": "string"
+                    },
+                    "publicPeerHost": {
+                        "type": "string"
+                    },
+                    "hasAdminToken": {
+                        "type": "boolean"
+                    },
+                    "hydraVersion": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "scriptCatalogueHash": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ledgerParamsHash": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "Active",
+                            "Draining",
+                            "Unreachable",
+                            "Disabled"
+                        ]
+                    },
+                    "lastHealthAt": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "lastHealthError": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "participantCount": {
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "id",
+                    "createdAt",
+                    "updatedAt",
+                    "name",
+                    "network",
+                    "baseUrl",
+                    "publicPeerHost",
+                    "hasAdminToken",
+                    "hydraVersion",
+                    "scriptCatalogueHash",
+                    "ledgerParamsHash",
+                    "status",
+                    "lastHealthAt",
+                    "lastHealthError",
+                    "participantCount"
+                ]
+            },
             "HydraRelationDetail": {
                 "allOf": [
                     {
@@ -29890,6 +29972,421 @@
                     },
                     "401": {
                         "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/hydra/host": {
+            "get": {
+                "summary": "List registered Hydra Hosts. (admin access required)",
+                "description": "Lists the Hydra Host deployments that can run hydra-node processes for this service. Tokens are never returned; `hasAdminToken` reports whether a Host can be provisioned on.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Restrict to one network"
+                        },
+                        "required": false,
+                        "description": "Restrict to one network",
+                        "name": "network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Registered hosts",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "hosts": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/HydraHost"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "hosts"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            },
+            "post": {
+                "summary": "Register a Hydra Host. (admin access required)",
+                "description": "Registers a Hydra Host control plane. The user token grants runtime access to the proxied node API; the optional admin token additionally allows provisioning nodes on this Host. Both are stored encrypted and never returned.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 120,
+                                        "description": "Operator-facing label"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ]
+                                    },
+                                    "baseUrl": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Control-plane URL, e.g. https://hydra1.example.com. TLS terminates in front of the Host."
+                                    },
+                                    "publicPeerHost": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Hostname the Host advertises for per-head peer ports; the counterparty dials this"
+                                    },
+                                    "userToken": {
+                                        "type": "string",
+                                        "minLength": 32,
+                                        "maxLength": 512,
+                                        "description": "Runtime token: proxied node API access"
+                                    },
+                                    "adminToken": {
+                                        "type": "string",
+                                        "minLength": 32,
+                                        "maxLength": 512,
+                                        "description": "Fleet token: provision, escrow-ack, reconfigure, delete. Omit to register for runtime use only."
+                                    }
+                                },
+                                "required": [
+                                    "name",
+                                    "network",
+                                    "baseUrl",
+                                    "publicPeerHost",
+                                    "userToken"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Registered host",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHost"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "409": {
+                        "description": "A host for this network and base URL is already registered"
+                    }
+                }
+            },
+            "patch": {
+                "summary": "Update a Hydra Host. (admin access required)",
+                "description": "Updates a Host label, status or tokens. Setting status to Draining keeps existing heads served while accepting no new placements, which matters because a head cannot be moved to another Host.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 120
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Active",
+                                            "Draining",
+                                            "Unreachable",
+                                            "Disabled"
+                                        ],
+                                        "description": "Draining keeps serving existing heads (they cannot be moved) but takes no new placements"
+                                    },
+                                    "userToken": {
+                                        "type": "string",
+                                        "minLength": 32,
+                                        "maxLength": 512,
+                                        "description": "Opaque bearer token issued by the Hydra Host. Stored encrypted and never returned."
+                                    },
+                                    "adminToken": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "minLength": 32,
+                                        "maxLength": 512,
+                                        "description": "Null clears the admin token, disabling provisioning"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated host",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHost"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Remove a Hydra Host. (admin access required)",
+                "description": "Removes a Host registration. Refused while the Host still runs nodes, because their heads cannot be relocated.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Removed host",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    },
+                    "409": {
+                        "description": "Host still runs nodes"
+                    }
+                }
+            }
+        },
+        "/hydra/host/check": {
+            "post": {
+                "summary": "Probe a Hydra Host and record its capabilities. (admin access required)",
+                "description": "Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Host capabilities",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHost"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    },
+                    "409": {
+                        "description": "Host has no admin token"
                     }
                 }
             }

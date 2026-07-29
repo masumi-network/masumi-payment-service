@@ -57,6 +57,16 @@ import {
 	ensureWalletBaseSchemaInput,
 	ensureWalletBaseSchemaOutput,
 } from '@/routes/api/hydra/wallet-base';
+import {
+	checkHydraHostSchemaInput,
+	deleteHydraHostSchemaInput,
+	deleteHydraHostSchemaOutput,
+	hydraHostSchema,
+	listHydraHostsSchemaInput,
+	listHydraHostsSchemaOutput,
+	registerHydraHostSchemaInput,
+	updateHydraHostSchemaInput,
+} from '@/routes/api/hydra/host';
 
 const HEAD_ID = 'cuid_v2_auto_generated';
 const TAG = ['hydra'];
@@ -69,6 +79,88 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 	const secured = [{ [apiKeyAuth.name]: [] }];
 	const unauthorized = { 401: { description: 'Unauthorized' } } as const;
 	const notFound = { 404: { description: 'Hydra head not found' } } as const;
+
+	// ---- host ----
+	registry.registerPath({
+		method: 'get',
+		path: '/hydra/host',
+		summary: 'List registered Hydra Hosts. (admin access required)',
+		description:
+			'Lists the Hydra Host deployments that can run hydra-node processes for this service. Tokens are never returned; `hasAdminToken` reports whether a Host can be provisioned on.',
+		tags: TAG,
+		security: secured,
+		request: { query: listHydraHostsSchemaInput },
+		responses: {
+			200: successResponse('Registered hosts', listHydraHostsSchemaOutput, undefined),
+			...unauthorized,
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/host',
+		summary: 'Register a Hydra Host. (admin access required)',
+		description:
+			'Registers a Hydra Host control plane. The user token grants runtime access to the proxied node API; the optional admin token additionally allows provisioning nodes on this Host. Both are stored encrypted and never returned.',
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(registerHydraHostSchemaInput, undefined) },
+		responses: {
+			200: successResponse('Registered host', hydraHostSchema, undefined),
+			409: { description: 'A host for this network and base URL is already registered' },
+			...unauthorized,
+		},
+	});
+
+	registry.registerPath({
+		method: 'patch',
+		path: '/hydra/host',
+		summary: 'Update a Hydra Host. (admin access required)',
+		description:
+			'Updates a Host label, status or tokens. Setting status to Draining keeps existing heads served while accepting no new placements, which matters because a head cannot be moved to another Host.',
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(updateHydraHostSchemaInput, undefined) },
+		responses: {
+			200: successResponse('Updated host', hydraHostSchema, undefined),
+			404: { description: 'Hydra host not found' },
+			...unauthorized,
+		},
+	});
+
+	registry.registerPath({
+		method: 'delete',
+		path: '/hydra/host',
+		summary: 'Remove a Hydra Host. (admin access required)',
+		description:
+			'Removes a Host registration. Refused while the Host still runs nodes, because their heads cannot be relocated.',
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(deleteHydraHostSchemaInput, undefined) },
+		responses: {
+			200: successResponse('Removed host', deleteHydraHostSchemaOutput, undefined),
+			409: { description: 'Host still runs nodes' },
+			404: { description: 'Hydra host not found' },
+			...unauthorized,
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/host/check',
+		summary: 'Probe a Hydra Host and record its capabilities. (admin access required)',
+		description:
+			'Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it.',
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(checkHydraHostSchemaInput, undefined) },
+		responses: {
+			200: successResponse('Host capabilities', hydraHostSchema, undefined),
+			409: { description: 'Host has no admin token' },
+			404: { description: 'Hydra host not found' },
+			...unauthorized,
+		},
+	});
 
 	// ---- wallet-base ----
 	registry.registerPath({

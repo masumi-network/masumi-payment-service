@@ -118,6 +118,11 @@ import {
 	initHeadPost,
 	checkHeadNodePost,
 	ensureHydraWalletBasePost,
+	listHydraHostsGet,
+	registerHydraHostPost,
+	updateHydraHostPatch,
+	deleteHydraHostDelete,
+	checkHydraHostPost,
 	listHydraWalletBasesGet,
 	listHeadErrorsGet,
 	topupHeadPost,
@@ -472,6 +477,13 @@ export const apiRouter: Routing = {
 			},
 		},
 		hydra: {
+			host: {
+				get: listHydraHostsGet,
+				post: registerHydraHostPost,
+				patch: updateHydraHostPatch,
+				delete: deleteHydraHostDelete,
+				check: { post: checkHydraHostPost },
+			},
 			'wallet-base': {
 				get: listHydraWalletBasesGet,
 				post: ensureHydraWalletBasePost,
