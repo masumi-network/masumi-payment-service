@@ -16,5 +16,8 @@
 		"@masumi/payment-core": "workspace:*",
 		"@meshsdk/core": "1.9.0-beta.103",
 		"@meshsdk/core-cst": "1.9.0-beta.103"
+	},
+	"scripts": {
+		"generate:hydra-params": "tsx scripts/generate-hydra-ledger-params.mts"
 	}
 }

@@ -31,6 +31,7 @@
 	"include": [
 		"src/**/*.ts",
 		"packages/**/*.ts",
+		"packages/**/*.mts",
 		"smart-contracts/**/plutus.json",
 		"tests/**/*.ts",
 		"jest.e2e*.config.ts",

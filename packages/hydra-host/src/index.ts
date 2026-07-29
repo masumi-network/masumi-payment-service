@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import os from 'node:os';
 import { createControlPlane } from './api/server.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
@@ -28,6 +29,18 @@ const logger: SupervisorLogger = {
 
 async function main(): Promise<void> {
 	const config = loadHostConfig();
+
+	// Fail fast on a missing ledger params file. Only networks with a reviewed
+	// base are generated, so a network we have not validated surfaces here with a
+	// clear message rather than as an opaque hydra-node startup failure — or,
+	// worse, a head running on someone else's chain parameters.
+	if (!existsSync(config.ledgerProtocolParametersFile)) {
+		throw new Error(
+			`no ledger protocol parameters for network "${config.network}" at ${config.ledgerProtocolParametersFile}. ` +
+				'Generate them with: pnpm --filter @masumi/payment-source-v2 run generate:hydra-params ' +
+				'(a network needs a reviewed base file in packages/hydra-host/params/base first)',
+		);
+	}
 
 	// Refuse to boot if another Host already owns this volume: both would spawn a
 	// process per node, giving duplicate hydra-nodes and two etcd members
