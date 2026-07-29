@@ -78,14 +78,37 @@ unchanged in direction: the key now lives in both places rather than only on
 the host, accepted because host and payment service are one security domain and
 because an escrowed copy is what makes a destroyed host rebuildable.
 
-**4. Restart is supervised, never delegated to Docker.** `--restart=always` and
-plain SIGKILL are unsafe: killing a node mid-snapshot-round can strand the head
-permanently, because etcd persists `last-known-revision` before the head logic
-durably consumes the message, so a lost `ReqSn`/`AckSn` is never redelivered.
-The supervisor drains first — polling `/snapshot/last-seen` until
-`LastSeenSnapshot`/`NoSeenSnapshot` — then stops, restarts and waits for sync.
-It also owns a **drift watchdog**: on Blockfrost the chain follower loses ≈17 s
-per minute with no catch-up path (upstream `#2753`), and past
+**4. Restart is supervised, and recovery is automatic because draining cannot
+be guaranteed.** Stopping a node mid-snapshot-round can strand it: etcd
+persists `last-known-revision` before the head logic durably consumes the
+message, so a lost `ReqSn`/`AckSn` is never redelivered and later txs fail
+`TxInvalid`. The supervisor therefore drains before any *voluntary* stop,
+polling `/snapshot/last-seen` until `LastSeenSnapshot`/`NoSeenSnapshot`.
+
+But a container can always be killed involuntarily — OOM, host failure,
+platform eviction — so **draining is a probability reduction, not a guarantee**,
+and correctness rests on recovery rather than on clean shutdown. Recovery is
+automatic and needs no operator:
+
+| Level | Situation | Action |
+|---|---|---|
+| 0 | process crash, volume intact | restart with backoff; `hydra.db` replays, etcd resumes its WAL |
+| 1 | container/host SIGKILL | identical to level 0 on next boot |
+| 2 | restarted but snapshot round stranded | detect, then side-load the node's own confirmed snapshot via `POST /snapshot` |
+| 3 | offline past etcd's compaction window | same side-load path |
+| 4 | persistence volume destroyed | restore a volume snapshot plus the escrowed keys — the only manual case |
+
+The level-2/3 procedure is not new: it is already proven in
+`hydra-l2-flow/run-hydra-e2e.sh:909-921`, which detects a stranded round and
+side-loads to un-wedge it. This work moves it from the harness into the
+supervisor. It is self-contained — the snapshot comes from the node's own last
+confirmed state, so no counterparty action is required. Safety is preserved
+because the service refuses to treat `SnapshotSideLoaded` as a replay
+authentication anchor (`docs/hydra-architecture.md:201`), so side-loading can
+restore a node without becoming a channel for injecting unverified state.
+
+The supervisor also owns a **drift watchdog**: on Blockfrost the chain follower
+loses ≈17 s per minute with no catch-up path (upstream `#2753`), and past
 `--unsynced-period` the node rejects all input with
 `RejectedInputBecauseUnsynced`, recoverable only by restart.
 
@@ -125,6 +148,31 @@ L2 params must match the Mesh cost models pinned by
 artefacts on one pin, with a CI drift guard; the host additionally reports a
 params hash via `/v1/capabilities` so the service refuses to provision against
 a skewed host.
+
+**7. Durable block storage is required, and TLS terminates outside the
+container.** A platform with an ephemeral filesystem cannot host a node:
+persistence is a SQLite event store plus an etcd raft WAL, both of which need
+real POSIX fsync durability, and etcd expects local disk rather than a network
+filesystem. This rules out **DigitalOcean App Platform**, which offers no
+persistent volumes. Periodically checkpointing to object storage does not
+rescue it, because an involuntary kill between checkpoints loses exactly the
+head state whose loss is unrecoverable.
+
+The target is therefore a droplet with an attached Block Storage volume mounted
+at `/data`, with volume snapshots covering level-4 recovery. The image stays
+**orchestrator-agnostic** — all durable state under a single mount point, clean
+SIGTERM handling, no host assumptions — so moving to DOKS with a StatefulSet
+and per-node PVCs later is a deployment change rather than a rewrite.
+
+TLS is **not** the container's concern: it serves plain HTTP on the control
+plane and honours `X-Forwarded-Proto`, while a managed load balancer (or an
+ingress, or a separate reverse-proxy container) terminates. Keeping ACME state
+out of the image avoids giving the container a second thing that would need
+durable storage. A managed load balancer also preserves the single-command
+deployment goal, which a sidecar proxy would not. The peer plane bypasses this
+entirely — it has no TLS upstream, and per-head dynamic TCP ports behind a
+managed load balancer would be unworkable, so peer ports are exposed directly
+on the host IP under a firewall allowlist.
 
 ## Consequences
 

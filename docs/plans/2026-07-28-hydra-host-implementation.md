@@ -184,11 +184,23 @@ technique already proven in
 `drift > threshold`: drain, restart, wait for sync, alert. Thresholds default
 to the launcher's current values (target 180 s, guard 400 s).
 
-**Divergence guard.** A node offline longer than etcd's compaction window
-(~1000 messages by default) cannot catch up from the network and needs a
-`SideLoadSnapshot`. The supervisor detects the repeated-restart-without-sync
-pattern and moves to `Failed` with a distinct reason rather than restarting
-forever. Tuning `ETCD_AUTO_COMPACTION_*` widens the window.
+**Unwedge (automatic, levels 2–3).** Draining only covers *voluntary* stops; an
+OOM kill or host failure will strand a snapshot round eventually. After any
+restart the supervisor checks for the stranded pattern — `/snapshot/last-seen`
+stuck on an in-flight round while transactions fail `TxInvalid` — and recovers
+by side-loading the node's **own last confirmed snapshot** via `POST /snapshot`.
+
+This is a port of `hydra-l2-flow/run-hydra-e2e.sh:909-921`, which already does
+exactly this (wait ~30 s, side-load, verify it un-wedged, fail loudly if not).
+It needs no counterparty action. The same path covers a node that was offline
+longer than etcd's compaction window (~1000 messages; widen with
+`ETCD_AUTO_COMPACTION_*`).
+
+Only if side-loading fails to un-wedge does the node move to `Failed`, so no
+operator is involved in levels 0–3. Safety is preserved upstream of us: the
+service refuses to treat `SnapshotSideLoaded` as a replay authentication anchor
+(`docs/hydra-architecture.md:201`), so recovery cannot be used to inject
+unverified state.
 
 ### A6. Ports
 
@@ -319,8 +331,54 @@ HYDRA_HOST_DRIFT_TARGET/GUARD
 HYDRA_HOST_ESCROW_TTL_SECONDS
 ```
 
-TLS terminates at the platform load balancer; the container serves plain HTTP
-and honours `X-Forwarded-Proto`.
+TLS terminates outside the container; it serves plain HTTP and honours
+`X-Forwarded-Proto`. See §A11.
+
+### A11. Deployment target
+
+**DigitalOcean App Platform cannot host nodes.** Persistence is a SQLite event
+store plus an etcd raft WAL needing real fsync durability on local disk, and
+App Platform has an ephemeral filesystem with no persistent volumes.
+Checkpointing to Spaces does not save it: an involuntary kill between
+checkpoints loses head state, which is the one unrecoverable failure.
+
+Target: a droplet with a Block Storage volume mounted at `/data`.
+
+```bash
+docker run -d --name hydra-host \
+  --network host \
+  -v /mnt/hydra_data:/data \
+  --stop-timeout 300 \
+  -e HYDRA_HOST_PUBLIC_HOST=hydra1.example.com \
+  -e HYDRA_HOST_ADMIN_TOKEN=... -e HYDRA_HOST_USER_TOKEN=... \
+  masumi/hydra-host:2.3.0
+```
+
+- `--network host` removes the port-publication ceiling (§A6).
+- `--stop-timeout 300` gives the supervisor a real drain window; Docker's
+  10 s default would SIGKILL mid-drain.
+- **No `--restart=always`** — restart policy belongs to the supervisor, which
+  drains first (§A5).
+
+Exposure on the droplet: the control-plane port is reached through a managed
+load balancer that terminates TLS; peer ports are exposed directly on the
+droplet IP under a cloud-firewall allowlist, because per-head dynamic TCP ports
+behind a managed LB are unworkable and the peer plane has no TLS upstream
+anyway. Volume snapshots cover level-4 recovery.
+
+**Orchestrator-agnostic image contract** — so DOKS later is a deployment change,
+not a rewrite:
+
+1. Every durable byte lives under one mount point (`/data`).
+2. SIGTERM drains all nodes, then exits; the process never assumes it will be
+   asked twice.
+3. No assumptions about the host — no fixed hostname, no host paths outside the
+   mount, public identity supplied only via `HYDRA_HOST_PUBLIC_HOST`.
+4. TLS, certificates and ACME state stay outside the image entirely.
+
+Under DOKS this becomes a StatefulSet with `volumeClaimTemplates` and
+`terminationGracePeriodSeconds: 300`; head-to-host affinity is then carried by
+the PVC binding.
 
 ---
 
