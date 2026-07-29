@@ -1,0 +1,21 @@
+{
+	"name": "@masumi/hydra-host",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./config": "./src/config.ts",
+		"./registry/ports": "./src/registry/ports.ts",
+		"./registry/store": "./src/registry/store.ts",
+		"./registry/types": "./src/registry/types.ts",
+		"./supervisor/args": "./src/supervisor/args.ts",
+		"./supervisor/drain": "./src/supervisor/drain.ts",
+		"./supervisor/drift": "./src/supervisor/drift.ts"
+	},
+	"dependencies": {
+		"ws": "8.18.0"
+	},
+	"devDependencies": {
+		"@jest/globals": "30.4.1"
+	}
+}
