@@ -7,10 +7,11 @@
  */
 
 import createHttpError from 'http-errors';
-import { HydraHostStatus, Network } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraHostStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { decrypt, encrypt } from '@/utils/security/encryption';
 import { assertUsableHydraAuthToken } from '@/lib/hydra/hydra/auth';
+import { getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
 import { fetchHostCapabilities, type HostCapabilities } from './client';
 
 /** Shape returned to operators. Deliberately excludes both tokens. */
@@ -47,7 +48,7 @@ type HostRow = {
 	status: HydraHostStatus;
 	lastHealthAt: Date | null;
 	lastHealthError: string | null;
-	_count?: { Participants: number };
+	_count: { Participants: number };
 };
 
 export function toPublicHydraHost(row: HostRow): PublicHydraHost {
@@ -68,8 +69,28 @@ export function toPublicHydraHost(row: HostRow): PublicHydraHost {
 		status: row.status,
 		lastHealthAt: row.lastHealthAt?.toISOString() ?? null,
 		lastHealthError: row.lastHealthError,
-		participantCount: row._count?.Participants ?? 0,
+		participantCount: row._count.Participants,
 	};
+}
+
+/**
+ * The status a Host should hold after a probe.
+ *
+ * Draining and Disabled are operator intent and a probe never overrides them —
+ * including on failure. Getting this wrong is silent: a draining Host that
+ * failed one probe would come back as Active on the next success and quietly
+ * start accepting placements again, undoing the drain.
+ */
+export function nextHostStatus(current: HydraHostStatus, probeSucceeded: boolean): HydraHostStatus {
+	if (current === HydraHostStatus.Disabled || current === HydraHostStatus.Draining) {
+		return current;
+	}
+	return probeSucceeded ? HydraHostStatus.Active : HydraHostStatus.Unreachable;
+}
+
+/** Truncate for storage, marking that it was cut so it does not read as complete. */
+function truncateError(message: string, limit = 500): string {
+	return message.length <= limit ? message : `${message.slice(0, limit - 1)}\u2026`;
 }
 
 /** A control-plane URL must be an absolute https/http origin with no credentials. */
@@ -103,9 +124,18 @@ function validateToken(token: string, field: string): string {
 	return encrypt(token);
 }
 
-export async function listHydraHosts(network?: Network): Promise<PublicHydraHost[]> {
+/** The network a Host belongs to, for scoping an api key's authority over it. */
+export async function readHydraHostNetwork(id: string): Promise<Network> {
+	const host = await prisma.hydraHost.findUnique({ where: { id }, select: { network: true } });
+	if (!host) {
+		throw createHttpError(404, 'hydra host not found');
+	}
+	return host.network;
+}
+
+export async function listHydraHosts(networks: Network[]): Promise<PublicHydraHost[]> {
 	const rows = await prisma.hydraHost.findMany({
-		where: network === undefined ? {} : { network },
+		where: { network: { in: networks } },
 		include: { _count: { select: { Participants: true } } },
 		orderBy: [{ network: 'asc' }, { name: 'asc' }],
 	});
@@ -124,25 +154,28 @@ export async function registerHydraHost(input: {
 	const encryptedUserToken = validateToken(input.userToken, 'userToken');
 	const encryptedAdminToken = input.adminToken === undefined ? null : validateToken(input.adminToken, 'adminToken');
 
-	const existing = await prisma.hydraHost.findUnique({
-		where: { network_baseUrl: { network: input.network, baseUrl } },
-	});
-	if (existing) {
-		throw createHttpError(409, `a hydra host for ${input.network} at ${baseUrl} is already registered`);
+	// Rely on the unique index rather than a read-then-write check: two
+	// concurrent registrations would both pass a pre-check, and the caller
+	// deserves the intended 409 rather than a raw constraint violation.
+	try {
+		const created = await prisma.hydraHost.create({
+			data: {
+				name: input.name,
+				network: input.network,
+				baseUrl,
+				publicPeerHost: input.publicPeerHost,
+				encryptedUserToken,
+				encryptedAdminToken,
+			},
+			include: { _count: { select: { Participants: true } } },
+		});
+		return toPublicHydraHost(created);
+	} catch (error) {
+		if (isPlainObject(error) && getOwnString(error, 'code') === 'P2002') {
+			throw createHttpError(409, `a hydra host for ${input.network} at ${baseUrl} is already registered`);
+		}
+		throw error;
 	}
-
-	const created = await prisma.hydraHost.create({
-		data: {
-			name: input.name,
-			network: input.network,
-			baseUrl,
-			publicPeerHost: input.publicPeerHost,
-			encryptedUserToken,
-			encryptedAdminToken,
-		},
-		include: { _count: { select: { Participants: true } } },
-	});
-	return toPublicHydraHost(created);
 }
 
 export async function updateHydraHost(
@@ -170,22 +203,35 @@ export async function updateHydraHost(
 }
 
 export async function deleteHydraHost(id: string): Promise<void> {
-	const existing = await prisma.hydraHost.findUnique({
-		where: { id },
-		include: { _count: { select: { Participants: true } } },
-	});
+	const existing = await prisma.hydraHost.findUnique({ where: { id } });
 	if (!existing) {
 		throw createHttpError(404, 'hydra host not found');
 	}
-	if (existing._count.Participants > 0) {
+
+	// Only participants whose head is still live block removal. A participant
+	// left behind by a finalised head holds no state worth protecting, and
+	// counting it would make the Host permanently undeletable through the API.
+	const liveParticipants = await prisma.hydraLocalParticipant.count({
+		where: {
+			hydraHostId: id,
+			OR: [{ HydraHead: { is: null } }, { HydraHead: { status: { not: HydraHeadStatus.Final } } }],
+		},
+	});
+	if (liveParticipants > 0) {
 		// The database would refuse this anyway (the relation is Restrict); saying
 		// why is more useful than surfacing a constraint violation.
 		throw createHttpError(
 			409,
-			`this hydra host still runs ${existing._count.Participants} node(s); their heads cannot be moved, so close and remove them first`,
+			`this hydra host still runs ${liveParticipants} node(s) on live heads; those heads cannot be moved, so close and remove them first`,
 		);
 	}
-	await prisma.hydraHost.delete({ where: { id } });
+
+	// Detach any finalised-head participants so the Restrict relation does not
+	// block a Host whose work is genuinely done.
+	await prisma.$transaction([
+		prisma.hydraLocalParticipant.updateMany({ where: { hydraHostId: id }, data: { hydraHostId: null } }),
+		prisma.hydraHost.delete({ where: { id } }),
+	]);
 }
 
 /**
@@ -211,9 +257,9 @@ export async function refreshHydraHostCapabilities(id: string): Promise<PublicHy
 		const updated = await prisma.hydraHost.update({
 			where: { id },
 			data: {
-				status: host.status === HydraHostStatus.Disabled ? host.status : HydraHostStatus.Unreachable,
+				status: nextHostStatus(host.status, false),
 				lastHealthAt: new Date(),
-				lastHealthError: (error as Error).message.slice(0, 500),
+				lastHealthError: truncateError((error as Error).message),
 			},
 			include: { _count: { select: { Participants: true } } },
 		});
@@ -226,9 +272,7 @@ export async function refreshHydraHostCapabilities(id: string): Promise<PublicHy
 			hydraVersion: capabilities.hydraVersion || null,
 			scriptCatalogueHash: capabilities.scriptCatalogueHash,
 			ledgerParamsHash: capabilities.ledgerParamsHash,
-			// A previously unreachable Host becomes eligible again once it answers.
-			// Draining and Disabled are operator intent and are never overridden.
-			status: host.status === HydraHostStatus.Unreachable ? HydraHostStatus.Active : host.status,
+			status: nextHostStatus(host.status, true),
 			lastHealthAt: new Date(),
 			lastHealthError: null,
 		},

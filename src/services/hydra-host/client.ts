@@ -7,6 +7,7 @@
  * service can operate existing nodes but cannot provision new ones.
  */
 
+import { createHash } from 'node:crypto';
 import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
 import { getOwnString, getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
@@ -58,16 +59,20 @@ async function request(
 	token: string,
 	init: { method?: string; body?: unknown; idempotencyKey?: string } = {},
 ): Promise<unknown> {
+	// Built before the try: a malformed stored token throws here, and wrapping it
+	// below would report a credential problem as an unreachable host.
+	const headers = {
+		'Content-Type': 'application/json',
+		...hydraAuthHeaders(token),
+		...(init.idempotencyKey === undefined ? {} : { 'Idempotency-Key': init.idempotencyKey }),
+	};
+
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 	try {
 		const response = await fetch(joinUrl(baseUrl, path), {
 			method: init.method ?? 'GET',
-			headers: {
-				'Content-Type': 'application/json',
-				...hydraAuthHeaders(token),
-				...(init.idempotencyKey === undefined ? {} : { 'Idempotency-Key': init.idempotencyKey }),
-			},
+			headers,
 			redirect: 'error',
 			signal: controller.signal,
 			...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
@@ -137,14 +142,19 @@ export async function fetchHostCapabilities(baseUrl: string, adminToken: string)
 }
 
 /**
- * Stable fingerprint of the script catalogue. The catalogue itself is a nested
- * document; comparing a hash keeps the stored value small and comparison exact.
+ * Stable fingerprint of the script catalogue.
+ *
+ * Genuinely hashed rather than stored verbatim: the catalogue is a nested
+ * document of unbounded size, and the column is named for a hash. Comparison
+ * stays exact either way, but the stored value stays small and the name stops
+ * lying.
  */
 function hashOf(value: unknown): string | null {
 	if (value === null || value === undefined) {
 		return null;
 	}
-	return typeof value === 'string' ? value : JSON.stringify(value);
+	const canonical = typeof value === 'string' ? value : JSON.stringify(value);
+	return `sha256:${createHash('sha256').update(canonical).digest('hex')}`;
 }
 
 export async function provisionNodeOnHost(

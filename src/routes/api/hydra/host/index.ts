@@ -6,12 +6,14 @@
  * thing in front of a node API that has no authentication of its own.
  */
 
-import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { adminAuthenticatedEndpointFactory, type AuthContext } from '@masumi/payment-core/auth';
+import { checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth-middleware';
 import { z } from '@masumi/payment-core/zod';
 import { HydraHostStatus, Network } from '@/generated/prisma/client';
 import {
 	deleteHydraHost,
 	listHydraHosts,
+	readHydraHostNetwork,
 	refreshHydraHostCapabilities,
 	registerHydraHost,
 	updateHydraHost,
@@ -54,7 +56,11 @@ export const listHydraHostsGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listHydraHostsSchemaInput,
 	output: listHydraHostsSchemaOutput,
-	handler: async ({ input }) => ({ hosts: await listHydraHosts(input.network) }),
+	handler: async ({ input, ctx }: { input: z.infer<typeof listHydraHostsSchemaInput>; ctx: AuthContext }) => {
+		// An api key scoped to one network must not see hosts on another.
+		const allowed = input.network ? ctx.networkLimit.filter((network) => network === input.network) : ctx.networkLimit;
+		return { hosts: await listHydraHosts(allowed) };
+	},
 });
 
 export const registerHydraHostSchemaInput = z.object({
@@ -79,7 +85,10 @@ export const registerHydraHostPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: registerHydraHostSchemaInput,
 	output: hydraHostSchema,
-	handler: async ({ input }) => registerHydraHost(input),
+	handler: async ({ input, ctx }: { input: z.infer<typeof registerHydraHostSchemaInput>; ctx: AuthContext }) => {
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
+		return registerHydraHost(input);
+	},
 });
 
 export const updateHydraHostSchemaInput = z.object({
@@ -97,7 +106,10 @@ export const updateHydraHostPatch = adminAuthenticatedEndpointFactory.build({
 	method: 'patch',
 	input: updateHydraHostSchemaInput,
 	output: hydraHostSchema,
-	handler: async ({ input }) => updateHydraHost(input.id, input),
+	handler: async ({ input, ctx }: { input: z.infer<typeof updateHydraHostSchemaInput>; ctx: AuthContext }) => {
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, await readHydraHostNetwork(input.id));
+		return updateHydraHost(input.id, input);
+	},
 });
 
 export const deleteHydraHostSchemaInput = z.object({ id: z.string() });
@@ -107,7 +119,8 @@ export const deleteHydraHostDelete = adminAuthenticatedEndpointFactory.build({
 	method: 'delete',
 	input: deleteHydraHostSchemaInput,
 	output: deleteHydraHostSchemaOutput,
-	handler: async ({ input }) => {
+	handler: async ({ input, ctx }: { input: z.infer<typeof deleteHydraHostSchemaInput>; ctx: AuthContext }) => {
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, await readHydraHostNetwork(input.id));
 		await deleteHydraHost(input.id);
 		return { id: input.id };
 	},
@@ -124,5 +137,8 @@ export const checkHydraHostPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: checkHydraHostSchemaInput,
 	output: hydraHostSchema,
-	handler: async ({ input }) => refreshHydraHostCapabilities(input.id),
+	handler: async ({ input, ctx }: { input: z.infer<typeof checkHydraHostSchemaInput>; ctx: AuthContext }) => {
+		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, await readHydraHostNetwork(input.id));
+		return refreshHydraHostCapabilities(input.id);
+	},
 });
