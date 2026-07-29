@@ -89,6 +89,29 @@ per minute with no catch-up path (upstream `#2753`), and past
 `--unsynced-period` the node rejects all input with
 `RejectedInputBecauseUnsynced`, recoverable only by restart.
 
+**4b. One node per Head, which makes a cross-org handshake mandatory.** A
+hydra-node serves exactly one Head and is provisioned with fresh keys and a
+fresh peer port each time. Because `--peer`, `--hydra-verification-key` and
+`--initial-cluster` are all startup configuration — and the etcd data dir is
+content-addressed by that configuration — both participants must agree the
+full cluster config *before either node boots*. They need not act
+simultaneously, but the agreement is a precondition, so each Head requires an
+exchange of public material between the two operators.
+
+Manual exchange does not scale per Head, so the handshake becomes an API. It is
+authenticated by **signature, not by a shared credential**: an offer is signed
+by the offering side's Relation wallet key and verified against
+`HydraRelation.RemoteWallet.walletVkey`, reusing the mechanism that already
+authenticates a seller's `blockchainIdentifier` to a buyer
+(`src/routes/api/purchases/shared.ts:233`). Only verification keys and an
+advertise address cross the boundary; no signing key leaves its Host. A
+deterministic tie-break — lower-sorting wallet vkey is the initiator — collapses
+simultaneous proposals for the same Head slot.
+
+The alternative, one node per Relation reused across sequential Heads, would
+have reduced the exchange to once per counterparty. It was rejected in favour
+of per-Head key isolation and a clean persistence directory per Head.
+
 **5. A head is pinned to its host for life.** Persistence is not relocatable, so
 placement happens once at provisioning and the head stays there. Process,
 container and VM restarts recover automatically from the intact volume; only

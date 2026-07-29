@@ -237,3 +237,27 @@ the [[Control Plane]] proxy, and is the only Hydra channel a counterparty ever
 touches.
 
 Avoid: peer websocket, p2p api — it is neither a WebSocket nor an HTTP API.
+
+### Head Offer
+
+The signed proposal by which one operator asks the counterparty of a
+[[Hydra Relation]] to open the next [[Hydra Head]], carrying the public
+material both sides need before either node may boot: Hydra verification key,
+[[Node Cardano Key]] hash, advertise address and the agreed periods. Signed by
+the offering side's Relation wallet and verified against the wallet already
+recorded on that Relation, so no shared credential is needed and a stranger
+cannot open a Head.
+
+Avoid: invite, request, negotiation — an Offer is bound to one Relation and one
+Head slot, and expires.
+
+### Advertise Address
+
+The externally reachable `host:port` a node publishes to its counterparty, set
+by `--advertise` independently of the bind address. It is a participant
+identity rather than merely a location — it names the node's etcd member and
+its broadcast key — so it is fixed for a [[Hydra Head]]'s life and both sides
+must configure the identical string.
+
+Avoid: peer url, public url, listen address (the bind address is separate and
+may differ).

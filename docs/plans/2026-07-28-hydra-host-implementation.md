@@ -394,6 +394,137 @@ fails at commit time.
 
 ---
 
+## Part D — cross-org head handshake
+
+### D1. Why this is required, not optional
+
+A node lives for exactly one Head (decided 2026-07-28), so every Head needs
+fresh keys, a fresh peer port and a fresh etcd cluster config. Three startup
+facts make the exchange a hard precondition:
+
+- `--peer` and `--hydra-verification-key` are **startup flags**, not runtime
+  state.
+- `--initial-cluster` is derived from own advertise plus all peers, and the
+  etcd data dir is content-addressed by it, so both sides must agree before
+  first boot.
+- A two-party head needs quorum `⌊n/2⌋+1 = 2`, so a lone node makes no
+  progress; it waits for its peer.
+
+The two sides need not act simultaneously — only to agree config before either
+starts. `PendingEscrow` / `Stopped` is that staging area. But because this
+recurs per Head, manual exchange does not scale and the handshake must be an
+API.
+
+### D2. Trust anchor — reuse the existing signed-payload pattern
+
+The offer is signed by the offering side's Relation wallet key and verified by
+the receiver with `checkSignature` against
+`HydraRelation.RemoteWallet.walletVkey` — exactly the mechanism already used to
+authenticate a seller's `blockchainIdentifier` to a buyer
+(`src/utils/generator/blockchain-identifier-payload.ts`, verified at
+`src/routes/api/purchases/shared.ts:233`).
+
+This means **no new credential distribution**: the two parties already agreed
+on each other's wallets when the Relation was created. A stranger cannot open a
+Head with us, because their offer will not verify against a Relation we hold.
+
+Only **public** material crosses the org boundary — verification keys and an
+advertise address. No signing key ever leaves its Host.
+
+### D3. Schema
+
+`HydraRelation` gains `counterpartyBaseUrl` (long-lived, set once at Relation
+setup — it does not exist today).
+
+```prisma
+model HydraHeadOffer {
+  id                     String   @id @default(cuid())
+  hydraRelationId        String
+  headSequence           Int          // binds an offer to one Head slot
+  nonce                  String   @unique
+  role                   HydraOfferRole   // Offerer | Acceptor
+  status                 HydraOfferStatus // Proposed|Accepted|Configured|Started|Declined|Expired
+  expiresAt              DateTime
+  ownNodeId              String
+  offeredHydraVk         String
+  offeredCardanoVkey     String
+  offeredAdvertise       String
+  counterpartyHydraVk    String?
+  counterpartyCardanoVkey String?
+  counterpartyAdvertise  String?
+  contestationPeriodSeconds Int
+  depositPeriodSeconds      Int
+  ledgerParamsHash       String
+  @@unique([hydraRelationId, headSequence])
+}
+```
+
+### D4. Endpoints
+
+Inbound, cross-org — authenticated by **signature, not by API key**, and rate
+limited:
+
+| Method | Path | Caller |
+|---|---|---|
+| POST | `/api/v1/hydra/handshake/offer` | counterparty's service |
+| POST | `/api/v1/hydra/handshake/accept` | counterparty's service |
+| POST | `/api/v1/hydra/handshake/decline` | counterparty's service |
+
+Operator-facing (admin): `POST /hydra/head/propose` starts the flow for a
+Relation.
+
+### D5. Initiator tie-break
+
+Both sides see themselves as "local", so nothing inherently designates an
+initiator and both could propose the same Head slot at once. Rule: **the party
+whose Relation wallet vkey sorts lexicographically lower is the initiator.**
+A node receiving an offer from the higher-sorting party for a slot it has
+already proposed declines it, collapsing the race deterministically.
+
+### D6. Flow
+
+```
+A (initiator)                                B (counterparty)
+1 provision -> PendingEscrow -> escrow-ack -> Stopped   (not started)
+2 ---- OFFER {hydraVK_A, cardanoVkey_A, advertise_A, periods,
+              ledgerParamsHash, relationId, headSequence, nonce, expiry}
+       signed by A's relation wallet ------------------->
+                                             3 verify sig vs relation
+                                               provision own node
+4 <--- ACCEPT {hydraVK_B, cardanoVkey_B, advertise_B} signed by B ----
+5 PATCH peers+vkeys, allowlist            5' PATCH peers+vkeys, allowlist
+6 start                                   6' start
+                  └─ etcd cluster forms (needs both) ─┘
+7 Init on-chain -> Initializing -> commits -> Open   (existing flow, unchanged)
+```
+
+`ledgerParamsHash` travels in the offer so a mismatch is rejected at handshake
+time rather than surfacing later as `PPViewHashesDontMatch` on the first
+in-head script spend.
+
+### D7. Safety properties
+
+- **Replay** — the signature covers `relationId`, `headSequence`, `nonce` and
+  `expiry`, so an old offer cannot be replayed to open an unwanted Head.
+- **Idempotency** — the nonce is the idempotency key, so a lost ACCEPT
+  response does not provision a second node on retry.
+- **Abandonment** — an offer not reaching `Started` before `expiresAt` is
+  reaped on both sides: nodes deleted, ports released. This shares the
+  `PendingEscrow` TTL reaper.
+- **Declines** — an explicit decline releases the offerer's node immediately
+  rather than waiting for expiry.
+
+### D8. Consequences of per-Head nodes
+
+- A peer port is consumed per Head and released at `Final`; with sequential
+  Heads per Relation, churn is bounded.
+- Each Head gets its own persistence directory, which never rotates. A
+  retention policy is needed: archive or delete a Head's directory only after
+  it is `Final` **and** its settlement has been independently verified.
+- Every Head performs one cross-org round trip before it can start, so Head
+  opening is no longer a purely local operation and must tolerate the
+  counterparty being slow or unreachable.
+
 ## Part C — delivery
 
 | Phase | Scope | Depends on |
@@ -403,7 +534,8 @@ fails at commit time.
 | 3 | Reverse proxy (HTTP + WS passthrough) | 1 |
 | 4 | Payment-service auth plumbing (B1) | — (parallel) |
 | 5 | `HydraHost` model, routes, placement, capabilities check | 2,3,4 |
-| 6 | Head creation via host API; retire `HYDRA_*` seeding for new heads | 5 |
+| 6 | Cross-org handshake (Part D): offer/accept/decline, tie-break, reaper | 5 |
+| 7 | Head creation via host API; retire `HYDRA_*` seeding for new heads | 6 |
 
 ### Testing
 
