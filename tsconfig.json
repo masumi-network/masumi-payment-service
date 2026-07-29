@@ -37,7 +37,8 @@
 		"jest.e2e*.config.ts",
 		"jest.setup.env.ts",
 		"jest.setup.libsodium.ts",
-		"scripts/**/*.ts"
+		"scripts/**/*.ts",
+		"scripts/**/*.mts"
 	],
 	"exclude": ["node_modules"]
 }
