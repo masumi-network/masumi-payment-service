@@ -10,12 +10,23 @@
 		"./registry/types": "./src/registry/types.ts",
 		"./supervisor/args": "./src/supervisor/args.ts",
 		"./supervisor/drain": "./src/supervisor/drain.ts",
-		"./supervisor/drift": "./src/supervisor/drift.ts"
+		"./supervisor/drift": "./src/supervisor/drift.ts",
+		".": "./src/index.ts",
+		"./node-client": "./src/node-client.ts",
+		"./slot-config": "./src/slot-config.ts",
+		"./supervisor/plan": "./src/supervisor/plan.ts",
+		"./supervisor/process": "./src/supervisor/process.ts",
+		"./supervisor/supervisor": "./src/supervisor/supervisor.ts",
+		"./supervisor/unwedge": "./src/supervisor/unwedge.ts"
 	},
 	"dependencies": {
 		"ws": "8.18.0"
 	},
 	"devDependencies": {
-		"@jest/globals": "30.4.1"
+		"@jest/globals": "30.4.1",
+		"typescript": "5.8.3"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json"
 	}
 }
