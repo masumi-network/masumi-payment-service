@@ -18,6 +18,7 @@ import { runX402LowBalanceMonitoringCycle } from '@/services/x402/low-balance-mo
 import type { JobDefinition } from '@/services/shared';
 import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
+import { reapExpiredOffers } from '@/services/hydra-handshake/orchestrator';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
 import { runHydraLowBalanceMonitoringCycle } from '@/services/hydra-low-balance/monitor';
 import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup';
@@ -69,6 +70,18 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting pending Hydra L1 top-up reconciliation',
 		finishMessage: 'Finished pending Hydra L1 top-up reconciliation',
 		run: reconcilePendingHydraTopups,
+	},
+	{
+		initialDelayMs: 16000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra head offer reaping',
+		finishMessage: 'Finished Hydra head offer reaping',
+		// An abandoned offer holds a provisioned node and a peer port on both
+		// sides, so the window has to be swept rather than left to the next
+		// proposal to notice.
+		run: async () => {
+			await reapExpiredOffers();
+		},
 	},
 	{
 		initialDelayMs: 14000,

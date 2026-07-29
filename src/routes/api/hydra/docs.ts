@@ -67,6 +67,14 @@ import {
 	registerHydraHostSchemaInput,
 	updateHydraHostSchemaInput,
 } from '@/routes/api/hydra/host';
+import {
+	declineHydraOfferSchemaInput,
+	declineHydraOfferSchemaOutput,
+	proposeHydraHeadSchemaInput,
+	proposeHydraHeadSchemaOutput,
+	receiveHydraOfferSchemaInput,
+	receiveHydraOfferSchemaOutput,
+} from '@/routes/api/hydra/handshake';
 
 const HEAD_ID = 'cuid_v2_auto_generated';
 const TAG = ['hydra'];
@@ -79,6 +87,52 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 	const secured = [{ [apiKeyAuth.name]: [] }];
 	const unauthorized = { 401: { description: 'Unauthorized' } } as const;
 	const notFound = { 404: { description: 'Hydra head not found' } } as const;
+
+	// ---- handshake ----
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/handshake/propose',
+		summary: 'Propose the next Hydra head on a relation. (admin access required)',
+		description:
+			'Provisions a node on a Hydra Host, signs an offer with the relation wallet and delivers it to the counterparty. Only the initiating side may propose: the lower-sorting relation wallet key decides, so both operators reach the same answer without coordinating.',
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(proposeHydraHeadSchemaInput, undefined) },
+		responses: {
+			200: successResponse('Offer delivered', proposeHydraHeadSchemaOutput, undefined),
+			409: { description: 'Not the initiator, or an offer for this head slot is already in flight' },
+			...unauthorized,
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/handshake/offer',
+		summary: 'Receive a head offer from a counterparty. (signature authenticated)',
+		description:
+			"Called by another operator's payment service, not by an api key holder. Authority comes from the offer being signed by the wallet already recorded on the named Hydra Relation, so a stranger cannot open a head here. Rejections are indistinguishable from an unknown relation, so this surface cannot be used to enumerate relations.",
+		tags: TAG,
+		request: { body: jsonBody(receiveHydraOfferSchemaInput, undefined) },
+		responses: {
+			200: successResponse('Offer accepted, with our own material', receiveHydraOfferSchemaOutput, undefined),
+			401: { description: 'Offer could not be authenticated' },
+			409: { description: 'Offer expired, wrong side proposing, or a slot conflict' },
+		},
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/handshake/decline',
+		summary: 'Decline a head offer. (signature authenticated)',
+		description:
+			'Releases the node and peer port the offer reserved on this side, rather than waiting for the offer window to expire.',
+		tags: TAG,
+		request: { body: jsonBody(declineHydraOfferSchemaInput, undefined) },
+		responses: {
+			200: successResponse('Offer declined', declineHydraOfferSchemaOutput, undefined),
+			401: { description: 'Decline could not be authenticated' },
+		},
+	});
 
 	// ---- host ----
 	registry.registerPath({

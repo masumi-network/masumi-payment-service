@@ -1,3 +1,5 @@
+export { receiveHydraOfferPost, declineHydraOfferPost, proposeHydraHeadPost } from './handshake';
+
 export {
 	listHydraHostsGet,
 	registerHydraHostPost,

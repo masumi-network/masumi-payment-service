@@ -118,6 +118,9 @@ import {
 	initHeadPost,
 	checkHeadNodePost,
 	ensureHydraWalletBasePost,
+	receiveHydraOfferPost,
+	declineHydraOfferPost,
+	proposeHydraHeadPost,
 	listHydraHostsGet,
 	registerHydraHostPost,
 	updateHydraHostPatch,
@@ -477,6 +480,11 @@ export const apiRouter: Routing = {
 			},
 		},
 		hydra: {
+			handshake: {
+				offer: { post: receiveHydraOfferPost },
+				decline: { post: declineHydraOfferPost },
+				propose: { post: proposeHydraHeadPost },
+			},
 			host: {
 				get: listHydraHostsGet,
 				post: registerHydraHostPost,
