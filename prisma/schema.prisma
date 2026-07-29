@@ -1555,7 +1555,13 @@ model HydraRelation {
   RemoteWallet   WalletBase @relation(fields: [remoteWalletId], references: [id], onDelete: Restrict)
 
   /// Individual head sessions within this relation (1:N)
-  Heads HydraHead[]
+  Heads  HydraHead[]
+  Offers HydraHeadOffer[]
+
+  /// Base URL of the counterparty's payment service, where head offers are
+  /// delivered. Long-lived: a relation outlives the individual heads opened
+  /// under it. Null until the two operators have exchanged endpoints.
+  counterpartyBaseUrl String?
 
   /// One relation per wallet pair per network
   @@unique([network, localHotWalletId, remoteWalletId])
@@ -1930,6 +1936,93 @@ model HydraHost {
   @@unique([network, baseUrl])
   /// Placement scans for an Active Host on a given network.
   @@index([network, status])
+}
+
+/// Which side of a head offer this row represents.
+enum HydraOfferRole {
+  Offerer
+  Acceptor
+}
+
+/// Lifecycle of a cross-organisation head offer.
+enum HydraOfferStatus {
+  /// Created locally; the offerer still has to put it on the wire.
+  Proposed
+  /// The counterparty answered with its own public material.
+  Accepted
+  /// Our node has been told its peers.
+  Configured
+  /// Our node is running; the head can now be initialised.
+  Started
+  Declined
+  Expired
+}
+
+/// A signed proposal to open the next [[Hydra Head]] on a relation.
+///
+/// A hydra-node serves exactly one head, so every head needs fresh keys, a
+/// fresh peer port and a fresh etcd cluster configuration. Because --peer,
+/// --hydra-verification-key and --initial-cluster are all startup
+/// configuration, both participants must agree the whole cluster before either
+/// node boots — which makes this exchange a precondition for every head rather
+/// than a one-off setup step.
+///
+/// Only public material is exchanged: verification keys and an advertise
+/// address. No signing key leaves its host.
+model HydraHeadOffer {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hydraRelationId String
+  HydraRelation   HydraRelation @relation(fields: [hydraRelationId], references: [id], onDelete: Cascade)
+
+  /// Which head slot on that relation this offer is for. Heads are sequential,
+  /// so an offer is bound to one slot and cannot be replayed into another.
+  headSequence Int
+
+  /// Single-use value covered by the signature, so an old offer cannot be
+  /// replayed to open an unwanted head. Also the idempotency key for retries.
+  nonce String @unique
+
+  role   HydraOfferRole
+  status HydraOfferStatus @default(Proposed)
+
+  /// After this, the offer is reaped on both sides and the node and peer port
+  /// it reserved are released.
+  expiresAt DateTime
+
+  /// The node provisioned locally for this offer, if one has been created yet.
+  ownNodeId String?
+
+  /// Our public material, as signed and sent.
+  offeredHydraVerificationKey   String
+  offeredCardanoVerificationKey String
+  offeredAdvertise              String
+
+  /// The counterparty's public material, once it answers.
+  counterpartyHydraVerificationKey   String?
+  counterpartyCardanoVerificationKey String?
+  counterpartyAdvertise              String?
+
+  /// Agreed head parameters, signed by both sides.
+  contestationPeriodSeconds Int
+  depositPeriodSeconds      Int
+  unsyncedPeriodSeconds     Int
+
+  /// Ledger parameter fingerprint, so a mismatch is caught at handshake time
+  /// rather than as PPViewHashesDontMatch on the first in-head script spend.
+  ledgerParamsHash String?
+
+  /// The counterparty signature over the canonical offer payload.
+  counterpartySignature String?
+  counterpartySignerKey String?
+
+  /// One offer per head slot is enforced by a partial unique index on the open
+  /// statuses (see the migration): two concurrent offers would each provision a
+  /// node and reserve a peer port, and only one could become the head.
+  @@index([hydraRelationId, headSequence])
+  @@index([status, expiresAt])
 }
 
 model HydraSecretKey {
