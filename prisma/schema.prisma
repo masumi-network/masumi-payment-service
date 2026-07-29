@@ -1677,7 +1677,20 @@ model HydraLocalParticipant {
   /// (Set to the funding wallet's vkey only for legacy coupled heads.)
   cardanoVkey String
 
-  /// WebSocket URL for this participant's Hydra node (e.g. ws://127.0.0.1:4001)
+  /// The Hydra Host this participant's node runs on, when it was provisioned
+  /// through one. Null for a node configured by hand (the legacy env-seeded
+  /// path). Restrict: a Host with live participants must not be deleted.
+  hydraHostId String?
+  HydraHost   HydraHost? @relation(fields: [hydraHostId], references: [id], onDelete: Restrict)
+
+  /// Node id assigned by that Host. Together with hydraHostId this identifies
+  /// the supervised process; nodeUrl/nodeHttpUrl below are derived from the two.
+  /// Unique per Host: two participants pointing at one supervised node would
+  /// have them fighting over the same head state.
+  hostNodeId String?
+
+  /// WebSocket URL for this participant's Hydra node (e.g. ws://127.0.0.1:4001,
+  /// or wss://host/v1/nodes/<hostNodeId>/api when placed on a Hydra Host)
   nodeUrl String
 
   /// HTTP URL for this participant's Hydra node (e.g. http://127.0.0.1:4001)
@@ -1704,6 +1717,7 @@ model HydraLocalParticipant {
   /// Low in-head-balance monitoring rules for this participant
   LowBalanceRules HydraLowBalanceRule[]
 
+  @@unique([hydraHostId, hostNodeId])
   @@index([walletId])
   @@index([hasCommitted, updatedAt])
 }
@@ -1856,6 +1870,68 @@ model HydraTopup {
 
 /// Encrypted Hydra signing key for the local participant (1:1 with HydraLocalParticipant).
 /// Fund and node wallet keys are not needed here — those come from the HotWallet.
+/// Status of a Hydra Host deployment.
+enum HydraHostStatus {
+  /// Accepting new node placements.
+  Active
+  /// Reachable and serving existing heads, but no new placements.
+  Draining
+  /// Health checks are failing; existing heads keep their placement because a
+  /// head cannot be moved (its persistence directory is not relocatable).
+  Unreachable
+  /// Administratively disabled.
+  Disabled
+}
+
+/// A deployment that supervises hydra-node processes and exposes a token-gated
+/// control plane. Several Hosts may serve one payment service; a head is placed
+/// on exactly one Host at provisioning time and stays there for its whole life,
+/// because its persistence directory holds the only copy of the head state on
+/// that machine and cannot be moved.
+model HydraHost {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Operator-facing label.
+  name    String
+  network Network
+
+  /// Base URL of the Host control plane, e.g. https://hydra1.example.com.
+  /// TLS terminates in front of the Host; the container itself serves plain HTTP.
+  baseUrl String
+
+  /// Hostname the Host advertises for per-head peer ports. Recorded so the
+  /// counterparty handshake can be checked against what the Host actually
+  /// returns — etcd rejects a mismatch between advertised and cluster URLs.
+  publicPeerHost String
+
+  /// Encrypted admin token. Fleet operations only: provision, escrow-ack,
+  /// reconfigure, delete. Nullable so a Host may be registered for runtime use
+  /// without handing this service the ability to provision on it.
+  encryptedAdminToken String?
+
+  /// Encrypted user token. Runtime access to the proxied node API.
+  encryptedUserToken String
+
+  /// Last values reported by GET /v1/capabilities. Provisioning is refused when
+  /// these do not match what this service expects, so a version skew fails at
+  /// placement rather than at first commit.
+  hydraVersion        String?
+  scriptCatalogueHash String?
+  ledgerParamsHash    String?
+
+  status          HydraHostStatus @default(Active)
+  lastHealthAt    DateTime?
+  lastHealthError String?
+
+  Participants HydraLocalParticipant[]
+
+  @@unique([network, baseUrl])
+  /// Placement scans for an Active Host on a given network.
+  @@index([network, status])
+}
+
 model HydraSecretKey {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
