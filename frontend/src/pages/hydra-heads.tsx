@@ -5,6 +5,7 @@ import {
   ExternalLink,
   Flag,
   GitBranch,
+  KeyRound,
   Layers3,
   Loader2,
   MoreHorizontal,
@@ -18,6 +19,9 @@ import { toast } from 'react-toastify';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import { AddHydraHeadDialog } from '@/components/hydra/AddHydraHeadDialog';
+import { HydraNodesCard } from '@/components/hydra/HydraNodesCard';
+import { ConnectHydraNodeDialog } from '@/components/hydra/ConnectHydraNodeDialog';
+import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
 import { HydraHeadInHeadBalance } from '@/components/hydra/HydraHeadInHeadBalance';
 import { HydraHeadTopupButton } from '@/components/hydra/HydraHeadTopupButton';
 import { AnimatedPage } from '@/components/ui/animated-page';
@@ -44,7 +48,6 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { cn, getExplorerUrl, shortenAddress } from '@/lib/utils';
 import {
-  checkHydraNode,
   closeHydraHead,
   commitHydraHead,
   fanoutHydraHead,
@@ -52,7 +55,6 @@ import {
   useHydraHeads,
   type HydraHead,
   type HydraHeadStatus,
-  type HydraNodeCheckResult,
   type HydraParticipant,
   type HydraRemoteParticipant,
 } from '@/lib/hooks/useHydraHeads';
@@ -390,18 +392,29 @@ function ParticipantCard({
             mono
           />
         )}
-        <DetailField
-          label="Node WS"
-          value={participant.nodeUrl}
-          copyValue={participant.nodeUrl}
-          mono
-        />
-        <DetailField
-          label="Node HTTP"
-          value={participant.nodeHttpUrl}
-          copyValue={participant.nodeHttpUrl}
-          mono
-        />
+        {'advertise' in participant ? (
+          <DetailField
+            label="Peer address"
+            value={participant.advertise}
+            copyValue={participant.advertise}
+            mono
+          />
+        ) : (
+          <>
+            <DetailField
+              label="Node WS"
+              value={participant.nodeUrl}
+              copyValue={participant.nodeUrl}
+              mono
+            />
+            <DetailField
+              label="Node HTTP"
+              value={participant.nodeHttpUrl}
+              copyValue={participant.nodeHttpUrl}
+              mono
+            />
+          </>
+        )}
       </div>
 
       <TransactionHashRow
@@ -413,115 +426,22 @@ function ParticipantCard({
   );
 }
 
-function HydraNodeCheckPanel({
-  head,
-  nodeCheck,
-  isCheckingNode,
-  onCheckNode,
-}: {
-  head: HydraHead;
-  nodeCheck: HydraNodeCheckResult | undefined;
-  isCheckingNode: boolean;
-  onCheckNode: (head: HydraHead) => void;
-}) {
-  const localParticipant = head.LocalParticipant;
-
-  return (
-    <div className="space-y-4 rounded-md border p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h3 className="font-medium">Node check</h3>
-          <p className="text-sm text-muted-foreground">
-            Checks the local participant node HTTP API and websocket reachability.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="w-fit"
-          disabled={!localParticipant || isCheckingNode}
-          onClick={() => onCheckNode(head)}
-        >
-          {isCheckingNode ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Wifi className="h-4 w-4" />
-          )}
-          Check
-        </Button>
-      </div>
-
-      {!localParticipant ? (
-        <p className="text-sm text-muted-foreground">
-          No local participant is saved for this head.
-        </p>
-      ) : (
-        <div className="grid gap-3 md:grid-cols-2">
-          <DetailField
-            label="Node WS"
-            value={localParticipant.nodeUrl}
-            copyValue={localParticipant.nodeUrl}
-            mono
-          />
-          <DetailField
-            label="Node HTTP"
-            value={localParticipant.nodeHttpUrl}
-            copyValue={localParticipant.nodeHttpUrl}
-            mono
-          />
-        </div>
-      )}
-
-      {nodeCheck && (
-        <div className="grid gap-3 rounded-md bg-muted/30 p-3 md:grid-cols-4">
-          <div>
-            <p className="text-xs font-medium uppercase text-muted-foreground">Reachability</p>
-            <Badge variant={nodeCheck.reachable ? 'success' : 'destructive'} className="mt-1 w-fit">
-              {nodeCheck.reachable ? 'Reachable' : 'Unreachable'}
-            </Badge>
-          </div>
-          <DetailField
-            label="HTTP"
-            value={nodeCheck.httpStatus ? String(nodeCheck.httpStatus) : '-'}
-          />
-          <DetailField
-            label="Websocket"
-            value={nodeCheck.websocketReachable ? 'OK' : 'Unchecked'}
-          />
-          <DetailField label="Status" value={nodeCheck.status ?? '-'} />
-          <div className="md:col-span-4">
-            <p className="text-xs text-muted-foreground">
-              Checked {formatDate(nodeCheck.checkedAt)}
-              {nodeCheck.error ? ` - ${nodeCheck.error}` : ''}
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function HydraHeadDetailsDialog({
   head,
   open,
   onOpenChange,
   network,
-  nodeCheck,
-  isCheckingNode,
   isLifecycleActionRunning,
-  onCheckNode,
   onRequestLifecycle,
+  onBackUpKeys,
 }: {
   head: HydraHead | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   network: string;
-  nodeCheck: HydraNodeCheckResult | undefined;
-  isCheckingNode: boolean;
   isLifecycleActionRunning: boolean;
-  onCheckNode: (head: HydraHead) => void;
   onRequestLifecycle: (head: HydraHead, action: HydraLifecycleAction) => void;
+  onBackUpKeys: (head: HydraHead) => void;
 }) {
   if (!head) {
     return null;
@@ -583,12 +503,20 @@ function HydraHeadDetailsDialog({
             <DetailField label="Finalized" value={formatDate(head.finalizedAt)} />
           </div>
 
-          <HydraNodeCheckPanel
-            head={head}
-            nodeCheck={nodeCheck}
-            isCheckingNode={isCheckingNode}
-            onCheckNode={onCheckNode}
-          />
+          {head.LocalParticipant && !head.LocalParticipant.keysDisclosedAt && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/60 dark:bg-amber-950/30">
+              <div className="text-xs text-amber-800 dark:text-amber-300">
+                <p className="font-medium">
+                  This node&apos;s signing keys have never been backed up.
+                </p>
+                <p>They can be shown once, then the service seals them.</p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => onBackUpKeys(head)}>
+                <KeyRound className="h-4 w-4" />
+                Back up keys
+              </Button>
+            </div>
+          )}
 
           <div className="space-y-3">
             <h3 className="font-medium">Lifecycle transactions</h3>
@@ -831,14 +759,13 @@ export default function HydraHeadsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<StatusTab>('All');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isConnectNodeOpen, setIsConnectNodeOpen] = useState(false);
+  const [connectedNodeCount, setConnectedNodeCount] = useState(0);
+  const [backUpKeysParticipantId, setBackUpKeysParticipantId] = useState<string | null>(null);
   const [selectedHeadId, setSelectedHeadId] = useState<string | null>(null);
-  const [checkingHeadId, setCheckingHeadId] = useState<string | null>(null);
   const [runningLifecycleHeadId, setRunningLifecycleHeadId] = useState<string | null>(null);
   const [pendingLifecycleAction, setPendingLifecycleAction] =
     useState<PendingLifecycleAction | null>(null);
-  const [nodeChecks, setNodeChecks] = useState<Record<string, HydraNodeCheckResult | undefined>>(
-    {},
-  );
 
   const stats = useMemo(() => {
     const openHeads = heads.filter((head) => head.status === 'Open').length;
@@ -889,8 +816,7 @@ export default function HydraHeadsPage() {
         localParticipant?.nodeHttpUrl ?? '',
         ...remoteParticipants.flatMap((participant) => [
           participant.walletId,
-          participant.nodeUrl,
-          participant.nodeHttpUrl,
+          participant.advertise,
         ]),
       ];
 
@@ -903,29 +829,12 @@ export default function HydraHeadsPage() {
     () => heads.find((head) => head.id === selectedHeadId) ?? null,
     [heads, selectedHeadId],
   );
+  // A head has to run somewhere, so the action is unavailable until a node is
+  // connected — which is the step above it on this page.
+  const hasConnectedNode = connectedNodeCount > 0;
   const pendingLifecycleCopy = pendingLifecycleAction
     ? getLifecycleActionConfirmCopy(pendingLifecycleAction.head, pendingLifecycleAction.action)
     : null;
-
-  const handleCheckNode = async (head: HydraHead) => {
-    const localParticipant = head.LocalParticipant;
-    if (!localParticipant) {
-      toast.error('This head has no local participant to check');
-      return;
-    }
-
-    setCheckingHeadId(head.id);
-    try {
-      const result = await checkHydraNode(apiClient, {
-        nodeHttpUrl: localParticipant.nodeHttpUrl,
-        nodeUrl: localParticipant.nodeUrl,
-        timeoutMs: 5000,
-      });
-      setNodeChecks((currentChecks) => ({ ...currentChecks, [head.id]: result }));
-    } finally {
-      setCheckingHeadId(null);
-    }
-  };
 
   const handleRunLifecycleAction = async (head: HydraHead, action: HydraLifecycleAction) => {
     setRunningLifecycleHeadId(head.id);
@@ -977,14 +886,17 @@ export default function HydraHeadsPage() {
               </p>
             </div>
 
+            {/* A node is the container: you connect one, then open heads on it. */}
             <div className="flex items-center gap-2">
-              <Button type="button" onClick={() => setIsAddDialogOpen(true)}>
+              <Button type="button" onClick={() => setIsConnectNodeOpen(true)}>
                 <Plus className="h-4 w-4" />
-                Add
+                Connect node
               </Button>
               <RefreshButton onRefresh={() => void refetch()} isRefreshing={isFetching} />
             </div>
           </div>
+
+          <HydraNodesCard onConnectedCountChange={setConnectedNodeCount} />
 
           <div className="grid gap-3 md:grid-cols-4">
             <div className="rounded-lg border bg-card px-4 py-3">
@@ -1025,13 +937,26 @@ export default function HydraHeadsPage() {
             onTabChange={(tab) => setActiveTab(tab as StatusTab)}
           />
 
-          <SearchInput
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search head ID, relation, participant wallet, or node..."
-            className="max-w-md"
-            isLoading={isFetching && !isLoading}
-          />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search head ID, relation, participant wallet, or node..."
+              className="max-w-md"
+              isLoading={isFetching && !isLoading}
+            />
+            <Button
+              type="button"
+              onClick={() => setIsAddDialogOpen(true)}
+              disabled={!hasConnectedNode}
+              title={
+                hasConnectedNode ? undefined : 'Connect a node first — a head has to run somewhere'
+              }
+            >
+              <Plus className="h-4 w-4" />
+              Add head
+            </Button>
+          </div>
 
           <HydraHeadTable
             heads={filteredHeads}
@@ -1052,11 +977,9 @@ export default function HydraHeadsPage() {
           }
         }}
         network={network}
-        nodeCheck={selectedHead ? nodeChecks[selectedHead.id] : undefined}
-        isCheckingNode={selectedHead ? checkingHeadId === selectedHead.id : false}
         isLifecycleActionRunning={selectedHead ? runningLifecycleHeadId === selectedHead.id : false}
-        onCheckNode={(head) => void handleCheckNode(head)}
         onRequestLifecycle={(head, action) => setPendingLifecycleAction({ head, action })}
+        onBackUpKeys={(head) => setBackUpKeysParticipantId(head.LocalParticipant?.id ?? null)}
       />
       <ConfirmDialog
         open={Boolean(pendingLifecycleAction)}
@@ -1070,6 +993,19 @@ export default function HydraHeadsPage() {
         isLoading={
           pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false
         }
+      />
+      <BackUpNodeKeysDialog
+        open={backUpKeysParticipantId !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setBackUpKeysParticipantId(null);
+        }}
+        participantId={backUpKeysParticipantId}
+        onDone={() => void refetch()}
+      />
+      <ConnectHydraNodeDialog
+        open={isConnectNodeOpen}
+        onOpenChange={setIsConnectNodeOpen}
+        onConnected={() => void refetch()}
       />
       <AddHydraHeadDialog
         open={isAddDialogOpen}

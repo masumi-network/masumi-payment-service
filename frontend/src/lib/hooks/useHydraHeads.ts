@@ -25,9 +25,28 @@ export type HydraParticipant = {
   nodeHttpUrl: string;
   hasCommitted: boolean;
   commitTxHash: string | null;
+  /** Which connected node runs this participant's hydra-node process. */
+  hydraHostId?: string;
+  hostNodeId?: string;
+  /** Null until an operator has taken the one-time backup of this node's keys. */
+  keysDisclosedAt?: string | null;
 };
 
-export type HydraRemoteParticipant = HydraParticipant & {
+export type HydraNodeKeys = {
+  id: string;
+  disclosedAt: string;
+  hydraSigningKey: string;
+  cardanoSigningKey: string | null;
+};
+
+/**
+ * The counterparty's node, as agreed in the handshake.
+ *
+ * No node URL: their API sits behind their own Host's proxy and we hold no
+ * token for it. What we have is the peer-plane address etcd dials.
+ */
+export type HydraRemoteParticipant = Omit<HydraParticipant, 'nodeUrl' | 'nodeHttpUrl'> & {
+  advertise: string;
   hydraVerificationKeyId: string;
 };
 
@@ -72,6 +91,7 @@ export type HydraRelation = {
   network: 'Preprod' | 'Mainnet';
   localHotWalletId: string;
   remoteWalletId: string;
+  counterpartyBaseUrl: string | null;
   LocalHotWallet?: HydraWalletSummary;
   RemoteWallet?: HydraWalletSummary;
   _count?: {
@@ -109,27 +129,8 @@ export type CreateHydraRelationPayload = {
   network: 'Preprod' | 'Mainnet';
   localHotWalletId: string;
   remoteWalletId: string;
-};
-
-export type CreateHydraLocalParticipantPayload = {
-  walletId: string;
-  nodeUrl: string;
-  nodeHttpUrl: string;
-  hydraSK: string;
-};
-
-export type CreateHydraRemoteParticipantPayload = {
-  walletId: string;
-  nodeUrl: string;
-  nodeHttpUrl: string;
-  hydraVK: string;
-};
-
-export type CreateHydraHeadPayload = {
-  hydraRelationId: string;
-  contestationPeriod: number;
-  localParticipantId: string;
-  remoteParticipantIds: string[];
+  /** Where this relation's head offers are delivered. */
+  counterpartyBaseUrl: string;
 };
 
 type ApiEnvelope<T> = {
@@ -380,14 +381,15 @@ export function useHydraRelations(network?: 'Preprod' | 'Mainnet') {
   };
 }
 
-export function useHydraLocalParticipants(walletId?: string) {
+export function useHydraLocalParticipants(walletId?: string, hydraHostId?: string) {
   const { apiClient } = useAppContext();
 
   const query = useQuery<HydraParticipant[]>({
-    queryKey: ['hydra-local-participants', walletId],
+    queryKey: ['hydra-local-participants', walletId ?? 'any', hydraHostId ?? 'any'],
     queryFn: async () =>
       fetchHydraPages<HydraParticipant>(apiClient, '/hydra/participant/local', 'participants', {
-        unassigned: true,
+        // Filtering by host wants every participant on it, assigned or not.
+        ...(hydraHostId ? { hydraHostId } : { unassigned: true }),
         walletId,
       }),
     enabled: !!apiClient,
@@ -459,58 +461,47 @@ export async function createHydraRelation(apiClient: Client, payload: CreateHydr
   return ensureData(response?.data?.data, 'Hydra relation was not returned by the API');
 }
 
-export async function createHydraLocalParticipant(
-  apiClient: Client,
-  payload: CreateHydraLocalParticipantPayload,
-) {
+/**
+ * Open the next head on a relation.
+ *
+ * The only way to create one: the service provisions a node on a Hydra Host,
+ * exchanges signed material with the counterparty, starts the node and records
+ * the head. Nothing about the node is configured here.
+ */
+export async function proposeHydraHead(apiClient: Client, payload: { hydraRelationId: string }) {
   const response = await handleApiCall(
     () =>
-      apiClient.post<HydraLocalParticipantResponse>({
+      apiClient.post<{ 200: ApiEnvelope<{ offerId: string; nonce: string; status: string }> }>({
         responseType: 'json',
-        url: '/hydra/participant/local',
+        url: '/hydra/handshake/propose',
         body: payload,
       }),
-    { errorMessage: 'Failed to create local Hydra participant' },
+    { errorMessage: 'Failed to propose a Hydra head' },
   );
 
-  return ensureData(
-    response?.data?.data?.participant,
-    'Local Hydra participant was not returned by the API',
-  );
+  return ensureData(response?.data?.data, 'The head offer was not returned by the API');
 }
 
-export async function createHydraRemoteParticipant(
-  apiClient: Client,
-  payload: CreateHydraRemoteParticipantPayload,
-) {
+/**
+ * Take the one-time backup of a node's signing keys.
+ *
+ * The Hydra Host generates these and hands them over exactly once, at
+ * provisioning; this service holds the only other copy. This call is therefore
+ * also once-only — it seals itself server-side — so whatever comes back has to
+ * be saved now or recovered from the Host.
+ */
+export async function revealHydraNodeKeys(apiClient: Client, payload: { id: string }) {
   const response = await handleApiCall(
     () =>
-      apiClient.post<HydraRemoteParticipantResponse>({
+      apiClient.post<{ 200: ApiEnvelope<HydraNodeKeys> }>({
         responseType: 'json',
-        url: '/hydra/participant/remote',
+        url: '/hydra/participant/local/keys',
         body: payload,
       }),
-    { errorMessage: 'Failed to create remote Hydra participant' },
+    { errorMessage: 'Failed to read the node keys' },
   );
 
-  return ensureData(
-    response?.data?.data?.participant,
-    'Remote Hydra participant was not returned by the API',
-  );
-}
-
-export async function createHydraHead(apiClient: Client, payload: CreateHydraHeadPayload) {
-  const response = await handleApiCall(
-    () =>
-      apiClient.post<HydraHeadResponse>({
-        responseType: 'json',
-        url: '/hydra/head',
-        body: payload,
-      }),
-    { errorMessage: 'Failed to create Hydra head' },
-  );
-
-  return ensureData(response?.data?.data, 'Hydra head was not returned by the API');
+  return ensureData(response?.data?.data, 'The node keys were not returned by the API');
 }
 
 export async function initHydraHead(apiClient: Client, payload: { headId: string }) {
@@ -583,21 +574,28 @@ export async function fanoutHydraHead(apiClient: Client, payload: { headId: stri
   return ensureData(response?.data?.data, 'Hydra head fanout response was not returned by the API');
 }
 
-export async function checkHydraNode(
+/**
+ * Record a counterparty's wallet from the address they sent you.
+ *
+ * A relation is defined by whose wallet sits on each side, and the counterparty
+ * is at another organisation — so their address arrives out of band and has to
+ * be entered, not picked from a list of our own wallets.
+ */
+export async function recordHydraCounterpartyWallet(
   apiClient: Client,
-  payload: { nodeHttpUrl: string; nodeUrl?: string; timeoutMs?: number },
+  payload: { paymentSourceId: string; walletAddress: string; note?: string },
 ) {
   const response = await handleApiCall(
     () =>
-      apiClient.post<HydraNodeCheckResponse>({
+      apiClient.post<HydraWalletBaseResponse>({
         responseType: 'json',
-        url: '/hydra/head/check',
+        url: '/hydra/wallet-base',
         body: payload,
       }),
-    { errorMessage: 'Failed to check Hydra node' },
+    { errorMessage: 'Failed to record the counterparty wallet' },
   );
 
-  return ensureData(response?.data?.data, 'Hydra node check was not returned by the API');
+  return ensureData(response?.data?.data, 'The counterparty wallet was not returned by the API');
 }
 
 export async function ensureHydraWalletBaseForHotWallet(
