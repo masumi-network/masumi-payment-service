@@ -77,7 +77,19 @@ function parseNodeRecord(raw: string, source: string): NodeRecord {
 	if (peerPort === undefined) {
 		throw new RegistryError(`${source} is missing a usable peerPort`);
 	}
-	return parsed as unknown as NodeRecord;
+
+	const record = parsed as unknown as NodeRecord;
+
+	// Records written before the counter was renamed carry `restartCount`.
+	// Reading them as a missing `startAttempts` would make every arithmetic on
+	// it NaN, and `NaN >= maxStartAttempts` is false — so a node that genuinely
+	// could not start would retry forever instead of failing. Carry the old
+	// value across on read; the next write persists the new name.
+	if (typeof record.startAttempts !== 'number') {
+		record.startAttempts = getOwnInteger(parsed, 'restartCount') ?? 0;
+	}
+
+	return record;
 }
 
 export class NodeRegistryStore {

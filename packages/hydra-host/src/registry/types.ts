@@ -15,13 +15,50 @@ export type NodeState =
 	| 'PendingEscrow'
 	/** Escrowed by the payment service; not running. */
 	| 'Stopped'
+	/**
+	 * Process spawned, API not answering yet.
+	 *
+	 * This is a real state, not a formality: with two participants etcd has no
+	 * quorum until both are up, and hydra-node does not open its API until it
+	 * has one *and* its chain follower has synced. A node can sit here for
+	 * minutes while being entirely healthy.
+	 */
 	| 'Starting'
+	/** Answering its API. A caller may use this node. */
 	| 'Running'
 	/** Waiting for a snapshot round to settle before stopping. */
 	| 'Draining'
 	/** Supervisor gave up; needs an operator. */
 	| 'Failed'
 	| 'Removing';
+
+/** Verdict from comparing the node's chain view against wall clock. */
+export type DriftVerdict = 'Healthy' | 'Degraded' | 'Unsynced';
+
+/**
+ * What the supervisor's last probe saw.
+ *
+ * Persisted rather than kept in memory because it is the only thing that can
+ * answer "is this node usable?" for a caller that is not the supervisor — and
+ * that question is what the health endpoint exists for.
+ */
+export type NodeObservationRecord = {
+	/** ISO timestamp of the probe. A stale value means the supervisor is not ticking. */
+	checkedAt: string;
+	/** Whether the node's own API answered. */
+	responsive: boolean;
+	/**
+	 * Whether the node's chain follower has caught up.
+	 *
+	 * Separate from `responsive` because a node that is answering but still
+	 * catching up accepts a connection and then refuses every command with
+	 * `WaitOnNodeInSync`. Treating it as usable is how a caller ends up with a
+	 * head that will not open.
+	 */
+	chainSynced: boolean;
+	/** Null until the node is synced enough for the measurement to mean anything. */
+	drift: DriftVerdict | null;
+};
 
 export type NodeDesiredState = 'Running' | 'Stopped';
 
@@ -75,8 +112,20 @@ export type NodeRecord = {
 
 	/** Populated when state is Failed, so an operator sees why without reading logs. */
 	failureReason?: string;
-	/** Counts consecutive supervisor restarts; reset on a healthy sync. */
-	restartCount: number;
+	/**
+	 * Spawn attempts in the current unhealthy streak, reset once the node is
+	 * observed healthy.
+	 *
+	 * Attempts, not restarts: the counter has to be incremented *before* the
+	 * spawn, or a node that dies instantly would have its exit handler's write
+	 * clobbered. That makes the first start attempt 1, so the number of
+	 * *restarts* — which is what a caller cares about — is one less. The wire
+	 * representation does that subtraction rather than reporting a healthy node
+	 * as having restarted once.
+	 */
+	startAttempts: number;
+	/** Last supervisor probe. Absent until the node has been observed at least once. */
+	lastObservation?: NodeObservationRecord;
 	/** True when the last stop could not be drained, so the unwedge check looks harder on the way up. */
 	lastStopUndrained: boolean;
 	/**
@@ -94,4 +143,30 @@ export function isKeyMaterialReadable(record: NodeRecord): boolean {
 
 export function canStart(record: NodeRecord): boolean {
 	return record.peers.length > 0 && record.escrowAckedAt !== null && record.state !== 'Removing';
+}
+
+/**
+ * Retries in the current unhealthy streak — the attempts beyond the first.
+ *
+ * A node that came up first time reads 0, which is what an operator means by
+ * "it has not restarted". Deliberately not a lifetime total: the number exists
+ * to show how close a node is to exhausting its restart budget, and that budget
+ * is refunded the moment the node proves it can stay up.
+ */
+export function restartCountOf(record: NodeRecord): number {
+	return Math.max(0, record.startAttempts - 1);
+}
+
+/**
+ * Whether a caller may route work to this node.
+ *
+ * Three things all have to hold, and none implies the others. The state must be
+ * `Running`; the node must still have been answering at the last probe, since
+ * it can stop after being promoted; and its chain follower must be caught up,
+ * because a synced-looking node that is actually catching up refuses every
+ * command with `WaitOnNodeInSync`.
+ */
+export function isUsable(record: NodeRecord): boolean {
+	const observation = record.lastObservation;
+	return record.state === 'Running' && observation?.responsive === true && observation.chainSynced;
 }

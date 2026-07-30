@@ -25,7 +25,7 @@ function record(overrides: Partial<NodeRecord> = {}): NodeRecord {
 		idempotencyKey: 'idem-1',
 		createdAt: '2026-07-28T00:00:00.000Z',
 		updatedAt: '2026-07-28T00:00:00.000Z',
-		restartCount: 0,
+		startAttempts: 0,
 		lastStopUndrained: false,
 		...overrides,
 	};
@@ -170,6 +170,36 @@ describe('NodeRegistryStore.update', () => {
 	});
 });
 
+describe('NodeRegistryStore legacy records', () => {
+	/**
+	 * A Host upgraded in place reads records written under the old field name.
+	 * Leaving `startAttempts` undefined would make every arithmetic on it NaN,
+	 * and `NaN >= maxStartAttempts` is false — so a node that genuinely could not
+	 * start would retry forever instead of being marked Failed.
+	 */
+	it('carries a pre-rename restartCount across as startAttempts', async () => {
+		const legacy = { ...record(), restartCount: 3 } as unknown as Record<string, unknown>;
+		delete legacy.startAttempts;
+
+		const nodeDir = path.join(dataDir, 'nodes', 'node-1');
+		await fs.mkdir(nodeDir, { recursive: true });
+		await fs.writeFile(path.join(nodeDir, 'node.json'), JSON.stringify(legacy), 'utf8');
+
+		expect((await store.read('node-1'))?.startAttempts).toBe(3);
+	});
+
+	it('defaults to zero when neither name is present', async () => {
+		const legacy = { ...record() } as unknown as Record<string, unknown>;
+		delete legacy.startAttempts;
+
+		const nodeDir = path.join(dataDir, 'nodes', 'node-2');
+		await fs.mkdir(nodeDir, { recursive: true });
+		await fs.writeFile(path.join(nodeDir, 'node.json'), JSON.stringify({ ...legacy, nodeId: 'node-2' }), 'utf8');
+
+		expect((await store.read('node-2'))?.startAttempts).toBe(0);
+	});
+});
+
 describe('NodeRegistryStore concurrency', () => {
 	// Found by running a real host: a node exited while its state was being
 	// reconciled, both writers used the same temp filename, and the second
@@ -179,13 +209,17 @@ describe('NodeRegistryStore concurrency', () => {
 
 		const results = await Promise.all(
 			Array.from({ length: 40 }, (_unused, index) =>
-				store.update('node-1', (current) => ({ ...current, restartCount: current.restartCount + 1, apiPort: 4001 + index })),
+				store.update('node-1', (current) => ({
+					...current,
+					startAttempts: current.startAttempts + 1,
+					apiPort: 4001 + index,
+				})),
 			),
 		);
 
 		expect(results.every((result) => result !== null)).toBe(true);
 		// Every increment must be visible: a lost update would leave this short.
-		expect((await store.read('node-1'))?.restartCount).toBe(40);
+		expect((await store.read('node-1'))?.startAttempts).toBe(40);
 	});
 
 	// The two writers in the observed failure were doing different things, so
@@ -207,9 +241,7 @@ describe('NodeRegistryStore concurrency', () => {
 
 	it('leaves no temp files behind after concurrent writes', async () => {
 		await store.write(record());
-		await Promise.all(
-			Array.from({ length: 20 }, () => store.update('node-1', (current) => ({ ...current }))),
-		);
+		await Promise.all(Array.from({ length: 20 }, () => store.update('node-1', (current) => ({ ...current }))));
 		const entries = await fs.readdir(store.nodeDir('node-1'));
 		expect(entries.filter((entry) => entry.includes('.tmp'))).toEqual([]);
 	});
@@ -218,12 +250,12 @@ describe('NodeRegistryStore concurrency', () => {
 		await store.write(record());
 		const outcomes = await Promise.allSettled([
 			store.update('node-1', (current) => ({ ...current, nodeId: 'hijacked' })),
-			store.update('node-1', (current) => ({ ...current, restartCount: 7 })),
+			store.update('node-1', (current) => ({ ...current, startAttempts: 7 })),
 		]);
 
 		expect(outcomes[0]?.status).toBe('rejected');
 		expect(outcomes[1]?.status).toBe('fulfilled');
-		expect((await store.read('node-1'))?.restartCount).toBe(7);
+		expect((await store.read('node-1'))?.startAttempts).toBe(7);
 	});
 });
 
@@ -233,7 +265,7 @@ describe('NodeRegistryStore.write concurrency', () => {
 	it('tolerates concurrent direct writes', async () => {
 		await store.write(record());
 		await expect(
-			Promise.all(Array.from({ length: 25 }, (_unused, i) => store.write(record({ restartCount: i })))),
+			Promise.all(Array.from({ length: 25 }, (_unused, i) => store.write(record({ startAttempts: i })))),
 		).resolves.toBeDefined();
 
 		const entries = await fs.readdir(store.nodeDir('node-1'));

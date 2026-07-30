@@ -38,7 +38,7 @@ function record(overrides: Partial<NodeRecord> = {}): NodeRecord {
 		idempotencyKey: 'idem-1',
 		createdAt: '2026-07-28T11:00:00.000Z',
 		updatedAt: '2026-07-28T11:00:00.000Z',
-		restartCount: 0,
+		startAttempts: 0,
 		lastStopUndrained: false,
 		...overrides,
 	};

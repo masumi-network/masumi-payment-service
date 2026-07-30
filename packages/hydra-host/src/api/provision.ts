@@ -151,7 +151,7 @@ export async function provisionNode(request: ProvisionRequest, deps: ProvisionDe
 			idempotencyKey: request.idempotencyKey,
 			createdAt,
 			updatedAt: createdAt,
-			restartCount: 0,
+			startAttempts: 0,
 			lastStopUndrained: false,
 		};
 		await deps.store.write(record);

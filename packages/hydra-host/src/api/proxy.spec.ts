@@ -63,7 +63,7 @@ function record(overrides: Partial<NodeRecord>): NodeRecord {
 		idempotencyKey: 'idem-1',
 		createdAt: '2026-07-28T11:00:00.000Z',
 		updatedAt: '2026-07-28T11:00:00.000Z',
-		restartCount: 0,
+		startAttempts: 0,
 		lastStopUndrained: false,
 		...overrides,
 	};
@@ -165,7 +165,9 @@ describe('node api proxy', () => {
 		const response = await call('GET', '/v1/nodes/node-1/api/head', USER);
 
 		expect(response.status).toBe(409);
-		expect((await response.json()) as { error: string }).toMatchObject({ error: expect.stringContaining('Stopped') as unknown as string });
+		expect((await response.json()) as { error: string }).toMatchObject({
+			error: expect.stringContaining('Stopped') as unknown as string,
+		});
 	});
 
 	it('502s when the node is recorded running but unreachable', async () => {
@@ -186,11 +188,17 @@ describe('node api websocket proxy', () => {
 		const greeted: string[] = [];
 		const server = createServer();
 		const wss = new WebSocketServer({ server });
-		wss.on('connection', (socket: { send: (d: string) => void; on: (e: string, cb: (d: Buffer) => void) => void }, request: { url?: string }) => {
-			greeted.push(request.url ?? '');
-			socket.send(JSON.stringify({ tag: 'Greetings' }));
-			socket.on('message', (data: Buffer) => socket.send(data.toString()));
-		});
+		wss.on(
+			'connection',
+			(
+				socket: { send: (d: string) => void; on: (e: string, cb: (d: Buffer) => void) => void },
+				request: { url?: string },
+			) => {
+				greeted.push(request.url ?? '');
+				socket.send(JSON.stringify({ tag: 'Greetings' }));
+				socket.on('message', (data: Buffer) => socket.send(data.toString()));
+			},
+		);
 		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 		return { server, port: (server.address() as AddressInfo).port, greeted };
 	}

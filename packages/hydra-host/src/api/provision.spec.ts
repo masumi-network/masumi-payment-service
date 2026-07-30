@@ -175,9 +175,9 @@ describe('setPeers', () => {
 		const { record } = await provisionNode(REQUEST, deps);
 
 		await expect(setPeers(record.nodeId, [], deps)).rejects.toThrow(/at least one peer/);
-		await expect(
-			setPeers(record.nodeId, [{ ...peer, advertise: record.advertise }], deps),
-		).rejects.toThrow(/its own advertise address/);
+		await expect(setPeers(record.nodeId, [{ ...peer, advertise: record.advertise }], deps)).rejects.toThrow(
+			/its own advertise address/,
+		);
 		await expect(setPeers(record.nodeId, [peer, peer], deps)).rejects.toThrow(/duplicate/);
 	});
 

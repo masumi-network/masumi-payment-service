@@ -76,6 +76,19 @@ async function main(): Promise<void> {
 		},
 		logger,
 	});
+	// Without this the listen failure surfaces as an unhandled 'error' event and
+	// a raw stack trace. The two ways this fails in production — the port is
+	// taken, or the port is privileged — both have one-line explanations, and a
+	// Host that cannot serve its control plane must exit rather than sit there
+	// supervising nodes nobody can reach.
+	server.on('error', (error: NodeJS.ErrnoException) => {
+		const detail =
+			error.code === 'EADDRINUSE'
+				? `port ${config.listenPort} is already in use; another Hydra Host may still be running`
+				: error.message;
+		logger.error(`[host] control plane could not listen: ${detail}`);
+		void lock.release().finally(() => process.exit(1));
+	});
 	server.listen(config.listenPort, () => {
 		logger.info(`[host] control plane listening on :${config.listenPort}`);
 	});

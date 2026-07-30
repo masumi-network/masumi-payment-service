@@ -31,12 +31,21 @@ export type NodeObservation = {
 	drift: 'Healthy' | 'Degraded' | 'Unsynced' | null;
 	/** True once the node has answered at least one probe since starting. */
 	responsive: boolean;
+	/** Whether the node's chain follower has caught up. False while it is still syncing. */
+	chainSynced: boolean;
 	/** Wall-clock ms, injected so decisions stay pure. */
 	nowMs: number;
 };
 
 export type PlanLimits = {
-	maxConsecutiveRestarts: number;
+	/**
+	 * Spawn attempts allowed in one unhealthy streak.
+	 *
+	 * Attempts rather than restarts, because the first start consumes one: the
+	 * counter is incremented before the spawn so a node that dies instantly
+	 * cannot have its exit handler's write clobbered.
+	 */
+	maxStartAttempts: number;
 	escrowTtlSeconds: number;
 };
 
@@ -88,17 +97,20 @@ export function planNodeAction(record: NodeRecord, observation: NodeObservation,
 	}
 
 	if (!observation.processRunning) {
-		if (record.restartCount >= limits.maxConsecutiveRestarts) {
+		if (record.startAttempts >= limits.maxStartAttempts) {
 			return {
 				kind: 'Fail',
-				reason: `node failed to stay up after ${record.restartCount} attempts; a restart is unlikely to fix it`,
+				reason: `node failed to stay up after ${record.startAttempts} attempts; a restart is unlikely to fix it`,
 			};
 		}
 		return { kind: 'Start' };
 	}
 
 	if (!observation.responsive) {
-		// Running but not answering yet — still coming up.
+		// Spawned but not answering yet. With two participants etcd has no quorum
+		// until the peer is up, and hydra-node opens its API only once it has one
+		// and its chain follower has synced — so this is the normal way up, not a
+		// fault, and the record stays in `Starting` until a probe succeeds.
 		return { kind: 'Idle' };
 	}
 

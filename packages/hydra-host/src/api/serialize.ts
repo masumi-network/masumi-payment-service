@@ -7,7 +7,7 @@
  * material and file paths.
  */
 
-import type { NodeRecord } from '../registry/types.js';
+import { restartCountOf, isUsable, type NodeRecord } from '../registry/types.js';
 
 export type PublicNode = {
 	nodeId: string;
@@ -25,7 +25,19 @@ export type PublicNode = {
 	escrowAckedAt: string | null;
 	createdAt: string;
 	updatedAt: string;
+	/**
+	 * Retries within the current unhealthy streak — zero for a node that came up
+	 * first time, and zero again once it is healthy. Not a lifetime total.
+	 */
 	restartCount: number;
+	/** Whether a caller may route work here: `Running`, answering, and chain-synced. */
+	usable: boolean;
+	/** What the last supervisor probe saw. Null before the first probe. */
+	responsive: boolean | null;
+	/** False while the chain follower is still catching up, when commands are refused. */
+	chainSynced: boolean | null;
+	drift: string | null;
+	lastCheckedAt: string | null;
 	failureReason?: string;
 };
 
@@ -55,7 +67,12 @@ export function toPublicNode(record: NodeRecord): PublicNode {
 		escrowAckedAt: record.escrowAckedAt,
 		createdAt: record.createdAt,
 		updatedAt: record.updatedAt,
-		restartCount: record.restartCount,
+		restartCount: restartCountOf(record),
+		usable: isUsable(record),
+		responsive: record.lastObservation?.responsive ?? null,
+		chainSynced: record.lastObservation?.chainSynced ?? null,
+		drift: record.lastObservation?.drift ?? null,
+		lastCheckedAt: record.lastObservation?.checkedAt ?? null,
 	};
 	if (record.failureReason !== undefined) {
 		publicNode.failureReason = record.failureReason;

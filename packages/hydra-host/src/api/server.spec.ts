@@ -144,9 +144,7 @@ describe('provisioning over HTTP', () => {
 	});
 
 	it('accepts peers and reports them back', async () => {
-		const created = await (
-			await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-1' })
-		).json();
+		const created = await (await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-1' })).json();
 		const { nodeId } = created as { nodeId: string };
 
 		const patched = await call('PATCH', `/v1/nodes/${nodeId}`, {
@@ -166,9 +164,7 @@ describe('provisioning over HTTP', () => {
 	});
 
 	it('rejects a malformed peer payload', async () => {
-		const created = await (
-			await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-1' })
-		).json();
+		const created = await (await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-1' })).json();
 		const { nodeId } = created as { nodeId: string };
 
 		expect((await call('PATCH', `/v1/nodes/${nodeId}`, { token: ADMIN, body: { peers: 'nope' } })).status).toBe(400);
@@ -176,9 +172,7 @@ describe('provisioning over HTTP', () => {
 	});
 
 	it('lets the user tier read node health', async () => {
-		const created = await (
-			await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-1' })
-		).json();
+		const created = await (await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-1' })).json();
 		const { nodeId } = created as { nodeId: string };
 
 		const health = await call('GET', `/v1/nodes/${nodeId}/health`, { token: USER });

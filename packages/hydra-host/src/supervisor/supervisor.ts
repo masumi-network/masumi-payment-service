@@ -26,7 +26,8 @@ import { planNodeAction, type NodeObservation, type PlanLimits } from './plan.js
 import { NodeProcessManager } from './process.js';
 import { unwedgeNode } from './unwedge.js';
 
-const MAX_CONSECUTIVE_RESTARTS = 5;
+/** One initial start plus four retries before a node is declared Failed. */
+const MAX_START_ATTEMPTS = 5;
 const STRANDED_SETTLE_WAIT_MS = 30_000;
 const SIGKILL_GRACE_MS = 30_000;
 /**
@@ -80,7 +81,7 @@ export class Supervisor {
 	) {}
 
 	private get limits(): PlanLimits {
-		return { maxConsecutiveRestarts: MAX_CONSECUTIVE_RESTARTS, escrowTtlSeconds: this.config.escrowTtlSeconds };
+		return { maxStartAttempts: MAX_START_ATTEMPTS, escrowTtlSeconds: this.config.escrowTtlSeconds };
 	}
 
 	private client(record: NodeRecord): NodeClient {
@@ -148,15 +149,16 @@ export class Supervisor {
 
 	private async observe(record: NodeRecord): Promise<NodeObservation> {
 		if (!this.processes.isRunning(record.nodeId)) {
-			return { processRunning: false, drift: null, responsive: false, nowMs: Date.now() };
+			return { processRunning: false, drift: null, responsive: false, chainSynced: false, nowMs: Date.now() };
 		}
 
 		const client = this.client(record);
 		if (!(await client.isResponsive())) {
-			return { processRunning: true, drift: null, responsive: false, nowMs: Date.now() };
+			return { processRunning: true, drift: null, responsive: false, chainSynced: false, nowMs: Date.now() };
 		}
 
-		const slot = await client.probeCurrentSlot();
+		const chain = await client.probeChain();
+		const slot = chain.synced ? chain.slot : null;
 		let drift: NodeObservation['drift'] = null;
 		if (slot !== null) {
 			// Validate against THIS node's unsynced period, not the host default: a
@@ -171,22 +173,53 @@ export class Supervisor {
 			drift = classifyDrift(measureDrift(slot, this.slotConfig, Date.now()), thresholds);
 		}
 
-		return { processRunning: true, drift, responsive: true, nowMs: Date.now() };
+		return { processRunning: true, drift, responsive: true, chainSynced: chain.synced, nowMs: Date.now() };
+	}
+
+	/**
+	 * Persist what the probe saw, and promote a node that has come up.
+	 *
+	 * Three things depend on this being durable rather than in-memory:
+	 *
+	 *  - the health endpoint, which is the payment service's only way to ask
+	 *    whether a node is usable, and which otherwise reports a record that
+	 *    says `Running` for a node whose API is dead;
+	 *  - `Starting` → `Running`, so `Running` means "answering" rather than
+	 *    "spawned" — with two participants a node legitimately sits in
+	 *    `Starting` for minutes, since etcd has no quorum until both are up;
+	 *  - the restart budget, which must be refunded once a node proves it can
+	 *    stay up, or routine drift restarts accumulate until a healthy node is
+	 *    marked Failed.
+	 *
+	 * Written every tick, including when only the timestamp changed: a stale
+	 * `checkedAt` is itself the signal that the supervisor has stopped ticking,
+	 * and that is worth more than the write it saves.
+	 */
+	private async recordObservation(record: NodeRecord, observation: NodeObservation): Promise<NodeRecord> {
+		const healthy = observation.responsive && observation.drift === 'Healthy';
+		const promote = record.state === 'Starting' && observation.responsive;
+
+		const updated = await this.store.update(record.nodeId, (current) => ({
+			...current,
+			lastObservation: {
+				checkedAt: new Date(observation.nowMs).toISOString(),
+				responsive: observation.responsive,
+				chainSynced: observation.chainSynced,
+				drift: observation.drift,
+			},
+			...(promote && current.state === 'Starting' ? { state: 'Running' as const } : {}),
+			...(healthy && current.startAttempts !== 0 ? { startAttempts: 0 } : {}),
+		}));
+
+		if (promote && updated?.state === 'Running') {
+			this.logger.info(`[supervisor] ${record.nodeId} is answering its API`);
+		}
+		return updated ?? record;
 	}
 
 	private async reconcile(record: NodeRecord): Promise<void> {
 		const observation = await this.observe(record);
-
-		// A node that is up, answering and in sync has demonstrably started, so
-		// clear the restart budget. Without this, routine drift restarts — which
-		// are expected and recurring on the Blockfrost backend — accumulate until
-		// a perfectly healthy node is marked Failed.
-		if (observation.responsive && observation.drift === 'Healthy' && record.restartCount !== 0) {
-			const updated = await this.store.update(record.nodeId, (current) => ({ ...current, restartCount: 0 }));
-			if (updated !== null) {
-				record = updated;
-			}
-		}
+		record = await this.recordObservation(record, observation);
 
 		const action = planNodeAction(record, observation, this.limits);
 
@@ -255,13 +288,17 @@ export class Supervisor {
 			await fs.rm(path.join(nodeDir, 'persistence', 'bin', 'etcd'), { force: true }).catch(() => undefined);
 		}
 
-		// Count the attempt and mark it running BEFORE spawning. Writing after the
+		// Count the attempt and mark it starting BEFORE spawning. Writing after the
 		// spawn would race the exit handler for a node that dies immediately, and
 		// the later write would clobber the undrained flag the handler just set.
+		//
+		// `Starting`, not `Running`: nothing has answered yet, and with two
+		// participants nothing can until the peer is up too. The next probe
+		// promotes it.
 		await this.store.update(record.nodeId, (current) => ({
 			...current,
-			state: 'Running',
-			restartCount: current.restartCount + 1,
+			state: 'Starting',
+			startAttempts: current.startAttempts + 1,
 		}));
 
 		this.logger.info(`[supervisor] starting ${record.nodeId} (peer ${record.peerPort}, api ${record.apiPort})`);
@@ -344,7 +381,7 @@ export class Supervisor {
 				await this.store.update(record.nodeId, (current) => ({
 					...current,
 					lastStopUndrained: false,
-					restartCount: 0,
+					startAttempts: 0,
 				}));
 				return;
 			case 'Unrecovered':

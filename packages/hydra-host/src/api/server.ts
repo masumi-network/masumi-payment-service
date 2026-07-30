@@ -15,7 +15,7 @@ import type { HostConfig } from '../config.js';
 import { readCapabilities } from '../capabilities.js';
 import type { PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
-import type { PeerRecord } from '../registry/types.js';
+import { isUsable, restartCountOf, type PeerRecord } from '../registry/types.js';
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate } from './auth.js';
@@ -284,11 +284,20 @@ export function createControlPlane(deps: ServerDeps): Server {
 					send(response, 404, { error: 'no such node' });
 					return;
 				}
+				// `usable` is the question this endpoint exists to answer, and the
+				// state alone cannot answer it: the supervisor's last probe is what
+				// knows whether the node is still responding. `lastCheckedAt` lets a
+				// caller distinguish "not usable" from "nobody has looked lately".
 				send(response, 200, {
 					nodeId: record.nodeId,
 					state: record.state,
 					desired: record.desired,
-					restartCount: record.restartCount,
+					usable: isUsable(record),
+					responsive: record.lastObservation?.responsive ?? null,
+					chainSynced: record.lastObservation?.chainSynced ?? null,
+					drift: record.lastObservation?.drift ?? null,
+					lastCheckedAt: record.lastObservation?.checkedAt ?? null,
+					restartCount: restartCountOf(record),
 					lastStopUndrained: record.lastStopUndrained,
 					failureReason: record.failureReason ?? null,
 				});

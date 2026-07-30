@@ -24,7 +24,14 @@ describe('matchNodeApiProxy', () => {
 
 describe('isProxyableHttpPath', () => {
 	it('permits the read surface the payment service uses', () => {
-		for (const path of ['/head', '/snapshot', '/snapshot/utxo', '/snapshot/last-seen', '/commits', '/protocol-parameters']) {
+		for (const path of [
+			'/head',
+			'/snapshot',
+			'/snapshot/utxo',
+			'/snapshot/last-seen',
+			'/commits',
+			'/protocol-parameters',
+		]) {
 			expect(isProxyableHttpPath('GET', path)).toBe(true);
 		}
 	});

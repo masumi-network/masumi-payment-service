@@ -2,7 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { planNodeAction, type NodeObservation, type PlanLimits } from './plan.js';
 import type { NodeRecord } from '../registry/types.js';
 
-const LIMITS: PlanLimits = { maxConsecutiveRestarts: 5, escrowTtlSeconds: 3600 };
+const LIMITS: PlanLimits = { maxStartAttempts: 5, escrowTtlSeconds: 3600 };
 const NOW = Date.parse('2026-07-28T12:00:00.000Z');
 
 function record(overrides: Partial<NodeRecord> = {}): NodeRecord {
@@ -25,14 +25,14 @@ function record(overrides: Partial<NodeRecord> = {}): NodeRecord {
 		idempotencyKey: 'idem-1',
 		createdAt: '2026-07-28T11:00:00.000Z',
 		updatedAt: '2026-07-28T11:00:00.000Z',
-		restartCount: 0,
+		startAttempts: 0,
 		lastStopUndrained: false,
 		...overrides,
 	};
 }
 
 function observe(overrides: Partial<NodeObservation> = {}): NodeObservation {
-	return { processRunning: true, drift: 'Healthy', responsive: true, nowMs: NOW, ...overrides };
+	return { processRunning: true, drift: 'Healthy', responsive: true, chainSynced: true, nowMs: NOW, ...overrides };
 }
 
 describe('planNodeAction', () => {
@@ -91,7 +91,7 @@ describe('planNodeAction', () => {
 	// A node that cannot stay up is a config or chain problem; looping restarts
 	// would hide it and keep the head unusable.
 	it('fails a node that exhausted its restart budget instead of looping', () => {
-		const action = planNodeAction(record({ restartCount: 5 }), observe({ processRunning: false }), LIMITS);
+		const action = planNodeAction(record({ startAttempts: 5 }), observe({ processRunning: false }), LIMITS);
 		expect(action.kind).toBe('Fail');
 		expect(action).toMatchObject({ reason: expect.stringContaining('5 attempts') as unknown as string });
 	});

@@ -14,6 +14,17 @@ import type { LastSeenSnapshotResponse } from './supervisor/drain.js';
 
 const LOOPBACK = '127.0.0.1';
 
+/**
+ * What the node says about its chain view.
+ *
+ * `synced: false` covers both "still catching up" and "the probe failed" — from
+ * the supervisor's point of view they are the same: the node cannot be trusted
+ * to accept work yet.
+ */
+export type ChainProbe = { synced: boolean; slot: number | null };
+
+const NOT_SYNCED: ChainProbe = { synced: false, slot: null };
+
 function decode(data: RawData): string {
 	if (Buffer.isBuffer(data)) {
 		return data.toString('utf8');
@@ -95,14 +106,20 @@ export class NodeClient {
 	}
 
 	/**
-	 * Read the head's current L1 slot from the `Greetings` frame the node sends
-	 * on connect. Used for drift, so the supervisor never has to parse log files
-	 * — the same technique the payment service uses to keep its head clock fresh.
+	 * Read chain sync state and the current L1 slot from the `Greetings` frame
+	 * the node sends on connect, so the supervisor never has to parse log files —
+	 * the same technique the payment service uses to keep its head clock fresh.
+	 *
+	 * Sync and slot are reported separately because they mean different things to
+	 * a caller. A node that is answering but still catching up will accept a
+	 * connection and then refuse every command with `WaitOnNodeInSync`; collapsing
+	 * that into "no slot" made it indistinguishable from a failed probe, and left
+	 * the node looking usable when it was not.
 	 */
-	probeCurrentSlot(timeoutMs = 8_000): Promise<number | null> {
-		return new Promise<number | null>((resolve) => {
+	probeChain(timeoutMs = 8_000): Promise<ChainProbe> {
+		return new Promise<ChainProbe>((resolve) => {
 			let settled = false;
-			const finish = (value: number | null) => {
+			const finish = (value: ChainProbe) => {
 				if (settled) {
 					return;
 				}
@@ -116,7 +133,7 @@ export class NodeClient {
 			};
 
 			const socket = new WebSocket(`${this.wsUrl}?history=no`);
-			const timer = setTimeout(() => finish(null), timeoutMs);
+			const timer = setTimeout(() => finish(NOT_SYNCED), timeoutMs);
 			timer.unref?.();
 
 			socket.on('message', (data: RawData) => {
@@ -130,13 +147,14 @@ export class NodeClient {
 					return;
 				}
 				if (getOwnValue(parsed, 'chainSyncedStatus') !== 'InSync') {
-					return finish(null);
+					return finish(NOT_SYNCED);
 				}
 				const slot = getOwnValue(parsed, 'currentSlot');
-				finish(typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= 0 ? slot : null);
+				const usable = typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= 0;
+				finish({ synced: true, slot: usable ? slot : null });
 			});
-			socket.on('error', () => finish(null));
-			socket.on('close', () => finish(null));
+			socket.on('error', () => finish(NOT_SYNCED));
+			socket.on('close', () => finish(NOT_SYNCED));
 		});
 	}
 }
