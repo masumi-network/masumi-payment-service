@@ -148,6 +148,14 @@ const agentMetadataObjectSchema = z.object({
 	verifications: verificationsSchema
 		.nullable()
 		.describe('KERI/Veridian verification claims advertised by this registry entry. Null when none.'),
+	agentCardUrl: z
+		.string()
+		.max(250)
+		.nullable()
+		.describe('URL to the agent MIP-002 Agent Card JSON. Null unless the agent is A2A-type'),
+	a2aProtocolVersions: z
+		.array(z.string())
+		.describe('A2A protocol versions this agent declares support for. Empty for non-A2A agents'),
 });
 
 export const queryAgentByIdentifierSchemaOutput = z
@@ -323,6 +331,8 @@ export const queryAgentByIdentifierGet = readAuthenticatedEndpointFactory.build(
 					input.network,
 				),
 				verifications: parseVerificationsFromMetadata(parsedMetadata.data.verifications),
+				agentCardUrl: metadataToString(parsedMetadata.data.agent_card_url) ?? null,
+				a2aProtocolVersions: parsedMetadata.data.a2a_protocol_versions ?? [],
 			},
 		};
 	},

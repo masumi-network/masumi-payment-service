@@ -229,6 +229,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 
 		return {
 			...result,
+			paymentSourceType: paymentSource.paymentSourceType,
 			Capability: {
 				name: result.capabilityName,
 				version: result.capabilityVersion,

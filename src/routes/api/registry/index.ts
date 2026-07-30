@@ -11,6 +11,7 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
+import { validateA2AAgentCardOrThrow } from '@/utils/validator/agent-card';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
 import {
@@ -119,14 +120,22 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				operation: 'register_agent',
 			});
 			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
+			const isV2Registration = sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2;
 			// Per-type endpoint descriptor (Standard=apiBaseUrl, OpenApi=openApiSpecUrl,
-			// X402=x402ResourcesUrl). Enforced here, not in the schema, so the update
-			// route can `.omit()` the register input (see getRegistryEndpointError).
+			// X402=x402ResourcesUrl, A2A=apiBaseUrl+a2aAgentCardUrl). Enforced here, not
+			// in the schema, so the update route can `.omit()` the register input (see
+			// getRegistryEndpointError).
 			const endpointError = getRegistryEndpointError(input);
 			if (endpointError != null) {
 				throw createHttpError(400, endpointError);
 			}
-			const isV2Registration = sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2;
+	
+			if (input.type === RegistryEntryType.A2A && !isV2Registration) {
+				throw createHttpError(400, 'A2A registration is only supported on V2 payment sources');
+			}
+			if (input.type === RegistryEntryType.A2A && !input.skipAgentCardValidation) {
+				await validateA2AAgentCardOrThrow(input.a2aAgentCardUrl!, input.a2aProtocolVersions!);
+			}
 			if (isV2Registration && input.AgentPricing != null) {
 				throw createHttpError(
 					400,
@@ -206,6 +215,8 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					apiBaseUrl: input.apiBaseUrl ?? null,
 					openApiSpecUrl: input.openApiSpecUrl ?? null,
 					x402ResourcesUrl: input.x402ResourcesUrl ?? null,
+					a2aAgentCardUrl: input.a2aAgentCardUrl ?? null,
+					a2aProtocolVersions: input.a2aProtocolVersions ?? [],
 					capabilityName: input.Capability.name,
 					capabilityVersion: input.Capability.version,
 					other: input.Legal?.other,
@@ -336,6 +347,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 
 			return {
 				...result,
+				paymentSourceType: sellingWallet.PaymentSource.paymentSourceType,
 				Capability: {
 					name: result.capabilityName,
 					version: result.capabilityVersion,
@@ -445,6 +457,9 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 						blockTime: true,
 					},
 				},
+				PaymentSource: {
+					select: { paymentSourceType: true },
+				},
 			} satisfies Prisma.RegistryRequestInclude;
 
 			const registryRequest = await prisma.registryRequest.findUnique({
@@ -529,6 +544,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 
 			return {
 				...item,
+				paymentSourceType: item.PaymentSource.paymentSourceType,
 				Capability: {
 					name: item.capabilityName,
 					version: item.capabilityVersion,

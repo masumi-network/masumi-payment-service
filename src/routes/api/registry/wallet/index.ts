@@ -104,6 +104,9 @@ export const metadataSchema = z.object({
 	metadata_version: z.coerce.number().int().min(1).max(2),
 	supported_payment_sources: z.array(supportedPaymentSourceMetadataSchema).optional(),
 	verifications: z.array(verificationMetadataSchema).optional(),
+	// A2A (MIP-002) entries only; absent for every other type.
+	agent_card_url: z.string().or(z.array(z.string())).optional(),
+	a2a_protocol_versions: z.array(z.string()).optional(),
 });
 
 type MetadataAgentPricing = NonNullable<z.infer<typeof metadataSchema>['agentPricing']>;

@@ -98,6 +98,9 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 			orderBy: [{ registrationStateLastChangedAt: 'asc' }, { id: 'asc' }],
 			take: input.limit,
 			include: {
+				PaymentSource: {
+					select: { paymentSourceType: true },
+				},
 				SmartContractWallet: {
 					select: { walletVkey: true, walletAddress: true },
 				},

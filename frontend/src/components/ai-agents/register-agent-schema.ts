@@ -42,9 +42,11 @@ export const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
   return z
     .object({
       // Agent access model. Standard uses apiUrl; OpenApi points to an OpenAPI
-      // spec document; X402 points to a self-hosted x402 resource manifest. The
-      // required endpoint field is enforced per-type in the superRefine below.
-      agentType: z.enum(['Standard', 'OpenApi', 'X402']),
+      // spec document; X402 points to a self-hosted x402 resource manifest; A2A
+      // (V2 payment sources only) requires both apiUrl and a2aAgentCardUrl plus
+      // a2aProtocolVersions. The required endpoint field(s) are enforced
+      // per-type in the superRefine below.
+      agentType: z.enum(['Standard', 'OpenApi', 'X402', 'A2A']),
       apiUrl: z
         .string()
         .url('API URL must be a valid URL')
@@ -66,6 +68,14 @@ export const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
         .max(REGISTRY_LIMITS.apiBaseUrl, 'x402 manifest URL must be less than 250 characters')
         .optional()
         .or(z.literal('')),
+      a2aAgentCardUrl: z
+        .string()
+        .url('Agent card URL must be a valid URL')
+        .max(REGISTRY_LIMITS.apiBaseUrl, 'Agent card URL must be less than 250 characters')
+        .optional()
+        .or(z.literal('')),
+      a2aProtocolVersions: z.string().optional().or(z.literal('')),
+      skipAgentCardValidation: z.boolean().optional(),
       name: z
         .string()
         .min(1, 'Name is required')
@@ -169,6 +179,26 @@ export const createAgentSchema = (network: 'Mainnet' | 'Preprod') => {
         });
       }
       // Per-type endpoint descriptor is required. Payment stays a separate axis.
+      if (data.agentType === 'A2A') {
+        if (!data.apiUrl) {
+          ctx.addIssue({ code: 'custom', path: ['apiUrl'], message: 'API URL is required' });
+        }
+        if (!data.a2aAgentCardUrl) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['a2aAgentCardUrl'],
+            message: 'Agent card URL is required',
+          });
+        }
+        if (!data.a2aProtocolVersions?.trim()) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['a2aProtocolVersions'],
+            message: 'At least one protocol version is required',
+          });
+        }
+        return;
+      }
       const endpointField = (
         {
           Standard: 'apiUrl',
@@ -199,6 +229,9 @@ export function createAgentDefaultValues(defaultPriceUnit: MasumiPriceUnit): Age
     apiUrl: '',
     openApiSpecUrl: '',
     x402ResourcesUrl: '',
+    a2aAgentCardUrl: '',
+    a2aProtocolVersions: '',
+    skipAgentCardValidation: false,
     name: '',
     description: '',
     selectedWallet: '',

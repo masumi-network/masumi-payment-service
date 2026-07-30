@@ -1678,6 +1678,14 @@ export type AgentIdentifierMetadata = {
              */
             baseUrl?: string;
         }> | null;
+        /**
+         * URL to the agent MIP-002 Agent Card JSON. Null unless the agent is A2A-type
+         */
+        agentCardUrl: string | null;
+        /**
+         * A2A protocol versions this agent declares support for. Empty for non-A2A agents
+         */
+        a2aProtocolVersions: Array<string>;
     };
 };
 
@@ -1699,11 +1707,11 @@ export type RegistryEntry = {
      */
     description: string | null;
     /**
-     * The agent access model. Standard for legacy/untyped entries; OpenApi or X402 otherwise
+     * The agent access model. Standard for legacy/untyped entries; OpenApi, X402, or A2A otherwise
      */
-    type: 'Standard' | 'OpenApi' | 'X402';
+    type: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
     /**
-     * Base URL of the agent API for interactions. Null for OpenApi/X402 agents
+     * Base URL of the agent API for interactions. Null for OpenApi/X402 agents; required for A2A agents alongside a2aAgentCardUrl
      */
     apiBaseUrl: string | null;
     /**
@@ -1714,6 +1722,18 @@ export type RegistryEntry = {
      * URL to the agent x402 resource manifest JSON. Null unless the agent is X402-type
      */
     x402ResourcesUrl: string | null;
+    /**
+     * URL to the agent MIP-002 Agent Card JSON. Null unless the agent is A2A-type
+     */
+    a2aAgentCardUrl: string | null;
+    /**
+     * A2A protocol versions this agent declares support for. Empty for non-A2A agents
+     */
+    a2aProtocolVersions: Array<string>;
+    /**
+     * Which payment source version (V1/V2) this registry entry is registered under
+     */
+    paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
     /**
      * Information about the AI model and version used by the agent
      */
@@ -9082,9 +9102,9 @@ export type PostRegistryData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.
+         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources; A2A (V2 payment sources only) requires both apiBaseUrl and a2aAgentCardUrl plus a2aProtocolVersions.
          */
-        type?: 'Standard' | 'OpenApi' | 'X402';
+        type?: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
         /**
          * The payment key of a specific wallet used for the registration
          */
@@ -9348,6 +9368,18 @@ export type PostRegistryData = {
          */
         x402ResourcesUrl?: string;
         /**
+         * URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others.
+         */
+        a2aAgentCardUrl?: string;
+        /**
+         * A2A protocol versions this agent declares support for. Required and non-empty for A2A-type agents; every value must appear in the fetched Agent Card protocolVersions. Omit for other types.
+         */
+        a2aProtocolVersions?: Array<string>;
+        /**
+         * A2A-only override: when true, skip fetching/validating the Agent Card before registering. Ignored for other types.
+         */
+        skipAgentCardValidation?: boolean;
+        /**
          * Description of the agent
          */
         description: string;
@@ -9552,9 +9584,9 @@ export type PostRegistryUpdateData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
-         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.
+         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources; A2A (V2 payment sources only) requires both apiBaseUrl and a2aAgentCardUrl plus a2aProtocolVersions.
          */
-        type?: 'Standard' | 'OpenApi' | 'X402';
+        type?: 'Standard' | 'OpenApi' | 'X402' | 'A2A';
         /**
          * Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.
          */
@@ -9813,6 +9845,18 @@ export type PostRegistryUpdateData = {
          * URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others.
          */
         x402ResourcesUrl?: string;
+        /**
+         * URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others.
+         */
+        a2aAgentCardUrl?: string;
+        /**
+         * A2A protocol versions this agent declares support for. Required and non-empty for A2A-type agents; every value must appear in the fetched Agent Card protocolVersions. Omit for other types.
+         */
+        a2aProtocolVersions?: Array<string>;
+        /**
+         * A2A-only override: when true, skip fetching/validating the Agent Card before registering. Ignored for other types.
+         */
+        skipAgentCardValidation?: boolean;
         /**
          * Description of the agent
          */

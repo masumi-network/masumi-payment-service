@@ -321,6 +321,8 @@ model RegistryRequest {
   // would allow inline); the indexer fetches + parses it into Masumi's catalog
   // grouped by agent. Set only for X402-type entries.
   x402ResourcesUrl               String?
+  a2aAgentCardUrl                String?
+  a2aProtocolVersions            String[]                 @default([])
   capabilityName                 String?
   capabilityVersion              String?
   description                    String?
@@ -1107,6 +1109,7 @@ enum RegistryEntryType {
   Standard
   OpenApi
   X402
+  A2A
 }
 
 enum PaymentErrorType {

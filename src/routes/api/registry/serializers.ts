@@ -174,6 +174,7 @@ export function serializeVerifications(rows: AgentVerificationRow[] | null | und
 export function serializeRegistryEntry(item: RegistryListRecord) {
 	return {
 		...item,
+		paymentSourceType: item.PaymentSource.paymentSourceType,
 		Capability: {
 			name: item.capabilityName,
 			version: item.capabilityVersion,

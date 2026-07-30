@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { testEndpoint } from 'express-zod-api';
+import createHttpError from 'http-errors';
 import {
 	ApiKeyStatus,
 	Network,
@@ -20,6 +21,7 @@ const mockFindRegistryRequests = jest.fn() as AnyMock;
 const mockCountRegistryRequests = jest.fn() as AnyMock;
 const mockFindX402Networks = jest.fn() as AnyMock;
 const mockValidateAssetsOnChain = jest.fn() as AnyMock;
+const mockValidateA2AAgentCardOrThrow = jest.fn() as AnyMock;
 const PREPROD_SCRIPT_ADDRESS = 'addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm';
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
@@ -91,6 +93,10 @@ jest.unstable_mockModule('@masumi/payment-core/metrics', () => ({
 jest.unstable_mockModule('@/utils/blockfrost', () => ({
 	getBlockfrostInstance: jest.fn(),
 	validateAssetsOnChain: mockValidateAssetsOnChain,
+}));
+
+jest.unstable_mockModule('@/utils/validator/agent-card', () => ({
+	validateA2AAgentCardOrThrow: mockValidateA2AAgentCardOrThrow,
 }));
 
 jest.unstable_mockModule('@/generated/prisma/client', async () => await import('@/generated/prisma/enums'));
@@ -173,6 +179,8 @@ function buildRegistryRequestResponse(
 		apiBaseUrl: 'https://example.com/agent',
 		openApiSpecUrl: null,
 		x402ResourcesUrl: null,
+		a2aAgentCardUrl: null,
+		a2aProtocolVersions: [],
 		capabilityName: 'demo',
 		capabilityVersion: '1.0.0',
 		authorName: 'Author',
@@ -198,6 +206,25 @@ function buildRegistryRequestResponse(
 		RecipientWallet: recipientWallet,
 		SupportedPaymentSources: [],
 		CurrentTransaction: null,
+	};
+}
+
+function buildA2ARequestBody(overrides: Record<string, unknown> = {}) {
+	return {
+		network: Network.Preprod,
+		sellingWalletVkey: 'b'.repeat(56),
+		name: 'A2A Agent',
+		description: 'Agent description',
+		type: RegistryEntryType.A2A,
+		apiBaseUrl: 'https://example.com/agent',
+		a2aAgentCardUrl: 'https://example.com/.well-known/agent-card.json',
+		a2aProtocolVersions: ['1.0'],
+		Tags: ['demo'],
+		Capability: { name: 'demo', version: '1.0.0' },
+		Author: { name: 'Author' },
+		supportedPaymentSources: [freeCardanoSource()],
+		ExampleOutputs: [],
+		...overrides,
 	};
 }
 
@@ -241,6 +268,7 @@ describe('registerAgentPost', () => {
 		mockFindRegistryRequests.mockResolvedValue([]);
 		mockCountRegistryRequests.mockResolvedValue(0);
 		mockValidateAssetsOnChain.mockResolvedValue({ valid: [], invalid: [] });
+		mockValidateA2AAgentCardOrThrow.mockResolvedValue(undefined);
 	});
 
 	it('scopes registry list queries to the current managed holder wallet', async () => {
@@ -934,6 +962,87 @@ describe('registerAgentPost', () => {
 			'V2 registrations require supportedPaymentSources with source-local pricing',
 		);
 		expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
+	});
+
+	describe('A2A (MIP-002) registration', () => {
+		it('rejects A2A registration on a V1 payment source', async () => {
+			mockFindSellingWallet.mockResolvedValue(buildV1SellingWallet());
+
+			const { responseMock } = await testEndpoint({
+				endpoint: registerAgentPost,
+				requestProps: {
+					method: 'POST',
+					headers: { token: 'valid' },
+					body: buildA2ARequestBody(),
+				},
+			});
+
+			expect(responseMock.statusCode).toBe(400);
+			expect(JSON.stringify(responseMock._getJSONData())).toContain(
+				'A2A registration is only supported on V2 payment sources',
+			);
+			expect(mockValidateA2AAgentCardOrThrow).not.toHaveBeenCalled();
+			expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
+		});
+
+		it('registers an A2A agent on V2 after validating the agent card', async () => {
+			const { responseMock } = await testEndpoint({
+				endpoint: registerAgentPost,
+				requestProps: {
+					method: 'POST',
+					headers: { token: 'valid' },
+					body: buildA2ARequestBody(),
+				},
+			});
+
+			expect(responseMock.statusCode).toBe(200);
+			expect(mockValidateA2AAgentCardOrThrow).toHaveBeenCalledWith('https://example.com/.well-known/agent-card.json', [
+				'1.0',
+			]);
+			expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data).toEqual(
+				expect.objectContaining({
+					type: RegistryEntryType.A2A,
+					a2aAgentCardUrl: 'https://example.com/.well-known/agent-card.json',
+					a2aProtocolVersions: ['1.0'],
+				}),
+			);
+		});
+
+		it('rejects A2A registration when the agent card fails validation', async () => {
+			mockValidateA2AAgentCardOrThrow.mockRejectedValueOnce(
+				createHttpError(400, 'A2A agent card is invalid: missing required field'),
+			);
+
+			const { responseMock } = await testEndpoint({
+				endpoint: registerAgentPost,
+				requestProps: {
+					method: 'POST',
+					headers: { token: 'valid' },
+					body: buildA2ARequestBody(),
+				},
+			});
+
+			expect(responseMock.statusCode).toBe(400);
+			expect(JSON.stringify(responseMock._getJSONData())).toContain('A2A agent card is invalid');
+			expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
+		});
+
+		it('registers an A2A agent despite an invalid card when skipAgentCardValidation is set', async () => {
+			mockValidateA2AAgentCardOrThrow.mockRejectedValueOnce(new Error('should not be called'));
+
+			const { responseMock } = await testEndpoint({
+				endpoint: registerAgentPost,
+				requestProps: {
+					method: 'POST',
+					headers: { token: 'valid' },
+					body: buildA2ARequestBody({ skipAgentCardValidation: true }),
+				},
+			});
+
+			expect(responseMock.statusCode).toBe(200);
+			expect(mockValidateA2AAgentCardOrThrow).not.toHaveBeenCalled();
+			expect(mockCreateRegistryRequest).toHaveBeenCalled();
+		});
 	});
 
 	it('rejects an x402 source whose address alias does not match payTo', async () => {

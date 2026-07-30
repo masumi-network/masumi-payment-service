@@ -71,11 +71,13 @@ export const registryRequestOutputSchema = z
 		description: z.string().nullable().describe('Description of the agent. Null if not provided'),
 		type: z
 			.nativeEnum(RegistryEntryType)
-			.describe('The agent access model. Standard for legacy/untyped entries; OpenApi or X402 otherwise'),
+			.describe('The agent access model. Standard for legacy/untyped entries; OpenApi, X402, or A2A otherwise'),
 		apiBaseUrl: z
 			.string()
 			.nullable()
-			.describe('Base URL of the agent API for interactions. Null for OpenApi/X402 agents'),
+			.describe(
+				'Base URL of the agent API for interactions. Null for OpenApi/X402 agents; required for A2A agents alongside a2aAgentCardUrl',
+			),
 		openApiSpecUrl: z
 			.string()
 			.nullable()
@@ -84,6 +86,16 @@ export const registryRequestOutputSchema = z
 			.string()
 			.nullable()
 			.describe('URL to the agent x402 resource manifest JSON. Null unless the agent is X402-type'),
+		a2aAgentCardUrl: z
+			.string()
+			.nullable()
+			.describe('URL to the agent MIP-002 Agent Card JSON. Null unless the agent is A2A-type'),
+		a2aProtocolVersions: z
+			.array(z.string())
+			.describe('A2A protocol versions this agent declares support for. Empty for non-A2A agents'),
+		paymentSourceType: z
+			.nativeEnum(PaymentSourceType)
+			.describe('Which payment source version (V1/V2) this registry entry is registered under'),
 		Capability: z
 			.object({
 				name: z.string().nullable().describe('Name of the AI model/capability. Null if not provided'),
@@ -234,7 +246,7 @@ export const registerAgentSchemaInput = z.object({
 		.nativeEnum(RegistryEntryType)
 		.optional()
 		.describe(
-			'The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.',
+			'The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources; A2A (V2 payment sources only) requires both apiBaseUrl and a2aAgentCardUrl plus a2aProtocolVersions.',
 		),
 	sellingWalletVkey: z
 		.string()
@@ -304,6 +316,28 @@ export const registerAgentSchemaInput = z.object({
 		.optional()
 		.describe(
 			'URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others.',
+		),
+	a2aAgentCardUrl: z
+		.string()
+		.url()
+		.max(250)
+		.optional()
+		.describe(
+			'URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others.',
+		),
+	a2aProtocolVersions: z
+		.array(z.string().max(63))
+		.min(1)
+		.max(10)
+		.optional()
+		.describe(
+			'A2A protocol versions this agent declares support for. Required and non-empty for A2A-type agents; every value must appear in the fetched Agent Card protocolVersions. Omit for other types.',
+		),
+	skipAgentCardValidation: z
+		.boolean()
+		.optional()
+		.describe(
+			'A2A-only override: when true, skip fetching/validating the Agent Card before registering. Ignored for other types.',
 		),
 	description: z.string().max(250).describe('Description of the agent'),
 	Capability: z
@@ -381,8 +415,38 @@ export function getRegistryEndpointError(input: {
 	apiBaseUrl?: string | null;
 	openApiSpecUrl?: string | null;
 	x402ResourcesUrl?: string | null;
+	a2aAgentCardUrl?: string | null;
+	a2aProtocolVersions?: string[] | null;
 }): string | null {
 	const entryType = input.type ?? RegistryEntryType.Standard;
+
+	if (entryType === RegistryEntryType.A2A) {
+		if (input.apiBaseUrl == null) {
+			return 'A2A agents require apiBaseUrl';
+		}
+		if (input.a2aAgentCardUrl == null) {
+			return 'A2A agents require a2aAgentCardUrl';
+		}
+		if (input.a2aProtocolVersions == null || input.a2aProtocolVersions.length === 0) {
+			return 'A2A agents require a non-empty a2aProtocolVersions';
+		}
+		if (input.openApiSpecUrl != null) {
+			return 'openApiSpecUrl is not valid for an A2A agent; use apiBaseUrl and a2aAgentCardUrl';
+		}
+		if (input.x402ResourcesUrl != null) {
+			return 'x402ResourcesUrl is not valid for an A2A agent; use apiBaseUrl and a2aAgentCardUrl';
+		}
+		return null;
+	}
+
+	// Non-A2A types must not set the A2A-only fields.
+	if (input.a2aAgentCardUrl != null) {
+		return `a2aAgentCardUrl is not valid for a ${entryType} agent`;
+	}
+	if (input.a2aProtocolVersions != null && input.a2aProtocolVersions.length > 0) {
+		return `a2aProtocolVersions is not valid for a ${entryType} agent`;
+	}
+
 	const requiredByType = {
 		[RegistryEntryType.Standard]: 'apiBaseUrl',
 		[RegistryEntryType.OpenApi]: 'openApiSpecUrl',

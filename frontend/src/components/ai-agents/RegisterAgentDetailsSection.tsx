@@ -22,6 +22,7 @@ export function RegisterAgentDetailsSection({
   watch,
   setValue,
   typeLocked = false,
+  isV2Target = false,
 }: {
   register: UseFormRegister<AgentFormValues>;
   errors: FieldErrors<AgentFormValues>;
@@ -30,6 +31,7 @@ export function RegisterAgentDetailsSection({
   // Update mode: the agent type is fixed (the update route is Standard-only for
   // now), so the selector is disabled to avoid an unsupported type change.
   typeLocked?: boolean;
+  isV2Target?: boolean;
 }) {
   const tags = watch('tags');
   const agentType = watch('agentType');
@@ -71,6 +73,7 @@ export function RegisterAgentDetailsSection({
           <option value="Standard">Standard — single API base URL</option>
           <option value="OpenApi">OpenAPI — link to a spec document</option>
           <option value="X402">x402 — link to a resource manifest</option>
+          {isV2Target && <option value="A2A">A2A — MIP-002 agent card</option>}
         </select>
         <p className="text-xs text-muted-foreground">
           How this agent&apos;s API is described. Payment is configured separately below.
@@ -121,6 +124,66 @@ export function RegisterAgentDetailsSection({
             <p className="text-sm text-destructive">{errors.x402ResourcesUrl.message}</p>
           )}
         </div>
+      )}
+
+      {agentType === 'A2A' && (
+        <>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              API URL <span className="text-destructive">*</span>
+            </label>
+            <Input
+              {...register('apiUrl')}
+              placeholder="Enter the API URL for your agent"
+              className={errors.apiUrl ? 'border-destructive' : ''}
+            />
+            {errors.apiUrl && <p className="text-sm text-destructive">{errors.apiUrl.message}</p>}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              Agent Card URL <span className="text-destructive">*</span>
+            </label>
+            <Input
+              {...register('a2aAgentCardUrl')}
+              placeholder="https://your-agent.example/.well-known/agent-card.json"
+              className={errors.a2aAgentCardUrl ? 'border-destructive' : ''}
+            />
+            {errors.a2aAgentCardUrl && (
+              <p className="text-sm text-destructive">{errors.a2aAgentCardUrl.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">
+              A2A Protocol Versions <span className="text-destructive">*</span>
+            </label>
+            <Input
+              {...register('a2aProtocolVersions')}
+              placeholder="1.0"
+              className={errors.a2aProtocolVersions ? 'border-destructive' : ''}
+            />
+            <p className="text-xs text-muted-foreground">
+              Comma-separated list of A2A protocol versions this agent supports. Must appear in the
+              Agent Card&apos;s protocolVersions.
+            </p>
+            {errors.a2aProtocolVersions && (
+              <p className="text-sm text-destructive">{errors.a2aProtocolVersions.message}</p>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="skipAgentCardValidation"
+              {...register('skipAgentCardValidation')}
+              className="h-4 w-4 rounded border-input"
+            />
+            <label htmlFor="skipAgentCardValidation" className="text-sm text-muted-foreground">
+              Register even if the agent card can&apos;t be fetched or validated right now
+            </label>
+          </div>
+        </>
       )}
 
       <div className="space-y-2">

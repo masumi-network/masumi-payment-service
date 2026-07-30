@@ -144,6 +144,8 @@ export function buildAgentMetadata(request: {
 	apiBaseUrl: string | null;
 	openApiSpecUrl: string | null;
 	x402ResourcesUrl: string | null;
+	a2aAgentCardUrl: string | null;
+	a2aProtocolVersions: string[];
 	ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
 	capabilityName?: string | null;
 	capabilityVersion?: string | null;
@@ -202,6 +204,8 @@ export function buildAgentMetadata(request: {
 		openapi_spec_url: stringToMetadata(request.openApiSpecUrl),
 		// Set only for X402 entries; null otherwise -> omitted by cleanMetadata.
 		x402_resources_url: stringToMetadata(request.x402ResourcesUrl),
+		agent_card_url: stringToMetadata(request.a2aAgentCardUrl),
+		a2a_protocol_versions: request.a2aProtocolVersions.length > 0 ? request.a2aProtocolVersions : undefined,
 		example_output: request.ExampleOutputs.map((exampleOutput) => ({
 			name: stringToMetadata(exampleOutput.name),
 			mime_type: stringToMetadata(exampleOutput.mimeType),

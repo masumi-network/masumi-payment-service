@@ -223,6 +223,8 @@ export function RegisterAIAgentDialog({
         apiUrl: editingAgent.apiBaseUrl ?? '',
         openApiSpecUrl: editingAgent.openApiSpecUrl ?? '',
         x402ResourcesUrl: editingAgent.x402ResourcesUrl ?? '',
+        a2aAgentCardUrl: editingAgent.a2aAgentCardUrl ?? '',
+        a2aProtocolVersions: (editingAgent.a2aProtocolVersions ?? []).join(', '),
         name: editingAgent.name,
         description: editingAgent.description ?? '',
         // Selling wallet is fixed in update mode — the asset's managed
@@ -536,6 +538,17 @@ export function RegisterAIAgentDialog({
             ...(data.agentType === 'Standard' ? { apiBaseUrl: data.apiUrl } : {}),
             ...(data.agentType === 'OpenApi' ? { openApiSpecUrl: data.openApiSpecUrl } : {}),
             ...(data.agentType === 'X402' ? { x402ResourcesUrl: data.x402ResourcesUrl } : {}),
+            ...(data.agentType === 'A2A'
+              ? {
+                  apiBaseUrl: data.apiUrl,
+                  a2aAgentCardUrl: data.a2aAgentCardUrl,
+                  a2aProtocolVersions: (data.a2aProtocolVersions ?? '')
+                    .split(',')
+                    .map((version) => version.trim())
+                    .filter((version) => version.length > 0),
+                  ...(data.skipAgentCardValidation ? { skipAgentCardValidation: true } : {}),
+                }
+              : {}),
             Tags: data.tags,
             Capability: capability,
             Author: author,
@@ -623,6 +636,7 @@ export function RegisterAIAgentDialog({
             watch={watch}
             setValue={setValue}
             typeLocked={isUpdateMode}
+            isV2Target={isV2Target}
           />
 
           <RegisterAgentWalletSection
