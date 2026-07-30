@@ -96,8 +96,8 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
               the URL is where your service receives their offer.
             </p>
             <p className="text-xs text-muted-foreground">
-              Only <span className="font-mono">/api/v1/hydra/handshake/offer</span>{' '}
-              has to be reachable from their network — route that one path and nothing else. Never give them
+              Only <span className="font-mono">/api/v1/hydra/handshake/offer</span> has to be
+              reachable from their network — route that one path and nothing else. Never give them
               your Hydra node&apos;s URL or keys: those start and stop your node.
             </p>
             <div className="space-y-3 rounded-md border bg-muted/20 p-3">

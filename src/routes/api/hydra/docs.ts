@@ -40,8 +40,6 @@ import {
 import {
 	getRelationSchemaInput,
 	getRelationSchemaOutput,
-	createRelationSchemaInput,
-	createRelationSchemaOutput,
 	deleteRelationSchemaInput,
 	deleteRelationSchemaOutput,
 } from '@/routes/api/hydra/relation';
@@ -62,13 +60,17 @@ import {
 	updateHydraHostSchemaInput,
 } from '@/routes/api/hydra/host';
 import {
-	declineHydraOfferSchemaInput,
-	declineHydraOfferSchemaOutput,
-	proposeHydraHeadSchemaInput,
-	proposeHydraHeadSchemaOutput,
-	receiveHydraOfferSchemaInput,
-	receiveHydraOfferSchemaOutput,
-} from '@/routes/api/hydra/handshake';
+	createInviteSchemaInput,
+	createInviteSchemaOutput,
+	deleteInviteSchemaInput,
+	deleteInviteSchemaOutput,
+	getInviteSchemaInput,
+	getInviteSchemaOutput,
+	previewInviteSchemaInput,
+	previewInviteSchemaOutput,
+	redeemInviteSchemaInput,
+	redeemInviteSchemaOutput,
+} from '@/routes/api/hydra/invite';
 
 const HEAD_ID = 'cuid_v2_auto_generated';
 const TAG = ['hydra'];
@@ -82,49 +84,81 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 	const unauthorized = { 401: { description: 'Unauthorized' } } as const;
 	const notFound = { 404: { description: 'Hydra head not found' } } as const;
 
-	// ---- handshake ----
+	// ---- invite ----
 	registry.registerPath({
-		method: 'post',
-		path: '/hydra/handshake/propose',
-		summary: 'Propose the next Hydra head on a relation. (admin access required)',
+		method: 'get',
+		path: '/hydra/invite',
+		summary: 'List head invites. (admin access required)',
 		description:
-			'Provisions a node on a Hydra Host, signs an offer with the relation wallet and delivers it to the counterparty. Only the initiating side may propose: the lower-sorting relation wallet key decides, so both operators reach the same answer without coordinating.',
+			'Invites this service has issued or redeemed. An issued invite holds a provisioned node and a peer port until it is redeemed, revoked or expires.',
 		tags: TAG,
 		security: secured,
-		request: { body: jsonBody(proposeHydraHeadSchemaInput, undefined) },
+		request: { query: getInviteSchemaInput },
+		responses: { 200: successResponse('Head invites', getInviteSchemaOutput, { invites: [] }), ...unauthorized },
+	});
+
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/invite',
+		summary: 'Mint a head invite. (admin access required)',
+		description:
+			"Provisions a node on a Hydra Host and signs its full public material with the given wallet, producing a code to hand a counterparty out of band. The node and its peer port are reserved from this moment and cannot be re-pointed, because --peer is fixed at boot — so an invite that is never redeemed must be revoked or left to expire. Redeeming it is what supplies the counterparty's material and lets the node start.",
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(createInviteSchemaInput, {}) },
 		responses: {
-			200: successResponse('Offer delivered', proposeHydraHeadSchemaOutput, undefined),
-			409: { description: 'Not the initiator, or an offer for this head slot is already in flight' },
+			200: successResponse('Invite minted', createInviteSchemaOutput, {}),
+			409: { description: 'No usable Hydra Host, or the host has no admin token' },
 			...unauthorized,
 		},
 	});
 
 	registry.registerPath({
 		method: 'post',
-		path: '/hydra/handshake/offer',
-		summary: 'Receive a head offer from a counterparty. (signature authenticated)',
+		path: '/hydra/invite/preview',
+		summary: 'Inspect an invite without acting on it. (admin access required)',
 		description:
-			"Called by another operator's payment service, not by an api key holder. Authority comes from the offer being signed by the wallet already recorded on the named Hydra Relation, so a stranger cannot open a head here. Rejections are indistinguishable from an unknown relation, so this surface cannot be used to enumerate relations.",
+			'Decodes an invite code and reports whether its signature matches the wallet it claims to be from. Nothing is provisioned and no counterparty is contacted, so this is safe to call on an invite of unknown provenance. A false `signatureValid` is reported rather than thrown, because an operator looking at a forged invite is better served by being told so.',
 		tags: TAG,
-		request: { body: jsonBody(receiveHydraOfferSchemaInput, undefined) },
+		security: secured,
+		request: { body: jsonBody(previewInviteSchemaInput, {}) },
 		responses: {
-			200: successResponse('Offer accepted, with our own material', receiveHydraOfferSchemaOutput, undefined),
-			401: { description: 'Offer could not be authenticated' },
-			409: { description: 'Offer expired, wrong side proposing, or a slot conflict' },
+			200: successResponse('Invite contents', previewInviteSchemaOutput, {}),
+			400: { description: 'Not a well-formed invite code' },
+			...unauthorized,
 		},
 	});
 
 	registry.registerPath({
 		method: 'post',
-		path: '/hydra/handshake/decline',
-		summary: 'Decline a head offer. (signature authenticated)',
+		path: '/hydra/invite/redeem',
+		summary: 'Redeem a counterparty invite. (admin access required)',
 		description:
-			'Releases the node and peer port the offer reserved on this side, rather than waiting for the offer window to expire.',
+			"Verifies the issuer's signature, provisions our own node, sends our material to the issuer's Exchange Plane and records the resulting relation and head. Spends a node and a peer port, and tells the counterparty we are ready, so it is deliberate rather than automatic.",
 		tags: TAG,
-		request: { body: jsonBody(declineHydraOfferSchemaInput, undefined) },
+		security: secured,
+		request: { body: jsonBody(redeemInviteSchemaInput, {}) },
 		responses: {
-			200: successResponse('Offer declined', declineHydraOfferSchemaOutput, undefined),
-			401: { description: 'Decline could not be authenticated' },
+			200: successResponse('Invite redeemed', redeemInviteSchemaOutput, {}),
+			409: { description: 'Wrong network, already redeemed, expired, or our own invite' },
+			502: { description: "The counterparty's exchange plane refused or could not be reached" },
+			...unauthorized,
+		},
+	});
+
+	registry.registerPath({
+		method: 'delete',
+		path: '/hydra/invite',
+		summary: 'Revoke an unredeemed invite. (admin access required)',
+		description:
+			'Stops the Host honouring the nonce and releases the node and peer port it reserved. Refused once redeemed: by then the reservation is a running node with a peer, and removing that is closing a head.',
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(deleteInviteSchemaInput, {}) },
+		responses: {
+			200: successResponse('Invite revoked', deleteInviteSchemaOutput, {}),
+			409: { description: 'Already redeemed, or not an invite we issued' },
+			...unauthorized,
 		},
 	});
 
@@ -250,21 +284,6 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		security: secured,
 		request: { query: getRelationSchemaInput },
 		responses: { 200: successResponse('Hydra relations', getRelationSchemaOutput, { relations: [] }), ...unauthorized },
-	});
-	registry.registerPath({
-		method: 'post',
-		path: '/hydra/relation',
-		summary: 'Create a Hydra relation. (admin access required)',
-		description:
-			'Pairs a local hot wallet with a remote counterparty wallet on a network; a head is later opened from this relation.',
-		tags: TAG,
-		security: secured,
-		request: { body: jsonBody(createRelationSchemaInput, {}) },
-		responses: {
-			200: successResponse('Hydra relation created', createRelationSchemaOutput, {}),
-			...unauthorized,
-			409: { description: 'Relation already exists or conflicts with an existing head' },
-		},
 	});
 	registry.registerPath({
 		method: 'delete',

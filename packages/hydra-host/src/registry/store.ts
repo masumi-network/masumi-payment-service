@@ -9,7 +9,6 @@
  */
 
 import fs from 'node:fs/promises';
-import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { fsyncDir, writeFileAtomic } from './atomic-write.js';
 import { getOwnInteger, getOwnString, isPlainObject } from './json.js';

@@ -29992,10 +29992,177 @@
                 }
             }
         },
-        "/hydra/handshake/propose": {
+        "/hydra/invite": {
+            "get": {
+                "summary": "List head invites. (admin access required)",
+                "description": "Invites this service has issued or redeemed. An issued invite holds a provisioned node and a peer port until it is redeemed, revoked or expires.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25
+                        },
+                        "required": false,
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Issued",
+                                "Redeemed",
+                                "Started",
+                                "Completed",
+                                "Expired",
+                                "Revoked"
+                            ]
+                        },
+                        "required": false,
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Head invites",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "invites": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "nonce": {
+                                                                "type": "string"
+                                                            },
+                                                            "network": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Preprod",
+                                                                    "Mainnet"
+                                                                ]
+                                                            },
+                                                            "role": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Issuer",
+                                                                    "Redeemer"
+                                                                ]
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Issued",
+                                                                    "Redeemed",
+                                                                    "Started",
+                                                                    "Completed",
+                                                                    "Expired",
+                                                                    "Revoked"
+                                                                ]
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "expiresAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "hydraHostId": {
+                                                                "type": "string"
+                                                            },
+                                                            "hostNodeId": {
+                                                                "type": "string"
+                                                            },
+                                                            "issuerWalletAddress": {
+                                                                "type": "string"
+                                                            },
+                                                            "issuerExchangeUrl": {
+                                                                "type": "string"
+                                                            },
+                                                            "redeemedAt": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "redeemerWalletAddress": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "hydraHeadId": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "nonce",
+                                                            "network",
+                                                            "role",
+                                                            "status",
+                                                            "createdAt",
+                                                            "expiresAt",
+                                                            "hydraHostId",
+                                                            "hostNodeId",
+                                                            "issuerWalletAddress",
+                                                            "issuerExchangeUrl",
+                                                            "redeemedAt",
+                                                            "redeemerWalletAddress",
+                                                            "hydraHeadId"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "invites"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "invites": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            },
             "post": {
-                "summary": "Propose the next Hydra head on a relation. (admin access required)",
-                "description": "Provisions a node on a Hydra Host, signs an offer with the relation wallet and delivers it to the counterparty. Only the initiating side may propose: the lower-sorting relation wallet key decides, so both operators reach the same answer without coordinating.",
+                "summary": "Mint a head invite. (admin access required)",
+                "description": "Provisions a node on a Hydra Host and signs its full public material with the given wallet, producing a code to hand a counterparty out of band. The node and its peer port are reserved from this moment and cannot be re-pointed, because --peer is fixed at boot — so an invite that is never redeemed must be revoked or left to expire. Redeeming it is what supplies the counterparty's material and lets the node start.",
                 "tags": [
                     "hydra"
                 ],
@@ -30010,21 +30177,29 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
-                                    "hydraRelationId": {
+                                    "hotWalletId": {
                                         "type": "string",
-                                        "description": "Relation to open the next head on"
+                                        "minLength": 1,
+                                        "description": "Wallet that will identify us on the resulting head"
+                                    },
+                                    "ttlHours": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 720,
+                                        "description": "How long the invite may sit before its reservation is released. Defaults to 168 (7 days)."
                                     }
                                 },
                                 "required": [
-                                    "hydraRelationId"
-                                ]
+                                    "hotWalletId"
+                                ],
+                                "example": {}
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "Offer delivered",
+                        "description": "Invite minted",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -30039,20 +30214,25 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
-                                                "offerId": {
+                                                "id": {
                                                     "type": "string"
                                                 },
                                                 "nonce": {
                                                     "type": "string"
                                                 },
-                                                "status": {
+                                                "expiresAt": {
                                                     "type": "string"
+                                                },
+                                                "code": {
+                                                    "type": "string",
+                                                    "description": "The invite itself. Hand this to the counterparty out of band."
                                                 }
                                             },
                                             "required": [
-                                                "offerId",
+                                                "id",
                                                 "nonce",
-                                                "status"
+                                                "expiresAt",
+                                                "code"
                                             ]
                                         }
                                     },
@@ -30061,7 +30241,8 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success"
+                                        "status": "success",
+                                        "data": {}
                                     }
                                 }
                             }
@@ -30071,17 +30252,20 @@
                         "description": "Unauthorized"
                     },
                     "409": {
-                        "description": "Not the initiator, or an offer for this head slot is already in flight"
+                        "description": "No usable Hydra Host, or the host has no admin token"
                     }
                 }
-            }
-        },
-        "/hydra/handshake/offer": {
-            "post": {
-                "summary": "Receive a head offer from a counterparty. (signature authenticated)",
-                "description": "Called by another operator's payment service, not by an api key holder. Authority comes from the offer being signed by the wallet already recorded on the named Hydra Relation, so a stranger cannot open a head here. Rejections are indistinguishable from an unknown relation, so this surface cannot be used to enumerate relations.",
+            },
+            "delete": {
+                "summary": "Revoke an unredeemed invite. (admin access required)",
+                "description": "Stops the Host honouring the nonce and releases the node and peer port it reserved. Refused once redeemed: by then the reservation is a running node with a peer, and removing that is closing a head.",
                 "tags": [
                     "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
                 ],
                 "requestBody": {
                     "content": {
@@ -30089,107 +30273,22 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
-                                    "offer": {
-                                        "type": "object",
-                                        "properties": {
-                                            "hydraRelationId": {
-                                                "type": "string",
-                                                "maxLength": 64
-                                            },
-                                            "headSequence": {
-                                                "type": "integer",
-                                                "minimum": 1
-                                            },
-                                            "nonce": {
-                                                "type": "string",
-                                                "minLength": 8,
-                                                "maxLength": 64
-                                            },
-                                            "expiresAt": {
-                                                "type": "string",
-                                                "pattern": "^\\d{1,15}$"
-                                            },
-                                            "network": {
-                                                "type": "string",
-                                                "maxLength": 16
-                                            },
-                                            "hydraVerificationKey": {
-                                                "type": "string",
-                                                "maxLength": 200
-                                            },
-                                            "cardanoVerificationKey": {
-                                                "type": "string",
-                                                "maxLength": 200
-                                            },
-                                            "advertise": {
-                                                "type": "string",
-                                                "maxLength": 260
-                                            },
-                                            "contestationPeriodSeconds": {
-                                                "type": "integer",
-                                                "minimum": 0,
-                                                "exclusiveMinimum": true
-                                            },
-                                            "depositPeriodSeconds": {
-                                                "type": "integer",
-                                                "minimum": 0,
-                                                "exclusiveMinimum": true
-                                            },
-                                            "unsyncedPeriodSeconds": {
-                                                "type": "integer",
-                                                "minimum": 0,
-                                                "exclusiveMinimum": true
-                                            },
-                                            "ledgerParamsHash": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "maxLength": 120
-                                            }
-                                        },
-                                        "required": [
-                                            "hydraRelationId",
-                                            "headSequence",
-                                            "nonce",
-                                            "expiresAt",
-                                            "network",
-                                            "hydraVerificationKey",
-                                            "cardanoVerificationKey",
-                                            "advertise",
-                                            "contestationPeriodSeconds",
-                                            "depositPeriodSeconds",
-                                            "unsyncedPeriodSeconds",
-                                            "ledgerParamsHash"
-                                        ]
-                                    },
-                                    "signature": {
-                                        "type": "object",
-                                        "properties": {
-                                            "signature": {
-                                                "type": "string",
-                                                "maxLength": 4000
-                                            },
-                                            "key": {
-                                                "type": "string",
-                                                "maxLength": 4000
-                                            }
-                                        },
-                                        "required": [
-                                            "signature",
-                                            "key"
-                                        ]
+                                    "id": {
+                                        "type": "string",
+                                        "minLength": 1
                                     }
                                 },
                                 "required": [
-                                    "offer",
-                                    "signature"
-                                ]
+                                    "id"
+                                ],
+                                "example": {}
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "Offer accepted, with our own material",
+                        "description": "Invite revoked",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -30204,101 +30303,24 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
-                                                "accepted": {
-                                                    "type": "boolean"
+                                                "id": {
+                                                    "type": "string"
                                                 },
-                                                "offer": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "hydraRelationId": {
-                                                            "type": "string",
-                                                            "maxLength": 64
-                                                        },
-                                                        "headSequence": {
-                                                            "type": "integer",
-                                                            "minimum": 1
-                                                        },
-                                                        "nonce": {
-                                                            "type": "string",
-                                                            "minLength": 8,
-                                                            "maxLength": 64
-                                                        },
-                                                        "expiresAt": {
-                                                            "type": "string",
-                                                            "pattern": "^\\d{1,15}$"
-                                                        },
-                                                        "network": {
-                                                            "type": "string",
-                                                            "maxLength": 16
-                                                        },
-                                                        "hydraVerificationKey": {
-                                                            "type": "string",
-                                                            "maxLength": 200
-                                                        },
-                                                        "cardanoVerificationKey": {
-                                                            "type": "string",
-                                                            "maxLength": 200
-                                                        },
-                                                        "advertise": {
-                                                            "type": "string",
-                                                            "maxLength": 260
-                                                        },
-                                                        "contestationPeriodSeconds": {
-                                                            "type": "integer",
-                                                            "minimum": 0,
-                                                            "exclusiveMinimum": true
-                                                        },
-                                                        "depositPeriodSeconds": {
-                                                            "type": "integer",
-                                                            "minimum": 0,
-                                                            "exclusiveMinimum": true
-                                                        },
-                                                        "unsyncedPeriodSeconds": {
-                                                            "type": "integer",
-                                                            "minimum": 0,
-                                                            "exclusiveMinimum": true
-                                                        },
-                                                        "ledgerParamsHash": {
-                                                            "type": "string",
-                                                            "nullable": true,
-                                                            "maxLength": 120
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "hydraRelationId",
-                                                        "headSequence",
-                                                        "nonce",
-                                                        "expiresAt",
-                                                        "network",
-                                                        "hydraVerificationKey",
-                                                        "cardanoVerificationKey",
-                                                        "advertise",
-                                                        "contestationPeriodSeconds",
-                                                        "depositPeriodSeconds",
-                                                        "unsyncedPeriodSeconds",
-                                                        "ledgerParamsHash"
-                                                    ]
-                                                },
-                                                "signature": {
-                                                    "type": "object",
-                                                    "properties": {
-                                                        "signature": {
-                                                            "type": "string",
-                                                            "maxLength": 4000
-                                                        },
-                                                        "key": {
-                                                            "type": "string",
-                                                            "maxLength": 4000
-                                                        }
-                                                    },
-                                                    "required": [
-                                                        "signature",
-                                                        "key"
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Issued",
+                                                        "Redeemed",
+                                                        "Started",
+                                                        "Completed",
+                                                        "Expired",
+                                                        "Revoked"
                                                     ]
                                                 }
                                             },
                                             "required": [
-                                                "accepted"
+                                                "id",
+                                                "status"
                                             ]
                                         }
                                     },
@@ -30307,27 +30329,33 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success"
+                                        "status": "success",
+                                        "data": {}
                                     }
                                 }
                             }
                         }
                     },
                     "401": {
-                        "description": "Offer could not be authenticated"
+                        "description": "Unauthorized"
                     },
                     "409": {
-                        "description": "Offer expired, wrong side proposing, or a slot conflict"
+                        "description": "Already redeemed, or not an invite we issued"
                     }
                 }
             }
         },
-        "/hydra/handshake/decline": {
+        "/hydra/invite/preview": {
             "post": {
-                "summary": "Decline a head offer. (signature authenticated)",
-                "description": "Releases the node and peer port the offer reserved on this side, rather than waiting for the offer window to expire.",
+                "summary": "Inspect an invite without acting on it. (admin access required)",
+                "description": "Decodes an invite code and reports whether its signature matches the wallet it claims to be from. Nothing is provisioned and no counterparty is contacted, so this is safe to call on an invite of unknown provenance. A false `signatureValid` is reported rather than thrown, because an operator looking at a forged invite is better served by being told so.",
                 "tags": [
                     "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
                 ],
                 "requestBody": {
                     "content": {
@@ -30335,113 +30363,23 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
-                                    "nonce": {
+                                    "code": {
                                         "type": "string",
-                                        "minLength": 8,
-                                        "maxLength": 64
-                                    },
-                                    "signature": {
-                                        "type": "object",
-                                        "properties": {
-                                            "signature": {
-                                                "type": "string",
-                                                "maxLength": 4000
-                                            },
-                                            "key": {
-                                                "type": "string",
-                                                "maxLength": 4000
-                                            }
-                                        },
-                                        "required": [
-                                            "signature",
-                                            "key"
-                                        ]
-                                    },
-                                    "offer": {
-                                        "type": "object",
-                                        "properties": {
-                                            "hydraRelationId": {
-                                                "type": "string",
-                                                "maxLength": 64
-                                            },
-                                            "headSequence": {
-                                                "type": "integer",
-                                                "minimum": 1
-                                            },
-                                            "nonce": {
-                                                "type": "string",
-                                                "minLength": 8,
-                                                "maxLength": 64
-                                            },
-                                            "expiresAt": {
-                                                "type": "string",
-                                                "pattern": "^\\d{1,15}$"
-                                            },
-                                            "network": {
-                                                "type": "string",
-                                                "maxLength": 16
-                                            },
-                                            "hydraVerificationKey": {
-                                                "type": "string",
-                                                "maxLength": 200
-                                            },
-                                            "cardanoVerificationKey": {
-                                                "type": "string",
-                                                "maxLength": 200
-                                            },
-                                            "advertise": {
-                                                "type": "string",
-                                                "maxLength": 260
-                                            },
-                                            "contestationPeriodSeconds": {
-                                                "type": "integer",
-                                                "minimum": 0,
-                                                "exclusiveMinimum": true
-                                            },
-                                            "depositPeriodSeconds": {
-                                                "type": "integer",
-                                                "minimum": 0,
-                                                "exclusiveMinimum": true
-                                            },
-                                            "unsyncedPeriodSeconds": {
-                                                "type": "integer",
-                                                "minimum": 0,
-                                                "exclusiveMinimum": true
-                                            },
-                                            "ledgerParamsHash": {
-                                                "type": "string",
-                                                "nullable": true,
-                                                "maxLength": 120
-                                            }
-                                        },
-                                        "required": [
-                                            "hydraRelationId",
-                                            "headSequence",
-                                            "nonce",
-                                            "expiresAt",
-                                            "network",
-                                            "hydraVerificationKey",
-                                            "cardanoVerificationKey",
-                                            "advertise",
-                                            "contestationPeriodSeconds",
-                                            "depositPeriodSeconds",
-                                            "unsyncedPeriodSeconds",
-                                            "ledgerParamsHash"
-                                        ]
+                                        "minLength": 1,
+                                        "description": "An invite code received from a counterparty"
                                     }
                                 },
                                 "required": [
-                                    "nonce",
-                                    "signature",
-                                    "offer"
-                                ]
+                                    "code"
+                                ],
+                                "example": {}
                             }
                         }
                     }
                 },
                 "responses": {
                     "200": {
-                        "description": "Offer declined",
+                        "description": "Invite contents",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -30456,12 +30394,56 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
-                                                "declined": {
+                                                "nonce": {
+                                                    "type": "string"
+                                                },
+                                                "network": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Preprod",
+                                                        "Mainnet"
+                                                    ]
+                                                },
+                                                "issuerWalletAddress": {
+                                                    "type": "string"
+                                                },
+                                                "advertise": {
+                                                    "type": "string"
+                                                },
+                                                "exchangeUrl": {
+                                                    "type": "string"
+                                                },
+                                                "expiresAt": {
+                                                    "type": "string"
+                                                },
+                                                "contestationPeriodSeconds": {
+                                                    "type": "number"
+                                                },
+                                                "depositPeriodSeconds": {
+                                                    "type": "number"
+                                                },
+                                                "unsyncedPeriodSeconds": {
+                                                    "type": "number"
+                                                },
+                                                "signatureValid": {
+                                                    "type": "boolean"
+                                                },
+                                                "alreadyKnown": {
                                                     "type": "boolean"
                                                 }
                                             },
                                             "required": [
-                                                "declined"
+                                                "nonce",
+                                                "network",
+                                                "issuerWalletAddress",
+                                                "advertise",
+                                                "exchangeUrl",
+                                                "expiresAt",
+                                                "contestationPeriodSeconds",
+                                                "depositPeriodSeconds",
+                                                "unsyncedPeriodSeconds",
+                                                "signatureValid",
+                                                "alreadyKnown"
                                             ]
                                         }
                                     },
@@ -30470,14 +30452,113 @@
                                         "data"
                                     ],
                                     "example": {
-                                        "status": "success"
+                                        "status": "success",
+                                        "data": {}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Not a well-formed invite code"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/hydra/invite/redeem": {
+            "post": {
+                "summary": "Redeem a counterparty invite. (admin access required)",
+                "description": "Verifies the issuer's signature, provisions our own node, sends our material to the issuer's Exchange Plane and records the resulting relation and head. Spends a node and a peer port, and tells the counterparty we are ready, so it is deliberate rather than automatic.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "hotWalletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Wallet that will identify us on the resulting head"
+                                    }
+                                },
+                                "required": [
+                                    "code",
+                                    "hotWalletId"
+                                ],
+                                "example": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Invite redeemed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "hydraHeadId": {
+                                                    "type": "string"
+                                                },
+                                                "counterpartyWalletAddress": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "hydraHeadId",
+                                                "counterpartyWalletAddress"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {}
                                     }
                                 }
                             }
                         }
                     },
                     "401": {
-                        "description": "Decline could not be authenticated"
+                        "description": "Unauthorized"
+                    },
+                    "409": {
+                        "description": "Wrong network, already redeemed, expired, or our own invite"
+                    },
+                    "502": {
+                        "description": "The counterparty's exchange plane refused or could not be reached"
                     }
                 }
             }
@@ -31356,97 +31437,6 @@
                     },
                     "401": {
                         "description": "Unauthorized"
-                    }
-                }
-            },
-            "post": {
-                "summary": "Create a Hydra relation. (admin access required)",
-                "description": "Pairs a local hot wallet with a remote counterparty wallet on a network; a head is later opened from this relation.",
-                "tags": [
-                    "hydra"
-                ],
-                "security": [
-                    {
-                        "API-Key": []
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "network": {
-                                        "type": "string",
-                                        "enum": [
-                                            "Preprod",
-                                            "Mainnet"
-                                        ],
-                                        "description": "Cardano network for this relation"
-                                    },
-                                    "localHotWalletId": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "HotWallet ID for the local participant"
-                                    },
-                                    "remoteWalletId": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "WalletBase ID for the remote counterparty"
-                                    },
-                                    "counterpartyBaseUrl": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "maxLength": 250,
-                                        "description": "Origin of the counterparty's payment service, where head offers are delivered — e.g. https://payments.example.com. A trailing /api/v1 is accepted and stripped. Required: the handshake is the only way to open a head on this relation."
-                                    }
-                                },
-                                "required": [
-                                    "network",
-                                    "localHotWalletId",
-                                    "remoteWalletId",
-                                    "counterpartyBaseUrl"
-                                ],
-                                "example": {}
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Hydra relation created",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "enum": [
-                                                "success"
-                                            ]
-                                        },
-                                        "data": {
-                                            "$ref": "#/components/schemas/HydraRelation"
-                                        }
-                                    },
-                                    "required": [
-                                        "status",
-                                        "data"
-                                    ],
-                                    "example": {
-                                        "status": "success",
-                                        "data": {}
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized"
-                    },
-                    "409": {
-                        "description": "Relation already exists or conflicts with an existing head"
                     }
                 }
             },

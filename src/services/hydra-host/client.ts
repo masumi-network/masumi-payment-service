@@ -231,3 +231,97 @@ export function hostNodeUrls(baseUrl: string, nodeId: string): { nodeUrl: string
 		nodeUrl: httpUrl.replace(/^http/, 'ws'),
 	};
 }
+
+/** Public material one side contributes to a head. */
+export type ExchangeMaterial = {
+	walletAddress: string;
+	hydraVerificationKey: string;
+	cardanoVerificationKey: string;
+	advertise: string;
+	exchangeUrl: string;
+};
+
+export type HostInviteRecord = {
+	nonce: string;
+	hostNodeId: string;
+	expiresAt: number;
+	redeemedAt: number | null;
+	redeemer: ExchangeMaterial | null;
+	redeemerSignature: { signature: string; key: string } | null;
+	startError: string | null;
+};
+
+/**
+ * Tell a Host to honour an invite we just minted.
+ *
+ * The Host is given only the nonce, the reserved node and an expiry — never the
+ * signed payload. It cannot verify a signature and has no use for one; keeping
+ * the material out of it means a Host compromise leaks nothing about who we are
+ * negotiating with beyond what the peer plane already reveals.
+ */
+export async function registerInviteOnHost(
+	baseUrl: string,
+	adminToken: string,
+	invite: { nonce: string; hostNodeId: string; expiresAt: number },
+): Promise<void> {
+	await request(baseUrl, '/v1/invites', adminToken, { method: 'POST', body: invite });
+}
+
+/** Redemptions since the watermark. One request however many invites are outstanding. */
+export async function fetchHostRedemptions(
+	baseUrl: string,
+	adminToken: string,
+	redeemedSince: number,
+): Promise<{ invites: HostInviteRecord[]; now: number }> {
+	const body = await request(baseUrl, `/v1/invites?redeemedSince=${redeemedSince}`, adminToken);
+	if (!isPlainObject(body)) {
+		throw new HydraProtocolError('hydra host returned a malformed invite list');
+	}
+	const invites = getOwnValue(body, 'invites');
+	const now = getOwnValue(body, 'now');
+	return {
+		invites: Array.isArray(invites) ? (invites as HostInviteRecord[]) : [],
+		now: typeof now === 'number' ? now : Date.now(),
+	};
+}
+
+/** Invites counterparties have left for the operator to consider. */
+export type HostInboundInvite = {
+	nonce: string;
+	payload: string;
+	signature: { signature: string; key: string };
+	issuerWalletAddress: string;
+	receivedAt: number;
+};
+
+export async function fetchHostInboundInvites(baseUrl: string, adminToken: string): Promise<HostInboundInvite[]> {
+	const body = await request(baseUrl, '/v1/inbound-invites', adminToken);
+	if (!isPlainObject(body)) {
+		throw new HydraProtocolError('hydra host returned a malformed inbound invite list');
+	}
+	const inbound = getOwnValue(body, 'inbound');
+	return Array.isArray(inbound) ? (inbound as HostInboundInvite[]) : [];
+}
+
+export async function forgetHostInboundInvite(baseUrl: string, adminToken: string, nonce: string): Promise<void> {
+	await request(baseUrl, `/v1/inbound-invites/${nonce}`, adminToken, { method: 'DELETE' });
+}
+
+export async function forgetHostInvite(baseUrl: string, adminToken: string, nonce: string): Promise<void> {
+	await request(baseUrl, `/v1/invites/${nonce}`, adminToken, { method: 'DELETE' });
+}
+
+/**
+ * Replace the set of wallets whose POSTed invites this Host accepts.
+ *
+ * Sent whole rather than incrementally: a Host that missed one add would
+ * silently refuse a legitimate counterparty, and the list is small enough that
+ * resending it is cheaper than reconciling it.
+ */
+export async function setHostAllowedIssuers(
+	baseUrl: string,
+	adminToken: string,
+	allowedIssuers: string[],
+): Promise<void> {
+	await request(baseUrl, '/v1/allowed-issuers', adminToken, { method: 'PUT', body: { allowedIssuers } });
+}

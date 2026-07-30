@@ -102,7 +102,6 @@ import {
 import {
 	closeHeadPost,
 	commitHeadPost,
-	createRelationPost,
 	deleteLocalParticipantDelete,
 	revealParticipantKeysPost,
 	deleteRelationDelete,
@@ -115,9 +114,11 @@ import {
 	getRemoteParticipantGet,
 	initHeadPost,
 	ensureHydraWalletBasePost,
-	receiveHydraOfferPost,
-	declineHydraOfferPost,
-	proposeHydraHeadPost,
+	queryInviteGet,
+	createInvitePost,
+	previewInvitePost,
+	redeemInvitePost,
+	deleteInviteDelete,
 	listHydraHostsGet,
 	registerHydraHostPost,
 	updateHydraHostPatch,
@@ -477,10 +478,12 @@ export const apiRouter: Routing = {
 			},
 		},
 		hydra: {
-			handshake: {
-				offer: { post: receiveHydraOfferPost },
-				decline: { post: declineHydraOfferPost },
-				propose: { post: proposeHydraHeadPost },
+			invite: {
+				get: queryInviteGet,
+				post: createInvitePost,
+				delete: deleteInviteDelete,
+				preview: { post: previewInvitePost },
+				redeem: { post: redeemInvitePost },
 			},
 			host: {
 				get: listHydraHostsGet,
@@ -495,7 +498,6 @@ export const apiRouter: Routing = {
 			},
 			relation: {
 				get: getOrListRelationsGet,
-				post: createRelationPost,
 				delete: deleteRelationDelete,
 			},
 			head: {
@@ -509,7 +511,7 @@ export const apiRouter: Routing = {
 				balance: { get: getHeadBalanceGet },
 				errors: { get: listHeadErrorsGet },
 			},
-			// Read and delete only: participants are created by the handshake.
+			// Read and delete only: participants are created by redeeming an invite.
 			participant: {
 				local: {
 					get: getLocalParticipantGet,

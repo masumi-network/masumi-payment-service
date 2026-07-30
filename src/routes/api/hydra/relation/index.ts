@@ -1,7 +1,6 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
-import { normalizeCounterpartyBaseUrl } from '@/services/hydra-handshake/counterparty-url';
 import createHttpError from 'http-errors';
 import { Network, HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
@@ -144,80 +143,10 @@ export const getOrListRelationsGet = adminAuthenticatedEndpointFactory.build({
 	},
 });
 
-// --- POST: create relation ---
-
-export const createRelationSchemaInput = z.object({
-	network: z.nativeEnum(Network).describe('Cardano network for this relation'),
-	localHotWalletId: z.string().min(1).describe('HotWallet ID for the local participant'),
-	remoteWalletId: z.string().min(1).describe('WalletBase ID for the remote counterparty'),
-	counterpartyBaseUrl: z
-		.string()
-		.min(1)
-		.max(250)
-		.describe(
-			"Origin of the counterparty's payment service, where head offers are delivered — e.g. https://payments.example.com. A trailing /api/v1 is accepted and stripped. Required: the handshake is the only way to open a head on this relation.",
-		),
-});
-
-export const createRelationSchemaOutput = hydraRelationSchema;
-
-export const createRelationPost = adminAuthenticatedEndpointFactory.build({
-	method: 'post',
-	input: createRelationSchemaInput,
-	output: createRelationSchemaOutput,
-	handler: async ({ input }) => {
-		const localWallet = await prisma.hotWallet.findFirst({
-			where: { id: input.localHotWalletId, deletedAt: null },
-			include: { PaymentSource: true },
-		});
-		if (!localWallet) {
-			throw createHttpError(404, `HotWallet ${input.localHotWalletId} not found`);
-		}
-
-		const remoteWallet = await prisma.walletBase.findUnique({
-			where: { id: input.remoteWalletId },
-			include: { PaymentSource: true },
-		});
-		if (!remoteWallet) {
-			throw createHttpError(404, `WalletBase ${input.remoteWalletId} not found`);
-		}
-
-		if (localWallet.PaymentSource.network !== input.network) {
-			throw createHttpError(400, 'Local wallet must belong to a payment source on the specified network');
-		}
-
-		if (remoteWallet.PaymentSource.network !== input.network) {
-			throw createHttpError(400, 'Remote wallet must belong to a payment source on the specified network');
-		}
-
-		const existing = await prisma.hydraRelation.findUnique({
-			where: {
-				network_localHotWalletId_remoteWalletId: {
-					network: input.network,
-					localHotWalletId: input.localHotWalletId,
-					remoteWalletId: input.remoteWalletId,
-				},
-			},
-		});
-
-		if (existing) {
-			throw createHttpError(409, 'A relation already exists between these wallets on this network');
-		}
-
-		const relation = await prisma.hydraRelation.create({
-			data: {
-				network: input.network,
-				localHotWalletId: input.localHotWalletId,
-				remoteWalletId: input.remoteWalletId,
-				counterpartyBaseUrl: normalizeCounterpartyBaseUrl(input.counterpartyBaseUrl),
-			},
-		});
-
-		return relation;
-	},
-});
-
-// --- DELETE: delete relation ---
+// A Relation is no longer something an operator types. It is produced by a
+// redeemed Head Invite, which is the only path that can know the counterparty's
+// wallet and Exchange Plane URL — both derived from a signature rather than
+// from a form. See ADR 0011.
 
 export const deleteRelationSchemaInput = z.object({
 	id: z.string().min(1).describe('ID of the HydraRelation to delete'),

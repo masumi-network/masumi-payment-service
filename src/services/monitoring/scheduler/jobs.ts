@@ -18,7 +18,7 @@ import { runX402LowBalanceMonitoringCycle } from '@/services/x402/low-balance-mo
 import type { JobDefinition } from '@/services/shared';
 import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
-import { reapExpiredOffers } from '@/services/hydra-handshake/orchestrator';
+import { pollHydraRedemptions, pushCounterpartyAllowlists, reapExpiredInvites } from '@/services/hydra-invite/adoption';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
 import { runHydraLowBalanceMonitoringCycle } from '@/services/hydra-low-balance/monitor';
 import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup';
@@ -74,13 +74,37 @@ export const scheduledJobs: JobDefinition[] = [
 	{
 		initialDelayMs: 16000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
-		startMessage: 'Starting Hydra head offer reaping',
-		finishMessage: 'Finished Hydra head offer reaping',
-		// An abandoned offer holds a provisioned node and a peer port on both
-		// sides, so the window has to be swept rather than left to the next
-		// proposal to notice.
+		startMessage: 'Starting Hydra invite reaping',
+		finishMessage: 'Finished Hydra invite reaping',
+		// An unredeemed invite holds a provisioned node and a peer port, and
+		// because --peer is startup configuration neither can be reused for a
+		// different counterparty. Sweeping is the only way they come back.
 		run: async () => {
-			await reapExpiredOffers();
+			await reapExpiredInvites();
+		},
+	},
+	{
+		initialDelayMs: 9000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra redemption poll',
+		finishMessage: 'Finished Hydra redemption poll',
+		// The issuing side never hears from its counterparty: the redemption
+		// lands on its Host, which cannot reach back into a payment service that
+		// may not be reachable at all. So the service asks.
+		run: async () => {
+			await pollHydraRedemptions();
+		},
+	},
+	{
+		initialDelayMs: 20000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra counterparty allow-list push',
+		finishMessage: 'Finished Hydra counterparty allow-list push',
+		// A Host with a stale allow-list silently refuses a legitimate
+		// counterparty, and the staleness is invisible from this side — so it is
+		// re-pushed rather than reconciled.
+		run: async () => {
+			await pushCounterpartyAllowlists();
 		},
 	},
 	{

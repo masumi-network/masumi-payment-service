@@ -1,4 +1,4 @@
-export { receiveHydraOfferPost, declineHydraOfferPost, proposeHydraHeadPost } from './handshake';
+export { queryInviteGet, createInvitePost, previewInvitePost, redeemInvitePost, deleteInviteDelete } from './invite';
 
 export {
 	listHydraHostsGet,
@@ -8,7 +8,7 @@ export {
 	checkHydraHostPost,
 } from './host';
 
-export { getOrListRelationsGet, createRelationPost, deleteRelationDelete } from './relation';
+export { getOrListRelationsGet, deleteRelationDelete } from './relation';
 
 export {
 	getOrListHeadsGet,
