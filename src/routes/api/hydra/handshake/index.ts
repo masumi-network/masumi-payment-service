@@ -22,6 +22,7 @@ import { HydraOfferRole, HydraOfferStatus } from '@/generated/prisma/client';
 import { checkOfferFreshness, isOfferInitiator } from '@/services/hydra-handshake/offer-payload';
 import { canProposeNewOffer } from '@/services/hydra-handshake/offer-state';
 import { verifyHydraHeadOffer } from '@/services/hydra-handshake/offer-signing';
+import { counterpartyOfferUrl } from '@/services/hydra-handshake/counterparty-url';
 import {
 	advanceOffer,
 	proposeHeadOffer,
@@ -226,7 +227,7 @@ async function deliverOffer(offerId: string): Promise<string> {
 	}
 
 	const signed = await signOwnOffer(offerId);
-	const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/v1/hydra/handshake/offer`, {
+	const response = await fetch(counterpartyOfferUrl(baseUrl), {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		redirect: 'error',

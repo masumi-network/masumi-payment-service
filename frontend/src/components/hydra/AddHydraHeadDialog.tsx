@@ -290,6 +290,11 @@ export function AddHydraHeadDialog({ open, onOpenChange, onCreated }: AddHydraHe
 
               <div className="space-y-2">
                 <Label htmlFor="hydra-head-counterparty-url">Counterparty service URL</Label>
+                <p className="text-xs text-muted-foreground">
+                  The origin of their payment service, e.g.{' '}
+                  <span className="font-mono">https://payments.example.com</span>. Not their Hydra
+                  node: the offer is answered by their service, which signs it with their wallet.
+                </p>
                 <Input
                   id="hydra-head-counterparty-url"
                   value={counterpartyBaseUrl}

@@ -69,9 +69,9 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
   if (!host) return null;
 
   const neverProbed = host.lastHealthAt === null;
-  // Where the counterparty sends offers. Same origin as this admin UI, because
-  // the service serves both.
-  const serviceUrl = typeof window === 'undefined' ? '' : `${window.location.origin}/api/v1`;
+  // The origin only. The counterparty appends the handshake path itself, so a
+  // URL ending in /api/v1 would be requested as /api/v1/api/v1/... and 404.
+  const serviceUrl = typeof window === 'undefined' ? '' : window.location.origin;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -95,12 +95,17 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
               They need both to open a head with you: the wallet identifies you on the relation, and
               the URL is where your service receives their offer.
             </p>
+            <p className="text-xs text-muted-foreground">
+              Only <span className="font-mono">/api/v1/hydra/handshake/offer</span>{' '}
+              has to be reachable from their network — route that one path and nothing else. Never give them
+              your Hydra node&apos;s URL or keys: those start and stop your node.
+            </p>
             <div className="space-y-3 rounded-md border bg-muted/20 p-3">
               <Field
                 label="Your service URL"
                 value={serviceUrl}
                 copyable
-                hint="Paste into their “Counterparty service URL”."
+                hint="Paste into their “Counterparty service URL”. Origin only — no path."
               />
               {wallets.length === 0 ? (
                 <p className="text-xs text-muted-foreground">

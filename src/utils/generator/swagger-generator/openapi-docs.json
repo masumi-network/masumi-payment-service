@@ -31398,7 +31398,7 @@
                                         "type": "string",
                                         "minLength": 1,
                                         "maxLength": 250,
-                                        "description": "Base URL of the counterparty's payment service, where head offers are delivered. Required: the handshake is the only way to open a head on this relation."
+                                        "description": "Origin of the counterparty's payment service, where head offers are delivered — e.g. https://payments.example.com. A trailing /api/v1 is accepted and stripped. Required: the handshake is the only way to open a head on this relation."
                                     }
                                 },
                                 "required": [

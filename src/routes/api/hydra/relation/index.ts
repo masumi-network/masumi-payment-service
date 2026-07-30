@@ -1,6 +1,7 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
+import { normalizeCounterpartyBaseUrl } from '@/services/hydra-handshake/counterparty-url';
 import createHttpError from 'http-errors';
 import { Network, HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
@@ -154,7 +155,7 @@ export const createRelationSchemaInput = z.object({
 		.min(1)
 		.max(250)
 		.describe(
-			"Base URL of the counterparty's payment service, where head offers are delivered. Required: the handshake is the only way to open a head on this relation.",
+			"Origin of the counterparty's payment service, where head offers are delivered — e.g. https://payments.example.com. A trailing /api/v1 is accepted and stripped. Required: the handshake is the only way to open a head on this relation.",
 		),
 });
 
@@ -208,7 +209,7 @@ export const createRelationPost = adminAuthenticatedEndpointFactory.build({
 				network: input.network,
 				localHotWalletId: input.localHotWalletId,
 				remoteWalletId: input.remoteWalletId,
-				counterpartyBaseUrl: input.counterpartyBaseUrl,
+				counterpartyBaseUrl: normalizeCounterpartyBaseUrl(input.counterpartyBaseUrl),
 			},
 		});
 
