@@ -66,10 +66,9 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 }));
 
 let createBoundHydraHead: typeof import('./index').createBoundHydraHead;
-let createHeadSchemaInput: typeof import('./index').createHeadSchemaInput;
 
 beforeAll(async () => {
-	({ createBoundHydraHead, createHeadSchemaInput } = await import('./index'));
+	({ createBoundHydraHead } = await import('./index'));
 });
 
 const relation = {
@@ -135,26 +134,6 @@ beforeEach(() => {
 		Heads: await mockFindFinalHeads(),
 	}));
 	mockLookupConfirmedChainTx.mockResolvedValue('confirmed-valid');
-});
-
-describe('createHeadSchemaInput', () => {
-	it('requires exactly one remote participant', () => {
-		const base = {
-			hydraRelationId: relation.id,
-			localParticipantId: localParticipant.id,
-		};
-
-		expect(createHeadSchemaInput.safeParse({ ...base, remoteParticipantIds: [] }).success).toBe(false);
-		expect(
-			createHeadSchemaInput.safeParse({
-				...base,
-				remoteParticipantIds: [remoteParticipant.id, 'unrelated-participant'],
-			}).success,
-		).toBe(false);
-		expect(createHeadSchemaInput.safeParse({ ...base, remoteParticipantIds: [remoteParticipant.id] }).success).toBe(
-			true,
-		);
-	});
 });
 
 describe('createBoundHydraHead', () => {

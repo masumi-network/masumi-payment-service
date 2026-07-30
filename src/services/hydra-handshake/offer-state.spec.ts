@@ -67,26 +67,42 @@ describe('nextOfferAction', () => {
 		expect(nextOfferAction(ready, NOW).kind).toBe('Reap');
 	});
 
-	it('idles a started offer, leaving the head to the normal init flow', () => {
-		expect(nextOfferAction(offer({ status: 'Started' }), NOW).kind).toBe('Idle');
+	// The handshake is the only way to open a head, so it has to finish the job:
+	// everything the head record needs is already agreed and signed by the time
+	// the node is running.
+	it('records the head once the node is started', () => {
+		expect(nextOfferAction(offer({ status: 'Started' }), NOW).kind).toBe('CreateHead');
 	});
 
 	// A started node must not be torn down merely because the offer window
-	// elapsed — the offer's job is done at that point.
+	// elapsed — its node is running and its head still has to be recorded.
 	it('does not reap a started offer that has passed its expiry', () => {
-		expect(nextOfferAction(offer({ status: 'Started', expiresAtMs: NOW - 1 }), NOW).kind).toBe('Idle');
+		expect(nextOfferAction(offer({ status: 'Started', expiresAtMs: NOW - 1 }), NOW).kind).toBe('CreateHead');
+	});
+
+	it('idles a completed offer', () => {
+		expect(nextOfferAction(offer({ status: 'Completed' }), NOW).kind).toBe('Idle');
+	});
+
+	// Completion is terminal, so an expired-looking completed offer must not be
+	// reaped: reaping releases the node and peer port the head is using.
+	it('does not reap a completed offer that has passed its expiry', () => {
+		expect(nextOfferAction(offer({ status: 'Completed', expiresAtMs: NOW - 1 }), NOW).kind).toBe('Idle');
 	});
 });
 
 describe('isOfferOpen / canProposeNewOffer', () => {
+	// `Started` is in-flight, not terminal: the node is running and its peer port
+	// is held, but the head record does not exist yet. A second offer accepted in
+	// that window would provision a duplicate node for a slot already spoken for.
 	it('treats in-flight statuses as open', () => {
-		for (const status of ['Proposed', 'Accepted', 'Configured'] as const) {
+		for (const status of ['Proposed', 'Accepted', 'Configured', 'Started'] as const) {
 			expect(isOfferOpen(status)).toBe(true);
 		}
 	});
 
 	it('treats terminal statuses as closed', () => {
-		for (const status of ['Started', 'Declined', 'Expired'] as const) {
+		for (const status of ['Completed', 'Declined', 'Expired'] as const) {
 			expect(isOfferOpen(status)).toBe(false);
 		}
 	});
@@ -97,7 +113,10 @@ describe('isOfferOpen / canProposeNewOffer', () => {
 		expect(canProposeNewOffer(null)).toBe(true);
 		expect(canProposeNewOffer({ status: 'Declined' })).toBe(true);
 		expect(canProposeNewOffer({ status: 'Expired' })).toBe(true);
+		// A completed offer has produced its head; the next head is a new slot.
+		expect(canProposeNewOffer({ status: 'Completed' })).toBe(true);
 		expect(canProposeNewOffer({ status: 'Proposed' })).toBe(false);
 		expect(canProposeNewOffer({ status: 'Accepted' })).toBe(false);
+		expect(canProposeNewOffer({ status: 'Started' })).toBe(false);
 	});
 });

@@ -63,7 +63,10 @@ jest.unstable_mockModule('../deletion-guard', () => ({
 	unsettledL2TransactionWhere: reconciledFinalHeadFilter.Transactions.none,
 }));
 
-jest.unstable_mockModule('@/utils/security/encryption', () => ({ encrypt: (value: string) => value }));
+jest.unstable_mockModule('@/utils/security/encryption', () => ({
+	encrypt: (value: string) => value,
+	decrypt: (value: string) => value,
+}));
 jest.unstable_mockModule('@/lib/hydra', () => ({
 	getHydraPlaintextHosts: () => [],
 	validateHydraNodeUrls: (httpUrl: string, wsUrl: string) => ({ httpUrl, wsUrl }),

@@ -11,10 +11,8 @@ export {
 export { getOrListRelationsGet, createRelationPost, deleteRelationDelete } from './relation';
 
 export {
-	checkHeadNodePost,
 	getOrListHeadsGet,
 	getHeadBalanceGet,
-	createHeadPost,
 	updateHeadPatch,
 	listHeadErrorsGet,
 	initHeadPost,
@@ -32,10 +30,9 @@ export {
 } from './low-balance';
 
 export {
-	createLocalParticipantPost,
 	getLocalParticipantGet,
 	deleteLocalParticipantDelete,
-	createRemoteParticipantPost,
+	revealParticipantKeysPost,
 	getRemoteParticipantGet,
 	deleteRemoteParticipantDelete,
 } from './participant';

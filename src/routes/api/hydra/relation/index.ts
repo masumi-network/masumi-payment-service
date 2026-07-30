@@ -18,6 +18,8 @@ export const hydraRelationSchema = z
 		network: z.nativeEnum(Network),
 		localHotWalletId: z.string(),
 		remoteWalletId: z.string(),
+		/** Where head offers are delivered. */
+		counterpartyBaseUrl: z.string().nullable(),
 		LocalHotWallet: z
 			.object({
 				id: z.string(),
@@ -147,6 +149,13 @@ export const createRelationSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('Cardano network for this relation'),
 	localHotWalletId: z.string().min(1).describe('HotWallet ID for the local participant'),
 	remoteWalletId: z.string().min(1).describe('WalletBase ID for the remote counterparty'),
+	counterpartyBaseUrl: z
+		.string()
+		.min(1)
+		.max(250)
+		.describe(
+			"Base URL of the counterparty's payment service, where head offers are delivered. Required: the handshake is the only way to open a head on this relation.",
+		),
 });
 
 export const createRelationSchemaOutput = hydraRelationSchema;
@@ -199,6 +208,7 @@ export const createRelationPost = adminAuthenticatedEndpointFactory.build({
 				network: input.network,
 				localHotWalletId: input.localHotWalletId,
 				remoteWalletId: input.remoteWalletId,
+				counterpartyBaseUrl: input.counterpartyBaseUrl,
 			},
 		});
 

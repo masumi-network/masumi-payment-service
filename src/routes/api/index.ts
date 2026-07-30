@@ -102,11 +102,9 @@ import {
 import {
 	closeHeadPost,
 	commitHeadPost,
-	createHeadPost,
-	createLocalParticipantPost,
 	createRelationPost,
-	createRemoteParticipantPost,
 	deleteLocalParticipantDelete,
+	revealParticipantKeysPost,
 	deleteRelationDelete,
 	deleteRemoteParticipantDelete,
 	fanoutHeadPost,
@@ -116,7 +114,6 @@ import {
 	getOrListRelationsGet,
 	getRemoteParticipantGet,
 	initHeadPost,
-	checkHeadNodePost,
 	ensureHydraWalletBasePost,
 	receiveHydraOfferPost,
 	declineHydraOfferPost,
@@ -503,9 +500,7 @@ export const apiRouter: Routing = {
 			},
 			head: {
 				get: getOrListHeadsGet,
-				post: createHeadPost,
 				patch: updateHeadPatch,
-				check: { post: checkHeadNodePost },
 				init: { post: initHeadPost },
 				commit: { post: commitHeadPost },
 				topup: { post: topupHeadPost },
@@ -514,15 +509,16 @@ export const apiRouter: Routing = {
 				balance: { get: getHeadBalanceGet },
 				errors: { get: listHeadErrorsGet },
 			},
+			// Read and delete only: participants are created by the handshake.
 			participant: {
 				local: {
 					get: getLocalParticipantGet,
-					post: createLocalParticipantPost,
 					delete: deleteLocalParticipantDelete,
+					// One-time backup of the node's signing keys; seals after first use.
+					keys: { post: revealParticipantKeysPost },
 				},
 				remote: {
 					get: getRemoteParticipantGet,
-					post: createRemoteParticipantPost,
 					delete: deleteRemoteParticipantDelete,
 				},
 			},

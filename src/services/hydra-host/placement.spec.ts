@@ -51,9 +51,7 @@ describe('selectPlacementHost', () => {
 	// A host registered with only a user token can be operated but not
 	// provisioned on, and that distinction should not look like "no host".
 	it('refuses a host with no admin token, and says why', () => {
-		expect(() => selectPlacementHost([host({ hasAdminToken: false })], 'Preprod')).toThrow(
-			/without an admin token/,
-		);
+		expect(() => selectPlacementHost([host({ hasAdminToken: false })], 'Preprod')).toThrow(/without an admin token/);
 	});
 
 	it('is deterministic in caller-supplied order', () => {

@@ -3,7 +3,6 @@ import { CONFIG } from '@masumi/payment-core/config';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
-import WebSocket, { type RawData } from 'ws';
 import {
 	HydraHeadStatus,
 	HydraErrorType,
@@ -16,29 +15,21 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
 import { logger } from '@masumi/payment-core/logger';
 import {
-	buildHydraHttpEndpoint,
 	buildValidatedHydraCommit,
 	deriveHydraVerificationKeyCborHex,
 	HydraCommitFlowError,
 	type ValidatedHydraCommit,
-	getHydraPlaintextHosts,
 	HydraHeadInitObservationError,
 	HydraTransactionType,
 	HydraTransportError,
 	interpretCardanoTxSubmitResult,
-	MAX_HYDRA_WS_FRAME_BYTES,
 	normalizeHydraVerificationKeyCborHex,
-	parseHydraWebSocketProbeFrame,
 	selectCommitUtxos,
-	validateHydraHttpUrl,
-	validateHydraNodeUrls,
 	verifyHydraHeadInitOnChain,
-	withHydraHistoryDisabled,
 } from '@/lib/hydra';
 import { toPrismaJsonValue } from '@/utils/json-value';
 import { generateWalletExtended } from '@/utils/generator/wallet-generator';
 import { buildHydraCommitFlowDeps } from './commit-flow-deps';
-import { getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
@@ -64,14 +55,16 @@ export const localParticipantSchema = z.object({
 	nodeHttpUrl: z.string(),
 	hasCommitted: z.boolean(),
 	commitTxHash: z.string().nullable(),
+	/** Null until an operator has taken the one-time backup of this node's keys. */
+	keysDisclosedAt: z.string().nullable(),
 });
 
 export const remoteParticipantSchema = z.object({
 	id: z.string(),
 	createdAt: z.string(),
 	walletId: z.string(),
-	nodeUrl: z.string(),
-	nodeHttpUrl: z.string(),
+	/** Peer-plane `host:port`, as the counterparty advertised it. Not an API URL. */
+	advertise: z.string(),
 	hasCommitted: z.boolean(),
 	commitTxHash: z.string().nullable(),
 	hydraVerificationKeyId: z.string(),
@@ -163,6 +156,8 @@ const headInclude = {
 			nodeHttpUrl: true,
 			hasCommitted: true,
 			commitTxHash: true,
+			// So the UI can offer the one-time key backup, and stop offering it.
+			keysDisclosedAt: true,
 		},
 	},
 	RemoteParticipants: {
@@ -170,8 +165,7 @@ const headInclude = {
 			id: true,
 			createdAt: true,
 			walletId: true,
-			nodeUrl: true,
-			nodeHttpUrl: true,
+			advertise: true,
 			hasCommitted: true,
 			commitTxHash: true,
 			hydraVerificationKeyId: true,
@@ -347,35 +341,6 @@ export const getOrListHeadsGet = adminAuthenticatedEndpointFactory.build({
 		});
 
 		return { heads: heads.map(serializeHydraHead) };
-	},
-});
-
-// --- POST: create head (links pre-existing participants) ---
-
-export const createHeadSchemaInput = z.object({
-	hydraRelationId: z.string().min(1).describe('The HydraRelation this head belongs to'),
-	contestationPeriod: z.coerce.number().int().min(1).default(86400).describe('Contestation period in seconds'),
-	localParticipantId: z.string().min(1).describe('ID of a pre-existing HydraLocalParticipant'),
-	remoteParticipantIds: z
-		.array(z.string().min(1))
-		.length(1)
-		.describe('Exactly one pre-existing HydraRemoteParticipant for the relation counterparty'),
-});
-
-export const createHeadSchemaOutput = hydraHeadSchema;
-
-export const createHeadPost = adminAuthenticatedEndpointFactory.build({
-	method: 'post',
-	input: createHeadSchemaInput,
-	output: createHeadSchemaOutput,
-	handler: async ({ input }) => {
-		const head = await createBoundHydraHead({
-			hydraRelationId: input.hydraRelationId,
-			contestationPeriod: BigInt(input.contestationPeriod),
-			localParticipantId: input.localParticipantId,
-			remoteParticipantId: input.remoteParticipantIds[0],
-		});
-		return serializeHydraHead(head);
 	},
 });
 
@@ -784,69 +749,6 @@ export async function updateHydraHeadEnabledState(
 	if (!head) throw createHttpError(404, 'Hydra head not found');
 	return head;
 }
-
-// --- POST: check node reachability/status ---
-
-export const checkHeadNodeSchemaInput = z.object({
-	nodeHttpUrl: z.string().min(1).describe('HTTP URL for the Hydra node'),
-	nodeUrl: z.string().min(1).optional().describe('Optional WebSocket URL for the Hydra node'),
-	timeoutMs: z.coerce
-		.number()
-		.int()
-		.min(500)
-		.max(15000)
-		.default(5000)
-		.describe('Maximum probe duration in milliseconds'),
-});
-
-export const checkHeadNodeSchemaOutput = z.object({
-	reachable: z.boolean(),
-	protocolParametersOk: z.boolean(),
-	websocketReachable: z.boolean(),
-	httpStatus: z.number().nullable(),
-	status: z.nativeEnum(HydraHeadStatus).nullable(),
-	checkedAt: z.string(),
-	error: z.string().nullable(),
-});
-
-export const checkHeadNodePost = adminAuthenticatedEndpointFactory.build({
-	method: 'post',
-	input: checkHeadNodeSchemaInput,
-	output: checkHeadNodeSchemaOutput,
-	handler: async ({ input }) => {
-		let nodeHttpUrl: string;
-		let nodeUrl: string | undefined;
-		try {
-			const validationOptions = { plaintextHosts: getHydraPlaintextHosts() };
-			if (input.nodeUrl) {
-				const validated = validateHydraNodeUrls(input.nodeHttpUrl, input.nodeUrl, validationOptions);
-				nodeHttpUrl = validated.httpUrl;
-				nodeUrl = validated.wsUrl;
-			} else {
-				nodeHttpUrl = validateHydraHttpUrl(input.nodeHttpUrl, validationOptions);
-			}
-		} catch (error) {
-			throw createHttpError(400, getErrorMessage(error));
-		}
-
-		const httpProbe = await probeHydraHttpNode(nodeHttpUrl, input.timeoutMs);
-		const websocketProbe = nodeUrl
-			? await probeHydraWebSocketNode(nodeUrl, input.timeoutMs)
-			: { websocketReachable: false, status: null, error: null };
-
-		const errors = [httpProbe.error, websocketProbe.error].filter((error): error is string => Boolean(error));
-
-		return {
-			reachable: httpProbe.protocolParametersOk || websocketProbe.websocketReachable,
-			protocolParametersOk: httpProbe.protocolParametersOk,
-			websocketReachable: websocketProbe.websocketReachable,
-			httpStatus: httpProbe.httpStatus,
-			status: websocketProbe.status,
-			checkedAt: new Date().toISOString(),
-			error: errors.length > 0 ? errors.join('; ') : null,
-		};
-	},
-});
 
 // --- GET errors ---
 
@@ -1519,145 +1421,4 @@ function getErrorMessage(error: unknown): string {
 		return error.message;
 	}
 	return String(error);
-}
-
-async function probeHydraHttpNode(
-	nodeHttpUrl: string,
-	timeoutMs: number,
-): Promise<{ protocolParametersOk: boolean; httpStatus: number | null; error: string | null }> {
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-	try {
-		const response = await fetch(buildHydraHttpEndpoint(nodeHttpUrl, 'protocol-parameters'), {
-			method: 'GET',
-			signal: controller.signal,
-			redirect: 'error',
-		});
-		// Reachability needs only the status line. Stop an untrusted endpoint from
-		// retaining the probe with an arbitrarily large or never-ending body.
-		await response.body?.cancel().catch(() => undefined);
-
-		return {
-			protocolParametersOk: response.ok,
-			httpStatus: response.status,
-			error: response.ok ? null : `Protocol parameters returned HTTP ${response.status}`,
-		};
-	} catch (error) {
-		return {
-			protocolParametersOk: false,
-			httpStatus: null,
-			error: `Protocol parameters probe failed: ${getErrorMessage(error)}`,
-		};
-	} finally {
-		clearTimeout(timeout);
-	}
-}
-
-function isHydraHeadStatus(value: unknown): value is HydraHeadStatus {
-	return typeof value === 'string' && Object.values(HydraHeadStatus).includes(value as HydraHeadStatus);
-}
-
-function parseHydraStatusMessage(value: unknown): HydraHeadStatus | null {
-	if (!isPlainObject(value)) {
-		return null;
-	}
-
-	const headStatus = getOwnValue(value, 'headStatus');
-	if (isHydraHeadStatus(headStatus)) {
-		return headStatus;
-	}
-
-	const tag = getOwnValue(value, 'tag');
-	if (tag === 'HeadIsInitializing') return HydraHeadStatus.Initializing;
-	if (tag === 'HeadIsOpen') return HydraHeadStatus.Open;
-	if (tag === 'HeadIsClosed') return HydraHeadStatus.Closed;
-	if (tag === 'ReadyToFanout') return HydraHeadStatus.FanoutPossible;
-	if (tag === 'HeadIsFinalized') return HydraHeadStatus.Final;
-
-	return null;
-}
-
-async function probeHydraWebSocketNode(
-	nodeUrl: string,
-	timeoutMs: number,
-): Promise<{ websocketReachable: boolean; status: HydraHeadStatus | null; error: string | null }> {
-	return new Promise((resolve) => {
-		let websocket: WebSocket | null = null;
-		let didOpen = false;
-		let settled = false;
-
-		const timeout = setTimeout(() => {
-			finish({
-				websocketReachable: didOpen,
-				status: null,
-				error: didOpen ? 'Timed out waiting for Hydra status' : 'WebSocket probe timed out',
-			});
-		}, timeoutMs);
-
-		function finish(result: { websocketReachable: boolean; status: HydraHeadStatus | null; error: string | null }) {
-			if (settled) {
-				return;
-			}
-			settled = true;
-			clearTimeout(timeout);
-			try {
-				websocket?.close();
-			} catch {
-				// Closing a failed probe is best-effort only.
-			}
-			resolve(result);
-		}
-
-		try {
-			websocket = new WebSocket(withHydraHistoryDisabled(nodeUrl), {
-				// Enforce the limit in the receiver before an attacker-controlled
-				// status frame is assembled in application memory.
-				maxPayload: MAX_HYDRA_WS_FRAME_BYTES,
-				perMessageDeflate: false,
-			});
-			websocket.on('open', () => {
-				didOpen = true;
-			});
-			websocket.on('message', (data: RawData, isBinary: boolean) => {
-				try {
-					const parsed = parseHydraWebSocketProbeFrame(isBinary ? data : rawWebSocketProbeDataToText(data));
-					const status = parseHydraStatusMessage(parsed);
-					finish({ websocketReachable: true, status, error: null });
-				} catch (error) {
-					finish({
-						websocketReachable: true,
-						status: null,
-						error: getErrorMessage(error),
-					});
-				}
-			});
-			websocket.on('error', () => {
-				finish({
-					websocketReachable: didOpen,
-					status: null,
-					error: 'WebSocket probe failed',
-				});
-			});
-			websocket.on('close', () => {
-				finish({
-					websocketReachable: didOpen,
-					status: null,
-					error: didOpen ? 'WebSocket probe closed before Hydra status' : 'WebSocket probe failed to open',
-				});
-			});
-		} catch (error) {
-			finish({
-				websocketReachable: false,
-				status: null,
-				error: `WebSocket probe failed: ${getErrorMessage(error)}`,
-			});
-		}
-	});
-}
-
-function rawWebSocketProbeDataToText(data: RawData): string {
-	if (Buffer.isBuffer(data)) return data.toString('utf8');
-	if (data instanceof ArrayBuffer) return Buffer.from(data).toString('utf8');
-	return Buffer.concat(data).toString('utf8');
 }

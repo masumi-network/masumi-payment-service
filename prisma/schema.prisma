@@ -1645,6 +1645,9 @@ model HydraHead {
   /// Transactions submitted through this head (L2)
   Transactions Transaction[]
 
+  /// The completed handshake offer that produced this head.
+  Offer HydraHeadOffer?
+
   /// Is enabled
   isEnabled Boolean @default(true)
   // One non-Final head per relation is enforced by the partial unique index
@@ -1683,23 +1686,26 @@ model HydraLocalParticipant {
   /// (Set to the funding wallet's vkey only for legacy coupled heads.)
   cardanoVkey String
 
-  /// The Hydra Host this participant's node runs on, when it was provisioned
-  /// through one. Null for a node configured by hand (the legacy env-seeded
-  /// path). Restrict: a Host with live participants must not be deleted.
-  hydraHostId String?
-  HydraHost   HydraHost? @relation(fields: [hydraHostId], references: [id], onDelete: Restrict)
+  /// The Hydra Host this participant's node runs on. Required: every node is
+  /// provisioned through a Host, which generates its keys and supervises its
+  /// process — a node configured by hand is not representable. Restrict: a Host
+  /// with live participants must not be deleted.
+  hydraHostId String
+  HydraHost   HydraHost @relation(fields: [hydraHostId], references: [id], onDelete: Restrict)
 
   /// Node id assigned by that Host. Together with hydraHostId this identifies
   /// the supervised process; nodeUrl/nodeHttpUrl below are derived from the two.
   /// Unique per Host: two participants pointing at one supervised node would
   /// have them fighting over the same head state.
-  hostNodeId String?
+  hostNodeId String
 
-  /// WebSocket URL for this participant's Hydra node (e.g. ws://127.0.0.1:4001,
-  /// or wss://host/v1/nodes/<hostNodeId>/api when placed on a Hydra Host)
+  /// WebSocket URL for this participant's Hydra node, through its Host's proxy
+  /// (wss://host/v1/nodes/<hostNodeId>/api). Derived from hydraHostId and
+  /// hostNodeId, and stored so the connection manager does not have to resolve
+  /// the Host on every reconnect.
   nodeUrl String
 
-  /// HTTP URL for this participant's Hydra node (e.g. http://127.0.0.1:4001)
+  /// HTTP URL for the same node, through the same proxy.
   nodeHttpUrl String
 
   /// Whether this participant has committed funds to the head
@@ -1712,6 +1718,12 @@ model HydraLocalParticipant {
   /// safe only after this slot plus the rollback/indexer grace window has passed
   /// with the hash absent. Legacy already-confirmed rows are migrated with 0.
   commitInvalidHereafterSlot BigInt?
+
+  /// When this participant's signing keys were handed to an operator to back
+  /// up. Set by the one-time reveal and never cleared: the disclosure path
+  /// seals after the first use, mirroring the Host's own escrow so key material
+  /// cannot be pulled repeatedly out of the database through the API.
+  keysDisclosedAt DateTime?
 
   /// Encrypted Hydra signing key (1:1)
   hydraSecretKeyId String         @unique
@@ -1784,11 +1796,15 @@ model HydraRemoteParticipant {
   /// participant's cardanoVkey for the rationale.
   cardanoVkey String
 
-  /// WebSocket URL for this participant's Hydra node
-  nodeUrl String
-
-  /// HTTP URL for this participant's Hydra node
-  nodeHttpUrl String
+  /// The counterparty node's publicly reachable peer-plane endpoint
+  /// (`host:port`), exactly as they advertised it in the handshake.
+  ///
+  /// Not an API URL, and deliberately so: their node's API sits behind their
+  /// own Host's proxy and we hold no token for it. What we need from them is
+  /// the address etcd dials to form the cluster, and etcd validates a member's
+  /// advertised URL against the cluster entry — so this must be stored verbatim
+  /// rather than reconstructed.
+  advertise String
 
   /// Whether this participant has committed funds (observed from Hydra protocol)
   hasCommitted Boolean @default(false)
@@ -1952,8 +1968,10 @@ enum HydraOfferStatus {
   Accepted
   /// Our node has been told its peers.
   Configured
-  /// Our node is running; the head can now be initialised.
+  /// Our node is running; the head record can now be created.
   Started
+  /// The head record exists and owns this offer's participants. Terminal.
+  Completed
   Declined
   Expired
 }
@@ -2018,6 +2036,14 @@ model HydraHeadOffer {
   counterpartySignature String?
   counterpartySignerKey String?
 
+  /// The head this offer produced, once it completed.
+  ///
+  /// Set in the same transaction that creates the head, which is what makes
+  /// completion idempotent: a retried advance finds the link and stops rather
+  /// than creating a second remote participant for the same counterparty.
+  hydraHeadId String?    @unique
+  HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id], onDelete: SetNull)
+
   /// One offer per head slot is enforced by a partial unique index on the open
   /// statuses (see the migration): two concurrent offers would each provision a
   /// node and reserve a peer port, and only one could become the head.
@@ -2032,6 +2058,14 @@ model HydraSecretKey {
 
   /// Encrypted Hydra signing key (cborHex of the signing key)
   hydraSK String
+
+  /// Encrypted node Cardano signing key (cborHex).
+  ///
+  /// Held for the same reason as the Hydra key: the Host discloses both exactly
+  /// once at provisioning, and if this service does not keep a copy the only
+  /// one lives on the Host's disk. Nullable for participants provisioned before
+  /// it was captured.
+  cardanoSK String?
 
   HydraLocalParticipant HydraLocalParticipant?
 }

@@ -24,6 +24,7 @@ import {
 import { assertHostCompatible, selectPlacementHost } from '@/services/hydra-host/placement';
 import { decrypt } from '@/utils/security/encryption';
 import { fetchHostCapabilities } from '@/services/hydra-host/client';
+import { createBoundHydraHead } from '@/routes/api/hydra/head';
 import { checkOfferFreshness, isOfferInitiator, type HydraHeadOfferPayloadInput } from './offer-payload';
 import { canProposeNewOffer, nextOfferAction, type OfferView } from './offer-state';
 import { deriveNodeCardanoVkey } from './node-keys';
@@ -113,7 +114,11 @@ async function provisionLocalNode(
 async function persistNodeSecrets(
 	relation: RelationContext,
 	hostId: string,
-	provisioned: { nodeId: string; secrets: { hydraSigningKey: string } | null; cardanoVerificationKey: string },
+	provisioned: {
+		nodeId: string;
+		secrets: { hydraSigningKey: string; cardanoSigningKey: string } | null;
+		cardanoVerificationKey: string;
+	},
 ): Promise<void> {
 	if (provisioned.secrets === null) {
 		return;
@@ -129,7 +134,15 @@ async function persistNodeSecrets(
 			nodeHttpUrl: urls.nodeHttpUrl,
 			HydraHost: { connect: { id: hostId } },
 			hostNodeId: provisioned.nodeId,
-			HydraSecretKey: { create: { hydraSK: encrypt(provisioned.secrets.hydraSigningKey) } },
+			// Both keys, not just the Hydra one: the Host discloses each exactly
+			// once, so a key this service drops here survives only on the Host's
+			// disk — and the node's on-chain identity would go with it.
+			HydraSecretKey: {
+				create: {
+					hydraSK: encrypt(provisioned.secrets.hydraSigningKey),
+					cardanoSK: encrypt(provisioned.secrets.cardanoSigningKey),
+				},
+			},
 		},
 	});
 }
@@ -310,7 +323,34 @@ function toOfferView(offer: {
  * Idempotent by design: each step is derived from the persisted state, so a
  * retry after a partial failure resumes rather than repeating.
  */
+/**
+ * Drive an offer as far as it can go right now.
+ *
+ * Each step is one action, but the steps after acceptance are ours alone —
+ * configure peers, start the node, record the head — so stopping after the
+ * first would leave the offer parked mid-handshake with nothing to resume it.
+ * The loop runs until the offer is waiting on the counterparty, finished, or
+ * reaped.
+ *
+ * Bounded rather than `while (true)`: a step that fails to change status would
+ * otherwise spin forever holding a database connection.
+ */
 export async function advanceOffer(offerId: string): Promise<HydraOfferStatus> {
+	let status = await advanceOfferOnce(offerId);
+	for (let step = 0; step < MAX_ADVANCE_STEPS; step += 1) {
+		const next = await advanceOfferOnce(offerId);
+		if (next === status) {
+			return next;
+		}
+		status = next;
+	}
+	return status;
+}
+
+/** How many transitions one advance may perform. Configure → Start → Create is three. */
+const MAX_ADVANCE_STEPS = 5;
+
+async function advanceOfferOnce(offerId: string): Promise<HydraOfferStatus> {
 	const offer = await prisma.hydraHeadOffer.findUniqueOrThrow({ where: { id: offerId } });
 	const action = nextOfferAction(toOfferView(offer), Date.now());
 
@@ -342,11 +382,77 @@ export async function advanceOffer(offerId: string): Promise<HydraOfferStatus> {
 			return HydraOfferStatus.Started;
 		}
 
+		case 'CreateHead': {
+			await completeOffer(offerId);
+			return HydraOfferStatus.Completed;
+		}
+
 		case 'Reap': {
 			await reapOffer(offerId, action.reason);
 			return HydraOfferStatus.Expired;
 		}
 	}
+}
+
+/**
+ * Turn a started offer into the head it agreed.
+ *
+ * This is the step that makes the handshake the *only* way to open a head: it
+ * records the counterparty as a participant from material they signed, rather
+ * than from a URL an operator typed. Everything needed is already on the offer
+ * — their verification keys and advertise address, the periods, and our own
+ * provisioned node — so no further round trip is required.
+ *
+ * Idempotent through `hydraHeadId`: a retried advance finds the link and stops,
+ * instead of creating a second remote participant for the same counterparty.
+ */
+async function completeOffer(offerId: string): Promise<void> {
+	const offer = await prisma.hydraHeadOffer.findUniqueOrThrow({
+		where: { id: offerId },
+		include: { HydraRelation: true },
+	});
+	if (offer.hydraHeadId !== null) {
+		return;
+	}
+
+	const hydraVerificationKey = offer.counterpartyHydraVerificationKey;
+	const cardanoVerificationKey = offer.counterpartyCardanoVerificationKey;
+	const advertise = offer.counterpartyAdvertise;
+	if (hydraVerificationKey === null || cardanoVerificationKey === null || advertise === null) {
+		throw createHttpError(409, 'this offer has no counterparty material, so no head can be recorded');
+	}
+
+	const localParticipant = await prisma.hydraLocalParticipant.findFirst({
+		where: { hostNodeId: offer.ownNodeId ?? '', hydraHeadId: null },
+	});
+	if (!localParticipant) {
+		throw createHttpError(409, 'this offer has no unbound local participant to attach to a head');
+	}
+
+	// The counterparty's node identity, not their funding wallet: the InitTx
+	// mints the participant token for this key hash, while the wallet on the
+	// relation is who they settle with.
+	const remoteParticipant = await prisma.hydraRemoteParticipant.create({
+		data: {
+			Wallet: { connect: { id: offer.HydraRelation.remoteWalletId } },
+			cardanoVkey: deriveNodeCardanoVkey(cardanoVerificationKey),
+			advertise,
+			HydraVerificationKey: { create: { hydraVK: hydraVerificationKey } },
+		},
+	});
+
+	const head = await createBoundHydraHead({
+		hydraRelationId: offer.hydraRelationId,
+		contestationPeriod: BigInt(offer.contestationPeriodSeconds),
+		localParticipantId: localParticipant.id,
+		remoteParticipantId: remoteParticipant.id,
+	});
+
+	await prisma.hydraHeadOffer.update({
+		where: { id: offerId },
+		data: { status: HydraOfferStatus.Completed, hydraHeadId: head.id },
+	});
+	logger.info(`[hydra] offer ${offerId} completed as head ${head.id}`);
 }
 
 async function hostCredentials(

@@ -208,30 +208,34 @@ export async function deleteHydraHost(id: string): Promise<void> {
 		throw createHttpError(404, 'hydra host not found');
 	}
 
-	// Only participants whose head is still live block removal. A participant
-	// left behind by a finalised head holds no state worth protecting, and
-	// counting it would make the Host permanently undeletable through the API.
-	const liveParticipants = await prisma.hydraLocalParticipant.count({
-		where: {
-			hydraHostId: id,
-			OR: [{ HydraHead: { is: null } }, { HydraHead: { status: { not: HydraHeadStatus.Final } } }],
-		},
-	});
-	if (liveParticipants > 0) {
+	// Every participant blocks removal, not just the live ones.
+	//
+	// A participant records which node held a head — its host, node id and commit
+	// transactions — and every node is provisioned through a Host, so that link
+	// cannot be detached. Previously a finalised head's participant was nulled
+	// out to let the Host go; with the Host now required, doing that would mean
+	// deleting the participant and losing the head's node identity along with it.
+	// Removing the finalised heads first is the honest order, and there is
+	// already a guard for that.
+	const participants = await prisma.hydraLocalParticipant.count({ where: { hydraHostId: id } });
+	if (participants > 0) {
+		const live = await prisma.hydraLocalParticipant.count({
+			where: {
+				hydraHostId: id,
+				OR: [{ HydraHead: { is: null } }, { HydraHead: { status: { not: HydraHeadStatus.Final } } }],
+			},
+		});
 		// The database would refuse this anyway (the relation is Restrict); saying
 		// why is more useful than surfacing a constraint violation.
 		throw createHttpError(
 			409,
-			`this hydra host still runs ${liveParticipants} node(s) on live heads; those heads cannot be moved, so close and remove them first`,
+			live > 0
+				? `this hydra host still runs ${live} node(s) on live heads; those heads cannot be moved, so close and remove them first`
+				: `this hydra host holds ${participants} node(s) from finalised heads; remove those heads first`,
 		);
 	}
 
-	// Detach any finalised-head participants so the Restrict relation does not
-	// block a Host whose work is genuinely done.
-	await prisma.$transaction([
-		prisma.hydraLocalParticipant.updateMany({ where: { hydraHostId: id }, data: { hydraHostId: null } }),
-		prisma.hydraHost.delete({ where: { id } }),
-	]);
+	await prisma.hydraHost.delete({ where: { id } });
 }
 
 /**

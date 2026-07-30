@@ -7,7 +7,7 @@
  * offer was made and those must not be held open indefinitely.
  */
 
-export type OfferStatus = 'Proposed' | 'Accepted' | 'Configured' | 'Started' | 'Declined' | 'Expired';
+export type OfferStatus = 'Proposed' | 'Accepted' | 'Configured' | 'Started' | 'Completed' | 'Declined' | 'Expired';
 
 export type OfferRole = 'Offerer' | 'Acceptor';
 
@@ -30,6 +30,8 @@ export type OfferAction =
 	| { kind: 'ConfigurePeers' }
 	/** Start our node; the cluster forms once the counterparty starts theirs. */
 	| { kind: 'StartNode' }
+	/** Record the head this offer agreed, binding both participants to it. */
+	| { kind: 'CreateHead' }
 	/** Release the node and peer port this offer reserved. */
 	| { kind: 'Reap'; reason: string };
 
@@ -41,8 +43,16 @@ export type OfferAction =
  * would bootstrap a cluster the counterparty cannot join.
  */
 export function nextOfferAction(offer: OfferView, nowMs: number): OfferAction {
+	if (offer.status === 'Completed') {
+		return { kind: 'Idle', reason: 'the head exists; the offer is finished' };
+	}
+
 	if (offer.status === 'Started') {
-		return { kind: 'Idle', reason: 'the node is running; the head can now be initialised' };
+		// Everything the head record needs is already agreed and signed: our own
+		// participant, the counterparty's keys and advertise address, and the
+		// periods. Neither side waits for the other here — each records its own
+		// head, and the two only have to agree on chain, at Init.
+		return { kind: 'CreateHead' };
 	}
 
 	if (offer.status === 'Declined') {
@@ -79,7 +89,10 @@ export function nextOfferAction(offer: OfferView, nowMs: number): OfferAction {
 }
 
 /** Statuses from which an offer may still progress. */
-const OPEN_STATUSES: ReadonlySet<OfferStatus> = new Set(['Proposed', 'Accepted', 'Configured']);
+// `Started` counts as open: the node is running and the port is held, but the
+// head record does not exist yet. A second offer accepted in that window would
+// provision a duplicate node for a slot that is already spoken for.
+const OPEN_STATUSES: ReadonlySet<OfferStatus> = new Set(['Proposed', 'Accepted', 'Configured', 'Started']);
 
 export function isOfferOpen(status: OfferStatus): boolean {
 	return OPEN_STATUSES.has(status);

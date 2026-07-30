@@ -1,20 +1,15 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
+import { decrypt } from '@/utils/security/encryption';
 import createHttpError from 'http-errors';
 import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
-import { encrypt } from '@/utils/security/encryption';
-import { getHydraPlaintextHosts, validateHydraNodeUrls } from '@/lib/hydra';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import {
 	quiesceHydraHeadsForDeletion,
 	reconciledFinalHeadFilter,
 	unsettledL2TransactionWhere,
 } from '../deletion-guard';
-import {
-	normalizeHydraSigningKeyCborHex,
-	normalizeHydraVerificationKeyCborHex,
-} from '@/lib/hydra/hydra/snapshot-verification';
 
 // --- Shared schemas ---
 
@@ -30,6 +25,11 @@ export const localParticipantSchema = z
 		nodeHttpUrl: z.string(),
 		hasCommitted: z.boolean(),
 		commitTxHash: z.string().nullable(),
+		/** Which connected node runs this participant's hydra-node process. */
+		hydraHostId: z.string(),
+		hostNodeId: z.string(),
+		/** Null until an operator has taken a one-time backup of the node's signing keys. */
+		keysDisclosedAt: z.date().nullable(),
 	})
 	.openapi('HydraLocalParticipant');
 
@@ -41,8 +41,8 @@ export const remoteParticipantSchema = z
 		hydraHeadId: z.string().nullable(),
 		walletId: z.string(),
 		cardanoVkey: z.string(),
-		nodeUrl: z.string(),
-		nodeHttpUrl: z.string(),
+		/** Peer-plane `host:port`, as the counterparty advertised it. Not an API URL. */
+		advertise: z.string(),
 		hasCommitted: z.boolean(),
 		commitTxHash: z.string().nullable(),
 		hydraVerificationKeyId: z.string(),
@@ -51,72 +51,17 @@ export const remoteParticipantSchema = z
 
 // ============================================================
 // LOCAL PARTICIPANT ENDPOINTS
+//
+// Read and delete only. Participants are created by the cross-organisation
+// handshake, which provisions the node on a Hydra Host and takes the
+// counterparty's identity from material they signed — there is no way to
+// declare one by hand.
 // ============================================================
-
-// --- POST: create local participant ---
-
-export const createLocalParticipantInput = z.object({
-	walletId: z.string().min(1).describe('HotWallet ID for the local participant (funding wallet)'),
-	nodeUrl: z.string().min(1).describe('WebSocket URL for the local Hydra node'),
-	nodeHttpUrl: z.string().min(1).describe('HTTP URL for the local Hydra node'),
-	hydraSK: z.string().min(1).describe('Hydra signing key (will be encrypted)'),
-	cardanoVkey: z
-		.string()
-		.regex(/^[0-9a-fA-F]{56}$/)
-		.optional()
-		.describe(
-			"The Hydra node's own Cardano verification-key HASH (28-byte hex) — the on-chain participant identity. Omit to reuse the funding wallet's vkey (legacy coupled behaviour).",
-		),
-});
-
-export const createLocalParticipantOutput = z.object({
-	participant: localParticipantSchema,
-});
-
-export const createLocalParticipantPost = adminAuthenticatedEndpointFactory.build({
-	method: 'post',
-	input: createLocalParticipantInput,
-	output: createLocalParticipantOutput,
-	handler: async ({ input }) => {
-		const nodeUrls = validateParticipantNodeUrls(input.nodeHttpUrl, input.nodeUrl);
-		let hydraSigningKey: string;
-		try {
-			hydraSigningKey = normalizeHydraSigningKeyCborHex(input.hydraSK);
-		} catch {
-			throw createHttpError(400, 'hydraSK must be a Hydra Ed25519 signing key or text envelope');
-		}
-		const wallet = await prisma.hotWallet.findFirst({
-			where: { id: input.walletId, deletedAt: null },
-		});
-		if (!wallet) {
-			throw createHttpError(404, `HotWallet ${input.walletId} not found`);
-		}
-
-		const participant = await prisma.hydraLocalParticipant.create({
-			data: {
-				Wallet: { connect: { id: input.walletId } },
-				// Node's own on-chain identity; defaults to the funding wallet's vkey
-				// only when the caller opts into the legacy coupled model.
-				cardanoVkey: (input.cardanoVkey ?? wallet.walletVkey).toLowerCase(),
-				nodeUrl: nodeUrls.wsUrl,
-				nodeHttpUrl: nodeUrls.httpUrl,
-				HydraSecretKey: {
-					create: {
-						hydraSK: encrypt(hydraSigningKey),
-					},
-				},
-			},
-		});
-
-		return { participant };
-	},
-});
-
-// --- GET: list or get local participants ---
 
 export const getLocalParticipantInput = z.object({
 	id: z.string().optional().describe('Get a single participant by ID'),
 	walletId: z.string().optional().describe('Filter by HotWallet ID'),
+	hydraHostId: z.string().optional().describe('Filter by the connected node running them'),
 	unassigned: z
 		.string()
 		.optional()
@@ -148,6 +93,7 @@ export const getLocalParticipantGet = adminAuthenticatedEndpointFactory.build({
 		const participants = await prisma.hydraLocalParticipant.findMany({
 			where: {
 				...(input.walletId ? { walletId: input.walletId } : {}),
+				...(input.hydraHostId ? { hydraHostId: input.hydraHostId } : {}),
 				...(input.unassigned === true ? { hydraHeadId: null } : {}),
 				...(input.unassigned === false ? { hydraHeadId: { not: null } } : {}),
 			},
@@ -312,63 +258,6 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 // REMOTE PARTICIPANT ENDPOINTS
 // ============================================================
 
-// --- POST: create remote participant ---
-
-export const createRemoteParticipantInput = z.object({
-	walletId: z.string().min(1).describe('WalletBase ID for the remote counterparty (funding wallet)'),
-	nodeUrl: z.string().min(1).describe('WebSocket URL for the remote Hydra node'),
-	nodeHttpUrl: z.string().min(1).describe('HTTP URL for the remote Hydra node'),
-	hydraVK: z.string().min(1).describe('Hydra verification key (cborHex)'),
-	cardanoVkey: z
-		.string()
-		.regex(/^[0-9a-fA-F]{56}$/)
-		.optional()
-		.describe(
-			"The remote Hydra node's own Cardano verification-key HASH (28-byte hex) — the on-chain participant identity. Omit to reuse the counterparty wallet's vkey (legacy coupled behaviour).",
-		),
-});
-
-export const createRemoteParticipantOutput = z.object({
-	participant: remoteParticipantSchema,
-});
-
-export const createRemoteParticipantPost = adminAuthenticatedEndpointFactory.build({
-	method: 'post',
-	input: createRemoteParticipantInput,
-	output: createRemoteParticipantOutput,
-	handler: async ({ input }) => {
-		const nodeUrls = validateParticipantNodeUrls(input.nodeHttpUrl, input.nodeUrl);
-		let hydraVerificationKey: string;
-		try {
-			hydraVerificationKey = normalizeHydraVerificationKeyCborHex(input.hydraVK);
-		} catch {
-			throw createHttpError(400, 'hydraVK must be a Hydra Ed25519 verification key or text envelope');
-		}
-		const wallet = await prisma.walletBase.findUnique({
-			where: { id: input.walletId },
-		});
-		if (!wallet) {
-			throw createHttpError(404, `WalletBase ${input.walletId} not found`);
-		}
-
-		const participant = await prisma.hydraRemoteParticipant.create({
-			data: {
-				Wallet: { connect: { id: input.walletId } },
-				cardanoVkey: (input.cardanoVkey ?? wallet.walletVkey).toLowerCase(),
-				nodeUrl: nodeUrls.wsUrl,
-				nodeHttpUrl: nodeUrls.httpUrl,
-				HydraVerificationKey: {
-					create: { hydraVK: hydraVerificationKey },
-				},
-			},
-		});
-
-		return { participant };
-	},
-});
-
-// --- GET: list or get remote participants ---
-
 export const getRemoteParticipantInput = z.object({
 	id: z.string().optional().describe('Get a single participant by ID'),
 	walletId: z.string().optional().describe('Filter by WalletBase ID'),
@@ -403,6 +292,7 @@ export const getRemoteParticipantGet = adminAuthenticatedEndpointFactory.build({
 		const participants = await prisma.hydraRemoteParticipant.findMany({
 			where: {
 				...(input.walletId ? { walletId: input.walletId } : {}),
+				...(input.hydraHostId ? { hydraHostId: input.hydraHostId } : {}),
 				...(input.unassigned === true ? { hydraHeadId: null } : {}),
 				...(input.unassigned === false ? { hydraHeadId: { not: null } } : {}),
 			},
@@ -562,12 +452,87 @@ export async function deleteHydraRemoteParticipant(id: string): Promise<void> {
 	);
 }
 
-function validateParticipantNodeUrls(nodeHttpUrl: string, nodeUrl: string) {
-	try {
-		return validateHydraNodeUrls(nodeHttpUrl, nodeUrl, {
-			plaintextHosts: getHydraPlaintextHosts(),
-		});
-	} catch (error) {
-		throw createHttpError(400, error instanceof Error ? error.message : 'Invalid Hydra node URLs');
-	}
-}
+// ============================================================
+// ONE-TIME KEY BACKUP
+// ============================================================
+
+export const revealParticipantKeysInput = z.object({
+	id: z.string().min(1).describe('ID of the local participant whose node keys to back up'),
+});
+
+export const revealParticipantKeysOutput = z.object({
+	id: z.string(),
+	disclosedAt: z.string(),
+	hydraSigningKey: z.string().describe('Text-envelope cborHex of the node Hydra signing key'),
+	cardanoSigningKey: z
+		.string()
+		.nullable()
+		.describe(
+			'Text-envelope cborHex of the node Cardano signing key. Null for nodes provisioned before it was captured.',
+		),
+});
+
+/**
+ * Hand a node's signing keys to an operator, exactly once.
+ *
+ * The keys are generated by the Hydra Host and disclosed by it a single time, at
+ * provisioning; this service keeps the only other copy. An operator who wants an
+ * off-site backup therefore has to get it from here — but a database copy that
+ * any admin call can print on demand is a far worse secret than one that leaves
+ * exactly once, so this seals itself the same way the Host's escrow does.
+ *
+ * Sealing before returning, not after: a caller that receives the keys and
+ * crashes has still seen them, and re-opening the path on the strength of a lost
+ * response would make "once" meaningless. The stamp is written in the same
+ * update that reads the row, so two concurrent calls cannot both win.
+ */
+export const revealParticipantKeysPost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: revealParticipantKeysInput,
+	output: revealParticipantKeysOutput,
+	handler: async ({ input, logger }) => {
+		const disclosed = await prisma.$transaction(
+			async (tx) => {
+				const rows = await tx.$queryRaw<Array<{ id: string; keysDisclosedAt: Date | null }>>(Prisma.sql`
+					SELECT "id", "keysDisclosedAt"
+					FROM "HydraLocalParticipant"
+					WHERE "id" = ${input.id}
+					FOR UPDATE
+				`);
+				if (rows.length !== 1) {
+					throw createHttpError(404, 'Local participant not found');
+				}
+				if (rows[0].keysDisclosedAt !== null) {
+					throw createHttpError(
+						409,
+						'these keys have already been handed out once; the disclosure path is sealed. Recover the backup you took, or replace the node',
+					);
+				}
+
+				const participant = await tx.hydraLocalParticipant.update({
+					where: { id: input.id },
+					data: { keysDisclosedAt: new Date() },
+					select: {
+						id: true,
+						keysDisclosedAt: true,
+						HydraSecretKey: { select: { hydraSK: true, cardanoSK: true } },
+					},
+				});
+				return participant;
+			},
+			{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 10_000 },
+		);
+
+		// Deliberately loud: a one-time disclosure of key material is exactly the
+		// event an operator wants to find in the log afterwards.
+		logger.warn(`Hydra node signing keys disclosed for participant ${disclosed.id}`);
+
+		return {
+			id: disclosed.id,
+			disclosedAt: (disclosed.keysDisclosedAt ?? new Date()).toISOString(),
+			hydraSigningKey: decrypt(disclosed.HydraSecretKey.hydraSK),
+			cardanoSigningKey:
+				disclosed.HydraSecretKey.cardanoSK === null ? null : decrypt(disclosed.HydraSecretKey.cardanoSK),
+		};
+	},
+});
