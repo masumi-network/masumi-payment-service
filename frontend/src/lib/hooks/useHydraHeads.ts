@@ -619,6 +619,33 @@ export async function revealHydraNodeKeys(apiClient: Client, payload: { id: stri
   return ensureData(response?.data?.data, 'The node keys were not returned by the API');
 }
 
+/**
+ * Top up the node's own Cardano key.
+ *
+ * A node cannot open a head from an empty address — Init consumes a seed UTxO
+ * there — so a freshly provisioned node fails with `NoSeedInput` until this has
+ * run. A scheduled cycle does it too; this is for not waiting.
+ */
+export async function fundHydraNode(apiClient: Client, payload: { id: string }) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.post<{
+        200: ApiEnvelope<{
+          address: string;
+          balanceLovelace: string;
+          transferredLovelace: string | null;
+        }>;
+      }>({
+        responseType: 'json',
+        url: '/hydra/participant/local/fund',
+        body: payload,
+      }),
+    { errorMessage: 'Failed to fund the node' },
+  );
+
+  return ensureData(response?.data?.data, 'The funding result was not returned by the API');
+}
+
 export async function initHydraHead(apiClient: Client, payload: { headId: string }) {
   const response = await handleApiCall(
     () =>

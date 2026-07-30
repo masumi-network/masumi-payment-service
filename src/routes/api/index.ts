@@ -104,6 +104,7 @@ import {
 	commitHeadPost,
 	deleteLocalParticipantDelete,
 	revealParticipantKeysPost,
+	fundParticipantNodePost,
 	deleteRelationDelete,
 	deleteRemoteParticipantDelete,
 	fanoutHeadPost,
@@ -518,6 +519,8 @@ export const apiRouter: Routing = {
 					delete: deleteLocalParticipantDelete,
 					// One-time backup of the node's signing keys; seals after first use.
 					keys: { post: revealParticipantKeysPost },
+					// Fund the node's own Cardano key, without which Init cannot post.
+					fund: { post: fundParticipantNodePost },
 				},
 				remote: {
 					get: getRemoteParticipantGet,

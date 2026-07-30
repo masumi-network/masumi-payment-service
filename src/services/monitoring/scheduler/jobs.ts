@@ -19,6 +19,7 @@ import type { JobDefinition } from '@/services/shared';
 import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
 import { pollHydraRedemptions, pushCounterpartyAllowlists, reapExpiredInvites } from '@/services/hydra-invite/adoption';
+import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
 import { runHydraLowBalanceMonitoringCycle } from '@/services/hydra-low-balance/monitor';
 import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup';
@@ -81,6 +82,19 @@ export const scheduledJobs: JobDefinition[] = [
 		// different counterparty. Sweeping is the only way they come back.
 		run: async () => {
 			await reapExpiredInvites();
+		},
+	},
+	{
+		initialDelayMs: 11000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra node funding',
+		finishMessage: 'Finished Hydra node funding',
+		// A node's Cardano key is generated empty, and Init consumes a seed UTxO
+		// at that address — so without this every first head fails with
+		// NoSeedInput. The same key later pays for Close and Fanout, so it has to
+		// stay funded rather than merely be funded once.
+		run: async () => {
+			await runHydraNodeFundingCycle();
 		},
 	},
 	{

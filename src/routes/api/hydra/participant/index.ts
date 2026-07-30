@@ -1,6 +1,7 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
+import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
 import { decrypt } from '@/utils/security/encryption';
 import createHttpError from 'http-errors';
 import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
@@ -534,5 +535,39 @@ export const revealParticipantKeysPost = adminAuthenticatedEndpointFactory.build
 			cardanoSigningKey:
 				disclosed.HydraSecretKey.cardanoSK === null ? null : decrypt(disclosed.HydraSecretKey.cardanoSK),
 		};
+	},
+});
+
+// --- POST: fund this node's Cardano key ---
+
+export const fundParticipantNodeInput = z.object({
+	id: z.string().min(1).describe('Local participant whose node should be funded'),
+});
+
+export const fundParticipantNodeOutput = z.object({
+	address: z.string().describe("The node's own Cardano address, derived from its key hash"),
+	balanceLovelace: z.string(),
+	transferredLovelace: z.string().nullable().describe('Null when the node already had enough'),
+});
+
+/**
+ * Top up the node's Cardano key now, rather than waiting for the funding cycle.
+ *
+ * A node cannot open a head from an empty address: Init consumes a seed UTxO
+ * there and pays its fee from the same key, so a freshly provisioned node fails
+ * with `NoSeedInput`. The scheduled cycle covers this, but the wait is worst on
+ * the first head an operator opens — when the failure is least legible and the
+ * fix is invisible.
+ *
+ * Queues a transfer rather than performing one: the existing fund-transfer
+ * lifecycle owns building, signing, submitting and confirming, and duplicating
+ * that here would mean a second path to get wrong.
+ */
+export const fundParticipantNodePost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: fundParticipantNodeInput,
+	output: fundParticipantNodeOutput,
+	handler: async ({ input }) => {
+		return await fundHydraNodeNow(input.id);
 	},
 });

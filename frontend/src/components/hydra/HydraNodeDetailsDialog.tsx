@@ -7,7 +7,7 @@
  * this is the page an operator is already on when they need them.
  */
 
-import { AlertTriangle, KeyRound, Server } from 'lucide-react';
+import { AlertTriangle, KeyRound, Loader2, Server } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
@@ -19,6 +19,9 @@ import {
 } from '@/components/ui/dialog';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { toast } from 'react-toastify';
+import { useAppContext } from '@/lib/contexts/AppContext';
+import { fundHydraNode } from '@/lib/hooks/useHydraHeads';
 import { useWallets } from '@/lib/queries/useWallets';
 import { useHydraLocalParticipants } from '@/lib/hooks/useHydraHeads';
 import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
@@ -60,11 +63,29 @@ function shortHash(value: string | null): string {
 
 export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDetailsDialogProps) {
   const { wallets } = useWallets();
+  const { apiClient } = useAppContext();
   const { participants, refetch: refetchParticipants } = useHydraLocalParticipants(
     undefined,
     host?.id,
   );
   const [backUpId, setBackUpId] = useState<string | null>(null);
+  const [fundingId, setFundingId] = useState<string | null>(null);
+
+  async function handleFund(participantId: string) {
+    setFundingId(participantId);
+    try {
+      const result = await fundHydraNode(apiClient, { id: participantId });
+      toast.success(
+        result.transferredLovelace === null
+          ? `Node already funded (${(Number(result.balanceLovelace) / 1_000_000).toFixed(2)} ADA)`
+          : `Sending ${(Number(result.transferredLovelace) / 1_000_000).toFixed(2)} ADA to the node`,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to fund the node');
+    } finally {
+      setFundingId(null);
+    }
+  }
 
   if (!host) return null;
 
@@ -190,6 +211,12 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
               Generated on the node, one set per head, and never typed here. Each set can be handed
               over exactly once — after that the service refuses, so keep what you take.
             </p>
+            <p className="text-xs text-muted-foreground">
+              Each node also spends from a Cardano key of its own, separate from your wallet so a
+              compromised node cannot reach escrowed funds. Opening a head consumes a UTxO there, so
+              an unfunded node fails to initialise. This is topped up automatically; the button is
+              for not waiting.
+            </p>
             {participants.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 No heads on this node yet, so there are no keys to back up.
@@ -211,15 +238,30 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
                           : 'Never backed up'}
                       </p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={Boolean(participant.keysDisclosedAt)}
-                      onClick={() => setBackUpId(participant.id)}
-                    >
-                      {participant.keysDisclosedAt ? 'Sealed' : 'Export keys'}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={fundingId === participant.id}
+                        onClick={() => void handleFund(participant.id)}
+                        title="Send ADA to this node's own key, which Init spends from"
+                      >
+                        {fundingId === participant.id && (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        )}
+                        Fund node
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={Boolean(participant.keysDisclosedAt)}
+                        onClick={() => setBackUpId(participant.id)}
+                      >
+                        {participant.keysDisclosedAt ? 'Sealed' : 'Export keys'}
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>

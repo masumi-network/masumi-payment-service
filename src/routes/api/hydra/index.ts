@@ -33,6 +33,7 @@ export {
 	getLocalParticipantGet,
 	deleteLocalParticipantDelete,
 	revealParticipantKeysPost,
+	fundParticipantNodePost,
 	getRemoteParticipantGet,
 	deleteRemoteParticipantDelete,
 } from './participant';
