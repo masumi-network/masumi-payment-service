@@ -1,6 +1,6 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PaymentSourceType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, RegistrationState, RegistryEntryType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { resolvePaymentKeyHash } from '@meshsdk/core-cst';
@@ -66,6 +66,11 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 					400,
 					'V2 updates must not set AgentPricing; put pricing inside each supportedPaymentSources[].pricing field',
 				);
+			}
+			// The update route only re-mints the Standard shape (apiBaseUrl). Reject
+			// OpenApi/X402 updates rather than silently dropping their spec URL.
+			if ((input.type ?? RegistryEntryType.Standard) !== RegistryEntryType.Standard) {
+				throw createHttpError(400, 'Updating OpenApi/X402 agents is not yet supported');
 			}
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 

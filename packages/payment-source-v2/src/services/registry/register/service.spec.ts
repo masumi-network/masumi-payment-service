@@ -1,5 +1,11 @@
 import { MeshTxBuilder } from '@meshsdk/core';
-import { Network, PaymentSourceType, PricingType, X402PaymentScheme } from '@/generated/prisma/client';
+import {
+	Network,
+	PaymentSourceType,
+	PricingType,
+	RegistryEntryType,
+	X402PaymentScheme,
+} from '@/generated/prisma/client';
 import { parseSupportedPaymentSourcesFromMetadata } from '@/types/payment-source';
 import { buildAgentMetadata } from './service';
 
@@ -24,7 +30,10 @@ describe('V2 registry metadata', () => {
 	const baseRequest = {
 		name: 'x402 Agent',
 		description: null,
+		type: RegistryEntryType.Standard,
 		apiBaseUrl: 'https://agent.example',
+		openApiSpecUrl: null,
+		x402ResourcesUrl: null,
 		ExampleOutputs: [],
 		capabilityName: null,
 		capabilityVersion: null,
@@ -48,6 +57,43 @@ describe('V2 registry metadata', () => {
 
 		expect(metadata.supported_payment_sources).toHaveLength(1);
 		expect(metadata.supported_payment_sources[0]?.chain).toEqual(['EVM']);
+	});
+
+	it('emits no type/openapi_spec_url/x402_resources_url for a Standard entry', () => {
+		const metadata = buildAgentMetadata(baseRequest) as {
+			type?: unknown;
+			openapi_spec_url?: unknown;
+			x402_resources_url?: unknown;
+			api_base_url?: unknown;
+		};
+		expect(metadata.type).toBeUndefined();
+		expect(metadata.openapi_spec_url).toBeUndefined();
+		expect(metadata.x402_resources_url).toBeUndefined();
+		expect(metadata.api_base_url).toBeDefined();
+	});
+
+	it('emits type "OpenAPI" + openapi_spec_url (no api_base_url) for an OpenApi entry', () => {
+		const metadata = buildAgentMetadata({
+			...baseRequest,
+			type: RegistryEntryType.OpenApi,
+			apiBaseUrl: null,
+			openApiSpecUrl: 'https://agent.example/openapi.json',
+		}) as { type?: unknown; openapi_spec_url?: unknown; api_base_url?: unknown };
+		expect(metadata.type).toBe('OpenAPI');
+		expect(metadata.openapi_spec_url).toEqual(['https://agent.example/openapi.json']);
+		expect(metadata.api_base_url).toBeUndefined();
+	});
+
+	it('emits type "x402V1" + x402_resources_url (no api_base_url) for an X402 entry', () => {
+		const metadata = buildAgentMetadata({
+			...baseRequest,
+			type: RegistryEntryType.X402,
+			apiBaseUrl: null,
+			x402ResourcesUrl: 'https://agent.example/.well-known/x402.json',
+		}) as { type?: unknown; x402_resources_url?: unknown; api_base_url?: unknown };
+		expect(metadata.type).toBe('x402V1');
+		expect(metadata.x402_resources_url).toEqual(['https://agent.example/.well-known/x402.json']);
+		expect(metadata.api_base_url).toBeUndefined();
 	});
 
 	it('omits nullable JSON extras before Mesh converts CIP-25 metadata', () => {

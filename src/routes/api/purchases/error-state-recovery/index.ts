@@ -13,6 +13,7 @@ import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { purchaseResponseSchema } from '..';
 import { z } from '@masumi/payment-core/zod';
 import { getPurchaseRetryAction } from '@/utils/shared/error-recovery';
+import { selectRecoveryTransaction } from '@/routes/api/shared/recovery-transaction';
 
 export const purchaseErrorStateRecoverySchemaInput = z.object({
 	blockchainIdentifier: z.string().min(1).max(8000).describe('The blockchain identifier of the purchase request'),
@@ -116,23 +117,19 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 			throw createHttpError(400, 'The purchase is already completed and its previous action cannot be retried.');
 		}
 
-		// Find the most recent successful transaction (confirmed or pending)
-		// Priority 1: Most recent Confirmed transaction (fully successful)
-		const confirmedTransactions = purchaseRequest.TransactionHistory.filter(
-			(tx) => tx.status === TransactionStatus.Confirmed,
-		);
-		const mostRecentConfirmedTransaction = confirmedTransactions.length > 0 ? confirmedTransactions[0] : undefined;
+		// Selection lives in selectRecoveryTransaction so the hash-less-row rule
+		// is unit-tested; see src/routes/api/shared/recovery-transaction.spec.ts
+		const lastSuccessfulTransaction = selectRecoveryTransaction(purchaseRequest.TransactionHistory);
 
-		// Priority 2: If no confirmed, get most recent Pending transaction (in progress)
-		const pendingTransactions = purchaseRequest.TransactionHistory.filter(
-			(tx) => tx.status === TransactionStatus.Pending,
-		);
-		const mostRecentPendingTransaction = pendingTransactions.length > 0 ? pendingTransactions[0] : undefined;
-
-		// Use the best available transaction
-		const lastSuccessfulTransaction = mostRecentConfirmedTransaction ?? mostRecentPendingTransaction;
+		// When no candidate qualifies AND an escrow exists, the pointer stays
+		// where it is (see below). In that case the row it points at must NOT be
+		// failed here, or the request ends up pointing at a row this same
+		// transaction marked FailedViaManualReset — reporting success while
+		// leaving the retry to throw 'Transaction hash not found'.
+		const willKeepCurrentPointer = lastSuccessfulTransaction == null && purchaseRequest.onChainState != null;
 
 		const transactionsToFail = purchaseRequest.TransactionHistory.filter((tx) => {
+			if (willKeepCurrentPointer && tx.id === purchaseRequest.currentTransactionId) return false;
 			if (tx.status !== TransactionStatus.Pending) return false;
 
 			if (lastSuccessfulTransaction && tx.id === lastSuccessfulTransaction.id) {
@@ -172,10 +169,31 @@ export const purchaseErrorStateRecoveryPost = payAuthenticatedEndpointFactory.bu
 								});
 							}
 
-							await tx.purchaseRequest.update({
-								where: { id: purchaseRequest.id },
-								data: { currentTransactionId: lastSuccessfulTransaction?.id || null },
-							});
+							// Repoint when we have a candidate. When we do NOT, the right
+							// move depends on whether an escrow exists on chain yet:
+							//
+							//   onChainState != null — the pointer is the request's only link
+							//     to its escrow transaction. Clearing it strands the request:
+							//     the row stays Confirmed with its hash but nothing references
+							//     it, and every later retry fails with 'Transaction hash not
+							//     found' until someone re-links it by hand. Leave it alone.
+							//
+							//   onChainState == null — pre-escrow (a funds-locking retry).
+							//     batch-payments re-selects candidates with
+							//     `CurrentTransaction: { is: null }`, so a row that keeps its
+							//     rolled-back tx would never re-batch — the endpoint would
+							//     return 200 and the request would stall forever. Clear it.
+							if (lastSuccessfulTransaction != null) {
+								await tx.purchaseRequest.update({
+									where: { id: purchaseRequest.id },
+									data: { currentTransactionId: lastSuccessfulTransaction.id },
+								});
+							} else if (purchaseRequest.onChainState == null) {
+								await tx.purchaseRequest.update({
+									where: { id: purchaseRequest.id },
+									data: { currentTransactionId: null },
+								});
+							}
 
 							return await tx.purchaseRequest.update({
 								where: {

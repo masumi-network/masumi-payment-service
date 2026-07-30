@@ -313,6 +313,26 @@ export async function startApp() {
 
 			//serve the static admin files
 			const adminDistDir = path.resolve(__dirname, 'frontend/dist');
+
+			// Land browsers on the admin interface instead of a bare 404.
+			//
+			// Deliberately matches on an EXPLICIT html media type rather than
+			// `req.accepts('html')`: the latter also matches the `Accept: */*`
+			// that curl, health probes and most API clients send, which would
+			// redirect them into a static HTML bundle they can't parse. Browsers
+			// always name `text/html` (or `application/xhtml+xml`) outright, so
+			// requiring it keeps the redirect to genuine navigations.
+			app.get('/', (req, res, next) => {
+				const wantsHtmlDocument =
+					req.accepts('html') === 'html' &&
+					/\b(?:text\/html|application\/xhtml\+xml)\b/i.test(req.headers.accept ?? '');
+
+				if (!wantsHtmlDocument) {
+					return next();
+				}
+				res.redirect(302, '/admin/');
+			});
+
 			app.use('/admin', express.static(adminDistDir));
 			app.use('/_next', express.static(path.join(adminDistDir, '_next')));
 			// Catch all routes for admin and serve the correct HTML file for each route

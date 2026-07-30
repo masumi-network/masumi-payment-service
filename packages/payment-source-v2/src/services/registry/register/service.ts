@@ -2,9 +2,11 @@ import {
 	PaymentSourceType,
 	RegistrationState,
 	PricingType,
+	RegistryEntryType,
 	TransactionStatus,
 	X402PaymentScheme,
 } from '@/generated/prisma/client';
+import { REGISTRY_ENTRY_ON_CHAIN_TYPE } from '@masumi/payment-core/registry-entry-type';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { UTxO } from '@meshsdk/core';
@@ -138,7 +140,10 @@ export function validateRegistrationPricing(request: {
 export function buildAgentMetadata(request: {
 	name: string;
 	description: string | null;
+	type: RegistryEntryType;
 	apiBaseUrl: string | null;
+	openApiSpecUrl: string | null;
+	x402ResourcesUrl: string | null;
 	ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
 	capabilityName?: string | null;
 	capabilityVersion?: string | null;
@@ -186,9 +191,17 @@ export function buildAgentMetadata(request: {
 			? verificationsToMetadata(verificationRows.map(verificationRowToApi), stringToMetadata)
 			: undefined;
 	const metadata = {
+		// Standard entries emit no `type` (undefined -> stripped by cleanMetadata)
+		// so their metadata stays byte-identical to pre-type-discriminator mints.
+		type: REGISTRY_ENTRY_ON_CHAIN_TYPE[request.type],
 		name: stringToMetadata(request.name),
 		description: stringToMetadata(request.description),
+		// Null for OpenApi/X402 entries -> omitted by cleanMetadata.
 		api_base_url: stringToMetadata(request.apiBaseUrl),
+		// Set only for OpenApi entries; null otherwise -> omitted by cleanMetadata.
+		openapi_spec_url: stringToMetadata(request.openApiSpecUrl),
+		// Set only for X402 entries; null otherwise -> omitted by cleanMetadata.
+		x402_resources_url: stringToMetadata(request.x402ResourcesUrl),
 		example_output: request.ExampleOutputs.map((exampleOutput) => ({
 			name: stringToMetadata(exampleOutput.name),
 			mime_type: stringToMetadata(exampleOutput.mimeType),
@@ -557,12 +570,18 @@ export async function registerAgentV2() {
 					// Collateral ready — clear any transient prep-failure count on every item.
 					await Promise.allSettled(registryRequests.map((request) => resetRegistryPrepFailureCount(request.id)));
 
-					// Pick collateral FIRST (smallest pure-ADA UTxO >= 5 ADA) so the
+					// Pick collateral FIRST (smallest qualifying UTxO >= 5 ADA) so the
 					// remaining sorted-by-lovelace pool can drive distinct
-					// per-item `firstUtxo`s without overlap. Conway rejects
-					// collateral that carries any non-ADA asset, so we never fall
-					// back to a non-pure UTxO — if none exists, defer to the next
-					// tick when the wallet may have more UTxOs.
+					// per-item `firstUtxo`s without overlap.
+					//
+					// Pure ADA is PREFERRED, not required: Babbage/CIP-40 permits
+					// token-bearing collateral, and the builder's
+					// `setTotalCollateral` makes Mesh emit the `collateral_return`
+					// output that hands the balance back. A previous version of
+					// this comment claimed Conway rejects any non-ADA collateral
+					// and that we never fall back — neither was true of the
+					// selector. If NO UTxO clears the 5 ADA floor we defer to the
+					// next tick, when the wallet may have more UTxOs.
 					const collateralUtxo = pickBatchCollateral(utxos, []);
 					if (collateralUtxo == null) {
 						logger.warn(

@@ -1,4 +1,5 @@
 import { Address, Transaction, Value } from '@emurgo/cardano-serialization-lib-nodejs';
+import type { Credential } from '@emurgo/cardano-serialization-lib-nodejs';
 import type { UTxO } from '@meshsdk/core';
 
 type BalanceMap = Map<string, bigint>;
@@ -120,6 +121,24 @@ function toBalanceMapFromCardanoValue(value: Value): BalanceMap {
 	return balanceMap;
 }
 
+function describePaymentCredential(credential: Credential | undefined): string | null {
+	if (credential == null) {
+		return null;
+	}
+
+	const keyHash = credential.to_keyhash();
+	if (keyHash != null) {
+		return `key:${keyHash.to_hex()}`;
+	}
+
+	const scriptHash = credential.to_scripthash();
+	return scriptHash == null ? null : `script:${scriptHash.to_hex()}`;
+}
+
+function getPaymentCredentialFromAddress(address: Address): string | null {
+	return describePaymentCredential(address.payment_cred());
+}
+
 function projectBalanceMapFromUnsignedTx(
 	walletAddress: string,
 	walletUtxos: ProjectableWalletUtxo[],
@@ -137,10 +156,27 @@ function projectBalanceMapFromUnsignedTx(
 		knownWalletInputs.set(referenceKey, toBalanceMapFromProjectableUtxo(utxo));
 	}
 
-	const walletAddressHex = Address.from_bech32(walletAddress).to_hex();
+	// Change is credited by payment credential rather than by the exact bech32 address:
+	// the address the caller knows about (the DB record or a freshly derived unused
+	// address) is not necessarily byte-identical to the one the transaction builder
+	// picked for change. Missing the change output would subtract the consumed inputs
+	// without adding anything back and report a wallet as empty while it is funded.
+	const walletCredential = getPaymentCredentialFromAddress(Address.from_bech32(walletAddress));
+	if (walletCredential == null) {
+		throw new Error(`Could not derive a payment credential for wallet address ${walletAddress}`);
+	}
+
 	const transaction = Transaction.from_bytes(Buffer.from(unsignedTx, 'hex'));
 	const transactionBody = transaction.body();
 	const inputs = transactionBody.inputs();
+
+	// Without the wallet UTXO set the consumed inputs cannot be identified, so the
+	// projection would only ever add change on top of the confirmed balance. Refuse to
+	// project instead of reporting a made-up balance; callers fall back to the
+	// confirmed balance.
+	if (walletUtxos.length === 0 && inputs.len() > 0) {
+		throw new Error('Cannot project the post-submission balance without the wallet UTXO set');
+	}
 
 	for (let inputIndex = 0; inputIndex < inputs.len(); inputIndex++) {
 		const input = inputs.get(inputIndex);
@@ -160,12 +196,21 @@ function projectBalanceMapFromUnsignedTx(
 	const outputs = transactionBody.outputs();
 	for (let outputIndex = 0; outputIndex < outputs.len(); outputIndex++) {
 		const output = outputs.get(outputIndex);
-		if (output.address().to_hex() !== walletAddressHex) {
+		if (getPaymentCredentialFromAddress(output.address()) !== walletCredential) {
 			continue;
 		}
 
 		for (const [assetUnit, quantity] of toBalanceMapFromCardanoValue(output.amount())) {
 			addQuantity(projectedBalanceMap, assetUnit, quantity);
+		}
+	}
+
+	// A projected balance below zero can only come from an inconsistent input set
+	// (for example a stale UTXO snapshot subtracted from a newer confirmed balance).
+	// Clamp instead of letting a negative amount trip the threshold comparison.
+	for (const [assetUnit, quantity] of projectedBalanceMap) {
+		if (quantity < 0n) {
+			projectedBalanceMap.set(assetUnit, 0n);
 		}
 	}
 

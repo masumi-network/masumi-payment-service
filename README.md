@@ -38,16 +38,37 @@ cp .env.example .env            # then fill in DATABASE_URL, ENCRYPTION_KEY,
 pnpm run prisma:migrate:dev     # apply database migrations
 pnpm run prisma:seed            # seed initial data (admin key, payment source)
 
-pnpm run dev                    # start the API server
+pnpm run dev                    # start the API server on http://localhost:3001
 ```
 
-The admin dashboard is a separate Next.js app with its own install:
+Once the API server is up, open **<http://localhost:3001/>** — browser requests
+to `/` are redirected to the admin interface at `/admin/`. API clients, health
+probes and `curl` are unaffected: the redirect only fires for requests that
+actually ask for HTML.
+
+The admin interface served under `/admin/` is the **built** Next.js bundle
+(`frontend/dist`), so it only exists after the frontend has been built. To work
+on the dashboard itself, run it as its own dev server instead — that gives you
+hot reload on <http://localhost:3000/>:
 
 ```bash
 cd frontend
 pnpm install
-pnpm run dev
+pnpm run dev                    # http://localhost:3000
 ```
+
+In that mode the frontend needs to be told where the API lives, since the
+default `/api/v1` is same-origin and only resolves in production where the
+backend serves the built bundle. Point it at the running backend in
+`frontend/.env.local`:
+
+```bash
+NEXT_PUBLIC_PAYMENT_API_BASE_URL=http://localhost:3001/api/v1
+```
+
+The admin interface is designed for desktop. Narrow screens now show a
+dismissible warning rather than being blocked outright, but tables and dialogs
+are still cramped below ~1024px.
 
 Useful commands: `pnpm run test` (unit tests — always via pnpm, not bare
 `npx jest`), `pnpm run lint`, `pnpm run format`, `pnpm run typecheck`. See the

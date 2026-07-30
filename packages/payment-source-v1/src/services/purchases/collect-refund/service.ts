@@ -1,10 +1,4 @@
-import {
-	OnChainState,
-	PaymentSourceType,
-	PurchasingAction,
-	TransactionStatus,
-	Prisma,
-} from '@/generated/prisma/client';
+import { OnChainState, PaymentSourceType, PurchasingAction, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { BlockfrostProvider, deserializeDatum } from '@meshsdk/core';
 import { logger } from '@masumi/payment-core/logger';
@@ -19,11 +13,13 @@ import { writePurchaseErrorTransition } from '@/services/shared/error-transition
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 import { generateMasumiSmartContractWithdrawTransactionAutomaticFees } from '@/utils/generator/transaction-generator';
 import {
+	assertEscrowUtxoUnspent,
 	connectPreviousAction,
 	createMeshProvider,
 	createNextPurchaseAction,
 	createTxWindow,
 	loadHotWalletSession,
+	resolveEscrowSpendTransactionWrite,
 	updateCurrentTransactionHash,
 } from '@/services/shared';
 import { getPaymentScriptFromPaymentSourceV1 } from '@masumi/payment-source-v1';
@@ -125,6 +121,8 @@ async function processSingleRefundCollection(
 		throw new Error('UTXO not found');
 	}
 
+	await assertEscrowUtxoUnspent(blockchainProvider, smartContractAddress, utxo);
+
 	const utxoDatum = utxo.output.plutusData;
 	if (!utxoDatum) {
 		throw new Error('No datum found in UTXO');
@@ -163,30 +161,33 @@ async function processSingleRefundCollection(
 	);
 
 	const signedTx = await wallet.signTx(unsignedTx);
-	await prisma.purchaseRequest.update({
-		where: { id: request.id },
-		data: {
-			...connectPreviousAction(request.nextActionId),
-			...createNextPurchaseAction(PurchasingAction.WithdrawRefundInitiated, {
-				submittedTxHash: null,
-			}),
-			CurrentTransaction: {
-				update: {
-					txHash: null,
-					status: TransactionStatus.Pending,
-					BlocksWallet: {
-						connect: {
-							id: request.SmartContractWallet.id,
-						},
-					},
-				},
+	// Record the outgoing tx WITHOUT touching the escrow row: blanking its
+	// txHash in place destroyed the only record of the UTxO this request
+	// depends on, wedging it on 'Transaction hash not found'. The write shape
+	// is resolved from a FRESH read because this whole function is replayed by
+	// advancedRetryAll and the closed-over `request` never refreshes — see
+	// resolveEscrowSpendTransactionWrite.
+	const escrowTransactionId = request.CurrentTransaction!.id;
+	const started = await prisma.$transaction(async (tx) => {
+		const fresh = await tx.purchaseRequest.findUniqueOrThrow({
+			where: { id: request.id },
+			select: { CurrentTransaction: { select: { id: true, txHash: true, status: true } } },
+		});
+		return await tx.purchaseRequest.update({
+			where: { id: request.id },
+			data: {
+				...connectPreviousAction(request.nextActionId),
+				...createNextPurchaseAction(PurchasingAction.WithdrawRefundInitiated, {
+					submittedTxHash: null,
+				}),
+				...resolveEscrowSpendTransactionWrite(
+					fresh.CurrentTransaction,
+					request.SmartContractWallet!.id,
+					escrowTransactionId,
+				),
 			},
-			TransactionHistory: {
-				connect: {
-					id: request.CurrentTransaction!.id,
-				},
-			},
-		},
+			select: { currentTransactionId: true },
+		});
 	});
 
 	//submit the transaction to the blockchain
@@ -195,7 +196,15 @@ async function processSingleRefundCollection(
 
 	await prisma.purchaseRequest.update({
 		where: { id: request.id },
-		data: updateCurrentTransactionHash(newTxHash),
+		data: {
+			...updateCurrentTransactionHash(newTxHash),
+			// CollectRefund is terminal, so no later action will archive this row.
+			// Without an explicit connect the withdrawal tx never reaches
+			// TransactionHistory and drops out of the API response and audit trail.
+			...(started.currentTransactionId != null
+				? { TransactionHistory: { connect: { id: started.currentTransactionId } } }
+				: {}),
+		},
 	});
 
 	logger.debug(`Created withdrawal transaction:

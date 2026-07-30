@@ -21,13 +21,18 @@ export function RegisterAgentDetailsSection({
   errors,
   watch,
   setValue,
+  typeLocked = false,
 }: {
   register: UseFormRegister<AgentFormValues>;
   errors: FieldErrors<AgentFormValues>;
   watch: UseFormWatch<AgentFormValues>;
   setValue: UseFormSetValue<AgentFormValues>;
+  // Update mode: the agent type is fixed (the update route is Standard-only for
+  // now), so the selector is disabled to avoid an unsupported type change.
+  typeLocked?: boolean;
 }) {
   const tags = watch('tags');
+  const agentType = watch('agentType');
   const [tagInput, setTagInput] = useState('');
 
   const handleAddTag = () => {
@@ -53,15 +58,70 @@ export function RegisterAgentDetailsSection({
     <>
       <div className="space-y-2">
         <label className="text-sm font-medium">
-          API URL <span className="text-destructive">*</span>
+          Agent Type <span className="text-destructive">*</span>
         </label>
-        <Input
-          {...register('apiUrl')}
-          placeholder="Enter the API URL for your agent"
-          className={errors.apiUrl ? 'border-destructive' : ''}
-        />
-        {errors.apiUrl && <p className="text-sm text-destructive">{errors.apiUrl.message}</p>}
+        {/* No field-clearing on change: only the active type's endpoint field is
+            sent in the payload, so a hidden value from another type is harmless
+            and keeping it preserves input if the user toggles back. */}
+        <select
+          {...register('agentType')}
+          disabled={typeLocked}
+          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <option value="Standard">Standard — single API base URL</option>
+          <option value="OpenApi">OpenAPI — link to a spec document</option>
+          <option value="X402">x402 — link to a resource manifest</option>
+        </select>
+        <p className="text-xs text-muted-foreground">
+          How this agent&apos;s API is described. Payment is configured separately below.
+        </p>
       </div>
+
+      {agentType === 'Standard' && (
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            API URL <span className="text-destructive">*</span>
+          </label>
+          <Input
+            {...register('apiUrl')}
+            placeholder="Enter the API URL for your agent"
+            className={errors.apiUrl ? 'border-destructive' : ''}
+          />
+          {errors.apiUrl && <p className="text-sm text-destructive">{errors.apiUrl.message}</p>}
+        </div>
+      )}
+
+      {agentType === 'OpenApi' && (
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            OpenAPI Spec URL <span className="text-destructive">*</span>
+          </label>
+          <Input
+            {...register('openApiSpecUrl')}
+            placeholder="https://your-agent.example/openapi.json (JSON or YAML)"
+            className={errors.openApiSpecUrl ? 'border-destructive' : ''}
+          />
+          {errors.openApiSpecUrl && (
+            <p className="text-sm text-destructive">{errors.openApiSpecUrl.message}</p>
+          )}
+        </div>
+      )}
+
+      {agentType === 'X402' && (
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            x402 Resource Manifest URL <span className="text-destructive">*</span>
+          </label>
+          <Input
+            {...register('x402ResourcesUrl')}
+            placeholder="https://your-agent.example/.well-known/x402.json"
+            className={errors.x402ResourcesUrl ? 'border-destructive' : ''}
+          />
+          {errors.x402ResourcesUrl && (
+            <p className="text-sm text-destructive">{errors.x402ResourcesUrl.message}</p>
+          )}
+        </div>
+      )}
 
       <div className="space-y-2">
         <label className="text-sm font-medium">
