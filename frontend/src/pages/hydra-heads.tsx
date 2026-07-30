@@ -18,7 +18,7 @@ import {
 import { toast } from 'react-toastify';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
-import { AddHydraHeadDialog } from '@/components/hydra/AddHydraHeadDialog';
+import { HydraInvitesCard } from '@/components/hydra/HydraInvitesCard';
 import { HydraNodesCard } from '@/components/hydra/HydraNodesCard';
 import { ConnectHydraNodeDialog } from '@/components/hydra/ConnectHydraNodeDialog';
 import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
@@ -937,6 +937,8 @@ export default function HydraHeadsPage() {
             onTabChange={(tab) => setActiveTab(tab as StatusTab)}
           />
 
+          <HydraInvitesCard hasConnectedNode={hasConnectedNode} />
+
           <div className="flex flex-wrap items-center justify-between gap-2">
             <SearchInput
               value={searchQuery}
@@ -945,17 +947,6 @@ export default function HydraHeadsPage() {
               className="max-w-md"
               isLoading={isFetching && !isLoading}
             />
-            <Button
-              type="button"
-              onClick={() => setIsAddDialogOpen(true)}
-              disabled={!hasConnectedNode}
-              title={
-                hasConnectedNode ? undefined : 'Connect a node first — a head has to run somewhere'
-              }
-            >
-              <Plus className="h-4 w-4" />
-              Add head
-            </Button>
           </div>
 
           <HydraHeadTable
@@ -1006,11 +997,6 @@ export default function HydraHeadsPage() {
         open={isConnectNodeOpen}
         onOpenChange={setIsConnectNodeOpen}
         onConnected={() => void refetch()}
-      />
-      <AddHydraHeadDialog
-        open={isAddDialogOpen}
-        onOpenChange={setIsAddDialogOpen}
-        onCreated={() => void refetch()}
       />
     </MainLayout>
   );

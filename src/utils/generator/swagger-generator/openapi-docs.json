@@ -30430,6 +30430,47 @@
                                                 },
                                                 "alreadyKnown": {
                                                     "type": "boolean"
+                                                },
+                                                "identity": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "policyId": {
+                                                            "type": "string"
+                                                        },
+                                                        "entries": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "unit": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "assetName": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "unit",
+                                                                    "assetName",
+                                                                    "name"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "lookupError": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "policyId",
+                                                        "entries",
+                                                        "lookupError"
+                                                    ],
+                                                    "description": "Registry entries held by the issuing wallet, so an operator can recognise who this is"
                                                 }
                                             },
                                             "required": [
@@ -30443,7 +30484,8 @@
                                                 "depositPeriodSeconds",
                                                 "unsyncedPeriodSeconds",
                                                 "signatureValid",
-                                                "alreadyKnown"
+                                                "alreadyKnown",
+                                                "identity"
                                             ]
                                         }
                                     },

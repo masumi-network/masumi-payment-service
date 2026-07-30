@@ -24,6 +24,39 @@ import { decodeInviteCode } from '@/services/hydra-invite/invite-code';
 import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
 import { mintHeadInvite, redeemHeadInvite } from '@/services/hydra-invite/orchestrator';
 import { hydraExchangePort } from '@/utils/config/hydra-exchange';
+import {
+	registryPolicyIdFor,
+	resolveCounterpartyIdentity,
+	type CounterpartyIdentity,
+} from '@/services/hydra-invite/counterparty-identity';
+
+/**
+ * Registry identity for the wallet that signed an invite.
+ *
+ * Needs a Blockfrost key, which belongs to a payment source rather than to the
+ * invite — so the source for that network is asked. An operator with no
+ * configured source still gets the rest of the preview, with the lookup failure
+ * stated rather than shown as "no entries".
+ */
+async function resolveIssuerIdentity(walletAddress: string, network: Network): Promise<CounterpartyIdentity> {
+	const source = await prisma.paymentSource.findFirst({
+		where: { network, deletedAt: null },
+		include: { PaymentSourceConfig: true },
+	});
+	if (!source) {
+		return {
+			walletAddress,
+			policyId: registryPolicyIdFor(network),
+			entries: [],
+			lookupError: `no payment source is configured for ${network}, so the chain cannot be consulted`,
+		};
+	}
+	return await resolveCounterpartyIdentity(
+		walletAddress,
+		network,
+		decrypt(source.PaymentSourceConfig.rpcProviderApiKey),
+	);
+}
 
 const inviteSchema = z.object({
 	id: z.string(),
@@ -159,6 +192,13 @@ export const previewInviteSchemaOutput = z.object({
 	unsyncedPeriodSeconds: z.number(),
 	signatureValid: z.boolean(),
 	alreadyKnown: z.boolean(),
+	identity: z
+		.object({
+			policyId: z.string(),
+			entries: z.array(z.object({ unit: z.string(), assetName: z.string(), name: z.string().nullable() })),
+			lookupError: z.string().nullable(),
+		})
+		.describe('Registry entries held by the issuing wallet, so an operator can recognise who this is'),
 });
 
 /**
@@ -186,9 +226,12 @@ export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 		}
 
 		const existing = await prisma.hydraHeadInvite.findUnique({ where: { nonce: decoded.payload.nonce } });
+		const network = decoded.payload.network as Network;
+		const identity = await resolveIssuerIdentity(decoded.payload.issuerWalletAddress, network);
+
 		return {
 			nonce: decoded.payload.nonce,
-			network: decoded.payload.network as Network,
+			network,
 			issuerWalletAddress: decoded.payload.issuerWalletAddress,
 			advertise: decoded.payload.advertise,
 			exchangeUrl: decoded.payload.exchangeUrl,
@@ -198,6 +241,7 @@ export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 			unsyncedPeriodSeconds: decoded.payload.unsyncedPeriodSeconds,
 			signatureValid,
 			alreadyKnown: existing !== null,
+			identity,
 		};
 	},
 });

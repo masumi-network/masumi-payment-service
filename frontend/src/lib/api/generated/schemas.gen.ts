@@ -5365,6 +5365,89 @@ export const FundDistributionTriggeredSchema = {
     ]
 } as const;
 
+export const HydraHostSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string'
+        },
+        updatedAt: {
+            type: 'string'
+        },
+        name: {
+            type: 'string'
+        },
+        network: {
+            type: 'string',
+            enum: [
+                'Preprod',
+                'Mainnet'
+            ]
+        },
+        baseUrl: {
+            type: 'string'
+        },
+        publicPeerHost: {
+            type: 'string'
+        },
+        hasAdminToken: {
+            type: 'boolean'
+        },
+        hydraVersion: {
+            type: 'string',
+            nullable: true
+        },
+        scriptCatalogueHash: {
+            type: 'string',
+            nullable: true
+        },
+        ledgerParamsHash: {
+            type: 'string',
+            nullable: true
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'Active',
+                'Draining',
+                'Unreachable',
+                'Disabled'
+            ]
+        },
+        lastHealthAt: {
+            type: 'string',
+            nullable: true
+        },
+        lastHealthError: {
+            type: 'string',
+            nullable: true
+        },
+        participantCount: {
+            type: 'number'
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'name',
+        'network',
+        'baseUrl',
+        'publicPeerHost',
+        'hasAdminToken',
+        'hydraVersion',
+        'scriptCatalogueHash',
+        'ledgerParamsHash',
+        'status',
+        'lastHealthAt',
+        'lastHealthError',
+        'participantCount'
+    ]
+} as const;
+
 export const HydraRelationDetailSchema = {
     allOf: [
         {
@@ -5478,6 +5561,10 @@ export const HydraRelationSchema = {
         remoteWalletId: {
             type: 'string'
         },
+        counterpartyBaseUrl: {
+            type: 'string',
+            nullable: true
+        },
         LocalHotWallet: {
             type: 'object',
             properties: {
@@ -5552,7 +5639,8 @@ export const HydraRelationSchema = {
         'updatedAt',
         'network',
         'localHotWalletId',
-        'remoteWalletId'
+        'remoteWalletId',
+        'counterpartyBaseUrl'
     ]
 } as const;
 
@@ -5670,6 +5758,10 @@ export const HydraHeadSchema = {
                 commitTxHash: {
                     type: 'string',
                     nullable: true
+                },
+                keysDisclosedAt: {
+                    type: 'string',
+                    nullable: true
                 }
             },
             required: [
@@ -5679,7 +5771,8 @@ export const HydraHeadSchema = {
                 'nodeUrl',
                 'nodeHttpUrl',
                 'hasCommitted',
-                'commitTxHash'
+                'commitTxHash',
+                'keysDisclosedAt'
             ]
         },
         RemoteParticipants: {
@@ -5696,10 +5789,7 @@ export const HydraHeadSchema = {
                     walletId: {
                         type: 'string'
                     },
-                    nodeUrl: {
-                        type: 'string'
-                    },
-                    nodeHttpUrl: {
+                    advertise: {
                         type: 'string'
                     },
                     hasCommitted: {
@@ -5717,8 +5807,7 @@ export const HydraHeadSchema = {
                     'id',
                     'createdAt',
                     'walletId',
-                    'nodeUrl',
-                    'nodeHttpUrl',
+                    'advertise',
                     'hasCommitted',
                     'commitTxHash',
                     'hydraVerificationKeyId'
@@ -5870,6 +5959,17 @@ export const HydraLocalParticipantSchema = {
         commitTxHash: {
             type: 'string',
             nullable: true
+        },
+        hydraHostId: {
+            type: 'string'
+        },
+        hostNodeId: {
+            type: 'string'
+        },
+        keysDisclosedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time'
         }
     },
     required: [
@@ -5882,7 +5982,10 @@ export const HydraLocalParticipantSchema = {
         'nodeUrl',
         'nodeHttpUrl',
         'hasCommitted',
-        'commitTxHash'
+        'commitTxHash',
+        'hydraHostId',
+        'hostNodeId',
+        'keysDisclosedAt'
     ]
 } as const;
 
@@ -5910,10 +6013,7 @@ export const HydraRemoteParticipantSchema = {
         cardanoVkey: {
             type: 'string'
         },
-        nodeUrl: {
-            type: 'string'
-        },
-        nodeHttpUrl: {
+        advertise: {
             type: 'string'
         },
         hasCommitted: {
@@ -5934,8 +6034,7 @@ export const HydraRemoteParticipantSchema = {
         'hydraHeadId',
         'walletId',
         'cardanoVkey',
-        'nodeUrl',
-        'nodeHttpUrl',
+        'advertise',
         'hasCommitted',
         'commitTxHash',
         'hydraVerificationKeyId'

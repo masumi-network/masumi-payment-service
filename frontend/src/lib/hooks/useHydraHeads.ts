@@ -447,39 +447,154 @@ export function useHydraWalletBases(network?: 'Preprod' | 'Mainnet', paymentSour
   };
 }
 
-export async function createHydraRelation(apiClient: Client, payload: CreateHydraRelationPayload) {
-  const response = await handleApiCall(
-    () =>
-      apiClient.post<HydraRelationResponse>({
-        responseType: 'json',
-        url: '/hydra/relation',
-        body: payload,
-      }),
-    { errorMessage: 'Failed to create Hydra relation' },
-  );
+/**
+ * Everything about invites.
+ *
+ * A head is opened by issuing an invite and having someone redeem it, or by
+ * redeeming theirs — there is no other path. Relations are a consequence of a
+ * redemption rather than something created here.
+ */
+export type HydraInvite = {
+  id: string;
+  nonce: string;
+  network: 'Preprod' | 'Mainnet';
+  role: 'Issuer' | 'Redeemer';
+  status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+  createdAt: string;
+  expiresAt: string;
+  hydraHostId: string;
+  hostNodeId: string;
+  issuerWalletAddress: string;
+  issuerExchangeUrl: string;
+  redeemedAt: string | null;
+  redeemerWalletAddress: string | null;
+  hydraHeadId: string | null;
+};
 
-  return ensureData(response?.data?.data, 'Hydra relation was not returned by the API');
+export type HydraInvitePreview = {
+  nonce: string;
+  network: 'Preprod' | 'Mainnet';
+  issuerWalletAddress: string;
+  advertise: string;
+  exchangeUrl: string;
+  expiresAt: string;
+  contestationPeriodSeconds: number;
+  depositPeriodSeconds: number;
+  unsyncedPeriodSeconds: number;
+  signatureValid: boolean;
+  alreadyKnown: boolean;
+  identity: {
+    policyId: string;
+    entries: { unit: string; assetName: string; name: string | null }[];
+    lookupError: string | null;
+  };
+};
+
+export function useHydraInvites() {
+  const { apiClient } = useAppContext();
+
+  const query = useQuery<HydraInvite[]>({
+    queryKey: ['hydra-invites'],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          apiClient.get<{ 200: ApiEnvelope<{ invites: HydraInvite[] }> }>({
+            responseType: 'json',
+            url: '/hydra/invite',
+            query: { limit: 100 },
+          }),
+        { errorMessage: 'Failed to load Hydra invites' },
+      );
+      return response?.data?.data?.invites ?? [];
+    },
+    enabled: !!apiClient,
+    staleTime: 10000,
+  });
+
+  return { ...query, invites: query.data ?? [] };
 }
 
 /**
- * Open the next head on a relation.
+ * Mint an invite.
  *
- * The only way to create one: the service provisions a node on a Hydra Host,
- * exchanges signed material with the counterparty, starts the node and records
- * the head. Nothing about the node is configured here.
+ * Reserves a node and a peer port on a Hydra Host and signs their material with
+ * the chosen wallet. The reservation is held until someone redeems the invite,
+ * it is revoked, or it expires — a node cannot be re-pointed at a different
+ * counterparty once issued.
  */
-export async function proposeHydraHead(apiClient: Client, payload: { hydraRelationId: string }) {
+export async function createHydraInvite(
+  apiClient: Client,
+  payload: { hotWalletId: string; ttlHours?: number },
+) {
   const response = await handleApiCall(
     () =>
-      apiClient.post<{ 200: ApiEnvelope<{ offerId: string; nonce: string; status: string }> }>({
+      apiClient.post<{
+        200: ApiEnvelope<{ id: string; nonce: string; expiresAt: string; code: string }>;
+      }>({
         responseType: 'json',
-        url: '/hydra/handshake/propose',
+        url: '/hydra/invite',
         body: payload,
       }),
-    { errorMessage: 'Failed to propose a Hydra head' },
+    { errorMessage: 'Failed to create the invite' },
   );
 
-  return ensureData(response?.data?.data, 'The head offer was not returned by the API');
+  return ensureData(response?.data?.data, 'The invite was not returned by the API');
+}
+
+/**
+ * Inspect an invite without acting on it.
+ *
+ * Nothing is provisioned and no counterparty is contacted, so this is safe to
+ * call on an invite of unknown provenance — which is the point: the operator
+ * sees who signed it before anything is spent.
+ */
+export async function previewHydraInvite(apiClient: Client, payload: { code: string }) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.post<{ 200: ApiEnvelope<HydraInvitePreview> }>({
+        responseType: 'json',
+        url: '/hydra/invite/preview',
+        body: payload,
+      }),
+    { errorMessage: 'Failed to read the invite' },
+  );
+
+  return ensureData(response?.data?.data, 'The invite contents were not returned by the API');
+}
+
+/** Accept an invite: provisions our node, answers the issuer, records the head. */
+export async function redeemHydraInvite(
+  apiClient: Client,
+  payload: { code: string; hotWalletId: string },
+) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.post<{
+        200: ApiEnvelope<{ id: string; hydraHeadId: string; counterpartyWalletAddress: string }>;
+      }>({
+        responseType: 'json',
+        url: '/hydra/invite/redeem',
+        body: payload,
+      }),
+    { errorMessage: 'Failed to redeem the invite' },
+  );
+
+  return ensureData(response?.data?.data, 'The redemption result was not returned by the API');
+}
+
+/** Withdraw an invite nobody has redeemed, releasing its node and peer port. */
+export async function revokeHydraInvite(apiClient: Client, payload: { id: string }) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.delete<{ 200: ApiEnvelope<{ id: string; status: string }> }>({
+        responseType: 'json',
+        url: '/hydra/invite',
+        body: payload,
+      }),
+    { errorMessage: 'Failed to revoke the invite' },
+  );
+
+  return ensureData(response?.data?.data, 'The invite was not returned by the API');
 }
 
 /**
@@ -574,29 +689,8 @@ export async function fanoutHydraHead(apiClient: Client, payload: { headId: stri
   return ensureData(response?.data?.data, 'Hydra head fanout response was not returned by the API');
 }
 
-/**
- * Record a counterparty's wallet from the address they sent you.
- *
- * A relation is defined by whose wallet sits on each side, and the counterparty
- * is at another organisation — so their address arrives out of band and has to
- * be entered, not picked from a list of our own wallets.
- */
-export async function recordHydraCounterpartyWallet(
-  apiClient: Client,
-  payload: { paymentSourceId: string; walletAddress: string; note?: string },
-) {
-  const response = await handleApiCall(
-    () =>
-      apiClient.post<HydraWalletBaseResponse>({
-        responseType: 'json',
-        url: '/hydra/wallet-base',
-        body: payload,
-      }),
-    { errorMessage: 'Failed to record the counterparty wallet' },
-  );
-
-  return ensureData(response?.data?.data, 'The counterparty wallet was not returned by the API');
-}
+// A counterparty's wallet is no longer entered by hand: it arrives inside a
+// signed invite, and the relation is created when that invite is redeemed.
 
 export async function ensureHydraWalletBaseForHotWallet(
   apiClient: Client,

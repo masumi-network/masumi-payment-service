@@ -5345,6 +5345,88 @@
                     "alreadyRunning"
                 ]
             },
+            "HydraHost": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "createdAt": {
+                        "type": "string"
+                    },
+                    "updatedAt": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "network": {
+                        "type": "string",
+                        "enum": [
+                            "Preprod",
+                            "Mainnet"
+                        ]
+                    },
+                    "baseUrl": {
+                        "type": "string"
+                    },
+                    "publicPeerHost": {
+                        "type": "string"
+                    },
+                    "hasAdminToken": {
+                        "type": "boolean"
+                    },
+                    "hydraVersion": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "scriptCatalogueHash": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "ledgerParamsHash": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "Active",
+                            "Draining",
+                            "Unreachable",
+                            "Disabled"
+                        ]
+                    },
+                    "lastHealthAt": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "lastHealthError": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "participantCount": {
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "id",
+                    "createdAt",
+                    "updatedAt",
+                    "name",
+                    "network",
+                    "baseUrl",
+                    "publicPeerHost",
+                    "hasAdminToken",
+                    "hydraVersion",
+                    "scriptCatalogueHash",
+                    "ledgerParamsHash",
+                    "status",
+                    "lastHealthAt",
+                    "lastHealthError",
+                    "participantCount"
+                ]
+            },
             "HydraRelationDetail": {
                 "allOf": [
                     {
@@ -5457,6 +5539,10 @@
                     "remoteWalletId": {
                         "type": "string"
                     },
+                    "counterpartyBaseUrl": {
+                        "type": "string",
+                        "nullable": true
+                    },
                     "LocalHotWallet": {
                         "type": "object",
                         "properties": {
@@ -5531,7 +5617,8 @@
                     "updatedAt",
                     "network",
                     "localHotWalletId",
-                    "remoteWalletId"
+                    "remoteWalletId",
+                    "counterpartyBaseUrl"
                 ]
             },
             "HydraHead": {
@@ -5648,6 +5735,10 @@
                             "commitTxHash": {
                                 "type": "string",
                                 "nullable": true
+                            },
+                            "keysDisclosedAt": {
+                                "type": "string",
+                                "nullable": true
                             }
                         },
                         "required": [
@@ -5657,7 +5748,8 @@
                             "nodeUrl",
                             "nodeHttpUrl",
                             "hasCommitted",
-                            "commitTxHash"
+                            "commitTxHash",
+                            "keysDisclosedAt"
                         ]
                     },
                     "RemoteParticipants": {
@@ -5674,10 +5766,7 @@
                                 "walletId": {
                                     "type": "string"
                                 },
-                                "nodeUrl": {
-                                    "type": "string"
-                                },
-                                "nodeHttpUrl": {
+                                "advertise": {
                                     "type": "string"
                                 },
                                 "hasCommitted": {
@@ -5695,8 +5784,7 @@
                                 "id",
                                 "createdAt",
                                 "walletId",
-                                "nodeUrl",
-                                "nodeHttpUrl",
+                                "advertise",
                                 "hasCommitted",
                                 "commitTxHash",
                                 "hydraVerificationKeyId"
@@ -5846,6 +5934,17 @@
                     "commitTxHash": {
                         "type": "string",
                         "nullable": true
+                    },
+                    "hydraHostId": {
+                        "type": "string"
+                    },
+                    "hostNodeId": {
+                        "type": "string"
+                    },
+                    "keysDisclosedAt": {
+                        "type": "string",
+                        "nullable": true,
+                        "format": "date-time"
                     }
                 },
                 "required": [
@@ -5858,7 +5957,10 @@
                     "nodeUrl",
                     "nodeHttpUrl",
                     "hasCommitted",
-                    "commitTxHash"
+                    "commitTxHash",
+                    "hydraHostId",
+                    "hostNodeId",
+                    "keysDisclosedAt"
                 ]
             },
             "HydraRemoteParticipant": {
@@ -5885,10 +5987,7 @@
                     "cardanoVkey": {
                         "type": "string"
                     },
-                    "nodeUrl": {
-                        "type": "string"
-                    },
-                    "nodeHttpUrl": {
+                    "advertise": {
                         "type": "string"
                     },
                     "hasCommitted": {
@@ -5909,8 +6008,7 @@
                     "hydraHeadId",
                     "walletId",
                     "cardanoVkey",
-                    "nodeUrl",
-                    "nodeHttpUrl",
+                    "advertise",
                     "hasCommitted",
                     "commitTxHash",
                     "hydraVerificationKeyId"
@@ -29894,6 +29992,992 @@
                 }
             }
         },
+        "/hydra/invite": {
+            "get": {
+                "summary": "List head invites. (admin access required)",
+                "description": "Invites this service has issued or redeemed. An issued invite holds a provisioned node and a peer port until it is redeemed, revoked or expires.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25
+                        },
+                        "required": false,
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Issued",
+                                "Redeemed",
+                                "Started",
+                                "Completed",
+                                "Expired",
+                                "Revoked"
+                            ]
+                        },
+                        "required": false,
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Head invites",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "invites": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "nonce": {
+                                                                "type": "string"
+                                                            },
+                                                            "network": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Preprod",
+                                                                    "Mainnet"
+                                                                ]
+                                                            },
+                                                            "role": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Issuer",
+                                                                    "Redeemer"
+                                                                ]
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Issued",
+                                                                    "Redeemed",
+                                                                    "Started",
+                                                                    "Completed",
+                                                                    "Expired",
+                                                                    "Revoked"
+                                                                ]
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "expiresAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "hydraHostId": {
+                                                                "type": "string"
+                                                            },
+                                                            "hostNodeId": {
+                                                                "type": "string"
+                                                            },
+                                                            "issuerWalletAddress": {
+                                                                "type": "string"
+                                                            },
+                                                            "issuerExchangeUrl": {
+                                                                "type": "string"
+                                                            },
+                                                            "redeemedAt": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "redeemerWalletAddress": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "hydraHeadId": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "nonce",
+                                                            "network",
+                                                            "role",
+                                                            "status",
+                                                            "createdAt",
+                                                            "expiresAt",
+                                                            "hydraHostId",
+                                                            "hostNodeId",
+                                                            "issuerWalletAddress",
+                                                            "issuerExchangeUrl",
+                                                            "redeemedAt",
+                                                            "redeemerWalletAddress",
+                                                            "hydraHeadId"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "invites"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "invites": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            },
+            "post": {
+                "summary": "Mint a head invite. (admin access required)",
+                "description": "Provisions a node on a Hydra Host and signs its full public material with the given wallet, producing a code to hand a counterparty out of band. The node and its peer port are reserved from this moment and cannot be re-pointed, because --peer is fixed at boot — so an invite that is never redeemed must be revoked or left to expire. Redeeming it is what supplies the counterparty's material and lets the node start.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "hotWalletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Wallet that will identify us on the resulting head"
+                                    },
+                                    "ttlHours": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 720,
+                                        "description": "How long the invite may sit before its reservation is released. Defaults to 168 (7 days)."
+                                    }
+                                },
+                                "required": [
+                                    "hotWalletId"
+                                ],
+                                "example": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Invite minted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "nonce": {
+                                                    "type": "string"
+                                                },
+                                                "expiresAt": {
+                                                    "type": "string"
+                                                },
+                                                "code": {
+                                                    "type": "string",
+                                                    "description": "The invite itself. Hand this to the counterparty out of band."
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "nonce",
+                                                "expiresAt",
+                                                "code"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "409": {
+                        "description": "No usable Hydra Host, or the host has no admin token"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Revoke an unredeemed invite. (admin access required)",
+                "description": "Stops the Host honouring the nonce and releases the node and peer port it reserved. Refused once redeemed: by then the reservation is a running node with a peer, and removing that is closing a head.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Invite revoked",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Issued",
+                                                        "Redeemed",
+                                                        "Started",
+                                                        "Completed",
+                                                        "Expired",
+                                                        "Revoked"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "status"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "409": {
+                        "description": "Already redeemed, or not an invite we issued"
+                    }
+                }
+            }
+        },
+        "/hydra/invite/preview": {
+            "post": {
+                "summary": "Inspect an invite without acting on it. (admin access required)",
+                "description": "Decodes an invite code and reports whether its signature matches the wallet it claims to be from. Nothing is provisioned and no counterparty is contacted, so this is safe to call on an invite of unknown provenance. A false `signatureValid` is reported rather than thrown, because an operator looking at a forged invite is better served by being told so.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "An invite code received from a counterparty"
+                                    }
+                                },
+                                "required": [
+                                    "code"
+                                ],
+                                "example": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Invite contents",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "nonce": {
+                                                    "type": "string"
+                                                },
+                                                "network": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Preprod",
+                                                        "Mainnet"
+                                                    ]
+                                                },
+                                                "issuerWalletAddress": {
+                                                    "type": "string"
+                                                },
+                                                "advertise": {
+                                                    "type": "string"
+                                                },
+                                                "exchangeUrl": {
+                                                    "type": "string"
+                                                },
+                                                "expiresAt": {
+                                                    "type": "string"
+                                                },
+                                                "contestationPeriodSeconds": {
+                                                    "type": "number"
+                                                },
+                                                "depositPeriodSeconds": {
+                                                    "type": "number"
+                                                },
+                                                "unsyncedPeriodSeconds": {
+                                                    "type": "number"
+                                                },
+                                                "signatureValid": {
+                                                    "type": "boolean"
+                                                },
+                                                "alreadyKnown": {
+                                                    "type": "boolean"
+                                                }
+                                            },
+                                            "required": [
+                                                "nonce",
+                                                "network",
+                                                "issuerWalletAddress",
+                                                "advertise",
+                                                "exchangeUrl",
+                                                "expiresAt",
+                                                "contestationPeriodSeconds",
+                                                "depositPeriodSeconds",
+                                                "unsyncedPeriodSeconds",
+                                                "signatureValid",
+                                                "alreadyKnown"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Not a well-formed invite code"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            }
+        },
+        "/hydra/invite/redeem": {
+            "post": {
+                "summary": "Redeem a counterparty invite. (admin access required)",
+                "description": "Verifies the issuer's signature, provisions our own node, sends our material to the issuer's Exchange Plane and records the resulting relation and head. Spends a node and a peer port, and tells the counterparty we are ready, so it is deliberate rather than automatic.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "code": {
+                                        "type": "string",
+                                        "minLength": 1
+                                    },
+                                    "hotWalletId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Wallet that will identify us on the resulting head"
+                                    }
+                                },
+                                "required": [
+                                    "code",
+                                    "hotWalletId"
+                                ],
+                                "example": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Invite redeemed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "hydraHeadId": {
+                                                    "type": "string"
+                                                },
+                                                "counterpartyWalletAddress": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "hydraHeadId",
+                                                "counterpartyWalletAddress"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "409": {
+                        "description": "Wrong network, already redeemed, expired, or our own invite"
+                    },
+                    "502": {
+                        "description": "The counterparty's exchange plane refused or could not be reached"
+                    }
+                }
+            }
+        },
+        "/hydra/host": {
+            "get": {
+                "summary": "List registered Hydra Hosts. (admin access required)",
+                "description": "Lists the Hydra Host deployments that can run hydra-node processes for this service. Tokens are never returned; `hasAdminToken` reports whether a Host can be provisioned on.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Restrict to one network"
+                        },
+                        "required": false,
+                        "description": "Restrict to one network",
+                        "name": "network",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Registered hosts",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "hosts": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/HydraHost"
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "hosts"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    }
+                }
+            },
+            "post": {
+                "summary": "Register a Hydra Host. (admin access required)",
+                "description": "Registers a Hydra Host control plane. The user token grants runtime access to the proxied node API; the optional admin token additionally allows provisioning nodes on this Host. Both are stored encrypted and never returned.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 120,
+                                        "description": "Operator-facing label"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Preprod",
+                                            "Mainnet"
+                                        ]
+                                    },
+                                    "baseUrl": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "description": "Control-plane URL, e.g. https://hydra1.example.com. TLS terminates in front of the Host."
+                                    },
+                                    "publicPeerHost": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 250,
+                                        "description": "Hostname the Host advertises for per-head peer ports; the counterparty dials this"
+                                    },
+                                    "userToken": {
+                                        "type": "string",
+                                        "minLength": 32,
+                                        "maxLength": 512,
+                                        "description": "Runtime token: proxied node API access"
+                                    },
+                                    "adminToken": {
+                                        "type": "string",
+                                        "minLength": 32,
+                                        "maxLength": 512,
+                                        "description": "Fleet token: provision, escrow-ack, reconfigure, delete. Omit to register for runtime use only."
+                                    }
+                                },
+                                "required": [
+                                    "name",
+                                    "network",
+                                    "baseUrl",
+                                    "publicPeerHost",
+                                    "userToken"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Registered host",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHost"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "409": {
+                        "description": "A host for this network and base URL is already registered"
+                    }
+                }
+            },
+            "patch": {
+                "summary": "Update a Hydra Host. (admin access required)",
+                "description": "Updates a Host label, status or tokens. Setting status to Draining keeps existing heads served while accepting no new placements, which matters because a head cannot be moved to another Host.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 120
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Active",
+                                            "Draining",
+                                            "Unreachable",
+                                            "Disabled"
+                                        ],
+                                        "description": "Draining keeps serving existing heads (they cannot be moved) but takes no new placements"
+                                    },
+                                    "userToken": {
+                                        "type": "string",
+                                        "minLength": 32,
+                                        "maxLength": 512,
+                                        "description": "Opaque bearer token issued by the Hydra Host. Stored encrypted and never returned."
+                                    },
+                                    "adminToken": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "minLength": 32,
+                                        "maxLength": 512,
+                                        "description": "Null clears the admin token, disabling provisioning"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated host",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHost"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Remove a Hydra Host. (admin access required)",
+                "description": "Removes a Host registration. Refused while the Host still runs nodes, because their heads cannot be relocated.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Removed host",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "id"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    },
+                    "409": {
+                        "description": "Host still runs nodes"
+                    }
+                }
+            }
+        },
+        "/hydra/host/check": {
+            "post": {
+                "summary": "Probe a Hydra Host and record its capabilities. (admin access required)",
+                "description": "Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Host capabilities",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "$ref": "#/components/schemas/HydraHost"
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra host not found"
+                    },
+                    "409": {
+                        "description": "Host has no admin token"
+                    }
+                }
+            }
+        },
         "/hydra/wallet-base": {
             "get": {
                 "summary": "List candidate wallets for Hydra participants. (admin access required)",
@@ -30093,16 +31177,53 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "hotWalletId": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "HotWallet to expose as a public WalletBase option"
+                                "anyOf": [
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "hotWalletId": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "description": "HotWallet to expose as a public WalletBase option"
+                                            }
+                                        },
+                                        "required": [
+                                            "hotWalletId"
+                                        ]
+                                    },
+                                    {
+                                        "type": "object",
+                                        "properties": {
+                                            "paymentSourceId": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "description": "Payment source this counterparty belongs to"
+                                            },
+                                            "walletAddress": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 250,
+                                                "description": "The counterparty's Cardano address, as they gave it to you"
+                                            },
+                                            "type": {
+                                                "type": "string",
+                                                "enum": [
+                                                    "Buyer",
+                                                    "Seller"
+                                                ],
+                                                "description": "Their role in the trade. Defaults to Seller."
+                                            },
+                                            "note": {
+                                                "type": "string",
+                                                "maxLength": 250,
+                                                "description": "Label, so the picker shows more than a bare type"
+                                            }
+                                        },
+                                        "required": [
+                                            "paymentSourceId",
+                                            "walletAddress"
+                                        ]
                                     }
-                                },
-                                "required": [
-                                    "hotWalletId"
                                 ],
                                 "example": {}
                             }
@@ -30316,90 +31437,6 @@
                     },
                     "401": {
                         "description": "Unauthorized"
-                    }
-                }
-            },
-            "post": {
-                "summary": "Create a Hydra relation. (admin access required)",
-                "description": "Pairs a local hot wallet with a remote counterparty wallet on a network; a head is later opened from this relation.",
-                "tags": [
-                    "hydra"
-                ],
-                "security": [
-                    {
-                        "API-Key": []
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "network": {
-                                        "type": "string",
-                                        "enum": [
-                                            "Preprod",
-                                            "Mainnet"
-                                        ],
-                                        "description": "Cardano network for this relation"
-                                    },
-                                    "localHotWalletId": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "HotWallet ID for the local participant"
-                                    },
-                                    "remoteWalletId": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "WalletBase ID for the remote counterparty"
-                                    }
-                                },
-                                "required": [
-                                    "network",
-                                    "localHotWalletId",
-                                    "remoteWalletId"
-                                ],
-                                "example": {}
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Hydra relation created",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "enum": [
-                                                "success"
-                                            ]
-                                        },
-                                        "data": {
-                                            "$ref": "#/components/schemas/HydraRelation"
-                                        }
-                                    },
-                                    "required": [
-                                        "status",
-                                        "data"
-                                    ],
-                                    "example": {
-                                        "status": "success",
-                                        "data": {}
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized"
-                    },
-                    "409": {
-                        "description": "Relation already exists or conflicts with an existing head"
                     }
                 }
             },
@@ -30626,104 +31663,6 @@
                     }
                 }
             },
-            "post": {
-                "summary": "Create a Hydra head from a relation. (admin access required)",
-                "description": "Binds a head to a relation with the given contestation period and pre-created local/remote participants. Does not open it — call init/commit next.",
-                "tags": [
-                    "hydra"
-                ],
-                "security": [
-                    {
-                        "API-Key": []
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "hydraRelationId": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "The HydraRelation this head belongs to"
-                                    },
-                                    "contestationPeriod": {
-                                        "type": "integer",
-                                        "minimum": 1,
-                                        "default": 86400,
-                                        "description": "Contestation period in seconds"
-                                    },
-                                    "localParticipantId": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "ID of a pre-existing HydraLocalParticipant"
-                                    },
-                                    "remoteParticipantIds": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "string",
-                                            "minLength": 1
-                                        },
-                                        "description": "Exactly one pre-existing HydraRemoteParticipant for the relation counterparty"
-                                    }
-                                },
-                                "required": [
-                                    "hydraRelationId",
-                                    "localParticipantId",
-                                    "remoteParticipantIds"
-                                ],
-                                "example": {
-                                    "hydraRelationId": "cuid_v2_auto_generated",
-                                    "localParticipantId": "cuid_v2_auto_generated",
-                                    "remoteParticipantIds": [
-                                        "cuid_v2_auto_generated"
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Hydra head created",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "enum": [
-                                                "success"
-                                            ]
-                                        },
-                                        "data": {
-                                            "$ref": "#/components/schemas/HydraHead"
-                                        }
-                                    },
-                                    "required": [
-                                        "status",
-                                        "data"
-                                    ],
-                                    "example": {
-                                        "status": "success",
-                                        "data": {
-                                            "id": "cuid_v2_auto_generated"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized"
-                    },
-                    "404": {
-                        "description": "Relation or participant not found"
-                    }
-                }
-            },
             "patch": {
                 "summary": "Enable or disable a Hydra head. (admin access required)",
                 "description": "Enabling re-verifies the head/participants/InitTx on L1 before re-admitting it; disabling quarantines it (drops its InitTx admission).",
@@ -30806,141 +31745,6 @@
                     },
                     "503": {
                         "description": "Independent L1 evidence not yet available"
-                    }
-                }
-            }
-        },
-        "/hydra/head/check": {
-            "post": {
-                "summary": "Probe the configured Hydra node reachability. (admin access required)",
-                "description": "Checks that the local participant Hydra node is reachable over its configured WebSocket/HTTP endpoints.",
-                "tags": [
-                    "hydra"
-                ],
-                "security": [
-                    {
-                        "API-Key": []
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "nodeHttpUrl": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "HTTP URL for the Hydra node"
-                                    },
-                                    "nodeUrl": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "Optional WebSocket URL for the Hydra node"
-                                    },
-                                    "timeoutMs": {
-                                        "type": "integer",
-                                        "minimum": 500,
-                                        "maximum": 15000,
-                                        "default": 5000,
-                                        "description": "Maximum probe duration in milliseconds"
-                                    }
-                                },
-                                "required": [
-                                    "nodeHttpUrl"
-                                ],
-                                "example": {
-                                    "headId": "cuid_v2_auto_generated"
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Node reachability",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "enum": [
-                                                "success"
-                                            ]
-                                        },
-                                        "data": {
-                                            "type": "object",
-                                            "properties": {
-                                                "reachable": {
-                                                    "type": "boolean"
-                                                },
-                                                "protocolParametersOk": {
-                                                    "type": "boolean"
-                                                },
-                                                "websocketReachable": {
-                                                    "type": "boolean"
-                                                },
-                                                "httpStatus": {
-                                                    "type": "number",
-                                                    "nullable": true
-                                                },
-                                                "status": {
-                                                    "type": "string",
-                                                    "nullable": true,
-                                                    "enum": [
-                                                        "Disconnected",
-                                                        "Connected",
-                                                        "Connecting",
-                                                        "Idle",
-                                                        "Initializing",
-                                                        "Open",
-                                                        "Closed",
-                                                        "FanoutPossible",
-                                                        "Final",
-                                                        null
-                                                    ]
-                                                },
-                                                "checkedAt": {
-                                                    "type": "string"
-                                                },
-                                                "error": {
-                                                    "type": "string",
-                                                    "nullable": true
-                                                }
-                                            },
-                                            "required": [
-                                                "reachable",
-                                                "protocolParametersOk",
-                                                "websocketReachable",
-                                                "httpStatus",
-                                                "status",
-                                                "checkedAt",
-                                                "error"
-                                            ]
-                                        }
-                                    },
-                                    "required": [
-                                        "status",
-                                        "data"
-                                    ],
-                                    "example": {
-                                        "status": "success",
-                                        "data": {
-                                            "headId": "cuid_v2_auto_generated",
-                                            "reachable": true
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized"
-                    },
-                    "404": {
-                        "description": "Hydra head not found"
                     }
                 }
             }
@@ -32037,111 +32841,6 @@
             }
         },
         "/hydra/participant/local": {
-            "post": {
-                "summary": "Create a local Hydra participant. (admin access required)",
-                "description": "Registers this server's participant: its funding hot wallet, Hydra signing key, node URLs, and (optionally) the node's dedicated Cardano vkey used as the on-chain participant identity.",
-                "tags": [
-                    "hydra"
-                ],
-                "security": [
-                    {
-                        "API-Key": []
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "walletId": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "HotWallet ID for the local participant (funding wallet)"
-                                    },
-                                    "nodeUrl": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "WebSocket URL for the local Hydra node"
-                                    },
-                                    "nodeHttpUrl": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "HTTP URL for the local Hydra node"
-                                    },
-                                    "hydraSK": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "Hydra signing key (will be encrypted)"
-                                    },
-                                    "cardanoVkey": {
-                                        "type": "string",
-                                        "pattern": "^[0-9a-fA-F]{56}$",
-                                        "description": "The Hydra node's own Cardano verification-key HASH (28-byte hex) — the on-chain participant identity. Omit to reuse the funding wallet's vkey (legacy coupled behaviour)."
-                                    }
-                                },
-                                "required": [
-                                    "walletId",
-                                    "nodeUrl",
-                                    "nodeHttpUrl",
-                                    "hydraSK"
-                                ],
-                                "example": {
-                                    "walletId": "cuid_v2_auto_generated",
-                                    "nodeUrl": "ws://127.0.0.1:4001",
-                                    "nodeHttpUrl": "http://127.0.0.1:4001",
-                                    "hydraSK": "5820..."
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Local participant created",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "enum": [
-                                                "success"
-                                            ]
-                                        },
-                                        "data": {
-                                            "type": "object",
-                                            "properties": {
-                                                "participant": {
-                                                    "$ref": "#/components/schemas/HydraLocalParticipant"
-                                                }
-                                            },
-                                            "required": [
-                                                "participant"
-                                            ]
-                                        }
-                                    },
-                                    "required": [
-                                        "status",
-                                        "data"
-                                    ],
-                                    "example": {
-                                        "status": "success",
-                                        "data": {}
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized"
-                    },
-                    "404": {
-                        "description": "HotWallet not found"
-                    }
-                }
-            },
             "get": {
                 "summary": "List local Hydra participants. (admin access required)",
                 "description": "Lists this server's Hydra participants, optionally filtered by wallet or assignment state.",
@@ -32172,6 +32871,16 @@
                         "required": false,
                         "description": "Filter by HotWallet ID",
                         "name": "walletId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Filter by the connected node running them"
+                        },
+                        "required": false,
+                        "description": "Filter by the connected node running them",
+                        "name": "hydraHostId",
                         "in": "query"
                     },
                     {
@@ -32343,10 +33052,10 @@
                 }
             }
         },
-        "/hydra/participant/remote": {
+        "/hydra/participant/local/keys": {
             "post": {
-                "summary": "Create a remote Hydra participant. (admin access required)",
-                "description": "Registers the counterparty participant: its wallet, Hydra verification key, node URLs, and (optionally) the remote node's dedicated Cardano vkey.",
+                "summary": "Back up a node's signing keys, once. (admin access required)",
+                "description": "Returns the node Hydra and Cardano signing keys a single time, then seals the path: every later call is refused. The keys are generated by the Hydra Host and disclosed by it once at provisioning, so this is the only way to take an off-site copy.",
                 "tags": [
                     "hydra"
                 ],
@@ -32361,43 +33070,17 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
-                                    "walletId": {
+                                    "id": {
                                         "type": "string",
                                         "minLength": 1,
-                                        "description": "WalletBase ID for the remote counterparty (funding wallet)"
-                                    },
-                                    "nodeUrl": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "WebSocket URL for the remote Hydra node"
-                                    },
-                                    "nodeHttpUrl": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "HTTP URL for the remote Hydra node"
-                                    },
-                                    "hydraVK": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "Hydra verification key (cborHex)"
-                                    },
-                                    "cardanoVkey": {
-                                        "type": "string",
-                                        "pattern": "^[0-9a-fA-F]{56}$",
-                                        "description": "The remote Hydra node's own Cardano verification-key HASH (28-byte hex) — the on-chain participant identity. Omit to reuse the counterparty wallet's vkey (legacy coupled behaviour)."
+                                        "description": "ID of the local participant whose node keys to back up"
                                     }
                                 },
                                 "required": [
-                                    "walletId",
-                                    "nodeUrl",
-                                    "nodeHttpUrl",
-                                    "hydraVK"
+                                    "id"
                                 ],
                                 "example": {
-                                    "walletId": "cuid_v2_auto_generated",
-                                    "nodeUrl": "ws://127.0.0.1:4002",
-                                    "nodeHttpUrl": "http://127.0.0.1:4002",
-                                    "hydraVK": "5820..."
+                                    "id": "cuid_v2_auto_generated"
                                 }
                             }
                         }
@@ -32405,7 +33088,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Remote participant created",
+                        "description": "Node signing keys",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -32420,12 +33103,27 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
-                                                "participant": {
-                                                    "$ref": "#/components/schemas/HydraRemoteParticipant"
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "disclosedAt": {
+                                                    "type": "string"
+                                                },
+                                                "hydraSigningKey": {
+                                                    "type": "string",
+                                                    "description": "Text-envelope cborHex of the node Hydra signing key"
+                                                },
+                                                "cardanoSigningKey": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Text-envelope cborHex of the node Cardano signing key. Null for nodes provisioned before it was captured."
                                                 }
                                             },
                                             "required": [
-                                                "participant"
+                                                "id",
+                                                "disclosedAt",
+                                                "hydraSigningKey",
+                                                "cardanoSigningKey"
                                             ]
                                         }
                                     },
@@ -32435,7 +33133,9 @@
                                     ],
                                     "example": {
                                         "status": "success",
-                                        "data": {}
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated"
+                                        }
                                     }
                                 }
                             }
@@ -32445,10 +33145,15 @@
                         "description": "Unauthorized"
                     },
                     "404": {
-                        "description": "WalletBase not found"
+                        "description": "Local participant not found"
+                    },
+                    "409": {
+                        "description": "The keys have already been handed out once"
                     }
                 }
-            },
+            }
+        },
+        "/hydra/participant/remote": {
             "get": {
                 "summary": "List remote Hydra participants. (admin access required)",
                 "description": "Lists counterparty participants, optionally filtered by wallet or assignment state.",

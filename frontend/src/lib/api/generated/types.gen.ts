@@ -2886,6 +2886,24 @@ export type FundDistributionTriggered = {
     alreadyRunning: boolean;
 };
 
+export type HydraHost = {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    name: string;
+    network: 'Preprod' | 'Mainnet';
+    baseUrl: string;
+    publicPeerHost: string;
+    hasAdminToken: boolean;
+    hydraVersion: string | null;
+    scriptCatalogueHash: string | null;
+    ledgerParamsHash: string | null;
+    status: 'Active' | 'Draining' | 'Unreachable' | 'Disabled';
+    lastHealthAt: string | null;
+    lastHealthError: string | null;
+    participantCount: number;
+};
+
 export type HydraRelationDetail = HydraRelation & {
     Heads?: Array<{
         id: string;
@@ -2909,6 +2927,7 @@ export type HydraRelation = {
     network: 'Preprod' | 'Mainnet';
     localHotWalletId: string;
     remoteWalletId: string;
+    counterpartyBaseUrl: string | null;
     LocalHotWallet?: {
         id: string;
         walletVkey: string;
@@ -2966,13 +2985,13 @@ export type HydraHead = {
         nodeHttpUrl: string;
         hasCommitted: boolean;
         commitTxHash: string | null;
+        keysDisclosedAt: string | null;
     } | null;
     RemoteParticipants?: Array<{
         id: string;
         createdAt: string;
         walletId: string;
-        nodeUrl: string;
-        nodeHttpUrl: string;
+        advertise: string;
         hasCommitted: boolean;
         commitTxHash: string | null;
         hydraVerificationKeyId: string;
@@ -3010,6 +3029,9 @@ export type HydraLocalParticipant = {
     nodeHttpUrl: string;
     hasCommitted: boolean;
     commitTxHash: string | null;
+    hydraHostId: string;
+    hostNodeId: string;
+    keysDisclosedAt: Date | null;
 };
 
 export type HydraRemoteParticipant = {
@@ -3019,8 +3041,7 @@ export type HydraRemoteParticipant = {
     hydraHeadId: string | null;
     walletId: string;
     cardanoVkey: string;
-    nodeUrl: string;
-    nodeHttpUrl: string;
+    advertise: string;
     hasCommitted: boolean;
     commitTxHash: string | null;
     hydraVerificationKeyId: string;
@@ -12655,6 +12676,429 @@ export type PostFundDistributionTriggerResponses = {
 
 export type PostFundDistributionTriggerResponse = PostFundDistributionTriggerResponses[keyof PostFundDistributionTriggerResponses];
 
+export type DeleteHydraInviteData = {
+    body?: {
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/invite';
+};
+
+export type DeleteHydraInviteErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Already redeemed, or not an invite we issued
+     */
+    409: unknown;
+};
+
+export type DeleteHydraInviteResponses = {
+    /**
+     * Invite revoked
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+        };
+    };
+};
+
+export type DeleteHydraInviteResponse = DeleteHydraInviteResponses[keyof DeleteHydraInviteResponses];
+
+export type GetHydraInviteData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+        status?: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+    };
+    url: '/hydra/invite';
+};
+
+export type GetHydraInviteErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetHydraInviteResponses = {
+    /**
+     * Head invites
+     */
+    200: {
+        status: 'success';
+        data: {
+            invites: Array<{
+                id: string;
+                nonce: string;
+                network: 'Preprod' | 'Mainnet';
+                role: 'Issuer' | 'Redeemer';
+                status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+                createdAt: string;
+                expiresAt: string;
+                hydraHostId: string;
+                hostNodeId: string;
+                issuerWalletAddress: string;
+                issuerExchangeUrl: string;
+                redeemedAt: string | null;
+                redeemerWalletAddress: string | null;
+                hydraHeadId: string | null;
+            }>;
+        };
+    };
+};
+
+export type GetHydraInviteResponse = GetHydraInviteResponses[keyof GetHydraInviteResponses];
+
+export type PostHydraInviteData = {
+    body?: {
+        /**
+         * Wallet that will identify us on the resulting head
+         */
+        hotWalletId: string;
+        /**
+         * How long the invite may sit before its reservation is released. Defaults to 168 (7 days).
+         */
+        ttlHours?: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/invite';
+};
+
+export type PostHydraInviteErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * No usable Hydra Host, or the host has no admin token
+     */
+    409: unknown;
+};
+
+export type PostHydraInviteResponses = {
+    /**
+     * Invite minted
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            nonce: string;
+            expiresAt: string;
+            /**
+             * The invite itself. Hand this to the counterparty out of band.
+             */
+            code: string;
+        };
+    };
+};
+
+export type PostHydraInviteResponse = PostHydraInviteResponses[keyof PostHydraInviteResponses];
+
+export type PostHydraInvitePreviewData = {
+    body?: {
+        /**
+         * An invite code received from a counterparty
+         */
+        code: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/invite/preview';
+};
+
+export type PostHydraInvitePreviewErrors = {
+    /**
+     * Not a well-formed invite code
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostHydraInvitePreviewResponses = {
+    /**
+     * Invite contents
+     */
+    200: {
+        status: 'success';
+        data: {
+            nonce: string;
+            network: 'Preprod' | 'Mainnet';
+            issuerWalletAddress: string;
+            advertise: string;
+            exchangeUrl: string;
+            expiresAt: string;
+            contestationPeriodSeconds: number;
+            depositPeriodSeconds: number;
+            unsyncedPeriodSeconds: number;
+            signatureValid: boolean;
+            alreadyKnown: boolean;
+        };
+    };
+};
+
+export type PostHydraInvitePreviewResponse = PostHydraInvitePreviewResponses[keyof PostHydraInvitePreviewResponses];
+
+export type PostHydraInviteRedeemData = {
+    body?: {
+        code: string;
+        /**
+         * Wallet that will identify us on the resulting head
+         */
+        hotWalletId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/invite/redeem';
+};
+
+export type PostHydraInviteRedeemErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Wrong network, already redeemed, expired, or our own invite
+     */
+    409: unknown;
+    /**
+     * The counterparty's exchange plane refused or could not be reached
+     */
+    502: unknown;
+};
+
+export type PostHydraInviteRedeemResponses = {
+    /**
+     * Invite redeemed
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            hydraHeadId: string;
+            counterpartyWalletAddress: string;
+        };
+    };
+};
+
+export type PostHydraInviteRedeemResponse = PostHydraInviteRedeemResponses[keyof PostHydraInviteRedeemResponses];
+
+export type DeleteHydraHostData = {
+    body?: {
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host';
+};
+
+export type DeleteHydraHostErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+    /**
+     * Host still runs nodes
+     */
+    409: unknown;
+};
+
+export type DeleteHydraHostResponses = {
+    /**
+     * Removed host
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+        };
+    };
+};
+
+export type DeleteHydraHostResponse = DeleteHydraHostResponses[keyof DeleteHydraHostResponses];
+
+export type GetHydraHostData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Restrict to one network
+         */
+        network?: 'Preprod' | 'Mainnet';
+    };
+    url: '/hydra/host';
+};
+
+export type GetHydraHostErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetHydraHostResponses = {
+    /**
+     * Registered hosts
+     */
+    200: {
+        status: 'success';
+        data: {
+            hosts: Array<HydraHost>;
+        };
+    };
+};
+
+export type GetHydraHostResponse = GetHydraHostResponses[keyof GetHydraHostResponses];
+
+export type PatchHydraHostData = {
+    body?: {
+        id: string;
+        name?: string;
+        /**
+         * Draining keeps serving existing heads (they cannot be moved) but takes no new placements
+         */
+        status?: 'Active' | 'Draining' | 'Unreachable' | 'Disabled';
+        /**
+         * Opaque bearer token issued by the Hydra Host. Stored encrypted and never returned.
+         */
+        userToken?: string;
+        /**
+         * Null clears the admin token, disabling provisioning
+         */
+        adminToken?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host';
+};
+
+export type PatchHydraHostErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+};
+
+export type PatchHydraHostResponses = {
+    /**
+     * Updated host
+     */
+    200: {
+        status: 'success';
+        data: HydraHost;
+    };
+};
+
+export type PatchHydraHostResponse = PatchHydraHostResponses[keyof PatchHydraHostResponses];
+
+export type PostHydraHostData = {
+    body?: {
+        /**
+         * Operator-facing label
+         */
+        name: string;
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Control-plane URL, e.g. https://hydra1.example.com. TLS terminates in front of the Host.
+         */
+        baseUrl: string;
+        /**
+         * Hostname the Host advertises for per-head peer ports; the counterparty dials this
+         */
+        publicPeerHost: string;
+        /**
+         * Runtime token: proxied node API access
+         */
+        userToken: string;
+        /**
+         * Fleet token: provision, escrow-ack, reconfigure, delete. Omit to register for runtime use only.
+         */
+        adminToken?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host';
+};
+
+export type PostHydraHostErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * A host for this network and base URL is already registered
+     */
+    409: unknown;
+};
+
+export type PostHydraHostResponses = {
+    /**
+     * Registered host
+     */
+    200: {
+        status: 'success';
+        data: HydraHost;
+    };
+};
+
+export type PostHydraHostResponse = PostHydraHostResponses[keyof PostHydraHostResponses];
+
+export type PostHydraHostCheckData = {
+    body?: {
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host/check';
+};
+
+export type PostHydraHostCheckErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+    /**
+     * Host has no admin token
+     */
+    409: unknown;
+};
+
+export type PostHydraHostCheckResponses = {
+    /**
+     * Host capabilities
+     */
+    200: {
+        status: 'success';
+        data: HydraHost;
+    };
+};
+
+export type PostHydraHostCheckResponse = PostHydraHostCheckResponses[keyof PostHydraHostCheckResponses];
+
 export type GetHydraWalletBaseData = {
     body?: never;
     path?: never;
@@ -12724,6 +13168,23 @@ export type PostHydraWalletBaseData = {
          * HotWallet to expose as a public WalletBase option
          */
         hotWalletId: string;
+    } | {
+        /**
+         * Payment source this counterparty belongs to
+         */
+        paymentSourceId: string;
+        /**
+         * The counterparty's Cardano address, as they gave it to you
+         */
+        walletAddress: string;
+        /**
+         * Their role in the trade. Defaults to Seller.
+         */
+        type?: 'Buyer' | 'Seller';
+        /**
+         * Label, so the picker shows more than a bare type
+         */
+        note?: string;
     };
     path?: never;
     query?: never;
@@ -12846,49 +13307,6 @@ export type GetHydraRelationResponses = {
 
 export type GetHydraRelationResponse = GetHydraRelationResponses[keyof GetHydraRelationResponses];
 
-export type PostHydraRelationData = {
-    body?: {
-        /**
-         * Cardano network for this relation
-         */
-        network: 'Preprod' | 'Mainnet';
-        /**
-         * HotWallet ID for the local participant
-         */
-        localHotWalletId: string;
-        /**
-         * WalletBase ID for the remote counterparty
-         */
-        remoteWalletId: string;
-    };
-    path?: never;
-    query?: never;
-    url: '/hydra/relation';
-};
-
-export type PostHydraRelationErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Relation already exists or conflicts with an existing head
-     */
-    409: unknown;
-};
-
-export type PostHydraRelationResponses = {
-    /**
-     * Hydra relation created
-     */
-    200: {
-        status: 'success';
-        data: HydraRelation;
-    };
-};
-
-export type PostHydraRelationResponse = PostHydraRelationResponses[keyof PostHydraRelationResponses];
-
 export type GetHydraHeadData = {
     body?: never;
     path?: never;
@@ -12988,104 +13406,6 @@ export type PatchHydraHeadResponses = {
 };
 
 export type PatchHydraHeadResponse = PatchHydraHeadResponses[keyof PatchHydraHeadResponses];
-
-export type PostHydraHeadData = {
-    body?: {
-        /**
-         * The HydraRelation this head belongs to
-         */
-        hydraRelationId: string;
-        /**
-         * Contestation period in seconds
-         */
-        contestationPeriod?: number;
-        /**
-         * ID of a pre-existing HydraLocalParticipant
-         */
-        localParticipantId: string;
-        /**
-         * Exactly one pre-existing HydraRemoteParticipant for the relation counterparty
-         */
-        remoteParticipantIds: Array<string>;
-    };
-    path?: never;
-    query?: never;
-    url: '/hydra/head';
-};
-
-export type PostHydraHeadErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Relation or participant not found
-     */
-    404: unknown;
-};
-
-export type PostHydraHeadResponses = {
-    /**
-     * Hydra head created
-     */
-    200: {
-        status: 'success';
-        data: HydraHead;
-    };
-};
-
-export type PostHydraHeadResponse = PostHydraHeadResponses[keyof PostHydraHeadResponses];
-
-export type PostHydraHeadCheckData = {
-    body?: {
-        /**
-         * HTTP URL for the Hydra node
-         */
-        nodeHttpUrl: string;
-        /**
-         * Optional WebSocket URL for the Hydra node
-         */
-        nodeUrl?: string;
-        /**
-         * Maximum probe duration in milliseconds
-         */
-        timeoutMs?: number;
-    };
-    path?: never;
-    query?: never;
-    url: '/hydra/head/check';
-};
-
-export type PostHydraHeadCheckErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Hydra head not found
-     */
-    404: unknown;
-};
-
-export type PostHydraHeadCheckResponses = {
-    /**
-     * Node reachability
-     */
-    200: {
-        status: 'success';
-        data: {
-            reachable: boolean;
-            protocolParametersOk: boolean;
-            websocketReachable: boolean;
-            httpStatus: number | null;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final' | null;
-            checkedAt: string;
-            error: string | null;
-        };
-    };
-};
-
-export type PostHydraHeadCheckResponse = PostHydraHeadCheckResponses[keyof PostHydraHeadCheckResponses];
 
 export type PostHydraHeadInitData = {
     body?: {
@@ -13625,6 +13945,10 @@ export type GetHydraParticipantLocalData = {
          */
         walletId?: string;
         /**
+         * Filter by the connected node running them
+         */
+        hydraHostId?: string;
+        /**
          * Filter to only unassigned participants (no head)
          */
         unassigned?: string;
@@ -13661,58 +13985,55 @@ export type GetHydraParticipantLocalResponses = {
 
 export type GetHydraParticipantLocalResponse = GetHydraParticipantLocalResponses[keyof GetHydraParticipantLocalResponses];
 
-export type PostHydraParticipantLocalData = {
+export type PostHydraParticipantLocalKeysData = {
     body?: {
         /**
-         * HotWallet ID for the local participant (funding wallet)
+         * ID of the local participant whose node keys to back up
          */
-        walletId: string;
-        /**
-         * WebSocket URL for the local Hydra node
-         */
-        nodeUrl: string;
-        /**
-         * HTTP URL for the local Hydra node
-         */
-        nodeHttpUrl: string;
-        /**
-         * Hydra signing key (will be encrypted)
-         */
-        hydraSK: string;
-        /**
-         * The Hydra node's own Cardano verification-key HASH (28-byte hex) — the on-chain participant identity. Omit to reuse the funding wallet's vkey (legacy coupled behaviour).
-         */
-        cardanoVkey?: string;
+        id: string;
     };
     path?: never;
     query?: never;
-    url: '/hydra/participant/local';
+    url: '/hydra/participant/local/keys';
 };
 
-export type PostHydraParticipantLocalErrors = {
+export type PostHydraParticipantLocalKeysErrors = {
     /**
      * Unauthorized
      */
     401: unknown;
     /**
-     * HotWallet not found
+     * Local participant not found
      */
     404: unknown;
+    /**
+     * The keys have already been handed out once
+     */
+    409: unknown;
 };
 
-export type PostHydraParticipantLocalResponses = {
+export type PostHydraParticipantLocalKeysResponses = {
     /**
-     * Local participant created
+     * Node signing keys
      */
     200: {
         status: 'success';
         data: {
-            participant: HydraLocalParticipant;
+            id: string;
+            disclosedAt: string;
+            /**
+             * Text-envelope cborHex of the node Hydra signing key
+             */
+            hydraSigningKey: string;
+            /**
+             * Text-envelope cborHex of the node Cardano signing key. Null for nodes provisioned before it was captured.
+             */
+            cardanoSigningKey: string | null;
         };
     };
 };
 
-export type PostHydraParticipantLocalResponse = PostHydraParticipantLocalResponses[keyof PostHydraParticipantLocalResponses];
+export type PostHydraParticipantLocalKeysResponse = PostHydraParticipantLocalKeysResponses[keyof PostHydraParticipantLocalKeysResponses];
 
 export type DeleteHydraParticipantRemoteData = {
     body?: {
@@ -13800,56 +14121,3 @@ export type GetHydraParticipantRemoteResponses = {
 };
 
 export type GetHydraParticipantRemoteResponse = GetHydraParticipantRemoteResponses[keyof GetHydraParticipantRemoteResponses];
-
-export type PostHydraParticipantRemoteData = {
-    body?: {
-        /**
-         * WalletBase ID for the remote counterparty (funding wallet)
-         */
-        walletId: string;
-        /**
-         * WebSocket URL for the remote Hydra node
-         */
-        nodeUrl: string;
-        /**
-         * HTTP URL for the remote Hydra node
-         */
-        nodeHttpUrl: string;
-        /**
-         * Hydra verification key (cborHex)
-         */
-        hydraVK: string;
-        /**
-         * The remote Hydra node's own Cardano verification-key HASH (28-byte hex) — the on-chain participant identity. Omit to reuse the counterparty wallet's vkey (legacy coupled behaviour).
-         */
-        cardanoVkey?: string;
-    };
-    path?: never;
-    query?: never;
-    url: '/hydra/participant/remote';
-};
-
-export type PostHydraParticipantRemoteErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * WalletBase not found
-     */
-    404: unknown;
-};
-
-export type PostHydraParticipantRemoteResponses = {
-    /**
-     * Remote participant created
-     */
-    200: {
-        status: 'success';
-        data: {
-            participant: HydraRemoteParticipant;
-        };
-    };
-};
-
-export type PostHydraParticipantRemoteResponse = PostHydraParticipantRemoteResponses[keyof PostHydraParticipantRemoteResponses];
