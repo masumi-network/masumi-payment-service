@@ -238,6 +238,17 @@ touches.
 
 Avoid: peer websocket, p2p api — it is neither a WebSocket nor an HTTP API.
 
+### Exchange Plane
+
+The counterparty-facing surface of a [[Hydra Host]], where a [[Head Invite]] is
+redeemed. Unauthenticated by design — the invite is the credential, and its
+authority is a signature rather than a shared secret. It is the only Host
+surface a counterparty may reach, and it is disjoint from the
+[[Control Plane]]: no fleet operation, no proxied node API, no token tier.
+
+Avoid: public api, handshake api (it terminates one exchange, not a protocol),
+webhook — the counterparty calls it directly and synchronously.
+
 ### Head Offer
 
 The signed proposal by which one operator asks the counterparty of a
@@ -248,8 +259,27 @@ the offering side's Relation wallet and verified against the wallet already
 recorded on that Relation, so no shared credential is needed and a stranger
 cannot open a Head.
 
-Avoid: invite, request, negotiation — an Offer is bound to one Relation and one
-Head slot, and expires.
+Avoid: request, negotiation — an Offer is bound to one Relation and one Head
+slot, and expires. Not to be confused with a [[Head Invite]], which precedes
+the Relation rather than presupposing it.
+
+### Head Invite
+
+A signed, single-use capability by which an operator offers to open a
+[[Hydra Head]] with a counterparty it has no [[Hydra Relation]] with yet. It
+carries the issuer's full public head material — Hydra verification key,
+[[Node Cardano Key]] hash, [[Advertise Address]], network and periods — signed
+by the issuer's Relation wallet, plus the [[Exchange Plane]] URL at which it is
+redeemed. Delivered out of band rather than over the wire, so it long outlives
+a [[Head Offer]]'s minutes.
+
+Issuing one pre-allocates the node and peer port whose material it carries;
+redeeming it supplies the counterparty's material, which is what lets that node
+finally boot. Because everything the recipient must trust is signed inside the
+invite, redemption needs no authenticated reply.
+
+Avoid: offer (an Offer travels between parties who already know each other),
+link, token — the URL and the credential are one signed object, not two.
 
 ### Advertise Address
 
