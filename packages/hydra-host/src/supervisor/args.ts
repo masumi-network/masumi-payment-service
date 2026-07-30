@@ -7,6 +7,12 @@
  *  - the client API always binds loopback, so a counterparty has no route to an
  *    unauthenticated API that can close a head (and `GET /config` discloses
  *    signing-key paths);
+ *  - `--monitoring-port` is emitted only when monitoring is asked for, because
+ *    hydra-node has no `--monitoring-host` and the Prometheus server therefore
+ *    binds every interface. Under `--network host` that puts head status,
+ *    snapshot numbers and peer liveness on the public IP with no auth. The
+ *    binary's own help states the server is not started when the flag is
+ *    absent, so omission is the only available control;
  *  - `--persistence-rotate-after` is never emitted, because the payment service
  *    permanently fail-closes a session that emits `EventLogRotated`;
  *  - `--advertise` is always explicit, since it is a participant identity on
@@ -25,7 +31,8 @@ export type HydraNodeLaunchSpec = {
 	network: 'preprod' | 'mainnet';
 	apiPort: number;
 	peerPort: number;
-	monitoringPort: number;
+	/** Prometheus port, or null to leave the monitoring server unstarted. See the module note. */
+	monitoringPort: number | null;
 	/** Publicly reachable `host:port`; must match what the counterparty configures. */
 	advertise: string;
 	/** Counterparty `host:port` values. Hostnames preferred so a peer IP change needs no restart. */
@@ -74,7 +81,9 @@ function assertPositiveSeconds(value: number, field: string): void {
 export function buildHydraNodeArgs(spec: HydraNodeLaunchSpec): string[] {
 	assertPort(spec.apiPort, 'apiPort');
 	assertPort(spec.peerPort, 'peerPort');
-	assertPort(spec.monitoringPort, 'monitoringPort');
+	if (spec.monitoringPort !== null) {
+		assertPort(spec.monitoringPort, 'monitoringPort');
+	}
 	assertHostPort(spec.advertise, 'advertise');
 	assertPositiveSeconds(spec.contestationPeriodSeconds, 'contestationPeriodSeconds');
 	assertPositiveSeconds(spec.depositPeriodSeconds, 'depositPeriodSeconds');
@@ -112,9 +121,11 @@ export function buildHydraNodeArgs(spec: HydraNodeLaunchSpec): string[] {
 		`0.0.0.0:${spec.peerPort}`,
 		'--advertise',
 		spec.advertise,
-		'--monitoring-port',
-		String(spec.monitoringPort),
 	];
+
+	if (spec.monitoringPort !== null) {
+		args.push('--monitoring-port', String(spec.monitoringPort));
+	}
 
 	for (const peer of spec.peers) {
 		args.push('--peer', peer);

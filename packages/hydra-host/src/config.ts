@@ -37,6 +37,14 @@ export type HostConfig = {
 	 * native hydra-node is the only build that executes at all.
 	 */
 	useSystemEtcd: boolean;
+	/**
+	 * Whether to start each node's Prometheus server.
+	 *
+	 * Off by default: hydra-node has no `--monitoring-host`, so the server binds
+	 * every interface and cannot be confined to loopback the way the client API
+	 * is. Turn it on only where the monitoring range is firewalled.
+	 */
+	monitoringEnabled: boolean;
 };
 
 export class ConfigError extends Error {
@@ -139,6 +147,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		escrowTtlSeconds: integer(env, 'HYDRA_HOST_ESCROW_TTL_SECONDS', 3600),
 		drainTimeoutMs: integer(env, 'HYDRA_HOST_DRAIN_TIMEOUT_MS', 120_000),
 		useSystemEtcd: optional(env, 'HYDRA_HOST_USE_SYSTEM_ETCD', 'true') !== 'false',
+		monitoringEnabled: optional(env, 'HYDRA_HOST_MONITORING_ENABLED', 'false') === 'true',
 	};
 }
 

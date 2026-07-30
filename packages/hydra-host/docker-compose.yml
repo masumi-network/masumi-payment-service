@@ -1,0 +1,82 @@
+# Hydra Host — reference deployment.
+#
+# The port mapping is the security boundary, so it is spelled out rather than
+# left to whoever writes the run command. Four ranges exist inside the
+# container and only two may ever leave it:
+#
+#   8443        control plane      published, bearer-token gated
+#   5001-5032   peer plane         published, raft traffic, no auth possible
+#   4001-4032   hydra-node API     NEVER — unauthenticated, can close a head
+#   6001-6032   Prometheus         NEVER — no --monitoring-host exists
+#
+# The API range is additionally bound to 127.0.0.1 inside the container, so it
+# stays shut even if someone adds `network_mode: host`. The monitoring range has
+# no such protection, which is why HYDRA_HOST_MONITORING_ENABLED defaults off.
+#
+# The peer plane cannot authenticate its callers. Apply the per-head allow-list
+# from `GET /v1/peer-allowlist` (it renders an nftables ruleset) and re-apply it
+# whenever a head is added or removed.
+
+services:
+  hydra-host:
+    image: masumi/hydra-host:latest
+    build:
+      context: ../..
+      dockerfile: packages/hydra-host/Dockerfile
+    restart: unless-stopped
+
+    ports:
+      - '8443:8443'
+      # Must match HYDRA_HOST_PEER_PORT_START and _COUNT below. Every head needs
+      # its own port; a head whose port is unpublished cannot reach its peer.
+      - '5001-5032:5001-5032'
+
+    environment:
+      # Bare hostname or IP, no scheme or port. Counterparties dial this, and it
+      # becomes each node's advertise identity, so it must be resolvable from
+      # outside and must not change for a head's lifetime.
+      HYDRA_HOST_PUBLIC_HOST: ${HYDRA_HOST_PUBLIC_HOST:?set to this host's public name}
+      HYDRA_HOST_NETWORK: ${HYDRA_HOST_NETWORK:-preprod}
+
+      # Two tiers, both at least 32 characters. Admin covers fleet operations;
+      # user covers driving a node that already exists. Never share either with
+      # a counterparty — a user token can close a head.
+      HYDRA_HOST_ADMIN_TOKEN: ${HYDRA_HOST_ADMIN_TOKEN:?required}
+      HYDRA_HOST_USER_TOKEN: ${HYDRA_HOST_USER_TOKEN:?required}
+
+      HYDRA_HOST_PEER_PORT_START: '5001'
+      HYDRA_HOST_PEER_PORT_COUNT: '32'
+
+      # Off unless the monitoring range is firewalled. hydra-node offers no way
+      # to bind the Prometheus server to loopback, so enabling it publishes head
+      # status, snapshot numbers and peer liveness with no authentication.
+      HYDRA_HOST_MONITORING_ENABLED: ${HYDRA_HOST_MONITORING_ENABLED:-false}
+
+    volumes:
+      # Real block storage, not a network filesystem: this holds a SQLite event
+      # store and an etcd raft WAL, both of which need POSIX fsync durability.
+      # Losing it loses the heads. ADR 0010 §7.
+      - hydra-data:/data
+
+    # etcd's raft WAL is intolerant of an abrupt stop mid-round. The supervisor
+    # drains before stopping, so give it room to finish.
+    stop_grace_period: 120s
+
+    # Deliberately an unauthenticated request to an authenticated route: a 401
+    # proves the server is serving AND that auth is wired, without adding a
+    # health route that would be one more thing reachable without a token.
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8443/v1/capabilities').then(r=>process.exit(r.status===401?0:1),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  hydra-data:

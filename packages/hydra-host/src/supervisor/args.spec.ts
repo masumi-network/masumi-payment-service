@@ -30,6 +30,17 @@ describe('buildHydraNodeArgs — security invariants', () => {
 		expect(API_BIND_HOST).toBe('127.0.0.1');
 	});
 
+	// hydra-node has no --monitoring-host, so the Prometheus server binds every
+	// interface. Omitting the flag is the only way to keep it off a public IP.
+	it('omits --monitoring-port when monitoring is not asked for', () => {
+		const args = buildHydraNodeArgs({ ...SPEC, monitoringPort: null });
+		expect(args).not.toContain('--monitoring-port');
+	});
+
+	it('emits --monitoring-port when a port is given', () => {
+		expect(valueAfter(buildHydraNodeArgs({ ...SPEC, monitoringPort: 6001 }), '--monitoring-port')).toBe('6001');
+	});
+
 	it('binds the peer port on all interfaces while advertising the public address', () => {
 		const args = buildHydraNodeArgs(SPEC);
 		expect(valueAfter(args, '--listen')).toBe('0.0.0.0:5001');

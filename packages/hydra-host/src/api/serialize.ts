@@ -42,9 +42,11 @@ export type PublicNode = {
 };
 
 /**
- * `apiPort` and `monitoringPort` are deliberately omitted: they are loopback
- * only and of no use to a caller, and publishing them invites someone to try
- * reaching an API that has no authentication of its own.
+ * `apiPort` and `monitoringPort` are deliberately omitted. The API port is
+ * loopback only and of no use to a caller, and publishing it invites someone to
+ * try reaching an API that has no authentication of its own. The monitoring
+ * port is worse — it cannot be confined to loopback at all — so naming it here
+ * would advertise the one port a node exposes without auth.
  */
 export function toPublicNode(record: NodeRecord): PublicNode {
 	const publicNode: PublicNode = {

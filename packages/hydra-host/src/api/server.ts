@@ -23,6 +23,7 @@ import { isHostApiError, HostApiError } from './http-error.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
 import { isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
+import { buildPeerAllowlist, renderNftables } from './peer-allowlist.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { matchRoute } from './routes.js';
 import { toPublicNode } from './serialize.js';
@@ -186,6 +187,13 @@ export function createControlPlane(deps: ServerDeps): Server {
 					slots: () => ({ used: ports.used, capacity: config.ports.capacity }),
 				});
 				send(response, 200, capabilities);
+				return;
+			}
+
+			case 'peerAllowlist': {
+				const range = { start: config.ports.peerStart, count: config.ports.capacity };
+				const allowlist = buildPeerAllowlist(await store.list(), range);
+				send(response, 200, { ...allowlist, peerRange: range, nftables: renderNftables(allowlist, range) });
 				return;
 			}
 

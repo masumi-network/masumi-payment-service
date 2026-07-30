@@ -22,7 +22,8 @@ export type RouteKind =
 	| 'restartNode'
 	| 'removeNode'
 	| 'nodeHealth'
-	| 'capabilities';
+	| 'capabilities'
+	| 'peerAllowlist';
 
 export type RouteMatch = {
 	kind: RouteKind;
@@ -48,6 +49,12 @@ export function matchRoute(method: string, pathname: string): RouteMatch | null 
 
 	if (segments.length === 2 && segments[1] === 'capabilities' && method === 'GET') {
 		return { kind: 'capabilities', tier: 'admin' };
+	}
+
+	// Admin: it enumerates every head's peer port and who may reach it, which is
+	// a map of the Host's public surface.
+	if (segments.length === 2 && segments[1] === 'peer-allowlist' && method === 'GET') {
+		return { kind: 'peerAllowlist', tier: 'admin' };
 	}
 
 	if (segments[1] !== 'nodes') {

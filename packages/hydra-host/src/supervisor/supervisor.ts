@@ -267,7 +267,9 @@ export class Supervisor {
 			network: record.network,
 			apiPort: record.apiPort,
 			peerPort: record.peerPort,
-			monitoringPort: record.monitoringPort,
+			// Null unless explicitly enabled: the Prometheus server binds every
+			// interface and hydra-node offers no way to confine it.
+			monitoringPort: this.config.monitoringEnabled ? record.monitoringPort : null,
 			advertise: record.advertise,
 			peers: record.peers.map((peer) => peer.advertise),
 			peerHydraVerificationKeyFiles: record.peers.map((_, i) => path.join(peersDir, `${i}-hydra.vk`)),
