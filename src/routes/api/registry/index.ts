@@ -129,7 +129,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 			if (endpointError != null) {
 				throw createHttpError(400, endpointError);
 			}
-	
+
 			if (input.type === RegistryEntryType.A2A && !isV2Registration) {
 				throw createHttpError(400, 'A2A registration is only supported on V2 payment sources');
 			}
