@@ -23,15 +23,23 @@ export type RouteKind =
 	| 'removeNode'
 	| 'nodeHealth'
 	| 'capabilities'
-	| 'peerAllowlist';
+	| 'peerAllowlist'
+	| 'registerInvite'
+	| 'listInvites'
+	| 'forgetInvite'
+	| 'listInboundInvites'
+	| 'forgetInboundInvite'
+	| 'setAllowedIssuers';
 
 export type RouteMatch = {
 	kind: RouteKind;
 	tier: Tier;
 	nodeId?: string;
+	nonce?: string;
 };
 
 const NODE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const NONCE_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 
 /**
  * Resolve a request to a route.
@@ -55,6 +63,36 @@ export function matchRoute(method: string, pathname: string): RouteMatch | null 
 	// a map of the Host's public surface.
 	if (segments.length === 2 && segments[1] === 'peer-allowlist' && method === 'GET') {
 		return { kind: 'peerAllowlist', tier: 'admin' };
+	}
+
+	// Exchange administration. The Exchange Plane itself is a separate listener
+	// with none of these; this is the owning service driving what that plane may
+	// honour, so every one of them is admin.
+	if (segments[1] === 'invites') {
+		if (segments.length === 2 && method === 'POST') {
+			return { kind: 'registerInvite', tier: 'admin' };
+		}
+		if (segments.length === 2 && method === 'GET') {
+			return { kind: 'listInvites', tier: 'admin' };
+		}
+		if (segments.length === 3 && method === 'DELETE' && NONCE_PATTERN.test(segments[2])) {
+			return { kind: 'forgetInvite', tier: 'admin', nonce: segments[2] };
+		}
+		return null;
+	}
+
+	if (segments[1] === 'inbound-invites') {
+		if (segments.length === 2 && method === 'GET') {
+			return { kind: 'listInboundInvites', tier: 'admin' };
+		}
+		if (segments.length === 3 && method === 'DELETE' && NONCE_PATTERN.test(segments[2])) {
+			return { kind: 'forgetInboundInvite', tier: 'admin', nonce: segments[2] };
+		}
+		return null;
+	}
+
+	if (segments.length === 2 && segments[1] === 'allowed-issuers' && method === 'PUT') {
+		return { kind: 'setAllowedIssuers', tier: 'admin' };
 	}
 
 	if (segments[1] !== 'nodes') {

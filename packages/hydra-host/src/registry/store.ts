@@ -11,6 +11,7 @@
 import fs from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
+import { fsyncDir, writeFileAtomic } from './atomic-write.js';
 import { getOwnInteger, getOwnString, isPlainObject } from './json.js';
 import type { NodeRecord } from './types.js';
 
@@ -21,42 +22,6 @@ export class RegistryError extends Error {
 		super(message);
 		this.name = 'RegistryError';
 	}
-}
-
-async function fsyncDir(dir: string): Promise<void> {
-	// Renaming is only durable once the *directory* entry is flushed. Not all
-	// platforms permit opening a directory for fsync, so failures here are
-	// tolerated rather than fatal.
-	let handle: FileHandle | undefined;
-	try {
-		handle = await fs.open(dir, 'r');
-		await handle.sync();
-	} catch {
-		// best effort
-	} finally {
-		await handle?.close().catch(() => undefined);
-	}
-}
-
-let tempCounter = 0;
-
-async function writeFileAtomic(filePath: string, contents: string): Promise<void> {
-	const dir = path.dirname(filePath);
-	// The temp name must be unique per write. A shared name lets two concurrent
-	// writers race: the first rename consumes the file and the second fails with
-	// ENOENT, losing that update. Observed in a running host when a node exited
-	// while its state was being reconciled.
-	const tmp = path.join(dir, `.${path.basename(filePath)}.${process.pid}.${tempCounter++}.tmp`);
-	let handle: FileHandle | undefined;
-	try {
-		handle = await fs.open(tmp, 'w');
-		await handle.writeFile(contents, 'utf8');
-		await handle.sync();
-	} finally {
-		await handle?.close().catch(() => undefined);
-	}
-	await fs.rename(tmp, filePath);
-	await fsyncDir(dir);
 }
 
 function parseNodeRecord(raw: string, source: string): NodeRecord {

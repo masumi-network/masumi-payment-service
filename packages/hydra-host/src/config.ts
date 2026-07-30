@@ -14,6 +14,14 @@ export type HostConfig = {
 	dataDir: string;
 	hydraNodeBin: string;
 	listenPort: number;
+	/**
+	 * Port for the counterparty-facing Exchange Plane.
+	 *
+	 * Separate from the control plane so the two security models cannot be
+	 * confused by a routing mistake, and so a deployment may publish one without
+	 * the other.
+	 */
+	exchangePort: number;
 	/** Public hostname used to build every node's advertise address. */
 	publicHost: string;
 	network: 'preprod' | 'mainnet';
@@ -133,6 +141,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		dataDir: optional(env, 'HYDRA_HOST_DATA_DIR', '/data'),
 		hydraNodeBin: optional(env, 'HYDRA_NODE_BIN', '/usr/local/bin/hydra-node'),
 		listenPort: integer(env, 'HYDRA_HOST_PORT', 8443),
+		exchangePort: integer(env, 'HYDRA_HOST_EXCHANGE_PORT', 8444),
 		publicHost,
 		network,
 		blockfrostProjectFile: optional(env, 'BLOCKFROST_PROJECT_FILE', '/run/secrets/blockfrost.txt'),

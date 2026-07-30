@@ -9,6 +9,7 @@ import { PortAllocator } from '../registry/ports.js';
 import { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
 import type { Supervisor } from '../supervisor/supervisor.js';
+import { ExchangeStore } from '../registry/exchange-store.js';
 import { createControlPlane } from './server.js';
 import type { ProvisionDeps } from './provision.js';
 
@@ -86,6 +87,7 @@ beforeEach(async () => {
 	host = createControlPlane({
 		config,
 		store,
+		exchange: new ExchangeStore(dataDir),
 		ports,
 		supervisor: { tick: async () => undefined } as unknown as Supervisor,
 		provision: {

@@ -15,6 +15,7 @@ import type { HostConfig } from '../config.js';
 import { readCapabilities } from '../capabilities.js';
 import type { PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
+import type { ExchangeStore } from '../registry/exchange-store.js';
 import { isUsable, restartCountOf, type PeerRecord } from '../registry/types.js';
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
@@ -24,6 +25,7 @@ import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type Provis
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
 import { isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
 import { buildPeerAllowlist, renderNftables } from './peer-allowlist.js';
+import { readAllowedIssuers, registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { matchRoute } from './routes.js';
 import { toPublicNode } from './serialize.js';
@@ -33,6 +35,7 @@ const MAX_BODY_BYTES = 256 * 1024;
 export type ServerDeps = {
 	config: HostConfig;
 	store: NodeRegistryStore;
+	exchange: ExchangeStore;
 	ports: PortAllocator;
 	supervisor: Supervisor;
 	provision: ProvisionDeps;
@@ -89,7 +92,7 @@ function readPeers(body: unknown): PeerRecord[] {
 }
 
 export function createControlPlane(deps: ServerDeps): Server {
-	const { config, store, ports, supervisor, provision, logger } = deps;
+	const { config, store, exchange, ports, supervisor, provision, logger } = deps;
 	const tokens = { adminToken: config.adminToken, userToken: config.userToken };
 
 	const server = createServer((request, response) => {
@@ -113,7 +116,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 
 			try {
-				await handle(route.kind, route.nodeId, request, response);
+				await handle(route.kind, route.nodeId, route.nonce, request, response);
 			} catch (error) {
 				if (isHostApiError(error)) {
 					send(response, error.status, { error: error.message });
@@ -175,6 +178,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 	async function handle(
 		kind: string,
 		nodeId: string | undefined,
+		nonce: string | undefined,
 		request: IncomingMessage,
 		response: ServerResponse,
 	): Promise<void> {
@@ -187,6 +191,49 @@ export function createControlPlane(deps: ServerDeps): Server {
 					slots: () => ({ used: ports.used, capacity: config.ports.capacity }),
 				});
 				send(response, 200, capabilities);
+				return;
+			}
+
+			case 'registerInvite': {
+				const body = await readBody(request);
+				send(response, 201, await registerInvite(exchange, body));
+				return;
+			}
+
+			case 'listInvites': {
+				// A watermark rather than a per-invite poll: the owning service asks
+				// once and learns about every redemption since it last asked.
+				const since = Number(new URL(request.url ?? '/', 'http://host.invalid').searchParams.get('redeemedSince') ?? 0);
+				const invites = await exchange.listInvites();
+				const changed = Number.isFinite(since)
+					? invites.filter((invite) => invite.redeemedAt !== null && invite.redeemedAt > since)
+					: invites;
+				send(response, 200, { invites: changed, now: Date.now() });
+				return;
+			}
+
+			case 'forgetInvite': {
+				await exchange.forgetInvite(nonce ?? '');
+				send(response, 200, { forgotten: true });
+				return;
+			}
+
+			case 'listInboundInvites': {
+				send(response, 200, { inbound: await exchange.listInbound() });
+				return;
+			}
+
+			case 'forgetInboundInvite': {
+				await exchange.forgetInbound(nonce ?? '');
+				send(response, 200, { forgotten: true });
+				return;
+			}
+
+			case 'setAllowedIssuers': {
+				const body = await readBody(request);
+				const addresses = readAllowedIssuers(body);
+				await exchange.setAllowedIssuers(addresses);
+				send(response, 200, { allowedIssuers: addresses.length });
 				return;
 			}
 

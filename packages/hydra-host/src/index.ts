@@ -11,9 +11,13 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import { createControlPlane } from './api/server.js';
+import { createExchangePlane } from './api/exchange-server.js';
+import { setPeers } from './api/provision.js';
+import { requestStart } from './api/transitions.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
 import { HostLock } from './registry/host-lock.js';
 import { PortAllocator } from './registry/ports.js';
+import { ExchangeStore } from './registry/exchange-store.js';
 import { NodeRegistryStore } from './registry/store.js';
 import { resolveSlotConfig } from './slot-config.js';
 import { Supervisor, type SupervisorLogger } from './supervisor/supervisor.js';
@@ -49,6 +53,7 @@ async function main(): Promise<void> {
 	await lock.acquire();
 
 	const store = new NodeRegistryStore(config.dataDir);
+	const exchange = new ExchangeStore(config.dataDir);
 
 	// Port allocation is rebuilt from the durable registry rather than kept in
 	// memory, so a restart cannot reissue a live node's peer port.
@@ -62,18 +67,21 @@ async function main(): Promise<void> {
 	const supervisor = new Supervisor(config, store, allocator, resolveSlotConfig(config.network), logger);
 	await supervisor.boot();
 
+	const provisionDeps = {
+		store,
+		ports: allocator,
+		advertiseFor: (peerPort: number) => advertiseAddress(config, peerPort),
+		newNodeId: () => randomUUID(),
+		now: () => new Date(),
+	};
+
 	const server = createControlPlane({
 		config,
 		store,
+		exchange,
 		ports: allocator,
 		supervisor,
-		provision: {
-			store,
-			ports: allocator,
-			advertiseFor: (peerPort) => advertiseAddress(config, peerPort),
-			newNodeId: () => randomUUID(),
-			now: () => new Date(),
-		},
+		provision: provisionDeps,
 		logger,
 	});
 	// Without this the listen failure surfaces as an unhandled 'error' event and
@@ -93,6 +101,46 @@ async function main(): Promise<void> {
 		logger.info(`[host] control plane listening on :${config.listenPort}`);
 	});
 
+	// A second listener, not a second path. Redeeming an invite configures and
+	// starts the node that invite reserved — the only thing a counterparty can
+	// cause here, and the reason the node existed at all.
+	const exchangePlane = createExchangePlane({
+		store: exchange,
+		logger,
+		onRedeemed: async (nonce, hostNodeId) => {
+			const invite = (await exchange.listInvites()).find((candidate) => candidate.nonce === nonce);
+			if (invite?.redeemer == null) {
+				throw new Error(`invite ${nonce} has no redeemer material`);
+			}
+			// Same path the control plane uses: record the peers, express the
+			// intent to run, and let the supervisor do the work. Driving the
+			// process directly from here would bypass the guarded transitions
+			// that keep `state` and `desired` honest.
+			await setPeers(
+				hostNodeId,
+				[
+					{
+						advertise: invite.redeemer.advertise,
+						hydraVerificationKey: invite.redeemer.hydraVerificationKey,
+						cardanoVerificationKey: invite.redeemer.cardanoVerificationKey,
+					},
+				],
+				provisionDeps,
+			);
+			await requestStart(store, hostNodeId);
+			void supervisor.tick();
+			logger.info(`[exchange] invite ${nonce} redeemed; node ${hostNodeId} starting`);
+		},
+	});
+	exchangePlane.on('error', (error: NodeJS.ErrnoException) => {
+		const detail = error.code === 'EADDRINUSE' ? `port ${config.exchangePort} is already in use` : error.message;
+		logger.error(`[host] exchange plane could not listen: ${detail}`);
+		void lock.release().finally(() => process.exit(1));
+	});
+	exchangePlane.listen(config.exchangePort, () => {
+		logger.info(`[host] exchange plane listening on :${config.exchangePort}`);
+	});
+
 	const timer = setInterval(() => void supervisor.tick(), TICK_INTERVAL_MS);
 
 	let shuttingDown = false;
@@ -104,6 +152,7 @@ async function main(): Promise<void> {
 		logger.info(`[host] received ${signal}`);
 		clearInterval(timer);
 		server.close();
+		exchangePlane.close();
 
 		// Bound the drain so a stuck node cannot hold the container open past the
 		// platform's own kill timeout; losing the race just means the next boot
