@@ -15,7 +15,7 @@ import { HydraInviteRole, HydraInviteStatus, Network, WalletType } from '@/gener
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { createBoundHydraHead } from '@/routes/api/hydra/head';
-import { registerInviteOnHost } from '@/services/hydra-host/client';
+import { registerInviteOnHost, setHostNodePeers, startHostNode } from '@/services/hydra-host/client';
 import { deriveNodeCardanoVkey } from './node-keys';
 import {
 	INVITE_TTL_MS,
@@ -241,6 +241,19 @@ export async function redeemHeadInvite(input: {
 		},
 		signature: redemptionSignature,
 	});
+
+	// Our side of the cluster, which nothing else will do for us. The issuer's
+	// Host configures and starts *its* node when the redemption lands; the
+	// mirror of that is ours to perform, and without it the node sits peerless
+	// and stopped while both sides believe a head exists.
+	await setHostNodePeers(node.hostBaseUrl, node.adminToken, node.nodeId, [
+		{
+			advertise: payload.advertise,
+			hydraVerificationKey: payload.hydraVerificationKey,
+			cardanoVerificationKey: payload.cardanoVerificationKey,
+		},
+	]);
+	await startHostNode(node.hostBaseUrl, node.adminToken, node.nodeId);
 
 	const head = await createHeadFromExchange({
 		network: wallet.network,

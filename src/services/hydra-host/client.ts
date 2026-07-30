@@ -205,6 +205,11 @@ export async function setHostNodePeers(
 	await request(baseUrl, `/v1/nodes/${nodeId}`, adminToken, { method: 'PATCH', body: { peers } });
 }
 
+/** Ask the Host's supervisor to run this node. Idempotent; the Host owns the transition. */
+export async function startHostNode(baseUrl: string, adminToken: string, nodeId: string): Promise<void> {
+	await request(baseUrl, `/v1/nodes/${nodeId}/start`, adminToken, { method: 'POST' });
+}
+
 export async function removeHostNode(
 	baseUrl: string,
 	adminToken: string,

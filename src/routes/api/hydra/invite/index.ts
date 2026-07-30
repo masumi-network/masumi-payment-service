@@ -51,11 +51,10 @@ async function resolveIssuerIdentity(walletAddress: string, network: Network): P
 			lookupError: `no payment source is configured for ${network}, so the chain cannot be consulted`,
 		};
 	}
-	return await resolveCounterpartyIdentity(
-		walletAddress,
-		network,
-		decrypt(source.PaymentSourceConfig.rpcProviderApiKey),
-	);
+	// Read raw: rpcProviderApiKey is stored in plaintext, as every other consumer
+	// treats it (see the getBlockfrostInstance callers). Decrypting it here fails
+	// with ERR_CRYPTO_INVALID_IV rather than with anything self-explanatory.
+	return await resolveCounterpartyIdentity(walletAddress, network, source.PaymentSourceConfig.rpcProviderApiKey);
 }
 
 const inviteSchema = z.object({

@@ -57,7 +57,9 @@ async function main(): Promise<void> {
 	}
 
 	const config = await prisma.paymentSourceConfig.create({
-		data: { rpcProviderApiKey: encrypt(BLOCKFROST_KEY || 'unset'), rpcProvider: 'Blockfrost' },
+		// Plaintext, matching how the service reads it everywhere else. Encrypting
+		// it here produced a source whose key could not be used.
+		data: { rpcProviderApiKey: BLOCKFROST_KEY || 'unset', rpcProvider: 'Blockfrost' },
 	});
 
 	const adminWords = MeshWallet.brew() as string[];
