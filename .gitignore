@@ -78,3 +78,9 @@ hydra-l2-flow/evidence/
 
 # Hydra Host build output
 packages/*/dist/
+
+# Local Hydra Host run state: node data dirs, logs, seeded keys and databases
+# written by scripts/hydra-e2e. Never share a machine or a branch.
+.hydra-e2e/
+.hydra-demo*/
+.hydra-two/
