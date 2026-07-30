@@ -261,10 +261,10 @@ function HydraLifecycleActionMenu({
               key={config.action}
               disabled={isDisabled}
               title={config.disabledReason}
-              onSelect={(event) => {
-                event.preventDefault();
-                onRequestLifecycle(head, config.action);
-              }}
+              // No preventDefault: the menu should close on choosing an action.
+              // Each one opens its own confirmation, so holding the menu open
+              // just leaves it hanging behind that dialog.
+              onSelect={() => onRequestLifecycle(head, config.action)}
             >
               <LifecycleActionIcon action={config.action} isRunning={isRunning} />
               <span>{config.label}</span>

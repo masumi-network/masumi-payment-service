@@ -91,6 +91,26 @@ describe('CustomHydraHead', () => {
 			expect(nodeInstances).toHaveLength(2);
 		});
 
+		// The node config is copied field by field, so an omission here is silent:
+		// a node behind a Hydra Host builds unauthenticated WebSockets and the
+		// proxy answers 401, long after the HTTP probe succeeded on its own
+		// headers. Assert every field the transport needs actually arrives.
+		it('passes the auth token through to the node', async () => {
+			const { HydraNode } = (await import('./node')) as unknown as {
+				HydraNode: jest.Mock<(config: HydraNodeConfig) => unknown>;
+			};
+			new CustomHydraHead([{ httpUrl: 'http://localhost:4001', walletId: 'wallet-a', authToken: 'host-user-token' }]);
+			expect(HydraNode).toHaveBeenCalledWith(expect.objectContaining({ authToken: 'host-user-token' }));
+		});
+
+		it('leaves the auth token absent for a node with none', async () => {
+			const { HydraNode } = (await import('./node')) as unknown as {
+				HydraNode: jest.Mock<(config: HydraNodeConfig) => unknown>;
+			};
+			new CustomHydraHead(singleConfig);
+			expect(HydraNode).toHaveBeenCalledWith(expect.objectContaining({ authToken: undefined }));
+		});
+
 		it('creates one HydraNode for a single config', () => {
 			new CustomHydraHead(singleConfig);
 			expect(nodeInstances).toHaveLength(1);

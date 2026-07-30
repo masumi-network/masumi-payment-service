@@ -38,6 +38,12 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 				snapshotVerificationKeys: nodeConfig.snapshotVerificationKeys,
 				expectedNodeVerificationKey: nodeConfig.expectedNodeVerificationKey,
 				trustLocalNodeSnapshotMetadata: nodeConfig.trustLocalNodeSnapshotMetadata,
+				// Without this the node's WebSockets are built unauthenticated, and a
+				// node behind a Hydra Host refuses the upgrade with a 401 — while the
+				// HTTP probe that ran moments earlier succeeded, because it builds its
+				// headers separately. Copying the config field by field is what made
+				// that possible; the omission is invisible at the call site.
+				authToken: nodeConfig.authToken,
 			});
 			this._nodes[nodeConfig.walletId] = node;
 			this._connected[nodeConfig.walletId] = false;

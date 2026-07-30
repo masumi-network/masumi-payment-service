@@ -367,6 +367,13 @@ export class HydraNode extends EventEmitter {
 		}
 		this._connectionsStarted = true;
 		const sessionReady = this.waitForPinnedLiveSession();
+		// Claim the rejection now, not only where it is awaited below.
+		// `waitUntilOpen` can reject first — a 401 from a Hydra Host's proxy does
+		// exactly that — and then nothing ever awaits `sessionReady`, so the
+		// rejection the socket's `close` handler raises a moment later is
+		// unhandled. Node treats that as fatal, so a transport failure on one head
+		// took down the whole payment service.
+		sessionReady.catch(() => undefined);
 		void this._historyConnection.connect().catch((error: unknown) => this.failHistoryReplay(error));
 		const connectPromise = (async () => {
 			try {
