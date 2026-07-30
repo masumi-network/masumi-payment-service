@@ -81,10 +81,18 @@ export async function requestRestart(store: NodeRegistryStore, nodeId: string): 
  * our side.
  *
  * The Host cannot tell whether a head is finalised; that is the payment
- * service's knowledge. So a node that was never acknowledged (and therefore
- * never started, and holds no head state) may be removed freely, while any
- * acknowledged node requires the caller to assert `force`, which is the caller
- * stating the head is settled.
+ * service's knowledge. So the guard asks the one question it *can* answer from
+ * the protocol: has this node ever been able to hold head state at all?
+ *
+ * It cannot have, unless it has peers. `--peer` becomes etcd's
+ * `--initial-cluster`, which is fixed at process start, and a node with an
+ * empty cluster never boots — so a peerless node's persistence directory is
+ * empty by construction, however long ago its keys were escrowed.
+ *
+ * That distinction matters because escrow-ack no longer implies "started". A
+ * head invite escrows a node's keys at the moment it is issued and leaves it
+ * peerless until someone redeems, so keying this guard on `escrowAckedAt`
+ * alone would make every unredeemed reservation unremovable.
  */
 export async function requestRemoval(
 	store: NodeRegistryStore,
@@ -92,7 +100,8 @@ export async function requestRemoval(
 	options: { force: boolean },
 ): Promise<NodeRecord> {
 	const record = await load(store, nodeId);
-	if (record.escrowAckedAt !== null && !options.force) {
+	const couldHoldHeadState = record.escrowAckedAt !== null && record.peers.length > 0;
+	if (couldHoldHeadState && !options.force) {
 		throw new HostApiError(
 			'this node has been live and its persistence directory may hold the only copy of the head state; ' +
 				'removing it would make the head impossible to close from this host. Retry with force=true once the head is finalised',

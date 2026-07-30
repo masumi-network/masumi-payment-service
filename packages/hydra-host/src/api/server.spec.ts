@@ -197,10 +197,32 @@ describe('lifecycle guards over HTTP', () => {
 	};
 
 	// Removal destroys the persistence dir — the only copy of head state here.
-	it('refuses to delete a live node without force, and allows it with force', async () => {
+	// A node can only hold that state once it has peers, because --peer becomes
+	// --initial-cluster and a peerless node never boots.
+	it('refuses to delete a peered live node without force, and allows it with force', async () => {
 		const nodeId = await provisionAndAck();
+		await call('PATCH', `/v1/nodes/${nodeId}`, {
+			token: ADMIN,
+			body: {
+				peers: [
+					{
+						advertise: 'hydra2.example.com:5101',
+						hydraVerificationKey: `5820${'ab'.repeat(32)}`,
+						cardanoVerificationKey: `5820${'cd'.repeat(32)}`,
+					},
+				],
+			},
+		});
 		expect((await call('DELETE', `/v1/nodes/${nodeId}`, { token: ADMIN })).status).toBe(409);
 		expect((await call('DELETE', `/v1/nodes/${nodeId}?force=true`, { token: ADMIN })).status).toBe(202);
+	});
+
+	// A head invite escrows its node's keys when it is issued and leaves it
+	// peerless until someone redeems, so an unredeemed reservation stays
+	// revocable without the operator asserting a head is settled.
+	it('deletes an acknowledged but peerless node without force', async () => {
+		const nodeId = await provisionAndAck('idem-peerless');
+		expect((await call('DELETE', `/v1/nodes/${nodeId}`, { token: ADMIN })).status).toBe(202);
 	});
 
 	it('deletes a never-acknowledged node without force', async () => {

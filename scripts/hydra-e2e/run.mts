@@ -27,7 +27,7 @@ import { checkEscrowContract, crossLinkPeers, escrowAck, provisionOn } from './p
 import { checkClusterIdentity, checkNodeHealth, checkPeerConnection, startCluster } from './phases/cluster.mjs';
 import { checkProxyAllowList, checkProxyWebSocket } from './phases/proxy.mjs';
 import { checkHostCrashRecovery, checkLifecycle } from './phases/lifecycle.mjs';
-import { checkHandshake } from './phases/handshake.mjs';
+import { checkInvites } from './phases/invite.mjs';
 import { checkHeadInit } from './phases/head-init.mjs';
 
 async function main(): Promise<number> {
@@ -66,7 +66,7 @@ async function main(): Promise<number> {
 	await checkLifecycle(nodes);
 	await checkHostCrashRecovery(hosts[0], nodes);
 	await checkHeadInit(nodes, FUNDING_SIGNING_KEY_FILE);
-	await checkHandshake(hosts[0].spec, hosts[1].spec);
+	await checkInvites(hosts[0].spec);
 
 	console.log(`\n[2mlogs in ${LOG_DIR}[0m`);
 	console.log(`[2mhost A ${HOST_A.baseUrl}  host B ${HOST_B.baseUrl}[0m`);

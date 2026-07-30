@@ -119,6 +119,15 @@ describe('requestRemoval', () => {
 		expect((await requestRemoval(store, 'node-1', { force: true })).state).toBe('Removing');
 	});
 
+	// A head invite escrows its node's keys the moment it is issued and leaves
+	// the node peerless until someone redeems. Without peers there is no
+	// --initial-cluster, so the node has never booted and its persistence
+	// directory is empty — an unredeemed reservation must stay revocable.
+	it('allows removing an acknowledged but peerless node without force', async () => {
+		await store.write(record({ peers: [] }));
+		expect((await requestRemoval(store, 'node-1', { force: false })).state).toBe('Removing');
+	});
+
 	// A node that was never acknowledged never started and holds no head state.
 	it('allows removing a never-acknowledged node without force', async () => {
 		await store.write(record({ escrowAckedAt: null, state: 'PendingEscrow' }));

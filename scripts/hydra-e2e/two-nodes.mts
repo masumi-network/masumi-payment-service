@@ -55,6 +55,10 @@ const SIDES: Side[] = [
 function serviceEnv(side: Side): NodeJS.ProcessEnv {
 	return {
 		...process.env,
+		// Each payment node drives exactly one Host, so a single fleet-wide
+		// exchange port is still one value per service — they only collide here
+		// because both Hosts share a machine.
+		HYDRA_HOST_EXCHANGE_PORT: String(HOSTS[side.hostIndex].exchangePort),
 		DATABASE_URL: `postgresql://sandro@localhost:5432/${side.database}?schema=public`,
 		ENCRYPTION_KEY,
 		ADMIN_KEY: side.adminKey,
@@ -151,6 +155,7 @@ function banner(): void {
 			`    API key       ${side.adminKey}`,
 			`    Its Hydra node, NOT connected — connect it yourself:`,
 			`      URL         ${host.baseUrl}`,
+			`      Exchange    http://127.0.0.1:${host.exchangePort}/exchange  (counterparty-facing)`,
 			`      Public peer 127.0.0.1`,
 			`      User key    ${host.userToken}`,
 			`      Admin key   ${host.adminToken}`,
@@ -160,12 +165,13 @@ function banner(): void {
 	lines.push(
 		'  To open a head between them:',
 		'    1. On each node: Hydra Heads -> Connect node, with the values above.',
-		'    2. Copy each node\u2019s wallet address (Wallets) to the other side.',
-		'    3. On ONE node: Add -> Create a new relation, paste the other side\u2019s',
-		'       wallet address and its service URL, then Propose head.',
+		'    2. On ONE node: Invites -> Invite someone, pick a wallet, copy the code.',
+		'    3. On the OTHER: Invites -> Redeem an invite, paste it, check who it is',
+		'       from, then Open the head.',
 		'',
-		'  Which side may propose is decided by wallet key order, so if a node',
-		'  refuses with "this side is the acceptor", propose from the other one.',
+		'  No wallet addresses to copy and no relation to create: the address is',
+		'  inside the signed invite, and the relation is created by redeeming it.',
+		'  Either side may invite \u2014 there is no initiator rule any more.',
 		'',
 		'  Ctrl-C stops everything.',
 		'',

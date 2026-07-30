@@ -156,6 +156,7 @@ async function main(): Promise<void> {
 		return {
 			label,
 			relationId: relation.id,
+			localHotWalletId: localWallet.id,
 			weInitiate: localSortsLower,
 			localAddress: local.address,
 			remoteAddress: remote.address,
@@ -171,7 +172,13 @@ async function main(): Promise<void> {
 	// Only the assertions need the acceptor side — it cannot be driven by hand,
 	// because a counterparty has to send the offer.
 	const inbound =
-		process.env.FIXTURE_RELATIONS === 'outbound' ? null : await makeRelation('inbound', false, HotWalletType.Selling);
+		process.env.FIXTURE_RELATIONS === 'outbound' || process.env.FIXTURE_RELATIONS === 'none'
+			? null
+			: await makeRelation('inbound', false, HotWalletType.Selling);
+	// Invites need a wallet, not a relation: the relation is what redeeming one
+	// produces. Exposed separately so a phase can ask for a wallet without
+	// caring which relation happens to use it.
+	const walletId = outbound.localHotWalletId;
 
 	const host = await prisma.hydraHost.upsert({
 		where: { network_baseUrl: { network: Network.Preprod, baseUrl: HOST_BASE_URL } },
@@ -187,7 +194,7 @@ async function main(): Promise<void> {
 		},
 	});
 
-	console.log(JSON.stringify({ sourceId: source.id, hostId: host.id, outbound, inbound }));
+	console.log(JSON.stringify({ sourceId: source.id, hostId: host.id, walletId, outbound, inbound }));
 }
 
 main()

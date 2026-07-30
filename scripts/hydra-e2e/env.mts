@@ -100,6 +100,8 @@ export type HostSpec = {
 	apiPortStart: number;
 	monitoringPortStart: number;
 	capacity: number;
+	/** Counterparty-facing plane. Separate per Host here because both share a machine. */
+	exchangePort: number;
 };
 
 export const HOST_A: HostSpec = {
@@ -113,6 +115,7 @@ export const HOST_A: HostSpec = {
 	apiPortStart: 4001,
 	monitoringPortStart: 6001,
 	capacity: 8,
+	exchangePort: 18543,
 };
 
 export const HOST_B: HostSpec = {
@@ -126,6 +129,7 @@ export const HOST_B: HostSpec = {
 	apiPortStart: 4101,
 	monitoringPortStart: 6101,
 	capacity: 8,
+	exchangePort: 18544,
 };
 
 export const HOSTS = [HOST_A, HOST_B];
@@ -144,6 +148,7 @@ export function hostEnv(spec: HostSpec): NodeJS.ProcessEnv {
 		...process.env,
 		HYDRA_HOST_DATA_DIR: spec.dataDir,
 		HYDRA_HOST_PORT: String(spec.controlPort),
+		HYDRA_HOST_EXCHANGE_PORT: String(spec.exchangePort),
 		HYDRA_HOST_PUBLIC_HOST: PUBLIC_HOST,
 		HYDRA_HOST_NETWORK: 'preprod',
 		HYDRA_HOST_ADMIN_TOKEN: spec.adminToken,

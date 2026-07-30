@@ -170,15 +170,31 @@ export async function checkEscrowContract(host: RunningHost): Promise<void> {
 	);
 	check('the node records its acknowledgement time', typeof fetchedBody.escrowAckedAt === 'string');
 
-	// An acknowledged node holds head state the Host cannot reason about, so
-	// removal is the caller's assertion that the head is settled.
-	const unforced = await http(`${host.spec.baseUrl}/v1/nodes/${first.nodeId ?? ''}`, {
+	// An acknowledged node with no peers has never booted: --peer becomes
+	// --initial-cluster, which is fixed at process start, so its persistence
+	// directory is empty by construction. That is exactly the state a head
+	// invite leaves its reserved node in, and an unredeemed reservation has to
+	// stay revocable.
+	//
+	// The other branch — acknowledged *and* peered, which does need force — is
+	// asserted in transitions.spec.ts rather than here, because reaching it live
+	// means leaving a started node running through the later process counts.
+	const reservedRemoved = await http(`${host.spec.baseUrl}/v1/nodes/${first.nodeId ?? ''}`, {
 		method: 'DELETE',
 		token: host.spec.adminToken,
 	});
-	equals('removing an acknowledged node without force is refused', unforced.status, 409);
+	check(
+		'an acknowledged but peerless node can be removed without force',
+		reservedRemoved.status < 400,
+		`status ${reservedRemoved.status}`,
+	);
 
-	const removed = await http(`${host.spec.baseUrl}/v1/nodes/${first.nodeId ?? ''}?force=true`, {
+	const forced = await provision(host, `escrow-forced-${Date.now()}`);
+	await http(`${host.spec.baseUrl}/v1/nodes/${forced.nodeId ?? ''}/escrow-ack`, {
+		method: 'POST',
+		token: host.spec.adminToken,
+	});
+	const removed = await http(`${host.spec.baseUrl}/v1/nodes/${forced.nodeId ?? ''}?force=true`, {
 		method: 'DELETE',
 		token: host.spec.adminToken,
 	});
