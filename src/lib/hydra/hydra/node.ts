@@ -30,6 +30,7 @@ import {
 	txInvalidMessageSchema,
 	txValidMessageSchema,
 } from './schemas';
+import { describePostTxError } from './post-tx-error';
 import { HydraConfirmedTransaction, HydraNodeEvent, HydraTransaction, HydraUTxO, StatusChangeData } from './types';
 import {
 	HydraCommandRejectedError,
@@ -1916,11 +1917,14 @@ function handleWsResponse(
 			const message = postTxOnChainFailedMessageSchema.parse(raw);
 			assertExpectedFrameHeadId(message, expectedHeadId);
 			if (message.postChainTx?.tag === `${command}Tx`) {
+				// Name the node's own reason. Without it every L1 refusal reads the
+				// same, and the operator has no way to tell "the node's key holds
+				// nothing" (NoSeedInput) from a genuine protocol rejection — the two
+				// have completely different fixes.
+				const reason = describePostTxError(message.postTxError);
 				return {
 					kind: 'reject',
-					error: new HydraCommandRejectedError(
-						`Error posting transaction for command ${command}; hydra-node rejected the L1 action`,
-					),
+					error: new HydraCommandRejectedError(`hydra-node refused to post the ${command} transaction: ${reason}`),
 				};
 			}
 			return { kind: 'message', message };

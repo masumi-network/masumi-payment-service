@@ -626,6 +626,70 @@ export async function revealHydraNodeKeys(apiClient: Client, payload: { id: stri
  * there — so a freshly provisioned node fails with `NoSeedInput` until this has
  * run. A scheduled cycle does it too; this is for not waiting.
  */
+export type HydraHeadError = {
+  id: string;
+  errorType: string;
+  errorMessage: string;
+  headStatus: string;
+  clientInput: string | null;
+  txHash: string | null;
+  errorAt: string;
+};
+
+/**
+ * What went wrong on a head, so the count in the table leads somewhere.
+ *
+ * The endpoint existed from the start and nothing called it: the table said
+ * "2 errors" and the detail view showed none of them, which is worse than not
+ * counting at all.
+ */
+export function useHydraHeadErrors(headId: string | null) {
+  const { apiClient } = useAppContext();
+
+  const query = useQuery<HydraHeadError[]>({
+    queryKey: ['hydra-head-errors', headId],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          apiClient.get<{ 200: ApiEnvelope<{ errors: HydraHeadError[] }> }>({
+            responseType: 'json',
+            url: '/hydra/head/errors',
+            query: { headId, limit: 25 },
+          }),
+        { errorMessage: 'Failed to load the head errors' },
+      );
+      return response?.data?.data?.errors ?? [];
+    },
+    enabled: !!apiClient && headId !== null,
+    staleTime: 10000,
+  });
+
+  return { ...query, errors: query.data ?? [] };
+}
+
+export type HydraNodeFunding = {
+  address: string;
+  balanceLovelace: string;
+  isUnderfunded: boolean;
+  shortfallLovelace: string;
+  checked: boolean;
+};
+
+/** What the node's own key holds, read before an L1 action rather than after it fails. */
+export async function readHydraNodeFunding(apiClient: Client, payload: { id: string }) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.get<{ 200: ApiEnvelope<HydraNodeFunding> }>({
+        responseType: 'json',
+        url: '/hydra/participant/local/fund',
+        query: payload,
+      }),
+    { errorMessage: "Failed to read the node's balance" },
+  );
+
+  return ensureData(response?.data?.data, 'The node balance was not returned by the API');
+}
+
 export async function fundHydraNode(apiClient: Client, payload: { id: string }) {
   const response = await handleApiCall(
     () =>

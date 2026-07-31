@@ -18,7 +18,12 @@ import {
 import { toast } from 'react-toastify';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
-import { HydraInvitesCard } from '@/components/hydra/HydraInvitesCard';
+import { HydraContextBar } from '@/components/hydra/HydraContextBar';
+import { HydraHeadErrors } from '@/components/hydra/HydraHeadErrors';
+import { HydraInitDialog } from '@/components/hydra/HydraInitDialog';
+import { HydraNodesDialog, HydraInvitesDialog } from '@/components/hydra/HydraManageDialog';
+import { useHydraInvites } from '@/lib/hooks/useHydraHeads';
+import { useHydraHosts } from '@/lib/hooks/useHydraHosts';
 import { HydraNodesCard } from '@/components/hydra/HydraNodesCard';
 import { ConnectHydraNodeDialog } from '@/components/hydra/ConnectHydraNodeDialog';
 import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
@@ -518,6 +523,8 @@ function HydraHeadDetailsDialog({
             </div>
           )}
 
+          <HydraHeadErrors headId={head.id} count={head._count?.Errors ?? 0} />
+
           <div className="space-y-3">
             <h3 className="font-medium">Lifecycle transactions</h3>
             <div className="grid gap-3">
@@ -760,7 +767,16 @@ export default function HydraHeadsPage() {
   const [activeTab, setActiveTab] = useState<StatusTab>('All');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isConnectNodeOpen, setIsConnectNodeOpen] = useState(false);
-  const [connectedNodeCount, setConnectedNodeCount] = useState(0);
+  const [isNodesOpen, setIsNodesOpen] = useState(false);
+  const [isInvitesOpen, setIsInvitesOpen] = useState(false);
+  const { invites } = useHydraInvites();
+  const inviteCount = invites.length;
+  // Read here rather than through the nodes card: the card now lives in a
+  // dialog, so leaving the count to it reported zero until the operator happened
+  // to open one — and the page gates its primary action on this.
+  const { hosts } = useHydraHosts(
+    network === 'Preprod' || network === 'Mainnet' ? network : undefined,
+  );
   const [backUpKeysParticipantId, setBackUpKeysParticipantId] = useState<string | null>(null);
   const [selectedHeadId, setSelectedHeadId] = useState<string | null>(null);
   const [runningLifecycleHeadId, setRunningLifecycleHeadId] = useState<string | null>(null);
@@ -831,6 +847,7 @@ export default function HydraHeadsPage() {
   );
   // A head has to run somewhere, so the action is unavailable until a node is
   // connected — which is the step above it on this page.
+  const connectedNodeCount = hosts.length;
   const hasConnectedNode = connectedNodeCount > 0;
   const pendingLifecycleCopy = pendingLifecycleAction
     ? getLifecycleActionConfirmCopy(pendingLifecycleAction.head, pendingLifecycleAction.action)
@@ -886,58 +903,39 @@ export default function HydraHeadsPage() {
               </p>
             </div>
 
-            {/* A node is the container: you connect one, then open heads on it. */}
+            {/* One primary action. Connecting a node is the prerequisite, so it
+                leads until there is one; after that, opening heads is what an
+                operator returns for. */}
             <div className="flex items-center gap-2">
-              <Button type="button" onClick={() => setIsConnectNodeOpen(true)}>
-                <Plus className="h-4 w-4" />
-                Connect node
-              </Button>
+              {hasConnectedNode ? (
+                <Button type="button" onClick={() => setIsInvitesOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  New head
+                </Button>
+              ) : (
+                <Button type="button" onClick={() => setIsConnectNodeOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  Connect node
+                </Button>
+              )}
               <RefreshButton onRefresh={() => void refetch()} isRefreshing={isFetching} />
             </div>
           </div>
 
-          <HydraNodesCard onConnectedCountChange={setConnectedNodeCount} />
-
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="rounded-lg border bg-card px-4 py-3">
-              <div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
-                <Layers3 className="h-4 w-4" />
-                Total
-              </div>
-              <p className="mt-1 text-xl font-semibold">{stats.totalHeads}</p>
-            </div>
-            <div
-              className={cn(
-                'rounded-lg border bg-card px-4 py-3',
-                stats.openHeads > 0 && 'border-green-200 dark:border-green-900/60',
-              )}
-            >
-              <div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
-                <Activity className="h-4 w-4" />
-                Open
-              </div>
-              <p className="mt-1 text-xl font-semibold">{stats.openHeads}</p>
-            </div>
-            <div className="rounded-lg border bg-card px-4 py-3">
-              <div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
-                <GitBranch className="h-4 w-4" />
-                Active lifecycle
-              </div>
-              <p className="mt-1 text-xl font-semibold">{stats.activeHeads}</p>
-            </div>
-            <div className="rounded-lg border bg-card px-4 py-3">
-              <p className="text-xs font-medium uppercase text-muted-foreground">Enabled</p>
-              <p className="mt-1 text-xl font-semibold">{stats.enabledHeads}</p>
-            </div>
-          </div>
+          <HydraContextBar
+            nodeCount={connectedNodeCount}
+            inviteCount={inviteCount}
+            openHeads={stats.openHeads}
+            activeHeads={stats.activeHeads}
+            onManageNodes={() => setIsNodesOpen(true)}
+            onManageInvites={() => setIsInvitesOpen(true)}
+          />
 
           <Tabs
             tabs={tabs}
             activeTab={activeTab}
             onTabChange={(tab) => setActiveTab(tab as StatusTab)}
           />
-
-          <HydraInvitesCard hasConnectedNode={hasConnectedNode} />
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <SearchInput
@@ -972,8 +970,21 @@ export default function HydraHeadsPage() {
         onRequestLifecycle={(head, action) => setPendingLifecycleAction({ head, action })}
         onBackUpKeys={(head) => setBackUpKeysParticipantId(head.LocalParticipant?.id ?? null)}
       />
+      {/* Init has a precondition the others do not: the node must be able to pay
+          for the transaction it is about to post. */}
+      <HydraInitDialog
+        open={pendingLifecycleAction?.action === 'init'}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setPendingLifecycleAction(null);
+        }}
+        localParticipantId={pendingLifecycleAction?.head.LocalParticipant?.id ?? null}
+        onConfirm={handleConfirmLifecycleAction}
+        isRunning={
+          pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false
+        }
+      />
       <ConfirmDialog
-        open={Boolean(pendingLifecycleAction)}
+        open={Boolean(pendingLifecycleAction) && pendingLifecycleAction?.action !== 'init'}
         onClose={() => setPendingLifecycleAction(null)}
         title={pendingLifecycleCopy?.title ?? 'Confirm Hydra action'}
         description={
@@ -992,6 +1003,12 @@ export default function HydraHeadsPage() {
         }}
         participantId={backUpKeysParticipantId}
         onDone={() => void refetch()}
+      />
+      <HydraNodesDialog open={isNodesOpen} onOpenChange={setIsNodesOpen} />
+      <HydraInvitesDialog
+        open={isInvitesOpen}
+        onOpenChange={setIsInvitesOpen}
+        hasConnectedNode={hasConnectedNode}
       />
       <ConnectHydraNodeDialog
         open={isConnectNodeOpen}

@@ -1,7 +1,7 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
-import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
+import { fundHydraNodeNow, readNodeFundingState } from '@/services/hydra-node-funding/service';
 import { decrypt } from '@/utils/security/encryption';
 import createHttpError from 'http-errors';
 import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
@@ -548,6 +548,42 @@ export const fundParticipantNodeOutput = z.object({
 	address: z.string().describe("The node's own Cardano address, derived from its key hash"),
 	balanceLovelace: z.string(),
 	transferredLovelace: z.string().nullable().describe('Null when the node already had enough'),
+});
+
+// --- GET: is this node funded enough to act on chain? ---
+
+export const participantFundingSchemaInput = z.object({ id: z.string().min(1) });
+
+export const participantFundingSchemaOutput = z.object({
+	address: z.string(),
+	balanceLovelace: z.string(),
+	isUnderfunded: z.boolean(),
+	shortfallLovelace: z.string(),
+	checked: z.boolean().describe('False when the chain could not be consulted — unknown, not zero'),
+});
+
+/**
+ * Read before an L1 action rather than after it fails.
+ *
+ * Init that fails for want of funds fails slowly and says nothing about money:
+ * the node posts nothing, the service waits out its timeout, and the operator
+ * sees a gateway timeout. Asking first turns that into a sentence with a number
+ * in it.
+ */
+export const participantFundingGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: participantFundingSchemaInput,
+	output: participantFundingSchemaOutput,
+	handler: async ({ input }) => {
+		const state = await readNodeFundingState(input.id);
+		return {
+			address: state.address,
+			balanceLovelace: state.balanceLovelace.toString(),
+			isUnderfunded: state.isUnderfunded,
+			shortfallLovelace: state.shortfallLovelace.toString(),
+			checked: state.checked,
+		};
+	},
 });
 
 /**

@@ -143,6 +143,52 @@ export async function runHydraNodeFundingCycle(): Promise<NodeFundingOutcome> {
 	return outcome;
 }
 
+export type NodeFundingState = {
+	address: string;
+	balanceLovelace: bigint;
+	/** True when the node cannot pay for an L1 action, so Init would fail. */
+	isUnderfunded: boolean;
+	/** What a top-up would send, so a caller can offer it rather than describe it. */
+	shortfallLovelace: bigint;
+	/** Null when the chain could not be consulted — unknown, not zero. */
+	checked: boolean;
+};
+
+/**
+ * What a node's key currently holds, and whether that is enough.
+ *
+ * Read before an L1 action rather than after it fails. Init that fails for want
+ * of funds does so slowly and opaquely: the node posts nothing, the service
+ * waits out its timeout, and the operator sees a gateway timeout with no
+ * mention of money.
+ */
+export async function readNodeFundingState(localParticipantId: string): Promise<NodeFundingState> {
+	const participant = await prisma.hydraLocalParticipant.findUniqueOrThrow({
+		where: { id: localParticipantId },
+		include: { Wallet: { include: { PaymentSource: { include: { PaymentSourceConfig: true } } } } },
+	});
+	const network = participant.Wallet.PaymentSource.network;
+	const address = nodeCardanoAddress(participant.cardanoVkey, network);
+	const balance = await readLovelaceAt(
+		address,
+		network,
+		participant.Wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
+	);
+
+	if (balance === null) {
+		// Unknown is not underfunded: refusing an action because a chain lookup
+		// failed would turn a Blockfrost hiccup into an outage.
+		return { address, balanceLovelace: 0n, isUnderfunded: false, shortfallLovelace: 0n, checked: false };
+	}
+	return {
+		address,
+		balanceLovelace: balance,
+		isUnderfunded: balance < NODE_MINIMUM_LOVELACE,
+		shortfallLovelace: balance < NODE_MINIMUM_LOVELACE ? NODE_TARGET_LOVELACE - balance : 0n,
+		checked: true,
+	};
+}
+
 /**
  * Fund one node now, rather than waiting for the cycle.
  *

@@ -26,6 +26,23 @@ import { revokeHydraInvite, useHydraInvites, type HydraInvite } from '@/lib/hook
 import { IssueHydraInviteDialog } from '@/components/hydra/IssueHydraInviteDialog';
 import { RedeemHydraInviteDialog } from '@/components/hydra/RedeemHydraInviteDialog';
 
+/** Chrome-free stand-ins, so the same card can sit inside a dialog that already has a header. */
+function EmbeddedShell({ children }: { children: React.ReactNode }) {
+  return <div className="space-y-4">{children}</div>;
+}
+function EmbeddedHeader({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <div className={className}>{children}</div>;
+}
+function EmbeddedBody({ children }: { children: React.ReactNode }) {
+  return <div>{children}</div>;
+}
+
 function statusTone(status: HydraInvite['status']) {
   if (status === 'Completed') return 'default';
   if (status === 'Issued') return 'secondary';
@@ -45,7 +62,14 @@ function describe(invite: HydraInvite): string {
   return invite.status;
 }
 
-export function HydraInvitesCard({ hasConnectedNode }: { hasConnectedNode: boolean }) {
+export function HydraInvitesCard({
+  hasConnectedNode,
+  variant = 'card',
+}: {
+  hasConnectedNode: boolean;
+  /** 'embedded' drops the card chrome, for use inside a dialog that already has a header. */
+  variant?: 'card' | 'embedded';
+}) {
   const { apiClient } = useAppContext();
   const { invites, refetch, isLoading } = useHydraInvites();
   const [isIssueOpen, setIsIssueOpen] = useState(false);
@@ -67,20 +91,29 @@ export function HydraInvitesCard({ hasConnectedNode }: { hasConnectedNode: boole
     }
   }
 
+  const isEmbedded = variant === 'embedded';
+  const Shell = isEmbedded ? EmbeddedShell : Card;
+  const HeaderShell = isEmbedded ? EmbeddedHeader : CardHeader;
+  const BodyShell = isEmbedded ? EmbeddedBody : CardContent;
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
-        <div>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Ticket className="h-4 w-4" />
-            Invites
-            <Badge variant="outline">{invites.length}</Badge>
-          </CardTitle>
-          <CardDescription>
-            A head is opened by issuing an invite or redeeming one. An outstanding invite holds a
-            node and a peer port until it is used.
-          </CardDescription>
-        </div>
+    <Shell>
+      <HeaderShell className="flex flex-row flex-wrap items-start justify-between gap-3">
+        {isEmbedded ? (
+          <span />
+        ) : (
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Ticket className="h-4 w-4" />
+              Invites
+              <Badge variant="outline">{invites.length}</Badge>
+            </CardTitle>
+            <CardDescription>
+              A head is opened by issuing an invite or redeeming one. An outstanding invite holds a
+              node and a peer port until it is used.
+            </CardDescription>
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
@@ -106,9 +139,9 @@ export function HydraInvitesCard({ hasConnectedNode }: { hasConnectedNode: boole
             Invite someone
           </Button>
         </div>
-      </CardHeader>
+      </HeaderShell>
 
-      <CardContent>
+      <BodyShell>
         {isLoading ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -165,7 +198,7 @@ export function HydraInvitesCard({ hasConnectedNode }: { hasConnectedNode: boole
             ))}
           </ul>
         )}
-      </CardContent>
+      </BodyShell>
 
       <IssueHydraInviteDialog
         open={isIssueOpen}
@@ -187,6 +220,6 @@ export function HydraInvitesCard({ hasConnectedNode }: { hasConnectedNode: boole
           if (pendingRevoke !== null) void handleRevoke(pendingRevoke);
         }}
       />
-    </Card>
+    </Shell>
   );
 }

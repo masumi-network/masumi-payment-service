@@ -1,0 +1,76 @@
+/**
+ * What went wrong on a head.
+ *
+ * The table has always counted errors and nothing ever showed them, which is
+ * worse than not counting: an operator is told twice that something failed and
+ * given no way to find out what. The endpoint existed the whole time.
+ *
+ * Newest first, because the last failure is the one being investigated. The
+ * message carries the node's own reason — `NoSeedInput` and friends are the
+ * difference between "fund the node" and "something is wrong with the head" —
+ * so it is shown verbatim rather than summarised.
+ */
+
+import { AlertCircle, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { useHydraHeadErrors } from '@/lib/hooks/useHydraHeads';
+
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  const minutes = Math.round((Date.now() - then) / 60_000);
+  if (!Number.isFinite(minutes)) return '';
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+export function HydraHeadErrors({ headId, count }: { headId: string; count: number }) {
+  const { errors, isLoading } = useHydraHeadErrors(headId);
+
+  if (count === 0 && errors.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3">
+      <h3 className="flex items-center gap-2 font-medium">
+        <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+        Errors
+        <Badge variant="outline">{errors.length || count}</Badge>
+      </h3>
+
+      {isLoading ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading…
+        </p>
+      ) : errors.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          The count is recorded but the entries are no longer available.
+        </p>
+      ) : (
+        <ul className="divide-y rounded-md border">
+          {errors.map((error) => (
+            <li key={error.id} className="space-y-1 px-3 py-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="text-red-600 dark:text-red-400">
+                  {error.errorType}
+                </Badge>
+                {error.clientInput && <Badge variant="outline">{error.clientInput}</Badge>}
+                <span className="text-xs text-muted-foreground">
+                  {relativeTime(error.errorAt)} · while {error.headStatus}
+                </span>
+              </div>
+              <p className="break-words text-sm">{error.errorMessage}</p>
+              {error.txHash && (
+                <p className="break-all font-mono text-xs text-muted-foreground">{error.txHash}</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

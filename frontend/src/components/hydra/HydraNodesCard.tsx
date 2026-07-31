@@ -62,8 +62,11 @@ function formatWhen(value: string | null): string {
 
 export function HydraNodesCard({
   onConnectedCountChange,
+  variant = 'card',
 }: {
   onConnectedCountChange?: (count: number) => void;
+  /** 'embedded' drops the outer chrome, for a dialog that already has a header. */
+  variant?: 'card' | 'embedded';
 }) {
   const { apiClient, network } = useAppContext();
   const cardanoNetwork = network === 'Preprod' || network === 'Mainnet' ? network : undefined;
@@ -120,19 +123,30 @@ export function HydraNodesCard({
     });
   }
 
+  const isEmbedded = variant === 'card' ? false : true;
+
   return (
-    <div className="rounded-lg border bg-card">
-      <div className="flex items-start justify-between gap-4 border-b px-4 py-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <Server className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold">Connected nodes</h2>
-            <Badge variant="outline">{hosts.length}</Badge>
+    <div className={cn(!isEmbedded && 'rounded-lg border bg-card')}>
+      <div
+        className={cn(
+          'flex items-start justify-between gap-4',
+          isEmbedded ? 'pb-2' : 'border-b px-4 py-3',
+        )}
+      >
+        {isEmbedded ? (
+          <span />
+        ) : (
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Server className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-sm font-semibold">Connected nodes</h2>
+              <Badge variant="outline">{hosts.length}</Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Each node runs a hydra-node process per head and generates that node’s keys itself.
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Each node runs a hydra-node process per head and generates that node’s keys itself.
-          </p>
-        </div>
+        )}
         <div className="flex items-center gap-2">
           <Button
             type="button"
@@ -154,15 +168,14 @@ export function HydraNodesCard({
           <div className="h-14 animate-pulse rounded-md bg-muted" />
         </div>
       ) : hosts.length === 0 ? (
-        <div className="px-4 py-8 text-center">
+        <div className="rounded-md border border-dashed px-4 py-8 text-center">
           <p className="text-sm text-muted-foreground">No Hydra nodes are connected yet.</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Use <span className="font-medium">Connect node</span> above, with its URL, user key and
-            admin key, to start opening heads.
+            Connect one with its URL, user key and admin key to start opening heads.
           </p>
         </div>
       ) : (
-        <ul className="divide-y">
+        <ul className={cn('divide-y', isEmbedded && 'rounded-md border')}>
           {hosts.map((host) => (
             <li
               key={host.id}
