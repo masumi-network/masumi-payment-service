@@ -2,7 +2,7 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import { fundHydraNodeNow, readNodeFundingState } from '@/services/hydra-node-funding/service';
-import { fetchHostNodeHealth } from '@/services/hydra-host/client';
+import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 import { decrypt } from '@/utils/security/encryption';
 import createHttpError from 'http-errors';
 import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
@@ -599,53 +599,6 @@ export const participantFundingGet = adminAuthenticatedEndpointFactory.build({
 		};
 	},
 });
-
-/**
- * Ask this participant's Host whether its node can act.
- *
- * Failures resolve to ready rather than blocking: a Host that cannot be reached
- * is a reason to let the operator try and see a real error, not to refuse on a
- * guess.
- */
-async function readParticipantNodeState(
-	localParticipantId: string,
-): Promise<{ state: string; isReady: boolean; reason: string | null }> {
-	const participant = await prisma.hydraLocalParticipant.findUnique({
-		where: { id: localParticipantId },
-		include: { HydraHost: true },
-	});
-	if (!participant) {
-		return { state: 'Unknown', isReady: true, reason: null };
-	}
-
-	try {
-		const health = await fetchHostNodeHealth(
-			participant.HydraHost.baseUrl,
-			decrypt(participant.HydraHost.encryptedUserToken),
-			participant.hostNodeId,
-		);
-		if (health.usable) {
-			return { state: health.state, isReady: true, reason: null };
-		}
-		if (health.state !== 'Running') {
-			return {
-				state: health.state,
-				isReady: false,
-				reason: 'The node is still starting. It has to be running before it can post a transaction.',
-			};
-		}
-		if (!health.chainSynced) {
-			return {
-				state: health.state,
-				isReady: false,
-				reason: 'The node is running but still catching up on chain, and will reject commands until it has.',
-			};
-		}
-		return { state: health.state, isReady: false, reason: 'The node is not answering its own API.' };
-	} catch {
-		return { state: 'Unknown', isReady: true, reason: null };
-	}
-}
 
 /**
  * Top up the node's Cardano key now, rather than waiting for the funding cycle.

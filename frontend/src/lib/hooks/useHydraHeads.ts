@@ -672,6 +672,30 @@ export function useHydraHeadErrors(headId: string | null) {
   return { ...query, errors: query.data ?? [] };
 }
 
+export type HydraHeadConnection = {
+  headId: string;
+  connected: boolean;
+  nodeState: string;
+  isReady: boolean;
+  reason: string | null;
+  checkedAt: string;
+};
+
+/** Whether the head's node is up and this service holds a live session to it. */
+export async function readHydraHeadConnection(apiClient: Client, payload: { headId: string }) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.get<{ 200: ApiEnvelope<HydraHeadConnection> }>({
+        responseType: 'json',
+        url: '/hydra/head/connection',
+        query: payload,
+      }),
+    { errorMessage: 'Failed to check the connection' },
+  );
+
+  return ensureData(response?.data?.data, 'The connection state was not returned by the API');
+}
+
 export type HydraTopup = {
   id: string;
   createdAt: string;

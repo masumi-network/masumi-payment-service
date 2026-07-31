@@ -15,6 +15,7 @@ export {
 	getHeadBalanceGet,
 	updateHeadPatch,
 	listHeadErrorsGet,
+	getHeadConnectionGet,
 	clearHeadErrorsDelete,
 	initHeadPost,
 	commitHeadPost,

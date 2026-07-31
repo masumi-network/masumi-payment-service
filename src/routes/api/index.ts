@@ -128,6 +128,7 @@ import {
 	checkHydraHostPost,
 	listHydraWalletBasesGet,
 	listHeadErrorsGet,
+	getHeadConnectionGet,
 	clearHeadErrorsDelete,
 	topupHeadPost,
 	listTopupsGet,
@@ -514,6 +515,7 @@ export const apiRouter: Routing = {
 				fanout: { post: fanoutHeadPost },
 				balance: { get: getHeadBalanceGet },
 				errors: { get: listHeadErrorsGet, delete: clearHeadErrorsDelete },
+				connection: { get: getHeadConnectionGet },
 			},
 			// Read and delete only: participants are created by redeeming an invite.
 			participant: {

@@ -22,6 +22,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import { HydraHeadErrors } from '@/components/hydra/HydraHeadErrors';
 import { HydraHeadWallets } from '@/components/hydra/HydraHeadWallets';
+import { HydraHeadConnectionPanel } from '@/components/hydra/HydraHeadConnection';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraInitDialog } from '@/components/hydra/HydraInitDialog';
 import { HydraInvitesDialog } from '@/components/hydra/HydraManageDialog';
@@ -540,6 +541,8 @@ function HydraHeadDetailsDialog({
               </Button>
             </div>
           )}
+
+          <HydraHeadConnectionPanel headId={head.id} />
 
           <HydraHeadInHeadBalance
             headId={head.id}

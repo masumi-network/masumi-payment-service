@@ -13,6 +13,7 @@ import {
 } from '@/generated/prisma/client';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
+import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 import { logger } from '@masumi/payment-core/logger';
 import {
 	buildValidatedHydraCommit,
@@ -850,6 +851,59 @@ export const clearHeadErrorsDelete = adminAuthenticatedEndpointFactory.build({
 		}
 		const { count } = await prisma.hydraHeadError.deleteMany({ where: { hydraHeadId: input.headId } });
 		return { cleared: count };
+	},
+});
+
+// --- GET: is this head reachable right now? ---
+
+export const headConnectionSchemaInput = z.object({ headId: z.string().min(1) });
+
+export const headConnectionSchemaOutput = z.object({
+	headId: z.string(),
+	/** True when this service holds a live authenticated session to the head's node. */
+	connected: z.boolean(),
+	nodeState: z.string(),
+	isReady: z.boolean(),
+	reason: z.string().nullable(),
+	checkedAt: z.string(),
+});
+
+/**
+ * Whether anything can be done with this head at this moment.
+ *
+ * Two different things have to be true and were both invisible: the node has to
+ * be running and synced, and this service has to hold a live session to it. A
+ * head can be perfectly valid on chain while neither holds, and the only
+ * evidence was an action failing minutes later with a timeout.
+ *
+ * Read on demand rather than polled, because it costs a round trip to the Host
+ * and an operator asks it when something looks stuck.
+ */
+export const getHeadConnectionGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: headConnectionSchemaInput,
+	output: headConnectionSchemaOutput,
+	handler: async ({ input }) => {
+		const head = await prisma.hydraHead.findUnique({
+			where: { id: input.headId },
+			include: { LocalParticipant: { select: { id: true } } },
+		});
+		if (!head) {
+			throw createHttpError(404, 'Hydra head not found');
+		}
+
+		const node = head.LocalParticipant
+			? await readParticipantNodeState(head.LocalParticipant.id)
+			: { state: 'Unknown', isReady: false, reason: 'This head has no local participant.' };
+
+		return {
+			headId: head.id,
+			connected: getHydraConnectionManager().isConnected(head.id),
+			nodeState: node.state,
+			isReady: node.isReady,
+			reason: node.reason,
+			checkedAt: new Date().toISOString(),
+		};
 	},
 });
 
