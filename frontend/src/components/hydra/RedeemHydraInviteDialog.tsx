@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, ShieldAlert, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
+import { CopyButton } from '@/components/ui/copy-button';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -36,6 +37,8 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useWallets } from '@/lib/queries/useWallets';
+import { shortenAddress } from '@/lib/utils';
+import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import {
   previewHydraInvite,
   redeemHydraInvite,
@@ -152,9 +155,13 @@ export function RedeemHydraInviteDialog({
               </p>
             )}
 
+            {/* Identity, not data. The wallet is what the signature proves, but
+                what an operator actually recognises is the agent name — so that
+                leads, the address is truncated with a copy, and the raw asset
+                ids move behind a disclosure where they belong. */}
             <section className="space-y-2">
               <h3 className="text-sm font-semibold">Who this is from</h3>
-              <Field label="Wallet" value={preview.issuerWalletAddress} />
+
               {preview.identity.lookupError !== null ? (
                 <p className="text-xs text-muted-foreground">{preview.identity.lookupError}</p>
               ) : preview.identity.entries.length === 0 ? (
@@ -162,41 +169,58 @@ export function RedeemHydraInviteDialog({
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
                     This wallet holds no registry entries, so there is nothing on chain vouching for
-                    who it is. That is normal for a brand-new operator and expected if you were told
-                    to expect it — otherwise confirm the address with them directly.
+                    who it is. Normal for a brand-new operator, and expected if you were told to
+                    expect it — otherwise confirm the address with them directly.
                   </span>
                 </p>
               ) : (
-                <ul className="space-y-1 rounded-md border p-2">
+                <ul className="divide-y rounded-md border">
                   {preview.identity.entries.map((entry) => (
-                    <li
-                      key={entry.unit}
-                      className="flex items-center justify-between gap-2 text-xs"
-                    >
-                      <span className="font-medium">{entry.name ?? entry.assetName}</span>
-                      <span className="truncate font-mono text-muted-foreground">
+                    <li key={entry.unit} className="px-3 py-2">
+                      <p className="text-sm font-medium">{entry.name ?? entry.assetName}</p>
+                      <p className="truncate font-mono text-xs text-muted-foreground">
                         {entry.assetName}
-                      </span>
+                      </p>
                     </li>
                   ))}
                 </ul>
               )}
+
+              <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/10 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground">Wallet</p>
+                  <p className="truncate font-mono text-xs">
+                    {shortenAddress(preview.issuerWalletAddress, 12)}
+                  </p>
+                </div>
+                <CopyButton value={preview.issuerWalletAddress} className="h-7 w-7" />
+              </div>
             </section>
 
             <section className="space-y-2">
               <h3 className="text-sm font-semibold">What you would be agreeing to</h3>
+              {/* The two terms with consequences stay visible; addresses and
+                  ports are for verifying a suspicion, not for reading every
+                  time. */}
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Network" value={preview.network} />
-                <Field label="Their node" value={preview.advertise} />
                 <Field label="Contestation" value={`${preview.contestationPeriodSeconds}s`} />
-                <Field label="Deposit period" value={`${preview.depositPeriodSeconds}s`} />
-                <Field label="Expires" value={new Date(preview.expiresAt).toLocaleString()} />
-                <Field label="Their exchange" value={preview.exchangeUrl} />
               </div>
               <p className="text-xs text-muted-foreground">
                 The contestation period is how long a closing head can be disputed. It is fixed for
                 the head&apos;s life and cannot be changed afterwards.
               </p>
+
+              <HydraDetailSection title="Technical details" summary={preview.advertise}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Their node" value={preview.advertise} />
+                  <Field label="Their exchange" value={preview.exchangeUrl} />
+                  <Field label="Deposit period" value={`${preview.depositPeriodSeconds}s`} />
+                  <Field label="Unsynced period" value={`${preview.unsyncedPeriodSeconds}s`} />
+                  <Field label="Expires" value={new Date(preview.expiresAt).toLocaleString()} />
+                  <Field label="Nonce" value={preview.nonce} />
+                </div>
+              </HydraDetailSection>
             </section>
 
             {preview.alreadyKnown && (
@@ -214,7 +238,19 @@ export function RedeemHydraInviteDialog({
                 <SelectContent>
                   {wallets.map((wallet) => (
                     <SelectItem key={wallet.id} value={wallet.id}>
-                      {wallet.note?.trim() || wallet.type} · {wallet.walletAddress.slice(0, 16)}…
+                      {/* The role is always shown, even when the wallet has a
+                          note. A head is between two wallets and which side
+                          each plays decides whether payments can route through
+                          it — a name alone does not say that. */}
+                      <span className="flex items-center gap-2">
+                        <Badge variant="outline" className="shrink-0">
+                          {wallet.type === 'Purchasing' ? 'Buyer' : 'Seller'}
+                        </Badge>
+                        <span className="truncate">
+                          {wallet.note?.trim() ? `${wallet.note.trim()} · ` : ''}
+                          {wallet.walletAddress.slice(0, 16)}…
+                        </span>
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>

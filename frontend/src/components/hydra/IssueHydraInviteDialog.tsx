@@ -15,6 +15,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Loader2, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
@@ -118,7 +119,19 @@ export function IssueHydraInviteDialog({
                 <SelectContent>
                   {wallets.map((wallet) => (
                     <SelectItem key={wallet.id} value={wallet.id}>
-                      {wallet.note?.trim() || wallet.type} · {wallet.walletAddress.slice(0, 16)}…
+                      {/* The role is always shown, even when the wallet has a
+                          note. A head is between two wallets and which side
+                          each plays decides whether payments can route through
+                          it — a name alone does not say that. */}
+                      <span className="flex items-center gap-2">
+                        <Badge variant="outline" className="shrink-0">
+                          {wallet.type === 'Purchasing' ? 'Buyer' : 'Seller'}
+                        </Badge>
+                        <span className="truncate">
+                          {wallet.note?.trim() ? `${wallet.note.trim()} · ` : ''}
+                          {wallet.walletAddress.slice(0, 16)}…
+                        </span>
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
