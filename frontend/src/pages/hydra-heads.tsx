@@ -28,7 +28,7 @@ import { HydraNodeDetailsDialog } from '@/components/hydra/HydraNodeDetailsDialo
 import { IssueHydraInviteDialog } from '@/components/hydra/IssueHydraInviteDialog';
 import { RedeemHydraInviteDialog } from '@/components/hydra/RedeemHydraInviteDialog';
 import type { HydraHost } from '@/lib/hooks/useHydraHosts';
-import { useHydraInvites } from '@/lib/hooks/useHydraHeads';
+import { useHydraInvites, type HydraInvite } from '@/lib/hooks/useHydraHeads';
 import { useHydraHosts } from '@/lib/hooks/useHydraHosts';
 import { HydraNodesCard } from '@/components/hydra/HydraNodesCard';
 import { ConnectHydraNodeDialog } from '@/components/hydra/ConnectHydraNodeDialog';
@@ -592,18 +592,33 @@ function HydraHeadDetailsDialog({
 
 function HydraHeadTable({
   heads,
+  pendingInvites,
+  hostNames,
   isLoading,
   hasActiveFilters,
   runningLifecycleHeadId,
   onOpenHead,
   onRequestLifecycle,
+  onManageInvites,
 }: {
   heads: HydraHead[];
+  /**
+   * Invites nobody has redeemed yet, listed as the heads they are becoming.
+   *
+   * Issuing one already provisions the node and reserves its peer port, so the
+   * head's resources exist and only the counterparty is missing — which makes
+   * "awaiting counterparty" the first stage of a head's life rather than a
+   * separate kind of object. Showing them apart was what made invites look like
+   * a third concept to learn.
+   */
+  pendingInvites: HydraInvite[];
+  hostNames: Record<string, string>;
   isLoading: boolean;
   hasActiveFilters: boolean;
   runningLifecycleHeadId: string | null;
   onOpenHead: (head: HydraHead) => void;
   onRequestLifecycle: (head: HydraHead, action: HydraLifecycleAction) => void;
+  onManageInvites: () => void;
 }) {
   if (isLoading && heads.length === 0) {
     return (
@@ -646,6 +661,9 @@ function HydraHeadTable({
               Status
             </th>
             <th scope="col" className="p-4 text-left text-sm font-medium">
+              Node
+            </th>
+            <th scope="col" className="p-4 text-left text-sm font-medium">
               Participants
             </th>
             <th scope="col" className="p-4 text-left text-sm font-medium">
@@ -666,6 +684,41 @@ function HydraHeadTable({
           </tr>
         </thead>
         <tbody>
+          {/* Listed first because they are the newest thing an operator did,
+              and because reading them as heads-in-waiting is the whole point:
+              the lifecycle runs awaiting → idle → initializing → open, not
+              "invites" beside "heads". */}
+          {pendingInvites.map((invite) => (
+            <tr key={invite.id} className="border-b bg-muted/20">
+              <td className="p-4 pl-6">
+                <div className="flex flex-col gap-1">
+                  <span className="font-mono text-sm text-muted-foreground">
+                    {invite.nonce.slice(0, 12)}…
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Invited {formatDate(invite.createdAt)}
+                  </span>
+                </div>
+              </td>
+              <td className="p-4">
+                <Badge variant="outline" className="w-fit">
+                  Awaiting counterparty
+                </Badge>
+              </td>
+              <td className="p-4">
+                <span className="text-sm">{hostNames[invite.hydraHostId] ?? '—'}</span>
+              </td>
+              <td className="p-4 text-sm text-muted-foreground" colSpan={4}>
+                Its node and peer port are reserved. It becomes a head when the counterparty redeems
+                it, or expires {formatDate(invite.expiresAt)}.
+              </td>
+              <td className="p-4 pr-6 text-right">
+                <Button type="button" variant="ghost" size="sm" onClick={onManageInvites}>
+                  Manage
+                </Button>
+              </td>
+            </tr>
+          ))}
           {heads.map((head, index) => {
             const participantSummary = getParticipantSummary(head);
             const lifecycleDate = getLifecycleDate(head);
@@ -727,6 +780,13 @@ function HydraHeadTable({
                       </span>
                     )}
                   </div>
+                </td>
+                <td className="p-4">
+                  {/* A head runs on exactly one node for its whole life and
+                      cannot be moved, so this is a fact about the head. */}
+                  <span className="text-sm">
+                    {hostNames[head.LocalParticipant?.hydraHostId ?? ''] ?? '—'}
+                  </span>
                 </td>
                 <td className="p-4">
                   <div className="flex flex-col gap-1 text-sm">
@@ -893,6 +953,22 @@ export default function HydraHeadsPage() {
     return counts;
   }, [heads]);
   const hasConnectedNode = connectedNodeCount > 0;
+  const hostNames = useMemo(
+    () => Object.fromEntries(hosts.map((host) => [host.id, host.name])),
+    [hosts],
+  );
+  // Only ones we issued and nobody has taken: a redeemed invite already has a
+  // head of its own in the list below, and showing both would double-count it.
+  const pendingInvites = useMemo(
+    () =>
+      invites.filter(
+        (invite) =>
+          invite.role === 'Issuer' &&
+          invite.status === 'Issued' &&
+          (selectedHostId === null || invite.hydraHostId === selectedHostId),
+      ),
+    [invites, selectedHostId],
+  );
   const pendingLifecycleCopy = pendingLifecycleAction
     ? getLifecycleActionConfirmCopy(pendingLifecycleAction.head, pendingLifecycleAction.action)
     : null;
@@ -942,8 +1018,16 @@ export default function HydraHeadsPage() {
                 <h1 className="text-2xl font-semibold tracking-tight">Hydra Heads</h1>
                 <Badge variant="outline">Cardano L2</Badge>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Monitor Hydra head sessions, lifecycle status, participants, and in-head activity.
+              {/* Two objects, said once. Operators kept asking what the
+                  difference was, and an invite looked like a third thing to
+                  learn rather than the first stage of a head's life. */}
+              <p className="max-w-3xl text-sm text-muted-foreground">
+                A <span className="font-medium text-foreground">node</span> is a machine you connect
+                once; a <span className="font-medium text-foreground">head</span> is one L2 channel
+                with one counterparty, and runs on exactly one node for its whole life. Inviting
+                someone opens a head — it appears below as{' '}
+                <span className="font-medium text-foreground">awaiting counterparty</span> until
+                they accept.
               </p>
             </div>
 
@@ -1018,6 +1102,9 @@ export default function HydraHeadsPage() {
 
           <HydraHeadTable
             heads={filteredHeads}
+            pendingInvites={pendingInvites}
+            hostNames={hostNames}
+            onManageInvites={() => setIsInvitesOpen(true)}
             isLoading={isLoading}
             hasActiveFilters={hasActiveFilters}
             runningLifecycleHeadId={runningLifecycleHeadId}
