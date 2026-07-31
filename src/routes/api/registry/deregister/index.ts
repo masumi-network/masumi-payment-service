@@ -12,7 +12,12 @@ import { registryRequestOutputSchema } from '@/routes/api/registry';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
-import { serializeLegacyAgentPricing, serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
+import {
+	serializeA2ADetail,
+	serializeLegacyAgentPricing,
+	serializeSupportedPaymentSources,
+	serializeVerifications,
+} from '../serializers';
 
 export const unregisterAgentSchemaInput = z.object({
 	agentIdentifier: z
@@ -186,6 +191,7 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 								},
 								ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
 								Verifications: true,
+								A2ADetail: true,
 								SupportedPaymentSources: {
 									select: {
 										chain: true,
@@ -229,6 +235,8 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 
 		return {
 			...result,
+			...serializeA2ADetail(result.A2ADetail),
+			paymentSourceType: paymentSource.paymentSourceType,
 			Capability: {
 				name: result.capabilityName,
 				version: result.capabilityVersion,

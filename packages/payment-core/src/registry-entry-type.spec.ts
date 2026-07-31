@@ -6,9 +6,10 @@ describe('registry entry type on-chain mapping', () => {
 		expect(REGISTRY_ENTRY_ON_CHAIN_TYPE[RegistryEntryType.Standard]).toBeUndefined();
 	});
 
-	it('maps OpenApi/X402 to their versioned on-chain strings', () => {
+	it('maps OpenApi/X402/A2A to their versioned on-chain strings', () => {
 		expect(REGISTRY_ENTRY_ON_CHAIN_TYPE[RegistryEntryType.OpenApi]).toBe('OpenAPI');
 		expect(REGISTRY_ENTRY_ON_CHAIN_TYPE[RegistryEntryType.X402]).toBe('x402V1');
+		expect(REGISTRY_ENTRY_ON_CHAIN_TYPE[RegistryEntryType.A2A]).toBe('a2aV1');
 	});
 
 	it('round-trips every enum value through the on-chain form', () => {

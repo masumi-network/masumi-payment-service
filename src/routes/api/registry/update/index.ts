@@ -14,7 +14,7 @@ import { bumpRegistryAssetNameVersionV2, normalizeRequestedRegistryFundingLovela
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { supportedPaymentSourcesSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
 import { validateX402NetworksAvailableOrThrow } from '@/services/registry/x402-network-availability';
-import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
+import { serializeA2ADetail, serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
 import { verificationToRow } from '@/types/verification';
 import { buildSupportedPaymentSourceCreate, getCardanoFixedAssets } from '@/services/registry/source-pricing';
 
@@ -68,9 +68,10 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 				);
 			}
 			// The update route only re-mints the Standard shape (apiBaseUrl). Reject
-			// OpenApi/X402 updates rather than silently dropping their spec URL.
+			// OpenApi/X402/A2A updates rather than silently dropping their type-specific
+			// fields (spec URL, resource manifest, agent card + protocol versions).
 			if ((input.type ?? RegistryEntryType.Standard) !== RegistryEntryType.Standard) {
-				throw createHttpError(400, 'Updating OpenApi/X402 agents is not yet supported');
+				throw createHttpError(400, 'Updating OpenApi/X402/A2A agents is not yet supported');
 			}
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
@@ -353,6 +354,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						RecipientWallet: { select: { walletVkey: true, walletAddress: true } },
 						ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
 						Verifications: true,
+						A2ADetail: true,
 						SupportedPaymentSources: {
 							select: {
 								chain: true,
@@ -392,6 +394,8 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 
 			return {
 				...result,
+				...serializeA2ADetail(result.A2ADetail),
+				paymentSourceType: paymentSource.paymentSourceType,
 				Capability: {
 					name: result.capabilityName,
 					version: result.capabilityVersion,

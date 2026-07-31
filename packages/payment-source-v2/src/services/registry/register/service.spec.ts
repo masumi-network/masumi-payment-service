@@ -34,6 +34,7 @@ describe('V2 registry metadata', () => {
 		apiBaseUrl: 'https://agent.example',
 		openApiSpecUrl: null,
 		x402ResourcesUrl: null,
+		A2ADetail: null,
 		ExampleOutputs: [],
 		capabilityName: null,
 		capabilityVersion: null,
@@ -94,6 +95,32 @@ describe('V2 registry metadata', () => {
 		expect(metadata.type).toBe('x402V1');
 		expect(metadata.x402_resources_url).toEqual(['https://agent.example/.well-known/x402.json']);
 		expect(metadata.api_base_url).toBeUndefined();
+	});
+
+	it('emits type "a2aV1" + agent_card_url + a2a_protocol_versions + api_base_url for an A2A entry', () => {
+		const metadata = buildAgentMetadata({
+			...baseRequest,
+			type: RegistryEntryType.A2A,
+			apiBaseUrl: 'https://agent.example',
+			A2ADetail: {
+				agentCardUrl: 'https://agent.example/.well-known/agent-card.json',
+				protocolVersions: ['1.0'],
+			},
+		}) as {
+			type?: unknown;
+			agent_card_url?: unknown;
+			a2a_protocol_versions?: unknown;
+			api_base_url?: unknown;
+		};
+		expect(metadata.type).toBe('a2aV1');
+		expect(metadata.agent_card_url).toEqual(['https://agent.example/.well-known/agent-card.json']);
+		expect(metadata.a2a_protocol_versions).toEqual(['1.0']);
+		expect(metadata.api_base_url).toEqual(['https://agent.example']);
+	});
+
+	it('never emits a2a_protocol_versions for a Standard entry (must be undefined, not [])', () => {
+		const metadata = buildAgentMetadata(baseRequest) as { a2a_protocol_versions?: unknown };
+		expect(metadata.a2a_protocol_versions).toBeUndefined();
 	});
 
 	it('omits nullable JSON extras before Mesh converts CIP-25 metadata', () => {

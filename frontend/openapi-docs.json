@@ -3254,6 +3254,19 @@
                                 },
                                 "maxItems": 10,
                                 "description": "KERI/Veridian verification claims advertised by this registry entry. Null when none."
+                            },
+                            "agentCardUrl": {
+                                "type": "string",
+                                "nullable": true,
+                                "maxLength": 250,
+                                "description": "URL to the agent MIP-002 Agent Card JSON. Null unless the agent is A2A-type"
+                            },
+                            "a2aProtocolVersions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "A2A protocol versions this agent declares support for. Empty for non-A2A agents"
                             }
                         },
                         "required": [
@@ -3266,7 +3279,9 @@
                             "image",
                             "metadataVersion",
                             "supportedPaymentSources",
-                            "verifications"
+                            "verifications",
+                            "agentCardUrl",
+                            "a2aProtocolVersions"
                         ],
                         "description": "On-chain metadata for the agent"
                     }
@@ -3304,14 +3319,15 @@
                         "enum": [
                             "Standard",
                             "OpenApi",
-                            "X402"
+                            "X402",
+                            "A2A"
                         ],
-                        "description": "The agent access model. Standard for legacy/untyped entries; OpenApi or X402 otherwise"
+                        "description": "The agent access model. Standard for legacy/untyped entries; OpenApi, X402, or A2A otherwise"
                     },
                     "apiBaseUrl": {
                         "type": "string",
                         "nullable": true,
-                        "description": "Base URL of the agent API for interactions. Null for OpenApi/X402 agents"
+                        "description": "Base URL of the agent API for interactions. Null for OpenApi/X402 agents; required for A2A agents alongside a2aAgentCardUrl"
                     },
                     "openApiSpecUrl": {
                         "type": "string",
@@ -3322,6 +3338,26 @@
                         "type": "string",
                         "nullable": true,
                         "description": "URL to the agent x402 resource manifest JSON. Null unless the agent is X402-type"
+                    },
+                    "a2aAgentCardUrl": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "URL to the agent MIP-002 Agent Card JSON. Null unless the agent is A2A-type"
+                    },
+                    "a2aProtocolVersions": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "A2A protocol versions this agent declares support for. Empty for non-A2A agents"
+                    },
+                    "paymentSourceType": {
+                        "type": "string",
+                        "enum": [
+                            "Web3CardanoV1",
+                            "Web3CardanoV2"
+                        ],
+                        "description": "Which payment source version (V1/V2) this registry entry is registered under"
                     },
                     "Capability": {
                         "type": "object",
@@ -4111,6 +4147,9 @@
                     "apiBaseUrl",
                     "openApiSpecUrl",
                     "x402ResourcesUrl",
+                    "a2aAgentCardUrl",
+                    "a2aProtocolVersions",
+                    "paymentSourceType",
                     "Capability",
                     "Author",
                     "Legal",
@@ -19539,9 +19578,10 @@
                                         "enum": [
                                             "Standard",
                                             "OpenApi",
-                                            "X402"
+                                            "X402",
+                                            "A2A"
                                         ],
-                                        "description": "The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources."
+                                        "description": "The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources; A2A (V2 payment sources only) requires both apiBaseUrl and a2aAgentCardUrl plus a2aProtocolVersions."
                                     },
                                     "sellingWalletVkey": {
                                         "type": "string",
@@ -20078,6 +20118,26 @@
                                         "format": "uri",
                                         "description": "URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others."
                                     },
+                                    "a2aAgentCardUrl": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "format": "uri",
+                                        "description": "URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others."
+                                    },
+                                    "a2aProtocolVersions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 63
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 10,
+                                        "description": "A2A protocol versions this agent declares support for. Required and non-empty for A2A-type agents; every value must appear in the fetched Agent Card protocolVersions. Omit for other types."
+                                    },
+                                    "skipAgentCardValidation": {
+                                        "type": "boolean",
+                                        "description": "A2A-only override: when true, skip fetching/validating the Agent Card before registering. Ignored for other types."
+                                    },
                                     "description": {
                                         "type": "string",
                                         "maxLength": 250,
@@ -20319,6 +20379,9 @@
                                             "apiBaseUrl": "https://api.example.com",
                                             "openApiSpecUrl": null,
                                             "x402ResourcesUrl": null,
+                                            "a2aAgentCardUrl": null,
+                                            "a2aProtocolVersions": [],
+                                            "paymentSourceType": "Web3CardanoV1",
                                             "Capability": {
                                                 "name": "Capability Name",
                                                 "version": "1.0.0"
@@ -20479,6 +20542,9 @@
                                             "apiBaseUrl": "https://api.example.com",
                                             "openApiSpecUrl": null,
                                             "x402ResourcesUrl": null,
+                                            "a2aAgentCardUrl": null,
+                                            "a2aProtocolVersions": [],
+                                            "paymentSourceType": "Web3CardanoV1",
                                             "Capability": {
                                                 "name": "Capability Name",
                                                 "version": "1.0.0"
@@ -20884,6 +20950,9 @@
                                             "apiBaseUrl": "https://api.example.com",
                                             "openApiSpecUrl": null,
                                             "x402ResourcesUrl": null,
+                                            "a2aAgentCardUrl": null,
+                                            "a2aProtocolVersions": [],
+                                            "paymentSourceType": "Web3CardanoV1",
                                             "Capability": {
                                                 "name": "Capability Name",
                                                 "version": "1.0.0"
@@ -21013,9 +21082,10 @@
                                         "enum": [
                                             "Standard",
                                             "OpenApi",
-                                            "X402"
+                                            "X402",
+                                            "A2A"
                                         ],
-                                        "description": "The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources."
+                                        "description": "The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources; A2A (V2 payment sources only) requires both apiBaseUrl and a2aAgentCardUrl plus a2aProtocolVersions."
                                     },
                                     "recipientWalletAddress": {
                                         "type": "string",
@@ -21545,6 +21615,26 @@
                                         "format": "uri",
                                         "description": "URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others."
                                     },
+                                    "a2aAgentCardUrl": {
+                                        "type": "string",
+                                        "maxLength": 250,
+                                        "format": "uri",
+                                        "description": "URL to the agent MIP-002 Agent Card JSON document. Required for A2A-type agents (V2 payment sources only), alongside apiBaseUrl; omit for others."
+                                    },
+                                    "a2aProtocolVersions": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 63
+                                        },
+                                        "minItems": 1,
+                                        "maxItems": 10,
+                                        "description": "A2A protocol versions this agent declares support for. Required and non-empty for A2A-type agents; every value must appear in the fetched Agent Card protocolVersions. Omit for other types."
+                                    },
+                                    "skipAgentCardValidation": {
+                                        "type": "boolean",
+                                        "description": "A2A-only override: when true, skip fetching/validating the Agent Card before registering. Ignored for other types."
+                                    },
                                     "description": {
                                         "type": "string",
                                         "maxLength": 250,
@@ -21783,6 +21873,9 @@
                                             "apiBaseUrl": "https://api.example.com",
                                             "openApiSpecUrl": null,
                                             "x402ResourcesUrl": null,
+                                            "a2aAgentCardUrl": null,
+                                            "a2aProtocolVersions": [],
+                                            "paymentSourceType": "Web3CardanoV1",
                                             "Capability": {
                                                 "name": "Capability Name",
                                                 "version": "1.0.0"

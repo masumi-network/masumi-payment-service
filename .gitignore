@@ -52,3 +52,4 @@ hydra-l2-flow/
 ruvector.db
 agentdb.rvf
 agentdb.rvf.lock
+.claude-flow

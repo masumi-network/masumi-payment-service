@@ -40,6 +40,7 @@ import { useRegistryEntryByAgentIdentifier } from '@/lib/queries/useRegistryEntr
 import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
+import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
 import { formatDate } from '@/lib/format-date';
@@ -79,7 +80,9 @@ export default function AIAgentsPage() {
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
 
   const [activeTab, setActiveTab] = useState('All');
-  const [typeFilter, setTypeFilter] = useState<'All' | 'Standard' | 'OpenApi' | 'X402'>('All');
+  const [typeFilter, setTypeFilter] = useState<'All' | 'Standard' | 'OpenApi' | 'X402' | 'A2A'>(
+    'All',
+  );
 
   const filterStatus = useMemo(() => {
     if (activeTab === 'All') return undefined;
@@ -487,7 +490,9 @@ export default function AIAgentsPage() {
               <select
                 value={typeFilter}
                 onChange={(event) =>
-                  setTypeFilter(event.target.value as 'All' | 'Standard' | 'OpenApi' | 'X402')
+                  setTypeFilter(
+                    event.target.value as 'All' | 'Standard' | 'OpenApi' | 'X402' | 'A2A',
+                  )
                 }
                 className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 aria-label="Filter agents by type"
@@ -496,6 +501,7 @@ export default function AIAgentsPage() {
                 <option value="Standard">Standard</option>
                 <option value="OpenApi">OpenAPI</option>
                 <option value="X402">x402</option>
+                <option value="A2A">A2A</option>
               </select>
             </div>
 
@@ -537,6 +543,12 @@ export default function AIAgentsPage() {
                       scope="col"
                       className="p-4 text-left text-sm font-medium text-muted-foreground"
                     >
+                      Version
+                    </th>
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
                       Wallets
                     </th>
                     <th
@@ -566,7 +578,7 @@ export default function AIAgentsPage() {
                     <AIAgentTableSkeleton rows={5} />
                   ) : displayAgents.length === 0 ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <EmptyState
                           icon={searchQuery ? 'search' : 'inbox'}
                           title={
@@ -637,6 +649,9 @@ export default function AIAgentsPage() {
                             ) : (
                               <span className="text-xs text-muted-foreground">—</span>
                             )}
+                          </td>
+                          <td className="p-4">
+                            <PaymentSourceTypeBadge paymentSourceType={agent.paymentSourceType} />
                           </td>
                           <td className="p-4">
                             <div className="space-y-2">

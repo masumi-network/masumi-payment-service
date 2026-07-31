@@ -158,6 +158,8 @@ function buildRegistryUpdateResponse() {
 		apiBaseUrl: 'https://example.com/agent',
 		openApiSpecUrl: null,
 		x402ResourcesUrl: null,
+		a2aAgentCardUrl: null,
+		a2aProtocolVersions: [],
 		capabilityName: 'demo',
 		capabilityVersion: '1.0.0',
 		authorName: 'Author',

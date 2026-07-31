@@ -128,6 +128,7 @@ export async function lockAndQueryRegistryRequests({
 												},
 											},
 											Verifications: true,
+											A2ADetail: true,
 										},
 										orderBy: {
 											createdAt: 'asc',

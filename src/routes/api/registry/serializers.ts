@@ -144,6 +144,17 @@ export function serializeSupportedPaymentSources(
 	return serialized.length === 0 ? null : serialized;
 }
 
+// A2A descriptors are persisted in a 1:1 A2ARegistryDetail row rather than as
+// nullable columns on RegistryRequest. Flatten them back onto the API shape so
+// that storage change is invisible on the wire: absent detail row (every
+// non-A2A entry) reads as null/[], exactly what the flat columns used to return.
+export function serializeA2ADetail(detail: { agentCardUrl: string; protocolVersions: string[] } | null | undefined) {
+	return {
+		a2aAgentCardUrl: detail?.agentCardUrl ?? null,
+		a2aProtocolVersions: detail?.protocolVersions ?? [],
+	};
+}
+
 export function serializeLegacyAgentPricing(pricing: LegacyAgentPricingRecord) {
 	if (pricing == null) return null;
 	return pricing.pricingType === PricingType.Fixed
@@ -174,6 +185,8 @@ export function serializeVerifications(rows: AgentVerificationRow[] | null | und
 export function serializeRegistryEntry(item: RegistryListRecord) {
 	return {
 		...item,
+		...serializeA2ADetail(item.A2ADetail),
+		paymentSourceType: item.PaymentSource.paymentSourceType,
 		Capability: {
 			name: item.capabilityName,
 			version: item.capabilityVersion,

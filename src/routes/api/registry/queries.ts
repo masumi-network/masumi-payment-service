@@ -231,6 +231,9 @@ export async function getRegistryEntriesForQuery(
 		orderBy: { createdAt: 'desc' },
 		...cursorPaginationArgs(input.cursorId, input.limit),
 		include: {
+			PaymentSource: {
+				select: { paymentSourceType: true },
+			},
 			SmartContractWallet: {
 				select: { walletVkey: true, walletAddress: true },
 			},
@@ -262,6 +265,7 @@ export async function getRegistryEntriesForQuery(
 				},
 			},
 			Verifications: true,
+			A2ADetail: true,
 			SupportedPaymentSources: {
 				select: {
 					chain: true,

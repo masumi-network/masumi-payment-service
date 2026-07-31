@@ -349,6 +349,10 @@ model RegistryRequest {
   ExampleOutputs                 ExampleOutput[]
   SupportedPaymentSources        SupportedPaymentSource[]
   Verifications                  AgentVerification[]
+  /// A2A-only fields, kept off this table so every other entry type does not
+  /// carry NULL columns for them. Present iff `type` is A2A (enforced at the
+  /// API boundary — a DB CHECK cannot span the relation).
+  A2ADetail                      A2ARegistryDetail?
   /// V1-only legacy pricing. V2 pricing is owned by each SupportedPaymentSource.
   Pricing                        AgentPricing?
   CurrentTransaction             Transaction?             @relation(fields: [currentTransactionId], references: [id])
@@ -362,6 +366,37 @@ model RegistryRequest {
   @@index([recipientHotWalletId])
   @@index([deregistrationHotWalletId])
   @@index([requestedById])
+}
+
+/// A2A (MIP-002) endpoint descriptor, split out of RegistryRequest rather than
+/// added as two more nullable columns there. Every other entry type would carry
+/// NULLs for these, and A2A is the only type whose descriptor is more than a
+/// single URL — so it is the one type that earns its own row.
+///
+/// One-to-one with RegistryRequest (the FK IS the primary key), so this adds no
+/// duplicated registry fields: name, author, legal, tags, pricing, wallet and
+/// transaction lifecycle all stay on the parent and the whole mint/sync/
+/// deregister pipeline is inherited unchanged. See ADR 0010.
+///
+/// A row exists iff `RegistryRequest.type` is A2A. That invariant is enforced at
+/// the API boundary (getRegistryEndpointError), not by a DB CHECK, which cannot
+/// span the relation — the same posture as X402Network's facilitator XOR.
+model A2ARegistryDetail {
+  /// FK and PK in one: guarantees at most one detail row per registry entry.
+  registryRequestId String   @id
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  /// URL of the agent's MIP-002 Agent Card JSON document. Fetched and validated
+  /// once at registration time (unless explicitly overridden); only the URL is
+  /// stored on chain, never the card body — same reasoning as x402ResourcesUrl.
+  /// NOT NULL: an A2A entry without a card URL is not representable here.
+  agentCardUrl      String
+  /// A2A protocol versions this agent declares, cross-checked against the
+  /// fetched card's `protocolVersions`. Emitted on chain as the raw (unchunked)
+  /// `a2a_protocol_versions` array. Non-empty is enforced at the API boundary.
+  protocolVersions  String[]
+
+  RegistryRequest RegistryRequest @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
 }
 
 /// One KERI/Veridian verification claim advertised by a registry entry. Flat,
@@ -1107,6 +1142,7 @@ enum RegistryEntryType {
   Standard
   OpenApi
   X402
+  A2A
 }
 
 enum PaymentErrorType {

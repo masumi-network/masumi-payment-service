@@ -144,6 +144,8 @@ export function buildAgentMetadata(request: {
 	apiBaseUrl: string | null;
 	openApiSpecUrl: string | null;
 	x402ResourcesUrl: string | null;
+	/// A2A descriptors live in a 1:1 detail row; absent (null) for every other type.
+	A2ADetail: { agentCardUrl: string; protocolVersions: string[] } | null;
 	ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
 	capabilityName?: string | null;
 	capabilityVersion?: string | null;
@@ -202,6 +204,16 @@ export function buildAgentMetadata(request: {
 		openapi_spec_url: stringToMetadata(request.openApiSpecUrl),
 		// Set only for X402 entries; null otherwise -> omitted by cleanMetadata.
 		x402_resources_url: stringToMetadata(request.x402ResourcesUrl),
+		// Set only for A2A entries (the detail row exists only for those); null/
+		// undefined otherwise -> omitted by cleanMetadata. The versions array must be
+		// `undefined` and never `[]` for non-A2A entries: cleanMetadata strips null and
+		// undefined but WOULD emit an empty array, changing the minted bytes for every
+		// other entry type.
+		agent_card_url: stringToMetadata(request.A2ADetail?.agentCardUrl ?? null),
+		a2a_protocol_versions:
+			request.A2ADetail != null && request.A2ADetail.protocolVersions.length > 0
+				? request.A2ADetail.protocolVersions
+				: undefined,
 		example_output: request.ExampleOutputs.map((exampleOutput) => ({
 			name: stringToMetadata(exampleOutput.name),
 			mime_type: stringToMetadata(exampleOutput.mimeType),
