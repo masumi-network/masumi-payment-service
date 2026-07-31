@@ -5736,6 +5736,12 @@
                                 "type": "string",
                                 "nullable": true
                             },
+                            "hydraHostId": {
+                                "type": "string"
+                            },
+                            "hostNodeId": {
+                                "type": "string"
+                            },
                             "keysDisclosedAt": {
                                 "type": "string",
                                 "nullable": true
@@ -5749,6 +5755,8 @@
                             "nodeHttpUrl",
                             "hasCommitted",
                             "commitTxHash",
+                            "hydraHostId",
+                            "hostNodeId",
                             "keysDisclosedAt"
                         ]
                     },

@@ -55,6 +55,15 @@ export const localParticipantSchema = z.object({
 	nodeHttpUrl: z.string(),
 	hasCommitted: z.boolean(),
 	commitTxHash: z.string().nullable(),
+	/**
+	 * Which connected node runs this head's process.
+	 *
+	 * A head is pinned to one node for its whole life and cannot be moved, so
+	 * this is a property of the head rather than a lookup — and the admin lists
+	 * heads under their node, which it could not do without it.
+	 */
+	hydraHostId: z.string(),
+	hostNodeId: z.string(),
 	/** Null until an operator has taken the one-time backup of this node's keys. */
 	keysDisclosedAt: z.string().nullable(),
 });
@@ -156,6 +165,10 @@ const headInclude = {
 			nodeHttpUrl: true,
 			hasCommitted: true,
 			commitTxHash: true,
+			// A head is pinned to one node for life, so the admin lists heads
+			// under theirs; without these it cannot tell which.
+			hydraHostId: true,
+			hostNodeId: true,
 			// So the UI can offer the one-time key backup, and stop offering it.
 			keysDisclosedAt: true,
 		},
@@ -791,6 +804,37 @@ export const listHeadErrorsGet = adminAuthenticatedEndpointFactory.build({
 		});
 
 		return { errors };
+	},
+});
+
+// --- DELETE: clear a head's recorded errors ---
+
+export const clearHeadErrorsSchemaInput = z.object({
+	headId: z.string().min(1).describe('ID of the HydraHead'),
+});
+
+export const clearHeadErrorsSchemaOutput = z.object({ cleared: z.number() });
+
+/**
+ * Forget a head's errors.
+ *
+ * They are a log, not state: a failed Init that later succeeded leaves entries
+ * behind that describe a problem which no longer exists, and an operator who
+ * has read and acted on them has no way to stop the head being flagged. Nothing
+ * downstream reads these rows — the head's own status is the source of truth —
+ * so clearing them changes what is displayed and nothing else.
+ */
+export const clearHeadErrorsDelete = adminAuthenticatedEndpointFactory.build({
+	method: 'delete',
+	input: clearHeadErrorsSchemaInput,
+	output: clearHeadErrorsSchemaOutput,
+	handler: async ({ input }) => {
+		const head = await prisma.hydraHead.findUnique({ where: { id: input.headId } });
+		if (!head) {
+			throw createHttpError(404, 'Hydra head not found');
+		}
+		const { count } = await prisma.hydraHeadError.deleteMany({ where: { hydraHeadId: input.headId } });
+		return { cleared: count };
 	},
 });
 

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import Head from 'next/head';
 import {
   Activity,
+  ChevronDown,
   ExternalLink,
   Flag,
   GitBranch,
@@ -11,6 +12,7 @@ import {
   MoreHorizontal,
   Play,
   Plus,
+  Ticket,
   Upload,
   Wifi,
   XCircle,
@@ -18,10 +20,14 @@ import {
 import { toast } from 'react-toastify';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
-import { HydraContextBar } from '@/components/hydra/HydraContextBar';
 import { HydraHeadErrors } from '@/components/hydra/HydraHeadErrors';
 import { HydraInitDialog } from '@/components/hydra/HydraInitDialog';
-import { HydraNodesDialog, HydraInvitesDialog } from '@/components/hydra/HydraManageDialog';
+import { HydraInvitesDialog } from '@/components/hydra/HydraManageDialog';
+import { HydraNodeStrip } from '@/components/hydra/HydraNodeStrip';
+import { HydraNodeDetailsDialog } from '@/components/hydra/HydraNodeDetailsDialog';
+import { IssueHydraInviteDialog } from '@/components/hydra/IssueHydraInviteDialog';
+import { RedeemHydraInviteDialog } from '@/components/hydra/RedeemHydraInviteDialog';
+import type { HydraHost } from '@/lib/hooks/useHydraHosts';
 import { useHydraInvites } from '@/lib/hooks/useHydraHeads';
 import { useHydraHosts } from '@/lib/hooks/useHydraHosts';
 import { HydraNodesCard } from '@/components/hydra/HydraNodesCard';
@@ -44,6 +50,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -265,14 +272,25 @@ function HydraLifecycleActionMenu({
             <DropdownMenuItem
               key={config.action}
               disabled={isDisabled}
-              title={config.disabledReason}
               // No preventDefault: the menu should close on choosing an action.
               // Each one opens its own confirmation, so holding the menu open
               // just leaves it hanging behind that dialog.
               onSelect={() => onRequestLifecycle(head, config.action)}
+              className={cn(config.disabledReason && 'flex-col items-start gap-0.5')}
             >
-              <LifecycleActionIcon action={config.action} isRunning={isRunning} />
-              <span>{config.label}</span>
+              <span className="flex items-center gap-2">
+                <LifecycleActionIcon action={config.action} isRunning={isRunning} />
+                <span>{config.label}</span>
+              </span>
+              {/* Spelled out rather than left to a tooltip. Hydra gates each
+                  action to one stage, so most of this menu is greyed most of
+                  the time — and hover text on a disabled item is easy to miss,
+                  which makes a correctly-gated menu look broken. */}
+              {config.disabledReason && (
+                <span className="pl-6 text-xs font-normal text-muted-foreground">
+                  {config.disabledReason}
+                </span>
+              )}
             </DropdownMenuItem>
           );
         })}
@@ -540,11 +558,7 @@ function HydraHeadDetailsDialog({
             network={network}
           />
 
-          <HydraHeadTopupButton
-            headId={head.id}
-            isOpen={head.status === 'Open'}
-            hasCommitted={head.LocalParticipant?.hasCommitted ?? false}
-          />
+          <HydraHeadTopupButton headId={head.id} isOpen={head.status === 'Open'} />
 
           <div className="space-y-3">
             <h3 className="font-medium">Participants</h3>
@@ -698,8 +712,18 @@ function HydraHeadTable({
                       {head.status}
                     </Badge>
                     {head._count && head._count.Errors > 0 && (
-                      <span className="text-xs text-destructive">
-                        {head._count.Errors} error{head._count.Errors === 1 ? '' : 's'}
+                      // Muted once the head has moved past Idle: the errors are
+                      // then history — a failed Init that later succeeded, say —
+                      // and colouring them like a live alarm makes a healthy
+                      // head read as broken.
+                      <span
+                        className={cn(
+                          'text-xs',
+                          head.status === 'Idle' ? 'text-destructive' : 'text-muted-foreground',
+                        )}
+                      >
+                        {head._count.Errors} {head.status === 'Idle' ? '' : 'past '}error
+                        {head._count.Errors === 1 ? '' : 's'}
                       </span>
                     )}
                   </div>
@@ -767,8 +791,11 @@ export default function HydraHeadsPage() {
   const [activeTab, setActiveTab] = useState<StatusTab>('All');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isConnectNodeOpen, setIsConnectNodeOpen] = useState(false);
-  const [isNodesOpen, setIsNodesOpen] = useState(false);
   const [isInvitesOpen, setIsInvitesOpen] = useState(false);
+  const [isIssueInviteOpen, setIsIssueInviteOpen] = useState(false);
+  const [isRedeemInviteOpen, setIsRedeemInviteOpen] = useState(false);
+  const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
+  const [detailsHost, setDetailsHost] = useState<HydraHost | null>(null);
   const { invites } = useHydraInvites();
   const inviteCount = invites.length;
   // Read here rather than through the nodes card: the card now lives in a
@@ -816,6 +843,12 @@ export default function HydraHeadsPage() {
         return false;
       }
 
+      // Selecting a node chip narrows the table to what that node runs, which
+      // is the "heads inside their node" view without a second layout.
+      if (selectedHostId !== null && head.LocalParticipant?.hydraHostId !== selectedHostId) {
+        return false;
+      }
+
       if (!query) {
         return true;
       }
@@ -838,9 +871,10 @@ export default function HydraHeadsPage() {
 
       return searchableValues.some((value) => value.toLowerCase().includes(query));
     });
-  }, [activeTab, heads, searchQuery]);
+  }, [activeTab, heads, searchQuery, selectedHostId]);
 
-  const hasActiveFilters = searchQuery.trim().length > 0 || activeTab !== 'All';
+  const hasActiveFilters =
+    searchQuery.trim().length > 0 || activeTab !== 'All' || selectedHostId !== null;
   const selectedHead = useMemo(
     () => heads.find((head) => head.id === selectedHeadId) ?? null,
     [heads, selectedHeadId],
@@ -848,6 +882,16 @@ export default function HydraHeadsPage() {
   // A head has to run somewhere, so the action is unavailable until a node is
   // connected — which is the step above it on this page.
   const connectedNodeCount = hosts.length;
+  // A head runs on exactly one node for its whole life, so this is a property of
+  // the head rather than a join: the chip can say what it is carrying.
+  const headCountsByHost = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const head of heads) {
+      const hostId = head.LocalParticipant?.hydraHostId;
+      if (hostId) counts[hostId] = (counts[hostId] ?? 0) + 1;
+    }
+    return counts;
+  }, [heads]);
   const hasConnectedNode = connectedNodeCount > 0;
   const pendingLifecycleCopy = pendingLifecycleAction
     ? getLifecycleActionConfirmCopy(pendingLifecycleAction.head, pendingLifecycleAction.action)
@@ -903,32 +947,57 @@ export default function HydraHeadsPage() {
               </p>
             </div>
 
-            {/* One primary action. Connecting a node is the prerequisite, so it
-                leads until there is one; after that, opening heads is what an
-                operator returns for. */}
+            {/* Connecting a node stays reachable however many exist — a second
+                node is how an operator adds capacity. Opening a head is one
+                action with two ways in, so it is one button with a menu rather
+                than two competing buttons. */}
             <div className="flex items-center gap-2">
-              {hasConnectedNode ? (
-                <Button type="button" onClick={() => setIsInvitesOpen(true)}>
-                  <Plus className="h-4 w-4" />
-                  New head
-                </Button>
-              ) : (
-                <Button type="button" onClick={() => setIsConnectNodeOpen(true)}>
-                  <Plus className="h-4 w-4" />
-                  Connect node
-                </Button>
-              )}
+              <Button type="button" variant="outline" onClick={() => setIsConnectNodeOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Connect node
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    disabled={!hasConnectedNode}
+                    title={
+                      hasConnectedNode
+                        ? undefined
+                        : 'Connect a node first — a head has to run somewhere'
+                    }
+                  >
+                    <Plus className="h-4 w-4" />
+                    New head
+                    <ChevronDown className="h-4 w-4 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-56">
+                  <DropdownMenuItem onClick={() => setIsIssueInviteOpen(true)}>
+                    <Ticket className="h-4 w-4" />
+                    Invite someone
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsRedeemInviteOpen(true)}>
+                    <Ticket className="h-4 w-4" />
+                    Redeem an invite
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setIsInvitesOpen(true)}>
+                    Manage invites{inviteCount > 0 ? ` (${inviteCount})` : ''}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <RefreshButton onRefresh={() => void refetch()} isRefreshing={isFetching} />
             </div>
           </div>
 
-          <HydraContextBar
-            nodeCount={connectedNodeCount}
-            inviteCount={inviteCount}
-            openHeads={stats.openHeads}
-            activeHeads={stats.activeHeads}
-            onManageNodes={() => setIsNodesOpen(true)}
-            onManageInvites={() => setIsInvitesOpen(true)}
+          <HydraNodeStrip
+            hosts={hosts}
+            headCounts={headCountsByHost}
+            selectedHostId={selectedHostId}
+            onSelectHost={setSelectedHostId}
+            onOpenHost={setDetailsHost}
+            onAddNode={() => setIsConnectNodeOpen(true)}
           />
 
           <Tabs
@@ -1004,11 +1073,27 @@ export default function HydraHeadsPage() {
         participantId={backUpKeysParticipantId}
         onDone={() => void refetch()}
       />
-      <HydraNodesDialog open={isNodesOpen} onOpenChange={setIsNodesOpen} />
       <HydraInvitesDialog
         open={isInvitesOpen}
         onOpenChange={setIsInvitesOpen}
         hasConnectedNode={hasConnectedNode}
+      />
+      <HydraNodeDetailsDialog
+        host={detailsHost}
+        open={detailsHost !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setDetailsHost(null);
+        }}
+      />
+      <IssueHydraInviteDialog
+        open={isIssueInviteOpen}
+        onOpenChange={setIsIssueInviteOpen}
+        onIssued={() => void refetch()}
+      />
+      <RedeemHydraInviteDialog
+        open={isRedeemInviteOpen}
+        onOpenChange={setIsRedeemInviteOpen}
+        onRedeemed={() => void refetch()}
       />
       <ConnectHydraNodeDialog
         open={isConnectNodeOpen}

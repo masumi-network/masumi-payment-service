@@ -667,6 +667,21 @@ export function useHydraHeadErrors(headId: string | null) {
   return { ...query, errors: query.data ?? [] };
 }
 
+/** Forget a head's errors. They are a log, so clearing them changes nothing but the display. */
+export async function clearHydraHeadErrors(apiClient: Client, payload: { headId: string }) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.delete<{ 200: ApiEnvelope<{ cleared: number }> }>({
+        responseType: 'json',
+        url: '/hydra/head/errors',
+        body: payload,
+      }),
+    { errorMessage: 'Failed to clear the errors' },
+  );
+
+  return ensureData(response?.data?.data, 'The result was not returned by the API');
+}
+
 export type HydraNodeFunding = {
   address: string;
   balanceLovelace: string;

@@ -11,9 +11,13 @@
  * so it is shown verbatim rather than summarised.
  */
 
+import { useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
-import { useHydraHeadErrors } from '@/lib/hooks/useHydraHeads';
+import { Button } from '@/components/ui/button';
+import { useAppContext } from '@/lib/contexts/AppContext';
+import { clearHydraHeadErrors, useHydraHeadErrors } from '@/lib/hooks/useHydraHeads';
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
@@ -27,7 +31,22 @@ function relativeTime(iso: string): string {
 }
 
 export function HydraHeadErrors({ headId, count }: { headId: string; count: number }) {
-  const { errors, isLoading } = useHydraHeadErrors(headId);
+  const { errors, isLoading, refetch } = useHydraHeadErrors(headId);
+  const { apiClient } = useAppContext();
+  const [isClearing, setIsClearing] = useState(false);
+
+  async function handleClear() {
+    setIsClearing(true);
+    try {
+      const result = await clearHydraHeadErrors(apiClient, { headId });
+      toast.success(`Cleared ${result.cleared} error${result.cleared === 1 ? '' : 's'}`);
+      await refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to clear the errors');
+    } finally {
+      setIsClearing(false);
+    }
+  }
 
   if (count === 0 && errors.length === 0) {
     return null;
@@ -35,11 +54,26 @@ export function HydraHeadErrors({ headId, count }: { headId: string; count: numb
 
   return (
     <div className="space-y-3">
-      <h3 className="flex items-center gap-2 font-medium">
-        <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-        Errors
-        <Badge variant="outline">{errors.length || count}</Badge>
-      </h3>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 font-medium">
+          <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+          Errors
+          <Badge variant="outline">{errors.length || count}</Badge>
+        </h3>
+        {errors.length > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleClear()}
+            disabled={isClearing}
+            title="These are a log, not state — clearing them affects nothing but this list"
+          >
+            {isClearing && <Loader2 className="h-4 w-4 animate-spin" />}
+            Clear
+          </Button>
+        )}
+      </div>
 
       {isLoading ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">

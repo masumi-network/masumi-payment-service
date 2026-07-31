@@ -75,9 +75,11 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	}
 	const localParticipant = head.LocalParticipant;
 	if (!localParticipant) throw createHttpError(400, 'Head has no local participant');
-	if (!localParticipant.hasCommitted) {
-		throw createHttpError(409, 'Local participant must complete its initial commit before topping up');
-	}
+	// Deliberately does NOT require an initial commit. A head can open with an
+	// empty commit — being a party is decided by Init, not by committing funds —
+	// and such a head could otherwise never be funded at all: the only way in is
+	// an incremental commit, which is this. `hasCommitted` describes the
+	// CollectCom that already happened, not eligibility for a deposit.
 	if (!head.headIdentifier) {
 		throw createHttpError(409, 'Cannot top up before the Hydra head identifier has been observed');
 	}

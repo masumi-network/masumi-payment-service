@@ -18,7 +18,6 @@ interface HydraHeadTopupButtonProps {
   /** Top-ups are incremental commits — only possible on an Open head. */
   isOpen: boolean;
   /** The initial commit must be done before a top-up can add more funds. */
-  hasCommitted: boolean;
 }
 
 type FilterMode = 'all' | 'ada-only' | 'token';
@@ -28,7 +27,7 @@ type FilterMode = 'all' | 'ada-only' | 'token';
  * (a repeatable incremental commit). Optionally restrict to ADA-only UTxOs or
  * UTxOs holding a specific native-asset unit.
  */
-export function HydraHeadTopupButton({ headId, isOpen, hasCommitted }: HydraHeadTopupButtonProps) {
+export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonProps) {
   const { apiClient } = useAppContext();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<FilterMode>('all');
@@ -36,7 +35,10 @@ export function HydraHeadTopupButton({ headId, isOpen, hasCommitted }: HydraHead
   const [exactAmount, setExactAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  if (!isOpen || !hasCommitted) return null;
+  // Only the head being Open matters. Requiring a prior commit hid the button
+  // on exactly the heads that need it: one opened with an empty commit has no
+  // funds and no other way to get them.
+  if (!isOpen) return null;
 
   const handleTopup = async () => {
     const trimmedUnit = assetUnit.trim();
