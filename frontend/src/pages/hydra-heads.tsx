@@ -321,14 +321,25 @@ function DetailField({
   );
 }
 
+/**
+ * One lifecycle transaction, or why there isn't one yet.
+ *
+ * These arrive in order — init, then close, then fanout — so on any live head
+ * most of them are legitimately absent. Saying "no transaction hash recorded"
+ * for a step that simply has not happened reads as missing data, which is how a
+ * perfectly healthy open head came to look broken.
+ */
 function TransactionHashRow({
   label,
   hash,
   network,
+  pendingReason,
 }: {
   label: string;
   hash: string | null | undefined;
   network: string;
+  /** What to say instead when the step has not happened yet. */
+  pendingReason?: string;
 }) {
   return (
     <div className="flex flex-col gap-2 rounded-md border bg-muted/10 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -344,7 +355,9 @@ function TransactionHashRow({
             {hash}
           </a>
         ) : (
-          <p className="mt-1 text-sm text-muted-foreground">No transaction hash recorded</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {pendingReason ?? 'No transaction hash recorded'}
+          </p>
         )}
       </div>
       {hash && (
@@ -444,6 +457,9 @@ function ParticipantCard({
         label={`${title} commit tx`}
         hash={participant.commitTxHash}
         network={network}
+        // A head can open with an empty commit, so "never committed" is a normal
+        // resting state rather than a gap in the record.
+        pendingReason="Committed nothing at open — add funds to deposit into the head"
       />
     </div>
   );
@@ -546,9 +562,32 @@ function HydraHeadDetailsDialog({
           <div className="space-y-3">
             <h3 className="font-medium">Lifecycle transactions</h3>
             <div className="grid gap-3">
-              <TransactionHashRow label="Initial tx" hash={head.initTxHash} network={network} />
-              <TransactionHashRow label="Close tx" hash={head.closeTxHash} network={network} />
-              <TransactionHashRow label="Fanout tx" hash={head.fanoutTxHash} network={network} />
+              <TransactionHashRow
+                label="Initial tx"
+                hash={head.initTxHash}
+                network={network}
+                pendingReason="Not opened yet"
+              />
+              <TransactionHashRow
+                label="Close tx"
+                hash={head.closeTxHash}
+                network={network}
+                pendingReason={
+                  head.status === 'Closed' || head.status === 'FanoutPossible'
+                    ? 'Closing — hash not observed yet'
+                    : 'Still open, nothing to close'
+                }
+              />
+              <TransactionHashRow
+                label="Fanout tx"
+                hash={head.fanoutTxHash}
+                network={network}
+                pendingReason={
+                  head.status === 'FanoutPossible'
+                    ? 'Ready to fan out'
+                    : 'Available once the head is closed and its contestation period has passed'
+                }
+              />
             </div>
           </div>
 

@@ -20,6 +20,7 @@ import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
 import { pollHydraRedemptions, pushCounterpartyAllowlists, reapExpiredInvites } from '@/services/hydra-invite/adoption';
 import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service';
+import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
 import { runHydraLowBalanceMonitoringCycle } from '@/services/hydra-low-balance/monitor';
 import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup';
@@ -82,6 +83,19 @@ export const scheduledJobs: JobDefinition[] = [
 		// different counterparty. Sweeping is the only way they come back.
 		run: async () => {
 			await reapExpiredInvites();
+		},
+	},
+	{
+		initialDelayMs: 13000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra init-tx backfill',
+		finishMessage: 'Finished Hydra init-tx backfill',
+		// Only the side that ran Init recorded the opening transaction, so the
+		// acceptor's head kept a null hash — which also left its L2 routing
+		// quarantined. The on-chain check is symmetric; it was just never called
+		// from that side.
+		run: async () => {
+			await backfillHydraInitTxHashes();
 		},
 	},
 	{
