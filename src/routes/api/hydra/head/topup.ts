@@ -1,4 +1,7 @@
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
+import { HydraTopupStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import type { CommitUtxoFilter } from '@/lib/hydra';
 import { executeHydraTopup } from '@/services/hydra-topup/execute';
@@ -26,17 +29,71 @@ export const topupInput = z.object({
 
 export const topupOutput = z.object({
 	headId: z.string(),
-	topupId: z.string(),
-	depositTxHash: z.string(),
-	confirmed: z.boolean().describe('Whether the deposit is already confirmed on L1 by the independent observer'),
-	committedLovelace: z.string(),
-	committedAssets: z.record(z.string(), z.string()).describe('Committed native-asset amounts keyed by unit'),
+	accepted: z.literal(true),
+});
+
+export const listTopupsInput = z.object({
+	headId: z.string().describe('The Hydra head whose top-ups to list'),
+	limit: z.coerce.number().int().min(1).max(50).default(10),
+});
+
+export const listTopupsOutput = z.object({
+	topups: z.array(
+		z.object({
+			id: z.string(),
+			createdAt: z.string(),
+			updatedAt: z.string(),
+			status: z.nativeEnum(HydraTopupStatus),
+			depositTxHash: z.string(),
+			committedLovelace: z.string(),
+			committedAssets: z.record(z.string(), z.string()),
+		}),
+	),
 });
 
 /**
- * Repeatable incremental-commit (top-up) of additional funds into an already-Open
- * head. A thin wrapper over executeHydraTopup, the shared flow also used by the
- * automatic low-balance top-up; it commits every matching UTxO (unbounded).
+ * Deposits into this head, newest first.
+ *
+ * A top-up is not one transaction and not quick: an exact amount is split off
+ * into its own L1 UTxO and that split has to confirm before the deposit can
+ * even be built, which is minutes. Without somewhere to see them, the only
+ * feedback was a request that appeared to hang.
+ */
+export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
+	method: 'get',
+	input: listTopupsInput,
+	output: listTopupsOutput,
+	handler: async ({ input }) => {
+		const rows = await prisma.hydraTopup.findMany({
+			where: { hydraHeadId: input.headId },
+			orderBy: { createdAt: 'desc' },
+			take: input.limit,
+		});
+		return {
+			topups: rows.map((row) => ({
+				id: row.id,
+				createdAt: row.createdAt.toISOString(),
+				updatedAt: row.updatedAt.toISOString(),
+				status: row.status,
+				depositTxHash: row.depositTxHash,
+				committedLovelace: row.committedLovelace.toString(),
+				committedAssets: (row.committedAssets ?? {}) as Record<string, string>,
+			})),
+		};
+	},
+});
+
+/**
+ * Start a top-up. Does not wait for it.
+ *
+ * The work is minutes long — an exact amount is split into its own L1 UTxO,
+ * that split must confirm, then the deposit is built, submitted and confirmed —
+ * and holding an HTTP request open across all of it gave an operator a spinner
+ * with no way to tell progress from failure. Nothing is lost by returning
+ * early: every state transition after submission is owned by reconciliation
+ * anyway, which is what makes the deposit recoverable if this process dies.
+ *
+ * The resulting HydraTopup rows are readable through listTopupsGet.
  */
 export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
@@ -45,14 +102,14 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }) => {
 		const filter: CommitUtxoFilter = input.assetUnit ? { unit: input.assetUnit } : input.assetFilter;
 		const exact = input.exactAmount ? { unit: input.assetUnit ?? 'lovelace', amount: BigInt(input.exactAmount) } : null;
-		const result = await executeHydraTopup({ headId: input.headId, filter, exact });
-		return {
-			headId: result.headId,
-			topupId: result.topupId,
-			depositTxHash: result.depositTxHash,
-			confirmed: result.confirmed,
-			committedLovelace: result.committedLovelace.toString(),
-			committedAssets: result.committedAssets,
-		};
+
+		// Detached deliberately. A rejection here is logged rather than returned
+		// because the caller has already been answered, and reconciliation — not
+		// this promise — decides what a submitted deposit finally becomes.
+		void executeHydraTopup({ headId: input.headId, filter, exact }).catch((error: unknown) => {
+			logger.error(`hydra: top-up of head ${input.headId} failed: ${(error as Error).message}`);
+		});
+
+		return { headId: input.headId, accepted: true as const };
 	},
 });

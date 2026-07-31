@@ -22,7 +22,7 @@ export {
 	fanoutHeadPost,
 } from './head';
 
-export { topupHeadPost } from './head/topup';
+export { topupHeadPost, listTopupsGet } from './head/topup';
 
 export {
 	listHydraLowBalanceRulesGet,

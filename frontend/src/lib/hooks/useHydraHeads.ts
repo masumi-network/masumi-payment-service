@@ -667,6 +667,49 @@ export function useHydraHeadErrors(headId: string | null) {
   return { ...query, errors: query.data ?? [] };
 }
 
+export type HydraTopup = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: 'Pending' | 'Confirmed' | 'Failed';
+  depositTxHash: string;
+  committedLovelace: string;
+  committedAssets: Record<string, string>;
+};
+
+/**
+ * Deposits into a head, newest first.
+ *
+ * Polled while any are pending: a top-up takes minutes — an exact amount is
+ * split into its own UTxO and that split must confirm before the deposit can be
+ * built — so this is the only way to tell progress from failure.
+ */
+export function useHydraTopups(headId: string | null, isOpen: boolean) {
+  const { apiClient } = useAppContext();
+
+  const query = useQuery<HydraTopup[]>({
+    queryKey: ['hydra-topups', headId],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          apiClient.get<{ 200: ApiEnvelope<{ topups: HydraTopup[] }> }>({
+            responseType: 'json',
+            url: '/hydra/head/topup',
+            query: { headId, limit: 10 },
+          }),
+        { errorMessage: 'Failed to load the deposits' },
+      );
+      return response?.data?.data?.topups ?? [];
+    },
+    enabled: !!apiClient && headId !== null && isOpen,
+    staleTime: 5000,
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((topup) => topup.status === 'Pending') ? 10_000 : false,
+  });
+
+  return { ...query, topups: query.data ?? [] };
+}
+
 /** Forget a head's errors. They are a log, so clearing them changes nothing but the display. */
 export async function clearHydraHeadErrors(apiClient: Client, payload: { headId: string }) {
   const response = await handleApiCall(

@@ -20,7 +20,10 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { topupHydraHead, type HydraTopupRequest } from '@/lib/hooks/useHydraHeads';
+import { topupHydraHead, useHydraTopups, type HydraTopupRequest } from '@/lib/hooks/useHydraHeads';
+import { Badge } from '@/components/ui/badge';
+import { CopyButton } from '@/components/ui/copy-button';
+import { formatAssetAmount } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -85,6 +88,68 @@ function adaToLovelace(value: string): string | null {
   return lovelace === '0' ? null : lovelace;
 }
 
+/**
+ * What has been deposited, and what is still on its way.
+ *
+ * A top-up is minutes of on-chain work, so the only honest feedback is a list
+ * that outlives the request: submitting returns immediately and the row shows
+ * up here, moving Pending to Confirmed on its own.
+ */
+function HydraTopupList({
+  headId,
+  isOpen,
+  network,
+}: {
+  headId: string;
+  isOpen: boolean;
+  network: string | undefined;
+}) {
+  const { topups } = useHydraTopups(headId, isOpen);
+
+  if (topups.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2 border-t pt-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Deposits</p>
+      <ul className="divide-y rounded-md border">
+        {topups.map((topup) => (
+          <li
+            key={topup.id}
+            className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+          >
+            <div className="flex items-center gap-2">
+              <Badge
+                variant="outline"
+                className={
+                  topup.status === 'Confirmed'
+                    ? 'text-green-600 dark:text-green-400'
+                    : topup.status === 'Failed'
+                      ? 'text-red-600 dark:text-red-400'
+                      : undefined
+                }
+              >
+                {topup.status === 'Pending' && <Spinner className="mr-1 h-3 w-3" />}
+                {topup.status}
+              </Badge>
+              <span className="font-mono text-sm">
+                {formatAssetAmount(topup.committedLovelace, 'lovelace', network)}
+              </span>
+            </div>
+            <span className="flex items-center gap-1">
+              <span className="font-mono text-xs text-muted-foreground">
+                {topup.depositTxHash.slice(0, 10)}…
+              </span>
+              <CopyButton value={topup.depositTxHash} className="h-6 w-6" />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonProps) {
   const { apiClient, network } = useAppContext();
   const queryClient = useQueryClient();
@@ -140,15 +205,10 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
 
     setIsSubmitting(true);
     try {
-      const result = await topupHydraHead(apiClient, payload);
-      toast.success(
-        result.confirmed
-          ? 'Funds are in the head'
-          : 'Deposit submitted — the funds appear once it confirms on chain',
-      );
+      await topupHydraHead(apiClient, payload);
+      toast.success('Deposit started — it appears below, and in the head once it confirms');
       setAmount('');
-      await queryClient.invalidateQueries({ queryKey: ['hydra-head-balance', headId] });
-      await queryClient.invalidateQueries({ queryKey: ['hydra-heads'] });
+      await queryClient.invalidateQueries({ queryKey: ['hydra-topups', headId] });
     } finally {
       setIsSubmitting(false);
     }
@@ -210,6 +270,8 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
           )}
         </Button>
       </div>
+
+      <HydraTopupList headId={headId} isOpen={isOpen} network={network} />
 
       {isCustom && (
         <div className="space-y-1.5">

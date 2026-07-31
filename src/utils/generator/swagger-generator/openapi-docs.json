@@ -32278,34 +32278,16 @@
                                                 "headId": {
                                                     "type": "string"
                                                 },
-                                                "topupId": {
-                                                    "type": "string"
-                                                },
-                                                "depositTxHash": {
-                                                    "type": "string"
-                                                },
-                                                "confirmed": {
+                                                "accepted": {
                                                     "type": "boolean",
-                                                    "description": "Whether the deposit is already confirmed on L1 by the independent observer"
-                                                },
-                                                "committedLovelace": {
-                                                    "type": "string"
-                                                },
-                                                "committedAssets": {
-                                                    "type": "object",
-                                                    "additionalProperties": {
-                                                        "type": "string"
-                                                    },
-                                                    "description": "Committed native-asset amounts keyed by unit"
+                                                    "enum": [
+                                                        true
+                                                    ]
                                                 }
                                             },
                                             "required": [
                                                 "headId",
-                                                "topupId",
-                                                "depositTxHash",
-                                                "confirmed",
-                                                "committedLovelace",
-                                                "committedAssets"
+                                                "accepted"
                                             ]
                                         }
                                     },
