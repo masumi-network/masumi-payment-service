@@ -736,8 +736,13 @@ export type HydraNodeFunding = {
   isUnderfunded: boolean;
   shortfallLovelace: string;
   checked: boolean;
-  /** Provisioned is not ready: a node must start and sync before it can post. */
-  node: { state: string; isReady: boolean; reason: string | null };
+  /**
+   * Provisioned is not ready: a node must start and sync before it can post.
+   *
+   * Optional because a service that predates it simply omits it, and the dialog
+   * has to keep working against one.
+   */
+  node?: { state: string; isReady: boolean; reason: string | null };
 };
 
 /** What the node's own key holds, read before an L1 action rather than after it fails. */

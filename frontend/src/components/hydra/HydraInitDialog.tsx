@@ -102,7 +102,10 @@ export function HydraInitDialog({
   const isUnderfunded = funding?.isUnderfunded === true;
   // Checked before funding is offered: sending ADA to a node that cannot act
   // yet is a fix for the wrong problem.
-  const nodeBlocker = funding?.node.isReady === false ? funding.node.reason : null;
+  // Optional-chained through `node` as well: a service that predates this field
+  // must degrade to "no opinion", not crash the page. Reading a property off an
+  // absent object is how a missing API field becomes a blank screen.
+  const nodeBlocker = funding?.node?.isReady === false ? (funding.node.reason ?? null) : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
