@@ -30,7 +30,17 @@ function relativeTime(iso: string): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-export function HydraHeadErrors({ headId, count }: { headId: string; count: number }) {
+export function HydraHeadErrors({
+  headId,
+  count,
+  // The surrounding collapsible already names the section and shows the count,
+  // so repeating both inside it read as two nested "Errors" headings.
+  showHeading = true,
+}: {
+  headId: string;
+  count: number;
+  showHeading?: boolean;
+}) {
   const { errors, isLoading, refetch } = useHydraHeadErrors(headId);
   const { apiClient } = useAppContext();
   const [isClearing, setIsClearing] = useState(false);
@@ -55,11 +65,15 @@ export function HydraHeadErrors({ headId, count }: { headId: string; count: numb
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="flex items-center gap-2 font-medium">
-          <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-          Errors
-          <Badge variant="outline">{errors.length || count}</Badge>
-        </h3>
+        {showHeading ? (
+          <h3 className="flex items-center gap-2 font-medium">
+            <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+            Errors
+            <Badge variant="outline">{errors.length || count}</Badge>
+          </h3>
+        ) : (
+          <span />
+        )}
         {errors.length > 0 && (
           <Button
             type="button"

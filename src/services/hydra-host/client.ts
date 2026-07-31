@@ -205,6 +205,34 @@ export async function setHostNodePeers(
 	await request(baseUrl, `/v1/nodes/${nodeId}`, adminToken, { method: 'PATCH', body: { peers } });
 }
 
+export type HostNodeHealth = {
+	state: string;
+	usable: boolean;
+	responsive: boolean;
+	chainSynced: boolean;
+};
+
+/**
+ * Whether a node can actually be driven right now.
+ *
+ * A node that has been provisioned is not immediately a node that can post a
+ * transaction: it has to start and catch up on chain first, and an L1 action
+ * attempted in that window fails as "unreachable" — which describes the symptom
+ * and not the cause.
+ */
+export async function fetchHostNodeHealth(baseUrl: string, userToken: string, nodeId: string): Promise<HostNodeHealth> {
+	const body = await request(baseUrl, `/v1/nodes/${nodeId}/health`, userToken);
+	if (!isPlainObject(body)) {
+		throw new HydraProtocolError('hydra host returned a malformed node health response');
+	}
+	return {
+		state: getOwnString(body, 'state') ?? 'Unknown',
+		usable: getOwnValue(body, 'usable') === true,
+		responsive: getOwnValue(body, 'responsive') === true,
+		chainSynced: getOwnValue(body, 'chainSynced') === true,
+	};
+}
+
 /** Ask the Host's supervisor to run this node. Idempotent; the Host owns the transition. */
 export async function startHostNode(baseUrl: string, adminToken: string, nodeId: string): Promise<void> {
 	await request(baseUrl, `/v1/nodes/${nodeId}/start`, adminToken, { method: 'POST' });

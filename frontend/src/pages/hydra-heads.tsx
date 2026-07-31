@@ -555,7 +555,11 @@ function HydraHeadDetailsDialog({
               summary={`${head._count?.Errors ?? 0} recorded`}
               defaultOpen={head.status === 'Idle'}
             >
-              <HydraHeadErrors headId={head.id} count={head._count?.Errors ?? 0} />
+              <HydraHeadErrors
+                headId={head.id}
+                count={head._count?.Errors ?? 0}
+                showHeading={false}
+              />
             </HydraDetailSection>
           )}
 

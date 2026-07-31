@@ -100,6 +100,9 @@ export function HydraInitDialog({
   }
 
   const isUnderfunded = funding?.isUnderfunded === true;
+  // Checked before funding is offered: sending ADA to a node that cannot act
+  // yet is a fix for the wrong problem.
+  const nodeBlocker = funding?.node.isReady === false ? funding.node.reason : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -115,8 +118,16 @@ export function HydraInitDialog({
         {isChecking ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Checking the node&apos;s balance…
+            Checking the node…
           </p>
+        ) : nodeBlocker !== null ? (
+          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              {nodeBlocker} Opening now would fail as &ldquo;node unreachable&rdquo;, which says
+              nothing about why — try again in a minute.
+            </span>
+          </div>
         ) : isUnderfunded && funding ? (
           <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
             <p className="flex items-start gap-2">
@@ -139,7 +150,7 @@ export function HydraInitDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          {isUnderfunded && funding ? (
+          {nodeBlocker !== null ? null : isUnderfunded && funding ? (
             <Button type="button" onClick={() => void handleFund()} disabled={isFunding}>
               {isFunding && <Loader2 className="h-4 w-4 animate-spin" />}
               Send {ada(funding.shortfallLovelace)}
