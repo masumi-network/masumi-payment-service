@@ -44,23 +44,24 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
         </div>
       ) : data.balance.length === 0 ? (
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          No funds committed to the head yet ({data.utxoCount} UTxOs).
+          Nothing committed yet — top up below to put funds in.
         </div>
       ) : (
+        // The amount is the answer; how many UTxOs carry it is a detail, so it
+        // is a footnote rather than the headline it used to be.
         <div className="rounded-md border divide-y">
           {data.balance.map((asset) => (
-            <div
-              key={asset.unit || 'ada'}
-              className="flex items-center justify-between px-4 py-2 text-sm"
-            >
-              <span className="text-muted-foreground">{formatFundLabel(asset.unit, network)}</span>
-              <span className="font-mono">
+            <div key={asset.unit || 'ada'} className="flex items-center justify-between px-4 py-3">
+              <span className="text-sm text-muted-foreground">
+                {formatFundLabel(asset.unit, network)}
+              </span>
+              <span className="font-mono text-base font-semibold">
                 {formatAssetAmount(asset.quantity, asset.unit || 'lovelace', network)}
               </span>
             </div>
           ))}
-          <div className="px-4 py-2 text-xs text-muted-foreground">
-            {data.utxoCount} in-head UTxO(s)
+          <div className="px-4 py-1.5 text-xs text-muted-foreground">
+            across {data.utxoCount} in-head UTxO{data.utxoCount === 1 ? '' : 's'}
           </div>
         </div>
       )}
