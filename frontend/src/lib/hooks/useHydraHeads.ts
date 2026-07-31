@@ -25,6 +25,11 @@ export type HydraParticipant = {
   nodeHttpUrl: string;
   hasCommitted: boolean;
   commitTxHash: string | null;
+  /**
+   * The node's own Cardano key hash — the head's on-chain identity, kept
+   * separate from the settling wallet so a node compromise cannot reach funds.
+   */
+  cardanoVkey?: string;
   /** Which connected node runs this participant's hydra-node process. */
   hydraHostId?: string;
   hostNodeId?: string;

@@ -5742,6 +5742,9 @@
                             "hostNodeId": {
                                 "type": "string"
                             },
+                            "cardanoVkey": {
+                                "type": "string"
+                            },
                             "keysDisclosedAt": {
                                 "type": "string",
                                 "nullable": true
@@ -5757,6 +5760,7 @@
                             "commitTxHash",
                             "hydraHostId",
                             "hostNodeId",
+                            "cardanoVkey",
                             "keysDisclosedAt"
                         ]
                     },
@@ -5786,6 +5790,9 @@
                                 },
                                 "hydraVerificationKeyId": {
                                     "type": "string"
+                                },
+                                "cardanoVkey": {
+                                    "type": "string"
                                 }
                             },
                             "required": [
@@ -5795,7 +5802,8 @@
                                 "advertise",
                                 "hasCommitted",
                                 "commitTxHash",
-                                "hydraVerificationKeyId"
+                                "hydraVerificationKeyId",
+                                "cardanoVkey"
                             ]
                         }
                     },

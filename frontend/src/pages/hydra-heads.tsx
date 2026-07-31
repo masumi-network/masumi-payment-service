@@ -21,6 +21,8 @@ import { toast } from 'react-toastify';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import { HydraHeadErrors } from '@/components/hydra/HydraHeadErrors';
+import { HydraHeadWallets } from '@/components/hydra/HydraHeadWallets';
+import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraInitDialog } from '@/components/hydra/HydraInitDialog';
 import { HydraInvitesDialog } from '@/components/hydra/HydraManageDialog';
 import { HydraNodeStrip } from '@/components/hydra/HydraNodeStrip';
@@ -513,34 +515,16 @@ function HydraHeadDetailsDialog({
           </div>
         </DialogHeader>
 
-        <div className="space-y-6">
-          <div className="grid gap-4 rounded-md border bg-muted/10 p-4 md:grid-cols-3">
-            <DetailField
-              label="Head identifier"
-              value={head.headIdentifier ?? head.id}
-              copyValue={head.headIdentifier ?? head.id}
-              mono
-            />
-            <DetailField
-              label="Relation"
-              value={head.hydraRelationId}
-              copyValue={head.hydraRelationId}
-              mono
-            />
-            <DetailField
-              label="Participants"
-              value={`${participantSummary.totalParticipants} total`}
-            />
-            <DetailField label="Snapshot" value={head.latestSnapshotNumber} />
-            <DetailField label="Contestation period" value={`${head.contestationPeriod}s`} />
-            <DetailField label="Transactions" value={String(head._count?.Transactions ?? 0)} />
-            <DetailField label="Created" value={formatDate(head.createdAt)} />
-            <DetailField label="Updated" value={formatDate(head.updatedAt)} />
-            <DetailField label="Latest activity" value={formatDate(head.latestActivityAt)} />
-            <DetailField label="Opened" value={formatDate(head.openedAt)} />
-            <DetailField label="Closed" value={formatDate(head.closedAt)} />
-            <DetailField label="Finalized" value={formatDate(head.finalizedAt)} />
-          </div>
+        {/* What is read every visit stays open; reference material collapses.
+            The wallets lead, because which two wallets a head is between is
+            what decides whether a payment can use it at all. */}
+        <div className="space-y-4">
+          <HydraHeadWallets
+            localWalletId={head.LocalParticipant?.walletId}
+            localCardanoVkey={head.LocalParticipant?.cardanoVkey}
+            remoteWalletId={head.RemoteParticipants?.[0]?.walletId}
+            remoteCardanoVkey={head.RemoteParticipants?.[0]?.cardanoVkey}
+          />
 
           {head.LocalParticipant && !head.LocalParticipant.keysDisclosedAt && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/60 dark:bg-amber-950/30">
@@ -557,40 +541,6 @@ function HydraHeadDetailsDialog({
             </div>
           )}
 
-          <HydraHeadErrors headId={head.id} count={head._count?.Errors ?? 0} />
-
-          <div className="space-y-3">
-            <h3 className="font-medium">Lifecycle transactions</h3>
-            <div className="grid gap-3">
-              <TransactionHashRow
-                label="Initial tx"
-                hash={head.initTxHash}
-                network={network}
-                pendingReason="Not opened yet"
-              />
-              <TransactionHashRow
-                label="Close tx"
-                hash={head.closeTxHash}
-                network={network}
-                pendingReason={
-                  head.status === 'Closed' || head.status === 'FanoutPossible'
-                    ? 'Closing — hash not observed yet'
-                    : 'Still open, nothing to close'
-                }
-              />
-              <TransactionHashRow
-                label="Fanout tx"
-                hash={head.fanoutTxHash}
-                network={network}
-                pendingReason={
-                  head.status === 'FanoutPossible'
-                    ? 'Ready to fan out'
-                    : 'Available once the head is closed and its contestation period has passed'
-                }
-              />
-            </div>
-          </div>
-
           <HydraHeadInHeadBalance
             headId={head.id}
             isOpen={head.status === 'Open'}
@@ -599,30 +549,98 @@ function HydraHeadDetailsDialog({
 
           <HydraHeadTopupButton headId={head.id} isOpen={head.status === 'Open'} />
 
-          <div className="space-y-3">
-            <h3 className="font-medium">Participants</h3>
+          {(head._count?.Errors ?? 0) > 0 && (
+            <HydraDetailSection
+              title="Errors"
+              summary={`${head._count?.Errors ?? 0} recorded`}
+              defaultOpen={head.status === 'Idle'}
+            >
+              <HydraHeadErrors headId={head.id} count={head._count?.Errors ?? 0} />
+            </HydraDetailSection>
+          )}
+
+          <HydraDetailSection
+            title="On-chain transactions"
+            summary={head.initTxHash ? 'Opened' : 'Not opened yet'}
+          >
+            <TransactionHashRow
+              label="Initial tx"
+              hash={head.initTxHash}
+              network={network}
+              pendingReason="Not opened yet"
+            />
+            <TransactionHashRow
+              label="Close tx"
+              hash={head.closeTxHash}
+              network={network}
+              pendingReason={
+                head.status === 'Closed' || head.status === 'FanoutPossible'
+                  ? 'Closing — hash not observed yet'
+                  : 'Still open, nothing to close'
+              }
+            />
+            <TransactionHashRow
+              label="Fanout tx"
+              hash={head.fanoutTxHash}
+              network={network}
+              pendingReason={
+                head.status === 'FanoutPossible'
+                  ? 'Ready to fan out'
+                  : 'Available once the head is closed and its contestation period has passed'
+              }
+            />
+          </HydraDetailSection>
+
+          <HydraDetailSection
+            title="Participants"
+            summary={`${participantSummary.totalParticipants} total, ${participantSummary.committedCount} committed`}
+          >
             <ParticipantCard
               title="Local participant"
               participant={head.LocalParticipant}
               network={network}
             />
             {(head.RemoteParticipants ?? []).length > 0 ? (
-              <div className="space-y-3">
-                {(head.RemoteParticipants ?? []).map((participant, index) => (
-                  <ParticipantCard
-                    key={participant.id}
-                    title={`Remote participant ${index + 1}`}
-                    participant={participant}
-                    network={network}
-                  />
-                ))}
-              </div>
+              (head.RemoteParticipants ?? []).map((participant, index) => (
+                <ParticipantCard
+                  key={participant.id}
+                  title={`Remote participant ${index + 1}`}
+                  participant={participant}
+                  network={network}
+                />
+              ))
             ) : (
               <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                 No remote participants saved.
               </div>
             )}
-          </div>
+          </HydraDetailSection>
+
+          <HydraDetailSection title="Identifiers and timeline" summary={formatDate(head.createdAt)}>
+            <div className="grid gap-4 md:grid-cols-3">
+              <DetailField
+                label="Head identifier"
+                value={head.headIdentifier ?? head.id}
+                copyValue={head.headIdentifier ?? head.id}
+                mono
+              />
+              <DetailField
+                label="Relation"
+                value={head.hydraRelationId}
+                copyValue={head.hydraRelationId}
+                mono
+              />
+              <DetailField label="Snapshot" value={head.latestSnapshotNumber} />
+              <DetailField label="Contestation period" value={`${head.contestationPeriod}s`} />
+              <DetailField label="Transactions" value={String(head._count?.Transactions ?? 0)} />
+              <DetailField label="Created" value={formatDate(head.createdAt)} />
+              <DetailField label="Updated" value={formatDate(head.updatedAt)} />
+              <DetailField label="Latest activity" value={formatDate(head.latestActivityAt)} />
+              <DetailField label="Opened" value={formatDate(head.openedAt)} />
+              <DetailField label="Closed" value={formatDate(head.closedAt)} />
+              <DetailField label="Finalized" value={formatDate(head.finalizedAt)} />
+            </div>
+          </HydraDetailSection>
         </div>
       </DialogContent>
     </Dialog>

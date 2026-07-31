@@ -64,6 +64,13 @@ export const localParticipantSchema = z.object({
 	 */
 	hydraHostId: z.string(),
 	hostNodeId: z.string(),
+	/**
+	 * The node's own Cardano key hash — the head's on-chain participant identity,
+	 * deliberately separate from the settling wallet (ADR 0010 §3). Public
+	 * material: it is what the InitTx mints a participant token for.
+	 */
+	cardanoVkey: z.string(),
+
 	/** Null until an operator has taken the one-time backup of this node's keys. */
 	keysDisclosedAt: z.string().nullable(),
 });
@@ -77,6 +84,12 @@ export const remoteParticipantSchema = z.object({
 	hasCommitted: z.boolean(),
 	commitTxHash: z.string().nullable(),
 	hydraVerificationKeyId: z.string(),
+	/**
+	 * The node's own Cardano key hash — the head's on-chain participant identity,
+	 * deliberately separate from the settling wallet (ADR 0010 §3). Public
+	 * material: it is what the InitTx mints a participant token for.
+	 */
+	cardanoVkey: z.string(),
 });
 
 export const hydraHeadSchema = z
@@ -169,6 +182,7 @@ const headInclude = {
 			// under theirs; without these it cannot tell which.
 			hydraHostId: true,
 			hostNodeId: true,
+			cardanoVkey: true,
 			// So the UI can offer the one-time key backup, and stop offering it.
 			keysDisclosedAt: true,
 		},
@@ -182,6 +196,7 @@ const headInclude = {
 			hasCommitted: true,
 			commitTxHash: true,
 			hydraVerificationKeyId: true,
+			cardanoVkey: true,
 		},
 	},
 	_count: { select: { Errors: true, Transactions: true } },
