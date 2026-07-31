@@ -16,6 +16,7 @@ import { ApiKeyStatus, HotWalletType, Network, PaymentSourceType } from '@/gener
 import { prisma } from '@masumi/payment-core/db';
 import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { encrypt } from '@/utils/security/encryption';
+import { defaultV2ContractParams } from '@/utils/v2-contract-sync';
 
 const LABEL = process.env.SEED_LABEL ?? 'node';
 const BLOCKFROST_KEY = process.env.SEED_BLOCKFROST_KEY?.trim() ?? '';
@@ -38,6 +39,11 @@ async function ensureAdminApiKey(token: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
+	const v2Defaults = defaultV2ContractParams(Network.Preprod);
+	if (v2Defaults === null) {
+		throw new Error('no V2 contract defaults for Preprod');
+	}
+
 	// Explicit rather than relying on boot seeding: the service only seeds an
 	// empty database, and this script has already written to it by then.
 	await ensureAdminApiKey(process.env.ADMIN_KEY ?? '');
@@ -72,7 +78,14 @@ async function main(): Promise<void> {
 		const created = await tx.paymentSource.create({
 			data: {
 				network: Network.Preprod,
-				smartContractAddress: `addr_test1${LABEL.replace(/[^a-z0-9]/gi, '')}${Date.now()}`,
+				// The real deployed V2 contract and registry policy, not a
+				// placeholder. A source with a made-up address and no policyId can
+				// hold Hydra wallets but nothing else: every payment resolves its
+				// source by (network, policyId) taken from the agent identifier, so
+				// a null policyId fails every one of them with "Network and policyId
+				// combination not supported".
+				smartContractAddress: v2Defaults.smartContractAddress,
+				policyId: v2Defaults.policyId,
 				feeRatePermille: 50,
 				cooldownTime: 0,
 				paymentSourceType: PaymentSourceType.Web3CardanoV2,
