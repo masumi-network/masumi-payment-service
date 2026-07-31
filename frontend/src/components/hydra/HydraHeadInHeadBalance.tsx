@@ -1,4 +1,4 @@
-import { useHydraHeadBalance } from '@/lib/hooks/useHydraHeads';
+import { useHydraHeadBalance, useHydraTopups } from '@/lib/hooks/useHydraHeads';
 import { formatAssetAmount } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
 
@@ -16,6 +16,10 @@ interface HydraHeadInHeadBalanceProps {
  */
 export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInHeadBalanceProps) {
   const { data, isLoading, isError } = useHydraHeadBalance(headId, isOpen);
+  const { topups } = useHydraTopups(headId, isOpen);
+  const hasSettlingDeposit = topups.some(
+    (topup) => topup.status === 'Confirmed' || topup.status === 'Pending',
+  );
 
   return (
     <div className="space-y-2">
@@ -43,8 +47,14 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
           Head is not currently connected — balance unavailable.
         </div>
       ) : data.balance.length === 0 ? (
+        // A confirmed deposit is on L1 but not yet folded into the L2 ledger —
+        // Hydra increments the head separately, and until it does the in-head
+        // balance is genuinely zero. Saying "nothing committed" while a deposit
+        // sits Confirmed below reads as a contradiction.
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          Nothing committed yet — top up below to put funds in.
+          {hasSettlingDeposit
+            ? 'A deposit is confirmed on chain and being folded into the head — this updates once the head increments.'
+            : 'Nothing in the head yet — add funds below.'}
         </div>
       ) : (
         // The amount is the answer; how many UTxOs carry it is a detail, so it

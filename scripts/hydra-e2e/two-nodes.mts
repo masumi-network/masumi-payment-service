@@ -63,19 +63,12 @@ function serviceEnv(side: Side): NodeJS.ProcessEnv {
 		ENCRYPTION_KEY,
 		ADMIN_KEY: side.adminKey,
 		PORT: String(side.port),
-		// The chain-polling jobs are pushed out because they hammer Blockfrost and
-		// prove nothing here. Agent registration is deliberately NOT throttled:
-		// it is a foreground action an operator triggers and then waits on, so a
-		// long interval reads as "stuck" rather than "slow".
-		BATCH_PAYMENT_INTERVAL: '3600',
-		CHECK_TX_INTERVAL: '3600',
-		CHECK_COLLECTION_INTERVAL: '3600',
-		CHECK_COLLECT_REFUND_INTERVAL: '3600',
-		CHECK_SET_REFUND_INTERVAL: '3600',
-		CHECK_UNSET_REFUND_INTERVAL: '3600',
-		CHECK_AUTHORIZE_REFUND_INTERVAL: '3600',
-		CHECK_SUBMIT_RESULT_INTERVAL: '3600',
-		CHECK_WALLET_TRANSACTION_HASH_INTERVAL: '3600',
+		// Nothing is throttled. These two nodes exist to be driven by hand, and
+		// every one of these jobs is load-bearing for that: with CHECK_TX_INTERVAL
+		// pushed to an hour the seller never observes the buyer's lock inside its
+		// 300-second grace and marks a perfectly good payment "Funds or Datum
+		// Invalid" — a failure invented entirely by the harness. Blockfrost calls
+		// are the price of the stack behaving like the product.
 		SEED_ONLY_IF_EMPTY: 'true',
 	};
 }

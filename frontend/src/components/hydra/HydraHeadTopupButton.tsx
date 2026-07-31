@@ -23,7 +23,6 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { topupHydraHead, useHydraTopups, type HydraTopupRequest } from '@/lib/hooks/useHydraHeads';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
-import { formatAssetAmount } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -95,6 +94,22 @@ function adaToLovelace(value: string): string | null {
  * that outlives the request: submitting returns immediately and the row shows
  * up here, moving Pending to Confirmed on its own.
  */
+/**
+ * Lovelace as a decimal with the network's own ticker.
+ *
+ * The shared formatter reports "ADA" for lovelace on every network, so a
+ * preprod deposit read as ADA next to a tADA balance in the same dialog.
+ * Corrected here rather than in the shared helper, which every other screen
+ * depends on.
+ */
+function formatLovelace(lovelace: string, network: string | undefined): string {
+  const ticker = network?.toLowerCase() === 'mainnet' ? 'ADA' : 'tADA';
+  const padded = lovelace.padStart(7, '0');
+  const whole = padded.slice(0, -6).replace(/^0+(?=\d)/, '');
+  const fraction = padded.slice(-6).replace(/0+$/, '') || '00';
+  return `${Number(whole).toLocaleString()}.${fraction} ${ticker}`;
+}
+
 function HydraTopupList({
   headId,
   isOpen,
@@ -134,7 +149,7 @@ function HydraTopupList({
                 {topup.status}
               </Badge>
               <span className="font-mono text-sm">
-                {formatAssetAmount(topup.committedLovelace, 'lovelace', network)}
+                {formatLovelace(topup.committedLovelace, network)}
               </span>
             </div>
             <span className="flex items-center gap-1">
