@@ -34,8 +34,7 @@ describe('V2 registry metadata', () => {
 		apiBaseUrl: 'https://agent.example',
 		openApiSpecUrl: null,
 		x402ResourcesUrl: null,
-		a2aAgentCardUrl: null,
-		a2aProtocolVersions: [],
+		A2ADetail: null,
 		ExampleOutputs: [],
 		capabilityName: null,
 		capabilityVersion: null,
@@ -103,8 +102,10 @@ describe('V2 registry metadata', () => {
 			...baseRequest,
 			type: RegistryEntryType.A2A,
 			apiBaseUrl: 'https://agent.example',
-			a2aAgentCardUrl: 'https://agent.example/.well-known/agent-card.json',
-			a2aProtocolVersions: ['1.0'],
+			A2ADetail: {
+				agentCardUrl: 'https://agent.example/.well-known/agent-card.json',
+				protocolVersions: ['1.0'],
+			},
 		}) as {
 			type?: unknown;
 			agent_card_url?: unknown;

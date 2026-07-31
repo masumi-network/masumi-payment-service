@@ -265,6 +265,7 @@ export async function getRegistryEntriesForQuery(
 				},
 			},
 			Verifications: true,
+			A2ADetail: true,
 			SupportedPaymentSources: {
 				select: {
 					chain: true,

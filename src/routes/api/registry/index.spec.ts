@@ -999,13 +999,36 @@ describe('registerAgentPost', () => {
 			expect(mockValidateA2AAgentCardOrThrow).toHaveBeenCalledWith('https://example.com/.well-known/agent-card.json', [
 				'1.0',
 			]);
+			// A2A descriptors are persisted in the 1:1 A2ARegistryDetail row, not as
+			// columns on RegistryRequest, so the create is nested.
 			expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data).toEqual(
 				expect.objectContaining({
 					type: RegistryEntryType.A2A,
-					a2aAgentCardUrl: 'https://example.com/.well-known/agent-card.json',
-					a2aProtocolVersions: ['1.0'],
+					A2ADetail: {
+						create: {
+							agentCardUrl: 'https://example.com/.well-known/agent-card.json',
+							protocolVersions: ['1.0'],
+						},
+					},
 				}),
 			);
+		});
+
+		it('creates no A2A detail row for a non-A2A registration', async () => {
+			// The whole point of the detail table: a Standard entry stores nothing at
+			// all for A2A rather than carrying NULL columns for it.
+			const { a2aAgentCardUrl: _card, a2aProtocolVersions: _versions, ...standardBody } = buildA2ARequestBody();
+			const { responseMock } = await testEndpoint({
+				endpoint: registerAgentPost,
+				requestProps: {
+					method: 'POST',
+					headers: { token: 'valid' },
+					body: { ...standardBody, type: RegistryEntryType.Standard },
+				},
+			});
+
+			expect(responseMock.statusCode).toBe(200);
+			expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.A2ADetail).toBeUndefined();
 		});
 
 		it('rejects A2A registration when the agent card fails validation', async () => {

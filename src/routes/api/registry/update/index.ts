@@ -14,7 +14,7 @@ import { bumpRegistryAssetNameVersionV2, normalizeRequestedRegistryFundingLovela
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { supportedPaymentSourcesSchema, validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
 import { validateX402NetworksAvailableOrThrow } from '@/services/registry/x402-network-availability';
-import { serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
+import { serializeA2ADetail, serializeSupportedPaymentSources, serializeVerifications } from '../serializers';
 import { verificationToRow } from '@/types/verification';
 import { buildSupportedPaymentSourceCreate, getCardanoFixedAssets } from '@/services/registry/source-pricing';
 
@@ -354,6 +354,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 						RecipientWallet: { select: { walletVkey: true, walletAddress: true } },
 						ExampleOutputs: { select: { name: true, url: true, mimeType: true } },
 						Verifications: true,
+						A2ADetail: true,
 						SupportedPaymentSources: {
 							select: {
 								chain: true,
@@ -393,6 +394,7 @@ export const updateAgentPost = payAuthenticatedEndpointFactory.build({
 
 			return {
 				...result,
+				...serializeA2ADetail(result.A2ADetail),
 				paymentSourceType: paymentSource.paymentSourceType,
 				Capability: {
 					name: result.capabilityName,

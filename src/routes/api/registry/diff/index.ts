@@ -132,6 +132,7 @@ export const queryRegistryDiffGet = readAuthenticatedEndpointFactory.build({
 					},
 				},
 				Verifications: true,
+				A2ADetail: true,
 				SupportedPaymentSources: {
 					select: {
 						chain: true,

@@ -38,6 +38,7 @@ import {
 import { getRegistryEntriesForQuery, resolveRegistryPaymentSourceTypeFilter } from './queries';
 import {
 	serializeRegistryEntriesResponse,
+	serializeA2ADetail,
 	serializeLegacyAgentPricing,
 	serializeSupportedPaymentSources,
 	serializeVerifications,
@@ -215,8 +216,18 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					apiBaseUrl: input.apiBaseUrl ?? null,
 					openApiSpecUrl: input.openApiSpecUrl ?? null,
 					x402ResourcesUrl: input.x402ResourcesUrl ?? null,
-					a2aAgentCardUrl: input.a2aAgentCardUrl ?? null,
-					a2aProtocolVersions: input.a2aProtocolVersions ?? [],
+					// A2A descriptors live in a 1:1 detail row rather than nullable columns
+					// here, so the row exists only for A2A entries (getRegistryEndpointError
+					// has already guaranteed both fields are present for this type).
+					A2ADetail:
+						input.type === RegistryEntryType.A2A
+							? {
+									create: {
+										agentCardUrl: input.a2aAgentCardUrl!,
+										protocolVersions: input.a2aProtocolVersions!,
+									},
+								}
+							: undefined,
 					capabilityName: input.Capability.name,
 					capabilityVersion: input.Capability.version,
 					other: input.Legal?.other,
@@ -309,6 +320,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 						},
 					},
 					Verifications: true,
+					A2ADetail: true,
 					SupportedPaymentSources: {
 						select: {
 							chain: true,
@@ -347,6 +359,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 
 			return {
 				...result,
+				...serializeA2ADetail(result.A2ADetail),
 				paymentSourceType: sellingWallet.PaymentSource.paymentSourceType,
 				Capability: {
 					name: result.capabilityName,
@@ -424,6 +437,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 					select: { name: true, url: true, mimeType: true },
 				},
 				Verifications: true,
+				A2ADetail: true,
 				SupportedPaymentSources: {
 					select: {
 						chain: true,
@@ -544,6 +558,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 
 			return {
 				...item,
+				...serializeA2ADetail(item.A2ADetail),
 				paymentSourceType: item.PaymentSource.paymentSourceType,
 				Capability: {
 					name: item.capabilityName,
