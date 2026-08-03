@@ -28,6 +28,7 @@ export function useX402Networks(options?: {
   silentErrors?: boolean;
   network?: NetworkType;
   allEnvironments?: boolean;
+  enabled?: boolean;
 }) {
   const { apiClient, authorized, network: activeNetwork } = useAppContext();
   const silentErrors = options?.silentErrors ?? false;
@@ -40,6 +41,7 @@ export function useX402Networks(options?: {
   // include both Cardano networks, so their ChainIdLimit must be choosable from every
   // EVM chain regardless of the active top-selector env. Omitting isTestnet returns all.
   const allEnvironments = options?.allEnvironments ?? false;
+  const enabled = options?.enabled ?? true;
 
   const query = useQuery({
     // Keyed by silentErrors so the silent (selector) and toasting (tab) consumers do
@@ -59,7 +61,7 @@ export function useX402Networks(options?: {
       );
       return response?.data?.data?.Networks ?? [];
     },
-    enabled: !!apiClient && authorized,
+    enabled: !!apiClient && authorized && enabled,
     staleTime: 30000,
   });
 
@@ -77,12 +79,14 @@ export function useAvailableX402Networks(options?: {
   silentErrors?: boolean;
   network?: NetworkType;
   allEnvironments?: boolean;
+  enabled?: boolean;
 }) {
   const { apiClient, authorized, network: activeNetwork } = useAppContext();
   const silentErrors = options?.silentErrors ?? false;
   const network = options?.network ?? activeNetwork;
   const isTestnet = isTestnetEnv(network);
   const allEnvironments = options?.allEnvironments ?? false;
+  const enabled = options?.enabled ?? true;
 
   const query = useQuery({
     // Keep this under the shared x402-networks prefix so chain mutations invalidate
@@ -99,7 +103,7 @@ export function useAvailableX402Networks(options?: {
       );
       return response?.data?.data?.Networks ?? [];
     },
-    enabled: !!apiClient && authorized,
+    enabled: !!apiClient && authorized && enabled,
     staleTime: 30000,
   });
 
@@ -110,6 +114,54 @@ export function useAvailableX402Networks(options?: {
     refetch: async () => {
       await query.refetch();
     },
+  };
+}
+
+/**
+ * Session bootstrap for rail detection: admins use the full configured-chain list;
+ * non-admins use the pay-authenticated available projection (admin list 401s for them).
+ */
+export type X402SessionNetwork = {
+  id: string;
+  caip2Id?: string;
+  displayName: string;
+  isEnabled: boolean;
+  isTestnet: boolean;
+  canSettle?: boolean;
+  facilitatorWalletId?: string | null;
+  facilitatorUrl?: string | null;
+  rpcUrl?: string | null;
+};
+
+export function useX402NetworksForSession(options?: {
+  silentErrors?: boolean;
+  network?: NetworkType;
+  allEnvironments?: boolean;
+}) {
+  const { capabilities } = useAppContext();
+  const admin = useX402Networks({
+    ...options,
+    enabled: capabilities.canAdmin,
+  });
+  const available = useAvailableX402Networks({
+    ...options,
+    enabled: !capabilities.canAdmin,
+  });
+
+  if (capabilities.canAdmin) {
+    return {
+      networks: admin.networks as X402SessionNetwork[],
+      isLoading: admin.isLoading,
+      isRefetching: admin.isRefetching,
+      refetch: admin.refetch,
+    };
+  }
+
+  return {
+    networks: available.networks as X402SessionNetwork[],
+    isLoading: available.isLoading,
+    isRefetching: available.isRefetching,
+    refetch: available.refetch,
   };
 }
 

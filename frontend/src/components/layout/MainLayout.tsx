@@ -45,7 +45,7 @@ import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
 import { DEFAULT_PAYMENT_SOURCE_TYPE, isV2PaymentSource } from '@/lib/payment-source-type';
 import { X402SetupBanner } from '@/components/x402/X402SetupBanner';
-import { useX402Networks } from '@/lib/hooks/useX402';
+import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -79,8 +79,15 @@ export function MainLayout({ children }: MainLayoutProps) {
   const sideBarWidth = 280;
   const sideBarWidthCollapsed = 96;
   const [isMac, setIsMac] = useState(false);
-  const { network, setNetwork, isChangingNetwork, isSetupMode, setupWizardStep, activeRail } =
-    useAppContext();
+  const {
+    network,
+    setNetwork,
+    isChangingNetwork,
+    isSetupMode,
+    setupWizardStep,
+    activeRail,
+    capabilities,
+  } = useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
   const isFirstNavMount = !hasAnimatedNav;
@@ -151,7 +158,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const hasPaymentSources = currentNetworkPaymentSources.length > 0;
   const hasV2PaymentSource = currentNetworkPaymentSources.some(isV2PaymentSource);
   const hasLegacyOnlyPaymentSources = hasPaymentSources && !hasV2PaymentSource;
-  const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
+  const { networks: x402Networks, isLoading: x402Loading } = useX402NetworksForSession({
     silentErrors: true,
   });
   // The x402 rail stands on its own: an operator working the EVM rail shouldn't be forced
@@ -178,39 +185,45 @@ export function MainLayout({ children }: MainLayoutProps) {
   const notificationCount = newTransactionsCount + unacknowledgedWalletAlertCount;
 
   const navItems = useMemo<NavItem[]>(() => {
+    const { canAdmin, canPay } = capabilities;
+
     // Show the setup-only sidebar while in Cardano setup, or when there are no payment
     // sources at all — unless a configured x402 rail is active, which has its own nav.
     if (isSetupMode || (!hasPaymentSources && !isX402Standalone)) {
-      return [
-        {
+      const setupNav: NavItem[] = [];
+      if (canAdmin) {
+        setupNav.push({
           href: '/setup',
           name: 'Setup',
           icon: <Wand2 className="h-4 w-4" />,
           badge: null,
           group: 0,
-        },
-        {
+        });
+        setupNav.push({
           href: '/api-keys',
           name: 'API keys',
           icon: <Key className="h-4 w-4" />,
           badge: null,
           group: 1,
-        },
-        {
+        });
+      }
+      if (canPay) {
+        setupNav.push({
           href: '/webhooks',
           name: 'Webhooks',
           icon: <Bell className="h-4 w-4" />,
           badge: null,
           group: 1,
-        },
-        {
-          href: '/developers',
-          name: 'Developers',
-          icon: <Code className="h-4 w-4 text-violet-500" />,
-          badge: null,
-          group: 1,
-        },
-      ];
+        });
+      }
+      setupNav.push({
+        href: '/developers',
+        name: 'Developers',
+        icon: <Code className="h-4 w-4 text-violet-500" />,
+        badge: null,
+        group: 1,
+      });
+      return setupNav;
     }
 
     // Shared items appear on both rails. The rest are gated by the active rail so the
@@ -224,21 +237,27 @@ export function MainLayout({ children }: MainLayoutProps) {
     };
     // Webhooks are scoped to the selected payment source / network, so they belong with the
     // context-aware items (group 0), not the account-level cluster (API keys, Developers).
-    const sharedWebhooks: NavItem = {
-      href: '/webhooks',
-      name: 'Webhooks',
-      icon: <Bell className="h-4 w-4" />,
-      badge: null,
-      group: 0,
-    };
+    const sharedWebhooks: NavItem | null = canPay
+      ? {
+          href: '/webhooks',
+          name: 'Webhooks',
+          icon: <Bell className="h-4 w-4" />,
+          badge: null,
+          group: 0,
+        }
+      : null;
     const sharedGroup1: NavItem[] = [
-      {
-        href: '/api-keys',
-        name: 'API keys',
-        icon: <Key className="h-4 w-4" />,
-        badge: null,
-        group: 1,
-      },
+      ...(canAdmin
+        ? [
+            {
+              href: '/api-keys',
+              name: 'API keys',
+              icon: <Key className="h-4 w-4" />,
+              badge: null,
+              group: 1,
+            } satisfies NavItem,
+          ]
+        : []),
       {
         href: '/developers',
         name: 'Developers',
@@ -258,7 +277,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           group: 0,
         },
         sharedAgents,
-        sharedWebhooks,
+        ...(sharedWebhooks ? [sharedWebhooks] : []),
         ...sharedGroup1,
       ];
     }
@@ -279,15 +298,19 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
         group: 0,
       },
-      {
-        href: '/wallets',
-        name: 'Wallets',
-        icon: <Wallet className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-        notificationDot: activeWalletAlertCount > 0,
-        notificationLabel: walletAlertLabel,
-      },
+      ...(canAdmin
+        ? [
+            {
+              href: '/wallets',
+              name: 'Wallets',
+              icon: <Wallet className="h-4 w-4" />,
+              badge: null,
+              group: 0,
+              notificationDot: activeWalletAlertCount > 0,
+              notificationLabel: walletAlertLabel,
+            } satisfies NavItem,
+          ]
+        : []),
       {
         href: '/transactions',
         name: 'Transactions',
@@ -295,15 +318,17 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: formatCount(newTransactionsCount),
         group: 0,
       },
-      {
-        // Chain sync failures the reconciler parked. Sits with Transactions
-        // because that is what a pending entry is holding back.
-        href: '/tx-sync-quarantine',
-        name: 'Sync Quarantine',
-        icon: <AlertTriangle className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-      },
+      ...(canAdmin
+        ? [
+            {
+              href: '/tx-sync-quarantine',
+              name: 'Sync Quarantine',
+              icon: <AlertTriangle className="h-4 w-4" />,
+              badge: null,
+              group: 0,
+            } satisfies NavItem,
+          ]
+        : []),
       {
         href: '/invoices',
         name: 'Invoices',
@@ -311,7 +336,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
         group: 0,
       },
-      sharedWebhooks,
+      ...(sharedWebhooks ? [sharedWebhooks] : []),
       ...sharedGroup1,
     ];
   }, [
@@ -322,6 +347,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     newTransactionsCount,
     activeWalletAlertCount,
     walletAlertLabel,
+    capabilities,
   ]);
 
   const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {

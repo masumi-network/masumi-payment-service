@@ -59,7 +59,7 @@ export const getStaticProps: GetStaticProps = async () => {
 };
 
 export default function Overview() {
-  const { network, selectedPaymentSource } = useAppContext();
+  const { network, selectedPaymentSource, capabilities } = useAppContext();
   const { paymentSources, isLoading: isLoadingPaymentSources } = usePaymentSourceExtendedAll();
   const [isMigrationHintDismissed, setIsMigrationHintDismissed] = useState(false);
 
@@ -90,7 +90,7 @@ export default function Overview() {
     totalBalance: totalBalanceValue,
     totalUsdcxBalance: totalUsdcxBalanceValue,
     isLoading: isLoadingWalletsQuery,
-  } = useWallets({ enabled: walletsReady });
+  } = useWallets({ enabled: walletsReady && capabilities.canAdmin });
   // Keep the balance cards in their loading state during the pre-paint defer
   // window so they never flash an empty "0" before the fetch starts.
   const isLoadingWallets = !walletsReady || isLoadingWalletsQuery;
@@ -110,7 +110,7 @@ export default function Overview() {
   const isContextResolving =
     isLoadingPaymentSources || (currentNetworkPaymentSources.length > 0 && !selectedPaymentSource);
   const agentsSectionLoading = isContextResolving || isLoadingAgents;
-  const walletsSectionLoading = isContextResolving || isLoadingWallets;
+  const walletsSectionLoading = capabilities.canAdmin && (isContextResolving || isLoadingWallets);
   const selectedSourceIsV1 = selectedPaymentSource
     ? !isV2PaymentSource(selectedPaymentSource)
     : false;
@@ -173,17 +173,24 @@ export default function Overview() {
                 Showing{' '}
                 {selectedPaymentSource?.smartContractAddress
                   ? shortenAddress(selectedPaymentSource?.smartContractAddress)
-                  : 'all payment sources'}{' '}
-                ·{' '}
-                <Link href="/payment-sources" className="text-primary hover:underline">
-                  Change source
-                </Link>
+                  : 'all payment sources'}
+                {capabilities.canAdmin && (
+                  <>
+                    {' '}
+                    ·{' '}
+                    <Link href="/payment-sources" className="text-primary hover:underline">
+                      Change source
+                    </Link>
+                  </>
+                )}
               </p>
             </div>
 
-            <SetupV2Banner onMigrateClick={() => setMigrateDialogOpen(true)} />
+            {capabilities.canAdmin && (
+              <SetupV2Banner onMigrateClick={() => setMigrateDialogOpen(true)} />
+            )}
 
-            {showMigrationHint && (
+            {capabilities.canAdmin && showMigrationHint && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/20">
                 <div className="flex items-center gap-2 text-amber-950 dark:text-amber-100">
                   <ArrowUpRight className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
@@ -233,41 +240,43 @@ export default function Overview() {
                     </div>
                   </StatCard>
                 )}
-                {walletsSectionLoading ? (
-                  <StatCardSkeleton />
-                ) : (
-                  <StatCard
-                    label={network === 'Mainnet' ? 'Total USDCx' : 'Total tUSDM'}
-                    index={1}
-                    icon={<DollarSign className="h-4 w-4 text-green-500" />}
-                    accentColor="rgb(34, 197, 94)"
-                  >
-                    <div className="text-2xl font-semibold flex items-center gap-1">
-                      <span className="text-xs font-normal text-muted-foreground">$</span>
-                      {formatSixDecimalAmount(totalUsdcxBalance)}
-                    </div>
-                  </StatCard>
-                )}
-                {walletsSectionLoading ? (
-                  <StatCardSkeleton />
-                ) : (
-                  <StatCard
-                    label="Total ada balance"
-                    index={2}
-                    icon={<Wallet className="h-4 w-4 text-orange-500" />}
-                    accentColor="rgb(249, 115, 22)"
-                  >
-                    <div className="flex flex-col gap-2">
+                {capabilities.canAdmin &&
+                  (walletsSectionLoading ? (
+                    <StatCardSkeleton />
+                  ) : (
+                    <StatCard
+                      label={network === 'Mainnet' ? 'Total USDCx' : 'Total tUSDM'}
+                      index={1}
+                      icon={<DollarSign className="h-4 w-4 text-green-500" />}
+                      accentColor="rgb(34, 197, 94)"
+                    >
                       <div className="text-2xl font-semibold flex items-center gap-1">
-                        {formatSixDecimalAmount(totalBalance)}
-                        <span className="text-xs font-normal text-muted-foreground">ADA</span>
+                        <span className="text-xs font-normal text-muted-foreground">$</span>
+                        {formatSixDecimalAmount(totalUsdcxBalance)}
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        {isLoadingRate ? '...' : totalBalanceUsd ? `~ $${totalBalanceUsd}` : '—'}
+                    </StatCard>
+                  ))}
+                {capabilities.canAdmin &&
+                  (walletsSectionLoading ? (
+                    <StatCardSkeleton />
+                  ) : (
+                    <StatCard
+                      label="Total ada balance"
+                      index={2}
+                      icon={<Wallet className="h-4 w-4 text-orange-500" />}
+                      accentColor="rgb(249, 115, 22)"
+                    >
+                      <div className="flex flex-col gap-2">
+                        <div className="text-2xl font-semibold flex items-center gap-1">
+                          {formatSixDecimalAmount(totalBalance)}
+                          <span className="text-xs font-normal text-muted-foreground">ADA</span>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {isLoadingRate ? '...' : totalBalanceUsd ? `~ $${totalBalanceUsd}` : '—'}
+                        </div>
                       </div>
-                    </div>
-                  </StatCard>
-                )}
+                    </StatCard>
+                  ))}
                 {isLoadingTransactions ? (
                   <StatCardSkeleton />
                 ) : (
@@ -378,180 +387,186 @@ export default function Overview() {
                 </div>
 
                 <div className="pt-4">
-                  <Button
-                    className="flex items-center gap-2 btn-hover-lift"
-                    onClick={() => setRegisterAgentDialogOpen(true)}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Register agent
-                  </Button>
-                </div>
-              </div>
-
-              <div className="border rounded-lg p-6 flex flex-col">
-                <div className="flex-1">
-                  <div className="flex justify-between items-center mb-2">
-                    <div className="flex items-center gap-2">
-                      <Link href="/wallets" className="font-medium hover:underline">
-                        Wallets
-                      </Link>
-                      <ChevronRight className="h-4 w-4" />
-                      <RefreshButton
-                        onRefresh={() => refetchWallets()}
-                        isRefreshing={isLoadingWallets || isLoadingBalances}
-                      />
-                    </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Manage your buying and selling wallets.
-                  </p>
-
-                  {walletsSectionLoading ? (
-                    <WalletListSkeleton rows={2} />
-                  ) : (
-                    <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto overflow-x-auto w-full">
-                      <table className="w-full">
-                        <thead className="sticky top-0 bg-muted/30 dark:bg-muted/15 z-10">
-                          <tr className="text-sm text-muted-foreground border-b">
-                            <th className="text-left py-2 px-2 w-20">Type</th>
-                            <th className="text-left py-2 px-2">Name</th>
-                            <th className="text-left py-2 px-2">Address</th>
-                            <th className="text-left py-2 px-2">Balance</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {walletsList.length === 0 ? (
-                            <tr>
-                              <td colSpan={4}>
-                                <EmptyState title="No wallets found" />
-                              </td>
-                            </tr>
-                          ) : (
-                            walletsList.map((wallet, index) => (
-                              <tr
-                                key={wallet.id}
-                                className={cn(
-                                  'border-b last:border-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
-                                  wallet.LowBalanceSummary?.isLow
-                                    ? 'bg-amber-500/5 hover:bg-amber-500/10'
-                                    : 'hover:bg-muted/10',
-                                )}
-                                style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
-                                onClick={() => setSelectedWalletForDetails(wallet)}
-                              >
-                                <td className="py-3 px-2">
-                                  <div className="flex items-center gap-2">
-                                    <WalletTypeBadge type={wallet.type} />
-                                    {wallet.LowBalanceSummary?.isLow && (
-                                      <>
-                                        <span
-                                          aria-hidden="true"
-                                          className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)]"
-                                          title={
-                                            wallet.LowBalanceSummary.lowRuleCount === 1
-                                              ? '1 low-balance alert'
-                                              : `${wallet.LowBalanceSummary.lowRuleCount} low-balance alerts`
-                                          }
-                                        />
-                                        <span className="sr-only">
-                                          {wallet.LowBalanceSummary.lowRuleCount === 1
-                                            ? '1 low-balance alert'
-                                            : `${wallet.LowBalanceSummary.lowRuleCount} low-balance alerts`}
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="py-3 px-2 max-w-25">
-                                  <div className="text-sm font-medium truncate">
-                                    {getWalletTypeRowLabel(wallet.type)}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground truncate">
-                                    {wallet.note || 'Created by seeding'}
-                                  </div>
-                                </td>
-                                <td className="py-3 px-2 max-w-25">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-mono text-xs text-muted-foreground truncate">
-                                      {wallet.walletAddress}
-                                    </span>
-                                    <CopyButton value={wallet.walletAddress} />
-                                  </div>
-                                </td>
-                                <td className="py-3 px-2 w-32">
-                                  <div className="text-xs flex items-center gap-1">
-                                    {wallet.isLoadingBalance ? (
-                                      <Spinner className="h-3 w-3" />
-                                    ) : (
-                                      <>
-                                        {wallet.isBalanceUnavailable
-                                          ? '—'
-                                          : formatSixDecimalAmount(wallet.balance || '0')}{' '}
-                                        <span className="text-xs text-muted-foreground">ADA</span>
-                                      </>
-                                    )}
-                                  </div>
-                                  <div className="text-xs flex items-center gap-1">
-                                    {!wallet.isLoadingBalance && (
-                                      <>
-                                        {wallet.isBalanceUnavailable
-                                          ? '—'
-                                          : formatSixDecimalAmount(wallet.usdcxBalance || '0')}{' '}
-                                        <span className="text-xs text-muted-foreground">
-                                          {network === 'Mainnet' ? 'USDCx' : 'tUSDM'}
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="py-3 px-2 w-32">
-                                  <div className="flex items-center gap-2">
-                                    {wallet.network === 'Mainnet' && (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        aria-label="Swap tokens"
-                                        className="h-8 w-8"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSelectedWalletForSwap(wallet);
-                                        }}
-                                      >
-                                        <ArrowLeftRight className="h-4 w-4" />
-                                      </Button>
-                                    )}
-                                    <Button
-                                      variant="muted"
-                                      className="h-8 btn-hover-lift"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedWalletForTopup(wallet);
-                                      }}
-                                    >
-                                      <PlusCircle className="h-3.5 w-3.5" />
-                                      Top Up
-                                    </Button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                  {capabilities.canPay && (
+                    <Button
+                      className="flex items-center gap-2 btn-hover-lift"
+                      onClick={() => setRegisterAgentDialogOpen(true)}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Register agent
+                    </Button>
                   )}
                 </div>
-
-                <div className="pt-4">
-                  <Button
-                    className="flex items-center gap-2 btn-hover-lift"
-                    onClick={() => setAddWalletDialogOpen(true)}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add wallet
-                  </Button>
-                </div>
               </div>
+
+              {capabilities.canAdmin && (
+                <div className="border rounded-lg p-6 flex flex-col">
+                  <div className="flex-1">
+                    <div className="flex justify-between items-center mb-2">
+                      <div className="flex items-center gap-2">
+                        <Link href="/wallets" className="font-medium hover:underline">
+                          Wallets
+                        </Link>
+                        <ChevronRight className="h-4 w-4" />
+                        <RefreshButton
+                          onRefresh={() => refetchWallets()}
+                          isRefreshing={isLoadingWallets || isLoadingBalances}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Manage your buying and selling wallets.
+                    </p>
+
+                    {walletsSectionLoading ? (
+                      <WalletListSkeleton rows={2} />
+                    ) : (
+                      <div className="animate-content-reveal mb-4 max-h-125 overflow-y-auto overflow-x-auto w-full">
+                        <table className="w-full">
+                          <thead className="sticky top-0 bg-muted/30 dark:bg-muted/15 z-10">
+                            <tr className="text-sm text-muted-foreground border-b">
+                              <th className="text-left py-2 px-2 w-20">Type</th>
+                              <th className="text-left py-2 px-2">Name</th>
+                              <th className="text-left py-2 px-2">Address</th>
+                              <th className="text-left py-2 px-2">Balance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {walletsList.length === 0 ? (
+                              <tr>
+                                <td colSpan={4}>
+                                  <EmptyState title="No wallets found" />
+                                </td>
+                              </tr>
+                            ) : (
+                              walletsList.map((wallet, index) => (
+                                <tr
+                                  key={wallet.id}
+                                  className={cn(
+                                    'border-b last:border-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                                    wallet.LowBalanceSummary?.isLow
+                                      ? 'bg-amber-500/5 hover:bg-amber-500/10'
+                                      : 'hover:bg-muted/10',
+                                  )}
+                                  style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
+                                  onClick={() => setSelectedWalletForDetails(wallet)}
+                                >
+                                  <td className="py-3 px-2">
+                                    <div className="flex items-center gap-2">
+                                      <WalletTypeBadge type={wallet.type} />
+                                      {wallet.LowBalanceSummary?.isLow && (
+                                        <>
+                                          <span
+                                            aria-hidden="true"
+                                            className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 shadow-[0_0_0_4px_rgba(245,158,11,0.16)]"
+                                            title={
+                                              wallet.LowBalanceSummary.lowRuleCount === 1
+                                                ? '1 low-balance alert'
+                                                : `${wallet.LowBalanceSummary.lowRuleCount} low-balance alerts`
+                                            }
+                                          />
+                                          <span className="sr-only">
+                                            {wallet.LowBalanceSummary.lowRuleCount === 1
+                                              ? '1 low-balance alert'
+                                              : `${wallet.LowBalanceSummary.lowRuleCount} low-balance alerts`}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-2 max-w-25">
+                                    <div className="text-sm font-medium truncate">
+                                      {getWalletTypeRowLabel(wallet.type)}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground truncate">
+                                      {wallet.note || 'Created by seeding'}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-2 max-w-25">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono text-xs text-muted-foreground truncate">
+                                        {wallet.walletAddress}
+                                      </span>
+                                      <CopyButton value={wallet.walletAddress} />
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-2 w-32">
+                                    <div className="text-xs flex items-center gap-1">
+                                      {wallet.isLoadingBalance ? (
+                                        <Spinner className="h-3 w-3" />
+                                      ) : (
+                                        <>
+                                          {wallet.isBalanceUnavailable
+                                            ? '—'
+                                            : formatSixDecimalAmount(wallet.balance || '0')}{' '}
+                                          <span className="text-xs text-muted-foreground">ADA</span>
+                                        </>
+                                      )}
+                                    </div>
+                                    <div className="text-xs flex items-center gap-1">
+                                      {!wallet.isLoadingBalance && (
+                                        <>
+                                          {wallet.isBalanceUnavailable
+                                            ? '—'
+                                            : formatSixDecimalAmount(
+                                                wallet.usdcxBalance || '0',
+                                              )}{' '}
+                                          <span className="text-xs text-muted-foreground">
+                                            {network === 'Mainnet' ? 'USDCx' : 'tUSDM'}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-2 w-32">
+                                    <div className="flex items-center gap-2">
+                                      {wallet.network === 'Mainnet' && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          aria-label="Swap tokens"
+                                          className="h-8 w-8"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedWalletForSwap(wallet);
+                                          }}
+                                        >
+                                          <ArrowLeftRight className="h-4 w-4" />
+                                        </Button>
+                                      )}
+                                      <Button
+                                        variant="muted"
+                                        className="h-8 btn-hover-lift"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedWalletForTopup(wallet);
+                                        }}
+                                      >
+                                        <PlusCircle className="h-3.5 w-3.5" />
+                                        Top Up
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-4">
+                    <Button
+                      className="flex items-center gap-2 btn-hover-lift"
+                      onClick={() => setAddWalletDialogOpen(true)}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add wallet
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </AnimatedPage>

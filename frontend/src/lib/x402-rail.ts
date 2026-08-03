@@ -22,7 +22,10 @@ export function isTestnetEnv(network: NetworkType): boolean {
 }
 
 /** Enabled EVM chains that belong to the given Cardano environment. */
-export function chainsForEnv(chains: X402Network[], network: NetworkType): X402Network[] {
+export function chainsForEnv<T extends { isEnabled: boolean; isTestnet: boolean }>(
+  chains: T[],
+  network: NetworkType,
+): T[] {
   const wantTestnet = isTestnetEnv(network);
   return chains.filter((chain) => chain.isEnabled && chain.isTestnet === wantTestnet);
 }
@@ -49,8 +52,20 @@ export function hasBudgetOnEnabledNetworks(
  * URL set), and with either a self-hosted wallet or remote facilitator assigned. An enabled-but-
  * unconfigured chain (no facilitator / blank RPC) is not selectable as an active rail —
  * picking it should route to setup instead of pretending the rail works.
+ *
+ * The pay-authenticated available projection exposes `canSettle` instead of facilitator/RPC
+ * details — treat that flag as the usability signal for non-admin session bootstrap.
  */
-export function isX402ChainUsable(chain: X402Network): boolean {
+export function isX402ChainUsable(chain: {
+  isEnabled: boolean;
+  canSettle?: boolean;
+  facilitatorWalletId?: string | null;
+  facilitatorUrl?: string | null;
+  rpcUrl?: string | null;
+}): boolean {
+  if (typeof chain.canSettle === 'boolean' && chain.rpcUrl === undefined) {
+    return chain.isEnabled && chain.canSettle;
+  }
   return (
     chain.isEnabled && (!!chain.facilitatorWalletId || !!chain.facilitatorUrl) && !!chain.rpcUrl
   );
@@ -62,6 +77,16 @@ export function isX402ChainUsable(chain: X402Network): boolean {
  * Uses the same bar as chain selection so a facilitator-but-no-RPC chain doesn't hide the
  * setup prompt while the rail still can't actually run payments.
  */
-export function isX402SetUpForEnv(chains: X402Network[], network: NetworkType): boolean {
+export function isX402SetUpForEnv(
+  chains: Array<{
+    isEnabled: boolean;
+    isTestnet: boolean;
+    canSettle?: boolean;
+    facilitatorWalletId?: string | null;
+    facilitatorUrl?: string | null;
+    rpcUrl?: string | null;
+  }>,
+  network: NetworkType,
+): boolean {
   return chainsForEnv(chains, network).some(isX402ChainUsable);
 }

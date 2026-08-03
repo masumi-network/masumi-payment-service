@@ -79,9 +79,9 @@ export function clearStoredWalletAlertAcknowledgements() {
 }
 
 export function useWalletAlertNotifications() {
-  const { selectedPaymentSource } = useAppContext();
+  const { selectedPaymentSource, capabilities } = useAppContext();
   const paymentSourceId = selectedPaymentSource?.id ?? null;
-  const { wallets } = usePaymentSourceWalletsAll(paymentSourceId);
+  const { wallets } = usePaymentSourceWalletsAll(paymentSourceId, capabilities.canAdmin);
   const [acknowledgementsBySourceId, setAcknowledgementsBySourceId] =
     useState<WalletAlertAcknowledgements>(() => readAcknowledgements());
 

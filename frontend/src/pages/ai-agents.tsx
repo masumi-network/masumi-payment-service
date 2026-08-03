@@ -205,8 +205,14 @@ export default function AIAgentsPage() {
   const [updateAgentSmartContractAddress, setUpdateAgentSmartContractAddress] = useState<
     string | null
   >(null);
-  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource, activeRail } =
-    useAppContext();
+  const {
+    apiClient,
+    network,
+    selectedPaymentSourceId,
+    selectedPaymentSource,
+    activeRail,
+    capabilities,
+  } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
   const currentNetworkPaymentSources = useMemo(
@@ -444,7 +450,7 @@ export default function AIAgentsPage() {
               />
               {/* Registration and migration are Cardano-registry operations. On the x402
                   rail this page is a read-only "accepts x402" view, so these don't apply. */}
-              {activeRail === 'cardano' && canMigrate && (
+              {activeRail === 'cardano' && capabilities.canPay && canMigrate && (
                 <Button
                   variant="outline"
                   className="flex items-center gap-2 btn-hover-lift"
@@ -454,7 +460,7 @@ export default function AIAgentsPage() {
                   Migrate to V2
                 </Button>
               )}
-              {activeRail === 'cardano' && (
+              {activeRail === 'cardano' && capabilities.canPay && (
                 <Button
                   className="flex items-center gap-2 btn-hover-lift"
                   onClick={() => setIsRegisterDialogOpen(true)}
@@ -769,6 +775,7 @@ export default function AIAgentsPage() {
                                   <ExternalLink className="h-4 w-4" />
                                 </Button>
                                 {agent.relation !== 'payment' &&
+                                  capabilities.canPay &&
                                   selectedPaymentSource &&
                                   isV2PaymentSource(selectedPaymentSource) && (
                                     <Button
@@ -784,19 +791,23 @@ export default function AIAgentsPage() {
                                       <Pencil className="h-4 w-4" />
                                     </Button>
                                   )}
-                                {agent.relation !== 'payment' && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteClick(agent);
-                                    }}
-                                    className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
-                                  >
-                                    <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
-                                  </Button>
-                                )}
+                                {agent.relation !== 'payment' &&
+                                  (agent.state === 'RegistrationFailed' ||
+                                  agent.state === 'DeregistrationConfirmed'
+                                    ? capabilities.canAdmin
+                                    : capabilities.canPay) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteClick(agent);
+                                      }}
+                                      className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
+                                    >
+                                      <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                                    </Button>
+                                  )}
                               </div>
                             ) : agent.state === 'RegistrationInitiated' ||
                               agent.state === 'DeregistrationInitiated' ? (

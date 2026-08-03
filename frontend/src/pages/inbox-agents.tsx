@@ -77,7 +77,8 @@ function formatLovelaceToAda(amount: string | null) {
 export default function InboxAgentsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
+  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource, capabilities } =
+    useAppContext();
   // The inbox query is gated on a resolved source; while an id is restored from
   // storage but the source object hasn't loaded yet, the query is disabled and
   // reports isLoading=false. Treat that as loading so the table shows a skeleton
@@ -272,14 +273,16 @@ export default function InboxAgentsPage() {
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={refetchAll} isRefreshing={isFetching} />
-              <Button
-                id="add-inbox-agent-button"
-                className="flex items-center gap-2 btn-hover-lift"
-                onClick={() => setIsRegisterDialogOpen(true)}
-              >
-                <Plus className="h-4 w-4" />
-                Register Inbox Agent
-              </Button>
+              {capabilities.canPay && (
+                <Button
+                  id="add-inbox-agent-button"
+                  className="flex items-center gap-2 btn-hover-lift"
+                  onClick={() => setIsRegisterDialogOpen(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                  Register Inbox Agent
+                </Button>
+              )}
             </div>
           </div>
 
@@ -356,10 +359,16 @@ export default function InboxAgentsPage() {
                     displayInboxAgents.map((agent, index) => {
                       const holdingWallet = getHoldingWallet(agent);
                       const isCombinedWallet = usesCombinedWallet(agent);
-                      const canDelete =
+                      const canDeleteState =
                         agent.state === 'RegistrationConfirmed' ||
                         agent.state === 'RegistrationFailed' ||
                         agent.state === 'DeregistrationConfirmed';
+                      const canDelete =
+                        canDeleteState &&
+                        (agent.state === 'RegistrationFailed' ||
+                        agent.state === 'DeregistrationConfirmed'
+                          ? capabilities.canAdmin
+                          : capabilities.canPay);
 
                       return (
                         <tr

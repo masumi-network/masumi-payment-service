@@ -21,8 +21,9 @@ import { handleApiCall } from '@/lib/utils';
 import { useDynamicFavicon } from '@/hooks/useDynamicFavicon';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import { useX402Networks } from '@/lib/hooks/useX402';
+import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
+import { capabilitiesFromApiKeyStatus, isAdminOnlyPath } from '@/lib/permissions';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
@@ -69,11 +70,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     signOut,
     apiKey,
     setAuthorized,
+    setCapabilities,
     updateApiKey,
     network,
     setNetwork,
     authorized,
+    capabilities,
     isSetupMode,
+    setIsSetupMode,
     activeRail,
   } = useAppContext();
 
@@ -96,7 +100,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   }, []);
 
   const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
-  const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
+  const { networks: x402Networks, isLoading: x402Loading } = useX402NetworksForSession({
     silentErrors: true,
   });
 
@@ -105,7 +109,9 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
     // Pages accessible even without payment sources (shown in setup sidebar)
-    const setupAccessiblePages = ['/api-keys', '/developers', '/settings', '/x402-setup'];
+    const setupAccessiblePages = capabilities.canAdmin
+      ? ['/api-keys', '/developers', '/settings', '/x402-setup']
+      : ['/developers', '/settings', '/webhooks'];
     // The x402 rail stands alone, so don't force Cardano setup for it. Two strengths:
     // - `x402MaybeStandalone` stays true WHILE the chain list is loading, so an EVM
     //   operator on a shared page (e.g. /ai-agents) isn't bounced to Cardano /setup during
@@ -115,18 +121,34 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     const x402ChainCount = chainsForEnv(x402Networks, network).length;
     const x402MaybeStandalone = activeRail === 'x402' && (x402Loading || x402ChainCount > 0);
     const x402Confirmed = activeRail === 'x402' && !x402Loading && x402ChainCount > 0;
-    if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0 && !x402MaybeStandalone) {
+
+    // Non-admins cannot run setup — keep them on read/pay surfaces (or developers).
+    if (apiKey && isHealthy && !capabilities.canAdmin && isAdminOnlyPath(router.pathname)) {
+      router.replace(currentNetworkPaymentSources.length > 0 ? '/' : '/developers');
+      return;
+    }
+
+    if (
+      apiKey &&
+      isHealthy &&
+      capabilities.canAdmin &&
+      currentNetworkPaymentSources.length === 0 &&
+      !x402MaybeStandalone
+    ) {
       const protectedPages = ['/', '/ai-agents', '/inbox-agents', '/wallets', '/transactions'];
       if (protectedPages.includes(router.pathname)) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
     }
     // If setup mode is active (persisted from before reload), redirect back to setup
-    // but allow access to pages shown in the setup sidebar
-    if (
+    // but allow access to pages shown in the setup sidebar. Non-admins never enter setup.
+    if (apiKey && isHealthy && isSetupMode && !capabilities.canAdmin) {
+      setIsSetupMode(false);
+    } else if (
       apiKey &&
       isHealthy &&
       isSetupMode &&
+      capabilities.canAdmin &&
       router.pathname !== '/setup' &&
       !setupAccessiblePages.includes(router.pathname)
     ) {
@@ -152,9 +174,11 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     mainnetPaymentSources,
     preprodPaymentSources,
     isSetupMode,
+    setIsSetupMode,
     activeRail,
     x402Loading,
     x402Networks,
+    capabilities.canAdmin,
   ]);
 
   useEffect(() => {
@@ -212,14 +236,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         return;
       }
 
-      // Check if the API key has admin permission
-      const permission = apiKeyStatus.data?.data?.permission;
-      if (!permission || permission !== 'Admin') {
+      const nextCapabilities = capabilitiesFromApiKeyStatus(apiKeyStatus.data?.data);
+      if (!nextCapabilities) {
         setIsHealthy(true);
         toast.error('Unauthorized access');
         signOut();
         return;
       }
+      setCapabilities(nextCapabilities);
       setAuthorized(true);
       updateApiKey(storedApiKey);
       setIsHealthy(true);
@@ -230,7 +254,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     return () => {
       cancelled = true;
     };
-  }, [apiClient, signOut, setAuthorized, updateApiKey]);
+  }, [apiClient, signOut, setAuthorized, setCapabilities, updateApiKey]);
 
   // Sync network from URL when query.network changes (e.g. after shallow replace on setup page).
   // Intentionally omit `network` from deps so that when we set network in the sidebar dialog,
@@ -261,8 +285,8 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         <div className="text-center space-y-4">
           <div className="text-lg text-destructive">Unauthorized</div>
           <div className="text-sm text-muted-foreground">
-            Your API key is invalid or does not have admin permissions. Please sign out and sign in
-            with an admin API key.
+            Your API key is invalid or lacks read access. Please sign out and sign in with a valid
+            API key.
           </div>
           <Button
             variant="destructive"

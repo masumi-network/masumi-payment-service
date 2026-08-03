@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { ExternalLink } from 'lucide-react';
@@ -11,23 +11,28 @@ import { BudgetsTab } from '@/components/x402/BudgetsTab';
 import { PaymentsTab } from '@/components/x402/PaymentsTab';
 import { AlertsTab } from '@/components/x402/AlertsTab';
 import { X402SetupGuide } from '@/components/x402/X402SetupGuide';
+import { useAppContext } from '@/lib/contexts/AppContext';
 
-const TAB_NAMES = ['Chains', 'Wallets', 'Budgets', 'Alerts', 'Payments'] as const;
-type TabName = (typeof TAB_NAMES)[number];
+const ADMIN_TAB_NAMES = ['Chains', 'Wallets', 'Budgets', 'Alerts', 'Payments'] as const;
+const PAY_TAB_NAMES = ['Wallets', 'Payments'] as const;
+type TabName = (typeof ADMIN_TAB_NAMES)[number];
 
-function isTabName(value: unknown): value is TabName {
-  return typeof value === 'string' && (TAB_NAMES as readonly string[]).includes(value);
+function isTabName(value: unknown, allowed: readonly string[]): value is TabName {
+  return typeof value === 'string' && allowed.includes(value);
 }
 
 export default function X402Page() {
   const router = useRouter();
+  const { capabilities } = useAppContext();
+  const tabNames = capabilities.canAdmin ? ADMIN_TAB_NAMES : PAY_TAB_NAMES;
+  const defaultTab = tabNames[0];
 
   // Drive the active tab from the URL so tabs are deep-linkable and shareable, and so an
   // empty state can route the operator to the prerequisite tab (e.g. "Create a wallet first").
   const activeTab: TabName = useMemo(() => {
     const fromQuery = router.query.tab;
-    return isTabName(fromQuery) ? fromQuery : 'Chains';
-  }, [router.query.tab]);
+    return isTabName(fromQuery, tabNames) ? fromQuery : defaultTab;
+  }, [router.query.tab, tabNames, defaultTab]);
 
   const setActiveTab = useCallback(
     (name: string) => {
@@ -35,6 +40,14 @@ export default function X402Page() {
     },
     [router],
   );
+
+  useEffect(() => {
+    if (!isTabName(router.query.tab, tabNames) && router.query.tab) {
+      router.replace({ pathname: '/x402', query: { tab: defaultTab } }, undefined, {
+        shallow: true,
+      });
+    }
+  }, [router, tabNames, defaultTab]);
 
   return (
     <MainLayout>
@@ -46,8 +59,9 @@ export default function X402Page() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">x402</h1>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Manage the EVM payment rail: chains, managed wallets, spend budgets, balance alerts
-              and payment activity.{' '}
+              {capabilities.canAdmin
+                ? 'Manage the EVM payment rail: chains, managed wallets, spend budgets, balance alerts and payment activity.'
+                : 'View managed EVM wallets and payment activity for chains your key can access.'}{' '}
               <a
                 href="https://www.masumi.network/dev/masumi"
                 target="_blank"
@@ -60,19 +74,19 @@ export default function X402Page() {
             </p>
           </div>
 
-          <X402SetupGuide />
+          {capabilities.canAdmin && <X402SetupGuide />}
 
           <Tabs
-            tabs={TAB_NAMES.map((name) => ({ name }))}
+            tabs={tabNames.map((name) => ({ name }))}
             activeTab={activeTab}
             onTabChange={setActiveTab}
           />
 
           <div className="pt-2">
-            {activeTab === 'Chains' && <ChainsTab />}
+            {activeTab === 'Chains' && capabilities.canAdmin && <ChainsTab />}
             {activeTab === 'Wallets' && <WalletsTab />}
-            {activeTab === 'Budgets' && <BudgetsTab />}
-            {activeTab === 'Alerts' && <AlertsTab />}
+            {activeTab === 'Budgets' && capabilities.canAdmin && <BudgetsTab />}
+            {activeTab === 'Alerts' && capabilities.canAdmin && <AlertsTab />}
             {activeTab === 'Payments' && <PaymentsTab />}
           </div>
         </div>
