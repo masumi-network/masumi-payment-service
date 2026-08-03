@@ -18,7 +18,7 @@
  * possible, on L1, and against a different address.
  */
 
-import { TransactionStatus } from '@/generated/prisma/client';
+import { HydraInviteStatus, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
@@ -84,13 +84,34 @@ async function readLovelaceAt(address: string, network: 'Preprod' | 'Mainnet', a
 /**
  * One pass over the nodes that could need funding.
  *
- * Only participants bound to a head are considered. An unbound participant
- * belongs to an invite nobody has redeemed yet, and its node cannot open
- * anything — funding it would tie up ADA in a reservation that may be revoked.
+ * Covers a node from the moment it is reserved, not from the moment a head
+ * exists. Funding only head-bound participants avoided tying up ADA in an
+ * invite that might be revoked, but it meant the operator who finally pressed
+ * Init met a funding delay at the worst possible moment — and an invite is
+ * revocable, which returns the money anyway.
  */
 export async function runHydraNodeFundingCycle(): Promise<NodeFundingOutcome> {
+	// An invite names its reservation by (host, node), which is the same pair a
+	// participant carries — so the live invites are resolved first and matched
+	// exactly, rather than by asking whether the *Host* has any live invite,
+	// which would sweep in every other node on that Host.
+	const liveInvites = await prisma.hydraHeadInvite.findMany({
+		where: { status: { in: [HydraInviteStatus.Issued, HydraInviteStatus.Redeemed, HydraInviteStatus.Started] } },
+		select: { hydraHostId: true, hostNodeId: true },
+	});
+
 	const participants = await prisma.hydraLocalParticipant.findMany({
-		where: { hydraHeadId: { not: null } },
+		where: {
+			OR: [
+				{ hydraHeadId: { not: null } },
+				// Reserved by an invite that is still alive. A revoked or expired
+				// one is reaped, and its node goes with it.
+				...liveInvites.map((invite) => ({
+					hydraHostId: invite.hydraHostId,
+					hostNodeId: invite.hostNodeId,
+				})),
+			],
+		},
 		include: {
 			Wallet: { include: { PaymentSource: { include: { PaymentSourceConfig: true } } } },
 			HydraHead: { select: { id: true, status: true } },

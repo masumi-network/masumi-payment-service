@@ -143,6 +143,12 @@ export const createInviteSchemaInput = z.object({
 		.max(720)
 		.optional()
 		.describe('How long the invite may sit before its reservation is released. Defaults to 168 (7 days).'),
+	autoFund: z
+		.boolean()
+		.default(true)
+		.describe(
+			"Send the node's L1 fuel from the chosen wallet straight away. On unless set false — a node cannot post Init, Commit, Close or Fanout without it, so opt out only if you fund that key yourself.",
+		),
 });
 
 export const createInviteSchemaOutput = z.object({
@@ -159,6 +165,7 @@ export const createInvitePost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }) => {
 		const minted = await mintHeadInvite({
 			localHotWalletId: input.hotWalletId,
+			autoFund: input.autoFund,
 			ttlMs: input.ttlHours === undefined ? INVITE_TTL_MS : input.ttlHours * 60 * 60 * 1000,
 		});
 		logger.info(`hydra: minted invite ${minted.nonce}`);
@@ -248,6 +255,10 @@ export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 export const redeemInviteSchemaInput = z.object({
 	code: z.string().min(1),
 	hotWalletId: z.string().min(1).describe('Wallet that will identify us on the resulting head'),
+	autoFund: z
+		.boolean()
+		.default(true)
+		.describe("Send the node's L1 fuel from the chosen wallet straight away. On unless set false."),
 });
 
 export const redeemInviteSchemaOutput = z.object({
@@ -264,6 +275,7 @@ export const redeemInvitePost = adminAuthenticatedEndpointFactory.build({
 		const redeemed = await redeemHeadInvite({
 			invite: decodeInviteCode(input.code),
 			localHotWalletId: input.hotWalletId,
+			autoFund: input.autoFund,
 		});
 		return {
 			id: redeemed.inviteId,

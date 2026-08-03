@@ -256,7 +256,9 @@ export function RedeemHydraInviteDialog({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Redeeming starts a node on your side and tells them you are ready.
+                Redeeming starts a node on your side and tells them you are ready. About 10 ADA is
+                sent from this wallet to that node to pay the head&apos;s on-chain fees, separate
+                from any funds you later put into the head.
               </p>
             </div>
           </div>

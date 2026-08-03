@@ -30203,6 +30203,11 @@
                                         "minimum": 1,
                                         "maximum": 720,
                                         "description": "How long the invite may sit before its reservation is released. Defaults to 168 (7 days)."
+                                    },
+                                    "autoFund": {
+                                        "type": "boolean",
+                                        "default": true,
+                                        "description": "Send the node's L1 fuel from the chosen wallet straight away. On unless set false — a node cannot post Init, Commit, Close or Fanout without it, so opt out only if you fund that key yourself."
                                     }
                                 },
                                 "required": [
@@ -30552,6 +30557,11 @@
                                         "type": "string",
                                         "minLength": 1,
                                         "description": "Wallet that will identify us on the resulting head"
+                                    },
+                                    "autoFund": {
+                                        "type": "boolean",
+                                        "default": true,
+                                        "description": "Send the node's L1 fuel from the chosen wallet straight away. On unless set false."
                                     }
                                 },
                                 "required": [

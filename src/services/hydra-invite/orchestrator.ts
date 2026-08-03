@@ -26,6 +26,7 @@ import {
 import { encodeInviteCode, type DecodedInvite } from './invite-code';
 import { signHydraHeadInvite, signHydraRedemption, verifyHydraHeadInvite } from './invite-signing';
 import { DEFAULT_PERIODS, reserveNodeForExchange, type HeadPeriods } from './provisioning';
+import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
 import { postRedemption } from './exchange-client';
 
 type WalletContext = {
@@ -106,6 +107,8 @@ export async function mintHeadInvite(input: {
 	localHotWalletId: string;
 	periods?: HeadPeriods;
 	ttlMs?: number;
+	/** Default. Opt out only if the node's fuel is managed elsewhere. */
+	autoFund?: boolean;
 }): Promise<MintedInvite> {
 	const wallet = await loadWallet(input.localHotWalletId);
 	const periods = input.periods ?? DEFAULT_PERIODS;
@@ -142,6 +145,17 @@ export async function mintHeadInvite(input: {
 		hostNodeId: node.nodeId,
 		expiresAt: expiresAt.getTime(),
 	});
+
+	// Fund the node now rather than when the head appears. The node cannot post
+	// anything without fuel, and waiting until redemption means the operator who
+	// finally presses Init meets a funding delay at the worst moment. Sent from
+	// the wallet they chose for this invite, so the money leaves where they
+	// expect. On by default; a caller managing fuel elsewhere opts out.
+	if (input.autoFund !== false) {
+		void fundHydraNodeNow(node.localParticipantId).catch((error: unknown) => {
+			logger.warn(`hydra: could not pre-fund node ${node.nodeId}: ${(error as Error).message}`);
+		});
+	}
 
 	const invite = await prisma.hydraHeadInvite.create({
 		data: {
@@ -191,6 +205,7 @@ export type RedeemedInvite = {
 export async function redeemHeadInvite(input: {
 	invite: DecodedInvite;
 	localHotWalletId: string;
+	autoFund?: boolean;
 }): Promise<RedeemedInvite> {
 	const { payload, signature } = input.invite;
 	const wallet = await loadWallet(input.localHotWalletId);
@@ -247,6 +262,14 @@ export async function redeemHeadInvite(input: {
 			network: wallet.network,
 		},
 	);
+
+	// Same reasoning as minting: the node is ours, it will need fuel, and the
+	// counterparty is about to be told we are ready.
+	if (input.autoFund !== false) {
+		void fundHydraNodeNow(node.localParticipantId).catch((error: unknown) => {
+			logger.warn(`hydra: could not pre-fund node ${node.nodeId}: ${(error as Error).message}`);
+		});
+	}
 
 	await postRedemption(payload.exchangeUrl, {
 		nonce: payload.nonce,

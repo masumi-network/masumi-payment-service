@@ -140,6 +140,11 @@ export function IssueHydraInviteDialog({
                 This wallet signs the invite and is who the counterparty will see. It is who you
                 settle with, not the node&apos;s own key.
               </p>
+              <p className="text-xs text-muted-foreground">
+                About 10 ADA is sent from it to the node straight away. That pays this head&apos;s
+                on-chain fees — opening, committing, closing — and is separate from any funds you
+                later put into the head.
+              </p>
             </div>
 
             <div className="space-y-2">
