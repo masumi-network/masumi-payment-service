@@ -2987,6 +2987,12 @@ export type HydraHead = {
         id: string;
         createdAt: string;
         walletId: string;
+        /**
+         * The settling wallet, by address
+         */
+        Wallet?: {
+            walletAddress: string;
+        };
         nodeUrl: string;
         nodeHttpUrl: string;
         hasCommitted: boolean;
@@ -3000,6 +3006,12 @@ export type HydraHead = {
         id: string;
         createdAt: string;
         walletId: string;
+        /**
+         * The settling wallet, by address
+         */
+        Wallet?: {
+            walletAddress: string;
+        };
         advertise: string;
         hasCommitted: boolean;
         commitTxHash: string | null;
@@ -13733,6 +13745,68 @@ export type GetHydraHeadBalanceResponses = {
 };
 
 export type GetHydraHeadBalanceResponse = GetHydraHeadBalanceResponses[keyof GetHydraHeadBalanceResponses];
+
+export type GetHydraHeadTransactionsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Hydra head whose transactions to list
+         */
+        headId: string;
+        /**
+         * Cursor ID for pagination
+         */
+        cursorId?: string;
+        /**
+         * Number of results
+         */
+        limit?: number;
+    };
+    url: '/hydra/head/transactions';
+};
+
+export type GetHydraHeadTransactionsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadTransactionsResponses = {
+    /**
+     * Hydra head transactions
+     */
+    200: {
+        status: 'success';
+        data: {
+            transactions: Array<{
+                id: string;
+                createdAt: Date;
+                /**
+                 * Null while a transaction is built but not yet broadcast; intendedTxHash names it in the meantime
+                 */
+                txHash: string | null;
+                intendedTxHash: string | null;
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
+                /**
+                 * L1 for on-chain, L2 for inside the head
+                 */
+                layer: 'L1' | 'L2';
+                confirmations: number | null;
+                fees: string | null;
+                blockTime: number | null;
+                lastCheckedAt: Date | null;
+            }>;
+        };
+    };
+};
+
+export type GetHydraHeadTransactionsResponse = GetHydraHeadTransactionsResponses[keyof GetHydraHeadTransactionsResponses];
 
 export type GetHydraHeadErrorsData = {
     body?: never;

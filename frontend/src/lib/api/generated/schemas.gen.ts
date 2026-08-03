@@ -5763,6 +5763,18 @@ export const HydraHeadSchema = {
                 walletId: {
                     type: 'string'
                 },
+                Wallet: {
+                    type: 'object',
+                    properties: {
+                        walletAddress: {
+                            type: 'string'
+                        }
+                    },
+                    required: [
+                        'walletAddress'
+                    ],
+                    description: 'The settling wallet, by address'
+                },
                 nodeUrl: {
                     type: 'string'
                 },
@@ -5817,6 +5829,18 @@ export const HydraHeadSchema = {
                     },
                     walletId: {
                         type: 'string'
+                    },
+                    Wallet: {
+                        type: 'object',
+                        properties: {
+                            walletAddress: {
+                                type: 'string'
+                            }
+                        },
+                        required: [
+                            'walletAddress'
+                        ],
+                        description: 'The settling wallet, by address'
                     },
                     advertise: {
                         type: 'string'

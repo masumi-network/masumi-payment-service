@@ -24,6 +24,8 @@ import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
 import { runHydraLowBalanceMonitoringCycle } from '@/services/hydra-low-balance/monitor';
 import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { logger } from '@masumi/payment-core/logger';
 
 export const scheduledJobs: JobDefinition[] = [
 	{
@@ -109,6 +111,21 @@ export const scheduledJobs: JobDefinition[] = [
 		// stay funded rather than merely be funded once.
 		run: async () => {
 			await runHydraNodeFundingCycle();
+		},
+	},
+	{
+		initialDelayMs: 12500,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra session reconciliation',
+		finishMessage: 'Finished Hydra session reconciliation',
+		// Heads are created while the service runs — every invite makes one — and
+		// the connection manager only connected what existed at boot. Without
+		// this the issuing side never observes its own head being opened.
+		run: async () => {
+			const reconnected = await getHydraConnectionManager().reconcileMissingSessions();
+			if (reconnected > 0) {
+				logger.info(`[HydraScheduler] Connected ${reconnected} Hydra head(s) that had no session`);
+			}
 		},
 	},
 	{

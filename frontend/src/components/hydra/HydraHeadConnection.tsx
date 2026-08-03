@@ -73,8 +73,8 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
 
       {state === null ? (
         <p className="text-sm text-muted-foreground">
-          Check whether the node is up and this service is connected to it — the two things an
-          action needs before it can do anything.
+          Two things have to hold before any action works: the node is up, and this service has a
+          live connection to it.
         </p>
       ) : (
         <div className="space-y-1.5">
@@ -96,8 +96,9 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
           )}
           {state.reason === null && !state.connected && (
             <p className="text-xs text-muted-foreground">
-              The node is fine but this service has no live session to it yet. It reconnects on its
-              own; if it does not, the head&apos;s errors will say why.
+              The node is fine, this service just has not connected to it yet. It retries every
+              minute or so — if it is still not connected after that, the head&apos;s errors say
+              why.
             </p>
           )}
           <p className="text-xs text-muted-foreground">

@@ -1,14 +1,22 @@
 /**
- * Everything about one connected Hydra node, including what to hand a counterparty.
+ * One connected node: what it is running, and the head processes on it.
  *
- * Opening a head with another organisation needs two values from each side —
- * the wallet the relation is with, and the service URL offers are delivered to —
- * and neither was visible anywhere in the UI. They are gathered here because
- * this is the page an operator is already on when they need them.
+ * This used to open with a block telling the operator to hand a counterparty
+ * their service URL and wallet address. That flow no longer exists — invites
+ * carry the address and the endpoint it named was deleted — so it was three
+ * paragraphs of instructions for a screen that would 404. It is gone.
+ *
+ * What is left is ordered by how often it is read: the node's state, then its
+ * heads and the two things you do to them (back up the keys, move the fuel),
+ * then the version and hash material that only matters when a head refuses to
+ * open. That last part collapses, because it is read once a month at most.
  */
 
-import { AlertTriangle, KeyRound, Loader2, Server } from 'lucide-react';
+import { useState } from 'react';
+import { KeyRound, Loader2, MoreHorizontal, Server } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
   Dialog,
@@ -17,14 +25,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { toast } from 'react-toastify';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { formatDateTime } from '@/lib/format-date';
 import { fundHydraNode, withdrawHydraNodeFunds } from '@/lib/hooks/useHydraHeads';
-import { useWallets } from '@/lib/queries/useWallets';
 import { useHydraLocalParticipants } from '@/lib/hooks/useHydraHeads';
 import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
+import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import type { HydraHost } from '@/lib/hooks/useHydraHosts';
 
 type HydraNodeDetailsDialogProps = {
@@ -33,6 +45,11 @@ type HydraNodeDetailsDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
+function ada(lovelace: string): string {
+  return `${(Number(lovelace) / 1_000_000).toFixed(2)} ADA`;
+}
+
+/** One reading, with its label above it. Values are copyable when they are worth copying. */
 function Field({
   label,
   value,
@@ -56,61 +73,67 @@ function Field({
   );
 }
 
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border px-3 py-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="truncate text-sm font-medium">{value}</p>
+    </div>
+  );
+}
+
 function shortHash(value: string | null): string {
   if (!value) return '—';
   return value.replace(/^sha256:/, '').slice(0, 16) + '…';
 }
 
 export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDetailsDialogProps) {
-  const { wallets } = useWallets();
   const { apiClient } = useAppContext();
   const { participants, refetch: refetchParticipants } = useHydraLocalParticipants(
     undefined,
     host?.id,
   );
   const [backUpId, setBackUpId] = useState<string | null>(null);
-  const [fundingId, setFundingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   async function handleWithdraw(participantId: string) {
-    setFundingId(participantId);
+    setBusyId(participantId);
     try {
       const result = await withdrawHydraNodeFunds(apiClient, { id: participantId });
-      // A refusal is the common answer, not an error: a node whose head is
-      // still live keeps its fuel on purpose.
+      // A refusal is the normal answer here, not a failure: a node still serving
+      // a live head keeps its fuel on purpose, and saying "error" would suggest
+      // otherwise.
       toast[result.txHash === null ? 'info' : 'success'](
         result.txHash === null
-          ? (result.reason ?? 'Nothing to withdraw')
-          : `Returning ${(Number(result.balanceLovelace) / 1_000_000).toFixed(2)} ADA to the wallet`,
+          ? (result.reason ?? 'Nothing to send back')
+          : `Sending ${ada(result.balanceLovelace)} back to the wallet`,
       );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to withdraw');
+      toast.error(error instanceof Error ? error.message : 'The withdrawal failed');
     } finally {
-      setFundingId(null);
+      setBusyId(null);
     }
   }
 
   async function handleFund(participantId: string) {
-    setFundingId(participantId);
+    setBusyId(participantId);
     try {
       const result = await fundHydraNode(apiClient, { id: participantId });
       toast.success(
         result.transferredLovelace === null
-          ? `Node already funded (${(Number(result.balanceLovelace) / 1_000_000).toFixed(2)} ADA)`
-          : `Sending ${(Number(result.transferredLovelace) / 1_000_000).toFixed(2)} ADA to the node`,
+          ? `Already funded — it holds ${ada(result.balanceLovelace)}`
+          : `Sending ${ada(result.transferredLovelace)} to the node`,
       );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to fund the node');
+      toast.error(error instanceof Error ? error.message : 'The transfer failed');
     } finally {
-      setFundingId(null);
+      setBusyId(null);
     }
   }
 
   if (!host) return null;
 
   const neverProbed = host.lastHealthAt === null;
-  // The origin only. The counterparty appends the handshake path itself, so a
-  // URL ending in /api/v1 would be requested as /api/v1/api/v1/... and 404.
-  const serviceUrl = typeof window === 'undefined' ? '' : window.location.origin;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -122,164 +145,68 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
             <Badge variant="outline">{host.status}</Badge>
             <Badge variant="outline">{host.network}</Badge>
           </DialogTitle>
-          <DialogDescription>
-            Runs one hydra-node process per head and generates each node&apos;s keys itself.
-          </DialogDescription>
+          <DialogDescription className="break-all">{host.baseUrl}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
-          <section className="space-y-3">
-            <h3 className="text-sm font-semibold">Give these to your counterparty</h3>
-            <p className="text-xs text-muted-foreground">
-              They need both to open a head with you: the wallet identifies you on the relation, and
-              the URL is where your service receives their offer.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Only <span className="font-mono">/api/v1/hydra/handshake/offer</span> has to be
-              reachable from their network — route that one path and nothing else. Never give them
-              your Hydra node&apos;s URL or keys: those start and stop your node.
-            </p>
-            <div className="space-y-3 rounded-md border bg-muted/20 p-3">
-              <Field
-                label="Your service URL"
-                value={serviceUrl}
-                copyable
-                hint="Paste into their “Counterparty service URL”. Origin only — no path."
-              />
-              {wallets.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No wallets on this payment source yet.
-                </p>
-              ) : (
-                wallets.map((wallet) => (
-                  <Field
-                    key={wallet.id}
-                    label={`Wallet · ${wallet.note?.trim() || wallet.type}`}
-                    value={wallet.walletAddress}
-                    copyable
-                    hint="Paste into their “Counterparty wallet address”."
-                  />
-                ))
-              )}
-            </div>
-            {wallets.length > 1 && (
-              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-                <AlertTriangle className="mr-1 inline h-3 w-3" />
-                Send the wallet you will pick as <span className="font-medium">
-                  Our wallet
-                </span>{' '}
-                when you create the relation. Offers are verified against that exact wallet, so a
-                mismatch is rejected.
-              </p>
-            )}
-          </section>
+        <div className="space-y-5">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Stat label="Heads" value={String(host.participantCount)} />
+            <Stat label="hydra-node" value={host.hydraVersion?.split('-')[0] ?? 'not probed'} />
+            <Stat
+              label="Last checked"
+              value={neverProbed ? 'never' : formatDateTime(host.lastHealthAt ?? '')}
+            />
+          </div>
 
-          <section className="space-y-3">
-            <h3 className="text-sm font-semibold">Connection</h3>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Control-plane URL" value={host.baseUrl} copyable />
-              <Field
-                label="Public peer host"
-                value={host.publicPeerHost}
-                hint="Ports are allocated per head; the counterparty learns the full host:port from the signed offer."
-              />
-              <Field label="Admin key" value={host.hasAdminToken ? 'stored' : 'not set'} />
-              <Field label="Heads on this node" value={String(host.participantCount)} />
-            </div>
-          </section>
+          {host.lastHealthError && (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400">
+              {host.lastHealthError}
+            </p>
+          )}
 
-          <section className="space-y-3">
-            <h3 className="text-sm font-semibold">What it reported</h3>
-            {neverProbed ? (
-              <p className="text-xs text-muted-foreground">
-                Never probed. Press <span className="font-medium">Check</span> to fill this in.
-              </p>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="hydra-node" value={host.hydraVersion?.split('-')[0] ?? '—'} />
-                <Field
-                  label="Last checked"
-                  value={new Date(host.lastHealthAt ?? '').toLocaleString()}
-                />
-                <Field
-                  label="Script catalogue"
-                  value={shortHash(host.scriptCatalogueHash)}
-                  hint="Must match the counterparty's, or the head cannot be opened."
-                />
-                <Field
-                  label="Ledger parameters"
-                  value={shortHash(host.ledgerParamsHash)}
-                  hint="A mismatch surfaces at first in-head spend, not here."
-                />
-              </div>
-            )}
-            {host.lastHealthError && (
-              <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400">
-                {host.lastHealthError}
-              </p>
-            )}
-          </section>
+          {!host.hasAdminToken && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+              No admin key stored. This node keeps its existing heads running, but it cannot start a
+              new one — add the key from Edit to open heads here again.
+            </p>
+          )}
 
           <section className="space-y-2">
-            <h3 className="flex items-center gap-2 text-sm font-semibold">
-              <KeyRound className="h-4 w-4" />
-              Keys
-            </h3>
+            <div className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold">Head processes</h3>
+            </div>
             <p className="text-xs text-muted-foreground">
-              Generated on the node, one set per head, and never typed here. Each set can be handed
-              over exactly once — after that the service refuses, so keep what you take.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Each node also spends from a Cardano key of its own, separate from your wallet so a
-              compromised node cannot reach escrowed funds. Opening a head consumes a UTxO there, so
-              an unfunded node fails to initialise. This is topped up automatically; the button is
-              for not waiting.
+              One process per head, with its own keys and its own small ADA balance to pay for
+              opening and closing that head. Funding happens on its own; the menu is for when you
+              would rather not wait, or want the leftovers back once a head is finished.
             </p>
             {participants.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                No heads on this node yet, so there are no keys to back up.
+              <p className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+                No heads on this node yet.
               </p>
             ) : (
               <ul className="divide-y rounded-md border">
                 {participants.map((participant) => (
                   <li
                     key={participant.id}
-                    className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+                    className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
                   >
                     <div className="min-w-0">
-                      <p className="font-mono text-xs">
+                      <p className="truncate font-mono text-xs">
                         {participant.hostNodeId ?? participant.id}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {participant.keysDisclosedAt
-                          ? `Backed up ${new Date(participant.keysDisclosedAt).toLocaleString()}`
-                          : 'Never backed up'}
+                          ? `Keys taken ${formatDateTime(participant.keysDisclosedAt)}`
+                          : 'Keys have never been backed up'}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={fundingId === participant.id}
-                        onClick={() => void handleWithdraw(participant.id)}
-                        title="Return what this node did not spend to the wallet that funded it"
-                      >
-                        Withdraw
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={fundingId === participant.id}
-                        onClick={() => void handleFund(participant.id)}
-                        title="Send ADA to this node's own key, which Init spends from"
-                      >
-                        {fundingId === participant.id && (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        )}
-                        Fund node
-                      </Button>
+                    <div className="flex items-center gap-1">
+                      {busyId === participant.id && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {/* Backing up is the one an operator comes here to do, and
+                          it can only be done once — so it stays a button while
+                          the money actions sit behind the menu. */}
                       <Button
                         type="button"
                         variant="outline"
@@ -287,14 +214,69 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
                         disabled={Boolean(participant.keysDisclosedAt)}
                         onClick={() => setBackUpId(participant.id)}
                       >
-                        {participant.keysDisclosedAt ? 'Sealed' : 'Export keys'}
+                        {participant.keysDisclosedAt ? 'Keys taken' : 'Back up keys'}
                       </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            disabled={busyId === participant.id}
+                            aria-label="More actions for this head process"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => void handleFund(participant.id)}>
+                            Top up its ADA now
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => void handleWithdraw(participant.id)}>
+                            Send leftovers back
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </li>
                 ))}
               </ul>
             )}
           </section>
+
+          {/* Read when a head will not open and never otherwise: two nodes whose
+              scripts or ledger parameters differ cannot share a head, and that
+              only shows up as a failure much later. */}
+          <HydraDetailSection
+            title="Version and hashes"
+            summary={neverProbed ? 'Not probed yet' : (host.hydraVersion?.split('-')[0] ?? '—')}
+          >
+            {neverProbed ? (
+              <p className="text-xs text-muted-foreground">
+                Nothing yet. Press Check on the node to read this.
+              </p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field
+                  label="Scripts"
+                  value={shortHash(host.scriptCatalogueHash)}
+                  hint="Both sides must match, or the head cannot be opened at all."
+                />
+                <Field
+                  label="Ledger parameters"
+                  value={shortHash(host.ledgerParamsHash)}
+                  hint="A mismatch shows up at the first spend inside the head, not here."
+                />
+                <Field label="Control URL" value={host.baseUrl} copyable />
+                <Field
+                  label="Peers dial"
+                  value={host.publicPeerHost}
+                  hint="Ports are handed out per head; the invite carries the full address."
+                />
+              </div>
+            )}
+          </HydraDetailSection>
         </div>
       </DialogContent>
 

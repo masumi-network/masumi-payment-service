@@ -21,6 +21,8 @@ export type HydraParticipant = {
   updatedAt?: string;
   hydraHeadId?: string | null;
   walletId: string;
+  /** The settling wallet's address. Absent on older payloads. */
+  Wallet?: { walletAddress: string };
   nodeUrl: string;
   nodeHttpUrl: string;
   hasCommitted: boolean;
@@ -292,6 +294,16 @@ async function fetchHydraPages<T extends { id: string }>(
   return items;
 }
 
+/**
+ * Head states that are waiting on the chain rather than on the operator.
+ *
+ * A head sits in one of these for a block or two after an action, and the
+ * action's own request does not carry the result — the status arrives from
+ * frames the node pushes. Without polling, an operator who opened a head saw
+ * Idle until they reloaded, which reads as "nothing happened".
+ */
+const SETTLING_STATUSES: HydraHeadStatus[] = ['Initializing', 'Connecting', 'Closed'];
+
 export function useHydraHeads() {
   const { apiClient } = useAppContext();
 
@@ -302,6 +314,13 @@ export function useHydraHeads() {
     },
     enabled: !!apiClient,
     staleTime: 10000,
+    // Only while something is actually moving. A steady list of Open heads does
+    // not need a request every few seconds, and each one is a database round
+    // trip per head.
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((head) => SETTLING_STATUSES.includes(head.status))
+        ? 5000
+        : false,
   });
 
   const heads = useMemo(() => query.data ?? [], [query.data]);
@@ -672,6 +691,51 @@ export function useHydraHeadErrors(headId: string | null) {
   });
 
   return { ...query, errors: query.data ?? [] };
+}
+
+export type HydraHeadTransaction = {
+  id: string;
+  createdAt: string;
+  txHash: string | null;
+  intendedTxHash: string | null;
+  status: string;
+  layer: 'L1' | 'L2';
+  confirmations: number | null;
+  fees: string | null;
+  blockTime: number | null;
+  lastCheckedAt: string | null;
+};
+
+/** Statuses that will not change again without something new happening. */
+const SETTLED_TX_STATUSES = ['Confirmed', 'FailedViaTimeout', 'RolledBack'];
+
+export function useHydraHeadTransactions(headId: string | null) {
+  const { apiClient } = useAppContext();
+
+  const query = useQuery<HydraHeadTransaction[]>({
+    queryKey: ['hydra-head-transactions', headId],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          apiClient.get<{ 200: ApiEnvelope<{ transactions: HydraHeadTransaction[] }> }>({
+            responseType: 'json',
+            url: '/hydra/head/transactions',
+            query: { headId, limit: 25 },
+          }),
+        { errorMessage: 'Could not load this head\u2019s transactions' },
+      );
+      return response?.data?.data?.transactions ?? [];
+    },
+    enabled: !!apiClient && headId !== null,
+    staleTime: 5000,
+    // Follow anything still in flight to its end, then stop.
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((tx) => !SETTLED_TX_STATUSES.includes(tx.status))
+        ? 8000
+        : false,
+  });
+
+  return { ...query, transactions: query.data ?? [] };
 }
 
 export type HydraHeadConnection = {

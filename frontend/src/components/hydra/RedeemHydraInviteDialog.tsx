@@ -123,7 +123,7 @@ export function RedeemHydraInviteDialog({
             Redeem an invite
           </DialogTitle>
           <DialogDescription>
-            Paste what they sent you. Nothing happens until you have seen who it is from.
+            Paste what they sent you. Nothing is created until you have seen who it is from.
           </DialogDescription>
         </DialogHeader>
 
@@ -139,7 +139,7 @@ export function RedeemHydraInviteDialog({
               onChange={(event) => setCode(event.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Reading it provisions nothing and tells the sender nothing.
+              Reading it starts nothing and tells the sender nothing.
             </p>
           </div>
         ) : (
@@ -256,9 +256,13 @@ export function RedeemHydraInviteDialog({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Redeeming starts a node on your side and tells them you are ready. About 10 ADA is
-                sent from this wallet to that node to pay the head&apos;s on-chain fees, separate
-                from any funds you later put into the head.
+                This starts a node on your side and tells them you are ready. About 10 ADA moves
+                from this wallet to that node to cover the head&apos;s on-chain fees — separate from
+                whatever you later put into the head.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Your side is the one that opens the head. You do that from the head itself, once
+                both nodes have found each other — usually within a minute.
               </p>
             </div>
           </div>
@@ -290,7 +294,7 @@ export function RedeemHydraInviteDialog({
                 ) : (
                   <CheckCircle2 className="h-4 w-4" />
                 )}
-                Open the head
+                Redeem and set up
               </Button>
             </>
           )}

@@ -5740,6 +5740,18 @@
                             "walletId": {
                                 "type": "string"
                             },
+                            "Wallet": {
+                                "type": "object",
+                                "properties": {
+                                    "walletAddress": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "walletAddress"
+                                ],
+                                "description": "The settling wallet, by address"
+                            },
                             "nodeUrl": {
                                 "type": "string"
                             },
@@ -5794,6 +5806,18 @@
                                 },
                                 "walletId": {
                                     "type": "string"
+                                },
+                                "Wallet": {
+                                    "type": "object",
+                                    "properties": {
+                                        "walletAddress": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "walletAddress"
+                                    ],
+                                    "description": "The settling wallet, by address"
                                 },
                                 "advertise": {
                                     "type": "string"
@@ -32479,6 +32503,171 @@
                     },
                     "404": {
                         "description": "Hydra head or its local participant wallet not found"
+                    }
+                }
+            }
+        },
+        "/hydra/head/transactions": {
+            "get": {
+                "summary": "List a Hydra head's transactions. (admin access required)",
+                "description": "Every transaction recorded against this head, newest first: L1 for on-chain and L2 for inside the head. The head record itself carries only the Init, Close and Fanout hashes.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "The Hydra head whose transactions to list"
+                        },
+                        "required": true,
+                        "description": "The Hydra head whose transactions to list",
+                        "name": "headId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Cursor ID for pagination"
+                        },
+                        "required": false,
+                        "description": "Cursor ID for pagination",
+                        "name": "cursorId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 25,
+                            "description": "Number of results"
+                        },
+                        "required": false,
+                        "description": "Number of results",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Hydra head transactions",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "transactions": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string",
+                                                                "format": "date-time"
+                                                            },
+                                                            "txHash": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "Null while a transaction is built but not yet broadcast; intendedTxHash names it in the meantime"
+                                                            },
+                                                            "intendedTxHash": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "FailedViaTimeout",
+                                                                    "FailedViaManualReset",
+                                                                    "RolledBack"
+                                                                ]
+                                                            },
+                                                            "layer": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "L1",
+                                                                    "L2"
+                                                                ],
+                                                                "description": "L1 for on-chain, L2 for inside the head"
+                                                            },
+                                                            "confirmations": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "fees": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "blockTime": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "lastCheckedAt": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "format": "date-time"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "txHash",
+                                                            "intendedTxHash",
+                                                            "status",
+                                                            "layer",
+                                                            "confirmations",
+                                                            "fees",
+                                                            "blockTime",
+                                                            "lastCheckedAt"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "transactions"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "transactions": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
                     }
                 }
             }

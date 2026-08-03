@@ -24,6 +24,7 @@ export {
 } from './head';
 
 export { topupHeadPost, listTopupsGet } from './head/topup';
+export { listHeadTransactionsGet } from './head/transactions';
 
 export {
 	listHydraLowBalanceRulesGet,

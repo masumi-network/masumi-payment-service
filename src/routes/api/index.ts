@@ -132,6 +132,7 @@ import {
 	getHeadConnectionGet,
 	clearHeadErrorsDelete,
 	topupHeadPost,
+	listHeadTransactionsGet,
 	listTopupsGet,
 	listHydraLowBalanceRulesGet,
 	setHydraLowBalanceRulePost,
@@ -516,6 +517,9 @@ export const apiRouter: Routing = {
 				fanout: { post: fanoutHeadPost },
 				balance: { get: getHeadBalanceGet },
 				errors: { get: listHeadErrorsGet, delete: clearHeadErrorsDelete },
+				// What the head has done, in order — the three lifecycle hashes on the
+				// head record leave out everything between them.
+				transactions: { get: listHeadTransactionsGet },
 				connection: { get: getHeadConnectionGet },
 			},
 			// Read and delete only: participants are created by redeeming an invite.

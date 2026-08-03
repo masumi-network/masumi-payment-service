@@ -42,10 +42,10 @@ const STATUS_STYLES: Record<HydraHostStatus, string> = {
 };
 
 const STATUS_HINTS: Record<HydraHostStatus, string> = {
-  Active: 'Accepting new heads.',
-  Draining: 'Serving existing heads, taking no new ones.',
+  Active: 'Takes new heads.',
+  Draining: 'Keeps its heads running, takes no new ones.',
   Disabled: 'Not in use.',
-  Unreachable: 'The last probe failed. Existing heads are untouched.',
+  Unreachable: 'Last check failed. Its heads are untouched.',
 };
 
 function shortHash(value: string | null): string {
@@ -143,7 +143,7 @@ export function HydraNodesCard({
               <Badge variant="outline">{hosts.length}</Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              Each node runs a hydra-node process per head and generates that node’s keys itself.
+              Each node runs one process per head and makes that head’s keys itself.
             </p>
           </div>
         )}
@@ -169,9 +169,9 @@ export function HydraNodesCard({
         </div>
       ) : hosts.length === 0 ? (
         <div className="rounded-md border border-dashed px-4 py-8 text-center">
-          <p className="text-sm text-muted-foreground">No Hydra nodes are connected yet.</p>
+          <p className="text-sm text-muted-foreground">No nodes connected yet.</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Connect one with its URL, user key and admin key to start opening heads.
+            Connect one with its URL and keys — heads run on it, not here.
           </p>
         </div>
       ) : (
@@ -198,7 +198,7 @@ export function HydraNodesCard({
                     <Badge
                       variant="outline"
                       className="border-amber-200 text-amber-700 dark:border-amber-900/60 dark:text-amber-400"
-                      title="Without an admin key this node can run existing heads but cannot open new ones."
+                      title="No admin key stored: it keeps its heads running but cannot start a new one."
                     >
                       Runtime only
                     </Badge>
@@ -265,8 +265,8 @@ export function HydraNodesCard({
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => void handleToggleDraining(host)}>
                       {host.status === 'Draining'
-                        ? 'Resume — accept new heads'
-                        : 'Drain — take no new heads'}
+                        ? 'Take new heads again'
+                        : 'Stop taking new heads'}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => {
@@ -275,7 +275,7 @@ export function HydraNodesCard({
                       }}
                     >
                       <Pencil className="h-4 w-4" />
-                      Edit or rotate keys
+                      Edit or replace keys
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
@@ -311,8 +311,8 @@ export function HydraNodesCard({
         title={`Disconnect ${pendingDisconnect?.name ?? 'this node'}?`}
         description={
           pendingDisconnect && pendingDisconnect.participantCount > 0
-            ? `This node still serves ${pendingDisconnect.participantCount} head(s). A head cannot be moved, so disconnecting leaves them unreachable from here. Drain it and settle its heads first.`
-            : 'The service forgets this node and its stored keys. The node itself keeps running.'
+            ? `${pendingDisconnect.participantCount} head(s) still run here. A head cannot be moved to another node, so disconnecting puts them out of reach — drain this node and settle them first.`
+            : 'This service forgets the node and its stored keys. The node itself keeps running.'
         }
         onConfirm={() => void handleDisconnect()}
       />

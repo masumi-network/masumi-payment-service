@@ -20,22 +20,25 @@ import { shortenAddress } from '@/lib/utils';
 
 type Party = {
   label: string;
+  /** The address when the payload carries it; the id is a fallback, not a display value. */
+  walletAddress: string | undefined;
   walletId: string | undefined;
   /** The node's own Cardano key hash — its on-chain identity, not its funds. */
   cardanoVkey: string | undefined;
 };
 
-function PartyCard({ label, walletId, cardanoVkey }: Party) {
+function PartyCard({ label, walletAddress, walletId, cardanoVkey }: Party) {
+  const settles = walletAddress ?? walletId;
   return (
     <div className="min-w-0 flex-1 space-y-2 rounded-md border bg-muted/10 p-3">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
 
       <div className="space-y-1">
         <p className="text-xs text-muted-foreground">Settles with</p>
-        {walletId ? (
+        {settles ? (
           <div className="flex items-center gap-1">
-            <span className="truncate font-mono text-sm">{shortenAddress(walletId, 10)}</span>
-            <CopyButton value={walletId} className="h-6 w-6" />
+            <span className="truncate font-mono text-sm">{shortenAddress(settles, 10)}</span>
+            <CopyButton value={settles} className="h-6 w-6" />
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">—</p>
@@ -60,13 +63,17 @@ function PartyCard({ label, walletId, cardanoVkey }: Party) {
 }
 
 export function HydraHeadWallets({
+  localWalletAddress,
   localWalletId,
   localCardanoVkey,
+  remoteWalletAddress,
   remoteWalletId,
   remoteCardanoVkey,
 }: {
+  localWalletAddress: string | undefined;
   localWalletId: string | undefined;
   localCardanoVkey: string | undefined;
+  remoteWalletAddress: string | undefined;
   remoteWalletId: string | undefined;
   remoteCardanoVkey: string | undefined;
 }) {
@@ -74,9 +81,19 @@ export function HydraHeadWallets({
     <div className="space-y-2">
       <h3 className="font-medium">Between</h3>
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-        <PartyCard label="Your wallet" walletId={localWalletId} cardanoVkey={localCardanoVkey} />
+        <PartyCard
+          label="Your wallet"
+          walletAddress={localWalletAddress}
+          walletId={localWalletId}
+          cardanoVkey={localCardanoVkey}
+        />
         <ArrowRight className="mx-auto h-4 w-4 shrink-0 rotate-90 text-muted-foreground sm:rotate-0" />
-        <PartyCard label="Counterparty" walletId={remoteWalletId} cardanoVkey={remoteCardanoVkey} />
+        <PartyCard
+          label="Counterparty"
+          walletAddress={remoteWalletAddress}
+          walletId={remoteWalletId}
+          cardanoVkey={remoteCardanoVkey}
+        />
       </div>
       <p className="text-xs text-muted-foreground">
         A payment uses this head only when the agent&apos;s seller wallet is this exact

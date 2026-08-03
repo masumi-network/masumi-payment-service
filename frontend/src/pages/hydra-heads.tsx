@@ -22,6 +22,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import { HydraHeadErrors } from '@/components/hydra/HydraHeadErrors';
 import { HydraHeadWallets } from '@/components/hydra/HydraHeadWallets';
+import { HydraHeadTransactions } from '@/components/hydra/HydraHeadTransactions';
 import { HydraHeadConnectionPanel } from '@/components/hydra/HydraHeadConnection';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraInitDialog } from '@/components/hydra/HydraInitDialog';
@@ -153,37 +154,42 @@ function getParticipantSummary(head: HydraHead) {
 }
 
 const lifecycleActions: Array<Omit<HydraLifecycleButtonConfig, 'disabledReason'>> = [
-  { action: 'init', label: 'Init' },
-  { action: 'commit', label: 'Commit local' },
+  // Named by what they do to the head, not by the protocol message they send.
+  // "Init" and "Fanout" are hydra-node vocabulary; an operator deciding whether
+  // to press one is thinking about opening, funding and settling.
+  { action: 'init', label: 'Open head' },
+  { action: 'commit', label: 'Add funds' },
   { action: 'close', label: 'Close head' },
-  { action: 'fanout', label: 'Fanout' },
+  { action: 'fanout', label: 'Settle on chain' },
 ];
 
 function getLifecycleActionDisabledReason(head: HydraHead, action: HydraLifecycleAction) {
   if (action === 'init') {
-    if (!head.LocalParticipant) return 'No local participant saved';
+    if (!head.LocalParticipant) return 'This head has no node on your side';
     // One side opens, and it is the side that redeemed: two Inits race for the
     // same seed inputs and the loser is left waiting on a head that never
     // existed. Stated rather than hidden, so the wait looks intended.
     if (head.Invite?.role === 'Issuer')
-      return 'Your counterparty opens this head — it redeemed your invite, so it posts the Init';
-    if (head.status !== 'Idle') return 'Available only while the head is idle';
+      return 'They opened your invite, so they open the head — it moves on its own when they do';
+    if (head.status !== 'Idle') return `Already past this — the head is ${head.status}`;
     return undefined;
   }
 
   if (action === 'commit') {
-    if (!head.LocalParticipant) return 'No local participant saved';
-    if (head.LocalParticipant.hasCommitted) return 'Local participant already committed';
-    if (head.status !== 'Initializing') return 'Available only while the head is initializing';
+    if (!head.LocalParticipant) return 'This head has no node on your side';
+    if (head.LocalParticipant.hasCommitted) return 'You have already put funds in';
+    if (head.status !== 'Initializing')
+      return 'Only while the head is opening — afterwards, use Top up';
     return undefined;
   }
 
   if (action === 'close') {
-    if (head.status !== 'Open') return 'Available only while the head is open';
+    if (head.status !== 'Open') return 'Only an open head can be closed';
     return undefined;
   }
 
-  if (head.status !== 'FanoutPossible') return 'Available only when fanout is possible';
+  if (head.status !== 'FanoutPossible')
+    return 'Available once the head is closed and its contestation period has passed';
   return undefined;
 }
 
@@ -526,6 +532,8 @@ function HydraHeadDetailsDialog({
             what decides whether a payment can use it at all. */}
         <div className="space-y-4">
           <HydraHeadWallets
+            localWalletAddress={head.LocalParticipant?.Wallet?.walletAddress}
+            remoteWalletAddress={head.RemoteParticipants?.[0]?.Wallet?.walletAddress}
             localWalletId={head.LocalParticipant?.walletId}
             localCardanoVkey={head.LocalParticipant?.cardanoVkey}
             remoteWalletId={head.RemoteParticipants?.[0]?.walletId}
@@ -572,9 +580,15 @@ function HydraHeadDetailsDialog({
           )}
 
           <HydraDetailSection
-            title="On-chain transactions"
+            title="Transactions"
             summary={head.initTxHash ? 'Opened' : 'Not opened yet'}
+            defaultOpen={head.status === 'Open'}
           >
+            <HydraHeadTransactions headId={head.id} network={network} />
+
+            <p className="pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Lifecycle
+            </p>
             <TransactionHashRow
               label="Initial tx"
               hash={head.initTxHash}

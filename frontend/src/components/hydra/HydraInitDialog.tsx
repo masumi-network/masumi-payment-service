@@ -111,10 +111,10 @@ export function HydraInitDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Open this head on chain?</DialogTitle>
+          <DialogTitle>Open this head?</DialogTitle>
           <DialogDescription>
-            Posts the Init transaction, which puts both participants on chain and moves the head to
-            Initializing. It cannot be undone except by closing the head.
+            Your node posts a transaction that puts both participants on chain. Once it lands the
+            head is open, and the only way back is to close it.
           </DialogDescription>
         </DialogHeader>
 
@@ -148,6 +148,14 @@ export function HydraInitDialog({
             The node holds {ada(funding.balanceLovelace)} — enough to post.
           </p>
         ) : null}
+
+        {/* Twenty to ninety seconds of preprod block time, and no way to shorten
+            it. Without saying so, the wait reads as a hang and the operator
+            clicks again — which is the one thing that must not happen. */}
+        <p className="text-xs text-muted-foreground">
+          This takes a block or two. You can close this window — the node carries on, and the head
+          updates itself when the transaction lands.
+        </p>
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

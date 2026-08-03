@@ -104,7 +104,8 @@ export function IssueHydraInviteDialog({
             Invite someone to open a head
           </DialogTitle>
           <DialogDescription>
-            Creates a signed code to send them. Redeeming it opens the head — no further step here.
+            You get a code to send them. When they redeem it, they open the head — nothing further
+            to do on this side.
           </DialogDescription>
         </DialogHeader>
 
@@ -141,9 +142,9 @@ export function IssueHydraInviteDialog({
                 settle with, not the node&apos;s own key.
               </p>
               <p className="text-xs text-muted-foreground">
-                About 10 ADA is sent from it to the node straight away. That pays this head&apos;s
-                on-chain fees — opening, committing, closing — and is separate from any funds you
-                later put into the head.
+                Once they redeem, about 10 ADA moves from this wallet to the node to cover the
+                head&apos;s on-chain fees. Nothing leaves the wallet while the invite is unused, and
+                this is separate from whatever you later put into the head.
               </p>
             </div>
 
@@ -156,15 +157,15 @@ export function IssueHydraInviteDialog({
                 onChange={(event) => setTtlHours(event.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                A node and a peer port stay reserved for this long. Shorter is tidier; long enough
-                that they will actually read it.
+                How long the node and port stay reserved. Long enough that they get round to reading
+                it.
               </p>
             </div>
 
             <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
               <AlertTriangle className="mr-1 inline h-3 w-3" />
-              Issuing starts a node and holds a peer port straight away. It cannot be pointed at a
-              different counterparty later, so revoke it if you change your mind.
+              This starts a node and reserves a peer port right away, tied to this one invite. You
+              cannot point it at someone else afterwards — revoke it instead.
             </p>
           </div>
         ) : (
@@ -179,9 +180,8 @@ export function IssueHydraInviteDialog({
               </p>
             </div>
             <p className="text-xs text-muted-foreground">
-              Send this however you normally reach them. It is not a secret — everything in it is
-              public and signed — but it can be redeemed once, so whoever uses it first becomes your
-              counterparty.
+              Send it however you normally reach them. Nothing in it is secret, but it works once —
+              whoever redeems it first becomes your counterparty.
             </p>
             <p className="text-xs text-muted-foreground">
               Expires {new Date(issued.expiresAt).toLocaleString()}.

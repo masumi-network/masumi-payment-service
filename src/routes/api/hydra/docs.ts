@@ -17,6 +17,7 @@ import {
 	listHeadErrorsSchemaOutput,
 } from '@/routes/api/hydra/head';
 import { topupInput, topupOutput } from '@/routes/api/hydra/head/topup';
+import { listHeadTransactionsInput, listHeadTransactionsOutput } from '@/routes/api/hydra/head/transactions';
 import {
 	listHydraLowBalanceRulesSchemaInput,
 	listHydraLowBalanceRulesSchemaOutput,
@@ -409,6 +410,21 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			}),
 			...unauthorized,
 			404: { description: 'Hydra head or its local participant wallet not found' },
+		},
+	});
+	registry.registerPath({
+		method: 'get',
+		path: '/hydra/head/transactions',
+		summary: "List a Hydra head's transactions. (admin access required)",
+		description:
+			'Every transaction recorded against this head, newest first: L1 for on-chain and L2 for inside the head. The head record itself carries only the Init, Close and Fanout hashes.',
+		tags: TAG,
+		security: secured,
+		request: { query: listHeadTransactionsInput },
+		responses: {
+			200: successResponse('Hydra head transactions', listHeadTransactionsOutput, { transactions: [] }),
+			...unauthorized,
+			...notFound,
 		},
 	});
 	registry.registerPath({

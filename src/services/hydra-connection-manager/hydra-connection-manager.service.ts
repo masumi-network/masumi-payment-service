@@ -184,6 +184,39 @@ export class HydraConnectionManager {
 		logger.info(`[HydraConnectionManager] Initialization complete, connected to ${this._heads.size} heads`);
 	}
 
+	/**
+	 * Give every enabled head a session, not just the ones that existed at boot.
+	 *
+	 * `initialize` runs once. A head created afterwards — which is every head
+	 * created from an invite — was never connected, so the issuing side sat with
+	 * no session and never observed its counterparty opening the head. It stayed
+	 * Idle indefinitely and the only cure was restarting the service, which is
+	 * not something an operator can be expected to guess.
+	 *
+	 * Cheap when there is nothing to do: connecting is skipped for heads that
+	 * already have a live session, so the steady state is one query.
+	 */
+	async reconcileMissingSessions(): Promise<number> {
+		const enabledHeads = await prisma.hydraHead.findMany({
+			where: { isEnabled: true, LocalParticipant: { isNot: null } },
+			select: { id: true },
+		});
+
+		let reconnected = 0;
+		for (const head of enabledHeads) {
+			if (this.isConnected(head.id)) continue;
+			try {
+				await this.reconcileEnabledState(head.id);
+				if (this.isConnected(head.id)) reconnected += 1;
+			} catch (error) {
+				// A node that is down is the ordinary case here, not an incident:
+				// the next cycle tries again.
+				logger.debug(`[HydraConnectionManager] Head ${head.id} still has no session: ${(error as Error).message}`);
+			}
+		}
+		return reconnected;
+	}
+
 	/** Converge the in-memory transport to the latest durable enable flag. */
 	async reconcileEnabledState(hydraHeadId: string): Promise<boolean> {
 		const previous = this._headControlQueues.get(hydraHeadId) ?? Promise.resolve(false);
