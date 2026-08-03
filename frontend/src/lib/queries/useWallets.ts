@@ -34,12 +34,13 @@ type WalletsResponse = {
 };
 
 export function useWallets(options?: { enabled?: boolean }) {
-  const { apiClient, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, selectedPaymentSource, capabilities } =
+    useAppContext();
 
   const network = selectedPaymentSource?.network;
-  // Callers can defer this (e.g. the dashboard, until after first paint) so the
-  // eager all-wallet balance fan-out doesn't fire during the initial render.
-  const callerEnabled = options?.enabled ?? true;
+  // Default off for read-only keys: /wallet/list is admin-only. Callers that need
+  // wallets for pay flows (register dialogs) should pass enabled explicitly.
+  const callerEnabled = options?.enabled ?? (capabilities.canAdmin || capabilities.canPay);
 
   const query = useQuery<WalletsResponse>({
     queryKey: ['wallets', selectedPaymentSourceId, network],

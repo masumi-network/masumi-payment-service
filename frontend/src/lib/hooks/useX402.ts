@@ -145,7 +145,8 @@ export function useX402NetworksForSession(options?: {
   });
   const available = useAvailableX402Networks({
     ...options,
-    enabled: !capabilities.canAdmin,
+    // Available networks is pay-authenticated — skip for read-only keys.
+    enabled: !capabilities.canAdmin && capabilities.canPay,
   });
 
   if (capabilities.canAdmin) {

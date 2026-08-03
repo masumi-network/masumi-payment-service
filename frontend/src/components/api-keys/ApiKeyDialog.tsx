@@ -85,7 +85,8 @@ export function ApiKeyDialog() {
         <h1 className="text-4xl font-bold mb-4">Enter your API Key</h1>
 
         <p className="text-sm text-muted-foreground mb-8 text-center max-w-md">
-          Your API key is needed to access the dashboard.
+          Your API key is needed to access the dashboard. This key is required to manage your ai
+          agents, payment settings and view transactions.
         </p>
 
         <Button variant="muted" className="text-sm mb-8 hover:underline" asChild>
