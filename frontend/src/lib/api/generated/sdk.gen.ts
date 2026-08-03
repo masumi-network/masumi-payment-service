@@ -87,7 +87,7 @@ export const postWallet = <ThrowOnError extends boolean = false>(options?: Optio
 });
 
 /**
- * List hot wallets, optionally filtered by payment source and type. (admin access required)
+ * List hot wallets, optionally filtered by payment source and type. (pay access required)
  *
  * Lists hot wallets across payment sources with cursor-based pagination
  */
@@ -926,7 +926,7 @@ export const deletePaymentSourceExtended = <ThrowOnError extends boolean = false
 });
 
 /**
- * List payment sources with their public details augmented with internal configuration and sync status information. (admin access required)
+ * List payment sources with their public details augmented with internal configuration and sync status information. (read access required)
  *
  * Gets the payment contracts including the status.
  */
