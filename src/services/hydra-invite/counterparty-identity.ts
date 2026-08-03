@@ -93,8 +93,13 @@ export async function resolveCounterpartyIdentity(
 	} catch (error) {
 		// A wallet that has never been used has no address record at all, which
 		// Blockfrost reports as 404. That is "no entries", not a failure.
+		//
+		// Matched on the status code: Blockfrost words this as "has not been
+		// found", which does not contain the substring "not found".
 		const message = (error as Error).message;
-		if (/404|not found/i.test(message)) {
+		const status =
+			typeof error === 'object' && error !== null ? (error as { status_code?: unknown }).status_code : undefined;
+		if (status === 404 || /\b404\b/.test(message)) {
 			return identity;
 		}
 		logger.warn(`hydra: could not read registry entries for ${walletAddress}: ${message}`);

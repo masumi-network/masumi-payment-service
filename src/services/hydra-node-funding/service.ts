@@ -47,6 +47,17 @@ export type NodeFundingOutcome = {
 	skipped: number;
 };
 
+/** Blockfrost signals an unused address with a 404 on the error object itself. */
+export function isNotFound(error: unknown): boolean {
+	if (typeof error === 'object' && error !== null) {
+		const status = (error as { status_code?: unknown }).status_code;
+		if (status === 404) {
+			return true;
+		}
+	}
+	return /\b404\b/.test((error as Error)?.message ?? '');
+}
+
 async function readLovelaceAt(address: string, network: 'Preprod' | 'Mainnet', apiKey: string): Promise<bigint | null> {
 	try {
 		const blockfrost = getBlockfrostInstance(network, apiKey);
@@ -54,14 +65,18 @@ async function readLovelaceAt(address: string, network: 'Preprod' | 'Mainnet', a
 		const lovelace = details.amount.find((entry) => entry.unit === 'lovelace');
 		return BigInt(lovelace?.quantity ?? '0');
 	} catch (error) {
-		const message = (error as Error).message;
 		// A never-used address has no record at all. That is zero, not a failure —
-		// and it is the state every newly provisioned node starts in, so treating
-		// it as an error would mean never funding the nodes that need it most.
-		if (/404|not found/i.test(message)) {
+		// and it is the state every newly provisioned node starts in, so reading it
+		// as "unknown" means never funding the nodes that most need it.
+		//
+		// Detected on the status code, not the message. Blockfrost words this as
+		// "The requested component has not been found", which does not contain the
+		// substring "not found" — so matching on prose silently inverted this for
+		// exactly the addresses it was written to cover.
+		if (isNotFound(error)) {
 			return 0n;
 		}
-		logger.warn(`hydra: could not read the balance of node address ${address}: ${message}`);
+		logger.warn(`hydra: could not read the balance of node address ${address}: ${(error as Error).message}`);
 		return null;
 	}
 }
@@ -100,15 +115,18 @@ export async function runHydraNodeFundingCycle(): Promise<NodeFundingOutcome> {
 			continue;
 		}
 
-		// One in-flight transfer per node. The transfer takes a while to confirm,
-		// and the balance does not move until it does — without this every cycle
-		// in that window would queue another.
+		// One in-flight transfer per node. A transfer takes a while to confirm and
+		// the balance does not move until it does, so every cycle inside that
+		// window would otherwise queue another and fund the node several times
+		// over from the operator's wallet.
+		//
+		// Deliberately not restricted to transfers without a txHash: the window
+		// that matters is precisely the one *after* submission, where the hash
+		// exists and the chain has yet to catch up. Requiring a null hash here
+		// left that window unguarded, which is how a second transfer was queued
+		// for a node that had already been paid.
 		const inFlight = await prisma.walletFundTransfer.findFirst({
-			where: {
-				toAddress: address,
-				status: { in: [TransactionStatus.Pending, TransactionStatus.Confirmed] },
-				txHash: null,
-			},
+			where: { toAddress: address, status: TransactionStatus.Pending },
 		});
 		if (inFlight !== null) {
 			outcome.skipped += 1;
