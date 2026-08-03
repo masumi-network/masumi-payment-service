@@ -59,6 +59,17 @@ interface ExtractedPaymentFields {
   amounts?: Array<{ amount: string; unit: string }>;
   /** Seller-signed routing choice from the payment response; must be round-tripped. */
   paymentForceLayer?: 'L1' | 'Hydra' | null;
+  /**
+   * Where the seller wants their funds returned, as signed into the identifier.
+   *
+   * Round-tripped for the same reason as the routing choice, and for one more:
+   * the server falls back to the seller's collection address *as stored in its
+   * own database*, which a buyer on a different node has never seen. It resolves
+   * to null there, the reconstructed payload stops matching what the seller
+   * signed, and the purchase is rejected as "signature invalid" with nothing
+   * pointing at the cause.
+   */
+  sellerReturnAddress?: string | null;
 }
 
 function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
@@ -69,6 +80,8 @@ function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
       obj = obj.data.data ? obj.data.data : obj.data;
     }
     const fields: Partial<MockPurchaseFormValues> = {};
+    const sellerReturnAddress =
+      typeof obj.sellerReturnAddress === 'string' ? obj.sellerReturnAddress : null;
     if (obj.blockchainIdentifier) fields.blockchainIdentifier = obj.blockchainIdentifier;
     if (obj.agentIdentifier) fields.agentIdentifier = obj.agentIdentifier;
     if (obj.inputHash) fields.inputHash = obj.inputHash;
@@ -106,7 +119,7 @@ function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
         : null;
     // Only return if we got at least blockchainIdentifier
     if (fields.blockchainIdentifier)
-      return { formFields: fields, pricingType, amounts, paymentForceLayer };
+      return { formFields: fields, pricingType, amounts, paymentForceLayer, sellerReturnAddress };
     return null;
   } catch {
     return null;
@@ -132,6 +145,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   // Seller-signed routing choice from the payment (paste/lookup). Non-null values
   // are part of the signed identifier and MUST be sent back on the purchase.
   const [paymentForceLayer, setPaymentForceLayer] = useState<'L1' | 'Hydra' | null>(null);
+  const [sellerReturnAddress, setSellerReturnAddress] = useState<string | null>(null);
   // The buyer's own optional routing override ('Auto' omits the field).
   const [buyerForceLayer, setBuyerForceLayer] = useState<'Auto' | 'L1' | 'Hydra'>('Auto');
 
@@ -220,6 +234,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
 
         setExtractedAmounts(undefined);
         setPaymentForceLayer(null);
+        setSellerReturnAddress(null);
         return;
       }
       const result = tryExtractPaymentFields(value);
@@ -229,6 +244,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
 
         setExtractedAmounts(result.amounts);
         setPaymentForceLayer(result.paymentForceLayer ?? null);
+        setSellerReturnAddress(result.sellerReturnAddress ?? null);
         if (result.formFields.identifierFromPurchaser) {
           toast.success('Fields populated from pasted response');
         } else {
@@ -287,6 +303,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
             : undefined,
         );
         setPaymentForceLayer(payment.forceLayer ?? null);
+        setSellerReturnAddress(payment.sellerReturnAddress ?? null);
 
         if (decoded) {
           setValue('identifierFromPurchaser', decoded.purchaserId);
@@ -331,9 +348,11 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
           externalDisputeUnlockTime: data.externalDisputeUnlockTime,
           metadata: data.metadata || undefined,
           ...(extractedAmounts && extractedAmounts.length > 0 ? { Amounts: extractedAmounts } : {}),
-          // The seller's routing choice is signed into the identifier; a non-null
-          // value must be round-tripped or the signature check rejects the purchase.
+          // Both of these are signed into the identifier and must be sent back
+          // exactly as the seller set them, or the reconstructed payload will not
+          // match and the purchase is rejected.
           ...(paymentForceLayer != null ? { paymentForceLayer } : {}),
+          ...(sellerReturnAddress != null ? { sellerReturnAddress } : {}),
           ...(buyerForceLayer !== 'Auto' ? { forceLayer: buyerForceLayer } : {}),
         };
 
@@ -365,7 +384,15 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setIsLoading(false);
       }
     },
-    [apiClient, apiKey, network, extractedAmounts, paymentForceLayer, buyerForceLayer],
+    [
+      apiClient,
+      apiKey,
+      network,
+      extractedAmounts,
+      paymentForceLayer,
+      sellerReturnAddress,
+      buyerForceLayer,
+    ],
   );
 
   const handleClose = () => {
@@ -375,6 +402,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
     setPasteError(null);
     setExtractedAmounts(undefined);
     setPaymentForceLayer(null);
+    setSellerReturnAddress(null);
     setBuyerForceLayer('Auto');
     setResponse(null);
     setError(null);
