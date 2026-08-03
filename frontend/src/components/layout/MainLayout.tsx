@@ -696,12 +696,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         <main className="flex-1 relative z-10 w-full animate-content-fade-in">
-          {activeRail === 'x402' && !isSetupMode && (
+          {capabilities.canAdmin && activeRail === 'x402' && !isSetupMode && (
             <div className="mx-auto w-full max-w-[1400px] px-4 pt-4">
               <X402SetupBanner />
             </div>
           )}
-          {activeRail !== 'x402' &&
+          {capabilities.canAdmin &&
+            activeRail !== 'x402' &&
             hasLegacyOnlyPaymentSources &&
             !isSetupMode &&
             // The payment-sources page renders its own richer V2 setup banner, so

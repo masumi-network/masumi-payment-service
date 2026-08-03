@@ -15,6 +15,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 
 const ADMIN_TAB_NAMES = ['Chains', 'Wallets', 'Budgets', 'Alerts', 'Payments'] as const;
 const PAY_TAB_NAMES = ['Wallets', 'Payments'] as const;
+const READ_TAB_NAMES = ['Payments'] as const;
 type TabName = (typeof ADMIN_TAB_NAMES)[number];
 
 function isTabName(value: unknown, allowed: readonly string[]): value is TabName {
@@ -24,7 +25,11 @@ function isTabName(value: unknown, allowed: readonly string[]): value is TabName
 export default function X402Page() {
   const router = useRouter();
   const { capabilities } = useAppContext();
-  const tabNames = capabilities.canAdmin ? ADMIN_TAB_NAMES : PAY_TAB_NAMES;
+  const tabNames = capabilities.canAdmin
+    ? ADMIN_TAB_NAMES
+    : capabilities.canPay
+      ? PAY_TAB_NAMES
+      : READ_TAB_NAMES;
   const defaultTab = tabNames[0];
 
   // Drive the active tab from the URL so tabs are deep-linkable and shareable, and so an
@@ -61,7 +66,9 @@ export default function X402Page() {
             <p className="max-w-2xl text-sm text-muted-foreground">
               {capabilities.canAdmin
                 ? 'Manage the EVM payment rail: chains, managed wallets, spend budgets, balance alerts and payment activity.'
-                : 'View managed EVM wallets and payment activity for chains your key can access.'}{' '}
+                : capabilities.canPay
+                  ? 'View and manage EVM wallets and payment activity for chains your key can access.'
+                  : 'View payment activity for chains your key can access.'}{' '}
               <a
                 href="https://www.masumi.network/dev/masumi"
                 target="_blank"

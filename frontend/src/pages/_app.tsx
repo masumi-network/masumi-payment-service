@@ -105,6 +105,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   });
 
   useEffect(() => {
+    // Bounce non-admins off admin-only routes immediately — do not wait for payment
+    // sources to load, or deep-links would mount those pages and fire admin APIs first.
+    if (apiKey && isHealthy && !capabilities.canAdmin && isAdminOnlyPath(router.pathname)) {
+      if (isLoading) {
+        router.replace('/');
+        return;
+      }
+      const sources = network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
+      router.replace(sources.length > 0 ? '/' : '/developers');
+      return;
+    }
+
     if (isLoading) return;
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
@@ -121,12 +133,6 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     const x402ChainCount = chainsForEnv(x402Networks, network).length;
     const x402MaybeStandalone = activeRail === 'x402' && (x402Loading || x402ChainCount > 0);
     const x402Confirmed = activeRail === 'x402' && !x402Loading && x402ChainCount > 0;
-
-    // Non-admins cannot run setup — keep them on read/pay surfaces (or developers).
-    if (apiKey && isHealthy && !capabilities.canAdmin && isAdminOnlyPath(router.pathname)) {
-      router.replace(currentNetworkPaymentSources.length > 0 ? '/' : '/developers');
-      return;
-    }
 
     if (
       apiKey &&
