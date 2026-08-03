@@ -190,6 +190,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
               control={control}
               errors={errors}
               paidAgents={paidAgents}
+              totalAgents={agents.length}
               isLoadingAgents={isLoadingAgents}
               inputData={inputData}
               setInputData={setInputData}

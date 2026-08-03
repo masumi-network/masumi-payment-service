@@ -14,12 +14,16 @@ export function useAgents(params?: {
 }) {
   const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
 
-  const { paymentSources } = usePaymentSourceExtendedAll();
+  const { paymentSources, isLoading: isLoadingPaymentSources } = usePaymentSourceExtendedAll();
 
   const hasCurrentNetworkPaymentSources = useMemo(
     () => paymentSources.some((ps) => ps.network === network),
     [paymentSources, network],
   );
+
+  // The query cannot run until the selected payment source is known, and agents
+  // are listed per source.
+  const isEnabled = hasCurrentNetworkPaymentSources && !!selectedPaymentSourceId;
 
   const query = useInfiniteQuery({
     // Key on the source id only — NOT the whole selectedPaymentSource object.
@@ -78,7 +82,7 @@ export function useAgents(params?: {
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage: { nextCursor: string | undefined }) => lastPage.nextCursor,
-    enabled: hasCurrentNetworkPaymentSources && !!selectedPaymentSourceId,
+    enabled: isEnabled,
     staleTime: 15000,
     placeholderData: keepPreviousData,
   });
@@ -96,7 +100,12 @@ export function useAgents(params?: {
   return {
     agents,
     hasMore: Boolean(query.hasNextPage),
-    isLoading: query.isLoading,
+    // A disabled query is not "loading" by TanStack's definition: it is pending
+    // and not fetching, so `isLoading` is false before the payment source has
+    // resolved. Callers read that as "asked and got nothing" and told the
+    // operator there were no agents, when nothing had been asked yet. Waiting on
+    // the source is reported as loading, because to the operator it is.
+    isLoading: query.isLoading || (!isEnabled && isLoadingPaymentSources),
     isFetching: query.isFetching,
     isRefetching: query.isRefetching,
     isPlaceholderData: query.isPlaceholderData,

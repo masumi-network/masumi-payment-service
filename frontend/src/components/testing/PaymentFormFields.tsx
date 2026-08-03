@@ -113,6 +113,17 @@ interface PaymentFormFieldsProps {
   control: Control<PaymentFormValues>;
   errors: FieldErrors<PaymentFormValues>;
   paidAgents: PaidAgent[];
+  /**
+   * Every agent on the selected payment source, paid or free.
+   *
+   * The empty state used to blame free pricing whichever way the list came back
+   * empty, when the usual cause is the payment source selected in the header:
+   * agents are listed per source, so an agent registered on the V2 source is
+   * invisible while V1 is selected, and one registered on another node is
+   * invisible entirely. Knowing whether there are any agents at all is what
+   * separates those two messages.
+   */
+  totalAgents?: number;
   isLoadingAgents: boolean;
 }
 
@@ -177,6 +188,7 @@ export function PaymentFormFields({
   control,
   errors,
   paidAgents,
+  totalAgents,
   isLoadingAgents,
   inputData,
   setInputData,
@@ -225,7 +237,9 @@ export function PaymentFormFields({
                     isLoadingAgents
                       ? 'Loading agents...'
                       : paidAgents.length === 0
-                        ? 'No paid agents available'
+                        ? totalAgents === 0
+                          ? 'No agents on this payment source'
+                          : 'No paid agents on this payment source'
                         : 'Select a paid agent'
                   }
                 />
@@ -247,7 +261,9 @@ export function PaymentFormFields({
         )}
         {paidAgents.length === 0 && !isLoadingAgents && (
           <p className="text-xs text-muted-foreground">
-            No paid agents available. Free agents cannot be used with the payment flow.
+            {totalAgents === 0
+              ? 'No agents on the payment source selected at the top of the page. Agents are listed per source, so check that the right one is selected.'
+              : 'Every agent on this payment source is free, and a payment needs a price.'}
           </p>
         )}
       </div>
