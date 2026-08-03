@@ -19,6 +19,7 @@ import { HydraTopupStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { HydraTransportAmbiguousError } from '@/lib/hydra/hydra/errors';
 
 export type DepositRecovery = {
 	depositTxHash: string;
@@ -67,8 +68,20 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 	try {
 		await node.delete(`/commits/${topup.depositTxHash}`);
 	} catch (error) {
-		// The node refuses before the deadline, which is the common answer rather
-		// than a fault: it is what stops a recovery racing an increment.
+		// Building and submitting the recover transaction takes longer than the
+		// HTTP client waits, so a lost response is the normal case rather than a
+		// refusal: the node posts it anyway. Reported as requested, because that
+		// is what happened, with the caller told where to look.
+		if (error instanceof HydraTransportAmbiguousError) {
+			logger.info(`hydra: recovery of deposit ${topup.depositTxHash} was requested; the node did not answer in time`);
+			return {
+				depositTxHash: topup.depositTxHash,
+				requested: true,
+				reason: 'the node took longer than the request window to answer. The recovery is posted; watch the wallet',
+			};
+		}
+		// A genuine refusal. Before the deadline this is what stops a recovery
+		// racing an increment.
 		const message = error instanceof Error ? error.message : 'the node refused the recovery';
 		logger.warn(`hydra: recovery of deposit ${topup.depositTxHash} was refused: ${message}`);
 		throw createHttpError(409, `the node would not recover this deposit yet: ${message}`);

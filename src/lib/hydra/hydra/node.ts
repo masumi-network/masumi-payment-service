@@ -1627,11 +1627,15 @@ export class HydraNode extends EventEmitter {
 			) {
 				throw error;
 			}
-			if (method === 'POST') {
+			// DELETE recovers a deposit by posting a transaction, so losing its
+			// response is as ambiguous as losing a POST's: the node may well have
+			// posted it. Reporting that as a plain failure told an operator their
+			// recovery had not happened while it was on its way to the chain.
+			if (method === 'POST' || method === 'DELETE') {
 				throw new HydraTransportAmbiguousError(
 					didTimeout
-						? `Hydra HTTP POST outcome is ambiguous after a ${this._httpTimeoutMs}ms timeout`
-						: 'Hydra HTTP POST outcome is ambiguous after a transport failure',
+						? `Hydra HTTP ${method} outcome is ambiguous after a ${this._httpTimeoutMs}ms timeout`
+						: `Hydra HTTP ${method} outcome is ambiguous after a transport failure`,
 					{ cause: error },
 				);
 			}
