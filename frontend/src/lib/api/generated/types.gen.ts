@@ -5196,9 +5196,13 @@ export type GetPaymentCountData = {
          * Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
-      
+        /**
+         * Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields.
+         */
         filterAgentIdentifier?: string;
-      
+        /**
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount.
+         */
         searchQuery?: string;
     };
     url: '/payment/count';
@@ -5241,9 +5245,13 @@ export type GetPurchaseCountData = {
          * Filter by payment source type. When omitted with no smart-contract-address filter, purchase count defaults to Web3CardanoV1 for backwards compatibility.
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
-      
+        /**
+         * Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields.
+         */
         filterAgentIdentifier?: string;
-      
+        /**
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount.
+         */
         searchQuery?: string;
     };
     url: '/purchase/count';
@@ -7365,9 +7373,13 @@ export type GetPurchaseData = {
          * When true, only returns purchases that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it
          */
         filterNeedsManualAction?: string;
-      
+        /**
+         * Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields.
+         */
         filterAgentIdentifier?: string;
-        
+        /**
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount.
+         */
         searchQuery?: string;
         /**
          * Whether to include the full transaction and action history of the purchases

@@ -78,13 +78,11 @@ export function buildNeedsManualActionFilter(filterNeedsManualAction: boolean | 
 	};
 }
 
-
 export function normalizeSearchQuery(searchQuery: string | undefined): { raw: string; lower: string } | undefined {
 	const raw = searchQuery?.trim();
 	if (!raw) return undefined;
 	return { raw, lower: raw.toLowerCase() };
 }
-
 
 export function buildAgentIdentifierFilter(filterAgentIdentifier: string | undefined) {
 	if (!filterAgentIdentifier) return {};
@@ -96,7 +94,6 @@ export function buildAgentIdentifierFilter(filterAgentIdentifier: string | undef
 	if (identifiers.length === 0) return {};
 	return { agentIdentifier: { in: identifiers } };
 }
-
 
 export function buildTransactionSearchFilter(
 	searchLower: string | undefined,

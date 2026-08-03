@@ -1,6 +1,5 @@
 import { z } from '@masumi/payment-core/zod';
 
-
 export const searchQuerySchema = z
 	.string()
 	.optional()
