@@ -799,6 +799,7 @@ model PaymentRequest {
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
   @@index([currentTransactionId])
+  @@index([agentIdentifier, createdAt])
 }
 
 model PaymentActionData {
@@ -884,6 +885,7 @@ model PurchaseRequest {
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
   @@index([currentTransactionId])
+  @@index([agentIdentifier, createdAt])
 }
 
 model PurchaseActionData {

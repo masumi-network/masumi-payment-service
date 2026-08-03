@@ -9218,10 +9218,20 @@
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount"
+                            "description": "Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields."
                         },
                         "required": false,
-                        "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount",
+                        "description": "Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields.",
+                        "name": "filterAgentIdentifier",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount."
+                        },
+                        "required": false,
+                        "description": "Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount.",
                         "name": "searchQuery",
                         "in": "query"
                     },
@@ -10593,6 +10603,26 @@
                         "description": "Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields."
+                        },
+                        "required": false,
+                        "description": "Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields.",
+                        "name": "filterAgentIdentifier",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount."
+                        },
+                        "required": false,
+                        "description": "Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount.",
+                        "name": "searchQuery",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -10696,6 +10726,26 @@
                         "required": false,
                         "description": "Filter by payment source type. When omitted with no smart-contract-address filter, purchase count defaults to Web3CardanoV1 for backwards compatibility.",
                         "name": "filterPaymentSourceType",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields."
+                        },
+                        "required": false,
+                        "description": "Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields.",
+                        "name": "filterAgentIdentifier",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount."
+                        },
+                        "required": false,
+                        "description": "Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount.",
+                        "name": "searchQuery",
                         "in": "query"
                     }
                 ],
@@ -15492,10 +15542,20 @@
                     {
                         "schema": {
                             "type": "string",
-                            "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount"
+                            "description": "Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields."
                         },
                         "required": false,
-                        "description": "Search query to filter by ID, hash, agent name, state, network, wallet address, or amount",
+                        "description": "Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields.",
+                        "name": "filterAgentIdentifier",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount."
+                        },
+                        "required": false,
+                        "description": "Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount.",
                         "name": "searchQuery",
                         "in": "query"
                     },

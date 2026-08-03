@@ -7,6 +7,8 @@ import {
 	buildMatchingStates,
 	buildNeedsManualActionFilter,
 	buildTransactionSearchFilter,
+	buildAgentIdentifierFilter,
+	normalizeSearchQuery,
 } from '@/utils/shared/queries';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { queryPaymentsSchemaInput } from './schemas';
@@ -24,7 +26,8 @@ export function resolvePaymentPaymentSourceTypeFilter(input: {
 }
 
 export async function getPaymentsForQuery(input: PaymentListQueryInput, walletScopeIds: AuthContext['walletScopeIds']) {
-	const searchLower = input.searchQuery?.toLowerCase();
+	const search = normalizeSearchQuery(input.searchQuery);
+	const searchLower = search?.lower;
 	const matchingStates = buildMatchingStates(searchLower);
 	const amountFilter = searchLower ? parseAmountSearchRange(searchLower) : undefined;
 	const paymentSourceTypeFilter = resolvePaymentPaymentSourceTypeFilter(input);
@@ -40,7 +43,8 @@ export async function getPaymentsForQuery(input: PaymentListQueryInput, walletSc
 			...buildWalletScopeFilter(walletScopeIds),
 			...(input.filterOnChainState ? { onChainState: input.filterOnChainState } : {}),
 			...buildNeedsManualActionFilter(input.filterNeedsManualAction),
-			...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds'),
+			...buildAgentIdentifierFilter(input.filterAgentIdentifier),
+			...buildTransactionSearchFilter(searchLower, matchingStates, amountFilter, 'RequestedFunds', search?.raw),
 		},
 		orderBy: { createdAt: 'desc' },
 		...cursorPaginationArgs(input.cursorId, input.limit),

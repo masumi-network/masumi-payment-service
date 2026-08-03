@@ -160,9 +160,15 @@ export default function Transactions() {
 
   // Client-side filter for instant feedback while server results are pending.
   // Mirrors the backend Prisma OR filter in src/utils/shared/queries.ts
-  // to avoid items appearing/disappearing when the server responds.
+  // (buildTransactionSearchFilter) to avoid items appearing/disappearing when the
+  // server responds. Matching MORE fields here than the backend is the bug this
+  // guards against: those rows show during the debounce and vanish on response.
+  // Deliberately absent, matching the backend: network, paymentSourceType and
+  // transaction type — the query is already scoped to one network and source
+  // type, so matching them would make any substring of those return everything.
   const displayTransactions = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
+    const rawQuery = searchQuery.trim();
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
       return filteredTransactions;
 
@@ -175,11 +181,12 @@ export default function Transactions() {
 
     return filteredTransactions.filter((tx) => {
       if (tx.id?.toLowerCase().includes(query)) return true;
-      if (getLatestTxHash(tx)?.toLowerCase().includes(query)) return true;
+      if (tx.blockchainIdentifier === rawQuery) return true;
+      if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
+      if (tx.TransactionHistory?.some((h) => h.txHash?.toLowerCase().includes(query))) return true;
+      if (tx.inputHash?.toLowerCase().includes(query)) return true;
+      if (tx.resultHash?.toLowerCase().includes(query)) return true;
       if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (tx.PaymentSource?.network?.toLowerCase().includes(query)) return true;
-      if (tx.PaymentSource?.paymentSourceType?.toLowerCase().includes(query)) return true;
-      if (tx.type?.toLowerCase().includes(query)) return true;
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
       if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;

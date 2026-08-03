@@ -24,7 +24,14 @@ import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-import { buildNeedsManualActionFilter } from '@/utils/shared/queries';
+import {
+	buildAgentIdentifierFilter,
+	buildMatchingStates,
+	buildNeedsManualActionFilter,
+	buildTransactionSearchFilter,
+	normalizeSearchQuery,
+	parseAmountSearchRange,
+} from '@/utils/shared/queries';
 import {
 	createPaymentSchemaOutput,
 	createPaymentsSchemaInput,
@@ -70,6 +77,8 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPaymentCountSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
+		const search = normalizeSearchQuery(input.searchQuery);
+		const searchLower = search?.lower;
 		const total = await prisma.paymentRequest.count({
 			where: {
 				PaymentSource: {
@@ -80,6 +89,14 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 				},
 				...buildWalletScopeFilter(ctx.walletScopeIds),
 				...buildNeedsManualActionFilter(input.filterNeedsManualAction),
+				...buildAgentIdentifierFilter(input.filterAgentIdentifier),
+				...buildTransactionSearchFilter(
+					searchLower,
+					buildMatchingStates(searchLower),
+					searchLower ? parseAmountSearchRange(searchLower) : undefined,
+					'RequestedFunds',
+					search?.raw,
+				),
 			},
 		});
 

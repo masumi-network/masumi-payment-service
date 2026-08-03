@@ -78,11 +78,32 @@ export function buildNeedsManualActionFilter(filterNeedsManualAction: boolean | 
 	};
 }
 
+
+export function normalizeSearchQuery(searchQuery: string | undefined): { raw: string; lower: string } | undefined {
+	const raw = searchQuery?.trim();
+	if (!raw) return undefined;
+	return { raw, lower: raw.toLowerCase() };
+}
+
+
+export function buildAgentIdentifierFilter(filterAgentIdentifier: string | undefined) {
+	if (!filterAgentIdentifier) return {};
+	const identifiers = filterAgentIdentifier
+		.split(',')
+		.map((value) => value.trim())
+		.filter((value) => value.length > 0);
+	// An all-empty list (e.g. ',,') must not become `in: ['']`, which matches nothing.
+	if (identifiers.length === 0) return {};
+	return { agentIdentifier: { in: identifiers } };
+}
+
+
 export function buildTransactionSearchFilter(
 	searchLower: string | undefined,
 	matchingStates: OnChainState[] | undefined,
 	amountFilter: { gte: bigint; lte: bigint } | undefined,
 	fundsRelation: 'RequestedFunds' | 'PaidFunds',
+	searchRaw?: string,
 ) {
 	if (!searchLower) return {};
 	return {
@@ -100,11 +121,30 @@ export function buildTransactionSearchFilter(
 				},
 			},
 			{ id: { contains: searchLower, mode: 'insensitive' as const } },
+			// LZString-compressed then hex-encoded, so a substring carries no meaning
+			// and `ILIKE '%..%'` could not use the unique index. Consumers paste the
+			// whole value; exact match keeps this an index seek.
+			{ blockchainIdentifier: { equals: searchRaw ?? searchLower } },
+			{ inputHash: { contains: searchLower, mode: 'insensitive' as const } },
+			{ resultHash: { contains: searchLower, mode: 'insensitive' as const } },
 			{
 				CurrentTransaction: {
 					txHash: {
 						contains: searchLower,
 						mode: 'insensitive' as const,
+					},
+				},
+			},
+			// History holds the PREVIOUS transactions — a new attempt moves the old row
+			// here — so the current hash lives only on CurrentTransaction. Both branches
+			// are required to match any hash a transaction has ever had.
+			{
+				TransactionHistory: {
+					some: {
+						txHash: {
+							contains: searchLower,
+							mode: 'insensitive' as const,
+						},
 					},
 				},
 			},
