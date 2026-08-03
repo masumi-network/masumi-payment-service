@@ -6562,7 +6562,7 @@
         "/wallet/list": {
             "get": {
                 "description": "Lists hot wallets across payment sources with cursor-based pagination",
-                "summary": "List hot wallets, optionally filtered by payment source and type. (admin access required)",
+                "summary": "List hot wallets, optionally filtered by payment source and type. (pay access required)",
                 "tags": [
                     "wallet"
                 ],

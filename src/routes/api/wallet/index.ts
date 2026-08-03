@@ -1,4 +1,9 @@
-import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import {
+	adminAuthenticatedEndpointFactory,
+	payAuthenticatedEndpointFactory,
+	AuthContext,
+	checkIsAllowedNetworkOrThrowUnauthorized,
+} from '@masumi/payment-core/auth';
 import { cursorPaginationArgs } from '@/utils/shared/queries';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
@@ -8,7 +13,6 @@ import { Prisma, WalletFundTransfer } from '@/generated/prisma/client';
 import { isCardanoAddressForNetwork } from '@masumi/payment-core/payment-source';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
-import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import {
 	getWalletListSchemaInput,
@@ -42,7 +46,9 @@ export {
 	getWalletFundSchemaOutput,
 };
 
-export const queryWalletListEndpointGet = adminAuthenticatedEndpointFactory.build({
+// Public wallet metadata (no secrets). Pay keys need this to pick a selling
+// wallet when registering agents; create/update/fund stay admin-only below.
+export const queryWalletListEndpointGet = payAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: getWalletListSchemaInput,
 	output: getWalletListSchemaOutput,

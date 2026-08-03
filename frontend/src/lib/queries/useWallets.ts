@@ -38,7 +38,7 @@ export function useWallets(options?: { enabled?: boolean }) {
     useAppContext();
 
   const network = selectedPaymentSource?.network;
-  // Default off for read-only keys: /wallet/list is admin-only. Callers that need
+  // Default off for read-only keys: /wallet/list requires pay. Callers that need
   // wallets for pay flows (register dialogs) should pass enabled explicitly.
   const callerEnabled = options?.enabled ?? (capabilities.canAdmin || capabilities.canPay);
 
