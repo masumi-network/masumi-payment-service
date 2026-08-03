@@ -162,6 +162,11 @@ const lifecycleActions: Array<Omit<HydraLifecycleButtonConfig, 'disabledReason'>
 function getLifecycleActionDisabledReason(head: HydraHead, action: HydraLifecycleAction) {
   if (action === 'init') {
     if (!head.LocalParticipant) return 'No local participant saved';
+    // One side opens, and it is the side that redeemed: two Inits race for the
+    // same seed inputs and the loser is left waiting on a head that never
+    // existed. Stated rather than hidden, so the wait looks intended.
+    if (head.Invite?.role === 'Issuer')
+      return 'Your counterparty opens this head — it redeemed your invite, so it posts the Init';
     if (head.status !== 'Idle') return 'Available only while the head is idle';
     return undefined;
   }

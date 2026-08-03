@@ -5710,6 +5710,23 @@
                         "type": "string",
                         "nullable": true
                     },
+                    "Invite": {
+                        "type": "object",
+                        "nullable": true,
+                        "properties": {
+                            "role": {
+                                "type": "string",
+                                "enum": [
+                                    "Issuer",
+                                    "Redeemer"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "role"
+                        ],
+                        "description": "Which side of the invite exchange this head came from; absent for heads not created from one"
+                    },
                     "LocalParticipant": {
                         "type": "object",
                         "nullable": true,
@@ -5736,6 +5753,15 @@
                                 "type": "string",
                                 "nullable": true
                             },
+                            "hydraHostId": {
+                                "type": "string"
+                            },
+                            "hostNodeId": {
+                                "type": "string"
+                            },
+                            "cardanoVkey": {
+                                "type": "string"
+                            },
                             "keysDisclosedAt": {
                                 "type": "string",
                                 "nullable": true
@@ -5749,6 +5775,9 @@
                             "nodeHttpUrl",
                             "hasCommitted",
                             "commitTxHash",
+                            "hydraHostId",
+                            "hostNodeId",
+                            "cardanoVkey",
                             "keysDisclosedAt"
                         ]
                     },
@@ -5778,6 +5807,9 @@
                                 },
                                 "hydraVerificationKeyId": {
                                     "type": "string"
+                                },
+                                "cardanoVkey": {
+                                    "type": "string"
                                 }
                             },
                             "required": [
@@ -5787,7 +5819,8 @@
                                 "advertise",
                                 "hasCommitted",
                                 "commitTxHash",
-                                "hydraVerificationKeyId"
+                                "hydraVerificationKeyId",
+                                "cardanoVkey"
                             ]
                         }
                     },
@@ -30187,6 +30220,11 @@
                                         "minimum": 1,
                                         "maximum": 720,
                                         "description": "How long the invite may sit before its reservation is released. Defaults to 168 (7 days)."
+                                    },
+                                    "autoFund": {
+                                        "type": "boolean",
+                                        "default": true,
+                                        "description": "Send the node's L1 fuel from the chosen wallet straight away. On unless set false — a node cannot post Init, Commit, Close or Fanout without it, so opt out only if you fund that key yourself."
                                     }
                                 },
                                 "required": [
@@ -30430,6 +30468,47 @@
                                                 },
                                                 "alreadyKnown": {
                                                     "type": "boolean"
+                                                },
+                                                "identity": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "policyId": {
+                                                            "type": "string"
+                                                        },
+                                                        "entries": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "unit": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "assetName": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "name": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "unit",
+                                                                    "assetName",
+                                                                    "name"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "lookupError": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "policyId",
+                                                        "entries",
+                                                        "lookupError"
+                                                    ],
+                                                    "description": "Registry entries held by the issuing wallet, so an operator can recognise who this is"
                                                 }
                                             },
                                             "required": [
@@ -30443,7 +30522,8 @@
                                                 "depositPeriodSeconds",
                                                 "unsyncedPeriodSeconds",
                                                 "signatureValid",
-                                                "alreadyKnown"
+                                                "alreadyKnown",
+                                                "identity"
                                             ]
                                         }
                                     },
@@ -30494,6 +30574,11 @@
                                         "type": "string",
                                         "minLength": 1,
                                         "description": "Wallet that will identify us on the resulting head"
+                                    },
+                                    "autoFund": {
+                                        "type": "boolean",
+                                        "default": true,
+                                        "description": "Send the node's L1 fuel from the chosen wallet straight away. On unless set false."
                                     }
                                 },
                                 "required": [
@@ -32228,34 +32313,16 @@
                                                 "headId": {
                                                     "type": "string"
                                                 },
-                                                "topupId": {
-                                                    "type": "string"
-                                                },
-                                                "depositTxHash": {
-                                                    "type": "string"
-                                                },
-                                                "confirmed": {
+                                                "accepted": {
                                                     "type": "boolean",
-                                                    "description": "Whether the deposit is already confirmed on L1 by the independent observer"
-                                                },
-                                                "committedLovelace": {
-                                                    "type": "string"
-                                                },
-                                                "committedAssets": {
-                                                    "type": "object",
-                                                    "additionalProperties": {
-                                                        "type": "string"
-                                                    },
-                                                    "description": "Committed native-asset amounts keyed by unit"
+                                                    "enum": [
+                                                        true
+                                                    ]
                                                 }
                                             },
                                             "required": [
                                                 "headId",
-                                                "topupId",
-                                                "depositTxHash",
-                                                "confirmed",
-                                                "committedLovelace",
-                                                "committedAssets"
+                                                "accepted"
                                             ]
                                         }
                                     },

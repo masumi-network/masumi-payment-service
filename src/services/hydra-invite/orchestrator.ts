@@ -146,16 +146,11 @@ export async function mintHeadInvite(input: {
 		expiresAt: expiresAt.getTime(),
 	});
 
-	// Fund the node now rather than when the head appears. The node cannot post
-	// anything without fuel, and waiting until redemption means the operator who
-	// finally presses Init meets a funding delay at the worst moment. Sent from
-	// the wallet they chose for this invite, so the money leaves where they
-	// expect. On by default; a caller managing fuel elsewhere opts out.
-	if (input.autoFund !== false) {
-		void fundHydraNodeNow(node.localParticipantId).catch((error: unknown) => {
-			logger.warn(`hydra: could not pre-fund node ${node.nodeId}: ${(error as Error).message}`);
-		});
-	}
+	// Deliberately NOT funded here. The issuer never posts the Init — the
+	// redeemer does — so this node needs nothing until it posts its own commit,
+	// which cannot happen before someone redeems. Funding at mint time would
+	// park ADA against an invite that may never be taken up, or be revoked.
+	// Adoption funds it, which is the first moment it could be spent.
 
 	const invite = await prisma.hydraHeadInvite.create({
 		data: {
@@ -263,8 +258,10 @@ export async function redeemHeadInvite(input: {
 		},
 	);
 
-	// Same reasoning as minting: the node is ours, it will need fuel, and the
-	// counterparty is about to be told we are ready.
+	// Funded here, unlike the issuing side: the redeemer is the one that posts
+	// Init, and it can do so the moment this returns. Waiting for the scheduled
+	// cycle would put a chain confirmation between redeeming and being able to
+	// open the head.
 	if (input.autoFund !== false) {
 		void fundHydraNodeNow(node.localParticipantId).catch((error: unknown) => {
 			logger.warn(`hydra: could not pre-fund node ${node.nodeId}: ${(error as Error).message}`);

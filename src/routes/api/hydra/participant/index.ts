@@ -2,6 +2,7 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import { fundHydraNodeNow, readNodeFundingState } from '@/services/hydra-node-funding/service';
+import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 import { decrypt } from '@/utils/security/encryption';
 import createHttpError from 'http-errors';
@@ -619,5 +620,39 @@ export const fundParticipantNodePost = adminAuthenticatedEndpointFactory.build({
 	output: fundParticipantNodeOutput,
 	handler: async ({ input }) => {
 		return await fundHydraNodeNow(input.id);
+	},
+});
+
+// --- POST: return this node's remaining fuel to its wallet ---
+
+export const withdrawParticipantNodeInput = z.object({
+	id: z.string().min(1).describe('Local participant whose node should be swept'),
+});
+
+export const withdrawParticipantNodeOutput = z.object({
+	address: z.string(),
+	balanceLovelace: z.string(),
+	txHash: z.string().nullable(),
+	reason: z.string().nullable().describe('Why nothing was swept, when nothing was'),
+});
+
+/**
+ * Sweep what a finished node did not spend back to the wallet that funded it.
+ *
+ * A node serves exactly one head and is never reused, so without this every
+ * head permanently strands its unspent fuel — a leak rather than an
+ * untidiness at any volume.
+ *
+ * Refused while the head is live. The node still owes a Close, possibly a
+ * Contest and a Fanout, and one that cannot pay for its Fanout leaves the
+ * committed funds behind a contestation deadline — much worse than leaving a
+ * few ADA behind.
+ */
+export const withdrawParticipantNodePost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: withdrawParticipantNodeInput,
+	output: withdrawParticipantNodeOutput,
+	handler: async ({ input }) => {
+		return await withdrawNodeFunds(input.id);
 	},
 });

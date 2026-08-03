@@ -21,7 +21,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { fundHydraNode } from '@/lib/hooks/useHydraHeads';
+import { fundHydraNode, withdrawHydraNodeFunds } from '@/lib/hooks/useHydraHeads';
 import { useWallets } from '@/lib/queries/useWallets';
 import { useHydraLocalParticipants } from '@/lib/hooks/useHydraHeads';
 import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
@@ -70,6 +70,24 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
   );
   const [backUpId, setBackUpId] = useState<string | null>(null);
   const [fundingId, setFundingId] = useState<string | null>(null);
+
+  async function handleWithdraw(participantId: string) {
+    setFundingId(participantId);
+    try {
+      const result = await withdrawHydraNodeFunds(apiClient, { id: participantId });
+      // A refusal is the common answer, not an error: a node whose head is
+      // still live keeps its fuel on purpose.
+      toast[result.txHash === null ? 'info' : 'success'](
+        result.txHash === null
+          ? (result.reason ?? 'Nothing to withdraw')
+          : `Returning ${(Number(result.balanceLovelace) / 1_000_000).toFixed(2)} ADA to the wallet`,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to withdraw');
+    } finally {
+      setFundingId(null);
+    }
+  }
 
   async function handleFund(participantId: string) {
     setFundingId(participantId);
@@ -239,6 +257,16 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={fundingId === participant.id}
+                        onClick={() => void handleWithdraw(participant.id)}
+                        title="Return what this node did not spend to the wallet that funded it"
+                      >
+                        Withdraw
+                      </Button>
                       <Button
                         type="button"
                         variant="outline"

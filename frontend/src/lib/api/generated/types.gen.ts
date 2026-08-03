@@ -2977,6 +2977,12 @@ export type HydraHead = {
     initTxHash: string | null;
     closeTxHash: string | null;
     fanoutTxHash: string | null;
+    /**
+     * Which side of the invite exchange this head came from; absent for heads not created from one
+     */
+    Invite?: {
+        role: 'Issuer' | 'Redeemer';
+    } | null;
     LocalParticipant?: {
         id: string;
         createdAt: string;
@@ -2985,6 +2991,9 @@ export type HydraHead = {
         nodeHttpUrl: string;
         hasCommitted: boolean;
         commitTxHash: string | null;
+        hydraHostId: string;
+        hostNodeId: string;
+        cardanoVkey: string;
         keysDisclosedAt: string | null;
     } | null;
     RemoteParticipants?: Array<{
@@ -2995,6 +3004,7 @@ export type HydraHead = {
         hasCommitted: boolean;
         commitTxHash: string | null;
         hydraVerificationKeyId: string;
+        cardanoVkey: string;
     }>;
     _count?: {
         Errors: number;
@@ -12767,6 +12777,10 @@ export type PostHydraInviteData = {
          * How long the invite may sit before its reservation is released. Defaults to 168 (7 days).
          */
         ttlHours?: number;
+        /**
+         * Send the node's L1 fuel from the chosen wallet straight away. On unless set false — a node cannot post Init, Commit, Close or Fanout without it, so opt out only if you fund that key yourself.
+         */
+        autoFund?: boolean;
     };
     path?: never;
     query?: never;
@@ -12845,6 +12859,18 @@ export type PostHydraInvitePreviewResponses = {
             unsyncedPeriodSeconds: number;
             signatureValid: boolean;
             alreadyKnown: boolean;
+            /**
+             * Registry entries held by the issuing wallet, so an operator can recognise who this is
+             */
+            identity: {
+                policyId: string;
+                entries: Array<{
+                    unit: string;
+                    assetName: string;
+                    name: string | null;
+                }>;
+                lookupError: string | null;
+            };
         };
     };
 };
@@ -12858,6 +12884,10 @@ export type PostHydraInviteRedeemData = {
          * Wallet that will identify us on the resulting head
          */
         hotWalletId: string;
+        /**
+         * Send the node's L1 fuel from the chosen wallet straight away. On unless set false.
+         */
+        autoFund?: boolean;
     };
     path?: never;
     query?: never;
@@ -13635,19 +13665,7 @@ export type PostHydraHeadTopupResponses = {
         status: 'success';
         data: {
             headId: string;
-            topupId: string;
-            depositTxHash: string;
-            /**
-             * Whether the deposit is already confirmed on L1 by the independent observer
-             */
-            confirmed: boolean;
-            committedLovelace: string;
-            /**
-             * Committed native-asset amounts keyed by unit
-             */
-            committedAssets: {
-                [key: string]: string;
-            };
+            accepted: true;
         };
     };
 };

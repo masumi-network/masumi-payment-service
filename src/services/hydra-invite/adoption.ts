@@ -19,6 +19,7 @@ import { decrypt } from '@/utils/security/encryption';
 import { fetchHostRedemptions, setHostAllowedIssuers, type HostInviteRecord } from '@/services/hydra-host/client';
 import { verifyHydraRedemption } from './invite-signing';
 import { createHeadFromExchange } from './orchestrator';
+import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
 
 /**
  * How far back to re-ask when we have no watermark for a Host.
@@ -173,6 +174,13 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 			redeemerSignerKey: record.redeemerSignature.key,
 			HydraHead: { connect: { id: head.hydraHeadId } },
 		},
+	});
+
+	// Fund now rather than on the next cycle. This is the issuing side, which
+	// was deliberately left unfunded while the invite sat unredeemed — a head
+	// exists as of this moment, so its node is about to owe a commit.
+	void fundHydraNodeNow(participant.id).catch((error: unknown) => {
+		logger.warn(`hydra: could not fund the node for head ${head.hydraHeadId}: ${(error as Error).message}`);
 	});
 
 	logger.info(

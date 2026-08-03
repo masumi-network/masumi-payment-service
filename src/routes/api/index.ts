@@ -105,6 +105,7 @@ import {
 	deleteLocalParticipantDelete,
 	revealParticipantKeysPost,
 	fundParticipantNodePost,
+	withdrawParticipantNodePost,
 	participantFundingGet,
 	deleteRelationDelete,
 	deleteRemoteParticipantDelete,
@@ -526,6 +527,8 @@ export const apiRouter: Routing = {
 					keys: { post: revealParticipantKeysPost },
 					// Fund the node's own Cardano key, without which Init cannot post.
 					fund: { post: fundParticipantNodePost, get: participantFundingGet },
+					// Return what the node did not spend, once its head is final.
+					withdraw: { post: withdrawParticipantNodePost },
 				},
 				remote: {
 					get: getRemoteParticipantGet,

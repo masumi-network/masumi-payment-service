@@ -5733,6 +5733,23 @@ export const HydraHeadSchema = {
             type: 'string',
             nullable: true
         },
+        Invite: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                role: {
+                    type: 'string',
+                    enum: [
+                        'Issuer',
+                        'Redeemer'
+                    ]
+                }
+            },
+            required: [
+                'role'
+            ],
+            description: 'Which side of the invite exchange this head came from; absent for heads not created from one'
+        },
         LocalParticipant: {
             type: 'object',
             nullable: true,
@@ -5759,6 +5776,15 @@ export const HydraHeadSchema = {
                     type: 'string',
                     nullable: true
                 },
+                hydraHostId: {
+                    type: 'string'
+                },
+                hostNodeId: {
+                    type: 'string'
+                },
+                cardanoVkey: {
+                    type: 'string'
+                },
                 keysDisclosedAt: {
                     type: 'string',
                     nullable: true
@@ -5772,6 +5798,9 @@ export const HydraHeadSchema = {
                 'nodeHttpUrl',
                 'hasCommitted',
                 'commitTxHash',
+                'hydraHostId',
+                'hostNodeId',
+                'cardanoVkey',
                 'keysDisclosedAt'
             ]
         },
@@ -5801,6 +5830,9 @@ export const HydraHeadSchema = {
                     },
                     hydraVerificationKeyId: {
                         type: 'string'
+                    },
+                    cardanoVkey: {
+                        type: 'string'
                     }
                 },
                 required: [
@@ -5810,7 +5842,8 @@ export const HydraHeadSchema = {
                     'advertise',
                     'hasCommitted',
                     'commitTxHash',
-                    'hydraVerificationKeyId'
+                    'hydraVerificationKeyId',
+                    'cardanoVkey'
                 ]
             }
         },

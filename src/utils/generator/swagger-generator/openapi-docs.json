@@ -5710,6 +5710,23 @@
                         "type": "string",
                         "nullable": true
                     },
+                    "Invite": {
+                        "type": "object",
+                        "nullable": true,
+                        "properties": {
+                            "role": {
+                                "type": "string",
+                                "enum": [
+                                    "Issuer",
+                                    "Redeemer"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "role"
+                        ],
+                        "description": "Which side of the invite exchange this head came from; absent for heads not created from one"
+                    },
                     "LocalParticipant": {
                         "type": "object",
                         "nullable": true,

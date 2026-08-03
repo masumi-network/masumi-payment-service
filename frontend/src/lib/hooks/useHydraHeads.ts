@@ -73,6 +73,8 @@ export type HydraHead = {
   initTxHash: string | null;
   closeTxHash: string | null;
   fanoutTxHash: string | null;
+  /** Absent for heads that predate invites; decides which side may Init. */
+  Invite?: { role: 'Issuer' | 'Redeemer' } | null;
   LocalParticipant?: HydraParticipant | null;
   RemoteParticipants?: HydraRemoteParticipant[];
   _count?: {
@@ -802,6 +804,33 @@ export async function fundHydraNode(apiClient: Client, payload: { id: string }) 
   );
 
   return ensureData(response?.data?.data, 'The funding result was not returned by the API');
+}
+
+/**
+ * Sweep a finished node's unspent fuel back to its wallet.
+ *
+ * A node serves one head and is never reused, so without this every head
+ * strands whatever its node did not spend.
+ */
+export async function withdrawHydraNodeFunds(apiClient: Client, payload: { id: string }) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.post<{
+        200: ApiEnvelope<{
+          address: string;
+          balanceLovelace: string;
+          txHash: string | null;
+          reason: string | null;
+        }>;
+      }>({
+        responseType: 'json',
+        url: '/hydra/participant/local/withdraw',
+        body: payload,
+      }),
+    { errorMessage: 'Failed to withdraw the node funds' },
+  );
+
+  return ensureData(response?.data?.data, 'The withdrawal result was not returned by the API');
 }
 
 export async function initHydraHead(apiClient: Client, payload: { headId: string }) {

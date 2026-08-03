@@ -6,6 +6,7 @@ import createHttpError from 'http-errors';
 import {
 	HydraHeadStatus,
 	HydraErrorType,
+	HydraInviteRole,
 	Network,
 	Prisma,
 	TransactionLayer,
@@ -121,6 +122,11 @@ export const hydraHeadSchema = z
 		initTxHash: z.string().nullable(),
 		closeTxHash: z.string().nullable(),
 		fanoutTxHash: z.string().nullable(),
+		Invite: z
+			.object({ role: z.nativeEnum(HydraInviteRole) })
+			.nullable()
+			.optional()
+			.describe('Which side of the invite exchange this head came from; absent for heads not created from one'),
 		LocalParticipant: localParticipantSchema.nullable().optional(),
 		RemoteParticipants: z.array(remoteParticipantSchema).optional(),
 		_count: z
@@ -200,6 +206,9 @@ const headInclude = {
 			cardanoVkey: true,
 		},
 	},
+	// Only the role: it decides which side may post the Init, and the rest of the
+	// invite is exchange bookkeeping the head view has no use for.
+	Invite: { select: { role: true } },
 	_count: { select: { Errors: true, Transactions: true } },
 } as const;
 
@@ -961,7 +970,7 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }) => {
 		const head = await prisma.hydraHead.findUnique({
 			where: { id: input.headId },
-			include: { LocalParticipant: true },
+			include: { LocalParticipant: true, Invite: { select: { role: true } } },
 		});
 
 		if (!head) {
@@ -969,6 +978,21 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 		}
 		if (!head.isEnabled) {
 			throw createHttpError(409, 'Cannot init a disabled Hydra head');
+		}
+
+		// Exactly one side may open a head, and nothing in the protocol arbitrates
+		// it: two Inits race for the same seed inputs, one loses on chain, and the
+		// loser's head is left Initializing against a head that does not exist.
+		// The redeemer is the one that opens, because it is the side that acted
+		// last and therefore knows the exchange completed — the issuer only learns
+		// that by polling, so it could not tell "not yet redeemed" from "redeemed
+		// and already opened".
+		if (head.Invite?.role === HydraInviteRole.Issuer) {
+			throw createHttpError(
+				409,
+				'This head is opened by the counterparty who redeemed your invite, not from here. ' +
+					'It moves to Initializing on its own once they post the Init transaction.',
+			);
 		}
 
 		if (head.status !== HydraHeadStatus.Idle) {
