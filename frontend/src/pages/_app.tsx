@@ -105,8 +105,8 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   });
 
   useEffect(() => {
-    // Bounce non-admins off admin-only routes immediately — do not wait for payment
-    // sources to load, or deep-links would mount those pages and fire admin APIs first.
+    // Non-admins cannot open admin-only routes — do this before waiting on
+    // payment sources to load, or deep-links would mount those pages and fire admin APIs first.
     if (apiKey && isHealthy && !capabilities.canAdmin && isAdminOnlyPath(router.pathname)) {
       if (isLoading) {
         router.replace('/');
@@ -114,6 +114,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       }
       const sources = network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
       router.replace(sources.length > 0 ? '/' : '/developers');
+      return;
+    }
+
+    // Read-only keys cannot use pay-authenticated x402 surfaces.
+    if (
+      apiKey &&
+      isHealthy &&
+      !capabilities.canAdmin &&
+      !capabilities.canPay &&
+      router.pathname === '/x402'
+    ) {
+      router.replace('/');
       return;
     }
 
@@ -185,6 +197,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     x402Loading,
     x402Networks,
     capabilities.canAdmin,
+    capabilities.canPay,
   ]);
 
   useEffect(() => {
@@ -318,6 +331,30 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
           </div>
         </div>
       </div>
+    );
+  }
+
+  // Do not mount admin-only pages for non-admins — a useEffect redirect alone
+  // still lets the page run one paint of admin queries first.
+  const blockAdminDeepLink =
+    !!apiKey && authorized && !capabilities.canAdmin && isAdminOnlyPath(router.pathname);
+  // x402 payment APIs are pay-authenticated; read-only keys have nothing useful there.
+  const blockX402DeepLink =
+    !!apiKey &&
+    authorized &&
+    !capabilities.canAdmin &&
+    !capabilities.canPay &&
+    router.pathname === '/x402';
+
+  if (blockAdminDeepLink || blockX402DeepLink) {
+    return (
+      <>
+        <RouteProgressBar />
+        <div className="flex items-center justify-center bg-background text-foreground fixed top-0 left-0 w-full h-full z-50">
+          <Spinner size={20} addContainer />
+        </div>
+        {mounted && <ToastWrapper />}
+      </>
     );
   }
 

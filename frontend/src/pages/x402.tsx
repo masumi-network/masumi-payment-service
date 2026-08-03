@@ -15,7 +15,6 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 
 const ADMIN_TAB_NAMES = ['Chains', 'Wallets', 'Budgets', 'Alerts', 'Payments'] as const;
 const PAY_TAB_NAMES = ['Wallets', 'Payments'] as const;
-const READ_TAB_NAMES = ['Payments'] as const;
 type TabName = (typeof ADMIN_TAB_NAMES)[number];
 
 function isTabName(value: unknown, allowed: readonly string[]): value is TabName {
@@ -25,11 +24,8 @@ function isTabName(value: unknown, allowed: readonly string[]): value is TabName
 export default function X402Page() {
   const router = useRouter();
   const { capabilities } = useAppContext();
-  const tabNames = capabilities.canAdmin
-    ? ADMIN_TAB_NAMES
-    : capabilities.canPay
-      ? PAY_TAB_NAMES
-      : READ_TAB_NAMES;
+  // Payment/wallet x402 APIs are pay-authenticated — read-only keys are bounced in _app.
+  const tabNames = capabilities.canAdmin ? ADMIN_TAB_NAMES : PAY_TAB_NAMES;
   const defaultTab = tabNames[0];
 
   // Drive the active tab from the URL so tabs are deep-linkable and shareable, and so an
@@ -47,12 +43,20 @@ export default function X402Page() {
   );
 
   useEffect(() => {
+    if (!capabilities.canAdmin && !capabilities.canPay) {
+      router.replace('/');
+      return;
+    }
     if (!isTabName(router.query.tab, tabNames) && router.query.tab) {
       router.replace({ pathname: '/x402', query: { tab: defaultTab } }, undefined, {
         shallow: true,
       });
     }
-  }, [router, tabNames, defaultTab]);
+  }, [router, tabNames, defaultTab, capabilities.canAdmin, capabilities.canPay]);
+
+  if (!capabilities.canAdmin && !capabilities.canPay) {
+    return null;
+  }
 
   return (
     <MainLayout>
@@ -66,9 +70,7 @@ export default function X402Page() {
             <p className="max-w-2xl text-sm text-muted-foreground">
               {capabilities.canAdmin
                 ? 'Manage the EVM payment rail: chains, managed wallets, spend budgets, balance alerts and payment activity.'
-                : capabilities.canPay
-                  ? 'View and manage EVM wallets and payment activity for chains your key can access.'
-                  : 'View payment activity for chains your key can access.'}{' '}
+                : 'View and manage EVM wallets and payment activity for chains your key can access.'}{' '}
               <a
                 href="https://www.masumi.network/dev/masumi"
                 target="_blank"

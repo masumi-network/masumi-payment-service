@@ -38,9 +38,10 @@ export function useWallets(options?: { enabled?: boolean }) {
     useAppContext();
 
   const network = selectedPaymentSource?.network;
-  // Default off for read-only keys: /wallet/list requires pay. Callers that need
-  // wallets for pay flows (register dialogs) should pass enabled explicitly.
-  const callerEnabled = options?.enabled ?? (capabilities.canAdmin || capabilities.canPay);
+  // Default true for callers that omit enabled, but always require pay/admin —
+  // explicit `enabled: open` must not bypass the permission gate for read-only keys.
+  const callerEnabled = options?.enabled ?? true;
+  const canListWallets = capabilities.canAdmin || capabilities.canPay;
 
   const query = useQuery<WalletsResponse>({
     queryKey: ['wallets', selectedPaymentSourceId, network],
@@ -125,7 +126,7 @@ export function useWallets(options?: { enabled?: boolean }) {
         nextCursor: undefined,
       };
     },
-    enabled: callerEnabled && !!selectedPaymentSourceId && !!network,
+    enabled: callerEnabled && canListWallets && !!selectedPaymentSourceId && !!network,
     staleTime: 25000,
   });
 
@@ -151,7 +152,8 @@ const WALLET_PAGE_SIZE = 5;
  * wallet up front. Returns a `vkey -> WalletListItem` map of the resolved ones.
  */
 export function useWalletsByVkeys(walletVkeys: (string | null | undefined)[]) {
-  const { apiClient } = useAppContext();
+  const { apiClient, capabilities } = useAppContext();
+  const canListWallets = capabilities.canAdmin || capabilities.canPay;
 
   const distinctVkeys = useMemo(
     () => Array.from(new Set(walletVkeys.filter((vkey): vkey is string => !!vkey))),
@@ -172,7 +174,7 @@ export function useWalletsByVkeys(walletVkeys: (string | null | undefined)[]) {
         );
         return response?.data?.data?.Wallets?.[0] ?? null;
       },
-      enabled: !!apiClient && !!vkey,
+      enabled: !!apiClient && !!vkey && canListWallets,
       staleTime: 25000,
     })),
   });
@@ -196,7 +198,8 @@ export function useWalletsByVkeys(walletVkeys: (string | null | undefined)[]) {
  * not on every page load.
  */
 export function useAllWallets(enabled = true) {
-  const { apiClient, apiKey } = useAppContext();
+  const { apiClient, apiKey, capabilities } = useAppContext();
+  const canListWallets = capabilities.canAdmin || capabilities.canPay;
 
   const query = useQuery<WalletListItem[]>({
     queryKey: ['all-wallets', apiKey],
@@ -219,7 +222,7 @@ export function useAllWallets(enabled = true) {
       }
       return items;
     },
-    enabled: !!apiClient && !!apiKey && enabled,
+    enabled: !!apiClient && !!apiKey && enabled && canListWallets,
     staleTime: 25000,
   });
 
