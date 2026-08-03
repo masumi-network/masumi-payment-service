@@ -1,4 +1,7 @@
+import createHttpError from 'http-errors';
+import { SLOT_CONFIG_NETWORK } from '@meshsdk/core';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
+import { convertNetwork } from '@/utils/converter/network-convert';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraTopupStatus } from '@/generated/prisma/client';
@@ -47,6 +50,15 @@ export const listTopupsOutput = z.object({
 			depositTxHash: z.string(),
 			committedLovelace: z.string(),
 			committedAssets: z.record(z.string(), z.string()),
+			/**
+			 * When the head stops being able to absorb this deposit.
+			 *
+			 * A deposit confirming on L1 is only half the story: the head folds it
+			 * in with a snapshot both parties sign, and if that has not happened by
+			 * this moment it never will. Without the deadline the UI could only say
+			 * "being folded in", which stays true-looking forever.
+			 */
+			deadline: z.string(),
 		}),
 	),
 });
@@ -64,6 +76,15 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 	input: listTopupsInput,
 	output: listTopupsOutput,
 	handler: async ({ input }) => {
+		const head = await prisma.hydraHead.findUnique({
+			where: { id: input.headId },
+			select: { HydraRelation: { select: { network: true } } },
+		});
+		if (!head) {
+			throw createHttpError(404, 'Hydra head not found');
+		}
+		const slotConfig = SLOT_CONFIG_NETWORK[convertNetwork(head.HydraRelation.network)];
+
 		const rows = await prisma.hydraTopup.findMany({
 			where: { hydraHeadId: input.headId },
 			orderBy: { createdAt: 'desc' },
@@ -77,6 +98,9 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 				status: row.status,
 				depositTxHash: row.depositTxHash,
 				committedLovelace: row.committedLovelace.toString(),
+				deadline: new Date(
+					slotConfig.zeroTime + (Number(row.invalidHereafterSlot) - slotConfig.zeroSlot) * slotConfig.slotLength,
+				).toISOString(),
 				committedAssets: (row.committedAssets ?? {}) as Record<string, string>,
 			})),
 		};

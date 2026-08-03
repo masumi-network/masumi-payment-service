@@ -221,6 +221,8 @@ export type HydraTopupResult = {
   confirmed: boolean;
   committedLovelace: string;
   committedAssets: Record<string, string>;
+  /** After this, the head can no longer absorb the deposit. */
+  deadline?: string;
 };
 
 export type HydraTopupRequest = {
@@ -772,6 +774,8 @@ export type HydraTopup = {
   depositTxHash: string;
   committedLovelace: string;
   committedAssets: Record<string, string>;
+  /** After this, the head can no longer absorb the deposit. */
+  deadline?: string;
 };
 
 /**

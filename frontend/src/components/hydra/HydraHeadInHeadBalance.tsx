@@ -1,4 +1,5 @@
-import { useHydraHeadBalance, useHydraTopups } from '@/lib/hooks/useHydraHeads';
+import { useEffect, useMemo, useState } from 'react';
+import { useHydraHeadBalance, useHydraTopups, type HydraTopup } from '@/lib/hooks/useHydraHeads';
 import { formatAssetAmount } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
 
@@ -17,9 +18,41 @@ interface HydraHeadInHeadBalanceProps {
 export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInHeadBalanceProps) {
   const { data, isLoading, isError } = useHydraHeadBalance(headId, isOpen);
   const { topups } = useHydraTopups(headId, isOpen);
-  const hasSettlingDeposit = topups.some(
-    (topup) => topup.status === 'Confirmed' || topup.status === 'Pending',
-  );
+  // Confirmed on L1 says the deposit transaction landed. It says nothing about
+  // the head absorbing it: that takes a snapshot both parties sign, and if it
+  // has not happened by the deposit's deadline it never will. Reporting those
+  // two states the same way left a head reading "being folded in" indefinitely.
+  // The clock is read in an effect rather than during render: a deposit's
+  // deadline passes while the page is open, and reading the time mid-render
+  // would make the same state render differently on an unrelated re-render.
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    // Ticked from a timer rather than set on mount: an effect that assigns
+    // state synchronously just re-renders immediately for no gain, and one
+    // deadline never turns on a single frame's precision.
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    const first = setTimeout(() => setNow(Date.now()), 0);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(first);
+    };
+  }, []);
+
+  const { hasSettlingDeposit, hasExpiredDeposit } = useMemo(() => {
+    // Before the first tick nothing is called expired: claiming a deadline has
+    // passed is the assertion that needs evidence.
+    const isStillFoldable = (topup: HydraTopup) =>
+      now === null || topup.deadline === undefined || new Date(topup.deadline).getTime() > now;
+    return {
+      hasSettlingDeposit: topups.some(
+        (topup) =>
+          (topup.status === 'Confirmed' || topup.status === 'Pending') && isStillFoldable(topup),
+      ),
+      hasExpiredDeposit: topups.some(
+        (topup) => topup.status === 'Confirmed' && !isStillFoldable(topup),
+      ),
+    };
+  }, [topups, now]);
 
   return (
     <div className="space-y-2">
@@ -53,8 +86,10 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
         // sits Confirmed below reads as a contradiction.
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
           {hasSettlingDeposit
-            ? 'A deposit is confirmed on chain and being folded into the head. This updates once the head increments.'
-            : 'Nothing in the head yet. Add funds below.'}
+            ? 'A deposit is confirmed on chain and waiting for the head to absorb it. This updates once the head increments.'
+            : hasExpiredDeposit
+              ? 'A deposit confirmed on chain but the head never absorbed it before its deadline, so the funds stayed on L1. Adding them again is the way forward.'
+              : 'Nothing in the head yet. Add funds below.'}
         </div>
       ) : (
         // The amount is the answer; how many UTxOs carry it is a detail, so it
