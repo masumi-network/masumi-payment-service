@@ -114,10 +114,13 @@ function HydraTopupList({
   headId,
   isOpen,
   network,
+  onRetry,
 }: {
   headId: string;
   isOpen: boolean;
   network: string | undefined;
+  /** Re-runs a failed ADA deposit for the same amount. */
+  onRetry: (topup: { committedLovelace: string }) => void;
 }) {
   const { topups } = useHydraTopups(headId, isOpen);
 
@@ -157,7 +160,31 @@ function HydraTopupList({
                 {topup.depositTxHash.slice(0, 10)}…
               </span>
               <CopyButton value={topup.depositTxHash} className="h-6 w-6" />
+              {/* Offered for ADA only. A token deposit would need its unit and
+                  its own decimals filled back in, and guessing either of those
+                  into a form that moves funds is worse than retyping them. */}
+              {topup.status === 'Failed' &&
+                Object.keys(topup.committedAssets ?? {}).length === 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-1"
+                    onClick={() => onRetry(topup)}
+                  >
+                    Try again
+                  </Button>
+                )}
             </span>
+            {topup.status === 'Failed' && (
+              // The only way a deposit reaches Failed is its transaction not
+              // being on chain by the deadline it was signed with. Nothing was
+              // spent, which is the part an operator needs to hear first.
+              <p className="w-full text-xs text-muted-foreground">
+                The deposit transaction never made it on chain before its deadline. Nothing left the
+                wallet, so it is safe to add the funds again.
+              </p>
+            )}
           </li>
         ))}
       </ul>
@@ -286,7 +313,19 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
         </Button>
       </div>
 
-      <HydraTopupList headId={headId} isOpen={isOpen} network={network} />
+      <HydraTopupList
+        headId={headId}
+        isOpen={isOpen}
+        network={network}
+        onRetry={(failed) => {
+          // Refills the form rather than resubmitting silently: a deposit moves
+          // real funds, and the amount should be confirmed by the person doing
+          // it, not replayed behind their back.
+          setAsset('ada');
+          setAmount((Number(failed.committedLovelace) / 1_000_000).toString());
+          toast.info('Amount filled in. Press Add funds to try the deposit again.');
+        }}
+      />
 
       {isCustom && (
         <div className="space-y-1.5">
