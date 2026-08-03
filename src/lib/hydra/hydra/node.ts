@@ -1563,7 +1563,18 @@ export class HydraNode extends EventEmitter {
 		return await this.requestHttp<T>('POST', url, payload);
 	}
 
-	private async requestHttp<T>(method: 'GET' | 'POST', url: string, payload?: unknown): Promise<T> {
+	/**
+	 * Recover a deposit the head never absorbed.
+	 *
+	 * A deposit that is not included by its deadline does not come back on its
+	 * own: the funds stay locked at the deposit script until the node is asked to
+	 * post a recover transaction.
+	 */
+	async delete<T = unknown>(url: string): Promise<T> {
+		return await this.requestHttp<T>('DELETE', url);
+	}
+
+	private async requestHttp<T>(method: 'GET' | 'POST' | 'DELETE', url: string, payload?: unknown): Promise<T> {
 		if (this._unsupportedPersistenceRotationError) throw this._unsupportedPersistenceRotationError;
 		let serializedPayload: string | undefined;
 		if (method === 'POST') {

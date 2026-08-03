@@ -20,7 +20,12 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { topupHydraHead, useHydraTopups, type HydraTopupRequest } from '@/lib/hooks/useHydraHeads';
+import {
+  recoverHydraTopup,
+  topupHydraHead,
+  useHydraTopups,
+  type HydraTopupRequest,
+} from '@/lib/hooks/useHydraHeads';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Button } from '@/components/ui/button';
@@ -122,7 +127,26 @@ function HydraTopupList({
   /** Re-runs a failed ADA deposit for the same amount. */
   onRetry: (topup: { committedLovelace: string }) => void;
 }) {
-  const { topups } = useHydraTopups(headId, isOpen);
+  const { apiClient } = useAppContext();
+  const { topups, refetch } = useHydraTopups(headId, isOpen);
+  const [recoveringId, setRecoveringId] = useState<string | null>(null);
+
+  async function handleRecover(topupId: string) {
+    setRecoveringId(topupId);
+    try {
+      const result = await recoverHydraTopup(apiClient, { topupId });
+      toast[result.requested ? 'success' : 'info'](
+        result.requested
+          ? 'Recovery posted. The funds return to the wallet once it confirms.'
+          : (result.reason ?? 'Nothing to recover'),
+      );
+      await refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The recovery failed');
+    } finally {
+      setRecoveringId(null);
+    }
+  }
 
   if (topups.length === 0) {
     return null;
@@ -160,6 +184,24 @@ function HydraTopupList({
                 {topup.depositTxHash.slice(0, 10)}…
               </span>
               <CopyButton value={topup.depositTxHash} className="h-6 w-6" />
+              {/* A confirmed deposit the head never took still holds the funds
+                  at the deposit script. Only the node can spend them back, and
+                  only after the deadline, so this is offered rather than done
+                  automatically. */}
+              {topup.status === 'Confirmed' && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="ml-1"
+                  disabled={recoveringId === topup.id}
+                  onClick={() => void handleRecover(topup.id)}
+                  title="Ask the node to return this deposit, if the head never took it"
+                >
+                  {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
+                  Recover
+                </Button>
+              )}
               {/* Offered for ADA only. A token deposit would need its unit and
                   its own decimals filled back in, and guessing either of those
                   into a form that moves funds is worse than retyping them. */}

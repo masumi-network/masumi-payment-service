@@ -33,10 +33,29 @@ export type HeadPeriods = {
 	unsyncedPeriodSeconds: number;
 };
 
-/** Matches what a two-party head on preprod has been run with. */
+/**
+ * Matches what a two-party head on preprod has been run with.
+ *
+ * The deposit period is not a cosmetic timeout: it decides whether an
+ * incremental commit can be absorbed at all. A hydra-node considers a deposit
+ * only once it is *older* than the period, and stops considering it once the
+ * deadline is *within* one period. The window in which any node will pick it up
+ * is therefore exactly one period wide, from `deposit + DP` to `deposit + 2·DP`
+ * (the node writes the deadline as `deposit + 3·DP`).
+ *
+ * At 300s that window was five minutes, shorter than the ten minutes a node
+ * waits before dropping an unanswered snapshot request, and hydra does not retry
+ * those (hydra#1999). A deposit could confirm on chain, be recorded by both
+ * nodes, and never be included: which is what happened to a 250 ADA deposit that
+ * sat at the deposit script until it expired.
+ *
+ * One hour is what hydra's own configuration guide uses, and it makes the
+ * pick-up window twelve times the retry gap. The cost is that a top-up takes at
+ * least an hour to reach the head, which is the price of it arriving at all.
+ */
 export const DEFAULT_PERIODS: HeadPeriods = {
 	contestationPeriodSeconds: 220,
-	depositPeriodSeconds: 300,
+	depositPeriodSeconds: 3600,
 	unsyncedPeriodSeconds: 1800,
 };
 

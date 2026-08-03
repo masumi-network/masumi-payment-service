@@ -931,6 +931,28 @@ export async function commitHydraHead(apiClient: Client, payload: { headId: stri
   return ensureData(response?.data?.data, 'Hydra head commit response was not returned by the API');
 }
 
+/**
+ * Ask the node to return a deposit the head never absorbed.
+ *
+ * The funds are at a deposit script, not in the wallet, and only the node can
+ * spend them back.
+ */
+export async function recoverHydraTopup(apiClient: Client, payload: { topupId: string }) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.post<{
+        200: ApiEnvelope<{ depositTxHash: string; requested: boolean; reason: string | null }>;
+      }>({
+        responseType: 'json',
+        url: '/hydra/head/topup/recover',
+        body: payload,
+      }),
+    { errorMessage: 'Could not request the recovery' },
+  );
+
+  return ensureData(response?.data?.data, 'The recovery result was not returned by the API');
+}
+
 export async function topupHydraHead(apiClient: Client, payload: HydraTopupRequest) {
   const response = await handleApiCall(
     () =>

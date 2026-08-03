@@ -23,7 +23,7 @@ export {
 	fanoutHeadPost,
 } from './head';
 
-export { topupHeadPost, listTopupsGet } from './head/topup';
+export { topupHeadPost, listTopupsGet, recoverTopupPost } from './head/topup';
 export { listHeadTransactionsGet } from './head/transactions';
 
 export {

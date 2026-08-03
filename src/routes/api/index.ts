@@ -133,6 +133,7 @@ import {
 	clearHeadErrorsDelete,
 	topupHeadPost,
 	listHeadTransactionsGet,
+	recoverTopupPost,
 	listTopupsGet,
 	listHydraLowBalanceRulesGet,
 	setHydraLowBalanceRulePost,
@@ -512,7 +513,12 @@ export const apiRouter: Routing = {
 				patch: updateHeadPatch,
 				init: { post: initHeadPost },
 				commit: { post: commitHeadPost },
-				topup: { post: topupHeadPost, get: listTopupsGet },
+				topup: {
+					post: topupHeadPost,
+					get: listTopupsGet,
+					// A deposit the head never absorbed does not return on its own.
+					recover: { post: recoverTopupPost },
+				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },
 				balance: { get: getHeadBalanceGet },

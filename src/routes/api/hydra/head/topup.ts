@@ -8,6 +8,7 @@ import { HydraTopupStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import type { CommitUtxoFilter } from '@/lib/hydra';
 import { executeHydraTopup } from '@/services/hydra-topup/execute';
+import { recoverHydraDeposit } from '@/services/hydra-topup/recover';
 
 export const topupInput = z.object({
 	headId: z.string().describe('The Hydra head to top up'),
@@ -61,6 +62,30 @@ export const listTopupsOutput = z.object({
 			deadline: z.string(),
 		}),
 	),
+});
+
+export const recoverTopupInput = z.object({
+	topupId: z.string().min(1).describe('The deposit to recover'),
+});
+
+export const recoverTopupOutput = z.object({
+	depositTxHash: z.string(),
+	requested: z.boolean(),
+	reason: z.string().nullable(),
+});
+
+/**
+ * Return a deposit the head never absorbed.
+ *
+ * The funds sit at a deposit script rather than in the wallet, and only the node
+ * can spend them back, and only once the deadline in the deposit's datum has
+ * passed.
+ */
+export const recoverTopupPost = adminAuthenticatedEndpointFactory.build({
+	method: 'post',
+	input: recoverTopupInput,
+	output: recoverTopupOutput,
+	handler: async ({ input }) => await recoverHydraDeposit(input.topupId),
 });
 
 /**
