@@ -6023,6 +6023,40 @@ export const HydraLocalParticipantSchema = {
         hostNodeId: {
             type: 'string'
         },
+        Wallet: {
+            type: 'object',
+            properties: {
+                walletAddress: {
+                    type: 'string'
+                }
+            },
+            required: [
+                'walletAddress'
+            ]
+        },
+        HydraHead: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                status: {
+                    type: 'string',
+                    enum: [
+                        'Disconnected',
+                        'Connected',
+                        'Connecting',
+                        'Idle',
+                        'Initializing',
+                        'Open',
+                        'Closed',
+                        'FanoutPossible',
+                        'Final'
+                    ]
+                }
+            },
+            required: [
+                'status'
+            ]
+        },
         keysDisclosedAt: {
             type: 'string',
             nullable: true,

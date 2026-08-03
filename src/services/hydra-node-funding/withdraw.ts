@@ -55,7 +55,7 @@ export function reasonHeadIsNotDone(status: HydraHeadStatus | undefined): string
 		return null;
 	}
 	return (
-		`the head is ${status} — its node still has to pay for closing, contesting and fanning out, ` +
+		`the head is ${status}, so its node still has to pay for closing, contesting and fanning out, ` +
 		'so its fuel stays until the head is final'
 	);
 }
@@ -163,7 +163,7 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 		);
 		throw createHttpError(
 			502,
-			`the withdrawal could not be confirmed as submitted (${intendedTxHash}) — check the address before retrying`,
+			`the withdrawal could not be confirmed as submitted (${intendedTxHash}). Check the address before retrying`,
 		);
 	}
 }

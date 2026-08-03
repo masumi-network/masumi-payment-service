@@ -22,6 +22,8 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import { HydraHeadErrors } from '@/components/hydra/HydraHeadErrors';
 import { HydraHeadWallets } from '@/components/hydra/HydraHeadWallets';
+import { HydraNotice } from '@/components/hydra/HydraNotice';
+import { HydraWalletLink } from '@/components/hydra/HydraWalletLink';
 import { HydraHeadTransactions } from '@/components/hydra/HydraHeadTransactions';
 import { HydraHeadConnectionPanel } from '@/components/hydra/HydraHeadConnection';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
@@ -170,8 +172,8 @@ function getLifecycleActionDisabledReason(head: HydraHead, action: HydraLifecycl
     // same seed inputs and the loser is left waiting on a head that never
     // existed. Stated rather than hidden, so the wait looks intended.
     if (head.Invite?.role === 'Issuer')
-      return 'They opened your invite, so they open the head — it moves on its own when they do';
-    if (head.status !== 'Idle') return `Already past this — the head is ${head.status}`;
+      return 'They redeemed your invite, so they open the head. It moves on its own when they do.';
+    if (head.status !== 'Idle') return `Already past this. The head is ${head.status}.`;
     return undefined;
   }
 
@@ -179,7 +181,7 @@ function getLifecycleActionDisabledReason(head: HydraHead, action: HydraLifecycl
     if (!head.LocalParticipant) return 'This head has no node on your side';
     if (head.LocalParticipant.hasCommitted) return 'You have already put funds in';
     if (head.status !== 'Initializing')
-      return 'Only while the head is opening — afterwards, use Top up';
+      return 'Only while the head is opening. Afterwards, use Top up.';
     return undefined;
   }
 
@@ -410,9 +412,6 @@ function ParticipantCard({
     );
   }
 
-  const verificationKeyId =
-    'hydraVerificationKeyId' in participant ? participant.hydraVerificationKeyId : null;
-
   return (
     <div className="space-y-4 rounded-md border bg-muted/10 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -428,20 +427,15 @@ function ParticipantCard({
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <DetailField
-          label="Wallet"
-          value={participant.walletId}
-          copyValue={participant.walletId}
-          mono
-        />
-        {verificationKeyId && (
-          <DetailField
-            label="Hydra verification key"
-            value={verificationKeyId}
-            copyValue={verificationKeyId}
-            mono
-          />
-        )}
+        {/* The address, and the database id it used to print is gone: the id
+            names nothing an operator can look up, while the address is what
+            they settle with. */}
+        <div className="space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Wallet
+          </p>
+          <HydraWalletLink address={participant.Wallet?.walletAddress} network={network} />
+        </div>
         {'advertise' in participant ? (
           <DetailField
             label="Peer address"
@@ -473,7 +467,7 @@ function ParticipantCard({
         network={network}
         // A head can open with an empty commit, so "never committed" is a normal
         // resting state rather than a gap in the record.
-        pendingReason="Committed nothing at open — add funds to deposit into the head"
+        pendingReason="Nothing was committed at open. Add funds to deposit into the head."
       />
     </div>
   );
@@ -534,25 +528,32 @@ function HydraHeadDetailsDialog({
           <HydraHeadWallets
             localWalletAddress={head.LocalParticipant?.Wallet?.walletAddress}
             remoteWalletAddress={head.RemoteParticipants?.[0]?.Wallet?.walletAddress}
-            localWalletId={head.LocalParticipant?.walletId}
             localCardanoVkey={head.LocalParticipant?.cardanoVkey}
-            remoteWalletId={head.RemoteParticipants?.[0]?.walletId}
             remoteCardanoVkey={head.RemoteParticipants?.[0]?.cardanoVkey}
+            network={network}
           />
 
           {head.LocalParticipant && !head.LocalParticipant.keysDisclosedAt && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/60 dark:bg-amber-950/30">
-              <div className="text-xs text-amber-800 dark:text-amber-300">
-                <p className="font-medium">
-                  This node&apos;s signing keys have never been backed up.
-                </p>
-                <p>They can be shown once, then the service seals them.</p>
-              </div>
-              <Button type="button" variant="outline" size="sm" onClick={() => onBackUpKeys(head)}>
-                <KeyRound className="h-4 w-4" />
-                Back up keys
-              </Button>
-            </div>
+            <HydraNotice
+              tone="warn"
+              action={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => onBackUpKeys(head)}
+                >
+                  <KeyRound className="h-4 w-4" />
+                  Back up keys
+                </Button>
+              }
+            >
+              <p className="font-medium">
+                This node&apos;s signing keys have never been backed up.
+              </p>
+              <p>They can be shown once, then the service seals them.</p>
+            </HydraNotice>
           )}
 
           <HydraHeadConnectionPanel headId={head.id} />
@@ -601,7 +602,7 @@ function HydraHeadDetailsDialog({
               network={network}
               pendingReason={
                 head.status === 'Closed' || head.status === 'FanoutPossible'
-                  ? 'Closing — hash not observed yet'
+                  ? 'Closing, hash not observed yet'
                   : 'Still open, nothing to close'
               }
             />
@@ -1108,7 +1109,7 @@ export default function HydraHeadsPage() {
                 A <span className="font-medium text-foreground">node</span> is a machine you connect
                 once; a <span className="font-medium text-foreground">head</span> is one L2 channel
                 with one counterparty, and runs on exactly one node for its whole life. Inviting
-                someone opens a head — it appears below as{' '}
+                someone opens a head. It appears below as{' '}
                 <span className="font-medium text-foreground">awaiting counterparty</span> until
                 they accept.
               </p>
@@ -1131,7 +1132,7 @@ export default function HydraHeadsPage() {
                     title={
                       hasConnectedNode
                         ? undefined
-                        : 'Connect a node first — a head has to run somewhere'
+                        : 'Connect a node first. A head has to run somewhere.'
                     }
                   >
                     <Plus className="h-4 w-4" />

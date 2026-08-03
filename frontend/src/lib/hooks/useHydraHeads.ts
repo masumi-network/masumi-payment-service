@@ -23,6 +23,8 @@ export type HydraParticipant = {
   walletId: string;
   /** The settling wallet's address. Absent on older payloads. */
   Wallet?: { walletAddress: string };
+  /** The head this node serves, when it has one. */
+  HydraHead?: { status: HydraHeadStatus } | null;
   nodeUrl: string;
   nodeHttpUrl: string;
   hasCommitted: boolean;

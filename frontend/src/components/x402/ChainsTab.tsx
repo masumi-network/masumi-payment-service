@@ -508,8 +508,8 @@ export function ChainDialog({
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  A remote facilitator settles inbound payments over HTTPS — the node holds no key
-                  on this chain. Auth is stored encrypted and never shown again
+                  A remote facilitator settles inbound payments over HTTPS. The node holds no key on
+                  this chain. Auth is stored encrypted and never shown again
                   {hasExistingRemoteFacilitator
                     ? clearFacilitatorAuth
                       ? '; the stored value will be cleared when saved.'

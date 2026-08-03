@@ -26,7 +26,7 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
       <div className="flex items-center justify-between">
         <h3 className="font-medium">Your in-head balance</h3>
         <span className="text-xs text-muted-foreground">
-          Own funds only — excludes the counterparty
+          Your funds only, not the counterparty&apos;s
         </span>
       </div>
 
@@ -44,7 +44,7 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
         </div>
       ) : !data.connected ? (
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-          Head is not currently connected — balance unavailable.
+          Not connected to the head, so the balance is unavailable.
         </div>
       ) : data.balance.length === 0 ? (
         // A confirmed deposit is on L1 but not yet folded into the L2 ledger —
@@ -53,8 +53,8 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
         // sits Confirmed below reads as a contradiction.
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
           {hasSettlingDeposit
-            ? 'A deposit is confirmed on chain and being folded into the head — this updates once the head increments.'
-            : 'Nothing in the head yet — add funds below.'}
+            ? 'A deposit is confirmed on chain and being folded into the head. This updates once the head increments.'
+            : 'Nothing in the head yet. Add funds below.'}
         </div>
       ) : (
         // The amount is the answer; how many UTxOs carry it is a detail, so it

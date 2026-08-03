@@ -171,7 +171,7 @@ export function HydraNodesCard({
         <div className="rounded-md border border-dashed px-4 py-8 text-center">
           <p className="text-sm text-muted-foreground">No nodes connected yet.</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Connect one with its URL and keys — heads run on it, not here.
+            Connect one with its URL and keys. Heads run on it, not here.
           </p>
         </div>
       ) : (
@@ -311,7 +311,7 @@ export function HydraNodesCard({
         title={`Disconnect ${pendingDisconnect?.name ?? 'this node'}?`}
         description={
           pendingDisconnect && pendingDisconnect.participantCount > 0
-            ? `${pendingDisconnect.participantCount} head(s) still run here. A head cannot be moved to another node, so disconnecting puts them out of reach — drain this node and settle them first.`
+            ? `${pendingDisconnect.participantCount} head(s) still run here. A head cannot be moved to another node, so disconnecting puts them out of reach. Drain this node and settle them first.`
             : 'This service forgets the node and its stored keys. The node itself keeps running.'
         }
         onConfirm={() => void handleDisconnect()}

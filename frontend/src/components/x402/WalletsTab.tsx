@@ -75,13 +75,13 @@ const WALLET_TYPE_OPTIONS: Array<{
   {
     value: 'Purchasing',
     label: 'Purchasing',
-    hint: 'Funds outbound payments (budgets) — the buy side.',
+    hint: 'Funds outbound payments (budgets). The buy side.',
     icon: ShoppingCart,
   },
   {
     value: 'Selling',
     label: 'Selling',
-    hint: 'Settles inbound payments as a chain facilitator — the sell side.',
+    hint: 'Settles inbound payments as a chain facilitator. The sell side.',
     icon: Store,
   },
 ];
@@ -572,7 +572,7 @@ function BackupKeyStep({
   const performDownload = () => {
     setConfirmDownloadOpen(false);
     const contents = [
-      'Masumi x402 managed wallet — PRIVATE KEY BACKUP',
+      'Masumi x402 managed wallet: PRIVATE KEY BACKUP',
       `Direction: ${type}`,
       `Address:   ${address}`,
       `Private key: ${privateKey}`,

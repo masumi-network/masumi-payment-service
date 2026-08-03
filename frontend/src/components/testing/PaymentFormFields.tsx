@@ -391,7 +391,7 @@ export function PaymentFormFields({
                 Simulate Dynamic Price <span className="text-destructive">*</span>
               </Label>
               <p className="text-xs text-muted-foreground">
-                This agent uses dynamic pricing — in production the agent determines the price per
+                This agent uses dynamic pricing. In production the agent determines the price per
                 request. Enter the amount in the smallest unit (e.g., lovelace for ADA where 1 ADA =
                 1000000 lovelace).
               </p>

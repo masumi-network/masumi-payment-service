@@ -255,6 +255,18 @@ export async function fundHydraNodeNow(localParticipantId: string): Promise<{
 		return { address, balanceLovelace: balance.toString(), transferredLovelace: null };
 	}
 
+	// The same one-in-flight rule the cycle applies, for the same reason: the
+	// balance does not move until a transfer confirms, so anything asking again
+	// inside that window sees zero and pays again. Redeeming an invite funds the
+	// node immediately and the cycle funds it too, which is exactly this window —
+	// it sent 10 ADA twice to every node opened so far.
+	const inFlight = await prisma.walletFundTransfer.findFirst({
+		where: { toAddress: address, status: TransactionStatus.Pending },
+	});
+	if (inFlight !== null) {
+		return { address, balanceLovelace: balance.toString(), transferredLovelace: null };
+	}
+
 	const amount = NODE_TARGET_LOVELACE - balance;
 	await prisma.walletFundTransfer.create({
 		data: { hotWalletId: participant.walletId, toAddress: address, lovelaceAmount: amount },

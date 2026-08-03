@@ -37,6 +37,8 @@ import { fundHydraNode, withdrawHydraNodeFunds } from '@/lib/hooks/useHydraHeads
 import { useHydraLocalParticipants } from '@/lib/hooks/useHydraHeads';
 import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
+import { HydraNotice } from '@/components/hydra/HydraNotice';
+import { HydraWalletLink } from '@/components/hydra/HydraWalletLink';
 import type { HydraHost } from '@/lib/hooks/useHydraHosts';
 
 type HydraNodeDetailsDialogProps = {
@@ -121,7 +123,7 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
       const result = await fundHydraNode(apiClient, { id: participantId });
       toast.success(
         result.transferredLovelace === null
-          ? `Already funded — it holds ${ada(result.balanceLovelace)}`
+          ? `Already funded, holding ${ada(result.balanceLovelace)}`
           : `Sending ${ada(result.transferredLovelace)} to the node`,
       );
     } catch (error) {
@@ -159,16 +161,18 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
           </div>
 
           {host.lastHealthError && (
-            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400">
-              {host.lastHealthError}
-            </p>
+            <HydraNotice tone="error">
+              <p>{host.lastHealthError}</p>
+            </HydraNotice>
           )}
 
           {!host.hasAdminToken && (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-              No admin key stored. This node keeps its existing heads running, but it cannot start a
-              new one — add the key from Edit to open heads here again.
-            </p>
+            <HydraNotice tone="warn">
+              <p>
+                No admin key stored. This node keeps its heads running but cannot start a new one.
+                Add the key from Edit to open heads here again.
+              </p>
+            </HydraNotice>
           )}
 
           <section className="space-y-2">
@@ -192,10 +196,20 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
                     key={participant.id}
                     className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-xs">
-                        {participant.hostNodeId ?? participant.id}
-                      </p>
+                    {/* Led by the wallet and the head state, because that is
+                        what an operator is looking for. The node's own id is a
+                        UUID that means something only to the Host. */}
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <HydraWalletLink
+                          address={participant.Wallet?.walletAddress}
+                          network={host.network}
+                          shorten={10}
+                        />
+                        <Badge variant="outline">
+                          {participant.HydraHead?.status ?? 'No head yet'}
+                        </Badge>
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         {participant.keysDisclosedAt
                           ? `Keys taken ${formatDateTime(participant.keysDisclosedAt)}`

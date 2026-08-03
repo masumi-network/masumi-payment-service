@@ -16,6 +16,7 @@ import { CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { readHydraHeadConnection, type HydraHeadConnection } from '@/lib/hooks/useHydraHeads';
 
@@ -90,15 +91,14 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
             <span>{state.connected ? 'Connected' : 'Not connected'}</span>
           </div>
           {state.reason !== null && (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-              {state.reason}
-            </p>
+            <HydraNotice tone="warn">
+              <p>{state.reason}</p>
+            </HydraNotice>
           )}
           {state.reason === null && !state.connected && (
             <p className="text-xs text-muted-foreground">
               The node is fine, this service just has not connected to it yet. It retries every
-              minute or so — if it is still not connected after that, the head&apos;s errors say
-              why.
+              minute or so. If it is still not connected after that, the head&apos;s errors say why.
             </p>
           )}
           <p className="text-xs text-muted-foreground">

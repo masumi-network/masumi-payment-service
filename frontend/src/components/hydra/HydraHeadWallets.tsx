@@ -17,32 +17,24 @@
 import { ArrowRight } from 'lucide-react';
 import { CopyButton } from '@/components/ui/copy-button';
 import { shortenAddress } from '@/lib/utils';
+import { HydraWalletLink } from '@/components/hydra/HydraWalletLink';
 
 type Party = {
   label: string;
-  /** The address when the payload carries it; the id is a fallback, not a display value. */
   walletAddress: string | undefined;
-  walletId: string | undefined;
-  /** The node's own Cardano key hash — its on-chain identity, not its funds. */
+  network: string;
+  /** The node's own Cardano key hash: its on-chain identity, not its funds. */
   cardanoVkey: string | undefined;
 };
 
-function PartyCard({ label, walletAddress, walletId, cardanoVkey }: Party) {
-  const settles = walletAddress ?? walletId;
+function PartyCard({ label, walletAddress, network, cardanoVkey }: Party) {
   return (
     <div className="min-w-0 flex-1 space-y-2 rounded-md border bg-muted/10 p-3">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
 
       <div className="space-y-1">
         <p className="text-xs text-muted-foreground">Settles with</p>
-        {settles ? (
-          <div className="flex items-center gap-1">
-            <span className="truncate font-mono text-sm">{shortenAddress(settles, 10)}</span>
-            <CopyButton value={settles} className="h-6 w-6" />
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">—</p>
-        )}
+        <HydraWalletLink address={walletAddress} network={network} shorten={10} />
       </div>
 
       <div className="space-y-1">
@@ -64,18 +56,16 @@ function PartyCard({ label, walletAddress, walletId, cardanoVkey }: Party) {
 
 export function HydraHeadWallets({
   localWalletAddress,
-  localWalletId,
   localCardanoVkey,
   remoteWalletAddress,
-  remoteWalletId,
   remoteCardanoVkey,
+  network,
 }: {
   localWalletAddress: string | undefined;
-  localWalletId: string | undefined;
   localCardanoVkey: string | undefined;
   remoteWalletAddress: string | undefined;
-  remoteWalletId: string | undefined;
   remoteCardanoVkey: string | undefined;
+  network: string;
 }) {
   return (
     <div className="space-y-2">
@@ -84,14 +74,14 @@ export function HydraHeadWallets({
         <PartyCard
           label="Your wallet"
           walletAddress={localWalletAddress}
-          walletId={localWalletId}
+          network={network}
           cardanoVkey={localCardanoVkey}
         />
         <ArrowRight className="mx-auto h-4 w-4 shrink-0 rotate-90 text-muted-foreground sm:rotate-0" />
         <PartyCard
           label="Counterparty"
           walletAddress={remoteWalletAddress}
-          walletId={remoteWalletId}
+          network={network}
           cardanoVkey={remoteCardanoVkey}
         />
       </div>

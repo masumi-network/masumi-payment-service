@@ -241,7 +241,6 @@ export default function ApiKeys() {
                       onCheckedChange={handleSelectAll}
                     />
                   </th>
-                  <th className="p-4 text-left text-sm font-medium">ID</th>
                   <th className="p-4 text-left text-sm font-medium">Key</th>
                   <th className="p-4 text-left text-sm font-medium">Permission</th>
                   <th className="p-4 text-left text-sm font-medium">Networks</th>
@@ -255,7 +254,7 @@ export default function ApiKeys() {
                   <ApiKeyTableSkeleton rows={5} />
                 ) : filteredApiKeys.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8">
+                    <td colSpan={7} className="text-center py-8">
                       {searchQuery ? 'No API keys found matching your search' : 'No API keys found'}
                     </td>
                   </tr>
@@ -267,9 +266,6 @@ export default function ApiKeys() {
                           checked={selectedKeys.includes(key.token)}
                           onCheckedChange={() => handleSelectKey(key.token)}
                         />
-                      </td>
-                      <td className="p-4">
-                        <div className="text-sm">{key.id}</div>
                       </td>
                       <td className="p-4 truncate">
                         <div className="flex items-center gap-2">

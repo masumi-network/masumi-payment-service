@@ -471,7 +471,7 @@ export function SwapDialog({
             onSwapComplete?.();
             void fetchBalance();
             setSwapStatus('confirmed');
-            toast.success('Order was already executed by the DEX — swap completed!', {
+            toast.success('Order was already executed by the DEX, so the swap completed.', {
               theme: 'dark',
             });
             pollTimeoutRef.current = setTimeout(() => {
@@ -506,7 +506,7 @@ export function SwapDialog({
 
           if (newStatus === 'OrderConfirmed') {
             setSwapStatus('orderConfirmed');
-            toast.info(message || 'Order recovered — you can retry cancelling.', {
+            toast.info(message || 'Order recovered. You can retry cancelling.', {
               theme: 'dark',
             });
           } else if (newStatus === 'CancelConfirmed' || newStatus === 'Completed') {
@@ -649,7 +649,7 @@ export function SwapDialog({
   const statusLabelMap: Record<string, string> = {
     processing: 'Signing transaction...',
     submitted: 'Waiting for order confirmation...',
-    orderConfirmed: 'Order placed — awaiting execution',
+    orderConfirmed: 'Order placed, awaiting execution',
     cancelling: 'Cancelling order...',
     cancelConfirmed: 'Order cancelled',
     confirmed: 'Swap confirmed!',

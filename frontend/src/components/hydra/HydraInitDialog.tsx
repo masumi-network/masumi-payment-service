@@ -14,9 +14,10 @@
  */
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Loader2, Wallet } from 'lucide-react';
+import { Loader2, Wallet } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button } from '@/components/ui/button';
+import { HydraNotice } from '@/components/hydra/HydraNotice';
 import {
   Dialog,
   DialogContent,
@@ -89,7 +90,7 @@ export function HydraInitDialog({
       toast.success(
         result.transferredLovelace === null
           ? 'The node is already funded'
-          : `Sending ${ada(result.transferredLovelace)} to the node — retry Init once it confirms`,
+          : `Sending ${ada(result.transferredLovelace)} to the node. Retry once it confirms.`,
       );
       onOpenChange(false);
     } catch (error) {
@@ -124,38 +125,36 @@ export function HydraInitDialog({
             Checking the node…
           </p>
         ) : nodeBlocker !== null ? (
-          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              {nodeBlocker} Opening now would fail as &ldquo;node unreachable&rdquo;, which says
-              nothing about why — try again in a minute.
-            </span>
-          </div>
-        ) : isUnderfunded && funding ? (
-          <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-            <p className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>
-                This node&apos;s own key holds {ada(funding.balanceLovelace)}. Opening a head spends
-                a UTxO from it, so Init will fail until it is funded.
-              </span>
+          <HydraNotice tone="warn">
+            <p>
+              {nodeBlocker} Opening now fails as &ldquo;node unreachable&rdquo;, which says nothing
+              about the cause. Try again in a minute.
             </p>
-            <p className="break-all font-mono text-xs opacity-80">{funding.address}</p>
-          </div>
+          </HydraNotice>
+        ) : isUnderfunded && funding ? (
+          <HydraNotice tone="warn">
+            <p>
+              This node&apos;s key holds {ada(funding.balanceLovelace)}. Opening a head spends a
+              UTxO from it, so posting fails until it has funds.
+            </p>
+            <p className="break-all font-mono opacity-80">{funding.address}</p>
+          </HydraNotice>
         ) : funding?.checked === true ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Wallet className="h-4 w-4" />
-            The node holds {ada(funding.balanceLovelace)} — enough to post.
+            The node holds {ada(funding.balanceLovelace)}, enough to post.
           </p>
         ) : null}
 
-        {/* Twenty to ninety seconds of preprod block time, and no way to shorten
-            it. Without saying so, the wait reads as a hang and the operator
-            clicks again — which is the one thing that must not happen. */}
-        <p className="text-xs text-muted-foreground">
-          This takes a block or two. You can close this window — the node carries on, and the head
-          updates itself when the transaction lands.
-        </p>
+        {/* Only once the transaction is being posted. Said up front it is
+            noise about a wait that has not started; said now it answers the
+            question the spinner just raised, and stops a second click. */}
+        {isRunning && (
+          <p className="text-xs text-muted-foreground">
+            Waiting for the transaction to land, usually a block or two. You can close this window.
+            The node carries on and the head updates itself.
+          </p>
+        )}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

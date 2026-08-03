@@ -97,7 +97,7 @@ export function HydraHeadTransactions({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          Newest first. In-head transactions never reach the explorer — the head settles as one
+          Newest first. In-head transactions never reach the explorer. The head settles as one
           transaction when it closes.
         </p>
         <Button

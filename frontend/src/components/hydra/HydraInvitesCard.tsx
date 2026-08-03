@@ -122,7 +122,7 @@ export function HydraInvitesCard({
             onClick={() => setIsRedeemOpen(true)}
             disabled={!hasConnectedNode}
             title={
-              hasConnectedNode ? undefined : 'Connect a node first — a head has to run somewhere'
+              hasConnectedNode ? undefined : 'Connect a node first. A head has to run somewhere.'
             }
           >
             Redeem an invite
@@ -133,7 +133,7 @@ export function HydraInvitesCard({
             onClick={() => setIsIssueOpen(true)}
             disabled={!hasConnectedNode}
             title={
-              hasConnectedNode ? undefined : 'Connect a node first — a head has to run somewhere'
+              hasConnectedNode ? undefined : 'Connect a node first. A head has to run somewhere.'
             }
           >
             Invite someone
@@ -214,7 +214,7 @@ export function HydraInvitesCard({
         open={pendingRevoke !== null}
         onClose={() => setPendingRevoke(null)}
         title="Revoke this invite?"
-        description="The counterparty can no longer redeem it, and the node and peer port it reserved are released. If they already have the code, tell them — redeeming will simply fail."
+        description="The counterparty can no longer redeem it, and the node and peer port it reserved are released. If they already have the code, tell them. Redeeming it will fail."
         isLoading={busyId !== null}
         onConfirm={() => {
           if (pendingRevoke !== null) void handleRevoke(pendingRevoke);

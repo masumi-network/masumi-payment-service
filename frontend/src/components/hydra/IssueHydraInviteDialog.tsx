@@ -17,6 +17,7 @@ import { AlertTriangle, Loader2, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
   Dialog,
@@ -104,8 +105,8 @@ export function IssueHydraInviteDialog({
             Invite someone to open a head
           </DialogTitle>
           <DialogDescription>
-            You get a code to send them. When they redeem it, they open the head — nothing further
-            to do on this side.
+            You get a code to send them. When they redeem it, they open the head. Nothing further to
+            do on this side.
           </DialogDescription>
         </DialogHeader>
 
@@ -162,11 +163,12 @@ export function IssueHydraInviteDialog({
               </p>
             </div>
 
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-              <AlertTriangle className="mr-1 inline h-3 w-3" />
-              This starts a node and reserves a peer port right away, tied to this one invite. You
-              cannot point it at someone else afterwards — revoke it instead.
-            </p>
+            <HydraNotice tone="warn">
+              <p>
+                This starts a node and reserves a peer port right away, tied to this one invite. You
+                cannot point it at someone else afterwards. Revoke it instead.
+              </p>
+            </HydraNotice>
           </div>
         ) : (
           <div className="space-y-4">
@@ -180,7 +182,7 @@ export function IssueHydraInviteDialog({
               </p>
             </div>
             <p className="text-xs text-muted-foreground">
-              Send it however you normally reach them. Nothing in it is secret, but it works once —
+              Send it however you normally reach them. Nothing in it is secret, but it works once:
               whoever redeems it first becomes your counterparty.
             </p>
             <p className="text-xs text-muted-foreground">

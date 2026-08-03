@@ -14,6 +14,7 @@ import { useState } from 'react';
 import { AlertTriangle, Eye, EyeOff, KeyRound, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button } from '@/components/ui/button';
+import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { Checkbox } from '@/components/ui/checkbox';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
@@ -113,14 +114,15 @@ export function BackUpNodeKeysDialog({
 
         {keys === null ? (
           <div className="space-y-4">
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-              <AlertTriangle className="mr-1 inline h-3 w-3" />
-              Revealing seals the path: the service will not hand these keys out a second time. Have
-              somewhere to put them before you continue.
-            </p>
+            <HydraNotice tone="warn">
+              <p>
+                Showing them seals this: the service will not hand these keys out a second time.
+                Have somewhere to put them before you continue.
+              </p>
+            </HydraNotice>
             <p className="text-xs text-muted-foreground">
-              You do not need this backup for normal operation — the service and the node each hold
-              a copy. It matters if you lose the node&apos;s storage.
+              Normal operation does not need this backup. The service and the node each hold a copy.
+              It matters only if you lose the node&apos;s storage.
             </p>
           </div>
         ) : (

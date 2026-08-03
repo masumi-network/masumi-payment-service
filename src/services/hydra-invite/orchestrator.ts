@@ -83,7 +83,7 @@ function requireExchangePort(node: { hostExchangePort: number | null; hostBaseUr
 	if (node.hostExchangePort === null) {
 		throw createHttpError(
 			409,
-			`the hydra host at ${node.hostBaseUrl} has not reported its exchange port yet — press Check on the node and try again`,
+			`the hydra host at ${node.hostBaseUrl} has not reported its exchange port yet. Press Check on the node and try again`,
 		);
 	}
 	return node.hostExchangePort;

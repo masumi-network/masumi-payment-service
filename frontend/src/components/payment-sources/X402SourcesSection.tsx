@@ -158,7 +158,7 @@ export function X402SourcesSection({
                     <td className="p-4 pr-8">
                       <div className="flex justify-end gap-2">
                         {/* Scope the rail to this row's chain before navigating, so /x402
-                            opens under the chain the user chose to manage — not whichever
+                            opens under the chain the user chose to manage, not whichever
                             chain happened to be selected. */}
                         <Button variant="ghost" size="sm" onClick={() => setActive(chain.id)}>
                           Manage

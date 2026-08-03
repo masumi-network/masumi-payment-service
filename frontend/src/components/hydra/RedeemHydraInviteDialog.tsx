@@ -39,6 +39,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 import { useWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
+import { HydraNotice } from '@/components/hydra/HydraNotice';
 import {
   previewHydraInvite,
   redeemHydraInvite,
@@ -145,14 +146,13 @@ export function RedeemHydraInviteDialog({
         ) : (
           <div className="space-y-5">
             {!preview.signatureValid && (
-              <p className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400">
-                <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>
-                  This invite&apos;s signature does not match the wallet it claims to be from. It
-                  has been altered in transit or was not produced by that wallet. Do not redeem it —
-                  ask for a fresh one over a channel you trust.
-                </span>
-              </p>
+              <HydraNotice tone="error">
+                <p>
+                  The signature does not match the wallet this invite claims to be from. It was
+                  altered in transit, or that wallet did not produce it. Do not redeem it. Ask for a
+                  fresh one over a channel you trust.
+                </p>
+              </HydraNotice>
             )}
 
             {/* Identity, not data. The wallet is what the signature proves, but
@@ -165,14 +165,13 @@ export function RedeemHydraInviteDialog({
               {preview.identity.lookupError !== null ? (
                 <p className="text-xs text-muted-foreground">{preview.identity.lookupError}</p>
               ) : preview.identity.entries.length === 0 ? (
-                <p className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>
-                    This wallet holds no registry entries, so there is nothing on chain vouching for
-                    who it is. Normal for a brand-new operator, and expected if you were told to
-                    expect it — otherwise confirm the address with them directly.
-                  </span>
-                </p>
+                <HydraNotice tone="warn">
+                  <p>
+                    This wallet holds no registry entries, so nothing on chain vouches for who it
+                    is. That is normal for a new operator. If you were not expecting it, confirm the
+                    address with them directly.
+                  </p>
+                </HydraNotice>
               ) : (
                 <ul className="divide-y rounded-md border">
                   {preview.identity.entries.map((entry) => (
@@ -224,9 +223,9 @@ export function RedeemHydraInviteDialog({
             </section>
 
             {preview.alreadyKnown && (
-              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-                You have seen this invite before — it is already recorded here.
-              </p>
+              <HydraNotice tone="warn" plain>
+                <p>You have read this invite before. It is already recorded here.</p>
+              </HydraNotice>
             )}
 
             <div className="space-y-2">
@@ -257,12 +256,12 @@ export function RedeemHydraInviteDialog({
               </Select>
               <p className="text-xs text-muted-foreground">
                 This starts a node on your side and tells them you are ready. About 10 ADA moves
-                from this wallet to that node to cover the head&apos;s on-chain fees — separate from
+                from this wallet to that node to cover the head&apos;s on-chain fees, separate from
                 whatever you later put into the head.
               </p>
               <p className="text-xs text-muted-foreground">
                 Your side is the one that opens the head. You do that from the head itself, once
-                both nodes have found each other — usually within a minute.
+                both nodes have found each other, usually within a minute.
               </p>
             </div>
           </div>

@@ -31,6 +31,16 @@ export const localParticipantSchema = z
 		/** Which connected node runs this participant's hydra-node process. */
 		hydraHostId: z.string(),
 		hostNodeId: z.string(),
+		/**
+		 * What this node is actually for, so a list of them does not read as a
+		 * column of UUIDs: the wallet it settles with, and the state of the head
+		 * it serves. Both are what an operator recognises; the ids are not.
+		 */
+		Wallet: z.object({ walletAddress: z.string() }).optional(),
+		HydraHead: z
+			.object({ status: z.nativeEnum(HydraHeadStatus) })
+			.nullable()
+			.optional(),
 		/** Null until an operator has taken a one-time backup of the node's signing keys. */
 		keysDisclosedAt: z.date().nullable(),
 	})
@@ -51,6 +61,12 @@ export const remoteParticipantSchema = z
 		hydraVerificationKeyId: z.string(),
 	})
 	.openapi('HydraRemoteParticipant');
+
+/** The two things that make a node row legible, and nothing else. */
+const localParticipantContext = {
+	Wallet: { select: { walletAddress: true } },
+	HydraHead: { select: { status: true } },
+} as const;
 
 // ============================================================
 // LOCAL PARTICIPANT ENDPOINTS
@@ -86,6 +102,7 @@ export const getLocalParticipantGet = adminAuthenticatedEndpointFactory.build({
 		if (input.id) {
 			const participant = await prisma.hydraLocalParticipant.findUnique({
 				where: { id: input.id },
+				include: localParticipantContext,
 			});
 			if (!participant) {
 				throw createHttpError(404, 'Local participant not found');
@@ -100,6 +117,7 @@ export const getLocalParticipantGet = adminAuthenticatedEndpointFactory.build({
 				...(input.unassigned === true ? { hydraHeadId: null } : {}),
 				...(input.unassigned === false ? { hydraHeadId: { not: null } } : {}),
 			},
+			include: localParticipantContext,
 			orderBy: { createdAt: 'desc' },
 			take: input.limit,
 			cursor: input.cursorId ? { id: input.cursorId } : undefined,
@@ -299,6 +317,7 @@ export const getRemoteParticipantGet = adminAuthenticatedEndpointFactory.build({
 				...(input.unassigned === true ? { hydraHeadId: null } : {}),
 				...(input.unassigned === false ? { hydraHeadId: { not: null } } : {}),
 			},
+			include: localParticipantContext,
 			orderBy: { createdAt: 'desc' },
 			take: input.limit,
 			cursor: input.cursorId ? { id: input.cursorId } : undefined,

@@ -81,7 +81,7 @@ export function HydraHeadErrors({
             size="sm"
             onClick={() => void handleClear()}
             disabled={isClearing}
-            title="These are a log, not state — clearing them affects nothing but this list"
+            title="These are a log, not state. Clearing them affects nothing but this list."
           >
             {isClearing && <Loader2 className="h-4 w-4 animate-spin" />}
             Clear

@@ -311,7 +311,6 @@ export function BudgetDialog({
                       {allApiKeys.map((key) => (
                         <SelectItem key={key.id} value={key.id}>
                           <span className="font-mono text-xs">{key.token}</span>
-                          <span className="ml-2 text-muted-foreground">{key.id}</span>
                         </SelectItem>
                       ))}
                     </SelectGroup>

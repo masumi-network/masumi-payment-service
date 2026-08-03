@@ -221,7 +221,7 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
     setIsSubmitting(true);
     try {
       await topupHydraHead(apiClient, payload);
-      toast.success('Deposit started — it appears below, and in the head once it confirms');
+      toast.success('Deposit started. It appears below, and in the head once it confirms.');
       setAmount('');
       await queryClient.invalidateQueries({ queryKey: ['hydra-topups', headId] });
     } finally {

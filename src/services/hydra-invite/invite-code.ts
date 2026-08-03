@@ -66,7 +66,7 @@ export function decodeInviteCode(code: string): DecodedInvite {
 	if (!trimmed.startsWith(INVITE_CODE_PREFIX)) {
 		throw createHttpError(
 			400,
-			'that does not look like a Masumi Hydra invite — it should start with "masumi-hydra-invite-1."',
+			'that does not look like a Masumi Hydra invite. It should start with "masumi-hydra-invite-1."',
 		);
 	}
 

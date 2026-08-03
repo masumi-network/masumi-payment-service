@@ -116,7 +116,7 @@ export async function reserveNodeForExchange(
 		if (error instanceof HydraHostRequestError && (error.status === 401 || error.status === 403)) {
 			throw createHttpError(
 				502,
-				`the hydra host at ${host.baseUrl} rejected our admin key — reconnect the node with the key that host was started with`,
+				`the hydra host at ${host.baseUrl} rejected our admin key. Reconnect the node with the key that host was started with`,
 			);
 		}
 		throw error;

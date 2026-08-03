@@ -147,7 +147,7 @@ export function normalizeHostToken(token: string, field: string): string {
 	if (TOKEN_INNER_WHITESPACE.test(trimmed)) {
 		throw createHttpError(
 			400,
-			`${field}: must not contain spaces or tabs — paste only the key itself, without its label`,
+			`${field}: must not contain spaces or tabs. Paste only the key itself, without its label`,
 		);
 	}
 	return trimmed;

@@ -308,7 +308,6 @@ export default function WebhooksPage() {
                       <p className="text-sm font-medium">
                         {webhook.name?.trim() || 'Unnamed webhook'}
                       </p>
-                      <p className="text-xs text-muted-foreground">{webhook.id}</p>
                     </div>
                   </td>
                   <td className="p-4">

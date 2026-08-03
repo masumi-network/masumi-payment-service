@@ -778,7 +778,7 @@ export function RegisterAIAgentDialog({
             {isUpdateMode
               ? 'Updating the on-chain metadata issues an UpdateAction on the V2 registry contract: the existing asset is burned and a new asset with the incremented version is minted in a single transaction.'
               : isReRegisterMode
-                ? 'This mints a brand-new registration from the previous agent’s details. It will be issued a new agent identifier — the old, deregistered one is not reused. Review the fields and wallet below, then mint.'
+                ? 'This mints a brand-new registration from the previous agent’s details. It is issued a new agent identifier; the old, deregistered one is not reused. Review the fields and wallet below, then mint.'
                 : 'This registers your agent on the Masumi Network, making it visible to everyone.'}
           </p>
         </DialogHeader>

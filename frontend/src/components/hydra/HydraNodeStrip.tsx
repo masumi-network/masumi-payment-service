@@ -51,7 +51,7 @@ export function HydraNodeStrip({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed px-4 py-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Server className="h-4 w-4" />
-          No Hydra node connected yet — a head has to run somewhere.
+          No Hydra node connected yet. A head has to run somewhere.
         </div>
         <Button type="button" size="sm" onClick={onAddNode}>
           <Plus className="h-4 w-4" />

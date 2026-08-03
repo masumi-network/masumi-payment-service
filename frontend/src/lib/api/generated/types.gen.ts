@@ -3053,6 +3053,12 @@ export type HydraLocalParticipant = {
     commitTxHash: string | null;
     hydraHostId: string;
     hostNodeId: string;
+    Wallet?: {
+        walletAddress: string;
+    };
+    HydraHead?: {
+        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+    } | null;
     keysDisclosedAt: Date | null;
 };
 

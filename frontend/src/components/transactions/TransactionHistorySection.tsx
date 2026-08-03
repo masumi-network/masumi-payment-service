@@ -138,7 +138,7 @@ export function TransactionHistorySection({
                   {action.errorType && (
                     <p className="text-xs text-destructive break-all">
                       <span className="font-medium">Error:</span> {action.errorType}
-                      {action.errorNote ? ` — ${action.errorNote}` : ''}
+                      {action.errorNote ? `: ${action.errorNote}` : ''}
                     </p>
                   )}
                 </li>
