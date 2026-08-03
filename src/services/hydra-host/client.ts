@@ -29,6 +29,8 @@ export type HostCapabilities = {
 	scriptCatalogueHash: string | null;
 	ledgerParamsHash: string | null;
 	network: string;
+	/** Where this Host serves its Exchange Plane. Null on a Host that predates reporting it. */
+	exchangePort: number | null;
 	nodeSlots: { used: number; capacity: number };
 	probeError: string | null;
 };
@@ -133,6 +135,8 @@ export async function fetchHostCapabilities(baseUrl: string, adminToken: string)
 		scriptCatalogueHash: hashOf(getOwnValue(body, 'scriptCatalogue')),
 		ledgerParamsHash: getOwnString(body, 'ledgerParamsHash') ?? null,
 		network: getOwnString(body, 'network') ?? '',
+		exchangePort:
+			typeof getOwnValue(body, 'exchangePort') === 'number' ? (getOwnValue(body, 'exchangePort') as number) : null,
 		nodeSlots: {
 			used: typeof used === 'number' ? used : 0,
 			capacity: typeof capacity === 'number' ? capacity : 0,

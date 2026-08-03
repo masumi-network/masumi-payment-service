@@ -1943,6 +1943,14 @@ model HydraHost {
   scriptCatalogueHash String?
   ledgerParamsHash    String?
 
+  /// Port this Host serves its Exchange Plane on, as the Host itself reports it.
+  ///
+  /// A property of the Host, not of this service: an invite's redemption URL is
+  /// built from it, so assuming one fleet-wide value sends counterparties to a
+  /// Host that never issued the nonce — which they see as a 404 and cannot act
+  /// on. Null until the first capabilities probe fills it in.
+  exchangePort Int?
+
   status          HydraHostStatus @default(Active)
   lastHealthAt    DateTime?
   lastHealthError String?

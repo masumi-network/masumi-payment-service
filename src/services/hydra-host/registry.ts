@@ -115,13 +115,46 @@ export function normalizeHostBaseUrl(rawUrl: string): string {
 	return `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`;
 }
 
-function validateToken(token: string, field: string): string {
+/**
+ * A bearer credential is one unbroken run of non-space characters — the header
+ * is `Bearer` followed by `\S+` and nothing else. A token with a space or a tab
+ * inside it therefore produces a header the Host rejects as *malformed*, which
+ * surfaces as a bare 401 saying the Authorization header is missing. That is
+ * close to undiagnosable: the request looks unauthenticated, the token looks
+ * right in the database, and nothing points at the whitespace.
+ *
+ * It happens by copy-paste, where a label or a column separator is dragged
+ * along with the value — an observed cause of exactly that 401.
+ */
+const TOKEN_INNER_WHITESPACE = /\s/;
+
+/**
+ * The exact string that should be stored for a pasted token, or a 400.
+ *
+ * Trimming absorbs the harmless half of a paste; whatever whitespace survives
+ * is refused rather than stored, because a token that cannot form a valid
+ * header must not reach the database. Checked here rather than in
+ * `assertUsableHydraAuthToken`, which also runs against tokens already stored
+ * and must not start rejecting them.
+ */
+export function normalizeHostToken(token: string, field: string): string {
+	const trimmed = token.trim();
 	try {
-		assertUsableHydraAuthToken(token);
+		assertUsableHydraAuthToken(trimmed);
 	} catch (error) {
 		throw createHttpError(400, `${field}: ${(error as Error).message}`);
 	}
-	return encrypt(token);
+	if (TOKEN_INNER_WHITESPACE.test(trimmed)) {
+		throw createHttpError(
+			400,
+			`${field}: must not contain spaces or tabs — paste only the key itself, without its label`,
+		);
+	}
+	return trimmed;
+}
+
+function validateToken(token: string, field: string): string {
+	return encrypt(normalizeHostToken(token, field));
 }
 
 /** The network a Host belongs to, for scoping an api key's authority over it. */
@@ -169,7 +202,17 @@ export async function registerHydraHost(input: {
 			},
 			include: { _count: { select: { Participants: true } } },
 		});
-		return toPublicHydraHost(created);
+
+		// Probe immediately, because connecting a node is exactly when its facts
+		// should be learned. One of them — the Exchange Plane port — is baked into
+		// every invite this Host issues, and a Host that has never been probed
+		// cannot mint one. Best-effort: a Host that is registered while briefly
+		// unreachable is still registered, and the next Check fills this in.
+		try {
+			return await refreshHydraHostCapabilities(created.id);
+		} catch {
+			return toPublicHydraHost(created);
+		}
 	} catch (error) {
 		if (isPlainObject(error) && getOwnString(error, 'code') === 'P2002') {
 			throw createHttpError(409, `a hydra host for ${input.network} at ${baseUrl} is already registered`);
@@ -274,6 +317,9 @@ export async function refreshHydraHostCapabilities(id: string): Promise<PublicHy
 		where: { id },
 		data: {
 			hydraVersion: capabilities.hydraVersion || null,
+			// Kept only when the Host reports one, so a probe against an older
+			// Host does not erase a value a newer one already supplied.
+			...(capabilities.exchangePort === null ? {} : { exchangePort: capabilities.exchangePort }),
 			scriptCatalogueHash: capabilities.scriptCatalogueHash,
 			ledgerParamsHash: capabilities.ledgerParamsHash,
 			status: nextHostStatus(host.status, true),

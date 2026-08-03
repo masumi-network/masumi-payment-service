@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { HydraHostStatus } from '@/generated/prisma/client';
-import { nextHostStatus, normalizeHostBaseUrl } from './registry';
+import { nextHostStatus, normalizeHostBaseUrl, normalizeHostToken } from './registry';
 
 describe('normalizeHostBaseUrl', () => {
 	it('keeps a plain origin', () => {
@@ -73,5 +73,44 @@ describe('nextHostStatus', () => {
 			status = nextHostStatus(status, ok);
 		}
 		expect(status).toBe(HydraHostStatus.Draining);
+	});
+});
+
+describe('normalizeHostToken', () => {
+	const TOKEN = 'e2e-admin-a-0123456789abcdef0123456789abcdef';
+
+	it('keeps a clean token unchanged', () => {
+		expect(normalizeHostToken(TOKEN, 'adminToken')).toBe(TOKEN);
+	});
+
+	it.each([
+		['a trailing newline from a terminal', `${TOKEN}\n`],
+		['a leading space from a table cell', ` ${TOKEN}`],
+		['both', `\t${TOKEN}\n`],
+	])('trims %s', (_label, pasted) => {
+		expect(normalizeHostToken(pasted, 'adminToken')).toBe(TOKEN);
+	});
+
+	// The observed failure: copying a row out of a table brings the label with
+	// it. A bearer header is `Bearer` plus one run of non-space characters, so
+	// the Host rejects this as a *malformed* header and answers 401 — which
+	// reads as "wrong credential" while the stored value looks perfectly right.
+	it('refuses a token with its label pasted in front', () => {
+		expect(() => normalizeHostToken(`key\t${TOKEN}`, 'adminToken')).toThrow(/only the key itself/);
+	});
+
+	it.each([
+		['an inner space', `e2e-admin a-0123`],
+		['an inner tab', `e2e-admin\ta-0123`],
+	])('refuses %s', (_label, pasted) => {
+		expect(() => normalizeHostToken(pasted, 'userToken')).toThrow(/spaces or tabs/);
+	});
+
+	it('refuses a blank token', () => {
+		expect(() => normalizeHostToken('   ', 'userToken')).toThrow();
+	});
+
+	it('names the field it rejected, so a form can point at it', () => {
+		expect(() => normalizeHostToken(`key\t${TOKEN}`, 'userToken')).toThrow(/userToken/);
 	});
 });

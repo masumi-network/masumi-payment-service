@@ -31,12 +31,23 @@ export type Capabilities = {
 	ledgerParamsHash: string | null;
 	network: string;
 	nodeSlots: { used: number; capacity: number };
+	/**
+	 * The port this Host serves its Exchange Plane on.
+	 *
+	 * Reported rather than configured on the payment service, because it is a
+	 * fact about this deployment and nothing else knows it. A service that
+	 * assumes a fleet-wide value builds invite URLs that point at the wrong
+	 * Host the moment two Hosts differ — and the failure lands on the
+	 * counterparty as a 404 for a nonce that was never theirs.
+	 */
+	exchangePort: number;
 };
 
 export type CapabilitiesDeps = {
 	hydraNodeBin: string;
 	ledgerProtocolParametersFile: string;
 	network: string;
+	exchangePort: number;
 	slots: () => { used: number; capacity: number };
 	exec?: (file: string, args: string[]) => Promise<{ stdout: string }>;
 };
@@ -88,6 +99,7 @@ export async function readCapabilities(deps: CapabilitiesDeps): Promise<Capabili
 		probeError: probeErrors.length === 0 ? null : probeErrors.join('; '),
 		ledgerParamsHash,
 		network: deps.network,
+		exchangePort: deps.exchangePort,
 		nodeSlots: deps.slots(),
 	};
 }

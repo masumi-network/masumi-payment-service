@@ -12,6 +12,15 @@
  * Nothing is connected for you: both Hydra Hosts run and print their URLs and
  * keys, and connecting them is the first step of the flow.
  *
+ * The databases and the Host state directory are all overridable, so a fresh
+ * run never has to destroy an existing one:
+ *
+ *   NODE_A_DATABASE=masumi_node_a2 NODE_B_DATABASE=masumi_node_b2 \
+ *   HYDRA_E2E_DIR=$PWD/.hydra-run2 pnpm exec tsx scripts/hydra-e2e/two-nodes.mts
+ *
+ * They default to the same names every time because a single local stack is the
+ * common case; reaching for a second one should not mean editing this file.
+ *
  * Test support only.
  */
 
@@ -33,32 +42,48 @@ type Side = {
 	blockfrostKey: string;
 };
 
+/**
+ * Which Blockfrost project each side uses.
+ *
+ * One key for both is the common case and what HYDRA_E2E_BLOCKFROST_KEY is for.
+ * Per-side overrides exist because two nodes hammering one project is the
+ * fastest way to hit a rate limit and spend an afternoon debugging a "chain is
+ * behind" that is really a 429.
+ */
+function blockfrostKeyFor(sideVar: 'NODE_A_BLOCKFROST_KEY' | 'NODE_B_BLOCKFROST_KEY'): string {
+	const perSide = process.env[sideVar]?.trim();
+	if (perSide) {
+		return perSide;
+	}
+	const shared = process.env.HYDRA_E2E_BLOCKFROST_KEY?.trim();
+	if (shared) {
+		return shared;
+	}
+	return fs.readFileSync(BLOCKFROST_PROJECT_FILE, 'utf8').trim();
+}
+
 const SIDES: Side[] = [
 	{
 		label: 'A',
 		port: 3001,
-		database: 'masumi_node_a',
+		database: process.env.NODE_A_DATABASE ?? 'masumi_node_a',
 		adminKey: 'node-a-admin-key-0123456789abcdef',
 		hostIndex: 0,
-		blockfrostKey: fs.readFileSync(BLOCKFROST_PROJECT_FILE, 'utf8').trim(),
+		blockfrostKey: blockfrostKeyFor('NODE_A_BLOCKFROST_KEY'),
 	},
 	{
 		label: 'B',
 		port: 3002,
-		database: 'masumi_node_b',
+		database: process.env.NODE_B_DATABASE ?? 'masumi_node_b',
 		adminKey: 'node-b-admin-key-0123456789abcdef',
 		hostIndex: 1,
-		blockfrostKey: process.env.NODE_B_BLOCKFROST_KEY?.trim() ?? '',
+		blockfrostKey: blockfrostKeyFor('NODE_B_BLOCKFROST_KEY'),
 	},
 ];
 
 function serviceEnv(side: Side): NodeJS.ProcessEnv {
 	return {
 		...process.env,
-		// Each payment node drives exactly one Host, so a single fleet-wide
-		// exchange port is still one value per service — they only collide here
-		// because both Hosts share a machine.
-		HYDRA_HOST_EXCHANGE_PORT: String(HOSTS[side.hostIndex].exchangePort),
 		DATABASE_URL: `postgresql://sandro@localhost:5432/${side.database}?schema=public`,
 		ENCRYPTION_KEY,
 		ADMIN_KEY: side.adminKey,
@@ -73,34 +98,51 @@ function serviceEnv(side: Side): NodeJS.ProcessEnv {
 	};
 }
 
-type Seeded = { sourceId: string; wallet: { id: string; address: string } };
+type Seeded = { purchaseAddress: string; sellingAddress: string };
 
 /**
- * Seed one side with a payment source and a single hot wallet.
+ * Seed one side with the product's own seed script.
  *
- * No relation and no connected node: a relation names the *other* side's
- * wallet, which neither side knows until both exist, and connecting the node is
- * the step being tested.
+ * `prisma/seed.ts` is what a real deployment runs, so using it means these two
+ * nodes start from the same state an operator's would: the deployed V2 contract
+ * and registry policy, the real admin-wallet quorum, a purchasing and a selling
+ * wallet, and an admin API key. A bespoke seeder here drifted from that — it
+ * invented a contract address and left policyId null, which is enough for Hydra
+ * plumbing and breaks every payment, because a payment resolves its source by
+ * (network, policyId).
+ *
+ * V2 mnemonics are generated per side rather than shared. The seed skips V2
+ * seeding entirely when they are absent, and a head needs a Web3CardanoV2
+ * source — so without them these nodes would come up unable to open one.
+ *
+ * It seeds V1 as well. That is the product's own behaviour rather than
+ * something to work around: a real deployment has both, and the extra wallets
+ * cost nothing here.
  */
 async function seed(side: Side): Promise<Seeded | null> {
-	const result = await runTsx(
-		`node-${side.label}-seed`,
-		path.join(REPO_ROOT, 'scripts', 'hydra-e2e', 'seed-node.mts'),
-		{
-			...serviceEnv(side),
-			SEED_BLOCKFROST_KEY: side.blockfrostKey,
-			SEED_LABEL: `node-${side.label}`,
-		},
-	);
-	const line = result.stdout
-		.split('\n')
-		.reverse()
-		.find((entry) => entry.trim().startsWith('{'));
-	if (line === undefined) {
-		console.error(`  node ${side.label} seed failed: ${result.stderr.split('\n').slice(-3).join(' ')}`);
+	const { MeshWallet } = await import('@meshsdk/core');
+	const brew = async (): Promise<{ mnemonic: string; address: string }> => {
+		const words = MeshWallet.brew() as string[];
+		const wallet = new MeshWallet({ networkId: 0, key: { type: 'mnemonic', words } });
+		return { mnemonic: words.join(' '), address: await wallet.getChangeAddress() };
+	};
+
+	const purchase = await brew();
+	const selling = await brew();
+
+	const result = await runTsx(`node-${side.label}-seed`, path.join(REPO_ROOT, 'prisma', 'seed.ts'), {
+		...serviceEnv(side),
+		BLOCKFROST_API_KEY_PREPROD: side.blockfrostKey,
+		PURCHASE_WALLET_V2_PREPROD_MNEMONIC: purchase.mnemonic,
+		SELLING_WALLET_V2_PREPROD_MNEMONIC: selling.mnemonic,
+		COLLECTION_WALLET_PREPROD_ADDRESS: purchase.address,
+	});
+
+	if (result.code !== 0) {
+		console.error(`  node ${side.label} seed failed: ${result.stderr.split('\n').slice(-4).join(' ').slice(0, 400)}`);
 		return null;
 	}
-	return JSON.parse(line) as Seeded;
+	return { purchaseAddress: purchase.address, sellingAddress: selling.address };
 }
 
 async function main(): Promise<void> {
@@ -131,7 +173,10 @@ async function main(): Promise<void> {
 			(result) => result.status === 200,
 			{ timeoutMs: 120_000, intervalMs: 2_000 },
 		);
-		console.log(`  node ${side.label} ready  ${seeded ? `wallet ${seeded.wallet.address}` : '(seed failed)'}`);
+		console.log(`  node ${side.label} ready  ${seeded ? `buyer ${seeded.purchaseAddress}` : '(seed failed)'}`);
+		if (seeded) {
+			console.log(`                  seller ${seeded.sellingAddress}`);
+		}
 	}
 
 	banner();

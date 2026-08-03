@@ -23,7 +23,6 @@ import { forgetHostInvite, removeHostNode } from '@/services/hydra-host/client';
 import { decodeInviteCode } from '@/services/hydra-invite/invite-code';
 import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
 import { mintHeadInvite, redeemHeadInvite } from '@/services/hydra-invite/orchestrator';
-import { hydraExchangePort } from '@/utils/config/hydra-exchange';
 import {
 	registryPolicyIdFor,
 	resolveCounterpartyIdentity,
@@ -160,7 +159,6 @@ export const createInvitePost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }) => {
 		const minted = await mintHeadInvite({
 			localHotWalletId: input.hotWalletId,
-			exchangePort: hydraExchangePort(),
 			ttlMs: input.ttlHours === undefined ? INVITE_TTL_MS : input.ttlHours * 60 * 60 * 1000,
 		});
 		logger.info(`hydra: minted invite ${minted.nonce}`);
@@ -266,7 +264,6 @@ export const redeemInvitePost = adminAuthenticatedEndpointFactory.build({
 		const redeemed = await redeemHeadInvite({
 			invite: decodeInviteCode(input.code),
 			localHotWalletId: input.hotWalletId,
-			exchangePort: hydraExchangePort(),
 		});
 		return {
 			id: redeemed.inviteId,

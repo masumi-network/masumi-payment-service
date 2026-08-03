@@ -18,6 +18,7 @@ function capabilities(overrides: Partial<HostCapabilities> = {}): HostCapabiliti
 		scriptCatalogueHash: 'catalogue-hash',
 		ledgerParamsHash: 'sha256:abc',
 		network: 'preprod',
+		exchangePort: 8444,
 		nodeSlots: { used: 1, capacity: 32 },
 		probeError: null,
 		...overrides,

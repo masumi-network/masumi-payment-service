@@ -18,6 +18,7 @@ import { Network } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { decrypt, encrypt } from '@/utils/security/encryption';
 import {
+	HydraHostRequestError,
 	acknowledgeEscrowOnHost,
 	fetchHostCapabilities,
 	hostNodeUrls,
@@ -42,6 +43,8 @@ export const DEFAULT_PERIODS: HeadPeriods = {
 export type ReservedNode = {
 	hostId: string;
 	hostBaseUrl: string;
+	/** Where this Host redeems invites. From the Host itself, never assumed. */
+	hostExchangePort: number | null;
 	adminToken: string;
 	nodeId: string;
 	advertise: string;
@@ -58,6 +61,7 @@ export async function selectHostForNetwork(network: Network): Promise<{
 	baseUrl: string;
 	adminToken: string;
 	ledgerParamsHash: string | null;
+	exchangePort: number | null;
 }> {
 	const hosts = await prisma.hydraHost.findMany({ where: { network } });
 	const chosen = selectPlacementHost(
@@ -80,6 +84,7 @@ export async function selectHostForNetwork(network: Network): Promise<{
 		baseUrl: row.baseUrl,
 		adminToken: decrypt(row.encryptedAdminToken),
 		ledgerParamsHash: row.ledgerParamsHash,
+		exchangePort: row.exchangePort,
 	};
 }
 
@@ -100,7 +105,22 @@ export async function reserveNodeForExchange(
 
 	// Checked before provisioning, not at first use: a head placed on a host
 	// whose ledger differs fails at commit time, far from the cause.
-	const capabilities = await fetchHostCapabilities(host.baseUrl, host.adminToken);
+	//
+	// A Host that refuses our credential is the Host's answer, not an internal
+	// fault — surfacing it as a 500 sent operators looking for a bug in this
+	// service when the stored token was simply wrong for that Host.
+	let capabilities;
+	try {
+		capabilities = await fetchHostCapabilities(host.baseUrl, host.adminToken);
+	} catch (error) {
+		if (error instanceof HydraHostRequestError && (error.status === 401 || error.status === 403)) {
+			throw createHttpError(
+				502,
+				`the hydra host at ${host.baseUrl} rejected our admin key — reconnect the node with the key that host was started with`,
+			);
+		}
+		throw error;
+	}
 	assertHostCompatible(capabilities, { network: capabilities.network, ledgerParamsHash: host.ledgerParamsHash });
 
 	const provisioned = await provisionNodeOnHost(host.baseUrl, host.adminToken, nonce, periods);
@@ -156,6 +176,9 @@ export async function reserveNodeForExchange(
 	return {
 		hostId: host.id,
 		hostBaseUrl: host.baseUrl,
+		// Read from the capabilities probe above when the row had none, so the
+		// very first invite on a freshly connected Host is already correct.
+		hostExchangePort: host.exchangePort ?? capabilities.exchangePort,
 		adminToken: host.adminToken,
 		nodeId: provisioned.nodeId,
 		advertise: provisioned.advertise,

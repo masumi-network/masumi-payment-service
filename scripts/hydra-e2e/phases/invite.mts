@@ -34,14 +34,13 @@ const ENCRYPTION_KEY = '12345678901234567890123456789012';
 
 type Fixture = { sourceId: string; hostId: string; walletId: string };
 
-function serviceEnv(host: HostSpec): NodeJS.ProcessEnv {
+function serviceEnv(): NodeJS.ProcessEnv {
 	return {
 		...process.env,
 		DATABASE_URL,
 		ENCRYPTION_KEY,
 		ADMIN_KEY,
 		PORT: String(SERVICE_PORT),
-		HYDRA_HOST_EXCHANGE_PORT: String(host.exchangePort),
 		// The background jobs are irrelevant here and would hammer Blockfrost with
 		// a fixture key; push them past the life of the run.
 		BATCH_PAYMENT_INTERVAL: '3600',
@@ -61,7 +60,7 @@ function serviceEnv(host: HostSpec): NodeJS.ProcessEnv {
 
 async function seed(host: HostSpec): Promise<Fixture | null> {
 	const result = await runTsx('fixture', path.join(REPO_ROOT, 'scripts', 'hydra-e2e', 'fixture.mts'), {
-		...serviceEnv(host),
+		...serviceEnv(),
 		FIXTURE_HOST_URL: host.baseUrl,
 		FIXTURE_HOST_ADMIN_TOKEN: host.adminToken,
 		FIXTURE_HOST_USER_TOKEN: host.userToken,
@@ -92,7 +91,7 @@ export async function checkInvites(host: HostSpec): Promise<void> {
 		return;
 	}
 
-	const service = spawnTsx('payment-service', path.join(REPO_ROOT, 'src', 'index.ts'), serviceEnv(host));
+	const service = spawnTsx('payment-service', path.join(REPO_ROOT, 'src', 'index.ts'), serviceEnv());
 	try {
 		await waitFor(
 			'the payment service to answer',

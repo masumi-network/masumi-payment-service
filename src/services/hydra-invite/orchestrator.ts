@@ -56,9 +56,13 @@ async function loadWallet(hotWalletId: string): Promise<WalletContext> {
 /**
  * Where our own invites are redeemed.
  *
- * Derived from the Host's control-plane URL rather than configured separately:
- * the Exchange Plane is the same deployment on its own port, and two
- * independently-typed URLs would eventually disagree.
+ * The host comes from the Host's control-plane URL — same deployment, so the
+ * same machine — and the port from what that Host reported about itself when it
+ * was connected. Never from a service-wide setting: an invite carries this URL
+ * to a counterparty, and with two Hosts a single shared value can only be right
+ * for one of them. The other's invites advertise the wrong exchange, the
+ * redemption reaches a Host that never issued the nonce, and the counterparty is
+ * told 404 for something they did nothing wrong with.
  */
 export function exchangeUrlForHost(baseUrl: string, exchangePort: number): string {
 	const url = new URL(baseUrl);
@@ -66,6 +70,22 @@ export function exchangeUrlForHost(baseUrl: string, exchangePort: number): strin
 	url.pathname = '/exchange';
 	url.search = '';
 	return url.toString().replace(/\/+$/, '');
+}
+
+/**
+ * The Host's own exchange port, or a refusal.
+ *
+ * Refusing beats guessing: a wrong port is baked into a signed invite and only
+ * fails at the counterparty, minutes later, as a 404 they cannot act on.
+ */
+function requireExchangePort(node: { hostExchangePort: number | null; hostBaseUrl: string }): number {
+	if (node.hostExchangePort === null) {
+		throw createHttpError(
+			409,
+			`the hydra host at ${node.hostBaseUrl} has not reported its exchange port yet — press Check on the node and try again`,
+		);
+	}
+	return node.hostExchangePort;
 }
 
 export type MintedInvite = {
@@ -84,7 +104,6 @@ export type MintedInvite = {
  */
 export async function mintHeadInvite(input: {
 	localHotWalletId: string;
-	exchangePort: number;
 	periods?: HeadPeriods;
 	ttlMs?: number;
 }): Promise<MintedInvite> {
@@ -94,7 +113,7 @@ export async function mintHeadInvite(input: {
 	const expiresAt = new Date(Date.now() + (input.ttlMs ?? INVITE_TTL_MS));
 
 	const node = await reserveNodeForExchange(wallet.network, wallet.id, nonce, periods);
-	const exchangeUrl = exchangeUrlForHost(node.hostBaseUrl, input.exchangePort);
+	const exchangeUrl = exchangeUrlForHost(node.hostBaseUrl, requireExchangePort(node));
 
 	const payload: HydraHeadInvitePayloadInput = {
 		nonce,
@@ -172,7 +191,6 @@ export type RedeemedInvite = {
 export async function redeemHeadInvite(input: {
 	invite: DecodedInvite;
 	localHotWalletId: string;
-	exchangePort: number;
 }): Promise<RedeemedInvite> {
 	const { payload, signature } = input.invite;
 	const wallet = await loadWallet(input.localHotWalletId);
@@ -202,7 +220,7 @@ export async function redeemHeadInvite(input: {
 		unsyncedPeriodSeconds: payload.unsyncedPeriodSeconds,
 	};
 	const node = await reserveNodeForExchange(wallet.network, wallet.id, payload.nonce, periods);
-	const exchangeUrl = exchangeUrlForHost(node.hostBaseUrl, input.exchangePort);
+	const exchangeUrl = exchangeUrlForHost(node.hostBaseUrl, requireExchangePort(node));
 
 	const redemptionPayload = buildHydraRedemptionPayload({
 		nonce: payload.nonce,
