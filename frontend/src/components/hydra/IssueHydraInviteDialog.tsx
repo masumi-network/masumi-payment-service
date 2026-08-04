@@ -18,6 +18,7 @@ import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DurationPicker, formatDuration } from '@/components/hydra/DurationPicker';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -72,15 +73,6 @@ const MIN_SETTLE_MINUTES = 2;
  * of a long one is merely that settling takes longer. An hour on mainnet, five
  * minutes on a testnet where the worst case is a re-run.
  */
-/** Seconds are unreadable past an hour, and these values run to days. */
-function humanDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '—';
-  if (seconds < 90) return `${Math.round(seconds)} seconds`;
-  if (seconds < 5400) return `${Math.round(seconds / 60)} minutes`;
-  if (seconds < 172_800) return `${(seconds / 3600).toFixed(seconds % 3600 === 0 ? 0 : 1)} hours`;
-  return `${(seconds / 86_400).toFixed(seconds % 86_400 === 0 ? 0 : 1)} days`;
-}
-
 function defaultsFor(network: string) {
   const isMainnet = network === 'Mainnet';
   const contestation = isMainnet ? 5 * 24 * 3600 : 12 * 3600;
@@ -103,18 +95,18 @@ export function IssueHydraInviteDialog({
   const defaults = defaultsFor(network);
   const [hotWalletId, setHotWalletId] = useState('');
   const [ttlHours, setTtlHours] = useState(String(DEFAULT_TTL_HOURS));
-  const [settleMinutes, setSettleMinutes] = useState(String(defaults.settleMinutes));
-  const [contestationSeconds, setContestationSeconds] = useState(String(defaults.contestation));
-  const [unsyncedSeconds, setUnsyncedSeconds] = useState(String(defaults.unsynced));
+  const [settleSeconds, setSettleSeconds] = useState(defaults.settleMinutes * 60);
+  const [contestationSeconds, setContestationSeconds] = useState(defaults.contestation);
+  const [unsyncedSeconds, setUnsyncedSeconds] = useState(defaults.unsynced);
   const [isLoading, setIsLoading] = useState(false);
   const [issued, setIssued] = useState<{ code: string; expiresAt: string } | null>(null);
 
   function reset() {
     setHotWalletId('');
     setTtlHours(String(DEFAULT_TTL_HOURS));
-    setSettleMinutes(String(defaults.settleMinutes));
-    setContestationSeconds(String(defaults.contestation));
-    setUnsyncedSeconds(String(defaults.unsynced));
+    setSettleSeconds(defaults.settleMinutes * 60);
+    setContestationSeconds(defaults.contestation);
+    setUnsyncedSeconds(defaults.unsynced);
     setIssued(null);
   }
 
@@ -138,13 +130,12 @@ export function IssueHydraInviteDialog({
 
     setIsLoading(true);
     try {
-      const settle = Number(settleMinutes);
-      if (!Number.isFinite(settle) || settle < MIN_SETTLE_MINUTES) {
+      if (settleSeconds < MIN_SETTLE_MINUTES * 60) {
         toast.error(`Funds need at least ${MIN_SETTLE_MINUTES} minutes to settle.`);
         return;
       }
-      const contestation = Number(contestationSeconds);
-      const unsynced = Number(unsyncedSeconds);
+      const contestation = contestationSeconds;
+      const unsynced = unsyncedSeconds;
       if (!Number.isInteger(contestation) || contestation < 60) {
         toast.error('The dispute window must be at least 60 seconds.');
         return;
@@ -162,7 +153,7 @@ export function IssueHydraInviteDialog({
       const invite = await createHydraInvite(apiClient, {
         hotWalletId,
         ttlHours: hours,
-        depositPeriodSeconds: Math.round(settle * 60),
+        depositPeriodSeconds: settleSeconds,
         contestationPeriodSeconds: contestation,
         unsyncedPeriodSeconds: unsynced,
       });
@@ -246,66 +237,54 @@ export function IssueHydraInviteDialog({
               </p>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="hydra-invite-settle">Added funds settle after (minutes)</Label>
-              <Input
-                id="hydra-invite-settle"
-                inputMode="numeric"
-                value={settleMinutes}
-                onChange={(event) => setSettleMinutes(event.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Money moved into this head is unusable for this long, and cannot be recovered for
-                three times it. Both nodes run the value you set here, and it is fixed once the head
-                exists.
-              </p>
-              {Number(settleMinutes) < 5 && (
-                <p className="text-xs text-amber-700 dark:text-amber-400">
-                  Under five minutes is fragile: the window in which the head can take a deposit is
-                  the same length again, and chain time here runs about half a minute behind.
-                </p>
-              )}
-            </div>
+            <DurationPicker
+              id="hydra-invite-settle"
+              label="Added funds settle after"
+              seconds={settleSeconds}
+              onChange={setSettleSeconds}
+              showDays={false}
+              hint="Money moved into this head is unusable for this long, and cannot be recovered for three times it. Both nodes run the value you set here, and it is fixed once the head exists."
+              warning={
+                settleSeconds < 5 * 60
+                  ? 'Under five minutes is fragile: the window in which the head can take a deposit is the same length again, and chain time runs about half a minute behind.'
+                  : null
+              }
+            />
 
             {/* Read once, if ever. The settle time above has a cost on every
                 top-up; these two only matter when a head is being closed or a
                 node falls behind. */}
-            <HydraDetailSection title="Advanced" summary="Dispute window, out-of-sync limit">
+            <HydraDetailSection
+              title="Advanced"
+              summary={`${formatDuration(contestationSeconds)} dispute window`}
+            >
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="hydra-invite-contestation">Dispute window (seconds)</Label>
-                  <Input
-                    id="hydra-invite-contestation"
-                    inputMode="numeric"
-                    value={contestationSeconds}
-                    onChange={(event) => setContestationSeconds(event.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    {humanDuration(Number(contestationSeconds))}. After the head closes, how long
-                    either side may dispute the final state. Nothing settles on chain until it
-                    passes, so it is also the wait between closing the head and having the funds
-                    back. Long is the safe direction: it is what protects you from a counterparty
-                    closing on a stale state while your node is down.
-                  </p>
-                </div>
+                <DurationPicker
+                  id="hydra-invite-contestation"
+                  label="Dispute window"
+                  seconds={contestationSeconds}
+                  onChange={(next) => {
+                    setContestationSeconds(next);
+                    // The sync limit is capped at half, so it follows the window
+                    // rather than silently becoming invalid behind a closed
+                    // section.
+                    setUnsyncedSeconds(Math.floor(next / 2));
+                  }}
+                  hint="After the head closes, how long either side may dispute the final state. Nothing settles on chain until it passes, so it is also the wait between closing the head and having the funds back. Long is the safe direction: it is what protects you from a counterparty closing on a stale state while your node is down."
+                />
 
-                <div className="space-y-2">
-                  <Label htmlFor="hydra-invite-unsynced">Out-of-sync limit (seconds)</Label>
-                  <Input
-                    id="hydra-invite-unsynced"
-                    inputMode="numeric"
-                    value={unsyncedSeconds}
-                    onChange={(event) => setUnsyncedSeconds(event.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    How long a node may see no new block before it declares itself out of sync and
-                    refuses commands, rather than acting on a stale view of the chain. It cannot
-                    exceed half the dispute window (
-                    {humanDuration(Math.floor(Number(contestationSeconds) / 2))} here): past that a
-                    node can believe it is in sync while it has already run out of time to contest a
-                    close.
-                  </p>
-                </div>
+                <DurationPicker
+                  id="hydra-invite-unsynced"
+                  label="Out-of-sync limit"
+                  seconds={unsyncedSeconds}
+                  onChange={setUnsyncedSeconds}
+                  hint={`How long a node may see no new block before it declares itself out of sync and refuses commands, rather than acting on a stale view of the chain. It cannot exceed half the dispute window (${formatDuration(Math.floor(contestationSeconds / 2))} here): past that a node can believe it is in sync while it has already run out of time to contest a close.`}
+                  warning={
+                    unsyncedSeconds > Math.floor(contestationSeconds / 2)
+                      ? 'Longer than half the dispute window. This will be refused.'
+                      : null
+                  }
+                />
               </div>
             </HydraDetailSection>
 
