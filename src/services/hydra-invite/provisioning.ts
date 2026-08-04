@@ -48,10 +48,12 @@ export type HeadPeriods = {
  *
  * **Dispute window** is the opposite: it is how long after closing either side
  * may contest a stale final state, and the only protection against a
- * counterparty closing on an outdated snapshot while your node is briefly down.
- * Short is dangerous, and the cost of long is only that settling takes longer.
- * An hour on mainnet, five minutes on a testnet where the worst case is a
- * re-run.
+ * counterparty closing on an outdated snapshot while your node is down. Closing
+ * is not always one clean step either — a head can settle across several
+ * transactions — so the window has to cover a node being unavailable for a
+ * realistic outage, not just a slow block. Five days on mainnet, twelve hours on
+ * a testnet. The cost of a long window is only that funds settle later; the cost
+ * of a short one is a close nobody was awake to contest.
  *
  * **Out-of-sync limit** follows hydra's own rule of half the dispute window: a
  * node that has seen no block for that long stops acting on its view of the
@@ -60,7 +62,7 @@ export type HeadPeriods = {
  */
 export function defaultPeriodsFor(network: Network): HeadPeriods {
 	const isMainnet = network === Network.Mainnet;
-	const contestationPeriodSeconds = isMainnet ? 3600 : 300;
+	const contestationPeriodSeconds = isMainnet ? 5 * 24 * 3600 : 12 * 3600;
 	return {
 		contestationPeriodSeconds,
 		depositPeriodSeconds: isMainnet ? 1200 : 600,

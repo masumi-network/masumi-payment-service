@@ -63,6 +63,15 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Seconds are unreadable past an hour, and a dispute window runs to days. */
+function humanDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+  if (seconds < 90) return `${Math.round(seconds)} seconds`;
+  if (seconds < 5400) return `${Math.round(seconds / 60)} minutes`;
+  if (seconds < 172_800) return `${(seconds / 3600).toFixed(seconds % 3600 === 0 ? 0 : 1)} hours`;
+  return `${(seconds / 86_400).toFixed(seconds % 86_400 === 0 ? 0 : 1)} days`;
+}
+
 export function RedeemHydraInviteDialog({
   open,
   onOpenChange,
@@ -228,7 +237,10 @@ export function RedeemHydraInviteDialog({
                   time. */}
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Network" value={preview.network} />
-                <Field label="Contestation" value={`${preview.contestationPeriodSeconds}s`} />
+                <Field
+                  label="Dispute window"
+                  value={humanDuration(preview.contestationPeriodSeconds)}
+                />
                 <Field
                   label="Deposit settles after"
                   value={`${Math.round(preview.depositPeriodSeconds / 60)} min`}
@@ -255,8 +267,9 @@ export function RedeemHydraInviteDialog({
                 </span>
               </label>
               <p className="text-xs text-muted-foreground">
-                The contestation period is how long a closing head can be disputed. It is fixed for
-                the head&apos;s life and cannot be changed afterwards.
+                The dispute window is how long a closing head can be contested, and therefore how
+                long after closing before anything settles on chain. It is fixed for the head&apos;s
+                life.
               </p>
 
               <HydraDetailSection title="Technical details" summary={preview.advertise}>

@@ -72,9 +72,18 @@ const MIN_SETTLE_MINUTES = 2;
  * of a long one is merely that settling takes longer. An hour on mainnet, five
  * minutes on a testnet where the worst case is a re-run.
  */
+/** Seconds are unreadable past an hour, and these values run to days. */
+function humanDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+  if (seconds < 90) return `${Math.round(seconds)} seconds`;
+  if (seconds < 5400) return `${Math.round(seconds / 60)} minutes`;
+  if (seconds < 172_800) return `${(seconds / 3600).toFixed(seconds % 3600 === 0 ? 0 : 1)} hours`;
+  return `${(seconds / 86_400).toFixed(seconds % 86_400 === 0 ? 0 : 1)} days`;
+}
+
 function defaultsFor(network: string) {
   const isMainnet = network === 'Mainnet';
-  const contestation = isMainnet ? 3600 : 300;
+  const contestation = isMainnet ? 5 * 24 * 3600 : 12 * 3600;
   return {
     settleMinutes: isMainnet ? 20 : 10,
     contestation,
@@ -272,9 +281,11 @@ export function IssueHydraInviteDialog({
                     onChange={(event) => setContestationSeconds(event.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    After the head closes, how long either side may dispute the final state. Nothing
-                    can be settled on chain until it passes, so it is also the wait between closing
-                    the head and having the funds back.
+                    {humanDuration(Number(contestationSeconds))}. After the head closes, how long
+                    either side may dispute the final state. Nothing settles on chain until it
+                    passes, so it is also the wait between closing the head and having the funds
+                    back. Long is the safe direction: it is what protects you from a counterparty
+                    closing on a stale state while your node is down.
                   </p>
                 </div>
 
@@ -289,9 +300,10 @@ export function IssueHydraInviteDialog({
                   <p className="text-xs text-muted-foreground">
                     How long a node may see no new block before it declares itself out of sync and
                     refuses commands, rather than acting on a stale view of the chain. It cannot
-                    exceed half the dispute window ({Math.floor(Number(contestationSeconds) / 2)}s
-                    here): past that a node can believe it is in sync while it has already run out
-                    of time to contest a close.
+                    exceed half the dispute window (
+                    {humanDuration(Math.floor(Number(contestationSeconds) / 2))} here): past that a
+                    node can believe it is in sync while it has already run out of time to contest a
+                    close.
                   </p>
                 </div>
               </div>
