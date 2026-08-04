@@ -499,6 +499,28 @@ async function finalizeAcceptedL2Lock(params: {
 }
 
 /**
+ * How long an auto-routed request waits for a busy head wallet before the L1
+ * pass may take it.
+ *
+ * A head lock needs the wallet that is a participant in that head, and that
+ * wallet builds one transaction at a time. Two purchases created seconds apart
+ * therefore contend for it, and the second one used to lose the head entirely:
+ * the L1 pass, running immediately after in the same tick, saw an unclaimed
+ * request and put it on chain. Waiting a couple of ticks costs nothing and is
+ * almost always enough, and the bound is what keeps a genuinely stuck wallet
+ * from parking purchases indefinitely.
+ */
+const AUTO_L2_DEFER_WINDOW_MS = 2 * 60 * 1000;
+
+export interface L2LockPassResult {
+	/**
+	 * Requests to keep away from L1 for this tick: a head is open for them, but
+	 * its wallet was busy. They are not failed — the next pass retries them.
+	 */
+	deferredRequestIds: string[];
+}
+
+/**
  * Route FundsLockingRequested V2 purchase requests through an open Hydra head
  * when one exists for (buyer hot wallet, seller). Runs BEFORE the L1 batch pass;
  * a handled request gets an L2 CurrentTransaction, so the L1 lock-and-query
@@ -508,7 +530,12 @@ async function finalizeAcceptedL2Lock(params: {
  * Invoked under the batch-payments per-tick mutex, so L2 selection is serialized
  * with the L1 pass within a process.
  */
-export async function processL2PurchaseLocks(): Promise<void> {
+export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
+	// Requests this pass wanted to route into a head but could not, only because
+	// the head's wallet was busy. Handed to the L1 pass so it leaves them alone
+	// this tick.
+	const deferredRequestIds: string[] = [];
+
 	const paymentSources = await prisma.paymentSource.findMany({
 		where: {
 			deletedAt: null,
@@ -651,6 +678,24 @@ export async function processL2PurchaseLocks(): Promise<void> {
 			// all: fail loudly instead of silently falling back to L1. A head that
 			// exists but whose wallet is merely busy this tick leaves `headAvailable`
 			// true, so the request retries next tick rather than being failed.
+			// Auto-routed, a head exists for this pair, and the only thing missing
+			// was a free wallet this tick. Falling through to L1 here is what put an
+			// unforced purchase on chain seconds after its head-bound sibling took
+			// the wallet: the head was open the whole time. Defer it instead, and
+			// only for as long as a wallet could plausibly free up — past that the
+			// L1 pass takes it on the usual cadence rather than waiting forever.
+			if (
+				!forcedHydra &&
+				!locked &&
+				(headAvailable || headResolutionIndeterminate) &&
+				Date.now() - request.createdAt.getTime() < AUTO_L2_DEFER_WINDOW_MS
+			) {
+				deferredRequestIds.push(request.id);
+				logger.info('L2 lock: head is open but its wallet is busy; holding the request off L1 for now', {
+					requestId: request.id,
+				});
+			}
+
 			if (forcedHydra && !locked && !headAvailable && !headResolutionIndeterminate) {
 				await failForcedL2Request(request, 'forceLayer=Hydra but no open head is available for this request');
 			} else if (forcedHydra && !locked && headResolutionIndeterminate) {
@@ -660,6 +705,8 @@ export async function processL2PurchaseLocks(): Promise<void> {
 			}
 		}
 	}
+
+	return { deferredRequestIds };
 }
 
 /**

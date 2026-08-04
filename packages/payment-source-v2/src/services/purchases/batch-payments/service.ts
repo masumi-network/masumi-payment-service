@@ -660,8 +660,15 @@ export async function batchLatestPaymentEntriesV2() {
 		// naturally skips them. Any failure after the L2 pre-submit reservation is
 		// fail-closed by that durable row; only failures before reservation remain
 		// eligible for this tick's L1 pass / a later retry.
+		//
+		// A request the L2 pass wanted but could not take — head open, its wallet
+		// busy with the previous lock — is reported back rather than left
+		// unclaimed, because unclaimed means this L1 pass locks it a moment later
+		// and the head is missed for good. On a failed pass nothing is deferred,
+		// which keeps the old behaviour: L1 takes everything it can.
+		let deferredToL2: string[] = [];
 		try {
-			await processL2PurchaseLocks();
+			({ deferredRequestIds: deferredToL2 } = await processL2PurchaseLocks());
 		} catch (l2Error) {
 			logger.error('L2 funds-lock pass failed; unreserved requests may continue to L1', { error: l2Error });
 		}
@@ -697,6 +704,8 @@ export async function batchLatestPaymentEntriesV2() {
 											CurrentTransaction: { is: null },
 											onChainState: null,
 											payByTime: { gte: payByTime },
+											// Waiting on a head wallet, not available to L1 this tick.
+											...(deferredToL2.length > 0 ? { id: { notIn: deferredToL2 } } : {}),
 											// Filter forced-Hydra and conflicting requests BEFORE `take`, or a
 											// full first page of L2-owned rows can starve later L1 work forever.
 											// Both nullable terms must independently permit L1: forceLayer is
