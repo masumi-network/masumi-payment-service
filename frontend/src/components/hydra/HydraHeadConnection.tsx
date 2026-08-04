@@ -40,7 +40,7 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
   const isHealthy = state !== null && state.connected && state.isReady;
 
   return (
-    <div className="space-y-2 rounded-md border p-4">
+    <div className="space-y-3 rounded-md border p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h3 className="flex items-center gap-1.5 font-medium">
@@ -79,7 +79,7 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
       {state === null ? (
         <p className="text-sm text-muted-foreground">Not checked yet.</p>
       ) : (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           {/* Reported separately because they fail independently and are fixed
               differently: a node that is down needs starting, a session that is
               absent usually re-establishes on its own. */}
@@ -121,7 +121,9 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
               sit in Initializing until their node is back and posts its commit.
             </p>
           )}
-          <p className="text-xs text-muted-foreground">
+          {/* When this was read, not something that was read. Set apart so it
+              stops scanning as another row of the list above it. */}
+          <p className="border-t pt-2 text-xs text-muted-foreground">
             Checked {new Date(state.checkedAt).toLocaleTimeString()}.
           </p>
         </div>

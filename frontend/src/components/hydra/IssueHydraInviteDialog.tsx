@@ -161,7 +161,9 @@ export function IssueHydraInviteDialog({
     if (Object.keys(problems).length > 0) {
       // The section holding the problem may be collapsed, so open it rather than
       // let the operator hunt for a message they cannot see.
-      if (problems.contestation !== undefined || problems.unsynced !== undefined) {
+      // Every duration now lives in that section, so anything except the wallet
+      // is a message the operator cannot currently see.
+      if (Object.keys(problems).some((field) => field !== 'wallet')) {
         setAdvancedOpen(true);
       }
       return;
@@ -259,64 +261,65 @@ export function IssueHydraInviteDialog({
               {errors.wallet && <p className="text-xs text-destructive">{errors.wallet}</p>}
             </div>
 
-            {/* The same control as the periods below it. A week expressed as
-                "168" in an hours box is a number an operator has to decode, and
-                it was the only duration on this form that worked differently
-                from the rest. */}
-            <DurationPicker
-              id="hydra-invite-ttl"
-              label="Invite valid for"
-              seconds={ttlSeconds}
-              onChange={(next) => {
-                setTtlSeconds(next);
-                setErrors({});
-              }}
-              error={errors.ttl}
-              hint={
-                <p>
-                  How long the node and peer port stay reserved for this invite. Long enough that
-                  the counterparty gets round to reading it.
-                </p>
-              }
-            />
-
-            <DurationPicker
-              id="hydra-invite-settle"
-              label="Added funds settle after"
-              seconds={settleSeconds}
-              onChange={(next) => {
-                setSettleSeconds(next);
-                setErrors({});
-              }}
-              showDays={false}
-              hint={
-                <>
-                  <p>
-                    Money moved into this head is unusable for this long, and cannot be recovered
-                    for three times it.
-                  </p>
-                  <p>
-                    Both nodes run the value you set here, and it is fixed once the head exists.
-                  </p>
-                </>
-              }
-              error={errors.settle}
-              warning={
-                settleSeconds < 5 * 60
-                  ? 'Under five minutes is fragile: the window in which the head can take a deposit is the same length again, and chain time runs about half a minute behind.'
-                  : null
-              }
-            />
-
-            {/* Read once, if ever. The settle time above has a cost on every
-                top-up; these two only matter when a head is being closed or a
-                node falls behind. */}
+            {/* Every period behind one disclosure. The defaults are chosen per
+                network and are right for almost every head, so the form asks
+                for one decision — which wallet — and keeps the four durations
+                one click away for the operator who needs them. */}
             <HydraDetailSection
-              title="Advanced"
-              summary={`${formatDuration(contestationSeconds)} dispute window`}
+              title="Timings"
+              summary={`${formatDuration(settleSeconds)} settle, ${formatDuration(contestationSeconds)} dispute`}
               defaultOpen={advancedOpen}
             >
               <div className="space-y-4">
+                {/* The same control as the periods below it. A week expressed as
+                  "168" in an hours box is a number an operator has to decode, and
+                  it was the only duration on this form that worked differently
+                  from the rest. */}
+                <DurationPicker
+                  id="hydra-invite-ttl"
+                  label="Invite valid for"
+                  seconds={ttlSeconds}
+                  onChange={(next) => {
+                    setTtlSeconds(next);
+                    setErrors({});
+                  }}
+                  error={errors.ttl}
+                  hint={
+                    <p>
+                      How long the node and peer port stay reserved for this invite. Long enough
+                      that the counterparty gets round to reading it.
+                    </p>
+                  }
+                />
+
+                <DurationPicker
+                  id="hydra-invite-settle"
+                  label="Added funds settle after"
+                  seconds={settleSeconds}
+                  onChange={(next) => {
+                    setSettleSeconds(next);
+                    setErrors({});
+                  }}
+                  showDays={false}
+                  hint={
+                    <>
+                      <p>
+                        Money moved into this head is unusable for this long, and cannot be
+                        recovered for three times it.
+                      </p>
+                      <p>
+                        Both nodes run the value you set here, and it is fixed once the head exists.
+                      </p>
+                    </>
+                  }
+                  error={errors.settle}
+                  warning={
+                    settleSeconds < 5 * 60
+                      ? 'Under five minutes is fragile: the window in which the head can take a deposit is the same length again, and chain time runs about half a minute behind.'
+                      : null
+                  }
+                />
+
                 <DurationPicker
                   id="hydra-invite-contestation"
                   label="Dispute window"
