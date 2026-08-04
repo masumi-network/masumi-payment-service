@@ -59,7 +59,7 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
       <div className="flex items-center justify-between">
         <h3 className="font-medium">Your in-head balance</h3>
         <span className="text-xs text-muted-foreground">
-          Your funds only, not the counterparty&apos;s
+          Spendable now. Your funds only, not the counterparty&apos;s
         </span>
       </div>
 
@@ -86,7 +86,7 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
         // sits Confirmed below reads as a contradiction.
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
           {hasSettlingDeposit
-            ? 'A deposit is confirmed on chain and waiting for the head to absorb it. This updates once the head increments.'
+            ? 'A deposit is on chain and waiting for the head to take it. It becomes spendable at the time shown on the deposit below.'
             : hasExpiredDeposit
               ? 'A deposit confirmed on chain but the head never absorbed it before its deadline, so the funds stayed on L1. Adding them again is the way forward.'
               : 'Nothing in the head yet. Add funds below.'}

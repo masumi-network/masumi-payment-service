@@ -16,7 +16,7 @@
  * token that renders as "tUSDM" on an invoice is the same token here.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -24,6 +24,7 @@ import {
   recoverHydraTopup,
   topupHydraHead,
   useHydraTopups,
+  type HydraTopup,
   type HydraTopupRequest,
 } from '@/lib/hooks/useHydraHeads';
 import { Badge } from '@/components/ui/badge';
@@ -129,6 +130,20 @@ function HydraTopupList({
 }) {
   const { apiClient } = useAppContext();
   const { topups, refetch } = useHydraTopups(headId, isOpen);
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 15_000);
+    const first = setTimeout(() => setNow(Date.now()), 0);
+    return () => {
+      clearInterval(tick);
+      clearTimeout(first);
+    };
+  }, []);
+
+  // Until the clock is read, nothing is claimed to be usable: saying money is
+  // in the head when it is not is the error that matters here.
+  const isUsable = (topup: HydraTopup) =>
+    now !== null && topup.usableFrom !== undefined && new Date(topup.usableFrom).getTime() <= now;
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
 
   async function handleRecover(topupId: string) {
@@ -162,22 +177,38 @@ function HydraTopupList({
             className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
           >
             <div className="flex items-center gap-2">
+              {/* Confirmed is about the transaction, not about the head. Between
+                  the two the money is on chain, committed to this head, and
+                  unusable, which read as success when both said "Confirmed". */}
               <Badge
                 variant="outline"
                 className={
-                  topup.status === 'Confirmed'
-                    ? 'text-green-600 dark:text-green-400'
-                    : topup.status === 'Failed'
-                      ? 'text-red-600 dark:text-red-400'
-                      : undefined
+                  topup.status === 'Failed'
+                    ? 'text-red-600 dark:text-red-400'
+                    : topup.status === 'Confirmed' && isUsable(topup)
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-amber-600 dark:text-amber-400'
                 }
               >
                 {topup.status === 'Pending' && <Spinner className="mr-1 h-3 w-3" />}
-                {topup.status}
+                {topup.status === 'Failed'
+                  ? 'Expired'
+                  : topup.status === 'Pending'
+                    ? 'Sending'
+                    : isUsable(topup)
+                      ? 'In the head'
+                      : 'Settling'}
               </Badge>
               <span className="font-mono text-sm">
                 {formatLovelace(topup.committedLovelace, network)}
               </span>
+              {topup.status === 'Confirmed' &&
+                !isUsable(topup) &&
+                topup.usableFrom !== undefined && (
+                  <span className="text-xs text-muted-foreground">
+                    usable {new Date(topup.usableFrom).toLocaleTimeString()}
+                  </span>
+                )}
             </div>
             <span className="flex items-center gap-1">
               <span className="font-mono text-xs text-muted-foreground">

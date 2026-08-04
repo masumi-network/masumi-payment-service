@@ -49,6 +49,18 @@ type IssueHydraInviteDialogProps = {
 
 const DEFAULT_TTL_HOURS = 168;
 
+/**
+ * How long money added to the head waits before it can be used.
+ *
+ * Ten minutes on a testnet, where a rollback costs nothing. The floor is two:
+ * a node measures a deposit's age in its own chain time, which trails real time
+ * by around half a minute here, and the window in which any node will take the
+ * deposit is only one period wide. Below a couple of minutes that window is the
+ * same size as the jitter it has to survive.
+ */
+const DEFAULT_SETTLE_MINUTES = 10;
+const MIN_SETTLE_MINUTES = 2;
+
 export function IssueHydraInviteDialog({
   open,
   onOpenChange,
@@ -58,6 +70,7 @@ export function IssueHydraInviteDialog({
   const { wallets } = useWallets();
   const [hotWalletId, setHotWalletId] = useState('');
   const [ttlHours, setTtlHours] = useState(String(DEFAULT_TTL_HOURS));
+  const [settleMinutes, setSettleMinutes] = useState(String(DEFAULT_SETTLE_MINUTES));
   const [isLoading, setIsLoading] = useState(false);
   const [issued, setIssued] = useState<{ code: string; expiresAt: string } | null>(null);
 
@@ -87,7 +100,16 @@ export function IssueHydraInviteDialog({
 
     setIsLoading(true);
     try {
-      const invite = await createHydraInvite(apiClient, { hotWalletId, ttlHours: hours });
+      const settle = Number(settleMinutes);
+      if (!Number.isFinite(settle) || settle < MIN_SETTLE_MINUTES) {
+        toast.error(`Funds need at least ${MIN_SETTLE_MINUTES} minutes to settle.`);
+        return;
+      }
+      const invite = await createHydraInvite(apiClient, {
+        hotWalletId,
+        ttlHours: hours,
+        depositPeriodSeconds: Math.round(settle * 60),
+      });
       setIssued({ code: invite.code, expiresAt: invite.expiresAt });
       onIssued();
     } catch (error) {

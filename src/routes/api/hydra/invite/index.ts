@@ -152,7 +152,12 @@ export const createInviteSchemaInput = z.object({
 	depositPeriodSeconds: z.coerce
 		.number()
 		.int()
-		.min(60)
+		// Two minutes is the floor worth allowing. A node measures the deposit's
+		// age in its own chain time, which trails real time by around half a
+		// minute, and the window in which any node will take the deposit is only
+		// one period wide. Below a couple of minutes that window is comparable to
+		// the observation jitter itself.
+		.min(120)
 		.max(86_400)
 		.optional()
 		.describe(

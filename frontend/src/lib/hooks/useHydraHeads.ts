@@ -223,6 +223,8 @@ export type HydraTopupResult = {
   committedAssets: Record<string, string>;
   /** After this, the head can no longer absorb the deposit. */
   deadline?: string;
+  /** Before this, the head will not take it however confirmed the transaction is. */
+  usableFrom?: string;
 };
 
 export type HydraTopupRequest = {
@@ -556,7 +558,7 @@ export function useHydraInvites() {
  */
 export async function createHydraInvite(
   apiClient: Client,
-  payload: { hotWalletId: string; ttlHours?: number },
+  payload: { hotWalletId: string; ttlHours?: number; depositPeriodSeconds?: number },
 ) {
   const response = await handleApiCall(
     () =>
@@ -784,6 +786,8 @@ export type HydraTopup = {
   committedAssets: Record<string, string>;
   /** After this, the head can no longer absorb the deposit. */
   deadline?: string;
+  /** Before this, the head will not take it however confirmed the transaction is. */
+  usableFrom?: string;
 };
 
 /**

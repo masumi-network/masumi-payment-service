@@ -30286,7 +30286,7 @@
                                     },
                                     "depositPeriodSeconds": {
                                         "type": "integer",
-                                        "minimum": 60,
+                                        "minimum": 120,
                                         "maximum": 86400,
                                         "description": "How long a deposit must settle before this head will take it. Both nodes run the value signed here. It decides how long a top-up is unusable (one period), and how long it is stuck if nobody takes it (three). Defaults to 600 on preprod and 3600 on mainnet, which is how long a rollback takes to rule out where the funds are real."
                                     }

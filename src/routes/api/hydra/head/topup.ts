@@ -60,6 +60,15 @@ export const listTopupsOutput = z.object({
 			 * "being folded in", which stays true-looking forever.
 			 */
 			deadline: z.string(),
+			/**
+			 * When the head can first take this deposit.
+			 *
+			 * A deposit confirming on chain is not the same as the head holding it:
+			 * a node ignores a deposit until it is older than the deposit period,
+			 * so between those two moments the money is on chain, spoken for, and
+			 * unusable. Reporting only "Confirmed" made that gap look like success.
+			 */
+			usableFrom: z.string(),
 		}),
 	),
 });
@@ -109,6 +118,8 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(404, 'Hydra head not found');
 		}
 		const slotConfig = SLOT_CONFIG_NETWORK[convertNetwork(head.HydraRelation.network)];
+		const deadlineMsOf = (slot: bigint) =>
+			slotConfig.zeroTime + (Number(slot) - slotConfig.zeroSlot) * slotConfig.slotLength;
 
 		const rows = await prisma.hydraTopup.findMany({
 			where: { hydraHeadId: input.headId },
@@ -123,8 +134,12 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 				status: row.status,
 				depositTxHash: row.depositTxHash,
 				committedLovelace: row.committedLovelace.toString(),
-				deadline: new Date(
-					slotConfig.zeroTime + (Number(row.invalidHereafterSlot) - slotConfig.zeroSlot) * slotConfig.slotLength,
+				deadline: new Date(deadlineMsOf(row.invalidHereafterSlot)).toISOString(),
+				// The node writes the deadline as `deposit + 3·DP` and will not touch
+				// the deposit before `deposit + DP`, so a third of the way there is
+				// exactly when it becomes eligible.
+				usableFrom: new Date(
+					row.createdAt.getTime() + (deadlineMsOf(row.invalidHereafterSlot) - row.createdAt.getTime()) / 3,
 				).toISOString(),
 				committedAssets: (row.committedAssets ?? {}) as Record<string, string>,
 			})),
