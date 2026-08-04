@@ -12804,7 +12804,7 @@ export type PostHydraInviteData = {
          */
         depositPeriodSeconds?: number;
         /**
-         * How long after closing the head anyone may dispute the final state. Nobody can settle on chain until it elapses, so it is the wait between closing a head and getting the funds back. Longer is safer against a counterparty closing on a stale state; shorter settles sooner. Defaults to 220.
+         * How long after closing the head anyone may dispute the final state. Nobody can settle on chain until it elapses, so it is also the wait between closing a head and getting the funds back. Longer is the safe direction: it is the only protection against a counterparty closing on a stale state while your node is down, and settling can take several transactions. Defaults to 5 days on mainnet and 12 hours on preprod.
          */
         contestationPeriodSeconds?: number;
         /**
@@ -12881,6 +12881,7 @@ export type PostHydraInvitePreviewResponses = {
             nonce: string;
             network: 'Preprod' | 'Mainnet';
             issuerWalletAddress: string;
+            issuerWalletRole?: 'Buyer' | 'Seller';
             advertise: string;
             exchangeUrl: string;
             expiresAt: string;

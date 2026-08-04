@@ -226,6 +226,12 @@ export const previewInviteSchemaOutput = z.object({
 	nonce: z.string(),
 	network: z.nativeEnum(Network),
 	issuerWalletAddress: z.string(),
+	/**
+	 * Which side the issuer takes, so the redeemer can be offered the wallets
+	 * that can actually work. Optional: an invite minted before the role was
+	 * signed carries no answer, and guessing one would filter the list wrongly.
+	 */
+	issuerWalletRole: z.enum(['Buyer', 'Seller']).optional(),
 	advertise: z.string(),
 	exchangeUrl: z.string(),
 	expiresAt: z.string(),

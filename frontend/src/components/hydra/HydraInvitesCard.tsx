@@ -8,21 +8,16 @@
  */
 
 import { useState } from 'react';
-import { Loader2, MoreHorizontal, Ticket } from 'lucide-react';
+import { Loader2, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { CopyButton } from '@/components/ui/copy-button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { revokeHydraInvite, useHydraInvites, type HydraInvite } from '@/lib/hooks/useHydraHeads';
+import { HydraInviteDetailsDialog } from '@/components/hydra/HydraInviteDetailsDialog';
 import { IssueHydraInviteDialog } from '@/components/hydra/IssueHydraInviteDialog';
 import { RedeemHydraInviteDialog } from '@/components/hydra/RedeemHydraInviteDialog';
 
@@ -70,11 +65,12 @@ export function HydraInvitesCard({
   /** 'embedded' drops the card chrome, for use inside a dialog that already has a header. */
   variant?: 'card' | 'embedded';
 }) {
-  const { apiClient } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const { invites, refetch, isLoading } = useHydraInvites();
   const [isIssueOpen, setIsIssueOpen] = useState(false);
   const [isRedeemOpen, setIsRedeemOpen] = useState(false);
   const [pendingRevoke, setPendingRevoke] = useState<HydraInvite | null>(null);
+  const [detailsInvite, setDetailsInvite] = useState<HydraInvite | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   async function handleRevoke(invite: HydraInvite) {
@@ -158,41 +154,32 @@ export function HydraInvitesCard({
                 key={invite.id}
                 className="flex flex-wrap items-center justify-between gap-3 px-3 py-2"
               >
-                <div className="min-w-0 space-y-1">
+                <button
+                  type="button"
+                  className="min-w-0 space-y-1 text-left"
+                  onClick={() => setDetailsInvite(invite)}
+                >
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs">{invite.nonce.slice(0, 12)}…</span>
+                    <span className="font-mono text-xs underline-offset-4 hover:underline">
+                      {invite.nonce.slice(0, 12)}…
+                    </span>
                     <Badge variant={statusTone(invite.status)}>{invite.status}</Badge>
                     <Badge variant="outline">{invite.role}</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">{describe(invite)}</p>
-                </div>
+                </button>
 
                 <div className="flex items-center gap-1">
                   <CopyButton value={invite.nonce} />
-                  {invite.role === 'Issuer' && invite.status === 'Issued' && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          disabled={busyId === invite.id}
-                          aria-label={`More actions for invite ${invite.nonce}`}
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
-                          onClick={() => setPendingRevoke(invite)}
-                        >
-                          Revoke and release its node
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busyId === invite.id}
+                    onClick={() => setDetailsInvite(invite)}
+                  >
+                    Details
+                  </Button>
                 </div>
               </li>
             ))}
