@@ -232,6 +232,28 @@ Connectivity in Hydra's network layer is cluster-wide, not per peer: a node
 reports itself connected or not, not "connected to X". Both sides being *Ready*
 is the signal, not one side.
 
+### Nodes exit immediately with SIGILL
+
+```
+[supervisor] starting <id> (peer 5001, api 4001)
+[supervisor] <id> exited (code=null signal=SIGILL)
+```
+
+The Host is fine — this is `hydra-node` itself refusing to run. Upstream
+publishes only `x86_64-linux` and `aarch64-darwin` builds, so on arm64 hardware
+the container runs the amd64 binary under emulation and it dies the moment it
+touches its crypto path. The supervisor restarts it with backoff and node health
+reports `usable: false` with a climbing `restartCount`, which is the correct
+report of a node that cannot run.
+
+An early sign, before you start anything: `GET /v1/capabilities` returns a
+`hydraVersion` but a null `scriptCatalogue` with
+`probeError: --hydra-script-catalogue: Command failed`. The version call
+survives emulation; the catalogue call does not.
+
+Run the Host on amd64 Linux, or natively — see
+[hydra-host-native-mode.md](hydra-host-native-mode.md).
+
 ### A payment settled on L1 with the head open
 
 Almost always one of:
