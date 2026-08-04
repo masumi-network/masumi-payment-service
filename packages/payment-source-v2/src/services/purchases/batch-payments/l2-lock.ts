@@ -60,6 +60,7 @@ import { resolveHydraL2WindowOptions } from '@/utils/hydra/l2-slot-context';
 import { requireHydraValidityUpperSlot } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { calculateMinUtxo, DUMMY_RESULT_HASH } from '@/utils/min-utxo';
 import { lockOpenHydraHeadForL2Reservation } from '../../l2-submission';
+import { HydraTransactionRejectedError } from '@/lib/hydra/hydra/errors';
 
 type PaymentSourceWithL2Relations = Prisma.PaymentSourceGetPayload<{
 	include: {
@@ -201,7 +202,24 @@ async function executeL2Lock(
 	// address up front keeps complete() fully offline. The lock is a script OUTPUT
 	// with an inline datum and NO script execution → no redeemer, no collateral,
 	// no script_data_hash, so no evaluation is needed.
-	const walletUtxos = await wallet.getUtxos();
+	// A deposit still being folded in is already in the head's snapshot and is
+	// not yet spendable: the head refuses anything consuming it with "all inputs
+	// are spent", which reads like a malformed transaction and is really a race
+	// with the fold. Dropping just those references keeps the head usable on the
+	// funds it already had — only a wallet whose entire balance is the arriving
+	// deposit has to wait, and that falls out of selection below.
+	const pendingIncrementRefs = hydraProvider.getPendingIncrementUtxoRefs?.() ?? new Set<string>();
+	const allWalletUtxos = await wallet.getUtxos();
+	const walletUtxos = allWalletUtxos.filter(
+		(utxo) => !pendingIncrementRefs.has(`${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase()),
+	);
+	if (walletUtxos.length !== allWalletUtxos.length) {
+		logger.info('L2 lock: leaving a deposit that is still being folded in out of coin selection', {
+			purchaseRequestId: request.id,
+			hydraHeadId,
+			excludedUtxoCount: allWalletUtxos.length - walletUtxos.length,
+		});
+	}
 	// Select explicit inputs of ANY form (pure-ADA or asset-carrying) that cover
 	// the paid funds + a splitter self-send + a min-UTxO change floor; leftover
 	// assets are returned by changeAddress below. See selectInHeadFundingUtxos for
@@ -300,6 +318,27 @@ async function executeL2Lock(
 		// wallet inputs remain fresh. A withholding node can relay a valid lock and
 		// then report rejection; releasing this reservation would permit a second
 		// lock from different inputs. Keep it fail-closed for reconciliation.
+		// A rejection naming our own transaction hash is the one outcome that is
+		// not ambiguous: the head refused this body. Record it so recovery can
+		// hand the request back once the body's validity window has closed and it
+		// can never be included after the fact. The reservation stays held either
+		// way — this only decides whether it can ever be released.
+		if (error instanceof HydraTransactionRejectedError) {
+			await prisma.transaction
+				.updateMany({
+					where: { id: reservation.transactionId, status: TransactionStatus.Pending, l2RejectedByHeadAt: null },
+					data: { l2RejectedByHeadAt: new Date(), l2RejectedByHeadReason: error.message.slice(0, 500) },
+				})
+				.catch((persistError: unknown) => {
+					// The reservation is what protects the funds; failing to annotate it
+					// only means recovery cannot release it automatically later.
+					logger.warn('L2 lock: could not record the head rejection on the reservation', {
+						purchaseRequestId: request.id,
+						hydraHeadId,
+						error: persistError instanceof Error ? persistError.message : persistError,
+					});
+				});
+		}
 		return retainInitialL2LockAfterSubmitFailure(intendedTxHash, error);
 	}
 	const submitMs = Date.now() - tSubmit;

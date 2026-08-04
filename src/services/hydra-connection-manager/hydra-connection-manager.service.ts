@@ -745,6 +745,23 @@ export class HydraConnectionManager {
 			});
 		});
 
+		// Funds that were promised to a deposit have just become spendable. Anything
+		// that was waiting on them should run now rather than on the next tick.
+		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {
+			// Loaded on demand: the nudge reaches the payment-source services, and
+			// importing that graph here would drag the whole settlement stack into
+			// every consumer of the connection manager.
+			void import('@/services/hydra-nudge')
+				.then(({ nudgeHydraCycle }) => nudgeHydraCycle('lockFunds'))
+				.catch((error: unknown) => {
+					// The batch tick remains the backstop, so this costs latency only.
+					logger.warn('[HydraConnectionManager] could not run the L2 lock pass after a deposit landed', {
+						hydraHeadId,
+						error: error instanceof Error ? error.message : error,
+					});
+				});
+		});
+
 		head.mainNode.on(HydraNodeEvent.TxConfirmed, (txId: string, confirmedTransaction?: HydraConfirmedTransaction) => {
 			void (async () => {
 				try {

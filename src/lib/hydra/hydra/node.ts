@@ -139,6 +139,9 @@ const HEAD_SCOPED_SERVER_OUTPUT_TAGS = new Set([
 	'SnapshotSideLoaded',
 ]);
 
+/** `txHash#index`, the reference form hydra-node keys its UTxO maps by. */
+const HYDRA_UTXO_REFERENCE_PATTERN = /^[0-9a-fA-F]{64}#\d{1,5}$/;
+
 function compareConfirmedTransactions(a: HydraConfirmedTransaction, b: HydraConfirmedTransaction): number {
 	const sequenceDifference =
 		(a.snapshotSequence ?? Number.MAX_SAFE_INTEGER) - (b.snapshotSequence ?? Number.MAX_SAFE_INTEGER);
@@ -176,6 +179,8 @@ export interface IHydraNode {
 	get httpUrl(): string;
 	get wsUrl(): string;
 	get headClock(): HydraHeadClock | undefined;
+	readonly hasPendingIncrement?: boolean;
+	readonly pendingIncrementUtxoRefs?: ReadonlySet<string>;
 	readonly hasVerifiedPinnedSessions?: boolean;
 	readonly expectedHeadId?: string;
 	pinExpectedHeadId?(headId: string): void;
@@ -280,6 +285,19 @@ export class HydraNode extends EventEmitter {
 	private readonly _maxRetainedTransactionCborBytes: number;
 	private _reconciledHistoryCursor: { snapshotSequence: number; snapshotTransactionIndex: number } | undefined;
 	private readonly _authHeaders: Record<string, string>;
+	/**
+	 * Deposits approved for folding in but not yet finalized.
+	 *
+	 * A counter rather than a flag: nothing stops a second deposit being approved
+	 * before the first finalizes, and a flag cleared by the first would reopen
+	 * the window the second is still inside.
+	 */
+	private _pendingIncrementCount = 0;
+	/**
+	 * UTxO references (`txHash#index`) belonging to deposits still being folded
+	 * in — visible in the snapshot, not yet spendable.
+	 */
+	private readonly _pendingIncrementUtxos = new Set<string>();
 
 	constructor(config: HydraNodeClientConfig) {
 		super();
@@ -858,6 +876,28 @@ export class HydraNode extends EventEmitter {
 			if (envelope.tag === 'HeadIsFinalized' && typeof message === 'object' && message !== null && 'utxo' in message) {
 				this.recordFinalizedFanout(headIsFinalizedMessageSchema.parse(message));
 			}
+			// A deposit is folded in over two events, and in between the head has
+			// agreed to spend its current UTxO set without having produced the
+			// replacement yet. Anything built against that set in the gap is refused
+			// with "all inputs are spent", which reads like a bug in the transaction
+			// and is really a race with the fold-in. Every deposit opens this window,
+			// not just a head's first.
+			if (envelope.tag === 'CommitApproved') {
+				this._pendingIncrementCount += 1;
+				this.recordPendingIncrementUtxos(message);
+			}
+			if (envelope.tag === 'CommitFinalized' || envelope.tag === 'CommitRecovered') {
+				this._pendingIncrementCount = Math.max(0, this._pendingIncrementCount - 1);
+				// Only once nothing is in flight. A finalization names its deposit but
+				// an approval does not, so with two deposits pending there is no way
+				// to tell which set just became spendable. Holding both until the
+				// last one lands over-blocks for a few minutes; releasing early
+				// re-creates the failure this exists to prevent.
+				if (this._pendingIncrementCount === 0) {
+					this._pendingIncrementUtxos.clear();
+				}
+				this.emit(HydraNodeEvent.IncrementFinalized);
+			}
 		} catch (error) {
 			if (error === this._unsupportedPersistenceRotationError) {
 				this.failHistoryReplay(error);
@@ -1043,6 +1083,45 @@ export class HydraNode extends EventEmitter {
 			};
 		} catch {
 			// non-JSON frames are other consumers' problem; the clock just skips them
+		}
+	}
+
+	/**
+	 * True while the head has agreed to absorb a deposit it has not yet absorbed.
+	 *
+	 * Callers building against the current snapshot should wait: the inputs they
+	 * can see are already promised to the fold-in, so the head refuses anything
+	 * spending them until it completes.
+	 */
+	get hasPendingIncrement(): boolean {
+		return this._pendingIncrementCount > 0;
+	}
+
+	/**
+	 * References of the funds arriving in a deposit that has not finished folding
+	 * in. The head shows them in its snapshot and refuses to spend them, so a
+	 * builder must leave them out of coin selection rather than avoid the head.
+	 */
+	get pendingIncrementUtxoRefs(): ReadonlySet<string> {
+		return this._pendingIncrementUtxos;
+	}
+
+	/**
+	 * Remember what a `CommitApproved` says is arriving.
+	 *
+	 * Best-effort by design: the frame comes from another process, so a shape we
+	 * do not recognise leaves the set as it was. Missing a reference costs one
+	 * rejected transaction, which is what happened before any of this existed;
+	 * throwing here would take down a live session over diagnostics.
+	 */
+	private recordPendingIncrementUtxos(message: unknown): void {
+		if (typeof message !== 'object' || message === null || !('utxoToCommit' in message)) return;
+		const utxoToCommit = (message as { utxoToCommit?: unknown }).utxoToCommit;
+		if (typeof utxoToCommit !== 'object' || utxoToCommit === null) return;
+		for (const reference of Object.keys(utxoToCommit)) {
+			if (HYDRA_UTXO_REFERENCE_PATTERN.test(reference)) {
+				this._pendingIncrementUtxos.add(reference.toLowerCase());
+			}
 		}
 	}
 
@@ -1932,7 +2011,17 @@ function handleWsResponse(
 			assertExpectedFrameHeadId(message, expectedHeadId);
 			const rejectedTxHash = resolveBoundTransactionHash(message.transaction);
 			if (command === 'NewTx' && transactionHash === rejectedTxHash) {
-				return { kind: 'reject', error: new HydraTransactionRejectedError('Transaction is invalid') };
+				// The node's own reason, when it gave one. Without it every rejection
+				// reads the same, and the ones worth acting on — a lock that raced a
+				// deposit being folded in, say — are indistinguishable from a bug in
+				// the transaction we built.
+				const reason = message.validationError?.reason;
+				return {
+					kind: 'reject',
+					error: new HydraTransactionRejectedError(
+						reason ? `Transaction is invalid: ${reason}` : 'Transaction is invalid',
+					),
+				};
 			}
 			return { kind: 'message', message };
 		}

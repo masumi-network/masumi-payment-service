@@ -85,6 +85,20 @@ export const txValidMessageSchema = z.looseObject({
 export const txInvalidMessageSchema = z.looseObject({
 	tag: z.literal('TxInvalid'),
 	transaction: hydraTransactionSchema,
+	/**
+	 * Why the head refused it, in the ledger's own words.
+	 *
+	 * Bounded and optional because it is diagnostic text from another process:
+	 * it must never be trusted for control flow, and a node that omits it or
+	 * sends something unexpected must not fail the frame. It is worth carrying
+	 * because "Transaction is invalid" on its own leaves an operator with no way
+	 * to tell a race from a bug — the difference between "retry" and "escalate".
+	 */
+	validationError: z
+		.looseObject({
+			reason: z.string().max(2000).optional(),
+		})
+		.optional(),
 	headId: canonicalHydraHeadIdSchema,
 	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
 });

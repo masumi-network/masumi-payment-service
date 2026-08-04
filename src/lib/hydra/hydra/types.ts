@@ -47,6 +47,14 @@ export enum HydraNodeEvent {
 	StatusChange = 'StatusChange',
 	TxConfirmed = 'TxConfirmed',
 	HistoryReplayFailed = 'HistoryReplayFailed',
+	/**
+	 * A deposit finished folding in, so its funds are spendable at last.
+	 *
+	 * Worth an event rather than a poll: work that was waiting on those funds
+	 * would otherwise sit until the next batch tick, which is the difference
+	 * between a payment settling now and settling in half a minute.
+	 */
+	IncrementFinalized = 'IncrementFinalized',
 }
 
 export interface StatusChangeData {

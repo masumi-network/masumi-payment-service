@@ -89,6 +89,24 @@ export class HydraProvider implements IFetcher, ISubmitter {
 		return this._node.headClock;
 	}
 
+	/**
+	 * True while a deposit is between approved and finalized. See the node's own
+	 * accessor: transactions built against the visible snapshot are refused for
+	 * the length of that window.
+	 */
+	hasPendingIncrement(): boolean {
+		return this._node.hasPendingIncrement === true;
+	}
+
+	/**
+	 * The arriving deposit's UTxO references, while it is still being folded in.
+	 * Leave these out of coin selection: the head shows them and will not spend
+	 * them until the fold completes.
+	 */
+	getPendingIncrementUtxoRefs(): ReadonlySet<string> {
+		return this._node.pendingIncrementUtxoRefs ?? new Set<string>();
+	}
+
 	async fetchUTxOs(hash?: string, index?: number): Promise<UTxO[]> {
 		const snapshotUTxOs = await this._node.snapshotUTxO();
 		const results = hash ? snapshotUTxOs.filter((utxo) => utxo.input.txHash === hash) : snapshotUTxOs;

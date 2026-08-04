@@ -5,6 +5,7 @@ import type { HydraNode } from '@/lib/hydra/hydra/node';
 import { hydraValidityUpperBoundTimeMs } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
+import { releaseRejectedL2Reservation } from './l2-reservation-release';
 
 export const L2_RESERVATION_EXPIRY_GRACE_MS = 60_000;
 export const EXPIRED_L2_RESERVATION_WARNING_INTERVAL_MS = 60 * 60_000;
@@ -86,10 +87,18 @@ export async function reportExpiredL2Reservations(params: {
 			id: true,
 			intendedTxHash: true,
 			invalidHereafterSlot: true,
+			// Only a body the head itself refused can ever be released, and only
+			// back to the state the reservation replaced.
+			l2RejectedByHeadAt: true,
+			l2ReservationPreviousLayer: true,
+			l2ReservationPreviousSmartContractWalletId: true,
+			l2ReservationPreviousBuyerReturnAddress: true,
+			l2ReservationPreviousCollateralReturn: true,
 		},
 	});
 
 	let reported = 0;
+	let releasedCount = 0;
 	const transactionIdSamples: string[] = [];
 	for (const candidate of candidates) {
 		if (candidate.intendedTxHash == null || candidate.invalidHereafterSlot == null) continue;
@@ -112,6 +121,21 @@ export async function reportExpiredL2Reservations(params: {
 			continue;
 		}
 
+		// Past the gate the body can no longer be included by anyone. If the head
+		// also told us it refused this body, there is nothing left to be ambiguous
+		// about, and holding the reservation only keeps a purchase stuck.
+		if (candidate.l2RejectedByHeadAt != null) {
+			const released = await releaseRejectedL2Reservation(candidate, database);
+			if (released) {
+				releasedCount += 1;
+				logger.info('[HydraReconcile] released a reservation the head refused; the request can be locked again', {
+					hydraHeadId,
+					transactionId: candidate.id,
+				});
+				continue;
+			}
+		}
+
 		reported += 1;
 		if (transactionIdSamples.length < MAX_EXPIRED_L2_WARNING_SAMPLES) transactionIdSamples.push(candidate.id);
 	}
@@ -122,6 +146,13 @@ export async function reportExpiredL2Reservations(params: {
 			transactionIdSamples,
 		});
 	}
+	if (releasedCount > 0) {
+		logger.info('[HydraReconcile] released reservations the head had refused', {
+			hydraHeadId,
+			releasedReservationCount: releasedCount,
+		});
+	}
+	// Still the count that needs a human. A released reservation resolved itself.
 	return reported;
 }
 
