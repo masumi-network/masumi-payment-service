@@ -9,8 +9,10 @@
 --
 -- Nullable rather than a placeholder hash: reconciliation keys off the hash, and
 -- a fake one would be a hash it could go looking for on chain.
-
-ALTER TYPE "HydraTopupStatus" ADD VALUE IF NOT EXISTS 'Preparing' BEFORE 'Pending';
+--
+-- The Preparing enum value is added by the migration before this one, because
+-- ALTER TYPE ... ADD VALUE cannot run inside a transaction block on PostgreSQL
+-- before 12 and Prisma wraps each migration in one.
 
 ALTER TABLE "HydraTopup" ALTER COLUMN "depositTxHash" DROP NOT NULL;
 ALTER TABLE "HydraTopup" ALTER COLUMN "invalidHereafterSlot" DROP NOT NULL;

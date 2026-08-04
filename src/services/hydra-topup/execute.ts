@@ -88,6 +88,10 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	const hydraHead = cm.getHead(head.id);
 	if (!hydraHead) throw createHttpError(502, 'No active connection to Hydra head');
 
+	// Hoisted so the outer catch can resolve the row it created: a Preparing row
+	// is invisible to reconciliation, which has no deposit hash to look for.
+	let preparingTopupId: string | null = null;
+
 	try {
 		let verifiedHead: Awaited<ReturnType<typeof verifyPersistedHydraHeadOnChain>>;
 		try {
@@ -108,10 +112,20 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 
 		// Reconcile any prior pending top-up first; only one Pending deposit per
 		// participant is permitted, so refuse a new one while an earlier could land.
+		// Preparing counts as in flight. It holds a pre-split that is already on
+		// chain, and a second one against the same wallet would race it for the
+		// same UTxOs — which the unique index on the deposit hash used to prevent
+		// only because the row was created that late.
 		const pending = await prisma.hydraTopup.findFirst({
-			where: { hydraLocalParticipantId: localParticipant.id, status: 'Pending' },
+			where: {
+				hydraLocalParticipantId: localParticipant.id,
+				status: { in: [HydraTopupStatus.Preparing, HydraTopupStatus.Pending] },
+			},
 			orderBy: { createdAt: 'desc' },
 		});
+		if (pending?.status === HydraTopupStatus.Preparing) {
+			throw createHttpError(409, 'A prior Hydra top-up is still being prepared on L1');
+		}
 		if (pending && pending.depositTxHash !== null && pending.invalidHereafterSlot !== null) {
 			const reconciliation = await reconcilePendingHydraTopup({
 				id: pending.id,
@@ -137,6 +151,9 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			data: {
 				hydraHeadId: head.id,
 				hydraLocalParticipantId: localParticipant.id,
+				// Known only for an exact amount. A whole-UTxO top-up commits whatever
+				// the selection turns out to hold, so it stays 0 until promotion and
+				// the UI says so rather than showing a total of zero.
 				committedLovelace: params.exact?.unit === 'lovelace' ? BigInt(params.exact.amount) : 0n,
 				committedAssets:
 					params.exact && params.exact.unit !== 'lovelace'
@@ -146,6 +163,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			},
 			select: { id: true },
 		});
+		preparingTopupId = preparing.id;
 
 		const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(hotWallet.PaymentSource.network));
 		if (!slotConfig) throw createHttpError(500, 'Hydra L1 slot configuration is incomplete or invalid');
@@ -281,6 +299,20 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			committedAssets,
 		};
 	} catch (error) {
+		// Nothing else will resolve this row: reconciliation skips a top-up with no
+		// deposit hash, because there is no transaction to look for. Left alone it
+		// would spin as Preparing forever and keep the balance panel claiming a
+		// deposit was on its way.
+		if (preparingTopupId !== null) {
+			await prisma.hydraTopup
+				.updateMany({
+					where: { id: preparingTopupId, status: HydraTopupStatus.Preparing },
+					data: { status: HydraTopupStatus.Failed },
+				})
+				.catch((markError: unknown) => {
+					logger.error(`[HydraAPI] Could not fail the preparing top-up ${preparingTopupId}`, { error: markError });
+				});
+		}
 		await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Topup');
 		throw error;
 	}

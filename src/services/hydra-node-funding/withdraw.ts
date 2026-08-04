@@ -19,7 +19,7 @@
 
 import createHttpError from 'http-errors';
 import { MeshTxBuilder, MeshWallet, resolveTxHash, type Asset, type UTxO } from '@meshsdk/core';
-import { HydraHeadStatus, Network } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraInviteStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
@@ -83,6 +83,29 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 	const notDone = reasonHeadIsNotDone(participant.HydraHead?.status);
 	if (notDone !== null) {
 		return { address, balanceLovelace: '0', txHash: null, reason: notDone };
+	}
+
+	// A node with no head is not necessarily finished: it may be reserved by an
+	// invite nobody has redeemed yet. The funding cycle keeps such a node topped
+	// up precisely so it can post its Init the moment someone does, and sweeping
+	// it would make that redemption fail with NoSeedInput.
+	if (participant.hydraHeadId === null) {
+		const liveInvite = await prisma.hydraHeadInvite.findFirst({
+			where: {
+				hydraHostId: participant.hydraHostId,
+				hostNodeId: participant.hostNodeId,
+				status: { in: [HydraInviteStatus.Issued, HydraInviteStatus.Redeemed, HydraInviteStatus.Started] },
+			},
+			select: { status: true },
+		});
+		if (liveInvite !== null) {
+			return {
+				address,
+				balanceLovelace: '0',
+				txHash: null,
+				reason: 'an invite is still holding this node, so it needs its funds to open the head. Revoke the invite first',
+			};
+		}
 	}
 
 	const provider = getCachedBlockfrostProvider(participant.Wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);

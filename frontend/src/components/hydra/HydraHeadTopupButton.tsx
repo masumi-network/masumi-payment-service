@@ -204,7 +204,12 @@ function HydraTopupList({
                         : 'Settling'}
               </Badge>
               <span className="font-mono text-sm">
-                {formatLovelace(topup.committedLovelace, network)}
+                {/* A whole-UTxO top-up commits whatever the selection turns out
+                    to hold, so the amount is unknown until the deposit is built.
+                    Zero would read as "nothing moved". */}
+                {topup.status === 'Preparing' && topup.committedLovelace === '0'
+                  ? 'amount pending'
+                  : formatLovelace(topup.committedLovelace, network)}
               </span>
               {topup.status === 'Confirmed' && !isUsable(topup) && topup.usableFrom != null && (
                 <span className="text-xs text-muted-foreground">

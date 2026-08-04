@@ -37,7 +37,6 @@ import { RedeemHydraInviteDialog } from '@/components/hydra/RedeemHydraInviteDia
 import type { HydraHost } from '@/lib/hooks/useHydraHosts';
 import { useHydraInvites, type HydraInvite } from '@/lib/hooks/useHydraHeads';
 import { useHydraHosts } from '@/lib/hooks/useHydraHosts';
-import { HydraNodesCard } from '@/components/hydra/HydraNodesCard';
 import { ConnectHydraNodeDialog } from '@/components/hydra/ConnectHydraNodeDialog';
 import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
 import { HydraHeadInHeadBalance } from '@/components/hydra/HydraHeadInHeadBalance';

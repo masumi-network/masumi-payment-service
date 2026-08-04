@@ -45,6 +45,10 @@ export type HydraNudgeKind = keyof typeof CYCLES;
  * A cycle picks up everything eligible when it runs, so a second request
  * arriving while one is in flight is already covered. Without this, ten
  * purchases in a second would queue ten cycles, each doing the same scan.
+ *
+ * Per process, deliberately. Two instances each get their own cooldown and can
+ * therefore each start a pass, which is harmless: the passes share a mutex per
+ * service, so the second finds the first already running and returns.
  */
 const NUDGE_COOLDOWN_MS = 1_000;
 

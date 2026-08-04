@@ -420,6 +420,10 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			// A lock inside an open head completes in under a second, so waiting for
 			// the batch tick is latency we add rather than latency the chain imposes.
 			// The tick remains the backstop if this pass finds the head unusable.
+			//
+			// Safe to read immediately: `handlePurchaseCreditInit` awaits a closed
+			// `prisma.$transaction`, so the request this pass is meant to pick up is
+			// committed before this line runs.
 			nudgeHydraCycle('lockFunds');
 
 			return {
