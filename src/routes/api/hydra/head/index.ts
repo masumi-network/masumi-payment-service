@@ -879,6 +879,12 @@ export const headConnectionSchemaOutput = z.object({
 	connected: z.boolean(),
 	nodeState: z.string(),
 	isReady: z.boolean(),
+	peerConnected: z
+		.boolean()
+		.nullable()
+		.describe(
+			"Whether this node is in its Hydra cluster, which for a two-party head means the counterparty's node is up and reachable. Null until the node reports either way. Not a statement about their chain sync.",
+		),
 	reason: z.string().nullable(),
 	checkedAt: z.string(),
 });
@@ -911,12 +917,23 @@ export const getHeadConnectionGet = adminAuthenticatedEndpointFactory.build({
 			? await readParticipantNodeState(head.LocalParticipant.id)
 			: { state: 'Unknown', isReady: false, reason: 'This head has no local participant.' };
 
+		// What the counterparty's node is doing is not directly observable: there
+		// is no token for it and the Exchange Plane is one-shot. This is the one
+		// signal that carries: under Hydra's etcd network layer, being connected
+		// means this node is in the majority cluster, which for a two-party head
+		// means the other node is up and reachable. It does NOT mean the other
+		// node has finished syncing the chain, so it is reported rather than
+		// gated on.
+		const manager = getHydraConnectionManager();
+		const peerLink = manager.getNode(head.id)?.networkConnected ?? null;
+
 		return {
 			headId: head.id,
-			connected: getHydraConnectionManager().isConnected(head.id),
+			connected: manager.isConnected(head.id),
 			nodeState: node.state,
 			isReady: node.isReady,
 			reason: node.reason,
+			peerConnected: peerLink,
 			checkedAt: new Date().toISOString(),
 		};
 	},

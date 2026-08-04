@@ -745,6 +745,8 @@ export function useHydraHeadTransactions(headId: string | null) {
 }
 
 export type HydraHeadConnection = {
+  /** Whether our node is in the Hydra cluster, so the counterparty's node is reachable. */
+  peerConnected?: boolean | null;
   headId: string;
   connected: boolean;
   nodeState: string;

@@ -230,6 +230,14 @@ export class HydraNode extends EventEmitter {
 	static readonly MAX_RETAINED_TRANSACTION_CBOR_BYTES = 64 * 1024 * 1024;
 	static readonly MAX_UNPINNED_HISTORY_BUFFER_BYTES = 8 * 1024 * 1024;
 
+	/**
+	 * Whether this node is in its Hydra cluster, as the node last reported.
+	 *
+	 * Null until it says either way. A restart replays history, so an old
+	 * connectivity frame can arrive again; that is harmless here because the
+	 * newest one wins and the node re-reports on every reconnect.
+	 */
+	private _networkConnected: boolean | null = null;
 	private readonly _httpUrl: string;
 	private readonly _wsUrl: string;
 	private readonly _confirmedTransactions = new Map<string, HydraConfirmedTransaction>();
@@ -801,6 +809,16 @@ export class HydraNode extends EventEmitter {
 			this.assertPersistenceReplayIsSupported(message);
 			envelope = messageSchema.parse(message);
 			const suppliedHeadId = assertExpectedFrameHeadId(envelope, this._expectedHeadId);
+			// Under the etcd network layer these mean "this node is in the majority
+			// cluster", so for a two-party head they say the counterparty's node is
+			// up and reachable. They say nothing about whether it has finished
+			// syncing the chain, which is why this is reported and not gated on.
+			if (envelope.tag === 'NetworkConnected' || envelope.tag === 'PeerConnected') {
+				this._networkConnected = true;
+			}
+			if (envelope.tag === 'NetworkDisconnected' || envelope.tag === 'PeerDisconnected') {
+				this._networkConnected = false;
+			}
 			if (envelope.tag === 'HeadIsInitializing' || envelope.tag === 'HeadIsOpen') {
 				this.bindSnapshotPartyOrder(message);
 				if (suppliedHeadId) this._liveSessionHeadId = suppliedHeadId;
@@ -1652,6 +1670,11 @@ export class HydraNode extends EventEmitter {
 
 	get status() {
 		return this._status;
+	}
+
+	/** See `_networkConnected`. Null means the node has not said yet. */
+	get networkConnected(): boolean | null {
+		return this._networkConnected;
 	}
 
 	get httpUrl() {

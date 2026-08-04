@@ -90,6 +90,19 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
             <span className="text-muted-foreground">Live session</span>
             <span>{state.connected ? 'Connected' : 'Not connected'}</span>
           </div>
+          {/* The only evidence available about the other side. Worth showing, and
+              worth not overstating: it says their node is up and in the cluster,
+              not that it has finished syncing the chain. */}
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">Counterparty node</span>
+            <span>
+              {state.peerConnected === true
+                ? 'Reachable'
+                : state.peerConnected === false
+                  ? 'Not reachable'
+                  : 'Not reported yet'}
+            </span>
+          </div>
           {state.reason !== null && (
             <HydraNotice tone="warn">
               <p>{state.reason}</p>
@@ -99,6 +112,18 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
             <p className="text-xs text-muted-foreground">
               The node is fine, this service just has not connected to it yet. It retries every
               minute or so. If it is still not connected after that, the head&apos;s errors say why.
+            </p>
+          )}
+          {state.peerConnected === false && (
+            <p className="text-xs text-muted-foreground">
+              Their node is not in the cluster right now. Opening the head still works, but it will
+              sit in Initializing until their node is back and posts its commit.
+            </p>
+          )}
+          {state.peerConnected === true && (
+            <p className="text-xs text-muted-foreground">
+              Their node is up and reachable. Whether it has finished syncing the chain is not
+              visible from here, so a head can still take a while to reach Open.
             </p>
           )}
           <p className="text-xs text-muted-foreground">
