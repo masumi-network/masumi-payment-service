@@ -20,6 +20,7 @@ import { revokeHydraInvite, useHydraInvites, type HydraInvite } from '@/lib/hook
 import { HydraInviteDetailsDialog } from '@/components/hydra/HydraInviteDetailsDialog';
 import { IssueHydraInviteDialog } from '@/components/hydra/IssueHydraInviteDialog';
 import { RedeemHydraInviteDialog } from '@/components/hydra/RedeemHydraInviteDialog';
+import { InviteHint } from '@/components/hydra/hydra-hints';
 
 /** Chrome-free stand-ins, so the same card can sit inside a dialog that already has a header. */
 function EmbeddedShell({ children }: { children: React.ReactNode }) {
@@ -103,11 +104,9 @@ export function HydraInvitesCard({
               <Ticket className="h-4 w-4" />
               Invites
               <Badge variant="outline">{invites.length}</Badge>
+              <InviteHint />
             </CardTitle>
-            <CardDescription>
-              A head is opened by issuing an invite or redeeming one. An outstanding invite holds a
-              node and a peer port until it is used.
-            </CardDescription>
+            <CardDescription>Outstanding offers to open a head.</CardDescription>
           </div>
         )}
         <div className="flex flex-wrap gap-2">

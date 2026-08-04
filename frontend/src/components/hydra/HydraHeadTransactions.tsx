@@ -18,6 +18,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { getExplorerUrl, shortenAddress } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import { useHydraHeadTransactions, type HydraHeadTransaction } from '@/lib/hooks/useHydraHeads';
+import { InfoHint } from '@/components/ui/info-hint';
 
 /**
  * Lovelace crosses the wire as a string because it is a BigInt, and putting it
@@ -123,10 +124,18 @@ export function HydraHeadTransactions({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          Everything this head has moved, newest first: payments it carried, deposits into it, and
-          ADA sent to its node to pay on-chain fees. In-head transactions never reach the explorer,
-          because the head settles as one transaction when it closes.
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          Newest first
+          <InfoHint label="transaction list">
+            <p>
+              Everything this head has moved: payments it carried, deposits into it, and ADA sent to
+              its node to pay on-chain fees.
+            </p>
+            <p>
+              In-head transactions never reach the explorer, because the head settles as one
+              transaction when it closes.
+            </p>
+          </InfoHint>
         </p>
         <Button
           type="button"

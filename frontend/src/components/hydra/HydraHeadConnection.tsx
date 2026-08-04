@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { readHydraHeadConnection, type HydraHeadConnection } from '@/lib/hooks/useHydraHeads';
+import { NodeConnectionHint } from '@/components/hydra/hydra-hints';
 
 export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
   const { apiClient } = useAppContext();
@@ -42,7 +43,10 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
     <div className="space-y-2 rounded-md border p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <h3 className="font-medium">Connection</h3>
+          <h3 className="flex items-center gap-1.5 font-medium">
+            Connection
+            <NodeConnectionHint />
+          </h3>
           {state !== null &&
             (isHealthy ? (
               <Badge variant="outline" className="text-green-600 dark:text-green-400">
@@ -73,10 +77,7 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
       </div>
 
       {state === null ? (
-        <p className="text-sm text-muted-foreground">
-          Two things have to hold before any action works: the node is up, and this service has a
-          live connection to it.
-        </p>
+        <p className="text-sm text-muted-foreground">Not checked yet.</p>
       ) : (
         <div className="space-y-1.5">
           {/* Reported separately because they fail independently and are fixed
@@ -118,12 +119,6 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
             <p className="text-xs text-muted-foreground">
               Their node is not in the cluster right now. Opening the head still works, but it will
               sit in Initializing until their node is back and posts its commit.
-            </p>
-          )}
-          {state.peerConnected === true && (
-            <p className="text-xs text-muted-foreground">
-              Their node is up and reachable. Whether it has finished syncing the chain is not
-              visible from here, so a head can still take a while to reach Open.
             </p>
           )}
           <p className="text-xs text-muted-foreground">

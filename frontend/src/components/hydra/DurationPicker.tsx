@@ -11,6 +11,8 @@
  * unit and never deal with the split.
  */
 
+import type { ReactNode } from 'react';
+import { InfoHint } from '@/components/ui/info-hint';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 
@@ -81,7 +83,14 @@ export function DurationPicker({
   label: string;
   seconds: number;
   onChange: (nextSeconds: number) => void;
-  hint?: string;
+  /**
+   * The explanation behind the label, opened from the info icon beside it.
+   *
+   * These run to three or four sentences — what the period does, which way is
+   * the safe direction, what it is capped by — and printing that under every
+   * field turned a two-field form into a page of prose nobody read.
+   */
+  hint?: ReactNode;
   /** Amber: the value is allowed but a poor choice. */
   warning?: string | null;
   /** Red: the value will be refused, so the form cannot be submitted with it. */
@@ -108,7 +117,10 @@ export function DurationPicker({
 
   return (
     <div className="space-y-2">
-      <Label htmlFor={`${id}-hours`}>{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={`${id}-hours`}>{label}</Label>
+        {hint && <InfoHint label={label.toLowerCase()}>{hint}</InfoHint>}
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         {showDays && (
           <Segment
@@ -134,7 +146,6 @@ export function DurationPicker({
         />
         <span className="text-xs text-muted-foreground">= {formatDuration(safe)}</span>
       </div>
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       {warning && !error && <p className="text-xs text-amber-700 dark:text-amber-400">{warning}</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>

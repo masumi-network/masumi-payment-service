@@ -41,6 +41,7 @@ import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { HydraWalletLink } from '@/components/hydra/HydraWalletLink';
 import type { HydraHost } from '@/lib/hooks/useHydraHosts';
+import { NodeFundsHint } from '@/components/hydra/hydra-hints';
 
 type HydraNodeDetailsDialogProps = {
   host: HydraHost | null;
@@ -183,12 +184,8 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
             <div className="flex items-center gap-2">
               <KeyRound className="h-4 w-4 text-muted-foreground" />
               <h3 className="text-sm font-semibold">Head processes</h3>
+              <NodeFundsHint />
             </div>
-            <p className="text-xs text-muted-foreground">
-              One process per head, with its own keys and its own small ADA balance to pay for
-              opening and closing that head. Funding happens on its own; the menu is for when you
-              would rather not wait, or want the leftovers back once a head is finished.
-            </p>
             {participants.length === 0 ? (
               <p className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
                 No heads on this node yet.

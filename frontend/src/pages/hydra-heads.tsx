@@ -66,6 +66,8 @@ import { Tabs } from '@/components/ui/tabs';
 import { CopyButton } from '@/components/ui/copy-button';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { cn, getExplorerUrl, shortenAddress } from '@/lib/utils';
+import { HeadStatusHint } from '@/components/hydra/hydra-hints';
+import { InfoHint } from '@/components/ui/info-hint';
 import {
   closeHydraHead,
   commitHydraHead,
@@ -192,7 +194,7 @@ function getLifecycleActionDisabledReason(head: HydraHead, action: HydraLifecycl
   }
 
   if (head.status !== 'FanoutPossible')
-    return 'Available once the head is closed and its contestation period has passed';
+    return 'Available once the head is closed and its dispute window has passed';
   return undefined;
 }
 
@@ -506,6 +508,7 @@ function HydraHeadDetailsDialog({
               <div className="flex flex-wrap items-center gap-2">
                 <DialogTitle>Hydra head details</DialogTitle>
                 <Badge variant={getStatusBadgeVariant(head.status)}>{head.status}</Badge>
+                <HeadStatusHint />
                 {!head.isEnabled && <Badge variant="outline">Disabled</Badge>}
               </div>
               <DialogDescription>
@@ -588,35 +591,41 @@ function HydraHeadDetailsDialog({
           >
             <HydraHeadTransactions headId={head.id} network={network} />
 
-            <p className="pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Lifecycle
-            </p>
-            <TransactionHashRow
-              label="Initial tx"
-              hash={head.initTxHash}
-              network={network}
-              pendingReason="Not opened yet"
-            />
-            <TransactionHashRow
-              label="Close tx"
-              hash={head.closeTxHash}
-              network={network}
-              pendingReason={
-                head.status === 'Closed' || head.status === 'FanoutPossible'
-                  ? 'Closing, hash not observed yet'
-                  : 'Still open, nothing to close'
-              }
-            />
-            <TransactionHashRow
-              label="Fanout tx"
-              hash={head.fanoutTxHash}
-              network={network}
-              pendingReason={
-                head.status === 'FanoutPossible'
-                  ? 'Ready to fan out'
-                  : 'Available once the head is closed and its contestation period has passed'
-              }
-            />
+            {/* The three on-chain steps, behind one more click. Two of them are
+                empty for the whole life of a healthy open head, and printing
+                "nothing to close" as a full-height card on every visit gave the
+                most-read section of the dialog to its least-read content. */}
+            <HydraDetailSection
+              title="Opening and closing"
+              summary={head.fanoutTxHash ? 'Settled' : head.closeTxHash ? 'Closing' : 'Open'}
+            >
+              <TransactionHashRow
+                label="Initial tx"
+                hash={head.initTxHash}
+                network={network}
+                pendingReason="Not opened yet"
+              />
+              <TransactionHashRow
+                label="Close tx"
+                hash={head.closeTxHash}
+                network={network}
+                pendingReason={
+                  head.status === 'Closed' || head.status === 'FanoutPossible'
+                    ? 'Closing, hash not observed yet'
+                    : 'Still open, nothing to close'
+                }
+              />
+              <TransactionHashRow
+                label="Fanout tx"
+                hash={head.fanoutTxHash}
+                network={network}
+                pendingReason={
+                  head.status === 'FanoutPossible'
+                    ? 'Ready to fan out'
+                    : 'Available once the head is closed and its dispute window has passed'
+                }
+              />
+            </HydraDetailSection>
           </HydraDetailSection>
 
           <HydraDetailSection
@@ -733,7 +742,7 @@ function HydraHeadTable({
 
   return (
     <div className="rounded-lg border overflow-x-auto">
-      <table className="w-full min-w-[1080px]">
+      <table className="w-full min-w-[720px]">
         <thead className="bg-muted/30 dark:bg-muted/15">
           <tr className="border-b">
             <th scope="col" className="p-4 pl-6 text-left text-sm font-medium">
@@ -746,19 +755,10 @@ function HydraHeadTable({
               Node
             </th>
             <th scope="col" className="p-4 text-left text-sm font-medium">
-              Participants
-            </th>
-            <th scope="col" className="p-4 text-left text-sm font-medium">
-              Snapshot
-            </th>
-            <th scope="col" className="p-4 text-left text-sm font-medium">
-              Transactions
+              Counterparty
             </th>
             <th scope="col" className="p-4 text-left text-sm font-medium">
               Activity
-            </th>
-            <th scope="col" className="p-4 pr-6 text-left text-sm font-medium">
-              Counterparty
             </th>
             <th scope="col" className="p-4 pr-6 text-right text-sm font-medium">
               Action
@@ -790,7 +790,7 @@ function HydraHeadTable({
               <td className="p-4">
                 <span className="text-sm">{hostNames[invite.hydraHostId] ?? '—'}</span>
               </td>
-              <td className="p-4 text-sm text-muted-foreground" colSpan={4}>
+              <td className="p-4 text-sm text-muted-foreground" colSpan={2}>
                 Its node and peer port are reserved. It becomes a head when the counterparty redeems
                 it, or expires {formatDate(invite.expiresAt)}.
               </td>
@@ -871,34 +871,6 @@ function HydraHeadTable({
                   </span>
                 </td>
                 <td className="p-4">
-                  <div className="flex flex-col gap-1 text-sm">
-                    <span>{participantSummary.totalParticipants} total</span>
-                    <span className="text-xs text-muted-foreground">
-                      {participantSummary.committedCount} committed,{' '}
-                      {participantSummary.remoteCount} remote
-                    </span>
-                  </div>
-                </td>
-                <td className="p-4">
-                  <div className="flex flex-col gap-1 text-sm">
-                    <span>{head.latestSnapshotNumber}</span>
-                    <span className="text-xs text-muted-foreground">
-                      Contestation {head.contestationPeriod}s
-                    </span>
-                  </div>
-                </td>
-                <td className="p-4 text-sm">{head._count?.Transactions ?? 0}</td>
-                <td className="p-4">
-                  <div className="flex flex-col gap-1 text-sm">
-                    <span>{formatDate(lifecycleDate)}</span>
-                    {head.contestationDeadline && (
-                      <span className="text-xs text-muted-foreground">
-                        Fanout after {formatDate(head.contestationDeadline)}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="p-4 pr-6">
                   {/* Who the head is with, rather than the id of the join row
                       that records it. The address is what an operator can match
                       against an agent's seller wallet. */}
@@ -915,6 +887,16 @@ function HydraHeadTable({
                       </>
                     ) : (
                       <span>Not recorded</span>
+                    )}
+                  </div>
+                </td>
+                <td className="p-4 pr-6">
+                  <div className="flex flex-col gap-1 text-sm">
+                    <span>{formatDate(lifecycleDate)}</span>
+                    {head.contestationDeadline && (
+                      <span className="text-xs text-muted-foreground">
+                        Settles after {formatDate(head.contestationDeadline)}
+                      </span>
                     )}
                   </div>
                 </td>
@@ -1122,13 +1104,21 @@ export default function HydraHeadsPage() {
               {/* Two objects, said once. Operators kept asking what the
                   difference was, and an invite looked like a third thing to
                   learn rather than the first stage of a head's life. */}
-              <p className="max-w-3xl text-sm text-muted-foreground">
-                A <span className="font-medium text-foreground">node</span> is a machine you connect
-                once; a <span className="font-medium text-foreground">head</span> is one L2 channel
-                with one counterparty, and runs on exactly one node for its whole life. Inviting
-                someone opens a head. It appears below as{' '}
-                <span className="font-medium text-foreground">awaiting counterparty</span> until
-                they accept.
+              {/* One sentence on screen. The rest is the same explanation, kept
+                  for the first visit and out of the way on every visit after. */}
+              <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+                Instant payments between two wallets, off chain.
+                <InfoHint label="relationship between nodes and heads">
+                  <p>
+                    A <span className="text-foreground">node</span> is a machine you connect once. A{' '}
+                    <span className="text-foreground">head</span> is one channel with one
+                    counterparty, and runs on exactly one node for its whole life.
+                  </p>
+                  <p>
+                    Inviting someone opens a head. It appears below as awaiting counterparty until
+                    they accept.
+                  </p>
+                </InfoHint>
               </p>
             </div>
 

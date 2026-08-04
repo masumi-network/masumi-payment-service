@@ -34,6 +34,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { DepositPeriodHint } from '@/components/hydra/hydra-hints';
 import {
   Select,
   SelectContent,
@@ -172,7 +173,10 @@ function HydraTopupList({
 
   return (
     <div className="space-y-2 border-t pt-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Deposits</p>
+      <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        Deposits
+        <DepositPeriodHint />
+      </p>
       <ul className="divide-y rounded-md border">
         {topups.map((topup) => (
           <li

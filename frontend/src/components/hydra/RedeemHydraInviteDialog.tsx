@@ -40,6 +40,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
+import type { ReactNode } from 'react';
+import {
+  DepositPeriodHint,
+  DisputeWindowHint,
+  OutOfSyncLimitHint,
+} from '@/components/hydra/hydra-hints';
 import { formatDuration } from '@/components/hydra/DurationPicker';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
@@ -55,10 +61,13 @@ type RedeemHydraInviteDialogProps = {
   onRedeemed: () => void;
 };
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ label, value, hint }: { label: string; value: string; hint?: ReactNode }) {
   return (
     <div className="space-y-1">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+        {hint}
+      </p>
       <p className="break-all font-mono text-xs">{value}</p>
     </div>
   );
@@ -246,16 +255,14 @@ export function RedeemHydraInviteDialog({
                 <Field
                   label="Dispute window"
                   value={formatDuration(preview.contestationPeriodSeconds)}
+                  hint={<DisputeWindowHint />}
                 />
                 <Field
                   label="Deposit settles after"
                   value={formatDuration(preview.depositPeriodSeconds)}
+                  hint={<DepositPeriodHint />}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Money added to this head is unusable for that long, and stuck for three times it if
-                the head never takes it. They chose it; your node runs the same value.
-              </p>
 
               {/* An explicit tick rather than a line of prose. The settle time is
                   the one term here with a running cost, it was chosen by someone
@@ -277,11 +284,6 @@ export function RedeemHydraInviteDialog({
                 </span>
               </label>
               {errors.terms && <p className="text-xs text-destructive">{errors.terms}</p>}
-              <p className="text-xs text-muted-foreground">
-                The dispute window is how long a closing head can be contested, and therefore how
-                long after closing before anything settles on chain. It is fixed for the head&apos;s
-                life.
-              </p>
 
               <HydraDetailSection title="Technical details" summary={preview.advertise}>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -290,6 +292,7 @@ export function RedeemHydraInviteDialog({
                   <Field
                     label="Out-of-sync limit"
                     value={formatDuration(preview.unsyncedPeriodSeconds)}
+                    hint={<OutOfSyncLimitHint />}
                   />
                   <Field label="Expires" value={new Date(preview.expiresAt).toLocaleString()} />
                   <Field label="Nonce" value={preview.nonce} />

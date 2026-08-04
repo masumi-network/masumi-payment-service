@@ -30,7 +30,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -42,6 +41,7 @@ import {
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useWallets } from '@/lib/queries/useWallets';
 import { createHydraInvite } from '@/lib/hooks/useHydraHeads';
+import { InfoHint } from '@/components/ui/info-hint';
 
 type IssueHydraInviteDialogProps = {
   open: boolean;
@@ -49,7 +49,10 @@ type IssueHydraInviteDialogProps = {
   onIssued: () => void;
 };
 
+const HOUR_SECONDS = 3600;
 const DEFAULT_TTL_HOURS = 168;
+/** The longest the API accepts, and as long as a reservation is worth holding. */
+const MAX_TTL_HOURS = 720;
 
 /**
  * How long money added to the head waits before it can be used.
@@ -95,7 +98,7 @@ export function IssueHydraInviteDialog({
   const { wallets } = useWallets();
   const defaults = defaultsFor(network);
   const [hotWalletId, setHotWalletId] = useState('');
-  const [ttlHours, setTtlHours] = useState(String(DEFAULT_TTL_HOURS));
+  const [ttlSeconds, setTtlSeconds] = useState(DEFAULT_TTL_HOURS * HOUR_SECONDS);
   const [settleSeconds, setSettleSeconds] = useState(defaults.settleMinutes * 60);
   const [contestationSeconds, setContestationSeconds] = useState(defaults.contestation);
   const [unsyncedSeconds, setUnsyncedSeconds] = useState(defaults.unsynced);
@@ -106,7 +109,7 @@ export function IssueHydraInviteDialog({
 
   function reset() {
     setHotWalletId('');
-    setTtlHours(String(DEFAULT_TTL_HOURS));
+    setTtlSeconds(DEFAULT_TTL_HOURS * HOUR_SECONDS);
     setSettleSeconds(defaults.settleMinutes * 60);
     setContestationSeconds(defaults.contestation);
     setUnsyncedSeconds(defaults.unsynced);
@@ -134,9 +137,9 @@ export function IssueHydraInviteDialog({
     if (hotWalletId.length === 0) {
       problems.wallet = 'Choose the wallet that will identify you on this head.';
     }
-    const hours = Number(ttlHours);
-    if (!Number.isInteger(hours) || hours < 1 || hours > 720) {
-      problems.ttl = 'A whole number of hours between 1 and 720.';
+    // The API takes whole hours, so anything under one would round to nothing.
+    if (ttlSeconds < HOUR_SECONDS || ttlSeconds > MAX_TTL_HOURS * HOUR_SECONDS) {
+      problems.ttl = `Between an hour and ${MAX_TTL_HOURS / 24} days.`;
     }
     if (settleSeconds < MIN_SETTLE_MINUTES * 60) {
       problems.settle = `Funds need at least ${MIN_SETTLE_MINUTES} minutes to settle.`;
@@ -168,7 +171,7 @@ export function IssueHydraInviteDialog({
     try {
       const invite = await createHydraInvite(apiClient, {
         hotWalletId,
-        ttlHours: Number(ttlHours),
+        ttlHours: Math.floor(ttlSeconds / HOUR_SECONDS),
         depositPeriodSeconds: settleSeconds,
         contestationPeriodSeconds: contestationSeconds,
         unsyncedPeriodSeconds: unsyncedSeconds,
@@ -230,39 +233,52 @@ export function IssueHydraInviteDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                This wallet signs the invite and is who the counterparty sees. It is who you settle
-                with, not the node&apos;s own key.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                It also fixes their side: pick a buying wallet and they must redeem with a selling
-                one, and the other way round. A head carries payments in one direction only.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Once they redeem, about 10 ADA moves from this wallet to the node to cover the
-                head&apos;s on-chain fees. Nothing leaves the wallet while the invite is unused, and
-                this is separate from whatever you later put into the head.
+              {/* One line of consequence, three paragraphs of detail behind the
+                  icon. All of it was true and none of it was read: an operator
+                  choosing from a two-item list does not stop to read six lines
+                  first. */}
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                Who you settle with, and what the counterparty must match.
+                <InfoHint label="wallet on this invite">
+                  <p>
+                    This wallet signs the invite and is who the counterparty sees. It is who you
+                    settle with, not the node&apos;s own key.
+                  </p>
+                  <p>
+                    It also fixes their side: pick a buying wallet and they must redeem with a
+                    selling one, and the other way round. A head carries payments in one direction
+                    only.
+                  </p>
+                  <p>
+                    Once they redeem, about 10 ADA moves from this wallet to the node to cover the
+                    head&apos;s on-chain fees. Nothing leaves the wallet while the invite is unused,
+                    and this is separate from whatever you later put into the head.
+                  </p>
+                </InfoHint>
               </p>
               {errors.wallet && <p className="text-xs text-destructive">{errors.wallet}</p>}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="hydra-invite-ttl">Valid for (hours)</Label>
-              <Input
-                id="hydra-invite-ttl"
-                inputMode="numeric"
-                value={ttlHours}
-                onChange={(event) => {
-                  setTtlHours(event.target.value);
-                  setErrors({});
-                }}
-              />
-              <p className="text-xs text-muted-foreground">
-                How long the node and port stay reserved. Long enough that they get round to reading
-                it.
-              </p>
-              {errors.ttl && <p className="text-xs text-destructive">{errors.ttl}</p>}
-            </div>
+            {/* The same control as the periods below it. A week expressed as
+                "168" in an hours box is a number an operator has to decode, and
+                it was the only duration on this form that worked differently
+                from the rest. */}
+            <DurationPicker
+              id="hydra-invite-ttl"
+              label="Invite valid for"
+              seconds={ttlSeconds}
+              onChange={(next) => {
+                setTtlSeconds(next);
+                setErrors({});
+              }}
+              error={errors.ttl}
+              hint={
+                <p>
+                  How long the node and peer port stay reserved for this invite. Long enough that
+                  the counterparty gets round to reading it.
+                </p>
+              }
+            />
 
             <DurationPicker
               id="hydra-invite-settle"
@@ -273,7 +289,17 @@ export function IssueHydraInviteDialog({
                 setErrors({});
               }}
               showDays={false}
-              hint="Money moved into this head is unusable for this long, and cannot be recovered for three times it. Both nodes run the value you set here, and it is fixed once the head exists."
+              hint={
+                <>
+                  <p>
+                    Money moved into this head is unusable for this long, and cannot be recovered
+                    for three times it.
+                  </p>
+                  <p>
+                    Both nodes run the value you set here, and it is fixed once the head exists.
+                  </p>
+                </>
+              }
               error={errors.settle}
               warning={
                 settleSeconds < 5 * 60
@@ -304,7 +330,19 @@ export function IssueHydraInviteDialog({
                     setUnsyncedSeconds(Math.floor(next / 2));
                   }}
                   error={errors.contestation}
-                  hint="After the head closes, how long either side may dispute the final state. Nothing settles on chain until it passes, so it is also the wait between closing the head and having the funds back. Long is the safe direction: it is what protects you from a counterparty closing on a stale state while your node is down."
+                  hint={
+                    <>
+                      <p>
+                        After the head closes, how long either side may dispute the final state.
+                        Nothing settles on chain until it passes, so it is also the wait between
+                        closing the head and having the funds back.
+                      </p>
+                      <p>
+                        Long is the safe direction: it is what protects you from a counterparty
+                        closing on a stale state while your node is down.
+                      </p>
+                    </>
+                  }
                 />
 
                 <DurationPicker
@@ -315,7 +353,20 @@ export function IssueHydraInviteDialog({
                     setUnsyncedSeconds(next);
                     setErrors({});
                   }}
-                  hint={`How long a node may see no new block before it declares itself out of sync and refuses commands, rather than acting on a stale view of the chain. It cannot exceed half the dispute window (${formatDuration(Math.floor(contestationSeconds / 2))} here): past that a node can believe it is in sync while it has already run out of time to contest a close.`}
+                  hint={
+                    <>
+                      <p>
+                        How long a node may see no new block before it declares itself out of sync
+                        and refuses commands, rather than acting on a stale view of the chain.
+                      </p>
+                      <p>
+                        It cannot exceed half the dispute window (
+                        {formatDuration(Math.floor(contestationSeconds / 2))} here): past that a
+                        node can believe it is in sync while it has already run out of time to
+                        contest a close.
+                      </p>
+                    </>
+                  }
                   error={errors.unsynced}
                 />
               </div>

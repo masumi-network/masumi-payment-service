@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useHydraHeadBalance, useHydraTopups, type HydraTopup } from '@/lib/hooks/useHydraHeads';
 import { formatAssetAmount } from '@/lib/utils';
 import { Spinner } from '@/components/ui/spinner';
+import { HeadBalanceHint } from '@/components/hydra/hydra-hints';
 
 interface HydraHeadInHeadBalanceProps {
   headId: string;
@@ -60,10 +61,10 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="font-medium">Your in-head balance</h3>
-        <span className="text-xs text-muted-foreground">
-          Spendable now. Your funds only, not the counterparty&apos;s
-        </span>
+        <h3 className="flex items-center gap-1.5 font-medium">
+          Your in-head balance
+          <HeadBalanceHint />
+        </h3>
       </div>
 
       {!isOpen ? (
@@ -109,7 +110,7 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
             </div>
           ))}
           <div className="px-4 py-1.5 text-xs text-muted-foreground">
-            across {data.utxoCount} in-head UTxO{data.utxoCount === 1 ? '' : 's'}
+            held in {data.utxoCount} piece{data.utxoCount === 1 ? '' : 's'}
           </div>
         </div>
       )}
