@@ -77,14 +77,25 @@ describe('fundHydraNodeNow', () => {
 		expect(mockCreateTransfer).not.toHaveBeenCalled();
 	});
 
-	// The guard has to span the post-submit window specifically: that is where a
-	// hash exists, the chain has not caught up, and the balance still reads zero.
-	it('looks for any pending transfer, submitted or not', async () => {
+	// The gap that actually bit was *after* confirmation: our row says Confirmed
+	// a little before the chain indexer shows the funds, and in that gap the
+	// balance still reads zero. Guarding on Pending alone paid every node twice.
+	it('counts a recently confirmed transfer as still in flight', async () => {
 		await fundHydraNodeNow('participant-1');
 
-		expect(mockFindTransfer).toHaveBeenCalledWith({
-			where: { toAddress: 'addr_test1_node', status: TransactionStatus.Pending },
-		});
+		const where = mockFindTransfer.mock.calls[0][0].where;
+		expect(where.toAddress).toBe('addr_test1_node');
+		expect(where.status.in).toEqual([TransactionStatus.Pending, TransactionStatus.Confirmed]);
+		expect(where.createdAt.gte).toBeInstanceOf(Date);
+	});
+
+	it('does not pay again just after the first transfer confirmed', async () => {
+		mockFindTransfer.mockResolvedValue({ id: 'transfer-0', status: TransactionStatus.Confirmed });
+
+		const result = await fundHydraNodeNow('participant-1');
+
+		expect(result.transferredLovelace).toBeNull();
+		expect(mockCreateTransfer).not.toHaveBeenCalled();
 	});
 
 	it('leaves an already-funded node alone', async () => {

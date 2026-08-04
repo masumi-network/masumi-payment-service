@@ -134,15 +134,17 @@ export function HydraInitDialog({
         ) : isUnderfunded && funding ? (
           <HydraNotice tone="warn">
             <p>
-              This node&apos;s key holds {ada(funding.balanceLovelace)}. Opening a head spends a
-              UTxO from it, so posting fails until it has funds.
+              This head&apos;s node holds {ada(funding.balanceLovelace)} at its own key, which is
+              where the transaction is paid from. Opening spends a UTxO there, so it fails until the
+              key has funds.
             </p>
             <p className="break-all font-mono opacity-80">{funding.address}</p>
           </HydraNotice>
         ) : funding?.checked === true ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Wallet className="h-4 w-4" />
-            The node holds {ada(funding.balanceLovelace)}, enough to post.
+            This head&apos;s node holds {ada(funding.balanceLovelace)} at its own key, enough to
+            post. Separate from the head, and from your wallet.
           </p>
         ) : null}
 

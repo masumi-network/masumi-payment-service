@@ -41,6 +41,33 @@ export const NODE_TARGET_LOVELACE = 10_000_000n;
 /** Bounded so one bad cycle cannot drain a funding wallet. */
 const MAX_TOPUPS_PER_CYCLE = 5;
 
+/**
+ * How long a transfer counts as still in flight after it stops being Pending.
+ *
+ * Guarding on Pending alone was not enough. A transfer confirms in our database
+ * a little before the chain indexer reflects it, and inside that gap the guard
+ * sees nothing pending and the balance still reads zero, so a second transfer
+ * goes out. Every node opened so far was funded twice, fifty seconds apart, for
+ * exactly this reason.
+ *
+ * Generous on purpose: paying a node twice costs real ADA, while waiting a few
+ * extra minutes to top up a node that is already funded costs nothing.
+ */
+const RECENT_TRANSFER_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Anything sent to this address recently enough that the chain may not show it.
+ *
+ * Terminal failures are excluded: a transfer that definitively did not happen
+ * must not block the retry that replaces it.
+ */
+function recentlySentTo() {
+	return {
+		createdAt: { gte: new Date(Date.now() - RECENT_TRANSFER_WINDOW_MS) },
+		status: { in: [TransactionStatus.Pending, TransactionStatus.Confirmed] },
+	};
+}
+
 export type NodeFundingOutcome = {
 	checked: number;
 	funded: number;
@@ -136,18 +163,12 @@ export async function runHydraNodeFundingCycle(): Promise<NodeFundingOutcome> {
 			continue;
 		}
 
-		// One in-flight transfer per node. A transfer takes a while to confirm and
-		// the balance does not move until it does, so every cycle inside that
-		// window would otherwise queue another and fund the node several times
-		// over from the operator's wallet.
-		//
-		// Deliberately not restricted to transfers without a txHash: the window
-		// that matters is precisely the one *after* submission, where the hash
-		// exists and the chain has yet to catch up. Requiring a null hash here
-		// left that window unguarded, which is how a second transfer was queued
-		// for a node that had already been paid.
+		// One recent transfer per node. The balance does not move until a transfer
+		// confirms on chain, so anything asking again inside that window reads zero
+		// and pays again. The window runs past confirmation deliberately: see
+		// RECENT_TRANSFER_WINDOW_MS.
 		const inFlight = await prisma.walletFundTransfer.findFirst({
-			where: { toAddress: address, status: TransactionStatus.Pending },
+			where: { toAddress: address, ...recentlySentTo() },
 		});
 		if (inFlight !== null) {
 			outcome.skipped += 1;
@@ -261,7 +282,7 @@ export async function fundHydraNodeNow(localParticipantId: string): Promise<{
 	// node immediately and the cycle funds it too, which is exactly this window —
 	// it sent 10 ADA twice to every node opened so far.
 	const inFlight = await prisma.walletFundTransfer.findFirst({
-		where: { toAddress: address, status: TransactionStatus.Pending },
+		where: { toAddress: address, ...recentlySentTo() },
 	});
 	if (inFlight !== null) {
 		return { address, balanceLovelace: balance.toString(), transferredLovelace: null };
