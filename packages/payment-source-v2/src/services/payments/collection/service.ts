@@ -1251,7 +1251,7 @@ export async function collectOutstandingPaymentsL2V2(): Promise<void> {
 	} catch (error) {
 		logger.error('Error in the on-demand Collection L2 pass', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }
 

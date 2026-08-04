@@ -1495,6 +1495,10 @@ export class HydraNode extends EventEmitter {
 	async disconnect(): Promise<void> {
 		await Promise.all([this._connection.disconnect(), this._historyConnection.disconnect()]);
 		this._status = HydraHeadStatus.Disconnected;
+		// Forgotten with the rest of the session state. A closed transport tells us
+		// nothing about the cluster, and keeping the last frame would report the
+		// counterparty as reachable long after we stopped being able to see them.
+		this._networkConnected = null;
 		this._liveSessionHeadId = undefined;
 		this._livePartyIdentityVerified = false;
 		this._headClock = undefined;

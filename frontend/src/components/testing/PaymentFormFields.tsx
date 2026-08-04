@@ -261,9 +261,11 @@ export function PaymentFormFields({
         )}
         {paidAgents.length === 0 && !isLoadingAgents && (
           <p className="text-xs text-muted-foreground">
-            {totalAgents === 0
-              ? 'No agents on the payment source selected at the top of the page. Agents are listed per source, so check that the right one is selected.'
-              : 'Every agent on this payment source is free, and a payment needs a price.'}
+            {totalAgents === undefined
+              ? 'No paid agents available.'
+              : totalAgents === 0
+                ? 'No agents on the payment source selected at the top of the page. Agents are listed per source, so check that the right one is selected.'
+                : 'Every agent on this payment source is free, and a payment needs a price.'}
           </p>
         )}
       </div>

@@ -160,7 +160,7 @@ const lifecycleActions: Array<Omit<HydraLifecycleButtonConfig, 'disabledReason'>
   // "Init" and "Fanout" are hydra-node vocabulary; an operator deciding whether
   // to press one is thinking about opening, funding and settling.
   { action: 'init', label: 'Open head' },
-  { action: 'commit', label: 'Add funds' },
+  { action: 'commit', label: 'Fund at open' },
   { action: 'close', label: 'Close head' },
   { action: 'fanout', label: 'Settle on chain' },
 ];
@@ -179,7 +179,7 @@ function getLifecycleActionDisabledReason(head: HydraHead, action: HydraLifecycl
 
   if (action === 'commit') {
     if (!head.LocalParticipant) return 'This head has no node on your side';
-    if (head.LocalParticipant.hasCommitted) return 'You have already put funds in';
+    if (head.LocalParticipant.hasCommitted) return 'You have already funded this head at open';
     if (head.status !== 'Initializing')
       return 'Only while the head is opening. Afterwards, use Top up.';
     return undefined;

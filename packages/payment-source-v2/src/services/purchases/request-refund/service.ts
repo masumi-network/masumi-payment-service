@@ -1206,7 +1206,7 @@ export async function requestRefundsL2V2(): Promise<void> {
 	} catch (error) {
 		logger.error('Error in the on-demand RequestRefund L2 pass', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }
 

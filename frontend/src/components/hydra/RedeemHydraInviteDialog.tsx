@@ -337,8 +337,8 @@ export function RedeemHydraInviteDialog({
               </Select>
               {requiredRole !== null && (
                 <p className="text-xs text-muted-foreground">
-                  Their side is the {requiredRole === 'Seller' ? 'buyer' : 'seller'}, so only your{' '}
-                  {requiredRole === 'Seller' ? 'selling' : 'buying'} wallets are offered. A head
+                  Their side is the {requiredRole === 'Seller' ? 'seller' : 'buyer'}, so only your{' '}
+                  {requiredRole === 'Seller' ? 'buying' : 'selling'} wallets are offered. A head
                   runs between a buyer and a seller, and payments route through it in that direction
                   only.
                 </p>

@@ -1178,7 +1178,7 @@ export async function authorizeWithdrawalsL2V2(): Promise<void> {
 	} catch (error) {
 		logger.error('Error in the on-demand AuthorizeWithdrawal L2 pass', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }
 

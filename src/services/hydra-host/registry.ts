@@ -216,7 +216,7 @@ export async function registerHydraHost(input: {
 				name: input.name,
 				network: input.network,
 				baseUrl,
-				publicPeerHost: input.publicPeerHost ?? hostOfUrl(input.baseUrl),
+				publicPeerHost: input.publicPeerHost ?? hostOfUrl(baseUrl),
 				encryptedUserToken,
 				encryptedAdminToken,
 			},

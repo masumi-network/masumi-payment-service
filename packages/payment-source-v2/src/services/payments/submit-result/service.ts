@@ -1394,7 +1394,7 @@ export async function submitResultL2V2(): Promise<void> {
 	} catch (error) {
 		logger.error('Error submitting V2 result on demand', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }
 

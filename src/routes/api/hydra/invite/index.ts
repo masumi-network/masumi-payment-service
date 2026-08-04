@@ -161,7 +161,7 @@ export const createInviteSchemaInput = z.object({
 		.max(86_400)
 		.optional()
 		.describe(
-			'How long a deposit must settle before this head will take it. Both nodes run the value signed here. It decides how long a top-up is unusable (one period), and how long it is stuck if nobody takes it (three). Defaults to 600 on preprod and 3600 on mainnet, which is how long a rollback takes to rule out where the funds are real.',
+			'How long a deposit must settle before this head will take it. Both nodes run the value signed here. A top-up is unusable for one period and cannot be recovered for three. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2.',
 		),
 	contestationPeriodSeconds: z.coerce
 		.number()
@@ -182,7 +182,7 @@ export const createInviteSchemaInput = z.object({
 		.max(604_800)
 		.optional()
 		.describe(
-			'How long a node may see no new block before it declares itself out of sync and refuses commands. Guards against acting on a stale view of the chain. Hydra defaults this to half the contestation period; ours defaults to 1800.',
+			'How long a node may see no new block before it declares itself out of sync and refuses commands, rather than acting on a stale view of the chain. Defaults to half the dispute window and may not exceed it, which is checked against the resolved pair when the invite is minted rather than here, since either field may be defaulted.',
 		),
 });
 

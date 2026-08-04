@@ -1152,7 +1152,7 @@ export async function collectRefundL2V2(): Promise<void> {
 	} catch (error) {
 		logger.error('Error in the on-demand CollectRefund L2 pass', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }
 

@@ -1174,7 +1174,7 @@ export async function authorizeRefundL2V2(): Promise<void> {
 	} catch (error) {
 		logger.error('Error in the on-demand AuthorizeRefund L2 pass', { error });
 	} finally {
-		release();
+		release?.();
 	}
 }
 

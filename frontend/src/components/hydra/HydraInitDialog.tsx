@@ -114,8 +114,9 @@ export function HydraInitDialog({
         <DialogHeader>
           <DialogTitle>Open this head?</DialogTitle>
           <DialogDescription>
-            Your node posts a transaction that puts both participants on chain. Once it lands the
-            head is open, and the only way back is to close it.
+            Your node posts a transaction that puts both participants on chain. The head starts
+            opening when it lands and is open once both sides have committed. The only way back is
+            to close it.
           </DialogDescription>
         </DialogHeader>
 

@@ -93,7 +93,8 @@ export async function carveExactUtxo(params: {
 	if (params.onCarveSubmitted) {
 		// Recording it must never lose the carve itself, which is already on chain.
 		await params.onCarveSubmitted(txHash).catch((error: unknown) => {
-			logger.warn(`hydra-pre-split: could not record carve tx ${txHash}: ${(error as Error).message}`);
+			const reason = error instanceof Error ? error.message : String(error);
+			logger.warn(`hydra-pre-split: could not record carve tx ${txHash}: ${reason}`);
 		});
 	}
 

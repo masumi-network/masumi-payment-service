@@ -70,8 +70,9 @@ const MIN_SETTLE_MINUTES = 2;
  * ruled out before real funds count, so twenty minutes buys confidence for a
  * wait an operator will accept. The dispute window is the reverse: it is the
  * only protection against a counterparty closing on a stale state, and the cost
- * of a long one is merely that settling takes longer. An hour on mainnet, five
- * minutes on a testnet where the worst case is a re-run.
+ * of a long one is merely that settling takes longer, so it is sized for an
+ * outage rather than a slow block: five days on mainnet, twelve hours on a
+ * testnet where the worst case is a re-run.
  */
 function defaultsFor(network: string) {
   const isMainnet = network === 'Mainnet';
