@@ -42,6 +42,7 @@ import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { AGENT_TYPE_LABELS, getAgentTypeLabel } from '@/lib/agent-type';
 import { formatDate } from '@/lib/format-date';
 import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 type AIAgent = RegistryEntry & { relation?: AgentRelation };
@@ -493,9 +494,13 @@ export default function AIAgentsPage() {
                 aria-label="Filter agents by type"
               >
                 <option value="All">All types</option>
-                <option value="Standard">Standard</option>
-                <option value="OpenApi">OpenAPI</option>
-                <option value="X402">x402</option>
+                {/* Options come from the same label map as the Type column, so
+                    the filter can never disagree with the badges it filters. */}
+                {Object.entries(AGENT_TYPE_LABELS).map(([type, label]) => (
+                  <option key={type} value={type}>
+                    {label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -520,6 +525,12 @@ export default function AIAgentsPage() {
                       className="p-4 text-left text-sm font-medium text-muted-foreground pl-6"
                     >
                       Name
+                    </th>
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
+                      Type
                     </th>
                     <th
                       scope="col"
@@ -563,10 +574,10 @@ export default function AIAgentsPage() {
                 <tbody>
                   {(isLoading && !agents.length) ||
                   (displayAgents.length === 0 && isSearchPending) ? (
-                    <AIAgentTableSkeleton rows={5} />
+                    <AIAgentTableSkeleton rows={5} columns={9} />
                   ) : displayAgents.length === 0 ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <EmptyState
                           icon={searchQuery ? 'search' : 'inbox'}
                           title={
@@ -617,6 +628,14 @@ export default function AIAgentsPage() {
                             >
                               {agent.description}
                             </div>
+                          </td>
+                          <td className="p-4">
+                            {/* Neutral outline: Status is the only colour-bearing
+                                badge in the row, and the Wallets cell already
+                                carries a RelationBadge. */}
+                            <Badge variant="outline" className="whitespace-nowrap">
+                              {getAgentTypeLabel(agent.type)}
+                            </Badge>
                           </td>
                           <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
                           <td className="p-4">
