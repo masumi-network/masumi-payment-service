@@ -18,6 +18,7 @@ import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { CopyButton } from '@/components/ui/copy-button';
 import {
@@ -61,6 +62,17 @@ const DEFAULT_TTL_HOURS = 168;
 const DEFAULT_SETTLE_MINUTES = 10;
 const MIN_SETTLE_MINUTES = 2;
 
+/**
+ * The wait between closing a head and being able to settle it on chain.
+ *
+ * It is the dispute window: until it elapses either side may contest the final
+ * state, and nobody can fan out. It also sets how long a node may go without
+ * seeing a block before it declares itself out of sync, since hydra derives
+ * that from half this value unless told otherwise.
+ */
+const DEFAULT_CONTESTATION_SECONDS = 220;
+const DEFAULT_UNSYNCED_SECONDS = 1800;
+
 export function IssueHydraInviteDialog({
   open,
   onOpenChange,
@@ -71,12 +83,19 @@ export function IssueHydraInviteDialog({
   const [hotWalletId, setHotWalletId] = useState('');
   const [ttlHours, setTtlHours] = useState(String(DEFAULT_TTL_HOURS));
   const [settleMinutes, setSettleMinutes] = useState(String(DEFAULT_SETTLE_MINUTES));
+  const [contestationSeconds, setContestationSeconds] = useState(
+    String(DEFAULT_CONTESTATION_SECONDS),
+  );
+  const [unsyncedSeconds, setUnsyncedSeconds] = useState(String(DEFAULT_UNSYNCED_SECONDS));
   const [isLoading, setIsLoading] = useState(false);
   const [issued, setIssued] = useState<{ code: string; expiresAt: string } | null>(null);
 
   function reset() {
     setHotWalletId('');
     setTtlHours(String(DEFAULT_TTL_HOURS));
+    setSettleMinutes(String(DEFAULT_SETTLE_MINUTES));
+    setContestationSeconds(String(DEFAULT_CONTESTATION_SECONDS));
+    setUnsyncedSeconds(String(DEFAULT_UNSYNCED_SECONDS));
     setIssued(null);
   }
 
@@ -105,10 +124,22 @@ export function IssueHydraInviteDialog({
         toast.error(`Funds need at least ${MIN_SETTLE_MINUTES} minutes to settle.`);
         return;
       }
+      const contestation = Number(contestationSeconds);
+      const unsynced = Number(unsyncedSeconds);
+      if (!Number.isInteger(contestation) || contestation < 60) {
+        toast.error('The dispute window must be at least 60 seconds.');
+        return;
+      }
+      if (!Number.isInteger(unsynced) || unsynced < 60) {
+        toast.error('The out-of-sync limit must be at least 60 seconds.');
+        return;
+      }
       const invite = await createHydraInvite(apiClient, {
         hotWalletId,
         ttlHours: hours,
         depositPeriodSeconds: Math.round(settle * 60),
+        contestationPeriodSeconds: contestation,
+        unsyncedPeriodSeconds: unsynced,
       });
       setIssued({ code: invite.code, expiresAt: invite.expiresAt });
       onIssued();
@@ -189,6 +220,63 @@ export function IssueHydraInviteDialog({
                 it.
               </p>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="hydra-invite-settle">Added funds settle after (minutes)</Label>
+              <Input
+                id="hydra-invite-settle"
+                inputMode="numeric"
+                value={settleMinutes}
+                onChange={(event) => setSettleMinutes(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Money moved into this head is unusable for this long, and cannot be recovered for
+                three times it. Both nodes run the value you set here, and it is fixed once the head
+                exists.
+              </p>
+              {Number(settleMinutes) < 5 && (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Under five minutes is fragile: the window in which the head can take a deposit is
+                  the same length again, and chain time here runs about half a minute behind.
+                </p>
+              )}
+            </div>
+
+            {/* Read once, if ever. The settle time above has a cost on every
+                top-up; these two only matter when a head is being closed or a
+                node falls behind. */}
+            <HydraDetailSection title="Advanced" summary="Dispute window, out-of-sync limit">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="hydra-invite-contestation">Dispute window (seconds)</Label>
+                  <Input
+                    id="hydra-invite-contestation"
+                    inputMode="numeric"
+                    value={contestationSeconds}
+                    onChange={(event) => setContestationSeconds(event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    After the head closes, how long either side may dispute the final state. Nothing
+                    can be settled on chain until it passes, so it is also the wait between closing
+                    the head and having the funds back.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="hydra-invite-unsynced">Out-of-sync limit (seconds)</Label>
+                  <Input
+                    id="hydra-invite-unsynced"
+                    inputMode="numeric"
+                    value={unsyncedSeconds}
+                    onChange={(event) => setUnsyncedSeconds(event.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    How long a node may see no new block before it declares itself out of sync and
+                    refuses commands, rather than acting on a stale view of the chain.
+                  </p>
+                </div>
+              </div>
+            </HydraDetailSection>
 
             <HydraNotice tone="warn">
               <p>

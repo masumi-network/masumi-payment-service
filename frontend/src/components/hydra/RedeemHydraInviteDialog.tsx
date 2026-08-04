@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -74,6 +75,7 @@ export function RedeemHydraInviteDialog({
   const [hotWalletId, setHotWalletId] = useState('');
 
   const [preview, setPreview] = useState<HydraInvitePreview | null>(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   // A head runs between a buyer and a seller. Offering the wallets that cannot
   // work, and refusing them on submit, teaches the rule the slow way; offering
@@ -236,6 +238,22 @@ export function RedeemHydraInviteDialog({
                 Money added to this head is unusable for that long, and stuck for three times it if
                 the head never takes it. They chose it; your node runs the same value.
               </p>
+
+              {/* An explicit tick rather than a line of prose. The settle time is
+                  the one term here with a running cost, it was chosen by someone
+                  else, and it cannot be changed once the head exists — so it is
+                  worth making the operator look at it. */}
+              <label className="flex items-start gap-2 rounded-md border px-3 py-2 text-xs">
+                <Checkbox
+                  checked={acceptedTerms}
+                  onCheckedChange={(checked) => setAcceptedTerms(checked === true)}
+                  className="mt-0.5"
+                />
+                <span>
+                  I accept a {Math.round(preview.depositPeriodSeconds / 60)} minute settle time and
+                  a {preview.contestationPeriodSeconds} second contestation period for this head.
+                </span>
+              </label>
               <p className="text-xs text-muted-foreground">
                 The contestation period is how long a closing head can be disputed. It is fixed for
                 the head&apos;s life and cannot be changed afterwards.
@@ -319,13 +337,20 @@ export function RedeemHydraInviteDialog({
             </>
           ) : (
             <>
-              <Button type="button" variant="outline" onClick={() => setPreview(null)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setPreview(null);
+                  setAcceptedTerms(false);
+                }}
+              >
                 Back
               </Button>
               <Button
                 type="button"
                 onClick={() => void handleRedeem()}
-                disabled={isLoading || !preview.signatureValid}
+                disabled={isLoading || !preview.signatureValid || !acceptedTerms}
               >
                 {isLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

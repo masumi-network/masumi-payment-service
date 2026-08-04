@@ -12803,6 +12803,14 @@ export type PostHydraInviteData = {
          * How long a deposit must settle before this head will take it. Both nodes run the value signed here. It decides how long a top-up is unusable (one period), and how long it is stuck if nobody takes it (three). Defaults to 600 on preprod and 3600 on mainnet, which is how long a rollback takes to rule out where the funds are real.
          */
         depositPeriodSeconds?: number;
+        /**
+         * How long after closing the head anyone may dispute the final state. Nobody can settle on chain until it elapses, so it is the wait between closing a head and getting the funds back. Longer is safer against a counterparty closing on a stale state; shorter settles sooner. Defaults to 220.
+         */
+        contestationPeriodSeconds?: number;
+        /**
+         * How long a node may see no new block before it declares itself out of sync and refuses commands. Guards against acting on a stale view of the chain. Hydra defaults this to half the contestation period; ours defaults to 1800.
+         */
+        unsyncedPeriodSeconds?: number;
     };
     path?: never;
     query?: never;

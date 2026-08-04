@@ -558,7 +558,13 @@ export function useHydraInvites() {
  */
 export async function createHydraInvite(
   apiClient: Client,
-  payload: { hotWalletId: string; ttlHours?: number; depositPeriodSeconds?: number },
+  payload: {
+    hotWalletId: string;
+    ttlHours?: number;
+    depositPeriodSeconds?: number;
+    contestationPeriodSeconds?: number;
+    unsyncedPeriodSeconds?: number;
+  },
 ) {
   const response = await handleApiCall(
     () =>

@@ -115,8 +115,10 @@ export async function mintHeadInvite(input: {
 	ttlMs?: number;
 	/** Default. Opt out only if the node's fuel is managed elsewhere. */
 	autoFund?: boolean;
-	/** Overrides just the deposit period, leaving the rest of the defaults alone. */
+	/** Any of the three periods may be overridden; the rest keep their defaults. */
 	depositPeriodSeconds?: number;
+	contestationPeriodSeconds?: number;
+	unsyncedPeriodSeconds?: number;
 }): Promise<MintedInvite> {
 	const wallet = await loadWallet(input.localHotWalletId);
 	// Defaulted from the wallet's own network: an hour of settle time protects
@@ -130,6 +132,8 @@ export async function mintHeadInvite(input: {
 	const periods = input.periods ?? {
 		...defaultPeriodsFor(wallet.network),
 		...(input.depositPeriodSeconds != null ? { depositPeriodSeconds: input.depositPeriodSeconds } : {}),
+		...(input.contestationPeriodSeconds != null ? { contestationPeriodSeconds: input.contestationPeriodSeconds } : {}),
+		...(input.unsyncedPeriodSeconds != null ? { unsyncedPeriodSeconds: input.unsyncedPeriodSeconds } : {}),
 	};
 	const nonce = createId();
 	const expiresAt = new Date(Date.now() + (input.ttlMs ?? INVITE_TTL_MS));
