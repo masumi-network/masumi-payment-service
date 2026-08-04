@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, MoreHorizontal, Pencil, RefreshCw, Server, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -69,6 +70,7 @@ export function HydraNodesCard({
   variant?: 'card' | 'embedded';
 }) {
   const { apiClient, network } = useAppContext();
+  const resync = useResync();
   const cardanoNetwork = network === 'Preprod' || network === 'Mainnet' ? network : undefined;
   const { hosts, isLoading, isFetching, refetch } = useHydraHosts(cardanoNetwork);
 
@@ -86,6 +88,7 @@ export function HydraNodesCard({
     setBusyId(id);
     try {
       await action();
+      await resync('hydra');
       await refetch();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The action failed');

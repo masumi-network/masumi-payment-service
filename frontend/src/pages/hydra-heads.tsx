@@ -18,6 +18,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import { HydraHeadErrors } from '@/components/hydra/HydraHeadErrors';
@@ -941,6 +942,7 @@ function HydraHeadTable({
 
 export default function HydraHeadsPage() {
   const { apiClient, network } = useAppContext();
+  const resync = useResync();
   const { heads, isLoading, isFetching, refetch } = useHydraHeads();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<StatusTab>('All');
@@ -1085,6 +1087,10 @@ export default function HydraHeadsPage() {
         toast.success('Hydra head fanout started');
       }
 
+      // Everything about this head just changed: its status, its participants,
+      // its transactions and its balance. Refetching only the list left the
+      // dialog the operator is looking at describing the previous state.
+      await resync('hydra');
       await refetch();
     } finally {
       setRunningLifecycleHeadId(null);

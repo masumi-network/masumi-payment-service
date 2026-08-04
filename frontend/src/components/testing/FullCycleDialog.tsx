@@ -9,6 +9,7 @@ import {
   PostPurchaseResponse,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAgents } from '@/lib/queries/useAgents';
@@ -39,6 +40,7 @@ interface FullCycleDialogProps {
 
 export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   const { apiClient, network, apiKey } = useAppContext();
+  const resync = useResync();
   const { agents, isLoading: isLoadingAgents } = useAgents();
   const [step, setStep] = useState<1 | 2>(1);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
@@ -172,6 +174,8 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         if (result.data?.data) {
           setPurchaseResponse(result.data.data);
           toast.success('Purchase created successfully - Full cycle complete!');
+          // A full cycle touches both sides, so both lists are now stale.
+          await resync('payments', 'purchases');
         } else {
           throw new Error('Invalid response from server - no data returned');
         }
@@ -184,7 +188,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPurchase(false);
       }
     },
-    [apiClient, apiKey, network],
+    [apiClient, apiKey, network, resync],
   );
 
   const onSubmitPayment = useCallback(
@@ -246,6 +250,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           const payment = result.data.data;
           setPaymentResponse(payment);
           toast.success('Payment created successfully');
+          await resync('payments');
 
           const sessionId = sessionIdRef.current;
           purchaseTimerRef.current = setTimeout(() => {
@@ -265,7 +270,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPayment(false);
       }
     },
-    [apiClient, apiKey, network, paidAgents, createPurchaseAutomatically],
+    [apiClient, apiKey, network, paidAgents, createPurchaseAutomatically, resync],
   );
 
   const handleClose = () => {

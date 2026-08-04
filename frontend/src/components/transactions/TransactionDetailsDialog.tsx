@@ -9,6 +9,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   postPurchaseRequestRefund,
@@ -86,6 +87,7 @@ export default function TransactionDetailsDialog({
   onRefresh,
 }: TransactionDetailsDialogProps) {
   const { network, apiClient } = useAppContext();
+  const resync = useResync();
   const { openAgentDetails } = useAgentDetailsDialog();
   // Pin actions and explorer links to the network the transaction row lives
   // on, not the ambient app network (they can diverge mid-navigation).
@@ -296,6 +298,7 @@ export default function TransactionDetailsDialog({
 
       if (response.data?.data) {
         toast.success('Refund request submitted successfully');
+        await resync('transactions');
         onRefresh();
         onClose();
       } else {
@@ -327,6 +330,7 @@ export default function TransactionDetailsDialog({
 
       if (response.data?.data) {
         toast.success('Refund authorized successfully');
+        await resync('transactions');
         onRefresh();
         onClose();
       } else {
@@ -356,6 +360,7 @@ export default function TransactionDetailsDialog({
 
       if (response.data?.data) {
         toast.success('Refund request cancelled successfully');
+        await resync('transactions');
         onRefresh();
         onClose();
       } else {

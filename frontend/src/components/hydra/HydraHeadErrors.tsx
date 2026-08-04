@@ -14,6 +14,7 @@
 import { useState } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAppContext } from '@/lib/contexts/AppContext';
@@ -43,6 +44,7 @@ export function HydraHeadErrors({
 }) {
   const { errors, isLoading, refetch } = useHydraHeadErrors(headId);
   const { apiClient } = useAppContext();
+  const resync = useResync();
   const [isClearing, setIsClearing] = useState(false);
 
   async function handleClear() {
@@ -50,6 +52,7 @@ export function HydraHeadErrors({
     try {
       const result = await clearHydraHeadErrors(apiClient, { headId });
       toast.success(`Cleared ${result.cleared} error${result.cleared === 1 ? '' : 's'}`);
+      await resync('hydra');
       await refetch();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to clear the errors');

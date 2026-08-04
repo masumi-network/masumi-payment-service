@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postPayment, PostPaymentResponse } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAgents } from '@/lib/queries/useAgents';
@@ -30,6 +31,7 @@ interface MockPaymentDialogProps {
 
 export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
   const { apiClient, network, apiKey } = useAppContext();
+  const resync = useResync();
   const { agents, isLoading: isLoadingAgents } = useAgents();
   const [isLoading, setIsLoading] = useState(false);
   const [curlCommand, setCurlCommand] = useState<string>('');
@@ -147,6 +149,8 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         if (result.data?.data) {
           setResponse(result.data.data);
           toast.success('Test payment created successfully');
+          // The lists behind this dialog describe the world before it ran.
+          await resync('payments');
         } else {
           throw new Error('Invalid response from server - no data returned');
         }
@@ -159,7 +163,7 @@ export function MockPaymentDialog({ open, onClose }: MockPaymentDialogProps) {
         setIsLoading(false);
       }
     },
-    [apiClient, apiKey, network, paidAgents],
+    [apiClient, apiKey, network, paidAgents, resync],
   );
 
   const handleClose = () => {

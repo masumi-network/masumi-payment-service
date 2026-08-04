@@ -20,6 +20,7 @@ import {
   PostPurchaseResponse,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -128,6 +129,7 @@ function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
 
 export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
+  const resync = useResync();
   const { wallets } = useWallets();
   const [isLoading, setIsLoading] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
@@ -372,6 +374,8 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         if (result.data?.data) {
           setResponse(result.data.data);
           toast.success('Test purchase created successfully');
+          // The lists behind this dialog describe the world before it ran.
+          await resync('purchases');
         } else {
           throw new Error('Invalid response from server - no data returned');
         }
@@ -385,6 +389,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
       }
     },
     [
+      resync,
       apiClient,
       apiKey,
       network,

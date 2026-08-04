@@ -15,6 +15,7 @@
 import { useState } from 'react';
 import { KeyRound, Loader2, MoreHorizontal, Server } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
@@ -91,6 +92,7 @@ function shortHash(value: string | null): string {
 
 export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDetailsDialogProps) {
   const { apiClient } = useAppContext();
+  const resync = useResync();
   const { participants, refetch: refetchParticipants } = useHydraLocalParticipants(
     undefined,
     host?.id,
@@ -112,6 +114,7 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
       );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The withdrawal failed');
+      await resync('hydra', 'wallets');
     } finally {
       setBusyId(null);
     }
@@ -126,6 +129,7 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
           ? `Already funded, holding ${ada(result.balanceLovelace)}`
           : `Sending ${ada(result.transferredLovelace)} to the node`,
       );
+      await resync('hydra', 'wallets');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The transfer failed');
     } finally {

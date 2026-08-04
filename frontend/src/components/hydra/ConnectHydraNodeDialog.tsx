@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -92,6 +93,7 @@ export function ConnectHydraNodeDialog({
   host,
 }: ConnectHydraNodeDialogProps) {
   const { apiClient, network: contextNetwork } = useAppContext();
+  const resync = useResync();
   const isEditing = Boolean(host);
 
   const [name, setName] = useState('');
@@ -166,6 +168,7 @@ export function ConnectHydraNodeDialog({
           ...(adminToken.trim().length > 0 ? { adminToken: adminToken.trim() } : {}),
         });
         toast.success(`Updated ${name.trim()}`);
+        await resync('hydra');
       } else {
         await connectHydraHost(apiClient, {
           name: name.trim(),
@@ -176,6 +179,7 @@ export function ConnectHydraNodeDialog({
           adminToken: adminToken.trim(),
         });
         toast.success(`Connected ${name.trim()}`);
+        await resync('hydra');
       }
       onConnected();
       onOpenChange(false);

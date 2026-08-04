@@ -19,6 +19,7 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   recoverHydraTopup,
@@ -129,6 +130,7 @@ function HydraTopupList({
   onRetry: (topup: { committedLovelace: string }) => void;
 }) {
   const { apiClient } = useAppContext();
+  const resync = useResync();
   const { topups, refetch } = useHydraTopups(headId, isOpen);
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
@@ -150,6 +152,7 @@ function HydraTopupList({
     setRecoveringId(topupId);
     try {
       const result = await recoverHydraTopup(apiClient, { topupId });
+      await resync('hydra', 'wallets');
       toast[result.requested ? 'success' : 'info'](
         result.requested
           ? 'Recovery posted. The funds return to the wallet once it confirms.'
@@ -182,12 +185,13 @@ function HydraTopupList({
                   unusable, which read as success when both said "Confirmed". */}
               <Badge
                 variant="outline"
+                // Never green. Nothing here can prove the head absorbed this
+                // particular deposit: the times say when it became eligible, and
+                // the in-head balance is the only thing that says it arrived.
                 className={
                   topup.status === 'Failed'
                     ? 'text-red-600 dark:text-red-400'
-                    : topup.status === 'Confirmed' && isUsable(topup)
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-amber-600 dark:text-amber-400'
+                    : 'text-amber-600 dark:text-amber-400'
                 }
               >
                 {(topup.status === 'Pending' || topup.status === 'Preparing') && (
@@ -200,7 +204,7 @@ function HydraTopupList({
                     : topup.status === 'Pending'
                       ? 'Sending'
                       : isUsable(topup)
-                        ? 'In the head'
+                        ? 'Submitted'
                         : 'Settling'}
               </Badge>
               <span className="font-mono text-sm">
@@ -293,6 +297,7 @@ function HydraTopupList({
 
 export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonProps) {
   const { apiClient, network } = useAppContext();
+  const resync = useResync();
   const queryClient = useQueryClient();
   const [amount, setAmount] = useState('');
   const [asset, setAsset] = useState<AssetChoice>('ada');
@@ -348,6 +353,7 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
     try {
       await topupHydraHead(apiClient, payload);
       toast.success('Deposit started. It appears below, and in the head once it confirms.');
+      await resync('hydra', 'wallets');
       setAmount('');
       await queryClient.invalidateQueries({ queryKey: ['hydra-topups', headId] });
     } finally {

@@ -21,6 +21,7 @@ import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { Tabs } from '@/components/ui/tabs';
 import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
@@ -53,6 +54,7 @@ export function AIAgentDetailsDialog({
   initialTab = 'Details',
 }: AIAgentDetailsDialogProps) {
   const { apiClient, selectedPaymentSourceId, network } = useAppContext();
+  const resync = useResync();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const deleteAgent = useApiMutation({
@@ -143,6 +145,7 @@ export function AIAgentDetailsDialog({
         setIsDeleteDialogOpen(false);
         if (response) {
           toast.success('AI agent deleted from the database successfully');
+          await resync('agents');
           onClose();
           onSuccess?.();
         }
@@ -166,6 +169,7 @@ export function AIAgentDetailsDialog({
         setIsDeleteDialogOpen(false);
         if (response) {
           toast.success('AI agent deregistration initiated successfully');
+          await resync('agents');
           onClose();
           onSuccess?.();
         }
@@ -178,6 +182,7 @@ export function AIAgentDetailsDialog({
       isDeletingRef.current = false;
     }
   }, [
+    resync,
     agent,
     deleteAgentAsync,
     deregisterAgentAsync,

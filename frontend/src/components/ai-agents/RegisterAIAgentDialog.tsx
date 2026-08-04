@@ -14,6 +14,7 @@ import { Badge } from '../ui/badge';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postRegistry, postRegistryUpdate, RegistryEntry } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { shortenAddress, formatFundUnit } from '@/lib/utils';
 import { Trash2, ChevronDown } from 'lucide-react';
 import { useForm, Controller, useFieldArray } from 'react-hook-form';
@@ -262,6 +263,7 @@ export function RegisterAIAgentDialog({
 
   const { wallets, isLoading: isLoadingWallets, isError: isWalletsError } = useWallets();
   const { apiClient, network, selectedPaymentSource } = useAppContext();
+  const resync = useResync();
   const stablecoinUnit = network === 'Mainnet' ? 'USDCx' : 'tUSDM';
 
   const {
@@ -667,6 +669,7 @@ export function RegisterAIAgentDialog({
           }
 
           toast.success('AI agent update requested');
+          await resync('agents');
           onSuccess();
           onClose();
           reset();
@@ -725,6 +728,7 @@ export function RegisterAIAgentDialog({
       }
     },
     [
+      resync,
       sellingWallets,
       selectedPaymentSource,
       apiClient,

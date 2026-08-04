@@ -36,6 +36,7 @@ import {
 } from '@/components/transactions/TransactionFilters';
 import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransactionErrors';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -70,6 +71,7 @@ const toCsvValue = (value: unknown): string => {
 
 export default function Transactions() {
   const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } = useAppContext();
+  const resync = useResync();
 
   const [activeTab, setActiveTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -288,12 +290,13 @@ export default function Transactions() {
 
         // Keep only the failed rows selected so the user can retry them.
         setSelectedIds(new Set(failedIds));
+        await resync('transactions');
         refreshTransactions();
       } finally {
         setBulkRecoveryMode(null);
       }
     },
-    [visibleTransactions, selectedIds, recoverErrors, refreshTransactions],
+    [visibleTransactions, selectedIds, recoverErrors, refreshTransactions, resync],
   );
 
   // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
