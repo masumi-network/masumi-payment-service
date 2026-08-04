@@ -251,8 +251,11 @@ An early sign, before you start anything: `GET /v1/capabilities` returns a
 `probeError: --hydra-script-catalogue: Command failed`. The version call
 survives emulation; the catalogue call does not.
 
-Run the Host on amd64 Linux, or natively — see
-[hydra-host-native-mode.md](hydra-host-native-mode.md).
+Run the Host on amd64 Linux, or run it natively. On Apple silicon native mode
+works today and there are step-by-step instructions in
+[hydra-host-native-mode.md](hydra-host-native-mode.md#running-it). On arm64
+Linux there is no `hydra-node` build at all, so native mode does not help
+either; that page says what building one would involve.
 
 ### A payment settled on L1 with the head open
 

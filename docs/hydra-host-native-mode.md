@@ -44,9 +44,72 @@ and all three are configuration rather than code paths:
 | `HYDRA_HOST_DATA_DIR` | `/data` volume | a local directory |
 | `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes a matching etcd 3.5.25 | `false` — let `hydra-node` extract its own |
 
-Native mode is a supported way to run the Host, not a workaround. It is also
-the right choice on arm64 Linux servers until upstream publishes a build for
-them.
+Native mode is a supported way to run the Host, not a workaround.
+
+## Running it
+
+Two arm64 cases, and they are not the same problem:
+
+- **macOS on Apple silicon** — upstream publishes `aarch64-darwin`, so this
+  works today. Everything below applies.
+- **arm64 Linux** — upstream publishes *no* build, so there is nothing to point
+  `HYDRA_NODE_BIN` at. Native mode does not rescue this: you would have to
+  build `hydra-node` from its Nix flake and verify the resulting script hashes
+  against `HYDRA_DEPOSIT_SCRIPT_HASH` and `HYDRA_HEAD_SCRIPT_HASH` before any
+  head opened with it could interoperate. Use amd64 Linux instead unless you
+  are prepared to do that.
+
+### 1. Fetch `hydra-node`
+
+```bash
+HYDRA_VERSION=2.3.0
+curl -fsSL -o hydra.zip \
+  "https://github.com/cardano-scaling/hydra/releases/download/${HYDRA_VERSION}/hydra-aarch64-darwin-${HYDRA_VERSION}.zip"
+unzip -j hydra.zip -d .bin
+chmod +x .bin/hydra-node
+.bin/hydra-node --version
+```
+
+Both sides of a head must run the same version, so pin it rather than tracking
+latest.
+
+### 2. Start the Host
+
+```bash
+HYDRA_HOST_PUBLIC_HOST=hydra.example.com \
+HYDRA_HOST_NETWORK=preprod \
+HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
+HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
+HYDRA_NODE_BIN="$PWD/.bin/hydra-node" \
+HYDRA_HOST_DATA_DIR="$PWD/.hydra-data" \
+BLOCKFROST_PROJECT_FILE="$PWD/blockfrost.txt" \
+HYDRA_HOST_LEDGER_PARAMS_FILE="$PWD/packages/hydra-host/params/preprod.json" \
+HYDRA_HOST_USE_SYSTEM_ETCD=false \
+pnpm exec tsx packages/hydra-host/src/index.ts
+```
+
+Four of those differ from the container and are worth understanding:
+
+| | Why |
+| --- | --- |
+| `HYDRA_NODE_BIN` | Nothing is baked in, so the path is yours to supply. |
+| `HYDRA_HOST_DATA_DIR` | Defaults to `/data`, which is the container's volume. Point it somewhere real and back it up: it holds the event store and the raft WAL. |
+| `HYDRA_HOST_LEDGER_PARAMS_FILE` | Defaults to `/opt/hydra/params/<network>.json`, which only exists in the image. The same files ship in `packages/hydra-host/params/`. |
+| `HYDRA_HOST_USE_SYSTEM_ETCD=false` | There is no matching system etcd; let `hydra-node` extract the copy it embeds. Setting `true` against a different version risks subtle raft incompatibilities. |
+
+`BLOCKFROST_PROJECT_FILE` is a path to a file containing the project id, not
+the id itself, in native mode as in the container.
+
+Everything else — ports, tokens, the peer allow-list — behaves exactly as it
+does in the container. See the
+[Hydra Operations Guide](hydra-operations.md) for those.
+
+### 3. Keep it running
+
+There is no supervisor around the supervisor here. Use whatever the machine
+already has — `launchd` on macOS, `systemd` on Linux — and give it a **stop
+timeout of about two minutes**, because the Host drains a snapshot round before
+exiting and etcd's raft WAL does not tolerate being cut off mid-round.
 
 ## What the container still covers exclusively
 
