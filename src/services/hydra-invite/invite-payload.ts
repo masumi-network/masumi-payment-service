@@ -26,6 +26,19 @@ export type HydraHeadInvitePayloadInput = {
 	network: string;
 	/** The wallet that identifies the issuer. Authority is bound to this. */
 	issuerWalletAddress: string;
+	/**
+	 * Which side of a trade the issuer's wallet plays.
+	 *
+	 * A head carries payments in one direction: the buyer's wallet locks funds
+	 * and the seller's collects them. Two buyers, or two sellers, produce a head
+	 * no payment can ever route through, and nothing about it looks wrong until
+	 * a payment quietly settles on L1 instead.
+	 *
+	 * Signed rather than sent alongside, because the redeemer decides which of
+	 * its own wallets to use based on this: an unsigned value would let anyone
+	 * who relays the invite steer that choice.
+	 */
+	issuerWalletRole: 'Buyer' | 'Seller';
 	/** Issuer's Hydra verification key (envelope cborHex). */
 	hydraVerificationKey: string;
 	/** Issuer's node Cardano verification key (envelope cborHex). */
@@ -49,7 +62,7 @@ export type HydraHeadInvitePayloadInput = {
 };
 
 /** Version tag, so a future field change is a rejected signature rather than a silent misread. */
-export const HYDRA_INVITE_PAYLOAD_VERSION = 'masumi.hydra.invite.v1';
+export const HYDRA_INVITE_PAYLOAD_VERSION = 'masumi.hydra.invite.v2';
 
 /**
  * Canonical, order-stable payload.
@@ -66,6 +79,7 @@ export function buildHydraHeadInvitePayload(input: HydraHeadInvitePayloadInput) 
 		expiresAt: input.expiresAt,
 		network: input.network,
 		issuerWalletAddress: input.issuerWalletAddress,
+		issuerWalletRole: input.issuerWalletRole,
 		hydraVerificationKey: input.hydraVerificationKey,
 		cardanoVerificationKey: input.cardanoVerificationKey,
 		advertise: input.advertise,

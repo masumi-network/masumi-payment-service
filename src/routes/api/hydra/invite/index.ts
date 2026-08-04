@@ -237,6 +237,7 @@ export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 			nonce: decoded.payload.nonce,
 			network,
 			issuerWalletAddress: decoded.payload.issuerWalletAddress,
+			issuerWalletRole: decoded.payload.issuerWalletRole,
 			advertise: decoded.payload.advertise,
 			exchangeUrl: decoded.payload.exchangeUrl,
 			expiresAt: new Date(Number(decoded.payload.expiresAt)).toISOString(),

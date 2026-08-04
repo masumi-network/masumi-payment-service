@@ -139,8 +139,12 @@ export function IssueHydraInviteDialog({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                This wallet signs the invite and is who the counterparty will see. It is who you
-                settle with, not the node&apos;s own key.
+                This wallet signs the invite and is who the counterparty sees. It is who you settle
+                with, not the node&apos;s own key.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                It also fixes their side: pick a buying wallet and they must redeem with a selling
+                one, and the other way round. A head carries payments in one direction only.
               </p>
               <p className="text-xs text-muted-foreground">
                 Once they redeem, about 10 ADA moves from this wallet to the node to cover the

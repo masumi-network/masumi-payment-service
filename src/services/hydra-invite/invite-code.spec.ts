@@ -7,6 +7,7 @@ const PAYLOAD: HydraHeadInvitePayloadInput = {
 	expiresAt: '1785600000000',
 	network: 'Preprod',
 	issuerWalletAddress: 'addr_test1issuer',
+	issuerWalletRole: 'Seller' as const,
 	hydraVerificationKey: 'hvk',
 	cardanoVerificationKey: '5820' + 'ab'.repeat(32),
 	advertise: 'them.example.com:5101',

@@ -11,7 +11,7 @@
 
 import createHttpError from 'http-errors';
 import { createId } from '@paralleldrive/cuid2';
-import { HydraInviteRole, HydraInviteStatus, Network, WalletType } from '@/generated/prisma/client';
+import { HotWalletType, HydraInviteRole, HydraInviteStatus, Network, WalletType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { createBoundHydraHead } from '@/routes/api/hydra/head';
@@ -35,6 +35,8 @@ type WalletContext = {
 	network: Network;
 	walletAddress: string;
 	encryptedMnemonic: string;
+	/** Which side of a trade this wallet plays, as the invite records it. */
+	role: 'Buyer' | 'Seller';
 };
 
 async function loadWallet(hotWalletId: string): Promise<WalletContext> {
@@ -45,12 +47,16 @@ async function loadWallet(hotWalletId: string): Promise<WalletContext> {
 	if (!wallet) {
 		throw createHttpError(404, 'wallet not found');
 	}
+	if (wallet.type === HotWalletType.Funding) {
+		throw createHttpError(409, 'a funding wallet cannot be a head participant; pick a buying or selling wallet');
+	}
 	return {
 		id: wallet.id,
 		paymentSourceId: wallet.paymentSourceId,
 		network: wallet.PaymentSource.network,
 		walletAddress: wallet.walletAddress,
 		encryptedMnemonic: wallet.Secret.encryptedMnemonic,
+		role: wallet.type === HotWalletType.Purchasing ? 'Buyer' : 'Seller',
 	};
 }
 
@@ -123,6 +129,7 @@ export async function mintHeadInvite(input: {
 		expiresAt: String(expiresAt.getTime()),
 		network: wallet.network,
 		issuerWalletAddress: wallet.walletAddress,
+		issuerWalletRole: wallet.role,
 		hydraVerificationKey: node.hydraVerificationKey,
 		cardanoVerificationKey: node.cardanoVerificationKey,
 		advertise: node.advertise,
@@ -213,6 +220,18 @@ export async function redeemHeadInvite(input: {
 	}
 	if (payload.issuerWalletAddress === wallet.walletAddress) {
 		throw createHttpError(409, 'this is our own invite; a head needs two distinct participants');
+	}
+	// A head carries payments one way. Same-role pairs open perfectly well and
+	// then route nothing: every payment falls back to L1, with no error to
+	// explain it. Refused here, where it is still one sentence to fix.
+	if (payload.issuerWalletRole === wallet.role) {
+		const theirs = payload.issuerWalletRole === 'Buyer' ? 'buying' : 'selling';
+		const wanted = payload.issuerWalletRole === 'Buyer' ? 'selling' : 'buying';
+		throw createHttpError(
+			409,
+			`this invite is from their ${theirs} wallet, so it has to be redeemed with a ${wanted} wallet. ` +
+				'A head runs between a buyer and a seller, and payments only route through it in that direction',
+		);
 	}
 	const freshness = checkInviteFreshness(Number(payload.expiresAt), Date.now());
 	if (!freshness.fresh) {

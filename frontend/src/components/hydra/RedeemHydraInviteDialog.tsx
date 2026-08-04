@@ -12,7 +12,7 @@
  * check someone performs and a hex address is one they click past.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, ShieldAlert, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
@@ -70,7 +70,22 @@ export function RedeemHydraInviteDialog({
   const { wallets } = useWallets();
   const [code, setCode] = useState('');
   const [hotWalletId, setHotWalletId] = useState('');
+
   const [preview, setPreview] = useState<HydraInvitePreview | null>(null);
+
+  // A head runs between a buyer and a seller. Offering the wallets that cannot
+  // work, and refusing them on submit, teaches the rule the slow way; offering
+  // only the ones that can teaches it by construction.
+  const requiredRole = preview?.issuerWalletRole ?? null;
+  const selectableWallets = useMemo(
+    () =>
+      requiredRole === null
+        ? wallets
+        : wallets.filter((wallet) =>
+            requiredRole === 'Buyer' ? wallet.type === 'Selling' : wallet.type === 'Purchasing',
+          ),
+    [wallets, requiredRole],
+  );
   const [isLoading, setIsLoading] = useState(false);
 
   function handleOpenChange(nextOpen: boolean) {
@@ -235,7 +250,7 @@ export function RedeemHydraInviteDialog({
                   <SelectValue placeholder="Choose a wallet" />
                 </SelectTrigger>
                 <SelectContent>
-                  {wallets.map((wallet) => (
+                  {selectableWallets.map((wallet) => (
                     <SelectItem key={wallet.id} value={wallet.id}>
                       {/* The role is always shown, even when the wallet has a
                           note. A head is between two wallets and which side
@@ -254,6 +269,14 @@ export function RedeemHydraInviteDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {requiredRole !== null && (
+                <p className="text-xs text-muted-foreground">
+                  Their side is the {requiredRole === 'Seller' ? 'buyer' : 'seller'}, so only your{' '}
+                  {requiredRole === 'Seller' ? 'selling' : 'buying'} wallets are offered. A head
+                  runs between a buyer and a seller, and payments route through it in that direction
+                  only.
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">
                 This starts a node on your side and tells them you are ready. About 10 ADA moves
                 from this wallet to that node to cover the head&apos;s on-chain fees, separate from

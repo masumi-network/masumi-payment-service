@@ -505,6 +505,8 @@ export type HydraInvitePreview = {
   nonce: string;
   network: 'Preprod' | 'Mainnet';
   issuerWalletAddress: string;
+  /** Which side the issuer takes. Ours has to be the other one. */
+  issuerWalletRole?: 'Buyer' | 'Seller';
   advertise: string;
   exchangeUrl: string;
   expiresAt: string;
