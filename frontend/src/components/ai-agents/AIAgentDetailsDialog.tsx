@@ -8,6 +8,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { getAgentTypeLabel } from '@/lib/agent-type';
 import { formatDateTime } from '@/lib/format-date';
 import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
 import type { AgentRelation } from '@/lib/queries/useContextAgents';
@@ -237,12 +238,17 @@ export function AIAgentDetailsDialog({
                   <DialogTitle className="text-xl leading-tight break-words">
                     {agent.name}
                   </DialogTitle>
-                  <Badge
-                    variant={getAgentStatusBadgeVariant(agent.state)}
-                    className="mt-0.5 shrink-0 whitespace-nowrap"
-                  >
-                    {parseAgentStatus(agent.state)}
-                  </Badge>
+                  <div className="mt-0.5 flex shrink-0 items-center gap-2">
+                    <Badge variant="outline" className="whitespace-nowrap">
+                      {getAgentTypeLabel(agent.type)}
+                    </Badge>
+                    <Badge
+                      variant={getAgentStatusBadgeVariant(agent.state)}
+                      className="whitespace-nowrap"
+                    >
+                      {parseAgentStatus(agent.state)}
+                    </Badge>
+                  </div>
                 </div>
               </DialogHeader>
 
