@@ -197,7 +197,21 @@ export function HydraInvitesCard({
         onOpenChange={setIsRedeemOpen}
         onRedeemed={() => void refetch()}
       />
+      <HydraInviteDetailsDialog
+        invite={detailsInvite}
+        open={detailsInvite !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setDetailsInvite(null);
+        }}
+        network={network}
+        isRevoking={busyId === detailsInvite?.id}
+        onRevoke={(invite) => {
+          setDetailsInvite(null);
+          setPendingRevoke(invite);
+        }}
+      />
       <ConfirmDialog
+        elevatedChildStack
         open={pendingRevoke !== null}
         onClose={() => setPendingRevoke(null)}
         title="Revoke this invite?"

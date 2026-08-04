@@ -58,7 +58,9 @@ export function HydraInviteDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      {/* Opened from the invites card, which is itself embedded in a dialog, so
+          this has to stack above its parent rather than behind the overlay. */}
+      <DialogContent className="sm:max-w-lg" elevatedStack>
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2">
             <Ticket className="h-4 w-4" />
