@@ -2,6 +2,7 @@ import { z } from '@masumi/payment-core/zod';
 import { HotWalletType, PaymentSourceType, TransactionLayer } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { nudgeHydraCycle } from '@/services/hydra-nudge';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { validateHexString } from '@/utils/validator/hex';
@@ -415,6 +416,11 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				forceLayer,
 				paymentForceLayer,
 			});
+
+			// A lock inside an open head completes in under a second, so waiting for
+			// the batch tick is latency we add rather than latency the chain imposes.
+			// The tick remains the backstop if this pass finds the head unusable.
+			nudgeHydraCycle('lockFunds');
 
 			return {
 				...initialPurchaseRequest,

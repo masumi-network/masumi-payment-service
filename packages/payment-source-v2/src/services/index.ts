@@ -6,6 +6,10 @@ export { authorizeRefundV2 as authorizeRefund } from './payments/authorize-refun
 export { handleAutomaticDecisionsV2 as handleAutomaticDecisions } from './payments/automatic-decisions/service';
 export { collectOutstandingPaymentsV2 as collectOutstandingPayments } from './payments/collection/service';
 export { submitResultV2 as submitResult } from './payments/submit-result/service';
+// The head-only passes, for running the moment the work appears rather than at
+// the next batch tick. They never touch the L1 path.
+export { submitResultL2V2 as submitResultL2 } from './payments/submit-result/service';
+export { processL2PurchaseLocks as lockFundsL2 } from './purchases/batch-payments/l2-lock';
 
 export { authorizeWithdrawalsV2 as authorizeWithdrawals } from './purchases/authorize-withdrawal/service';
 export { batchLatestPaymentEntriesV2 as batchLatestPaymentEntries } from './purchases/batch-payments/service';
