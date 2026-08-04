@@ -49,6 +49,10 @@ export const listTopupsOutput = z.object({
 			updatedAt: z.string(),
 			status: z.nativeEnum(HydraTopupStatus),
 			depositTxHash: z.string().nullable(),
+			splitTxHash: z
+				.string()
+				.nullable()
+				.describe('The L1 transaction that carved the exact amount, while a top-up is still preparing'),
 			committedLovelace: z.string(),
 			committedAssets: z.record(z.string(), z.string()),
 			/**
@@ -133,6 +137,7 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 				updatedAt: row.updatedAt.toISOString(),
 				status: row.status,
 				depositTxHash: row.depositTxHash,
+				splitTxHash: row.splitTxHash,
 				committedLovelace: row.committedLovelace.toString(),
 				// Both are unknown until the deposit is built: a preparing top-up has
 				// no signed validity slot to derive them from.

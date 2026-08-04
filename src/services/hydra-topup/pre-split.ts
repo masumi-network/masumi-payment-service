@@ -69,6 +69,14 @@ export async function carveExactUtxo(params: {
 	now?: () => number;
 	sleep?: (ms: number) => Promise<void>;
 	submitCarveTx?: (wallet: MeshWallet, walletAddress: string, unit: string, amount: bigint) => Promise<string>;
+	/**
+	 * Called with the carve transaction's hash the moment it is submitted.
+	 *
+	 * The wait for it to confirm is the longest part of a top-up, and until the
+	 * hash is recorded somewhere an operator has nothing to look up: the funds
+	 * have left the wallet and no transaction is named anywhere in the product.
+	 */
+	onCarveSubmitted?: (txHash: string) => Promise<void>;
 }): Promise<UTxO> {
 	if (params.amount <= 0n) throw new HydraPreSplitError('exact top-up amount must be positive');
 
@@ -82,6 +90,12 @@ export async function carveExactUtxo(params: {
 		);
 	}
 	logger.info('hydra-pre-split: carve tx submitted', { txHash, unit: params.unit, amount: params.amount.toString() });
+	if (params.onCarveSubmitted) {
+		// Recording it must never lose the carve itself, which is already on chain.
+		await params.onCarveSubmitted(txHash).catch((error: unknown) => {
+			logger.warn(`hydra-pre-split: could not record carve tx ${txHash}: ${(error as Error).message}`);
+		});
+	}
 
 	const now = params.now ?? Date.now;
 	const sleep = params.sleep ?? defaultSleep;

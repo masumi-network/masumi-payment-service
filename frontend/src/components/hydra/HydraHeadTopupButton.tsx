@@ -214,11 +214,20 @@ function HydraTopupList({
             </div>
             <span className="flex items-center gap-1">
               {topup.depositTxHash === null ? (
-                // Nothing to copy yet: an exact amount is being carved into its
-                // own UTxO on L1, which has to confirm before a deposit exists.
-                <span className="text-xs text-muted-foreground">
-                  splitting the amount on chain first
-                </span>
+                // The deposit does not exist yet, but the split that precedes it
+                // does, and it is the transaction that took the funds. Named so
+                // the wait can be checked on chain rather than taken on trust.
+                topup.splitTxHash ? (
+                  <>
+                    <span className="text-xs text-muted-foreground">splitting</span>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {topup.splitTxHash.slice(0, 10)}…
+                    </span>
+                    <CopyButton value={topup.splitTxHash} className="h-6 w-6" />
+                  </>
+                ) : (
+                  <span className="text-xs text-muted-foreground">building the split</span>
+                )
               ) : (
                 <>
                   <span className="font-mono text-xs text-muted-foreground">

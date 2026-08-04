@@ -1873,6 +1873,12 @@ model HydraTopup {
   hydraLocalParticipantId String
   LocalParticipant        HydraLocalParticipant @relation(fields: [hydraLocalParticipantId], references: [id], onDelete: Cascade)
 
+  /// The L1 self-payment that carves the exact amount into its own UTxO, when an
+  /// exact amount was asked for. Recorded as soon as it is submitted: waiting for
+  /// it to confirm is the longest part of a top-up, and without this there is no
+  /// transaction an operator can look up during that wait.
+  splitTxHash String?
+
   /// The incremental-commit deposit L1 transaction hash (64 hex).
   ///
   /// Null while the top-up is still being prepared. An exact-amount top-up first

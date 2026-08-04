@@ -787,8 +787,10 @@ export type HydraTopup = {
   createdAt: string;
   updatedAt: string;
   status: 'Preparing' | 'Pending' | 'Confirmed' | 'Failed';
-  /** Null until the deposit is built; a preparing top-up has no transaction yet. */
+  /** Null until the deposit is built; a preparing top-up has no deposit yet. */
   depositTxHash: string | null;
+  /** The L1 split that carves the exact amount, present while preparing. */
+  splitTxHash?: string | null;
   committedLovelace: string;
   committedAssets: Record<string, string>;
   /** After this, the head can no longer absorb the deposit. Null while preparing. */

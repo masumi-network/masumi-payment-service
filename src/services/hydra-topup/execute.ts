@@ -172,6 +172,12 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 					amount: params.exact.amount,
 					network: hotWallet.PaymentSource.network,
 					rpcProviderApiKey,
+					// So the row an operator is watching names the transaction that
+					// took their funds, rather than saying only that something is
+					// happening.
+					onCarveSubmitted: async (splitTxHash) => {
+						await prisma.hydraTopup.update({ where: { id: preparing.id }, data: { splitTxHash } });
+					},
 				});
 			} catch (error) {
 				if (error instanceof HydraPreSplitError) throw createHttpError(502, `Pre-split failed: ${error.message}`);
