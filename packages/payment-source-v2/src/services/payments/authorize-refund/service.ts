@@ -1110,6 +1110,74 @@ function groupRequestsByWallet(requests: PaymentRequestWithRelations[]): Map<str
 	return byWallet;
 }
 
+/** The L2 portion of the AuthorizeRefund cycle, shared by the timer and the on-demand run. */
+async function runAuthorizeRefundL2Pass(): Promise<void> {
+	// --- Hydra L2: dedicated single-item head path ---
+	// L2 spends the contract UTxO in the head; in-head timing windows differ
+	// from L1. Validated on a Hydra devnet (see docs/hydra-l2-devnet-findings.md).
+	const l2PaymentContracts = await lockAndQueryPayments({
+		paymentStatus: PaymentAction.AuthorizeRefundRequested,
+		onChainState: { in: [OnChainState.Disputed, OnChainState.RefundRequested] },
+		// One wallet can own only one durable L2 reservation at a time.
+		maxBatchSize: 1,
+		paymentSourceType: PaymentSourceType.Web3CardanoV2,
+		layer: TransactionLayer.L2,
+	});
+	await Promise.allSettled(
+		l2PaymentContracts.map(async (paymentContract) => {
+			if (paymentContract.PaymentRequests.length === 0) return;
+			const network = convertNetwork(paymentContract.network);
+			await Promise.allSettled(
+				paymentContract.PaymentRequests.map(async (request) => {
+					try {
+						await processL2AuthorizeRefund(request, paymentContract, network);
+					} catch (error) {
+						if (isLookupDeferred(error)) {
+							logger.info('L2 authorize-refund deferred to next tick', { requestId: request.id, error });
+						} else {
+							logger.error('L2 authorize-refund failed', { requestId: request.id, error });
+						}
+						await unlockHotWalletIfNoPendingTransaction(
+							request.SmartContractWallet!.id,
+							'authorize-refund-l2-pre-reservation',
+							request.SmartContractWallet!.lockedAt!,
+						);
+					}
+				}),
+			);
+		}),
+	);
+}
+
+/**
+ * The head path on its own, so it can run the moment the work appears.
+ *
+ * L1 is batched because the chain paces it. This is a signature exchange inside
+ * an open head that finishes in under a second, so the wait is latency we add.
+ * Extracted rather than running the whole cycle early, which would drag the L1
+ * pass forward with it.
+ *
+ * Shares the cycle's mutex: work arriving mid-cycle is already covered by the
+ * pass in flight, and two passes would race for the same wallet locks.
+ */
+export async function authorizeRefundL2V2(): Promise<void> {
+	let release: MutexInterface.Releaser | null;
+	try {
+		release = await tryAcquire(mutex).acquire();
+	} catch {
+		logger.info('authorize_refund_v2 is already running, skipping the on-demand L2 pass');
+		return;
+	}
+
+	try {
+		await runAuthorizeRefundL2Pass();
+	} catch (error) {
+		logger.error('Error in the on-demand AuthorizeRefund L2 pass', { error });
+	} finally {
+		release();
+	}
+}
+
 export async function authorizeRefundV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -1163,41 +1231,7 @@ export async function authorizeRefundV2() {
 			}),
 		);
 
-		// --- Hydra L2: dedicated single-item head path ---
-		// L2 spends the contract UTxO in the head; in-head timing windows differ
-		// from L1. Validated on a Hydra devnet (see docs/hydra-l2-devnet-findings.md).
-		const l2PaymentContracts = await lockAndQueryPayments({
-			paymentStatus: PaymentAction.AuthorizeRefundRequested,
-			onChainState: { in: [OnChainState.Disputed, OnChainState.RefundRequested] },
-			// One wallet can own only one durable L2 reservation at a time.
-			maxBatchSize: 1,
-			paymentSourceType: PaymentSourceType.Web3CardanoV2,
-			layer: TransactionLayer.L2,
-		});
-		await Promise.allSettled(
-			l2PaymentContracts.map(async (paymentContract) => {
-				if (paymentContract.PaymentRequests.length === 0) return;
-				const network = convertNetwork(paymentContract.network);
-				await Promise.allSettled(
-					paymentContract.PaymentRequests.map(async (request) => {
-						try {
-							await processL2AuthorizeRefund(request, paymentContract, network);
-						} catch (error) {
-							if (isLookupDeferred(error)) {
-								logger.info('L2 authorize-refund deferred to next tick', { requestId: request.id, error });
-							} else {
-								logger.error('L2 authorize-refund failed', { requestId: request.id, error });
-							}
-							await unlockHotWalletIfNoPendingTransaction(
-								request.SmartContractWallet!.id,
-								'authorize-refund-l2-pre-reservation',
-								request.SmartContractWallet!.lockedAt!,
-							);
-						}
-					}),
-				);
-			}),
-		);
+		await runAuthorizeRefundL2Pass();
 	} catch (error) {
 		logger.error('Error authorizing V2 refunds', { error });
 	} finally {

@@ -2,6 +2,7 @@ import { z } from '@masumi/payment-core/zod';
 import { Network, PurchasingAction, OnChainState, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { nudgeHydraCycle } from '@/services/hydra-nudge';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { purchaseResponseSchema } from '@/routes/api/purchases';
@@ -131,6 +132,9 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
 		}
 
 		const decoded = decodeBlockchainIdentifier(newPurchase.blockchainIdentifier);
+
+		// A refund request can free the buyer side immediately when the head carries it.
+		nudgeHydraCycle('collectRefund');
 
 		return {
 			...newPurchase,

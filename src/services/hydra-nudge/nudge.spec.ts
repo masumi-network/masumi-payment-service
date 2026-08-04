@@ -10,6 +10,9 @@ jest.unstable_mockModule('@/services/payment-source-types', () => ({
 	web3CardanoV2: {
 		lockFundsL2: mockLockFundsL2,
 		submitResultL2: mockSubmitResultL2,
+		collectL2: jest.fn(async () => undefined),
+		authorizeRefundL2: jest.fn(async () => undefined),
+		collectRefundL2: jest.fn(async () => undefined),
 		// Present so the test would notice if the nudge ever reached for the whole
 		// cycle instead of the head-only pass.
 		batchLatestPaymentEntries: mockBatchLatestPaymentEntries,

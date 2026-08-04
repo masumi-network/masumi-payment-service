@@ -35,6 +35,9 @@ import { web3CardanoV2 } from '@/services/payment-source-types';
 const CYCLES = {
 	lockFunds: web3CardanoV2.lockFundsL2,
 	submitResult: web3CardanoV2.submitResultL2,
+	collect: web3CardanoV2.collectL2,
+	authorizeRefund: web3CardanoV2.authorizeRefundL2,
+	collectRefund: web3CardanoV2.collectRefundL2,
 } as const;
 
 export type HydraNudgeKind = keyof typeof CYCLES;

@@ -9,6 +9,9 @@ export { submitResultV2 as submitResult } from './payments/submit-result/service
 // The head-only passes, for running the moment the work appears rather than at
 // the next batch tick. They never touch the L1 path.
 export { submitResultL2V2 as submitResultL2 } from './payments/submit-result/service';
+export { collectOutstandingPaymentsL2V2 as collectL2 } from './payments/collection/service';
+export { authorizeRefundL2V2 as authorizeRefundL2 } from './payments/authorize-refund/service';
+export { collectRefundL2V2 as collectRefundL2 } from './purchases/collect-refund/service';
 export { processL2PurchaseLocks as lockFundsL2 } from './purchases/batch-payments/l2-lock';
 
 export { authorizeWithdrawalsV2 as authorizeWithdrawals } from './purchases/authorize-withdrawal/service';

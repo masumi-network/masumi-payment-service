@@ -1178,6 +1178,83 @@ async function processL2Collection(
 	return outcome.status !== 'definitively-rejected';
 }
 
+/** The L2 portion of the Collection cycle, shared by the timer and the on-demand run. */
+async function runCollectionL2Pass(): Promise<void> {
+	// --- Hydra L2: dedicated single-item head collection path ---
+	// In-head withdraw timing differs from L1; validated on a Hydra devnet
+	// (see docs/hydra-l2-devnet-findings.md).
+	const l2PaymentContracts = await lockAndQueryPayments({
+		paymentStatus: PaymentAction.WithdrawRequested,
+		resultHash: { not: null },
+		// One wallet can own only one durable L2 reservation at a time.
+		maxBatchSize: 1,
+		paymentSourceType: PaymentSourceType.Web3CardanoV2,
+		layer: TransactionLayer.L2,
+		orFilters: [
+			{
+				onChainState: { in: [OnChainState.ResultSubmitted] },
+				unlockTime: { lte: Date.now() - 1000 * 60 * 10 },
+			},
+			{
+				onChainState: { in: [OnChainState.WithdrawAuthorized] },
+			},
+		],
+	});
+	await Promise.allSettled(
+		l2PaymentContracts.map(async (paymentContract) => {
+			if (paymentContract.PaymentRequests.length === 0) return;
+			const network = convertNetwork(paymentContract.network);
+			await Promise.allSettled(
+				paymentContract.PaymentRequests.map(async (request) => {
+					try {
+						await processL2Collection(request, paymentContract, network);
+					} catch (error) {
+						if (isLookupDeferred(error)) {
+							logger.info('L2 collection deferred to next tick', { requestId: request.id, error });
+						} else {
+							logger.error('L2 collection failed', { requestId: request.id, error });
+						}
+						await unlockHotWalletIfNoPendingTransaction(
+							request.SmartContractWallet!.id,
+							'collection-l2-pre-reservation',
+							request.SmartContractWallet!.lockedAt!,
+						);
+					}
+				}),
+			);
+		}),
+	);
+}
+
+/**
+ * The head path on its own, so it can run the moment the work appears.
+ *
+ * L1 is batched because the chain paces it. This is a signature exchange inside
+ * an open head that finishes in under a second, so the wait is latency we add.
+ * Extracted rather than running the whole cycle early, which would drag the L1
+ * pass forward with it.
+ *
+ * Shares the cycle's mutex: work arriving mid-cycle is already covered by the
+ * pass in flight, and two passes would race for the same wallet locks.
+ */
+export async function collectOutstandingPaymentsL2V2(): Promise<void> {
+	let release: MutexInterface.Releaser | null;
+	try {
+		release = await tryAcquire(mutex).acquire();
+	} catch {
+		logger.info('collect_outstanding_payments_v2 is already running, skipping the on-demand L2 pass');
+		return;
+	}
+
+	try {
+		await runCollectionL2Pass();
+	} catch (error) {
+		logger.error('Error in the on-demand Collection L2 pass', { error });
+	} finally {
+		release();
+	}
+}
+
 export async function collectOutstandingPaymentsV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -1245,50 +1322,7 @@ export async function collectOutstandingPaymentsV2() {
 			}),
 		);
 
-		// --- Hydra L2: dedicated single-item head collection path ---
-		// In-head withdraw timing differs from L1; validated on a Hydra devnet
-		// (see docs/hydra-l2-devnet-findings.md).
-		const l2PaymentContracts = await lockAndQueryPayments({
-			paymentStatus: PaymentAction.WithdrawRequested,
-			resultHash: { not: null },
-			// One wallet can own only one durable L2 reservation at a time.
-			maxBatchSize: 1,
-			paymentSourceType: PaymentSourceType.Web3CardanoV2,
-			layer: TransactionLayer.L2,
-			orFilters: [
-				{
-					onChainState: { in: [OnChainState.ResultSubmitted] },
-					unlockTime: { lte: Date.now() - 1000 * 60 * 10 },
-				},
-				{
-					onChainState: { in: [OnChainState.WithdrawAuthorized] },
-				},
-			],
-		});
-		await Promise.allSettled(
-			l2PaymentContracts.map(async (paymentContract) => {
-				if (paymentContract.PaymentRequests.length === 0) return;
-				const network = convertNetwork(paymentContract.network);
-				await Promise.allSettled(
-					paymentContract.PaymentRequests.map(async (request) => {
-						try {
-							await processL2Collection(request, paymentContract, network);
-						} catch (error) {
-							if (isLookupDeferred(error)) {
-								logger.info('L2 collection deferred to next tick', { requestId: request.id, error });
-							} else {
-								logger.error('L2 collection failed', { requestId: request.id, error });
-							}
-							await unlockHotWalletIfNoPendingTransaction(
-								request.SmartContractWallet!.id,
-								'collection-l2-pre-reservation',
-								request.SmartContractWallet!.lockedAt!,
-							);
-						}
-					}),
-				);
-			}),
-		);
+		await runCollectionL2Pass();
 	} catch (error) {
 		logger.error('Error collecting V2 outstanding payments', { error });
 	} finally {
