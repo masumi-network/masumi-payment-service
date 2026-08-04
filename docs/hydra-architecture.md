@@ -1,5 +1,8 @@
 # Hydra L2 Architecture
 
+For setting one up and running it, see the
+[Hydra Operations Guide](hydra-operations.md). This page is the internal view.
+
 This diagram shows how the payment service routes normal Cardano transactions and Hydra in-head transactions. Hydra is not a replacement for L1 in this system; it is an L2 execution environment that is opened, funded, closed, and finalized through L1 transactions.
 
 ## System View
