@@ -40,6 +40,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
+import { formatDuration } from '@/components/hydra/DurationPicker';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import {
@@ -63,15 +64,6 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Seconds are unreadable past an hour, and a dispute window runs to days. */
-function humanDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '—';
-  if (seconds < 90) return `${Math.round(seconds)} seconds`;
-  if (seconds < 5400) return `${Math.round(seconds / 60)} minutes`;
-  if (seconds < 172_800) return `${(seconds / 3600).toFixed(seconds % 3600 === 0 ? 0 : 1)} hours`;
-  return `${(seconds / 86_400).toFixed(seconds % 86_400 === 0 ? 0 : 1)} days`;
-}
-
 export function RedeemHydraInviteDialog({
   open,
   onOpenChange,
@@ -85,6 +77,9 @@ export function RedeemHydraInviteDialog({
 
   const [preview, setPreview] = useState<HydraInvitePreview | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  // Reported at the field rather than as a toast: a message that disappears
+  // leaves the operator to work out which of three things it meant.
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   // A head runs between a buyer and a seller. Offering the wallets that cannot
   // work, and refusing them on submit, teaches the rule the slow way; offering
@@ -112,7 +107,7 @@ export function RedeemHydraInviteDialog({
 
   async function handlePreview() {
     if (code.trim().length === 0) {
-      toast.error('Paste the invite code you were sent.');
+      setErrors({ code: 'Paste the invite code you were sent.' });
       return;
     }
     setIsLoading(true);
@@ -126,8 +121,12 @@ export function RedeemHydraInviteDialog({
   }
 
   async function handleRedeem() {
+    if (!acceptedTerms) {
+      setErrors({ terms: 'Accept the head\u2019s timings before redeeming.' });
+      return;
+    }
     if (hotWalletId.length === 0) {
-      toast.error('Choose the wallet that will identify you on this head.');
+      setErrors({ wallet: 'Choose the wallet that will identify you on this head.' });
       return;
     }
     setIsLoading(true);
@@ -176,6 +175,7 @@ export function RedeemHydraInviteDialog({
             <p className="text-xs text-muted-foreground">
               Reading it starts nothing and tells the sender nothing.
             </p>
+            {errors.code && <p className="text-xs text-destructive">{errors.code}</p>}
           </div>
         ) : (
           <div className="space-y-5">
@@ -239,11 +239,11 @@ export function RedeemHydraInviteDialog({
                 <Field label="Network" value={preview.network} />
                 <Field
                   label="Dispute window"
-                  value={humanDuration(preview.contestationPeriodSeconds)}
+                  value={formatDuration(preview.contestationPeriodSeconds)}
                 />
                 <Field
                   label="Deposit settles after"
-                  value={`${Math.round(preview.depositPeriodSeconds / 60)} min`}
+                  value={formatDuration(preview.depositPeriodSeconds)}
                 />
               </div>
               <p className="text-xs text-muted-foreground">
@@ -258,14 +258,19 @@ export function RedeemHydraInviteDialog({
               <label className="flex items-start gap-2 rounded-md border px-3 py-2 text-xs">
                 <Checkbox
                   checked={acceptedTerms}
-                  onCheckedChange={(checked) => setAcceptedTerms(checked === true)}
+                  onCheckedChange={(checked) => {
+                    setAcceptedTerms(checked === true);
+                    setErrors({});
+                  }}
                   className="mt-0.5"
                 />
                 <span>
-                  I accept a {Math.round(preview.depositPeriodSeconds / 60)} minute settle time and
-                  a {preview.contestationPeriodSeconds} second contestation period for this head.
+                  I accept a {formatDuration(preview.depositPeriodSeconds)} settle time, a{' '}
+                  {formatDuration(preview.contestationPeriodSeconds)} dispute window and a{' '}
+                  {formatDuration(preview.unsyncedPeriodSeconds)} out-of-sync limit for this head.
                 </span>
               </label>
+              {errors.terms && <p className="text-xs text-destructive">{errors.terms}</p>}
               <p className="text-xs text-muted-foreground">
                 The dispute window is how long a closing head can be contested, and therefore how
                 long after closing before anything settles on chain. It is fixed for the head&apos;s
@@ -276,8 +281,10 @@ export function RedeemHydraInviteDialog({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Their node" value={preview.advertise} />
                   <Field label="Their exchange" value={preview.exchangeUrl} />
-                  <Field label="Deposit period" value={`${preview.depositPeriodSeconds}s`} />
-                  <Field label="Unsynced period" value={`${preview.unsyncedPeriodSeconds}s`} />
+                  <Field
+                    label="Out-of-sync limit"
+                    value={formatDuration(preview.unsyncedPeriodSeconds)}
+                  />
                   <Field label="Expires" value={new Date(preview.expiresAt).toLocaleString()} />
                   <Field label="Nonce" value={preview.nonce} />
                 </div>
@@ -292,7 +299,13 @@ export function RedeemHydraInviteDialog({
 
             <div className="space-y-2">
               <Label htmlFor="hydra-redeem-wallet">Our wallet</Label>
-              <Select value={hotWalletId} onValueChange={setHotWalletId}>
+              <Select
+                value={hotWalletId}
+                onValueChange={(value) => {
+                  setHotWalletId(value);
+                  setErrors({});
+                }}
+              >
                 <SelectTrigger id="hydra-redeem-wallet">
                   <SelectValue placeholder="Choose a wallet" />
                 </SelectTrigger>
@@ -329,6 +342,7 @@ export function RedeemHydraInviteDialog({
                 from this wallet to that node to cover the head&apos;s on-chain fees, separate from
                 whatever you later put into the head.
               </p>
+              {errors.wallet && <p className="text-xs text-destructive">{errors.wallet}</p>}
               <p className="text-xs text-muted-foreground">
                 Your side is the one that opens the head. You do that from the head itself, once
                 both nodes have found each other, usually within a minute.
@@ -363,7 +377,7 @@ export function RedeemHydraInviteDialog({
               <Button
                 type="button"
                 onClick={() => void handleRedeem()}
-                disabled={isLoading || !preview.signatureValid || !acceptedTerms}
+                disabled={isLoading || !preview.signatureValid}
               >
                 {isLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

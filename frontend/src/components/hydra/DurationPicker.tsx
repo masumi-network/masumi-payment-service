@@ -69,6 +69,7 @@ export function DurationPicker({
   onChange,
   hint,
   warning,
+  error,
   showDays = true,
 }: {
   id: string;
@@ -76,8 +77,10 @@ export function DurationPicker({
   seconds: number;
   onChange: (nextSeconds: number) => void;
   hint?: string;
-  /** Shown in amber under the field when the current value is a poor choice. */
+  /** Amber: the value is allowed but a poor choice. */
   warning?: string | null;
+  /** Red: the value will be refused, so the form cannot be submitted with it. */
+  error?: string | null;
   /** Off for durations that are never more than a few hours, to keep the row short. */
   showDays?: boolean;
 }) {
@@ -120,7 +123,8 @@ export function DurationPicker({
         <span className="text-xs text-muted-foreground">= {formatDuration(safe)}</span>
       </div>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      {warning && <p className="text-xs text-amber-700 dark:text-amber-400">{warning}</p>}
+      {warning && !error && <p className="text-xs text-amber-700 dark:text-amber-400">{warning}</p>}
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

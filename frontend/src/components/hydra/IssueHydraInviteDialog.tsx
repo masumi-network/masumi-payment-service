@@ -98,6 +98,8 @@ export function IssueHydraInviteDialog({
   const [settleSeconds, setSettleSeconds] = useState(defaults.settleMinutes * 60);
   const [contestationSeconds, setContestationSeconds] = useState(defaults.contestation);
   const [unsyncedSeconds, setUnsyncedSeconds] = useState(defaults.unsynced);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [issued, setIssued] = useState<{ code: string; expiresAt: string } | null>(null);
 
@@ -108,6 +110,8 @@ export function IssueHydraInviteDialog({
     setContestationSeconds(defaults.contestation);
     setUnsyncedSeconds(defaults.unsynced);
     setIssued(null);
+    setErrors({});
+    setAdvancedOpen(false);
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -117,45 +121,56 @@ export function IssueHydraInviteDialog({
     onOpenChange(nextOpen);
   }
 
-  async function handleIssue() {
+  /**
+   * Every problem with the form, keyed by field.
+   *
+   * A toast names the problem and then takes it away, leaving the operator to
+   * find which of five fields it meant. These render next to the input and stay
+   * until it is fixed.
+   */
+  function validate(): Record<string, string> {
+    const problems: Record<string, string> = {};
     if (hotWalletId.length === 0) {
-      toast.error('Choose the wallet that will identify you on this head.');
-      return;
+      problems.wallet = 'Choose the wallet that will identify you on this head.';
     }
     const hours = Number(ttlHours);
     if (!Number.isInteger(hours) || hours < 1 || hours > 720) {
-      toast.error('Validity must be a whole number of hours between 1 and 720.');
+      problems.ttl = 'A whole number of hours between 1 and 720.';
+    }
+    if (settleSeconds < MIN_SETTLE_MINUTES * 60) {
+      problems.settle = `Funds need at least ${MIN_SETTLE_MINUTES} minutes to settle.`;
+    }
+    if (contestationSeconds < 60) {
+      problems.contestation = 'The dispute window must be at least a minute.';
+    }
+    if (unsyncedSeconds < 60) {
+      problems.unsynced = 'The out-of-sync limit must be at least a minute.';
+    } else if (unsyncedSeconds > Math.floor(contestationSeconds / 2)) {
+      problems.unsynced = `Cannot exceed half the dispute window (${formatDuration(Math.floor(contestationSeconds / 2))}).`;
+    }
+    return problems;
+  }
+
+  async function handleIssue() {
+    const problems = validate();
+    setErrors(problems);
+    if (Object.keys(problems).length > 0) {
+      // The section holding the problem may be collapsed, so open it rather than
+      // let the operator hunt for a message they cannot see.
+      if (problems.contestation !== undefined || problems.unsynced !== undefined) {
+        setAdvancedOpen(true);
+      }
       return;
     }
 
     setIsLoading(true);
     try {
-      if (settleSeconds < MIN_SETTLE_MINUTES * 60) {
-        toast.error(`Funds need at least ${MIN_SETTLE_MINUTES} minutes to settle.`);
-        return;
-      }
-      const contestation = contestationSeconds;
-      const unsynced = unsyncedSeconds;
-      if (!Number.isInteger(contestation) || contestation < 60) {
-        toast.error('The dispute window must be at least 60 seconds.');
-        return;
-      }
-      if (!Number.isInteger(unsynced) || unsynced < 60) {
-        toast.error('The out-of-sync limit must be at least 60 seconds.');
-        return;
-      }
-      if (unsynced > Math.floor(contestation / 2)) {
-        toast.error(
-          `The out-of-sync limit cannot exceed half the dispute window (${Math.floor(contestation / 2)}s).`,
-        );
-        return;
-      }
       const invite = await createHydraInvite(apiClient, {
         hotWalletId,
-        ttlHours: hours,
+        ttlHours: Number(ttlHours),
         depositPeriodSeconds: settleSeconds,
-        contestationPeriodSeconds: contestation,
-        unsyncedPeriodSeconds: unsynced,
+        contestationPeriodSeconds: contestationSeconds,
+        unsyncedPeriodSeconds: unsyncedSeconds,
       });
       setIssued({ code: invite.code, expiresAt: invite.expiresAt });
       onIssued();
@@ -184,7 +199,13 @@ export function IssueHydraInviteDialog({
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="hydra-invite-wallet">Our wallet</Label>
-              <Select value={hotWalletId} onValueChange={setHotWalletId}>
+              <Select
+                value={hotWalletId}
+                onValueChange={(value) => {
+                  setHotWalletId(value);
+                  setErrors({});
+                }}
+              >
                 <SelectTrigger id="hydra-invite-wallet">
                   <SelectValue placeholder="Choose a wallet" />
                 </SelectTrigger>
@@ -221,6 +242,7 @@ export function IssueHydraInviteDialog({
                 head&apos;s on-chain fees. Nothing leaves the wallet while the invite is unused, and
                 this is separate from whatever you later put into the head.
               </p>
+              {errors.wallet && <p className="text-xs text-destructive">{errors.wallet}</p>}
             </div>
 
             <div className="space-y-2">
@@ -229,21 +251,29 @@ export function IssueHydraInviteDialog({
                 id="hydra-invite-ttl"
                 inputMode="numeric"
                 value={ttlHours}
-                onChange={(event) => setTtlHours(event.target.value)}
+                onChange={(event) => {
+                  setTtlHours(event.target.value);
+                  setErrors({});
+                }}
               />
               <p className="text-xs text-muted-foreground">
                 How long the node and port stay reserved. Long enough that they get round to reading
                 it.
               </p>
+              {errors.ttl && <p className="text-xs text-destructive">{errors.ttl}</p>}
             </div>
 
             <DurationPicker
               id="hydra-invite-settle"
               label="Added funds settle after"
               seconds={settleSeconds}
-              onChange={setSettleSeconds}
+              onChange={(next) => {
+                setSettleSeconds(next);
+                setErrors({});
+              }}
               showDays={false}
               hint="Money moved into this head is unusable for this long, and cannot be recovered for three times it. Both nodes run the value you set here, and it is fixed once the head exists."
+              error={errors.settle}
               warning={
                 settleSeconds < 5 * 60
                   ? 'Under five minutes is fragile: the window in which the head can take a deposit is the same length again, and chain time runs about half a minute behind.'
@@ -257,6 +287,7 @@ export function IssueHydraInviteDialog({
             <HydraDetailSection
               title="Advanced"
               summary={`${formatDuration(contestationSeconds)} dispute window`}
+              defaultOpen={advancedOpen}
             >
               <div className="space-y-4">
                 <DurationPicker
@@ -264,12 +295,14 @@ export function IssueHydraInviteDialog({
                   label="Dispute window"
                   seconds={contestationSeconds}
                   onChange={(next) => {
+                    setErrors({});
                     setContestationSeconds(next);
                     // The sync limit is capped at half, so it follows the window
                     // rather than silently becoming invalid behind a closed
                     // section.
                     setUnsyncedSeconds(Math.floor(next / 2));
                   }}
+                  error={errors.contestation}
                   hint="After the head closes, how long either side may dispute the final state. Nothing settles on chain until it passes, so it is also the wait between closing the head and having the funds back. Long is the safe direction: it is what protects you from a counterparty closing on a stale state while your node is down."
                 />
 
@@ -277,13 +310,12 @@ export function IssueHydraInviteDialog({
                   id="hydra-invite-unsynced"
                   label="Out-of-sync limit"
                   seconds={unsyncedSeconds}
-                  onChange={setUnsyncedSeconds}
+                  onChange={(next) => {
+                    setUnsyncedSeconds(next);
+                    setErrors({});
+                  }}
                   hint={`How long a node may see no new block before it declares itself out of sync and refuses commands, rather than acting on a stale view of the chain. It cannot exceed half the dispute window (${formatDuration(Math.floor(contestationSeconds / 2))} here): past that a node can believe it is in sync while it has already run out of time to contest a close.`}
-                  warning={
-                    unsyncedSeconds > Math.floor(contestationSeconds / 2)
-                      ? 'Longer than half the dispute window. This will be refused.'
-                      : null
-                  }
+                  error={errors.unsynced}
                 />
               </div>
             </HydraDetailSection>
