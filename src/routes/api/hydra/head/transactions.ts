@@ -23,6 +23,7 @@
 import createHttpError from 'http-errors';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 import { z } from '@masumi/payment-core/zod';
 import { TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 import { nodeCardanoAddress } from '@/services/hydra-node-funding/node-address';
@@ -106,15 +107,31 @@ export const listHeadTransactionsGet = adminAuthenticatedEndpointFactory.build({
 			where: { hydraHeadId: input.headId },
 			orderBy: { createdAt: 'desc' },
 			take: input.limit,
-			select: { id: true, createdAt: true, depositTxHash: true, status: true, committedLovelace: true },
+			select: {
+				id: true,
+				createdAt: true,
+				depositTxHash: true,
+				splitTxHash: true,
+				status: true,
+				committedLovelace: true,
+			},
 		});
 
 		// Matched by address rather than by relation: a transfer is to a node key,
 		// and only this head's participant holds that key.
-		const nodeAddress =
-			head.LocalParticipant === null
-				? null
-				: nodeCardanoAddress(head.LocalParticipant.cardanoVkey, head.HydraRelation.network);
+		// A key hash that cannot be turned into an address is a broken participant,
+		// not a reason to fail the whole history: the ledger rows and deposits above
+		// are still worth returning.
+		let nodeAddress: string | null = null;
+		if (head.LocalParticipant !== null) {
+			try {
+				nodeAddress = nodeCardanoAddress(head.LocalParticipant.cardanoVkey, head.HydraRelation.network);
+			} catch (error) {
+				logger.warn(
+					`hydra: head ${input.headId} has an unusable node key, so its funding transfers are omitted: ${(error as Error).message}`,
+				);
+			}
+		}
 		const funding =
 			nodeAddress === null
 				? []
@@ -144,7 +161,10 @@ export const listHeadTransactionsGet = adminAuthenticatedEndpointFactory.build({
 				id: deposit.id,
 				kind: 'Deposit' as const,
 				createdAt: deposit.createdAt,
-				txHash: deposit.depositTxHash,
+				// A deposit still being prepared has no deposit transaction, but it does
+				// have the split that carved the amount, and that is the one that has
+				// already moved the funds.
+				txHash: deposit.depositTxHash ?? deposit.splitTxHash,
 				intendedTxHash: null,
 				// A deposit's three states map onto the ledger vocabulary directly.
 				// Failed has to carry across as a failure rather than collapsing into
@@ -159,7 +179,10 @@ export const listHeadTransactionsGet = adminAuthenticatedEndpointFactory.build({
 				layer: TransactionLayer.L1,
 				confirmations: null,
 				fees: null,
-				lovelace: deposit.committedLovelace.toString(),
+				// Zero is a placeholder here, not a total: a whole-UTxO top-up commits
+				// whatever the selection holds and the amount is unknown until the
+				// deposit is built.
+				lovelace: deposit.committedLovelace === 0n ? null : deposit.committedLovelace.toString(),
 				blockTime: null,
 				lastCheckedAt: null,
 			})),

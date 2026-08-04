@@ -19,6 +19,19 @@ import { getExplorerUrl, shortenAddress } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import { useHydraHeadTransactions, type HydraHeadTransaction } from '@/lib/hooks/useHydraHeads';
 
+/**
+ * Lovelace crosses the wire as a string because it is a BigInt, and putting it
+ * through Number to divide would give it back the precision loss the string was
+ * there to avoid. Split on the decimal instead.
+ */
+function formatLovelace(lovelace: string): string {
+  const negative = lovelace.startsWith('-');
+  const digits = (negative ? lovelace.slice(1) : lovelace).padStart(7, '0');
+  const whole = digits.slice(0, -6).replace(/^0+(?=\d)/, '');
+  const fraction = digits.slice(-6, -4);
+  return `${negative ? '-' : ''}${whole}.${fraction}`;
+}
+
 function statusVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (status === 'Confirmed') return 'default';
   if (status === 'Pending') return 'secondary';

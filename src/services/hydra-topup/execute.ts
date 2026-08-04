@@ -1,6 +1,7 @@
 import createHttpError from 'http-errors';
-import { HydraErrorType, HydraHeadStatus, HydraTopupStatus } from '@/generated/prisma/client';
+import { HydraErrorType, HydraHeadStatus, HydraTopupStatus, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { logger } from '@masumi/payment-core/logger';
 import {
 	buildValidatedHydraCommit,
@@ -124,69 +125,71 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 
 		// Reconcile any prior pending top-up first; only one Pending deposit per
 		// participant is permitted, so refuse a new one while an earlier could land.
-		// Preparing counts as in flight. It holds a pre-split that is already on
-		// chain, and a second one against the same wallet would race it for the
-		// same UTxOs — which the unique index on the deposit hash used to prevent
-		// only because the row was created that late.
-		const pending = await prisma.hydraTopup.findFirst({
-			where: {
-				hydraLocalParticipantId: localParticipant.id,
-				status: { in: [HydraTopupStatus.Preparing, HydraTopupStatus.Pending] },
-			},
-			orderBy: { createdAt: 'desc' },
-		});
-		if (pending?.status === HydraTopupStatus.Preparing) {
-			// A process that died mid-carve leaves this row with nobody to resolve
-			// it, and it now blocks every later top-up. Age it out rather than
-			// wedging the head: the carve either confirmed long ago or never will.
-			const isStale = Date.now() - pending.createdAt.getTime() > PREPARING_STALE_AFTER_MS;
-			if (!isStale) {
-				throw createHttpError(409, 'A prior Hydra top-up is still being prepared on L1');
-			}
-			await prisma.hydraTopup.updateMany({
-				where: { id: pending.id, status: HydraTopupStatus.Preparing },
-				data: { status: HydraTopupStatus.Failed },
-			});
-			logger.warn(`[HydraAPI] Failed a stale preparing top-up ${pending.id} so a new one can start`);
-		}
-		if (pending && pending.depositTxHash !== null && pending.invalidHereafterSlot !== null) {
-			const reconciliation = await reconcilePendingHydraTopup({
-				id: pending.id,
-				status: pending.status,
-				depositTxHash: pending.depositTxHash,
-				invalidHereafterSlot: pending.invalidHereafterSlot,
-				network: hotWallet.PaymentSource.network,
-				rpcProviderApiKey,
-			});
-			if (reconciliation === 'pending') {
-				throw createHttpError(409, 'A prior Hydra top-up remains pending independent L1 confirmation');
-			}
-			if (reconciliation === 'transient-error') {
-				throw createHttpError(503, 'Could not reconcile the prior Hydra top-up against L1; retry shortly');
-			}
-		}
+		// Claimed in one serializable transaction rather than checked and then
+		// written. Two requests arriving together would otherwise both find no
+		// active top-up and both start a pre-split against the same wallet, which
+		// is the same shape of race the node funding had.
+		//
+		// Preparing counts as active: it holds a carve that is already on chain.
+		// A row whose process died mid-carve is aged out here too, since nothing
+		// else can resolve one — it has no deposit hash for reconciliation to look
+		// for, and it would otherwise block this head's top-ups for good.
+		const claim = await withSerializableSlotRetry(() =>
+			prisma.$transaction(
+				async (tx) => {
+					const active = await tx.hydraTopup.findFirst({
+						where: {
+							hydraLocalParticipantId: localParticipant.id,
+							status: { in: [HydraTopupStatus.Preparing, HydraTopupStatus.Pending] },
+						},
+						orderBy: { createdAt: 'desc' },
+					});
 
-		// Recorded before any of the slow work starts. An exact-amount top-up
-		// carves a UTxO on L1 and waits for it to confirm before a deposit can even
-		// be built, and until this row existed the operator saw nothing at all in
-		// that window: no pending entry, and none after a refresh either.
-		const preparing = await prisma.hydraTopup.create({
-			data: {
-				hydraHeadId: head.id,
-				hydraLocalParticipantId: localParticipant.id,
-				// Known only for an exact amount. A whole-UTxO top-up commits whatever
-				// the selection turns out to hold, so it stays 0 until promotion and
-				// the UI says so rather than showing a total of zero.
-				committedLovelace: params.exact?.unit === 'lovelace' ? BigInt(params.exact.amount) : 0n,
-				committedAssets:
-					params.exact && params.exact.unit !== 'lovelace'
-						? { [params.exact.unit]: params.exact.amount.toString() }
-						: {},
-				status: HydraTopupStatus.Preparing,
-			},
-			select: { id: true },
-		});
-		preparingTopupId = preparing.id;
+					if (active !== null) {
+						const isStalePreparation =
+							active.status === HydraTopupStatus.Preparing &&
+							Date.now() - active.createdAt.getTime() > PREPARING_STALE_AFTER_MS;
+						if (!isStalePreparation) {
+							return { claimed: false as const, active };
+						}
+						await tx.hydraTopup.updateMany({
+							where: { id: active.id, status: HydraTopupStatus.Preparing },
+							data: { status: HydraTopupStatus.Failed },
+						});
+						logger.warn(`[HydraAPI] Failed a stale preparing top-up ${active.id} so a new one can start`);
+					}
+
+					const created = await tx.hydraTopup.create({
+						data: {
+							hydraHeadId: head.id,
+							hydraLocalParticipantId: localParticipant.id,
+							// Known only for an exact amount. A whole-UTxO top-up commits
+							// whatever the selection turns out to hold, so it stays 0 until
+							// promotion and the UI says so rather than showing a total of zero.
+							committedLovelace: params.exact?.unit === 'lovelace' ? BigInt(params.exact.amount) : 0n,
+							committedAssets:
+								params.exact && params.exact.unit !== 'lovelace'
+									? { [params.exact.unit]: params.exact.amount.toString() }
+									: {},
+							status: HydraTopupStatus.Preparing,
+						},
+						select: { id: true },
+					});
+					return { claimed: true as const, id: created.id };
+				},
+				{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+			),
+		);
+
+		if (!claim.claimed) {
+			throw createHttpError(
+				409,
+				claim.active.status === HydraTopupStatus.Preparing
+					? 'A prior Hydra top-up is still being prepared on L1'
+					: 'A prior Hydra top-up remains pending independent L1 confirmation',
+			);
+		}
+		preparingTopupId = claim.id;
 
 		const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(hotWallet.PaymentSource.network));
 		if (!slotConfig) throw createHttpError(500, 'Hydra L1 slot configuration is incomplete or invalid');
@@ -217,7 +220,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 					// took their funds, rather than saying only that something is
 					// happening.
 					onCarveSubmitted: async (splitTxHash) => {
-						await prisma.hydraTopup.update({ where: { id: preparing.id }, data: { splitTxHash } });
+						await prisma.hydraTopup.update({ where: { id: claim.id }, data: { splitTxHash } });
 					},
 				});
 			} catch (error) {
@@ -270,7 +273,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		try {
 			({ topupId, submitResult } = await reserveAndSubmitHydraTopup(
 				{
-					topupId: preparing.id,
+					topupId: claim.id,
 					hydraHeadId: head.id,
 					hydraLocalParticipantId: localParticipant.id,
 					depositTxHash: validatedDraft.txId,
