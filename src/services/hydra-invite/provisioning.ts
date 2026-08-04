@@ -34,30 +34,39 @@ export type HeadPeriods = {
 };
 
 /**
- * Matches what a two-party head on preprod has been run with.
+ * How long a deposit must settle before a head will take it.
  *
- * The deposit period is not a cosmetic timeout: it decides whether an
- * incremental commit can be absorbed at all. A hydra-node considers a deposit
- * only once it is *older* than the period, and stops considering it once the
- * deadline is *within* one period. The window in which any node will pick it up
- * is therefore exactly one period wide, from `deposit + DP` to `deposit + 2·DP`
- * (the node writes the deadline as `deposit + 3·DP`).
+ * This is a risk setting, not a correctness one. A node ignores a deposit until
+ * it is older than the period, so the period is exactly how long a rollback has
+ * to be ruled out before those funds are treated as real on L2. Hydra's guidance
+ * puts an hour at roughly 180 blocks on mainnet, where a deposit rolled back
+ * after the fact would be a double spend.
  *
- * At 300s that window was five minutes, shorter than the ten minutes a node
- * waits before dropping an unanswered snapshot request, and hydra does not retry
- * those (hydra#1999). A deposit could confirm on chain, be recorded by both
- * nodes, and never be included: which is what happened to a 250 ADA deposit that
- * sat at the deposit script until it expired.
+ * Preprod carries no such stake, and waiting an hour to find out whether an
+ * incremental commit works is its own kind of failure. Ten minutes there, an
+ * hour on mainnet.
  *
- * One hour is what hydra's own configuration guide uses, and it makes the
- * pick-up window twelve times the retry gap. The cost is that a top-up takes at
- * least an hour to reach the head, which is the price of it arriving at all.
+ * The knock-on effects are worth stating, because the period sets three things
+ * at once: a node writes the deadline as `deposit + 3·DP`, will take the deposit
+ * only between `+DP` and `+2·DP`, and the depositor cannot recover it until the
+ * deadline. So the period is how long funds are unusable, and three times it is
+ * how long they are stuck if nobody takes them.
  */
-export const DEFAULT_PERIODS: HeadPeriods = {
-	contestationPeriodSeconds: 220,
-	depositPeriodSeconds: 3600,
-	unsyncedPeriodSeconds: 1800,
-};
+function depositPeriodFor(network: Network): number {
+	return network === Network.Mainnet ? 3600 : 600;
+}
+
+/** Matches what a two-party head on preprod has been run with. */
+export function defaultPeriodsFor(network: Network): HeadPeriods {
+	return {
+		contestationPeriodSeconds: 220,
+		depositPeriodSeconds: depositPeriodFor(network),
+		unsyncedPeriodSeconds: 1800,
+	};
+}
+
+/** For the callers that have no network in hand yet. */
+export const DEFAULT_PERIODS: HeadPeriods = defaultPeriodsFor(Network.Preprod);
 
 export type ReservedNode = {
 	hostId: string;

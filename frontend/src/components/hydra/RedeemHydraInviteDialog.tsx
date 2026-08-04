@@ -219,7 +219,15 @@ export function RedeemHydraInviteDialog({
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Network" value={preview.network} />
                 <Field label="Contestation" value={`${preview.contestationPeriodSeconds}s`} />
+                <Field
+                  label="Deposit settles after"
+                  value={`${Math.round(preview.depositPeriodSeconds / 60)} min`}
+                />
               </div>
+              <p className="text-xs text-muted-foreground">
+                Money added to this head is unusable for that long, and stuck for three times it if
+                the head never takes it. They chose it; your node runs the same value.
+              </p>
               <p className="text-xs text-muted-foreground">
                 The contestation period is how long a closing head can be disputed. It is fixed for
                 the head&apos;s life and cannot be changed afterwards.

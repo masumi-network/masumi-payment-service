@@ -25,7 +25,7 @@ import {
 } from './invite-payload';
 import { encodeInviteCode, type DecodedInvite } from './invite-code';
 import { signHydraHeadInvite, signHydraRedemption, verifyHydraHeadInvite } from './invite-signing';
-import { DEFAULT_PERIODS, reserveNodeForExchange, type HeadPeriods } from './provisioning';
+import { defaultPeriodsFor, reserveNodeForExchange, type HeadPeriods } from './provisioning';
 import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
 import { postRedemption } from './exchange-client';
 
@@ -115,9 +115,22 @@ export async function mintHeadInvite(input: {
 	ttlMs?: number;
 	/** Default. Opt out only if the node's fuel is managed elsewhere. */
 	autoFund?: boolean;
+	/** Overrides just the deposit period, leaving the rest of the defaults alone. */
+	depositPeriodSeconds?: number;
 }): Promise<MintedInvite> {
 	const wallet = await loadWallet(input.localHotWalletId);
-	const periods = input.periods ?? DEFAULT_PERIODS;
+	// Defaulted from the wallet's own network: an hour of settle time protects
+	// mainnet funds and only wastes a tester's afternoon on preprod.
+	//
+	// Per head rather than per fleet, because a head that moves large sums wants
+	// a longer settle than one used for small frequent top-ups, and the two can
+	// run side by side. It is fixed for the head's life: hydra-node reads
+	// --deposit-period at startup and a node serves exactly one head, so changing
+	// it means a new head.
+	const periods = input.periods ?? {
+		...defaultPeriodsFor(wallet.network),
+		...(input.depositPeriodSeconds != null ? { depositPeriodSeconds: input.depositPeriodSeconds } : {}),
+	};
 	const nonce = createId();
 	const expiresAt = new Date(Date.now() + (input.ttlMs ?? INVITE_TTL_MS));
 

@@ -147,7 +147,16 @@ export const createInviteSchemaInput = z.object({
 		.boolean()
 		.default(true)
 		.describe(
-			"Send the node's L1 fuel from the chosen wallet straight away. On unless set false — a node cannot post Init, Commit, Close or Fanout without it, so opt out only if you fund that key yourself.",
+			"Send the node's L1 fuel from the chosen wallet straight away. On unless set false, since a node cannot post Init, Commit, Close or Fanout without it. Opt out only if you fund that key yourself.",
+		),
+	depositPeriodSeconds: z.coerce
+		.number()
+		.int()
+		.min(60)
+		.max(86_400)
+		.optional()
+		.describe(
+			'How long a deposit must settle before this head will take it. Both nodes run the value signed here. It decides how long a top-up is unusable (one period), and how long it is stuck if nobody takes it (three). Defaults to 600 on preprod and 3600 on mainnet, which is how long a rollback takes to rule out where the funds are real.',
 		),
 });
 
@@ -166,6 +175,7 @@ export const createInvitePost = adminAuthenticatedEndpointFactory.build({
 		const minted = await mintHeadInvite({
 			localHotWalletId: input.hotWalletId,
 			autoFund: input.autoFund,
+			depositPeriodSeconds: input.depositPeriodSeconds,
 			ttlMs: input.ttlHours === undefined ? INVITE_TTL_MS : input.ttlHours * 60 * 60 * 1000,
 		});
 		logger.info(`hydra: minted invite ${minted.nonce}`);
