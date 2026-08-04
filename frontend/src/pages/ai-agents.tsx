@@ -42,7 +42,9 @@ import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { AGENT_TYPE_LABELS, getAgentTypeLabel } from '@/lib/agent-type';
 import { formatDate } from '@/lib/format-date';
+import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 type AIAgent = RegistryEntry & { relation?: AgentRelation };
 
 // Tells apart agents registered on the active source from those registered elsewhere that
@@ -78,6 +80,7 @@ export default function AIAgentsPage() {
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
 
   const [activeTab, setActiveTab] = useState('All');
+  const [typeFilter, setTypeFilter] = useState<'All' | 'Standard' | 'OpenApi' | 'X402'>('All');
 
   const filterStatus = useMemo(() => {
     if (activeTab === 'All') return undefined;
@@ -131,34 +134,44 @@ export default function AIAgentsPage() {
   // Mirrors the backend Prisma OR filter in src/routes/api/registry/index.ts
   // to avoid items appearing/disappearing when the server responds.
   const displayAgents = useMemo(() => {
+    // Type filter is a plain client-side facet (not a separate tab): absent
+    // type is Standard, matching the on-chain default.
+    const byType = (list: typeof agents) =>
+      typeFilter === 'All'
+        ? list
+        : list.filter((agent) => (agent.type ?? 'Standard') === typeFilter);
+
     const query = searchQuery.toLowerCase().trim();
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
-      return agents;
+      return byType(agents);
 
     const amountRange = parseAmountSearchRange(query);
 
-    return agents.filter((agent) => {
-      if (agent.name?.toLowerCase().includes(query)) return true;
-      if (agent.description?.toLowerCase().includes(query)) return true;
-      // Backend uses hasSome (exact match against tag array), not partial
-      if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
-      if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (agent.state?.toLowerCase().includes(query)) return true;
-      if (agent.AgentPricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
-      if (agent.AgentPricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
-      if (
-        amountRange &&
-        agent.AgentPricing?.pricingType === 'Fixed' &&
-        agent.AgentPricing.Pricing?.some((p) => {
-          const amt = parseAmountToBigInt(p.amount);
-          return amt != null && amt >= amountRange.min && amt <= amountRange.max;
-        })
-      )
-        return true;
-      return false;
-    });
-  }, [agents, searchQuery, debouncedSearchQuery, isPlaceholderData]);
+    return byType(
+      agents.filter((agent) => {
+        const pricing = getPrimaryCardanoPricing(agent);
+        if (agent.name?.toLowerCase().includes(query)) return true;
+        if (agent.description?.toLowerCase().includes(query)) return true;
+        // Backend uses hasSome (exact match against tag array), not partial
+        if (agent.Tags?.some((tag) => tag.toLowerCase() === query)) return true;
+        if (agent.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+        if (agent.RecipientWallet?.walletAddress?.toLowerCase().includes(query)) return true;
+        if (agent.state?.toLowerCase().includes(query)) return true;
+        if (pricing?.pricingType === 'Free' && 'free'.startsWith(query)) return true;
+        if (pricing?.pricingType === 'Dynamic' && 'dynamic'.startsWith(query)) return true;
+        if (
+          amountRange &&
+          pricing?.pricingType === 'Fixed' &&
+          pricing.Pricing.some((p) => {
+            const amt = parseAmountToBigInt(p.amount);
+            return amt != null && amt >= amountRange.min && amt <= amountRange.max;
+          })
+        )
+          return true;
+        return false;
+      }),
+    );
+  }, [agents, searchQuery, debouncedSearchQuery, isPlaceholderData, typeFilter]);
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedAgentToDelete, setSelectedAgentToDelete] = useState<AIAgent | null>(null);
@@ -472,6 +485,23 @@ export default function AIAgentsPage() {
                   isLoading={isSearchPending && !!searchQuery}
                 />
               </div>
+              <select
+                value={typeFilter}
+                onChange={(event) =>
+                  setTypeFilter(event.target.value as 'All' | 'Standard' | 'OpenApi' | 'X402')
+                }
+                className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label="Filter agents by type"
+              >
+                <option value="All">All types</option>
+                {/* Options come from the same label map as the Type column, so
+                    the filter can never disagree with the badges it filters. */}
+                {Object.entries(AGENT_TYPE_LABELS).map(([type, label]) => (
+                  <option key={type} value={type}>
+                    {label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {truncated && !isLoading && (
@@ -495,6 +525,12 @@ export default function AIAgentsPage() {
                       className="p-4 text-left text-sm font-medium text-muted-foreground pl-6"
                     >
                       Name
+                    </th>
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
+                      Type
                     </th>
                     <th
                       scope="col"
@@ -538,10 +574,10 @@ export default function AIAgentsPage() {
                 <tbody>
                   {(isLoading && !agents.length) ||
                   (displayAgents.length === 0 && isSearchPending) ? (
-                    <AIAgentTableSkeleton rows={5} />
+                    <AIAgentTableSkeleton rows={5} columns={9} />
                   ) : displayAgents.length === 0 ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <EmptyState
                           icon={searchQuery ? 'search' : 'inbox'}
                           title={
@@ -592,6 +628,14 @@ export default function AIAgentsPage() {
                             >
                               {agent.description}
                             </div>
+                          </td>
+                          <td className="p-4">
+                            {/* Neutral outline: Status is the only colour-bearing
+                                badge in the row, and the Wallets cell already
+                                carries a RelationBadge. */}
+                            <Badge variant="outline" className="whitespace-nowrap">
+                              {getAgentTypeLabel(agent.type)}
+                            </Badge>
                           </td>
                           <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
                           <td className="p-4">
@@ -671,19 +715,23 @@ export default function AIAgentsPage() {
                             </div>
                           </td>
                           <td className="p-4 text-sm truncate max-w-25">
-                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Free' && (
-                              <div className="whitespace-nowrap">Free</div>
-                            )}
-                            {agent.AgentPricing && agent.AgentPricing.pricingType == 'Dynamic' && (
-                              <div className="whitespace-nowrap">Dynamic</div>
-                            )}
-                            {agent.AgentPricing &&
-                              agent.AgentPricing.pricingType == 'Fixed' &&
-                              agent.AgentPricing.Pricing?.map((price, index) => (
-                                <div key={index} className="whitespace-nowrap">
-                                  {formatAssetAmount(price.amount, price.unit, network)}
-                                </div>
-                              ))}
+                            {(() => {
+                              const pricing = getPrimaryCardanoPricing(agent);
+                              if (pricing?.pricingType === 'Free') {
+                                return <div className="whitespace-nowrap">Free</div>;
+                              }
+                              if (pricing?.pricingType === 'Dynamic') {
+                                return <div className="whitespace-nowrap">Dynamic</div>;
+                              }
+                              if (pricing?.pricingType === 'Fixed') {
+                                return pricing.Pricing.map((price, index) => (
+                                  <div key={index} className="whitespace-nowrap">
+                                    {formatAssetAmount(price.amount, price.unit, network)}
+                                  </div>
+                                ));
+                              }
+                              return null;
+                            })()}
                             {agentHasX402Options(agent.supportedPaymentSources) && (
                               <div className="mt-1">
                                 <Badge variant="secondary">x402</Badge>

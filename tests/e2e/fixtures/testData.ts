@@ -3,6 +3,8 @@ import { CreatePaymentData, RegistrationData } from '../utils/apiClient';
 import { createHash, randomBytes } from 'crypto';
 import crypto from 'crypto';
 
+export const E2E_CARDANO_SOURCE_INDEX = 0;
+
 // In-test unique-id helper. We avoid `@paralleldrive/cuid2` here because it
 // is an ESM-only package and jest 30 in this repo's ESM mode struggles to
 // load it from .ts test files (`SyntaxError: Cannot use import statement
@@ -38,12 +40,20 @@ export interface TestAgentConfig {
 export function generateTestRegistrationData(
 	network: Network,
 	sellingWalletVkey: string,
+	paymentSourceType: PaymentSourceType,
+	smartContractAddress: string | undefined,
 	config: TestAgentConfig = {},
 ): RegistrationData {
 	const uniqueId = createId();
 	const timestamp = Date.now();
+	const fixedPricing = config.pricing || [
+		{
+			unit: 'lovelace',
+			amount: '1000000', // 1 ADA
+		},
+	];
 
-	const defaultData: RegistrationData = {
+	const commonData = {
 		network,
 		sellingWalletVkey,
 		name: config.name || `Test Agent ${uniqueId}`,
@@ -66,15 +76,6 @@ export function generateTestRegistrationData(
 			name: 'GPT-4 Test Model',
 			version: '1.0.0',
 		},
-		AgentPricing: {
-			pricingType: 'Fixed',
-			Pricing: config.pricing || [
-				{
-					unit: 'lovelace',
-					amount: '1000000', // 1 ADA
-				},
-			],
-		},
 		Author: {
 			name: config.author?.name || 'E2E Test Suite',
 			contactEmail: config.author?.contactEmail || `test-${uniqueId}@example.com`,
@@ -87,7 +88,37 @@ export function generateTestRegistrationData(
 		},
 	};
 
-	return defaultData;
+	if (paymentSourceType === PaymentSourceType.Web3CardanoV2) {
+		if (smartContractAddress == null || smartContractAddress.length === 0) {
+			throw new Error('V2 E2E registration requires the configured smart contract address');
+		}
+		return {
+			...commonData,
+			supportedPaymentSources: [
+				{
+					chain: 'Cardano',
+					network,
+					paymentSourceType: PaymentSourceType.Web3CardanoV2,
+					address: smartContractAddress,
+					pricing: {
+						pricingType: 'Fixed',
+						fixed: fixedPricing.map(({ unit, amount }) => ({
+							asset: unit,
+							amount,
+						})),
+					},
+				},
+			],
+		};
+	}
+
+	return {
+		...commonData,
+		AgentPricing: {
+			pricingType: 'Fixed',
+			Pricing: fixedPricing,
+		},
+	};
 }
 
 /**
@@ -249,6 +280,7 @@ export function generateTestPaymentData(
 
 	// Generate unique purchaser identifier (14-26 chars hex)
 	const identifierFromPurchaser = generateHexIdentifier(20);
+	const paymentSourceType = options.paymentSourceType ?? getTestEnvironment().paymentSourceType;
 
 	console.log(`Generated Payment Test Data:
     - Agent Identifier: ${agentIdentifier}
@@ -264,7 +296,10 @@ export function generateTestPaymentData(
 		inputHash,
 		network,
 		agentIdentifier,
-		paymentSourceType: options.paymentSourceType ?? getTestEnvironment().paymentSourceType,
+		paymentSourceType,
+		...(paymentSourceType === PaymentSourceType.Web3CardanoV2
+			? { supportedPaymentSourceIndex: E2E_CARDANO_SOURCE_INDEX }
+			: {}),
 		payByTime: timing.payByTime.toISOString(),
 		submitResultTime: timing.submitResultTime.toISOString(),
 		unlockTime: timing.unlockTime?.toISOString(),

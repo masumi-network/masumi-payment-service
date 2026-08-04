@@ -5,6 +5,7 @@ import { convertNewPaymentActionAndError, convertNewPurchasingActionAndError } f
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { withSerializableSlot } from '@masumi/payment-core/serializable-semaphore';
 import { TransactionMetadata } from '@/services/transactions/tx-sync/blockchain';
+import { TxSyncBeforeWrite } from '@/services/transactions/tx-sync/quarantine/fenced-write';
 
 export async function handleV1PaymentTransaction(
 	tx_hash: string,
@@ -20,6 +21,7 @@ export async function handleV1PaymentTransaction(
 	metadata: TransactionMetadata,
 	buyerCardanoFees: bigint,
 	sellerCardanoFees: bigint,
+	beforeWrite?: TxSyncBeforeWrite,
 ) {
 	// Gate Serializable $transaction through the shared semaphore so the pg
 	// connection pool isn't exhausted under tx-sync fan-out.
@@ -28,6 +30,7 @@ export async function handleV1PaymentTransaction(
 			() =>
 				prisma.$transaction(
 					async (prisma) => {
+						await beforeWrite?.(prisma);
 						//we dont need to do sanity checks as the tx hash is unique
 						const paymentRequest = await prisma.paymentRequest.findUnique({
 							where: {
@@ -202,6 +205,7 @@ export async function handleV1PurchasingTransaction(
 	metadata: TransactionMetadata,
 	buyerCardanoFees: bigint,
 	sellerCardanoFees: bigint,
+	beforeWrite?: TxSyncBeforeWrite,
 ) {
 	// Gate Serializable $transaction through the shared semaphore so the pg
 	// connection pool isn't exhausted under tx-sync fan-out.
@@ -210,6 +214,7 @@ export async function handleV1PurchasingTransaction(
 			() =>
 				prisma.$transaction(
 					async (prisma) => {
+						await beforeWrite?.(prisma);
 						//we dont need to do sanity checks as the tx hash is unique
 						const purchasingRequest = await prisma.purchaseRequest.findUnique({
 							where: {

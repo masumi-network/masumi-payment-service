@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   postPayment,
@@ -12,7 +12,7 @@ import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useAgents } from '@/lib/queries/useAgents';
+import { useAllAgents } from '@/lib/queries/useAgents';
 import { Spinner } from '@/components/ui/spinner';
 import { CurlResponseViewer } from './CurlResponseViewer';
 import {
@@ -32,6 +32,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
+import { buildPaidAgentOptions } from './payment-options';
 
 interface FullCycleDialogProps {
   open: boolean;
@@ -39,9 +40,16 @@ interface FullCycleDialogProps {
 }
 
 export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
-  const { apiClient, network, apiKey } = useAppContext();
+  const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
   const resync = useResync();
-  const { agents, isLoading: isLoadingAgents } = useAgents();
+  const {
+    agents,
+    isLoading: isLoadingAgents,
+    error: agentsError,
+  } = useAllAgents({
+    filterStatus: 'Registered',
+    enabled: open,
+  });
   const [step, setStep] = useState<1 | 2>(1);
   const [isLoadingPayment, setIsLoadingPayment] = useState(false);
   const [isLoadingPurchase, setIsLoadingPurchase] = useState(false);
@@ -57,21 +65,6 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
-  // The auto-purchase is scheduled with a delay; closing (or close+reopen) must not
-  // let a previous session's timer fire and mutate fresh dialog state.
-  const purchaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sessionIdRef = useRef(0);
-
-  const cancelScheduledPurchase = useCallback(() => {
-    sessionIdRef.current += 1;
-    if (purchaseTimerRef.current !== null) {
-      clearTimeout(purchaseTimerRef.current);
-      purchaseTimerRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => cancelScheduledPurchase, [cancelScheduledPurchase]);
-
   const {
     register,
     handleSubmit,
@@ -83,7 +76,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   } = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentFormSchema),
     defaultValues: {
-      agentIdentifier: '',
+      paymentOptionId: '',
       inputHash: '',
       identifierFromPurchaser: '',
       metadata: '',
@@ -92,19 +85,8 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   });
 
   const paidAgents = useMemo(
-    () =>
-      agents
-        .filter(
-          (agent) =>
-            agent.state === 'RegistrationConfirmed' &&
-            agent.agentIdentifier !== null &&
-            agent.AgentPricing?.pricingType !== 'Free',
-        )
-        .map((agent) => ({
-          ...agent,
-          pricingType: agent.AgentPricing?.pricingType,
-        })),
-    [agents],
+    () => buildPaidAgentOptions(agents, selectedPaymentSource?.paymentSourceType),
+    [agents, selectedPaymentSource?.paymentSourceType],
   );
 
   const { inputData, setInputData, inputDataError, resetInputData } = useInputDataHash(
@@ -114,8 +96,8 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
 
   useEffect(() => {
     if (open) {
-      cancelScheduledPurchase();
       resetInputData();
+      setValue('paymentOptionId', '');
       setValue('identifierFromPurchaser', generateRandomHex(16));
       setStep(1);
       setPaymentResponse(null);
@@ -125,7 +107,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
       setPaymentCurl('');
       setPurchaseCurl('');
     }
-  }, [open, setValue, resetInputData, cancelScheduledPurchase]);
+  }, [open, selectedPaymentSource?.id, setValue, resetInputData]);
 
   const createPurchaseAutomatically = useCallback(
     async (payment: PostPaymentResponse['data'], originalFormData: PaymentFormValues) => {
@@ -139,6 +121,14 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           payment.RequestedFunds && payment.RequestedFunds.length > 0
             ? payment.RequestedFunds.map((f) => ({ amount: f.amount, unit: f.unit }))
             : undefined;
+        const selectedAgent = paidAgents.find(
+          (option) => option.optionId === originalFormData.paymentOptionId,
+        );
+        if (!selectedAgent) {
+          throw new Error(
+            'The selected agent option is no longer available. Restart the cycle and select it again.',
+          );
+        }
 
         const requestBody = {
           blockchainIdentifier: payment.blockchainIdentifier,
@@ -152,6 +142,9 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           unlockTime: payment.unlockTime || '',
           externalDisputeUnlockTime: payment.externalDisputeUnlockTime || '',
           metadata: originalFormData.metadata || undefined,
+          ...(selectedAgent.supportedPaymentSourceIndex != null
+            ? { supportedPaymentSourceIndex: selectedAgent.supportedPaymentSourceIndex }
+            : {}),
           ...(amounts ? { Amounts: amounts } : {}),
           // The seller's routing choice is signed into the payment terms; the
           // purchase must round-trip it or the identifier signature check fails.
@@ -188,7 +181,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPurchase(false);
       }
     },
-    [apiClient, apiKey, network, resync],
+    [apiClient, apiKey, network, paidAgents, resync],
   );
 
   const onSubmitPayment = useCallback(
@@ -198,8 +191,13 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setPaymentError(null);
 
         const times = calculateDefaultTimes();
-        const selectedAgent = paidAgents.find((a) => a.agentIdentifier === data.agentIdentifier);
-        const isDynamic = selectedAgent?.pricingType === 'Dynamic';
+        const selectedAgent = paidAgents.find((option) => option.optionId === data.paymentOptionId);
+        if (!selectedAgent) {
+          throw new Error(
+            'The selected agent option is no longer available on this payment source. Select it again.',
+          );
+        }
+        const isDynamic = selectedAgent.pricingType === 'Dynamic';
 
         if (isDynamic && !data.requestedFundsAmount) {
           setPaymentError('Amount is required for dynamic pricing agents');
@@ -222,7 +220,8 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
 
         const requestBody = {
           network: network,
-          agentIdentifier: data.agentIdentifier,
+          agentIdentifier: selectedAgent.agentIdentifier,
+          paymentSourceType: selectedAgent.paymentSourceType,
           inputHash: data.inputHash,
           identifierFromPurchaser: data.identifierFromPurchaser,
           payByTime: times.payByTime,
@@ -230,6 +229,9 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           unlockTime: times.unlockTime,
           externalDisputeUnlockTime: times.externalDisputeUnlockTime,
           metadata: data.metadata || undefined,
+          ...(selectedAgent.supportedPaymentSourceIndex != null
+            ? { supportedPaymentSourceIndex: selectedAgent.supportedPaymentSourceIndex }
+            : {}),
           ...(requestedFunds ? { RequestedFunds: requestedFunds } : {}),
         };
 
@@ -251,13 +253,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           setPaymentResponse(payment);
           toast.success('Payment created successfully');
           await resync('payments');
-
-          const sessionId = sessionIdRef.current;
-          purchaseTimerRef.current = setTimeout(() => {
-            purchaseTimerRef.current = null;
-            if (sessionIdRef.current !== sessionId) return;
-            createPurchaseAutomatically(payment, data);
-          }, 500);
+          await createPurchaseAutomatically(payment, data);
         } else {
           throw new Error('Invalid response from server - no data returned');
         }
@@ -274,7 +270,6 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   );
 
   const handleClose = () => {
-    cancelScheduledPurchase();
     reset();
     resetInputData(false);
     setStep(1);
@@ -346,6 +341,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
                 paidAgents={paidAgents}
                 totalAgents={agents.length}
                 isLoadingAgents={isLoadingAgents}
+                hasAgentsError={agentsError != null}
                 inputData={inputData}
                 setInputData={setInputData}
                 inputDataError={inputDataError}
@@ -358,7 +354,12 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={isLoadingPayment || isLoadingAgents || paidAgents.length === 0}
+                  disabled={
+                    isLoadingPayment ||
+                    isLoadingAgents ||
+                    agentsError != null ||
+                    paidAgents.length === 0
+                  }
                 >
                   {isLoadingPayment ? (
                     <>

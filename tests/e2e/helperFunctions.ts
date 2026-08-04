@@ -215,6 +215,7 @@ export interface PaymentResult {
 	externalDisputeUnlockTime: string;
 	inputHash: string;
 	identifierFromPurchaser: string; // Original purchaser identifier used in payment creation
+	supportedPaymentSourceIndex?: number;
 	response: PaymentResponse;
 }
 
@@ -253,15 +254,34 @@ export async function registerAndConfirmAgent(
 	console.log('🔍 E2E: loading test wallet from database...');
 	const testWallet = await getTestWalletFromDatabase(network, 'seller', undefined, resolvedPaymentSourceType);
 	const testScenario = getTestScenarios().basicAgent;
+	const smartContractAddress =
+		resolvedPaymentSourceType === PaymentSourceType.Web3CardanoV2
+			? await getActiveSmartContractAddress(network, resolvedPaymentSourceType, global.testApiClient)
+			: undefined;
 
-	const registrationData = generateTestRegistrationData(network, testWallet.vkey, testScenario);
+	const registrationData = generateTestRegistrationData(
+		network,
+		testWallet.vkey,
+		resolvedPaymentSourceType,
+		smartContractAddress,
+		testScenario,
+	);
+	const registrationPrices =
+		registrationData.AgentPricing?.Pricing ??
+		registrationData.supportedPaymentSources?.flatMap((source) =>
+			source.pricing.fixed.map(({ asset, amount }) => ({
+				unit: asset,
+				amount,
+			})),
+		) ??
+		[];
 
 	console.log(`🎯 E2E: registration payload:
     - Agent Name: ${registrationData.name}
     - Network: ${registrationData.network}
     - Payment Source Type: ${resolvedPaymentSourceType}
     - Wallet: ${testWallet.name}
-    - Pricing: ${registrationData.AgentPricing.Pricing.map((p) => `${p.amount} ${p.unit}`).join(', ')}
+    - Pricing: ${registrationPrices.map((price) => `${price.amount} ${price.unit}`).join(', ')}
   `);
 
 	// Submit registration
@@ -546,6 +566,7 @@ export async function createPayment(agentIdentifier: string, network: Network): 
 		externalDisputeUnlockTime: paymentResponse.externalDisputeUnlockTime,
 		inputHash: paymentResponse.inputHash,
 		identifierFromPurchaser: paymentData.identifierFromPurchaser, // Store the original identifier
+		supportedPaymentSourceIndex: paymentData.supportedPaymentSourceIndex,
 		response: paymentResponse,
 	};
 }
@@ -605,6 +626,7 @@ export async function createPaymentWithCustomTiming(
 		externalDisputeUnlockTime: paymentResponse.externalDisputeUnlockTime,
 		inputHash: paymentResponse.inputHash,
 		identifierFromPurchaser: paymentData.identifierFromPurchaser, // Store the original identifier
+		supportedPaymentSourceIndex: paymentData.supportedPaymentSourceIndex,
 		response: paymentResponse,
 	};
 }
@@ -638,6 +660,7 @@ export async function createPurchase(paymentResult: PaymentResult, agentData: Co
 		sellerVkey: agentData.SmartContractWallet.walletVkey,
 		agentIdentifier: agentData.agentIdentifier,
 		paymentSourceType: paymentResult.response.PaymentSource.paymentSourceType,
+		supportedPaymentSourceIndex: paymentResult.supportedPaymentSourceIndex,
 		unlockTime: paymentResult.unlockTime,
 		externalDisputeUnlockTime: paymentResult.externalDisputeUnlockTime,
 		submitResultTime: paymentResult.submitResultTime,

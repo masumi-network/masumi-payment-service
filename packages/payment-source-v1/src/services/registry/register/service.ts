@@ -1,4 +1,5 @@
-import { PaymentSourceType, RegistrationState, PricingType } from '@/generated/prisma/client';
+import { PaymentSourceType, RegistrationState, PricingType, RegistryEntryType } from '@/generated/prisma/client';
+import { REGISTRY_ENTRY_ON_CHAIN_TYPE } from '@masumi/payment-core/registry-entry-type';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { convertNetwork } from '@masumi/payment-core/network';
@@ -24,7 +25,6 @@ import {
 	resolveRegistryFundingLovelace,
 	resolveRegistryRecipientWalletAddress,
 } from '@/services/registry/shared';
-import { SupportedPaymentSourceChain, type RegistryMetadataPaymentSource } from '@/types/payment-source';
 import { verificationRowToApi, verificationsToMetadata, type AgentVerificationRow } from '@/types/verification';
 
 const mutex = new Mutex();
@@ -61,62 +61,41 @@ function validateRegistrationPricing(request: {
 	}
 }
 
-export function buildAgentMetadata(
-	request: {
-		name: string;
-		description: string | null;
-		apiBaseUrl: string | null;
-		ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
-		capabilityName?: string | null;
-		capabilityVersion?: string | null;
-		authorName: string | null;
-		authorContactEmail: string | null;
-		authorContactOther: string | null;
-		authorOrganization: string | null;
-		privacyPolicy: string | null;
-		terms: string | null;
-		other: string | null;
-		tags: string[];
-		Pricing: {
-			pricingType: PricingType;
-			FixedPricing?: {
-				Amounts: Array<{ unit: string; amount: bigint }>;
-			} | null;
-		};
-		metadataVersion: number;
-		SupportedPaymentSources: RegistrySupportedPaymentSourceMetadataRow[];
-		// Persisted AgentVerification rows; reshaped to nested form before emit.
-		Verifications?: AgentVerificationRow[];
-	},
-	paymentSource: RegistryMetadataPaymentSource,
-): RegistryMetadata {
-	const cardanoSupportedPaymentSources = request.SupportedPaymentSources.filter(
-		(source) => source.chain === SupportedPaymentSourceChain.Cardano,
-	);
-	const supportedPaymentSources =
-		cardanoSupportedPaymentSources.length > 0
-			? cardanoSupportedPaymentSources
-			: [
-					{
-						chain: SupportedPaymentSourceChain.Cardano,
-						network: paymentSource.network,
-						paymentSourceType: paymentSource.paymentSourceType,
-						address: paymentSource.smartContractAddress,
-					},
-				];
-	// Cardano sources advertise the agent's pricing inline (one self-contained
-	// payable option per source). Derived from the same `request.Pricing` that
-	// still feeds the top-level `agentPricing` block, so the two stay consistent.
-	const cardanoPricingMetadata =
-		request.Pricing.pricingType == PricingType.Fixed
-			? {
-					pricingType: PricingType.Fixed,
-					fixed: (request.Pricing.FixedPricing?.Amounts ?? []).map((pricing) => ({
-						asset: stringToMetadata(pricing.unit, false),
-						amount: pricing.amount.toString(),
-					})),
-				}
-			: { pricingType: request.Pricing.pricingType };
+export function buildAgentMetadata(request: {
+	name: string;
+	description: string | null;
+	type: RegistryEntryType;
+	apiBaseUrl: string | null;
+	openApiSpecUrl: string | null;
+	x402ResourcesUrl: string | null;
+	ExampleOutputs: Array<{ name: string; mimeType: string; url: string }>;
+	capabilityName?: string | null;
+	capabilityVersion?: string | null;
+	authorName: string | null;
+	authorContactEmail: string | null;
+	authorContactOther: string | null;
+	authorOrganization: string | null;
+	privacyPolicy: string | null;
+	terms: string | null;
+	other: string | null;
+	tags: string[];
+	Pricing: {
+		pricingType: PricingType;
+		FixedPricing?: {
+			Amounts: Array<{ unit: string; amount: bigint }>;
+		} | null;
+	};
+	metadataVersion: number;
+	SupportedPaymentSources: RegistrySupportedPaymentSourceMetadataRow[];
+	// Persisted AgentVerification rows; reshaped to nested form before emit.
+	Verifications?: AgentVerificationRow[];
+}): RegistryMetadata {
+	if (request.metadataVersion !== DEFAULTS.DEFAULT_METADATA_VERSION) {
+		throw new Error(`V1 registry requests require metadata version ${DEFAULTS.DEFAULT_METADATA_VERSION}`);
+	}
+	if (request.SupportedPaymentSources.length > 0) {
+		throw new Error('V1 registry requests must not contain supported payment sources');
+	}
 	// Optional KERI/Veridian verification claims (see @masumi/payment-core/
 	// verification). Gated on the same metadata version as supported_payment_sources
 	// (a v2-metadata concept); self-describing on chain for third-party verification.
@@ -126,9 +105,17 @@ export function buildAgentMetadata(
 			? verificationsToMetadata(verificationRows.map(verificationRowToApi), stringToMetadata)
 			: undefined;
 	const metadata = {
+		// Standard entries emit no `type` (undefined -> stripped by cleanMetadata)
+		// so their metadata stays byte-identical to pre-type-discriminator mints.
+		type: REGISTRY_ENTRY_ON_CHAIN_TYPE[request.type],
 		name: stringToMetadata(request.name),
 		description: stringToMetadata(request.description),
+		// Null for OpenApi entries -> omitted by cleanMetadata.
 		api_base_url: stringToMetadata(request.apiBaseUrl),
+		// Set only for OpenApi entries; null otherwise -> omitted by cleanMetadata.
+		openapi_spec_url: stringToMetadata(request.openApiSpecUrl),
+		// Set only for X402 entries; null otherwise -> omitted by cleanMetadata.
+		x402_resources_url: stringToMetadata(request.x402ResourcesUrl),
 		example_output: request.ExampleOutputs.map((exampleOutput) => ({
 			name: stringToMetadata(exampleOutput.name),
 			mime_type: stringToMetadata(exampleOutput.mimeType),
@@ -171,19 +158,6 @@ export function buildAgentMetadata(
 					},
 		image: stringToMetadata(DEFAULTS.DEFAULT_IMAGE),
 		metadata_version: request.metadataVersion.toString(),
-		supported_payment_sources:
-			request.metadataVersion >= DEFAULTS.DEFAULT_REGISTRY_METADATA_VERSION
-				? supportedPaymentSources.map((source) => ({
-						chain: stringToMetadata(source.chain),
-						network: stringToMetadata(String(source.network)),
-						settlement: {
-							paymentSourceType:
-								source.paymentSourceType != null ? stringToMetadata(source.paymentSourceType) : undefined,
-							address: stringToMetadata(source.address),
-						},
-						pricing: cardanoPricingMetadata,
-					}))
-				: undefined,
 		verifications: verificationsMetadata,
 	};
 	return cleanMetadata(metadata) as RegistryMetadata;
@@ -224,7 +198,11 @@ export async function registerAgentV1() {
 				const results = await advancedRetryAll({
 					errorResolvers: [delayErrorResolver({ configuration: SERVICE_CONSTANTS.RETRY })],
 					operations: registryRequests.map((request) => async () => {
-						validateRegistrationPricing(request);
+						if (request.Pricing == null) {
+							throw new Error('V1 registry request is missing top-level AgentPricing');
+						}
+						const requestWithPricing = { ...request, Pricing: request.Pricing };
+						validateRegistrationPricing(requestWithPricing);
 						const walletSession = await loadHotWalletSession({
 							network: paymentSource.network,
 							rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
@@ -243,7 +221,7 @@ export async function registerAgentV1() {
 						const recipientWalletAddress = resolveRegistryRecipientWalletAddress(request);
 						const fundingLovelace = resolveRegistryFundingLovelace(request);
 						const assetName = generateRegistryAssetName(firstUtxo);
-						const metadata = buildAgentMetadata(request, paymentSource);
+						const metadata = buildAgentMetadata(requestWithPricing);
 						const rpcApiKey = paymentSource.PaymentSourceConfig.rpcProviderApiKey;
 
 						const evaluationTx = await generateRegistryMintTransaction(

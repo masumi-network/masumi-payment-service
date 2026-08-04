@@ -3,6 +3,7 @@ import {
 	assertNoCollateralOverlap,
 	assertTxSizeWithinLimit,
 	computeCollateralFromExUnits,
+	getSpendableWalletUtxos,
 	getWalletUtxosForSelection,
 	intersectTxWindows,
 	isTxSizeWithinLimit,
@@ -198,6 +199,41 @@ describe('getWalletUtxosForSelection', () => {
 			collateral,
 			funding,
 		]);
+	});
+});
+
+describe('getSpendableWalletUtxos', () => {
+	it('holds the collateral reserve back from the coin-selection candidates', () => {
+		const collateral = makeUtxo({ txHash: 'collateral', lovelace: '8000000' });
+		const funding = makeUtxo({ txHash: 'funding', lovelace: '6000000' });
+
+		expect(getSpendableWalletUtxos([collateral, funding], collateral)).toEqual([funding]);
+	});
+
+	it('matches the collateral on output index, not just tx hash', () => {
+		const collateral = makeUtxo({ txHash: 'shared', outputIndex: 1, lovelace: '8000000' });
+		const sibling = makeUtxo({ txHash: 'shared', outputIndex: 0, lovelace: '9000000' });
+
+		expect(getSpendableWalletUtxos([sibling, collateral], collateral)).toEqual([sibling]);
+	});
+
+	// A tx that cannot be funded is worse than one that consumes the reserve.
+	it('falls back to the unfiltered set when the collateral is the only UTxO', () => {
+		const collateral = makeUtxo({ txHash: 'collateral', lovelace: '8000000' });
+
+		expect(getSpendableWalletUtxos([collateral], collateral)).toEqual([collateral]);
+	});
+
+	// Complements getWalletUtxosForSelection above, which excludes script
+	// spending inputs but deliberately leaves the collateral in.
+	it('composes with getWalletUtxosForSelection to exclude both script inputs and collateral', () => {
+		const collateral = makeUtxo({ txHash: 'collateral', lovelace: '8000000' });
+		const scriptInput = makeUtxo({ txHash: 'script', lovelace: '7000000' });
+		const funding = makeUtxo({ txHash: 'funding', lovelace: '6000000' });
+
+		const afterScriptFilter = getWalletUtxosForSelection([collateral, scriptInput, funding], [scriptInput.input]);
+
+		expect(getSpendableWalletUtxos(afterScriptFilter, collateral)).toEqual([funding]);
 	});
 });
 

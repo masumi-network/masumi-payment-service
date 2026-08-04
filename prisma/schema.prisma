@@ -69,7 +69,7 @@ model UnitValue {
   buyerWithdrawnPurchaseRequestId  String?
   sellerWithdrawnPaymentRequestId  String?
   sellerWithdrawnPurchaseRequestId String?
-  AgentFixedPricing                AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id])
+  AgentFixedPricing                AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id], onDelete: Cascade)
   ApiKey                           ApiKey?            @relation(fields: [apiKeyId], references: [id])
   BuyerWithdrawnPaymentRequest     PaymentRequest?    @relation("BuyerWithdrawnPaymentRequest", fields: [buyerWithdrawnPaymentRequestId], references: [id])
   BuyerWithdrawnPurchaseRequest    PurchaseRequest?   @relation("BuyerWithdrawnPurchaseRequest", fields: [buyerWithdrawnPurchaseRequestId], references: [id])
@@ -337,7 +337,29 @@ model RegistryRequest {
   deregistrationHotWalletId      String?
   sendFundingLovelace            BigInt?
   name                           String
-  apiBaseUrl                     String
+  // Discriminates the agent access model advertised on chain. Standard is the
+  // implicit legacy type: rows created before this column existed, and any
+  // on-chain metadata with no `type` field, resolve to Standard. OpenApi and
+  // X402 add alternative endpoint descriptors (openApiSpecUrl / X402Resources)
+  // while sharing every other registry field.
+  type                           RegistryEntryType        @default(Standard)
+  // Base URL of the agent API. Required for Standard entries; null for OpenApi
+  // (see openApiSpecUrl) and X402 (see X402Resources) entries which describe
+  // their endpoints differently. Enforced per-type at the API boundary.
+  apiBaseUrl                     String?
+  // URL of the agent's OpenAPI 3.1.x specification document (JSON or YAML).
+  // Set only for OpenApi-type entries.
+  openApiSpecUrl                 String?
+  // URL of the agent's self-hosted x402 resource manifest (e.g. the emerging
+  // /.well-known/x402.json convention): a JSON document listing this agent's
+  // resources, each { resource(url), type(http|mcp), inputSchema?, outputSchema? }
+  // aligned to the x402 Bazaar DiscoveryResource shape but WITHOUT per-resource
+  // pricing (payment is agent-level via SupportedPaymentSources). x402 has no
+  // native agent grouping, so this declared set IS the grouping. Only the URL is
+  // stored on chain (a manifest can list far more resources than tx-size limits
+  // would allow inline); the indexer fetches + parses it into Masumi's catalog
+  // grouped by agent. Set only for X402-type entries.
+  x402ResourcesUrl               String?
   capabilityName                 String?
   capabilityVersion              String?
   description                    String?
@@ -350,7 +372,6 @@ model RegistryRequest {
   authorOrganization             String?
   metadataVersion                Int
   tags                           String[]
-  agentPricingId                 String                   @unique
   agentIdentifier                String?                  @unique
   state                          RegistrationState
   registrationStateLastChangedAt DateTime                 @default(now())
@@ -367,7 +388,8 @@ model RegistryRequest {
   ExampleOutputs                 ExampleOutput[]
   SupportedPaymentSources        SupportedPaymentSource[]
   Verifications                  AgentVerification[]
-  Pricing                        AgentPricing             @relation(fields: [agentPricingId], references: [id])
+  /// V1-only legacy pricing. V2 pricing is owned by each SupportedPaymentSource.
+  Pricing                        AgentPricing?
   CurrentTransaction             Transaction?             @relation(fields: [currentTransactionId], references: [id])
   PaymentSource                  PaymentSource            @relation(fields: [paymentSourceId], references: [id])
   SmartContractWallet            HotWallet                @relation("RegistryRequestMintingWallet", fields: [smartContractWalletId], references: [id])
@@ -426,52 +448,60 @@ model SupportedPaymentSource {
   /// Existing Cardano rows keep `Mainnet` / `Preprod` for wire compatibility.
   /// Standard x402 rows use CAIP-2 ids such as `eip155:8453`.
   network           String
+  /// Stable zero-based order in supported_payment_sources metadata.
+  position          Int
   /// Cardano escrow entries keep their PaymentSourceType. Standard x402 rows
   /// are not Masumi escrow PaymentSourceTypes and leave this null.
   paymentSourceType PaymentSourceType?
   address           String
   scheme            X402PaymentScheme?
-  asset             String?
-  amount            BigInt?
-  decimals          Int?
   payTo             String?
   resource          String?
   extra             Json?
+  /// Canonical settlement + pricing key used to reject duplicate V2 options.
+  canonicalKey      String
+  /// EVM-only optional allowlist for Dynamic pricing.
+  dynamicAsset      String?
+  dynamicDecimals   Int?
+  /// EVM-only decimals for the single Fixed pricing asset.
+  fixedDecimals     Int?
   RegistryRequest   RegistryRequest      @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+  Pricing           AgentPricing?
   X402Attempts      X402PaymentAttempt[]
 
-  // Partial database unique indexes preserve the legacy Cardano key and the
-  // separate x402 key. Prisma cannot model those partial indexes directly.
+  @@unique([registryRequestId, position])
+  @@unique([registryRequestId, canonicalKey])
   @@index([address])
   @@index([paymentSourceType])
   @@index([chain, network])
 }
 
 model X402Network {
-  id                  String               @id @default(cuid())
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  caip2Id             String               @unique
-  displayName         String
-  rpcUrl              String
-  isTestnet           Boolean              @default(false)
-  isEnabled           Boolean              @default(true)
-  defaultAsset        String?
+  id                   String               @id @default(cuid())
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  caip2Id              String               @unique
+  displayName          String
+  rpcUrl               String
+  isTestnet            Boolean              @default(false)
+  isEnabled            Boolean              @default(true)
+  defaultAsset         String?
+  defaultAssetDecimals Int?
   // Facilitator config: EXACTLY ONE of facilitatorWalletId (self-hosted — an owned
   // Selling wallet signs settlements locally) or facilitatorUrl (remote — verify/settle
   // are delegated to an external x402 facilitator over HTTP; the node owns no key here).
   // Enforced at the application layer (a partial DB CHECK cannot span the wallet relation).
-  facilitatorWalletId String?
-  facilitatorUrl      String?
+  facilitatorWalletId  String?
+  facilitatorUrl       String?
   // Encrypted auth header value for the remote facilitator (only meaningful with
   // facilitatorUrl); encrypted at rest like other wallet secrets.
-  facilitatorAuthEnc  String?
-  createdById         String?
-  FacilitatorWallet   X402EvmWallet?       @relation("X402NetworkFacilitatorWallet", fields: [facilitatorWalletId], references: [id], onDelete: SetNull)
-  CreatedBy           ApiKey?              @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  facilitatorAuthEnc   String?
+  createdById          String?
+  FacilitatorWallet    X402EvmWallet?       @relation("X402NetworkFacilitatorWallet", fields: [facilitatorWalletId], references: [id], onDelete: SetNull)
+  CreatedBy            ApiKey?              @relation(fields: [createdById], references: [id], onDelete: SetNull)
   // Wallets bound to this network/payment source (mirrors PaymentSource.HotWallets).
-  Wallets             X402EvmWallet[]      @relation("X402NetworkWallets")
-  PaymentAttempts     X402PaymentAttempt[]
+  Wallets              X402EvmWallet[]      @relation("X402NetworkWallets")
+  PaymentAttempts      X402PaymentAttempt[]
 
   @@index([isEnabled])
   @@index([createdById])
@@ -718,21 +748,24 @@ model ExampleOutput {
 }
 
 model AgentPricing {
-  id                  String             @id @default(cuid())
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
-  pricingType         PricingType
-  agentFixedPricingId String?            @unique
-  FixedPricing        AgentFixedPricing? @relation(fields: [agentFixedPricingId], references: [id])
-  RegistryRequest     RegistryRequest?
+  id                       String                  @id @default(cuid())
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  pricingType              PricingType
+  registryRequestId        String?                 @unique
+  supportedPaymentSourceId String?                 @unique
+  FixedPricing             AgentFixedPricing?
+  RegistryRequest          RegistryRequest?        @relation(fields: [registryRequestId], references: [id], onDelete: Cascade)
+  SupportedPaymentSource   SupportedPaymentSource? @relation(fields: [supportedPaymentSourceId], references: [id], onDelete: Cascade)
 }
 
 model AgentFixedPricing {
-  id           String        @id @default(cuid())
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  AgentPricing AgentPricing?
-  Amounts      UnitValue[]
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  agentPricingId String       @unique
+  AgentPricing   AgentPricing @relation(fields: [agentPricingId], references: [id], onDelete: Cascade)
+  Amounts        UnitValue[]
 }
 
 model PaymentRequest {
@@ -985,6 +1018,10 @@ model PaymentSource {
   lastCheckedAt                  DateTime?
   lastIdentifierChecked          String?
   syncInProgress                 Boolean                         @default(false)
+  /// Monotonic source-wide tx-sync epoch. Scanner quarantine/rollback markers
+  /// increment it; reconciler and scanner business writes must hold this row's
+  /// lock and match the captured value before changing request state.
+  txSyncFenceVersion             Int                             @default(0)
   paymentSourceType              PaymentSourceType               @default(Web3CardanoV1)
   /// Required for Web3CardanoV2 (must be >= 1) and forbidden for Web3CardanoV1.
   /// Enforced at the DB layer by a CHECK constraint defined in migration
@@ -1019,6 +1056,7 @@ model PaymentSource {
   InboxAgentRegistrationRequests InboxAgentRegistrationRequest[]
   WalletBases                    WalletBase[]
   WebhookEndpoints               WebhookEndpoint[]
+  QuarantinedTransactions        TxSyncQuarantine[]
 
   @@unique([network, smartContractAddress])
   // Active-only uniqueness on (network, policyId) is enforced by the partial
@@ -1160,6 +1198,17 @@ enum PricingType {
   Fixed
   Free
   Dynamic
+}
+
+/// Agent access model advertised in the registry metadata. Standard is the
+/// implicit default: absent on-chain `type` and pre-existing rows map here.
+/// The on-chain string values differ from these identifiers (Standard emits no
+/// `type`; OpenApi emits "OpenAPI"; X402 emits "x402V1") — the mapping lives in
+/// the metadata builder/parser, not the DB.
+enum RegistryEntryType {
+  Standard
+  OpenApi
+  X402
 }
 
 enum PaymentErrorType {
@@ -2136,4 +2185,70 @@ model HydraVerificationKey {
   hydraVK String
 
   HydraRemoteParticipant HydraRemoteParticipant?
+}
+
+/// A transaction the sync scanner saw at a payment source's contract address
+/// but could not fetch or process.
+///
+/// The scanner keeps a single `lastIdentifierChecked` cursor, which forces a
+/// choice between two bad options when one transaction fails: drop it and
+/// advance (silent, permanent data loss — a request frozen in a stale state
+/// forever) or halt and refuse to advance (one permanently-unfetchable tx,
+/// e.g. one rolled back mid-flight, stalls every later transaction for that
+/// payment source).
+///
+/// This table breaks that tie by separating "scanned" from "processed": the
+/// cursor may advance, and the unresolved transaction plus its chain-order
+/// suffix are recorded here for ordered replay. Nothing is skipped silently;
+/// one bad transaction does not stop scanning, while descendants cannot apply
+/// ahead of it and regress request state.
+model TxSyncQuarantine {
+  id                       String                 @id @default(cuid())
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+  paymentSourceId          String
+  txHash                   String
+  /// Chain position, kept so the reconciler can replay in chain order.
+  blockHeight              Int?
+  txIndex                  Int?
+  /// Why it was quarantined, for triage. Not parsed by the reconciler.
+  reason                   TxSyncQuarantineReason
+  attempts                 Int                    @default(0)
+  lastError                String?
+  /// Retries are due when now() >= nextRetryAt. Backs off with attempts.
+  nextRetryAt              DateTime               @default(now())
+  /// Set once successfully processed or independently confirmed rolled back.
+  /// Rows are retained for audit.
+  resolvedAt               DateTime?
+  /// Terminal failures (e.g. a deterministic parse error) stop being retried
+  /// and must be looked at by an operator.
+  needsOperator            Boolean                @default(false)
+  /// Cross-process claim. Every worker mutation compares processingLeaseId so
+  /// an expired worker cannot overwrite a newer retry/delete/claim decision.
+  processingLeaseId        String?
+  processingLeaseExpiresAt DateTime?
+  /// Set only by canonical address-history rollback detection. The unresolved
+  /// row blocks descendants until scanner rollback business writes commit.
+  canonicalRollbackAt      DateTime?
+
+  PaymentSource PaymentSource @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentSourceId, txHash])
+  @@index([resolvedAt, nextRetryAt])
+  @@index([needsOperator])
+  @@index([processingLeaseExpiresAt])
+  @@index([canonicalRollbackAt])
+}
+
+enum TxSyncQuarantineReason {
+  /// One of the Blockfrost lookups for the tx failed after retries.
+  ExtendedLookupFailed
+  /// The tx was fetched but processing threw.
+  ProcessingFailed
+  /// Processing was deliberately deferred until an earlier chain transaction
+  /// for the same payment source has been resolved or removed by an operator.
+  PredecessorPending
+  /// Canonical address history observed this tx roll back; the row remains an
+  /// ordering barrier until scanner rollback business writes have committed.
+  CanonicalRollback
 }

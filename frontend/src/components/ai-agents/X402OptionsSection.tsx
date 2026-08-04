@@ -1,194 +1,386 @@
-import { Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { X402Network } from '@/lib/api/generated';
+import { Separator } from '@/components/ui/separator';
+import type { X402AvailableNetwork, X402Wallet } from '@/lib/api/generated';
+import { shortenAddress } from '@/lib/utils';
+import {
+  addressesMatch,
+  assetPresetsForNetwork,
+  defaultAssetForNetwork,
+  findAssetPreset,
+  type X402OptionDraft,
+} from '@/lib/x402-registration';
 
-/** Stable per-draft id so editable rows key on identity, not array index (index
- * keys misbind input state when a middle row is removed). UI-only — never sent
- * to the API. */
-export function newX402OptionId(): string {
-  return crypto.randomUUID();
-}
+const CUSTOM_ASSET = '__custom_asset__';
+const ANY_ASSET = '__any_asset__';
+const CUSTOM_WALLET = '__custom_wallet__';
 
-export type X402OptionDraft = {
-  id: string;
-  caip2Network: string;
-  asset: string;
-  amount: string;
-  decimals: string;
-  payTo: string;
-  resource: string;
-};
-
-export const emptyX402Option: Omit<X402OptionDraft, 'id'> = {
-  caip2Network: '',
-  asset: '',
-  amount: '',
-  decimals: '6',
-  payTo: '',
-  resource: '',
-};
-
-const EVM_ADDRESS = /^0x[a-fA-F0-9]{40}$/;
-const CAIP2_EIP155 = /^eip155:\d+$/;
-const UINT = /^\d+$/;
-
-/**
- * Canonicalize a base-unit amount for submission: strips leading zeros
- * ('007' -> '7') via a BigInt round-trip. Invalid input is returned verbatim
- * so `validateX402Options` rejects it with a proper message instead of this
- * helper throwing mid-submit.
- */
-export function normalizeX402Amount(amount: string): string {
-  return UINT.test(amount) ? BigInt(amount).toString() : amount;
-}
-
-export function validateX402Options(options: X402OptionDraft[]): string | null {
-  for (let i = 0; i < options.length; i++) {
-    const option = options[i];
-    const n = i + 1;
-    if (!CAIP2_EIP155.test(option.caip2Network)) return `x402 option ${n}: select a chain`;
-    if (!EVM_ADDRESS.test(option.asset)) return `x402 option ${n}: asset must be an EVM address`;
-    // /^0+$/ rather than === '0': '00'/'000' are still zero amounts.
-    if (!UINT.test(option.amount) || /^0+$/.test(option.amount)) {
-      return `x402 option ${n}: amount must be a positive integer in base units`;
-    }
-    const decimals = Number(option.decimals);
-    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
-      return `x402 option ${n}: decimals must be a whole number between 0 and 255`;
-    }
-    if (!EVM_ADDRESS.test(option.payTo)) return `x402 option ${n}: pay-to must be an EVM address`;
-    if (option.resource && !/^https?:\/\//.test(option.resource)) {
-      return `x402 option ${n}: resource must be an http(s) URL`;
-    }
-  }
-  return null;
-}
-
-export function X402OptionsSection({
-  options,
+export function X402OptionFields({
+  option,
+  optionNumber,
   networks,
+  wallets,
+  isLoadingWallets,
+  hasError = false,
   onChange,
-  error,
 }: {
-  options: X402OptionDraft[];
-  networks: X402Network[];
-  onChange: (next: X402OptionDraft[]) => void;
-  error: string | null;
+  option: X402OptionDraft;
+  optionNumber: number;
+  networks: X402AvailableNetwork[];
+  wallets: X402Wallet[];
+  isLoadingWallets: boolean;
+  /** True while a validation error targets this option. */
+  hasError?: boolean;
+  onChange: (patch: Partial<X402OptionDraft>) => void;
 }) {
-  const update = (index: number, patch: Partial<X402OptionDraft>) =>
-    onChange(options.map((option, i) => (i === index ? { ...option, ...patch } : option)));
-  const remove = (index: number) => onChange(options.filter((_, i) => i !== index));
-  const add = () => onChange([...options, { ...emptyX402Option, id: newX402OptionId() }]);
+  const selectedNetwork = networks.find((network) => network.caip2Id === option.caip2Network);
+  const assetPresets = assetPresetsForNetwork(selectedNetwork);
+  const selectedAssetPreset = findAssetPreset(selectedNetwork, option.asset);
+  const availableWallets = wallets.filter(
+    (wallet) => wallet.type === 'Selling' && wallet.networkId === selectedNetwork?.id,
+  );
+  const selectedWallet = availableWallets.find((wallet) =>
+    addressesMatch(wallet.address, option.payTo),
+  );
+  const isCustomWallet = !selectedWallet;
+  const isCustomAsset = !!option.asset && !selectedAssetPreset;
+  const hasKnownTokenDecimals = !!selectedAssetPreset;
+
+  // Controlled, not defaultOpen: the token-contract/decimals inputs live in
+  // this section, so selecting "Custom token" after mount (and validation
+  // errors, which usually target fields in here) must force it open — a
+  // mount-time default would leave the required inputs hidden.
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(isCustomAsset || !!option.resource);
+  // Adjust-state-during-render (not an effect): when a validation error
+  // starts targeting this option, pop the section open so the field the
+  // error points at is visible.
+  const [prevHasError, setPrevHasError] = useState(hasError);
+  if (hasError !== prevHasError) {
+    setPrevHasError(hasError);
+    if (hasError) setIsAdvancedOpen(true);
+  }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-medium">x402 payment options (optional)</h3>
-          <p className="text-xs text-muted-foreground">
-            Advertise EVM/x402 payment rails alongside Cardano pricing.
-          </p>
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium">Pricing model</label>
+          <Select
+            value={option.pricingType}
+            onValueChange={(value: X402OptionDraft['pricingType']) => {
+              if (value === 'Fixed') {
+                const defaultAsset = defaultAssetForNetwork(selectedNetwork);
+                onChange({
+                  pricingType: value,
+                  asset: defaultAsset?.address ?? selectedNetwork?.defaultAsset ?? '',
+                  decimals: String(defaultAsset?.decimals ?? ''),
+                  amount: '',
+                });
+                return;
+              }
+              onChange({
+                pricingType: value,
+                asset: '',
+                decimals: '',
+                amount: '',
+              });
+            }}
+          >
+            <SelectTrigger aria-label={`Pricing model for payment option ${optionNumber}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="Dynamic">Dynamic (default)</SelectItem>
+                <SelectItem value="Fixed">Fixed</SelectItem>
+                <SelectItem value="Free">Free</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={add}
-          className="flex items-center gap-1"
-        >
-          <Plus className="h-4 w-4" />
-          Add
-        </Button>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium">Receive in</label>
+          <Select
+            value={selectedWallet?.id ?? CUSTOM_WALLET}
+            onValueChange={(value) => {
+              if (value === CUSTOM_WALLET) {
+                onChange({ payTo: selectedWallet ? '' : option.payTo });
+                return;
+              }
+              const wallet = availableWallets.find((candidate) => candidate.id === value);
+              if (wallet) onChange({ payTo: wallet.address });
+            }}
+            disabled={isLoadingWallets}
+          >
+            <SelectTrigger aria-label={`Recipient for payment option ${optionNumber}`}>
+              <SelectValue
+                placeholder={isLoadingWallets ? 'Loading wallets...' : 'Select a wallet'}
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {availableWallets.map((wallet) => (
+                  <SelectItem key={wallet.id} value={wallet.id}>
+                    {wallet.note || 'Selling wallet'}
+                    <span className="ml-2 font-mono text-xs text-muted-foreground">
+                      {shortenAddress(wallet.address, 6)}
+                    </span>
+                  </SelectItem>
+                ))}
+                <SelectItem value={CUSTOM_WALLET}>Custom EVM address</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          {isCustomWallet ? (
+            <Input
+              aria-label={`Custom EVM recipient for payment option ${optionNumber}`}
+              className="font-mono"
+              placeholder="0x… recipient address"
+              value={option.payTo}
+              onChange={(event) => onChange({ payTo: event.target.value })}
+            />
+          ) : null}
+        </div>
       </div>
 
-      {error && <p className="text-xs text-destructive">{error}</p>}
-
-      {options.map((option, index) => (
-        <div key={option.id} className="rounded-lg border p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Option {index + 1}</span>
-            <Button type="button" variant="ghost" size="sm" onClick={() => remove(index)}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
+      {option.pricingType === 'Fixed' ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-1">
+            <label htmlFor={`x402-amount-${option.id}`} className="text-xs font-medium">
+              Price
+            </label>
+            <Input
+              id={`x402-amount-${option.id}`}
+              type="text"
+              inputMode="decimal"
+              placeholder="1.00"
+              value={option.amount}
+              onChange={(event) => onChange({ amount: event.target.value })}
+            />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="col-span-2 space-y-1">
-              <label className="text-xs text-muted-foreground">Chain</label>
-              <Select
-                value={option.caip2Network}
-                onValueChange={(value) => update(index, { caip2Network: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a chain" />
-                </SelectTrigger>
-                <SelectContent>
-                  {networks.map((network) => (
-                    <SelectItem key={network.id} value={network.caip2Id}>
-                      {network.displayName}
-                      <span className="ml-2 font-mono text-xs text-muted-foreground">
-                        {network.caip2Id}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium">Coin</label>
+            <Select
+              value={selectedAssetPreset?.address ?? CUSTOM_ASSET}
+              onValueChange={(value) => {
+                if (value === CUSTOM_ASSET) {
+                  onChange({ asset: '0x', decimals: '' });
+                  // The contract/decimals inputs for a custom token live in
+                  // the Advanced section — surface them immediately.
+                  setIsAdvancedOpen(true);
+                  return;
+                }
+                const preset = assetPresets.find((candidate) => candidate.address === value);
+                if (preset) {
+                  onChange({
+                    asset: preset.address,
+                    decimals: String(preset.decimals),
+                  });
+                }
+              }}
+            >
+              <SelectTrigger aria-label={`Coin for payment option ${optionNumber}`}>
+                <SelectValue placeholder="Select a coin" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {assetPresets.map((preset) => (
+                    <SelectItem key={preset.address} value={preset.address}>
+                      {preset.symbol}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {shortenAddress(preset.address, 5)}
                       </span>
                     </SelectItem>
                   ))}
+                  <SelectItem value={CUSTOM_ASSET}>Custom token</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      ) : null}
+
+      <Collapsible open={isAdvancedOpen} onOpenChange={setIsAdvancedOpen}>
+        <Separator />
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="group mt-2 w-full justify-between px-2 text-muted-foreground hover:text-foreground"
+          >
+            <span>Advanced settings</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="max-w-44 truncate font-normal">
+                {selectedNetwork?.displayName ?? 'Select chain'}
+              </span>
+              <ChevronDown
+                data-icon="inline-end"
+                className="transition-transform duration-200 group-data-[state=open]:rotate-180"
+              />
+            </span>
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <label className="text-xs font-medium">Chain override</label>
+              <Select
+                value={option.caip2Network}
+                onValueChange={(value) => {
+                  const network = networks.find((candidate) => candidate.caip2Id === value);
+                  const asset = defaultAssetForNetwork(network);
+                  const wallet = wallets.find(
+                    (candidate) =>
+                      candidate.type === 'Selling' && candidate.networkId === network?.id,
+                  );
+                  onChange({
+                    caip2Network: value,
+                    asset:
+                      option.pricingType === 'Fixed'
+                        ? (asset?.address ?? network?.defaultAsset ?? '')
+                        : '',
+                    decimals: option.pricingType === 'Fixed' ? String(asset?.decimals ?? '') : '',
+                    payTo: wallet?.address ?? '',
+                  });
+                }}
+              >
+                <SelectTrigger aria-label={`Chain for payment option ${optionNumber}`}>
+                  <SelectValue placeholder="Select a chain" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {networks.map((network) => (
+                      <SelectItem key={network.id} value={network.caip2Id}>
+                        {network.displayName}
+                        <span className="ml-2 font-mono text-xs text-muted-foreground">
+                          {network.caip2Id}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
-            <div className="col-span-2 space-y-1">
-              <label className="text-xs text-muted-foreground">Asset (token contract)</label>
+            {option.pricingType === 'Dynamic' ? (
+              <div className="flex flex-col gap-1 sm:col-span-2">
+                <label className="text-xs font-medium">Accepted coin (optional)</label>
+                <Select
+                  value={!option.asset ? ANY_ASSET : (selectedAssetPreset?.address ?? CUSTOM_ASSET)}
+                  onValueChange={(value) => {
+                    if (value === ANY_ASSET) {
+                      onChange({ asset: '', decimals: '' });
+                      return;
+                    }
+                    if (value === CUSTOM_ASSET) {
+                      onChange({ asset: '0x', decimals: '' });
+                      return;
+                    }
+                    const preset = assetPresets.find((candidate) => candidate.address === value);
+                    if (preset) {
+                      onChange({
+                        asset: preset.address,
+                        decimals: String(preset.decimals),
+                      });
+                    }
+                  }}
+                >
+                  <SelectTrigger aria-label={`Coin for payment option ${optionNumber}`}>
+                    <SelectValue placeholder="Select a coin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={ANY_ASSET}>Any supported asset</SelectItem>
+                      {assetPresets.map((preset) => (
+                        <SelectItem key={preset.address} value={preset.address}>
+                          {preset.symbol}
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {shortenAddress(preset.address, 5)}
+                          </span>
+                        </SelectItem>
+                      ))}
+                      <SelectItem value={CUSTOM_ASSET}>Custom token</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                {!option.asset ? (
+                  <p className="text-xs text-muted-foreground">
+                    The runtime 402 chooses the asset, decimals, and exact amount.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {option.pricingType !== 'Free' && isCustomAsset ? (
+              <div className="flex flex-col gap-1">
+                <label htmlFor={`x402-contract-${option.id}`} className="text-xs font-medium">
+                  Token contract
+                </label>
+                <Input
+                  id={`x402-contract-${option.id}`}
+                  className="font-mono"
+                  placeholder="0x… token contract"
+                  value={option.asset}
+                  onChange={(event) => onChange({ asset: event.target.value })}
+                />
+              </div>
+            ) : option.pricingType !== 'Free' && option.asset ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-medium">Token contract</span>
+                <Input
+                  aria-label={`Token contract for payment option ${optionNumber}`}
+                  className="font-mono"
+                  value={option.asset}
+                  readOnly
+                />
+              </div>
+            ) : null}
+            {option.pricingType !== 'Free' && option.asset ? (
+              <div className="flex flex-col gap-1">
+                <label htmlFor={`x402-decimals-${option.id}`} className="text-xs font-medium">
+                  Token decimals
+                </label>
+                <Input
+                  id={`x402-decimals-${option.id}`}
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  max="255"
+                  value={option.decimals}
+                  readOnly={hasKnownTokenDecimals}
+                  onChange={(event) => onChange({ decimals: event.target.value })}
+                />
+              </div>
+            ) : null}
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <label htmlFor={`x402-resource-${option.id}`} className="text-xs font-medium">
+                Protected resource URL
+              </label>
               <Input
-                className="font-mono"
-                placeholder="0x…"
-                value={option.asset}
-                onChange={(e) => update(index, { asset: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Amount (base units)</label>
-              <Input
-                className="font-mono"
-                placeholder="1000000"
-                value={option.amount}
-                onChange={(e) => update(index, { amount: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Decimals</label>
-              <Input
-                className="font-mono"
-                placeholder="6"
-                value={option.decimals}
-                onChange={(e) => update(index, { decimals: e.target.value })}
-              />
-            </div>
-            <div className="col-span-2 space-y-1">
-              <label className="text-xs text-muted-foreground">Pay to (recipient)</label>
-              <Input
-                className="font-mono"
-                placeholder="0x…"
-                value={option.payTo}
-                onChange={(e) => update(index, { payTo: e.target.value })}
-              />
-            </div>
-            <div className="col-span-2 space-y-1">
-              <label className="text-xs text-muted-foreground">Resource URL (optional)</label>
-              <Input
-                className="font-mono"
-                placeholder="https://… (leave empty for none)"
+                id={`x402-resource-${option.id}`}
+                type="url"
+                placeholder="https://agent.example.com/resource"
                 value={option.resource}
-                onChange={(e) => update(index, { resource: e.target.value })}
+                onChange={(event) => onChange({ resource: event.target.value })}
               />
+              <p className="text-xs text-muted-foreground">
+                Optional. Leave blank when this option applies to the agent API generally.
+              </p>
             </div>
           </div>
-        </div>
-      ))}
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }

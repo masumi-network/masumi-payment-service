@@ -1,4 +1,5 @@
 import { z } from '@masumi/payment-core/zod';
+import { MAX_X402_TIMEOUT_SECONDS } from '@masumi/payment-source-x402';
 import {
 	LowBalanceStatus,
 	X402EvmWalletType,
@@ -11,6 +12,18 @@ export const caip2Eip155Schema = z
 	.regex(/^eip155:\d+$/, 'Network must be a CAIP-2 EVM chain id, for example eip155:8453');
 
 export const evmAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Expected an EVM address');
+// Sentinel addresses some ecosystems use for the native asset are
+// syntactically valid but can never be an ERC-20 contract.
+const EVM_NATIVE_SENTINEL_ADDRESSES = new Set([
+	'0x0000000000000000000000000000000000000000',
+	'0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+]);
+export const x402AssetSchema = evmAddressSchema
+	.refine(
+		(asset) => !EVM_NATIVE_SENTINEL_ADDRESSES.has(asset.toLowerCase()),
+		'x402 asset must be an ERC-20 token contract, not a native-asset sentinel address',
+	)
+	.describe('ERC-20 token contract address');
 export const uintStringSchema = z.string().regex(/^\d+$/, 'Expected an unsigned integer string');
 // A boolean carried in a query string. z.coerce.boolean() is WRONG here: Boolean("false")
 // is true, so "false" would read as true. Parse the literal string instead.
@@ -25,10 +38,12 @@ export const paymentIdentifierSchema = z
 export const x402PaymentRequirementsSchema = z.object({
 	scheme: z.string(),
 	network: caip2Eip155Schema,
-	asset: evmAddressSchema,
+	asset: x402AssetSchema,
 	amount: uintStringSchema,
 	payTo: evmAddressSchema,
-	maxTimeoutSeconds: z.number().int().positive(),
+	// Upper bound mirrors the service-side policy cap for Dynamic runtime
+	// requirements; Fixed sources pin 300s regardless.
+	maxTimeoutSeconds: z.number().int().positive().max(MAX_X402_TIMEOUT_SECONDS),
 	extra: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -48,6 +63,11 @@ export const x402PaymentPayloadSchema = z.object({
 export const verifySettleSchemaInput = z.object({
 	supportedPaymentSourceId: z.string(),
 	paymentPayload: x402PaymentPayloadSchema,
+	paymentRequirements: x402PaymentRequirementsSchema
+		.optional()
+		.describe(
+			'Trusted requirements originally issued by the authenticated resource server. Required for Dynamic registry pricing; Fixed pricing is derived from the registry.',
+		),
 });
 
 export const verifySchemaOutput = z.object({
@@ -116,7 +136,7 @@ export const createPaymentSchemaInput = z.object({
 	evmWalletId: z.string().describe('Managed EVM wallet to sign the payment with'),
 	paymentRequired: forwardedX402PaymentRequiredSchema.describe('The 402 Payment Required response the buyer received'),
 	preferredNetwork: caip2Eip155Schema.optional().describe('Restrict signing to this CAIP-2 network'),
-	preferredAsset: evmAddressSchema.optional().describe('Restrict signing to this token asset'),
+	preferredAsset: x402AssetSchema.optional().describe('Restrict signing to this token asset'),
 	paymentIdentifier: paymentIdentifierSchema,
 });
 
@@ -124,7 +144,7 @@ export const createPaymentSchemaOutput = z.object({
 	attemptId: z.string(),
 	payer: evmAddressSchema.describe('The managed wallet address that signed the payment'),
 	caip2Network: caip2Eip155Schema,
-	asset: evmAddressSchema,
+	asset: x402AssetSchema,
 	amount: uintStringSchema.describe('Signed payment amount in token base units'),
 	payTo: evmAddressSchema,
 	xPaymentHeader: z
@@ -358,6 +378,13 @@ export const x402NetworkSchema = z
 		isTestnet: z.boolean().describe('Whether this chain is a testnet (paired with the Cardano Preprod environment)'),
 		isEnabled: z.boolean().describe('Whether this chain may be used for x402 payments'),
 		defaultAsset: evmAddressSchema.nullable().describe('Default settlement asset (token contract) for this chain'),
+		defaultAssetDecimals: z
+			.number()
+			.int()
+			.min(0)
+			.max(255)
+			.nullable()
+			.describe('Decimals for the default settlement asset; null until an operator confirms them'),
 		facilitatorWalletId: z
 			.string()
 			.nullable()
@@ -385,7 +412,19 @@ export const x402AvailableNetworkSchema = z
 		displayName: z.string().describe('Human readable chain name'),
 		isTestnet: z.boolean().describe('Whether this chain belongs to the testnet environment'),
 		isEnabled: z.boolean().describe('Whether this chain may currently be used for x402 payments'),
+		canSettle: z
+			.boolean()
+			.describe(
+				'Whether inbound settlement is configured (a facilitator wallet or URL is present). Outbound (buy) wallets do not require a facilitator, so networks may be listed with canSettle=false.',
+			),
 		defaultAsset: evmAddressSchema.nullable().describe('Default settlement asset (token contract) for this chain'),
+		defaultAssetDecimals: z
+			.number()
+			.int()
+			.min(0)
+			.max(255)
+			.nullable()
+			.describe('Decimals for the default settlement asset; null until an operator confirms them'),
 	})
 	.openapi('X402AvailableNetwork');
 
@@ -399,6 +438,7 @@ export const upsertNetworkSchemaInput = z.object({
 	isTestnet: z.boolean().optional(),
 	isEnabled: z.boolean().optional(),
 	defaultAsset: evmAddressSchema.nullable().optional(),
+	defaultAssetDecimals: z.number().int().min(0).max(255).nullable().optional(),
 	// Configure the facilitator in exactly one mode: an owned Selling wallet (self-hosted) or a
 	// remote facilitator URL. Supplying both is rejected by the service. Every field is tri-state
 	// on update: omit to keep the stored value, send a string to set it, or send explicit null to

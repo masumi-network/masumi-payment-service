@@ -1,4 +1,10 @@
-import { Network, PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import {
+	Network,
+	PaymentSourceType,
+	PricingType,
+	RegistrationState,
+	RegistryEntryType,
+} from '@/generated/prisma/client';
 import { SupportedPaymentSourceChain } from '@/types/payment-source';
 import { z } from '@masumi/payment-core/zod';
 import { registerAgentSchemaOutput } from './schemas';
@@ -8,7 +14,10 @@ export const registryEntryExample = {
 	id: 'registry_id',
 	name: 'Agent Name',
 	description: 'Agent Description',
+	type: RegistryEntryType.Standard,
 	apiBaseUrl: 'https://api.example.com',
+	openApiSpecUrl: null,
+	x402ResourcesUrl: null,
 	Capability: { name: 'Capability Name', version: '1.0.0' },
 	Author: {
 		name: 'Author Name',
@@ -50,6 +59,10 @@ export const registryEntryExample = {
 			network: Network.Preprod,
 			paymentSourceType: PaymentSourceType.Web3CardanoV2,
 			address: 'addr_test1wz7j4kmg2cs7yf92uat3ed4a3u97kr7axxr4avaz0lhwdsqukgwfm',
+			pricing: {
+				pricingType: PricingType.Fixed,
+				fixed: [{ asset: '', amount: '1000000' }],
+			},
 		},
 	],
 	verifications: [

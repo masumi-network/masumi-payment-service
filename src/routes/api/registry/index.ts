@@ -1,7 +1,7 @@
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
-import { PaymentSourceType, PricingType, RegistrationState } from '@/generated/prisma/client';
+import { PaymentSourceType, PricingType, RegistrationState, RegistryEntryType } from '@/generated/prisma/client';
 import type { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
@@ -13,7 +13,13 @@ import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance, validateAssetsOnChain } from '@/utils/blockfrost';
 import { buildManagedHolderWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { normalizeRequestedRegistryFundingLovelace } from '@/services/registry/shared';
+import {
+	buildLegacyAgentPricingCreate,
+	buildSupportedPaymentSourceCreate,
+	getCardanoFixedAssets,
+} from '@/services/registry/source-pricing';
 import { validateSupportedPaymentSourcesOrThrow } from '@/types/payment-source';
+import { validateX402NetworksAvailableOrThrow } from '@/services/registry/x402-network-availability';
 import { verificationToRow } from '@/types/verification';
 import {
 	deleteAgentRegistrationSchemaInput,
@@ -21,6 +27,7 @@ import {
 	FilterStatus,
 	queryRegistryCountSchemaInput,
 	queryRegistryCountSchemaOutput,
+	getRegistryEndpointError,
 	queryRegistryRequestSchemaInput,
 	queryRegistryRequestSchemaOutput,
 	registerAgentSchemaInput,
@@ -30,6 +37,7 @@ import {
 import { getRegistryEntriesForQuery, resolveRegistryPaymentSourceTypeFilter } from './queries';
 import {
 	serializeRegistryEntriesResponse,
+	serializeLegacyAgentPricing,
 	serializeSupportedPaymentSources,
 	serializeVerifications,
 } from './serializers';
@@ -111,17 +119,36 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				operation: 'register_agent',
 			});
 			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
-			// Keep persisted registry payment-source rows opt-in. Mint metadata
-			// still advertises the active payment source from the mint service.
-			// supportedPaymentSources is a V2-only concept: silently drop any
-			// provided rows for V1 (legacy) registrations so they are never
-			// persisted or advertised on-chain. (The validation + DB create below
-			// then become no-ops for V1.)
-			const supportedPaymentSources =
-				sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2
-					? (input.supportedPaymentSources ?? [])
-					: [];
-			if (supportedPaymentSources.length > 0) {
+			// Per-type endpoint descriptor (Standard=apiBaseUrl, OpenApi=openApiSpecUrl,
+			// X402=x402ResourcesUrl). Enforced here, not in the schema, so the update
+			// route can `.omit()` the register input (see getRegistryEndpointError).
+			const endpointError = getRegistryEndpointError(input);
+			if (endpointError != null) {
+				throw createHttpError(400, endpointError);
+			}
+			const isV2Registration = sellingWallet.PaymentSource.paymentSourceType === PaymentSourceType.Web3CardanoV2;
+			if (isV2Registration && input.AgentPricing != null) {
+				throw createHttpError(
+					400,
+					'V2 registrations must not set AgentPricing; put pricing inside each supportedPaymentSources[].pricing field',
+				);
+			}
+			if (isV2Registration && input.supportedPaymentSources == null) {
+				throw createHttpError(400, 'V2 registrations require supportedPaymentSources with source-local pricing');
+			}
+			if (!isV2Registration && input.supportedPaymentSources != null) {
+				throw createHttpError(
+					400,
+					'V1 registrations must not set supportedPaymentSources; use the top-level AgentPricing field',
+				);
+			}
+			if (!isV2Registration && input.AgentPricing == null) {
+				throw createHttpError(400, 'V1 registrations require the top-level AgentPricing field');
+			}
+
+			const supportedPaymentSources = isV2Registration ? input.supportedPaymentSources! : [];
+			const legacyAgentPricing = isV2Registration ? null : input.AgentPricing!;
+			if (isV2Registration) {
 				try {
 					validateSupportedPaymentSourcesOrThrow(
 						supportedPaymentSources,
@@ -132,17 +159,26 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				} catch (error) {
 					throw createHttpError(400, error instanceof Error ? error.message : String(error));
 				}
+				// Outside the catch-all above: throws its own 400s for unavailable
+				// networks while letting DB faults propagate as 500s.
+				await validateX402NetworksAvailableOrThrow(supportedPaymentSources);
 			}
 
 			// Validate pricing assets exist on-chain
-			if (input.AgentPricing.pricingType === PricingType.Fixed) {
+			const cardanoAssetUnits =
+				legacyAgentPricing?.pricingType === PricingType.Fixed
+					? legacyAgentPricing.Pricing.map((pricing) => pricing.unit)
+					: getCardanoFixedAssets(supportedPaymentSources);
+			if (cardanoAssetUnits.length > 0) {
 				const blockfrost = getBlockfrostInstance(
 					input.network,
 					sellingWallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey,
 				);
 
-				const assetUnits = input.AgentPricing.Pricing.map((pricing) => pricing.unit);
-				const { valid: _validAssets, invalid: invalidAssets } = await validateAssetsOnChain(blockfrost, assetUnits);
+				const { valid: _validAssets, invalid: invalidAssets } = await validateAssetsOnChain(
+					blockfrost,
+					cardanoAssetUnits,
+				);
 
 				if (invalidAssets.length > 0) {
 					const invalidAssetsMessage = invalidAssets.map((item) => `${item.asset} (${item.errorMessage})`).join(', ');
@@ -166,7 +202,10 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				data: {
 					name: input.name,
 					description: input.description,
-					apiBaseUrl: input.apiBaseUrl,
+					type: input.type ?? RegistryEntryType.Standard,
+					apiBaseUrl: input.apiBaseUrl ?? null,
+					openApiSpecUrl: input.openApiSpecUrl ?? null,
+					x402ResourcesUrl: input.x402ResourcesUrl ?? null,
 					capabilityName: input.Capability.name,
 					capabilityVersion: input.Capability.version,
 					other: input.Legal?.other,
@@ -203,25 +242,9 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					SupportedPaymentSources:
 						supportedPaymentSources.length > 0
 							? {
-									createMany: {
-										data: supportedPaymentSources.map((source) => ({
-											chain: source.chain,
-											network: source.network,
-											paymentSourceType: source.paymentSourceType,
-											address: source.chain === 'EVM' ? (source.address ?? source.payTo) : source.address,
-											...(source.chain === 'EVM'
-												? {
-														scheme: source.scheme,
-														asset: source.asset,
-														amount: BigInt(source.amount),
-														decimals: source.decimals,
-														payTo: source.payTo,
-														resource: source.resource,
-														extra: source.extra as Prisma.InputJsonValue | undefined,
-													}
-												: {}),
-										})),
-									},
+									create: supportedPaymentSources.map((source, position) =>
+										buildSupportedPaymentSourceCreate(source, position),
+									),
 								}
 							: undefined,
 					SmartContractWallet: {
@@ -246,28 +269,12 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					...(input.verifications && input.verifications.length > 0
 						? { Verifications: { createMany: { data: input.verifications.map(verificationToRow) } } }
 						: {}),
-					Pricing: {
-						create:
-							input.AgentPricing.pricingType == PricingType.Fixed
-								? {
-										pricingType: input.AgentPricing.pricingType,
-										FixedPricing: {
-											create: {
-												Amounts: {
-													createMany: {
-														data: input.AgentPricing.Pricing.map((price) => ({
-															unit: price.unit.toLowerCase() == 'lovelace' ? '' : price.unit,
-															amount: BigInt(price.amount),
-														})),
-													},
-												},
-											},
-										},
-									}
-								: {
-										pricingType: input.AgentPricing.pricingType,
-									},
-					},
+					Pricing:
+						legacyAgentPricing != null
+							? {
+									create: buildLegacyAgentPricingCreate(legacyAgentPricing),
+								}
+							: undefined,
 				},
 				include: {
 					Pricing: {
@@ -295,15 +302,23 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 						select: {
 							chain: true,
 							network: true,
+							position: true,
 							paymentSourceType: true,
 							address: true,
 							scheme: true,
-							asset: true,
-							amount: true,
-							decimals: true,
+							dynamicAsset: true,
+							dynamicDecimals: true,
+							fixedDecimals: true,
 							payTo: true,
 							resource: true,
 							extra: true,
+							Pricing: {
+								include: {
+									FixedPricing: {
+										include: { Amounts: { select: { unit: true, amount: true } } },
+									},
+								},
+							},
 						},
 					},
 					CurrentTransaction: {
@@ -336,19 +351,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 					terms: result.terms,
 					other: result.other,
 				},
-				AgentPricing:
-					result.Pricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: PricingType.Fixed,
-								Pricing:
-									result.Pricing.FixedPricing?.Amounts.map((price) => ({
-										unit: price.unit,
-										amount: price.amount.toString(),
-									})) ?? [],
-							}
-						: {
-								pricingType: result.Pricing.pricingType,
-							},
+				AgentPricing: serializeLegacyAgentPricing(result.Pricing),
 				sendFundingLovelace: result.sendFundingLovelace?.toString() ?? null,
 				supportedPaymentSources: serializeSupportedPaymentSources(result.SupportedPaymentSources),
 				verifications: serializeVerifications(result.Verifications),
@@ -413,15 +416,23 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 					select: {
 						chain: true,
 						network: true,
+						position: true,
 						paymentSourceType: true,
 						address: true,
 						scheme: true,
-						asset: true,
-						amount: true,
-						decimals: true,
+						dynamicAsset: true,
+						dynamicDecimals: true,
+						fixedDecimals: true,
 						payTo: true,
 						resource: true,
 						extra: true,
+						Pricing: {
+							include: {
+								FixedPricing: {
+									include: { Amounts: { select: { unit: true, amount: true } } },
+								},
+							},
+						},
 					},
 				},
 				CurrentTransaction: {
@@ -533,19 +544,7 @@ export const deleteAgentRegistration = adminAuthenticatedEndpointFactory.build({
 					terms: item.terms,
 					other: item.other,
 				},
-				AgentPricing:
-					item.Pricing.pricingType == PricingType.Fixed
-						? {
-								pricingType: PricingType.Fixed,
-								Pricing:
-									item.Pricing.FixedPricing?.Amounts.map((price) => ({
-										unit: price.unit,
-										amount: price.amount.toString(),
-									})) ?? [],
-							}
-						: {
-								pricingType: item.Pricing.pricingType,
-							},
+				AgentPricing: serializeLegacyAgentPricing(item.Pricing),
 				sendFundingLovelace: item.sendFundingLovelace?.toString() ?? null,
 				supportedPaymentSources: serializeSupportedPaymentSources(item.SupportedPaymentSources),
 				verifications: serializeVerifications(item.Verifications),

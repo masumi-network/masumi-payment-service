@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
-import { cn, shortenAddress } from '@/lib/utils';
+import { cn, shortenAddress, formatAssetAmount } from '@/lib/utils';
 import { RegistryEntry } from '@/lib/api/generated';
 
 type SupportedPaymentSource = NonNullable<RegistryEntry['supportedPaymentSources']>[number];
@@ -21,6 +21,17 @@ export function AgentCardanoSources({
   );
   if (cardanoSources.length === 0) return null;
 
+  const pricingLabel = (source: CardanoPaymentSource): string => {
+    if (source.pricing.pricingType === 'Free') return 'Free';
+    if (source.pricing.pricingType === 'Dynamic') return 'Dynamic per payment';
+    // Amounts are stored in atomic base units; formatAssetAmount decimal-shifts
+    // known 6-decimal units (1000000 lovelace renders as "1 ADA", not
+    // "1000000 ADA") and appends the display unit.
+    return source.pricing.fixed
+      .map((price) => formatAssetAmount(price.amount, price.asset || 'lovelace', source.network))
+      .join(' · ');
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -28,14 +39,20 @@ export function AgentCardanoSources({
       </CardHeader>
       <CardContent>
         <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
+          {/* Multiple options can share one escrow address (same contract,
+              different pricing), so the index keeps sibling keys unique. */}
           {cardanoSources.map((source, index, arr) => (
             <div
-              key={`${source.network}-${source.address}`}
+              key={`${source.network}-${source.address}-${index}`}
               className={cn('flex flex-col gap-1 py-2', index < arr.length - 1 && 'border-b')}
             >
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">{source.network}</span>
-                <Badge variant="outline">{source.paymentSourceType}</Badge>
+                <Badge variant="outline">{pricingLabel(source)}</Badge>
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Settlement</span>
+                <span>{source.paymentSourceType}</span>
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>Escrow contract</span>

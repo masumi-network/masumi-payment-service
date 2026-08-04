@@ -152,9 +152,11 @@ export const verifyX402Post = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof verifySettleSchemaInput>; ctx: AuthContext }) =>
 		verifyX402Payment({
 			apiKeyId: ctx.id,
+			canAdmin: ctx.canAdmin,
 			caip2NetworkLimit: x402NetworkLimit(ctx),
 			supportedPaymentSourceId: input.supportedPaymentSourceId,
 			paymentPayload: input.paymentPayload as Parameters<typeof verifyX402Payment>[0]['paymentPayload'],
+			paymentRequirements: input.paymentRequirements as Parameters<typeof verifyX402Payment>[0]['paymentRequirements'],
 		}),
 });
 
@@ -165,9 +167,11 @@ export const settleX402Post = payAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof verifySettleSchemaInput>; ctx: AuthContext }) => {
 		const result = await settleX402Payment({
 			apiKeyId: ctx.id,
+			canAdmin: ctx.canAdmin,
 			caip2NetworkLimit: x402NetworkLimit(ctx),
 			supportedPaymentSourceId: input.supportedPaymentSourceId,
 			paymentPayload: input.paymentPayload as Parameters<typeof settleX402Payment>[0]['paymentPayload'],
+			paymentRequirements: input.paymentRequirements as Parameters<typeof settleX402Payment>[0]['paymentRequirements'],
 		});
 		// Notify subscribers of the settle outcome (a replay was already settled before, so
 		// it does not re-fire). Fire-and-forget: webhook delivery must not block the response.

@@ -8,6 +8,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { getAgentTypeLabel } from '@/lib/agent-type';
 import { formatDateTime } from '@/lib/format-date';
 import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
 import type { AgentRelation } from '@/lib/queries/useContextAgents';
@@ -31,6 +32,7 @@ import { VerifyAndPublishAgentDialog } from './VerifyAndPublishAgentDialog';
 import { AgentX402Options } from './AgentX402Options';
 import { AgentCardanoSources } from './AgentCardanoSources';
 import { AgentVerifications } from './AgentVerifications';
+import { parseLegacyAgentPricing } from '@/lib/registry-pricing';
 
 // The list page decorates agents with their relation to the active payment
 // source ('payment' = registered elsewhere, merely accepts payment here).
@@ -99,6 +101,10 @@ export function AIAgentDetailsDialog({
       holdingWallet != null &&
       holdingWallet.walletVkey === agent.SmartContractWallet.walletVkey,
     [agent, holdingWallet],
+  );
+  const legacyPricing = useMemo(
+    () => parseLegacyAgentPricing(agent?.AgentPricing),
+    [agent?.AgentPricing],
   );
 
   // Manage actions (deregister/verify) only apply to agents registered on the
@@ -237,12 +243,17 @@ export function AIAgentDetailsDialog({
                   <DialogTitle className="text-xl leading-tight break-words">
                     {agent.name}
                   </DialogTitle>
-                  <Badge
-                    variant={getAgentStatusBadgeVariant(agent.state)}
-                    className="mt-0.5 shrink-0 whitespace-nowrap"
-                  >
-                    {parseAgentStatus(agent.state)}
-                  </Badge>
+                  <div className="mt-0.5 flex shrink-0 items-center gap-2">
+                    <Badge variant="outline" className="whitespace-nowrap">
+                      {getAgentTypeLabel(agent.type)}
+                    </Badge>
+                    <Badge
+                      variant={getAgentStatusBadgeVariant(agent.state)}
+                      className="whitespace-nowrap"
+                    >
+                      {parseAgentStatus(agent.state)}
+                    </Badge>
+                  </div>
                 </div>
               </DialogHeader>
 
@@ -332,52 +343,46 @@ export function AIAgentDetailsDialog({
                       </CardContent>
                     </Card>
 
-                    {/* Pricing */}
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-sm font-medium">Pricing Details</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
-                          {agent.AgentPricing?.pricingType == 'Free' && (
-                            <div className="text-sm text-muted-foreground">
-                              <span className="font-medium">Free</span>
-                            </div>
-                          )}
-                          {agent.AgentPricing?.pricingType == 'Dynamic' && (
-                            <div className="text-sm text-muted-foreground">
-                              <span className="font-medium">Dynamic</span>
-                              <span className="ml-1 text-xs">(price set per request)</span>
-                            </div>
-                          )}
-                          {agent.AgentPricing &&
-                            agent.AgentPricing?.pricingType == 'Fixed' &&
-                            agent.AgentPricing?.Pricing?.map((price, index, arr) => (
-                              <div
-                                key={index}
-                                className={cn(
-                                  'flex items-center justify-between py-2',
-                                  index < arr.length - 1 && 'border-b',
-                                )}
-                              >
-                                <span className="text-sm text-muted-foreground">
-                                  Price ({formatFundUnit(price.unit, network)})
-                                </span>
-                                <span className="font-medium">
-                                  {formatAssetAmount(price.amount, price.unit, network)}
-                                </span>
+                    {/* V1 legacy pricing. V2 pricing is rendered on each source below. */}
+                    {legacyPricing ? (
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="text-sm font-medium">Legacy V1 pricing</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2 p-2 bg-muted/40 border rounded-md">
+                            {legacyPricing.pricingType === 'Free' && (
+                              <div className="text-sm text-muted-foreground">
+                                <span className="font-medium">Free</span>
                               </div>
-                            ))}
-                          {(!agent.AgentPricing ||
-                            (agent.AgentPricing.pricingType == 'Fixed' &&
-                              agent.AgentPricing.Pricing.length === 0)) && (
-                            <div className="text-sm text-muted-foreground">
-                              No pricing information available
-                            </div>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
+                            )}
+                            {legacyPricing.pricingType === 'Dynamic' && (
+                              <div className="text-sm text-muted-foreground">
+                                <span className="font-medium">Dynamic</span>
+                                <span className="ml-1 text-xs">(price set per request)</span>
+                              </div>
+                            )}
+                            {legacyPricing.pricingType === 'Fixed' &&
+                              legacyPricing.Pricing.map((price, index, arr) => (
+                                <div
+                                  key={index}
+                                  className={cn(
+                                    'flex items-center justify-between py-2',
+                                    index < arr.length - 1 && 'border-b',
+                                  )}
+                                >
+                                  <span className="text-sm text-muted-foreground">
+                                    Price ({formatFundUnit(price.unit, network)})
+                                  </span>
+                                  <span className="font-medium">
+                                    {formatAssetAmount(price.amount, price.unit, network)}
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : null}
 
                     <AgentCardanoSources sources={agent.supportedPaymentSources} />
 

@@ -3,9 +3,10 @@ import {
 	PaymentSourceType,
 	PricingType,
 	RegistrationState,
+	RegistryEntryType,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { supportedPaymentSourcesSchema } from '@/types/payment-source';
+import { atomicAmountSchema, supportedPaymentSourcesSchema } from '@/types/payment-source';
 import { verificationsSchema } from '@/types/verification';
 import { z } from '@masumi/payment-core/zod';
 
@@ -68,7 +69,21 @@ export const registryRequestOutputSchema = z
 		id: z.string().describe('Unique identifier for the registry request'),
 		name: z.string().describe('Name of the agent'),
 		description: z.string().nullable().describe('Description of the agent. Null if not provided'),
-		apiBaseUrl: z.string().describe('Base URL of the agent API for interactions'),
+		type: z
+			.nativeEnum(RegistryEntryType)
+			.describe('The agent access model. Standard for legacy/untyped entries; OpenApi or X402 otherwise'),
+		apiBaseUrl: z
+			.string()
+			.nullable()
+			.describe('Base URL of the agent API for interactions. Null for OpenApi/X402 agents'),
+		openApiSpecUrl: z
+			.string()
+			.nullable()
+			.describe('URL to the agent OpenAPI specification document. Null unless the agent is OpenApi-type'),
+		x402ResourcesUrl: z
+			.string()
+			.nullable()
+			.describe('URL to the agent x402 resource manifest JSON. Null unless the agent is X402-type'),
 		Capability: z
 			.object({
 				name: z.string().nullable().describe('Name of the AI model/capability. Null if not provided'),
@@ -145,7 +160,8 @@ export const registryRequestOutputSchema = z
 						.describe('Pricing type for the agent. Amounts are provided per payment/purchase request'),
 				}),
 			)
-			.describe('Pricing information for the agent'),
+			.nullable()
+			.describe('V1 legacy pricing. Null for V2 entries, whose pricing is owned by each supported payment source.'),
 		sendFundingLovelace: z
 			.string()
 			.nullable()
@@ -214,6 +230,12 @@ export const queryRegistryCountSchemaOutput = z.object({
 
 export const registerAgentSchemaInput = z.object({
 	network: z.nativeEnum(Network).describe('The Cardano network used to register the agent on'),
+	type: z
+		.nativeEnum(RegistryEntryType)
+		.optional()
+		.describe(
+			'The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.',
+		),
 	sellingWalletVkey: z
 		.string()
 		.length(56)
@@ -241,9 +263,7 @@ export const registerAgentSchemaInput = z.object({
 		),
 	supportedPaymentSources: supportedPaymentSourcesSchema
 		.optional()
-		.describe(
-			'Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.',
-		),
+		.describe('Required for V2 registrations and forbidden for V1 registrations. Every V2 source owns its pricing.'),
 	verifications: verificationsSchema
 		.optional()
 		.describe(
@@ -261,7 +281,30 @@ export const registerAgentSchemaInput = z.object({
 		.describe('List of example outputs from the agent'),
 	Tags: z.array(z.string().max(63)).min(1).max(15).describe('Tags used in the registry metadata'),
 	name: z.string().max(250).describe('Name of the agent'),
-	apiBaseUrl: z.string().url().max(250).describe('Base URL of the agent, to request interactions'),
+	apiBaseUrl: z
+		.string()
+		.url()
+		.max(250)
+		.optional()
+		.describe(
+			'Base URL of the agent, to request interactions. Required for Standard-type agents; omit for OpenApi/X402.',
+		),
+	openApiSpecUrl: z
+		.string()
+		.url()
+		.max(250)
+		.optional()
+		.describe(
+			'URL to the agent OpenAPI 3.1.x specification document (JSON or YAML). Required for OpenApi-type agents; omit for others.',
+		),
+	x402ResourcesUrl: z
+		.string()
+		.url()
+		.max(250)
+		.optional()
+		.describe(
+			'URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others.',
+		),
 	description: z.string().max(250).describe('Description of the agent'),
 	Capability: z
 		.object({
@@ -281,12 +324,13 @@ export const registerAgentSchemaInput = z.object({
 							.describe(
 								'Asset policy id + asset name concatenated. Uses an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
 							),
-						amount: z
-							.string()
-							.max(25)
-							.describe(
-								'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)',
-							),
+						// Same bounds as the V2 source-owned pricing amounts: digits
+						// only, positive, within Postgres BIGINT. The old bare
+						// `.max(25)` let `BigInt()` throw a 500 on '1.5'/'abc' and
+						// persisted negative or overlong values.
+						amount: atomicAmountSchema.describe(
+							'The quantity of the asset. Make sure to convert it from the underlying smallest unit (in case of decimals, multiply it by the decimal factor e.g. for 1 ADA = 1000000 lovelace)',
+						),
 					}),
 				)
 				.min(1)
@@ -305,7 +349,10 @@ export const registerAgentSchemaInput = z.object({
 					.describe('Pricing type for the agent. Amounts are provided per payment/purchase request'),
 			}),
 		)
-		.describe('Pricing information for the agent'),
+		.optional()
+		.describe(
+			'Required legacy pricing for V1 registrations and forbidden for V2 registrations. V2 pricing belongs inside supportedPaymentSources[].pricing.',
+		),
 	Legal: z
 		.object({
 			privacyPolicy: z.string().max(250).optional().describe('URL to the privacy policy'),
@@ -323,6 +370,35 @@ export const registerAgentSchemaInput = z.object({
 		})
 		.describe('Author information about the agent'),
 });
+
+// Per-type endpoint validation, run in the route handler rather than as a schema
+// `.superRefine`. Keeping `registerAgentSchemaInput` a plain ZodObject is what
+// lets the update route do `.omit({ sellingWalletVkey: true })` — `.omit()`
+// throws on a refined schema. Absent type == Standard; payment is a separate
+// axis. Returns an error message or null.
+export function getRegistryEndpointError(input: {
+	type?: RegistryEntryType | null;
+	apiBaseUrl?: string | null;
+	openApiSpecUrl?: string | null;
+	x402ResourcesUrl?: string | null;
+}): string | null {
+	const entryType = input.type ?? RegistryEntryType.Standard;
+	const requiredByType = {
+		[RegistryEntryType.Standard]: 'apiBaseUrl',
+		[RegistryEntryType.OpenApi]: 'openApiSpecUrl',
+		[RegistryEntryType.X402]: 'x402ResourcesUrl',
+	} as const;
+	const required = requiredByType[entryType];
+	if (input[required] == null) {
+		return `${entryType} agents require ${required}`;
+	}
+	for (const field of ['apiBaseUrl', 'openApiSpecUrl', 'x402ResourcesUrl'] as const) {
+		if (field !== required && input[field] != null) {
+			return `${field} is not valid for a ${entryType} agent; use ${required}`;
+		}
+	}
+	return null;
+}
 
 export const registerAgentSchemaOutput = registryRequestOutputSchema;
 

@@ -244,6 +244,13 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			const explicitSmartContractAddress =
 				input.smartContractAddress != null && input.smartContractAddress.length > 0 ? input.smartContractAddress : null;
 
+			if (!isV2 && input.supportedPaymentSourceIndex != null) {
+				throw createHttpError(
+					400,
+					'V1 Cardano purchases must not set supportedPaymentSourceIndex; pricing comes from AgentPricing',
+				);
+			}
+
 			const paymentSource = await (async () => {
 				if (isV2) {
 					if (v2SmartContractAddress == null) {

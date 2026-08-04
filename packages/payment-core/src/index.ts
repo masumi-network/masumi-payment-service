@@ -8,18 +8,24 @@ export type PaymentSourceAdapter = {
 export { PaymentSourceType };
 export {
 	MAX_SUPPORTED_PAYMENT_SOURCES,
+	POSTGRES_BIGINT_MAX,
 	SupportedPaymentSourceChain,
+	atomicAmountSchema,
+	getSupportedPaymentSourceCanonicalKey,
 	isCardanoAddressForNetwork,
 	isCardanoPubKeyAddressForNetwork,
 	parseSupportedPaymentSourcesFromMetadata,
 	paymentSourceTypeSchema,
 	supportedPaymentSourceMetadataSchema,
+	supportedPaymentSourcePricingSchema,
 	supportedPaymentSourceSchema,
 	supportedPaymentSourcesSchema,
 	validateSupportedPaymentSourcesOrThrow,
 	type RegistryMetadataPaymentSource,
 	type SupportedPaymentSource,
+	type SupportedPaymentSourcePricing,
 } from './payment-source';
+export { REGISTRY_ENTRY_ON_CHAIN_TYPE, registryEntryTypeFromOnChain } from './registry-entry-type';
 export { SmartContractState, smartContractStateEqualsOnChainState } from './smart-contract-state';
 export {
 	VerificationMethod,

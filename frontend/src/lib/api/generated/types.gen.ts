@@ -1113,7 +1113,7 @@ export type AgentMetadata = {
             other?: string | null;
         } | null;
         /**
-         * Pricing information for the agent
+         * V1 legacy pricing. Null for V2 metadata, which prices each source independently.
          */
         AgentPricing: {
             /**
@@ -1143,7 +1143,7 @@ export type AgentMetadata = {
              * Pricing type for the agent (Dynamic)
              */
             pricingType: 'Dynamic';
-        };
+        } | unknown;
         /**
          * URL to the agent image/logo
          */
@@ -1172,6 +1172,48 @@ export type AgentMetadata = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
+            };
         } | {
             /**
              * The chain family used by standard x402
@@ -1194,18 +1236,6 @@ export type AgentMetadata = {
              */
             scheme: 'Exact';
             /**
-             * ERC-20 token contract address
-             */
-            asset: string;
-            /**
-             * Atomic token amount
-             */
-            amount: string;
-            /**
-             * ERC-20 token decimals
-             */
-            decimals: number;
-            /**
              * EVM address receiving the x402 payment
              */
             payTo: string;
@@ -1218,6 +1248,48 @@ export type AgentMetadata = {
              */
             extra?: {
                 [key: string]: unknown;
+            };
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
             };
         }> | null;
         /**
@@ -1398,7 +1470,7 @@ export type AgentIdentifierMetadata = {
             other?: string | null;
         } | null;
         /**
-         * Pricing information for the agent
+         * V1 legacy pricing. Null for V2 metadata, which prices each source independently.
          */
         AgentPricing: {
             /**
@@ -1428,7 +1500,7 @@ export type AgentIdentifierMetadata = {
              * Pricing type for the agent (Dynamic). Amounts are provided per payment/purchase request
              */
             pricingType: 'Dynamic';
-        };
+        } | unknown;
         /**
          * URL to the agent image/logo
          */
@@ -1457,6 +1529,48 @@ export type AgentIdentifierMetadata = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
+            };
         } | {
             /**
              * The chain family used by standard x402
@@ -1479,18 +1593,6 @@ export type AgentIdentifierMetadata = {
              */
             scheme: 'Exact';
             /**
-             * ERC-20 token contract address
-             */
-            asset: string;
-            /**
-             * Atomic token amount
-             */
-            amount: string;
-            /**
-             * ERC-20 token decimals
-             */
-            decimals: number;
-            /**
              * EVM address receiving the x402 payment
              */
             payTo: string;
@@ -1503,6 +1605,48 @@ export type AgentIdentifierMetadata = {
              */
             extra?: {
                 [key: string]: unknown;
+            };
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
             };
         }> | null;
         /**
@@ -1599,9 +1743,21 @@ export type RegistryEntry = {
      */
     description: string | null;
     /**
-     * Base URL of the agent API for interactions
+     * The agent access model. Standard for legacy/untyped entries; OpenApi or X402 otherwise
      */
-    apiBaseUrl: string;
+    type: 'Standard' | 'OpenApi' | 'X402';
+    /**
+     * Base URL of the agent API for interactions. Null for OpenApi/X402 agents
+     */
+    apiBaseUrl: string | null;
+    /**
+     * URL to the agent OpenAPI specification document. Null unless the agent is OpenApi-type
+     */
+    openApiSpecUrl: string | null;
+    /**
+     * URL to the agent x402 resource manifest JSON. Null unless the agent is X402-type
+     */
+    x402ResourcesUrl: string | null;
     /**
      * Information about the AI model and version used by the agent
      */
@@ -1695,7 +1851,7 @@ export type RegistryEntry = {
      */
     agentIdentifier: string | null;
     /**
-     * Pricing information for the agent
+     * V1 legacy pricing. Null for V2 entries, whose pricing is owned by each supported payment source.
      */
     AgentPricing: {
         /**
@@ -1725,7 +1881,7 @@ export type RegistryEntry = {
          * Pricing type for the agent. Amounts are provided per payment/purchase request
          */
         pricingType: 'Dynamic';
-    };
+    } | unknown;
     /**
      * Effective lovelace amount explicitly configured for the NFT output. Null means the default minimum NFT funding is used.
      */
@@ -1750,6 +1906,48 @@ export type RegistryEntry = {
          * The escrow smart contract address for this payment source
          */
         address: string;
+        pricing: {
+            /**
+             * A fixed amount is advertised for this payment source
+             */
+            pricingType: 'Fixed';
+            fixed: Array<{
+                /**
+                 * Chain-native asset identifier
+                 */
+                asset: string;
+                /**
+                 * Atomic token amount
+                 */
+                amount: string;
+                /**
+                 * Asset decimals when required by the rail
+                 */
+                decimals?: number;
+            }>;
+        } | {
+            /**
+             * The exact positive amount is supplied dynamically for each payment request
+             */
+            pricingType: 'Dynamic';
+            dynamic?: [
+                {
+                    /**
+                     * Optional accepted asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }
+            ];
+        } | {
+            /**
+             * This payment source does not require payment
+             */
+            pricingType: 'Free';
+        };
     } | {
         /**
          * The chain family used by standard x402
@@ -1772,18 +1970,6 @@ export type RegistryEntry = {
          */
         scheme: 'Exact';
         /**
-         * ERC-20 token contract address
-         */
-        asset: string;
-        /**
-         * Atomic token amount
-         */
-        amount: string;
-        /**
-         * ERC-20 token decimals
-         */
-        decimals: number;
-        /**
          * EVM address receiving the x402 payment
          */
         payTo: string;
@@ -1796,6 +1982,48 @@ export type RegistryEntry = {
          */
         extra?: {
             [key: string]: unknown;
+        };
+        pricing: {
+            /**
+             * A fixed amount is advertised for this payment source
+             */
+            pricingType: 'Fixed';
+            fixed: Array<{
+                /**
+                 * Chain-native asset identifier
+                 */
+                asset: string;
+                /**
+                 * Atomic token amount
+                 */
+                amount: string;
+                /**
+                 * Asset decimals when required by the rail
+                 */
+                decimals?: number;
+            }>;
+        } | {
+            /**
+             * The exact positive amount is supplied dynamically for each payment request
+             */
+            pricingType: 'Dynamic';
+            dynamic?: [
+                {
+                    /**
+                     * Optional accepted asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }
+            ];
+        } | {
+            /**
+             * This payment source does not require payment
+             */
+            pricingType: 'Free';
         };
     }> | null;
     /**
@@ -2472,9 +2700,17 @@ export type X402AvailableNetwork = {
      */
     isEnabled: boolean;
     /**
+     * Whether inbound settlement is configured (a facilitator wallet or URL is present). Outbound (buy) wallets do not require a facilitator, so networks may be listed with canSettle=false.
+     */
+    canSettle: boolean;
+    /**
      * Default settlement asset (token contract) for this chain
      */
     defaultAsset: string | null;
+    /**
+     * Decimals for the default settlement asset; null until an operator confirms them
+     */
+    defaultAssetDecimals: number | null;
 };
 
 export type X402Network = {
@@ -2503,6 +2739,10 @@ export type X402Network = {
      * Default settlement asset (token contract) for this chain
      */
     defaultAsset: string | null;
+    /**
+     * Decimals for the default settlement asset; null until an operator confirms them
+     */
+    defaultAssetDecimals: number | null;
     /**
      * Id of the managed EVM wallet used to settle payments on this chain (self-hosted facilitator)
      */
@@ -3073,6 +3313,126 @@ export type HydraRemoteParticipant = {
     hasCommitted: boolean;
     commitTxHash: string | null;
     hydraVerificationKeyId: string;
+};
+
+export type RailReadiness = {
+    /**
+     * The environment these results describe
+     */
+    network: 'Preprod' | 'Mainnet';
+    /**
+     * Readiness per payment rail
+     */
+    Rails: Array<{
+        /**
+         * Which payment rail this readiness block describes
+         */
+        rail: 'CardanoV2' | 'X402';
+        /**
+         * Whether the rail can actually take payments right now. True only when every blocking check is complete — optional checks (e.g. outbound spending) do not affect it
+         */
+        isReady: boolean;
+        /**
+         * Individual checks, in setup order
+         */
+        Checks: Array<{
+            /**
+             * Stable check identifier. The admin UI maps setup steps onto these
+             */
+            id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet' | 'x402.budget';
+            /**
+             * Short human-readable name for the check
+             */
+            label: string;
+            /**
+             * Whether the backend considers this check satisfied
+             */
+            isComplete: boolean;
+            /**
+             * Why the check is incomplete, or extra context when it passes. Null when there is nothing to add
+             */
+            detail: string | null;
+        }>;
+        /**
+         * Per-source outbound purchase readiness for CardanoV2. Policy ids and contract addresses are public on-chain identifiers; secrets are never returned
+         */
+        PurchaseSources?: Array<{
+            /**
+             * Registry policy id this configured V2 source can purchase from
+             */
+            policyId: string | null;
+            /**
+             * V2 escrow contract address this configured source can purchase through
+             */
+            smartContractAddress: string;
+            /**
+             * Whether this exact policy and contract source can execute outbound purchases
+             */
+            isPurchaseReady: boolean;
+            /**
+             * Buyer-direction checks for this source; selling-wallet readiness is intentionally excluded
+             */
+            Checks: Array<{
+                /**
+                 * Stable check identifier. The admin UI maps setup steps onto these
+                 */
+                id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet' | 'x402.budget';
+                /**
+                 * Short human-readable name for the check
+                 */
+                label: string;
+                /**
+                 * Whether the backend considers this check satisfied
+                 */
+                isComplete: boolean;
+                /**
+                 * Why the check is incomplete, or extra context when it passes. Null when there is nothing to add
+                 */
+                detail: string | null;
+            }>;
+        }>;
+    }>;
+};
+
+export type TxSyncQuarantineEntry = {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    /**
+     * The transaction the sync could not apply
+     */
+    txHash: string;
+    /**
+     * Chain position, when known
+     */
+    blockHeight: number | null;
+    txIndex: number | null;
+    /**
+     * Whether lookup/processing failed, processing was deferred behind a predecessor, or canonical rollback settlement is pending
+     */
+    reason: 'ExtendedLookupFailed' | 'ProcessingFailed' | 'PredecessorPending' | 'CanonicalRollback';
+    /**
+     * How many retries the reconciler has already made
+     */
+    attempts: number;
+    lastError: string | null;
+    /**
+     * The reconciler will not retry before this time
+     */
+    nextRetryAt: Date;
+    /**
+     * Set once successfully applied or canonically confirmed rolled back. Rows are retained for audit
+     */
+    resolvedAt: Date | null;
+    /**
+     * Retries stopped; a human needs to look at it
+     */
+    needsOperator: boolean;
+    PaymentSource: {
+        id: string;
+        network: 'Preprod' | 'Mainnet';
+        smartContractAddress: string;
+    };
 };
 
 export type GetHealthData = {
@@ -4608,6 +4968,10 @@ export type PostPaymentData = {
          * Expected payment source type for this request
          */
         paymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
+        /**
+         * Required for V2 Cardano payments and forbidden for V1. Selects the independently-priced source by its index in supported_payment_sources.
+         */
+        supportedPaymentSourceIndex?: number;
         /**
          * The amounts of the payment, should be null for fixed amount
          */
@@ -7388,6 +7752,10 @@ export type PostPurchaseData = {
          */
         smartContractAddress?: string;
         /**
+         * The V2 Cardano source index selected when the seller created the payment. The seller signature covers this value. Omit only for legacy V2 identifiers created before source-owned pricing.
+         */
+        supportedPaymentSourceIndex?: number;
+        /**
          * The hash of the input data of the purchase, should be sha256 hash of the input data, therefore needs to be in hex string format
          */
         inputHash: string;
@@ -9125,6 +9493,10 @@ export type PostRegistryData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
+         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.
+         */
+        type?: 'Standard' | 'OpenApi' | 'X402';
+        /**
          * The payment key of a specific wallet used for the registration
          */
         sellingWalletVkey: string;
@@ -9137,7 +9509,7 @@ export type PostRegistryData = {
          */
         sendFundingLovelace?: string;
         /**
-         * Payment sources to persist for this registry request. If omitted, mint metadata advertises the active payment source.
+         * Required for V2 registrations and forbidden for V1 registrations. Every V2 source owns its pricing.
          */
         supportedPaymentSources?: Array<{
             /**
@@ -9156,6 +9528,48 @@ export type PostRegistryData = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
+            };
         } | {
             /**
              * The chain family used by standard x402
@@ -9178,18 +9592,6 @@ export type PostRegistryData = {
              */
             scheme: 'Exact';
             /**
-             * ERC-20 token contract address
-             */
-            asset: string;
-            /**
-             * Atomic token amount
-             */
-            amount: string;
-            /**
-             * ERC-20 token decimals
-             */
-            decimals: number;
-            /**
              * EVM address receiving the x402 payment
              */
             payTo: string;
@@ -9202,6 +9604,48 @@ export type PostRegistryData = {
              */
             extra?: {
                 [key: string]: unknown;
+            };
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
             };
         }>;
         /**
@@ -9303,9 +9747,17 @@ export type PostRegistryData = {
          */
         name: string;
         /**
-         * Base URL of the agent, to request interactions
+         * Base URL of the agent, to request interactions. Required for Standard-type agents; omit for OpenApi/X402.
          */
-        apiBaseUrl: string;
+        apiBaseUrl?: string;
+        /**
+         * URL to the agent OpenAPI 3.1.x specification document (JSON or YAML). Required for OpenApi-type agents; omit for others.
+         */
+        openApiSpecUrl?: string;
+        /**
+         * URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others.
+         */
+        x402ResourcesUrl?: string;
         /**
          * Description of the agent
          */
@@ -9324,9 +9776,9 @@ export type PostRegistryData = {
             version: string;
         };
         /**
-         * Pricing information for the agent
+         * Required legacy pricing for V1 registrations and forbidden for V2 registrations. V2 pricing belongs inside supportedPaymentSources[].pricing.
          */
-        AgentPricing: {
+        AgentPricing?: {
             /**
              * Pricing type for the agent
              */
@@ -9511,6 +9963,10 @@ export type PostRegistryUpdateData = {
          */
         network: 'Preprod' | 'Mainnet';
         /**
+         * The agent access model. Defaults to Standard when omitted (Standard emits no on-chain type field for backwards compatibility). Standard requires apiBaseUrl; OpenApi requires openApiSpecUrl; X402 advertises priced resources.
+         */
+        type?: 'Standard' | 'OpenApi' | 'X402';
+        /**
          * Optional managed hot wallet address on the same payment source that should receive the minted registry NFT. If omitted, the minting wallet receives it.
          */
         recipientWalletAddress?: string;
@@ -9519,7 +9975,7 @@ export type PostRegistryUpdateData = {
          */
         sendFundingLovelace?: string;
         /**
-         * Payment sources to replace on this registry request. Provide an empty array to clear them.
+         * Payment sources to replace on this V2 registry request. Omit the field to keep existing sources; an empty array is invalid.
          */
         supportedPaymentSources?: Array<{
             /**
@@ -9538,6 +9994,48 @@ export type PostRegistryUpdateData = {
              * The escrow smart contract address for this payment source
              */
             address: string;
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
+            };
         } | {
             /**
              * The chain family used by standard x402
@@ -9560,18 +10058,6 @@ export type PostRegistryUpdateData = {
              */
             scheme: 'Exact';
             /**
-             * ERC-20 token contract address
-             */
-            asset: string;
-            /**
-             * Atomic token amount
-             */
-            amount: string;
-            /**
-             * ERC-20 token decimals
-             */
-            decimals: number;
-            /**
              * EVM address receiving the x402 payment
              */
             payTo: string;
@@ -9584,6 +10070,48 @@ export type PostRegistryUpdateData = {
              */
             extra?: {
                 [key: string]: unknown;
+            };
+            pricing: {
+                /**
+                 * A fixed amount is advertised for this payment source
+                 */
+                pricingType: 'Fixed';
+                fixed: Array<{
+                    /**
+                     * Chain-native asset identifier
+                     */
+                    asset: string;
+                    /**
+                     * Atomic token amount
+                     */
+                    amount: string;
+                    /**
+                     * Asset decimals when required by the rail
+                     */
+                    decimals?: number;
+                }>;
+            } | {
+                /**
+                 * The exact positive amount is supplied dynamically for each payment request
+                 */
+                pricingType: 'Dynamic';
+                dynamic?: [
+                    {
+                        /**
+                         * Optional accepted asset identifier
+                         */
+                        asset: string;
+                        /**
+                         * Asset decimals when required by the rail
+                         */
+                        decimals?: number;
+                    }
+                ];
+            } | {
+                /**
+                 * This payment source does not require payment
+                 */
+                pricingType: 'Free';
             };
         }>;
         /**
@@ -9685,9 +10213,17 @@ export type PostRegistryUpdateData = {
          */
         name: string;
         /**
-         * Base URL of the agent, to request interactions
+         * Base URL of the agent, to request interactions. Required for Standard-type agents; omit for OpenApi/X402.
          */
-        apiBaseUrl: string;
+        apiBaseUrl?: string;
+        /**
+         * URL to the agent OpenAPI 3.1.x specification document (JSON or YAML). Required for OpenApi-type agents; omit for others.
+         */
+        openApiSpecUrl?: string;
+        /**
+         * URL to the agent self-hosted x402 resource manifest (e.g. /.well-known/x402.json): a JSON document listing this agent resources, each { resource, type (http|mcp), inputSchema?, outputSchema? }. Payment stays agent-level (supportedPaymentSources), not per resource. Required for X402-type agents; omit for others.
+         */
+        x402ResourcesUrl?: string;
         /**
          * Description of the agent
          */
@@ -9706,9 +10242,9 @@ export type PostRegistryUpdateData = {
             version: string;
         };
         /**
-         * Pricing information for the agent
+         * Required legacy pricing for V1 registrations and forbidden for V2 registrations. V2 pricing belongs inside supportedPaymentSources[].pricing.
          */
-        AgentPricing: {
+        AgentPricing?: {
             /**
              * Pricing type for the agent
              */
@@ -11462,6 +11998,7 @@ export type PostX402NetworksData = {
         isTestnet?: boolean;
         isEnabled?: boolean;
         defaultAsset?: string | null;
+        defaultAssetDecimals?: number | null;
         /**
          * Self-hosted facilitator: owned Selling wallet id (null clears it)
          */
@@ -11690,6 +12227,9 @@ export type PostX402VerifyData = {
             accepted: {
                 scheme: string;
                 network: string;
+                /**
+                 * ERC-20 token contract address
+                 */
                 asset: string;
                 amount: string;
                 payTo: string;
@@ -11702,6 +12242,23 @@ export type PostX402VerifyData = {
                 [key: string]: unknown;
             };
             extensions?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * Trusted requirements originally issued by the authenticated resource server. Required for Dynamic registry pricing; Fixed pricing is derived from the registry.
+         */
+        paymentRequirements?: {
+            scheme: string;
+            network: string;
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            amount: string;
+            payTo: string;
+            maxTimeoutSeconds: number;
+            extra?: {
                 [key: string]: unknown;
             };
         };
@@ -11753,6 +12310,9 @@ export type PostX402SettleData = {
             accepted: {
                 scheme: string;
                 network: string;
+                /**
+                 * ERC-20 token contract address
+                 */
                 asset: string;
                 amount: string;
                 payTo: string;
@@ -11765,6 +12325,23 @@ export type PostX402SettleData = {
                 [key: string]: unknown;
             };
             extensions?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * Trusted requirements originally issued by the authenticated resource server. Required for Dynamic registry pricing; Fixed pricing is derived from the registry.
+         */
+        paymentRequirements?: {
+            scheme: string;
+            network: string;
+            /**
+             * ERC-20 token contract address
+             */
+            asset: string;
+            amount: string;
+            payTo: string;
+            maxTimeoutSeconds: number;
+            extra?: {
                 [key: string]: unknown;
             };
         };
@@ -11870,6 +12447,9 @@ export type PostX402PayResponses = {
              */
             payer: string;
             caip2Network: string;
+            /**
+             * ERC-20 token contract address
+             */
             asset: string;
             /**
              * Signed payment amount in token base units
@@ -14236,3 +14816,330 @@ export type GetHydraParticipantRemoteResponses = {
 };
 
 export type GetHydraParticipantRemoteResponse = GetHydraParticipantRemoteResponses[keyof GetHydraParticipantRemoteResponses];
+
+export type GetRailReadinessData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Cardano environment to report on. x402 chains are grouped in by their testnet flag
+         */
+        network: 'Preprod' | 'Mainnet';
+    };
+    url: '/rail-readiness';
+};
+
+export type GetRailReadinessErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetRailReadinessResponses = {
+    /**
+     * Rail readiness
+     */
+    200: {
+        status: 'success';
+        data: RailReadiness;
+    };
+};
+
+export type GetRailReadinessResponse = GetRailReadinessResponses[keyof GetRailReadinessResponses];
+
+export type DeleteTxSyncQuarantineData = {
+    /**
+     * Quarantine entry to delete
+     */
+    body?: {
+        /**
+         * The quarantine entry to delete
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/tx-sync-quarantine';
+};
+
+export type DeleteTxSyncQuarantineErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Quarantine entry not found
+     */
+    404: unknown;
+    /**
+     * Quarantine entry is currently being processed or changed concurrently
+     */
+    409: unknown;
+};
+
+export type DeleteTxSyncQuarantineResponses = {
+    /**
+     * Quarantine entry deleted
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            txHash: string;
+        };
+    };
+};
+
+export type DeleteTxSyncQuarantineResponse = DeleteTxSyncQuarantineResponses[keyof DeleteTxSyncQuarantineResponses];
+
+export type GetTxSyncQuarantineData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter to a single network
+         */
+        network?: 'Preprod' | 'Mainnet';
+        /**
+         * Filter to a single payment source
+         */
+        paymentSourceId?: string;
+        /**
+         * Unresolved: every unapplied entry. Pending: awaiting retry. NeedsOperator: retries exhausted or a non-retryable failure. Resolved: successfully applied or independently confirmed rolled back.
+         */
+        status?: 'Unresolved' | 'Pending' | 'NeedsOperator' | 'Resolved' | 'All';
+        /**
+         * How many entries to return
+         */
+        take?: number;
+        /**
+         * Id of the last entry of the previous page
+         */
+        cursorId?: string;
+    };
+    url: '/tx-sync-quarantine';
+};
+
+export type GetTxSyncQuarantineErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetTxSyncQuarantineResponses = {
+    /**
+     * Quarantine entries
+     */
+    200: {
+        status: 'success';
+        data: {
+            Quarantine: Array<TxSyncQuarantineEntry>;
+        };
+    };
+};
+
+export type GetTxSyncQuarantineResponse = GetTxSyncQuarantineResponses[keyof GetTxSyncQuarantineResponses];
+
+export type PostTxSyncQuarantineRetryData = {
+    /**
+     * Quarantine entry to retry
+     */
+    body?: {
+        /**
+         * The quarantine entry to retry
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/tx-sync-quarantine/retry';
+};
+
+export type PostTxSyncQuarantineRetryErrors = {
+    /**
+     * Quarantine entry is already resolved
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Quarantine entry not found
+     */
+    404: unknown;
+    /**
+     * Quarantine entry is currently being processed or changed concurrently
+     */
+    409: unknown;
+};
+
+export type PostTxSyncQuarantineRetryResponses = {
+    /**
+     * Quarantine entry re-queued
+     */
+    200: {
+        status: 'success';
+        data: TxSyncQuarantineEntry;
+    };
+};
+
+export type PostTxSyncQuarantineRetryResponse = PostTxSyncQuarantineRetryResponses[keyof PostTxSyncQuarantineRetryResponses];
+
+export type PostRequestRepairPreviewData = {
+    /**
+     * Request and transaction to validate
+     */
+    body?: {
+        /**
+         * Whether the blockchainIdentifier refers to a purchase or a payment
+         */
+        kind: 'Purchase' | 'Payment';
+        /**
+         * The network the request belongs to
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The request to repair
+         */
+        blockchainIdentifier: string;
+        /**
+         * The transaction that should become the request's CurrentTransaction
+         */
+        txHash: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/request-repair/preview';
+};
+
+export type PostRequestRepairPreviewErrors = {
+    /**
+     * The transaction does not validate against this request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Request not found for the given blockchainIdentifier and network
+     */
+    404: unknown;
+    /**
+     * Chain provider could not complete validation; retry later
+     */
+    502: unknown;
+};
+
+export type PostRequestRepairPreviewResponses = {
+    /**
+     * Repair preview
+     */
+    200: {
+        status: 'success';
+        data: {
+            txHash: string;
+            outputIndex: number;
+            derivedOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+            resultHash: string | null;
+            currentOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            /**
+             * Opaque version to pass to the apply endpoint as requestVersion
+             */
+            requestVersion: string;
+        };
+    };
+};
+
+export type PostRequestRepairPreviewResponse = PostRequestRepairPreviewResponses[keyof PostRequestRepairPreviewResponses];
+
+export type PostRequestRepairData = {
+    /**
+     * Request and transaction to repair with
+     */
+    body?: {
+        /**
+         * Whether the blockchainIdentifier refers to a purchase or a payment
+         */
+        kind: 'Purchase' | 'Payment';
+        /**
+         * The network the request belongs to
+         */
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * The request to repair
+         */
+        blockchainIdentifier: string;
+        /**
+         * The transaction that should become the request's CurrentTransaction
+         */
+        txHash: string;
+        /**
+         * Skip chain validation and write the supplied onChainState verbatim. Only for cases validation cannot cover — a mistake here points the request at the wrong escrow and the automatic refund/withdraw logic will act on it.
+         */
+        force?: boolean;
+        /**
+         * Required when force is true. Ignored otherwise — the state is read from the transaction datum.
+         */
+        onChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        /**
+         * Opaque request version returned by preview. Required unless force is true; rejects an apply when tx-sync changed the request after preview.
+         */
+        requestVersion?: string;
+        /**
+         * Required for force when requestVersion is unavailable. Pass the request updatedAt shown in the operator dialog to reject stale forced writes.
+         */
+        expectedRequestUpdatedAt?: Date;
+    };
+    path?: never;
+    query?: never;
+    url: '/request-repair';
+};
+
+export type PostRequestRepairErrors = {
+    /**
+     * The transaction does not validate against this request
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Request not found for the given blockchainIdentifier and network
+     */
+    404: unknown;
+    /**
+     * Request changed after preview or after the force dialog loaded
+     */
+    409: unknown;
+    /**
+     * Chain provider could not complete validation; retry later
+     */
+    502: unknown;
+};
+
+export type PostRequestRepairResponses = {
+    /**
+     * Request repaired
+     */
+    200: {
+        status: 'success';
+        data: {
+            requestId: string;
+            txHash: string;
+            transactionId: string;
+            previousOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+            newOnChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+            /**
+             * True when chain validation was skipped
+             */
+            forced: boolean;
+        };
+    };
+};
+
+export type PostRequestRepairResponse = PostRequestRepairResponses[keyof PostRequestRepairResponses];
