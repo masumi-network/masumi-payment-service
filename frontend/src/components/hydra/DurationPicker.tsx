@@ -22,12 +22,16 @@ export function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return 'not set';
   const days = Math.floor(seconds / DAY);
   const hours = Math.floor((seconds % DAY) / HOUR);
-  const minutes = Math.round((seconds % HOUR) / MINUTE);
+  const minutes = Math.floor((seconds % HOUR) / MINUTE);
+  const remainder = Math.round(seconds % MINUTE);
   const parts: string[] = [];
   if (days > 0) parts.push(`${days} day${days === 1 ? '' : 's'}`);
   if (hours > 0) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
   if (minutes > 0) parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`);
-  // Anything under a minute is only reachable by typing seconds into the API.
+  // Kept rather than rounded: a value set through the API need not land on a
+  // minute, and hiding the remainder would make this look lossless when it is
+  // not.
+  if (remainder > 0) parts.push(`${remainder} second${remainder === 1 ? '' : 's'}`);
   return parts.length === 0 ? `${Math.round(seconds)} seconds` : parts.join(' ');
 }
 
@@ -49,6 +53,7 @@ function Segment({
       <Input
         id={id}
         inputMode="numeric"
+        aria-label={label}
         className="w-16 text-right tabular-nums"
         value={String(value)}
         onChange={(event) => {
@@ -87,11 +92,18 @@ export function DurationPicker({
   const safe = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
   const days = showDays ? Math.floor(safe / DAY) : 0;
   const hours = Math.floor((safe - days * DAY) / HOUR);
-  const minutes = Math.round((safe - days * DAY - hours * HOUR) / MINUTE);
+  const minutes = Math.floor((safe - days * DAY - hours * HOUR) / MINUTE);
+  // Whatever is left below a minute. Rounding it away would silently change a
+  // value the operator never touched: a 220-second dispute window opened here
+  // and saved again would become 240.
+  const subMinute = safe - days * DAY - hours * HOUR - minutes * MINUTE;
 
   const emit = (next: { days?: number; hours?: number; minutes?: number }) =>
     onChange(
-      (next.days ?? days) * DAY + (next.hours ?? hours) * HOUR + (next.minutes ?? minutes) * MINUTE,
+      (next.days ?? days) * DAY +
+        (next.hours ?? hours) * HOUR +
+        (next.minutes ?? minutes) * MINUTE +
+        subMinute,
     );
 
   return (

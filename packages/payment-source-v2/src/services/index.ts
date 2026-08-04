@@ -12,6 +12,8 @@ export { submitResultL2V2 as submitResultL2 } from './payments/submit-result/ser
 export { collectOutstandingPaymentsL2V2 as collectL2 } from './payments/collection/service';
 export { authorizeRefundL2V2 as authorizeRefundL2 } from './payments/authorize-refund/service';
 export { collectRefundL2V2 as collectRefundL2 } from './purchases/collect-refund/service';
+export { requestRefundsL2V2 as requestRefundL2 } from './purchases/request-refund/service';
+export { authorizeWithdrawalsL2V2 as authorizeWithdrawalL2 } from './purchases/authorize-withdrawal/service';
 export { processL2PurchaseLocks as lockFundsL2 } from './purchases/batch-payments/l2-lock';
 
 export { authorizeWithdrawalsV2 as authorizeWithdrawals } from './purchases/authorize-withdrawal/service';

@@ -24,6 +24,18 @@ import { buildHydraCommitFlowDeps } from '@/routes/api/hydra/head/commit-flow-de
 import { recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import { carveExactUtxo, HydraPreSplitError } from './pre-split';
 
+/**
+ * After this, a Preparing row is treated as abandoned.
+ *
+ * Nothing resolves such a row on its own: it has no deposit hash, so
+ * reconciliation has nothing to look for, and the request that owns it is long
+ * gone. Since Preparing also blocks the next top-up, leaving it would let one
+ * crashed carve wedge the head's deposits for good. Comfortably longer than the
+ * carve's own confirmation budget, so a slow chain is never mistaken for a
+ * crash.
+ */
+const PREPARING_STALE_AFTER_MS = 30 * 60 * 1000;
+
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
@@ -124,7 +136,18 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			orderBy: { createdAt: 'desc' },
 		});
 		if (pending?.status === HydraTopupStatus.Preparing) {
-			throw createHttpError(409, 'A prior Hydra top-up is still being prepared on L1');
+			// A process that died mid-carve leaves this row with nobody to resolve
+			// it, and it now blocks every later top-up. Age it out rather than
+			// wedging the head: the carve either confirmed long ago or never will.
+			const isStale = Date.now() - pending.createdAt.getTime() > PREPARING_STALE_AFTER_MS;
+			if (!isStale) {
+				throw createHttpError(409, 'A prior Hydra top-up is still being prepared on L1');
+			}
+			await prisma.hydraTopup.updateMany({
+				where: { id: pending.id, status: HydraTopupStatus.Preparing },
+				data: { status: HydraTopupStatus.Failed },
+			});
+			logger.warn(`[HydraAPI] Failed a stale preparing top-up ${pending.id} so a new one can start`);
 		}
 		if (pending && pending.depositTxHash !== null && pending.invalidHereafterSlot !== null) {
 			const reconciliation = await reconcilePendingHydraTopup({

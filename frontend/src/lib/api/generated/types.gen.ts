@@ -13774,10 +13774,6 @@ export type GetHydraHeadTransactionsData = {
          */
         headId: string;
         /**
-         * Cursor ID for pagination
-         */
-        cursorId?: string;
-        /**
          * Number of results
          */
         limit?: number;

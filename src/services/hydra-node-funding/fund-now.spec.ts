@@ -8,11 +8,22 @@ const mockFindTransfer = jest.fn() as AnyMock;
 const mockCreateTransfer = jest.fn() as AnyMock;
 const mockReadLovelaceAt = jest.fn() as AnyMock;
 
+// The claim is one serializable transaction now, so the mock has to offer the
+// same client inside it.
+const transactionClient = {
+	walletFundTransfer: { findFirst: mockFindTransfer, create: mockCreateTransfer },
+};
+
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraLocalParticipant: { findUniqueOrThrow: mockFindParticipant, findMany: jest.fn() },
 		walletFundTransfer: { findFirst: mockFindTransfer, create: mockCreateTransfer },
+		$transaction: async (run: (tx: typeof transactionClient) => Promise<unknown>) => await run(transactionClient),
 	},
+}));
+
+jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
+	withSerializableSlotRetry: async (operation: () => Promise<unknown>) => await operation(),
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({

@@ -9,6 +9,7 @@ import { z } from '@masumi/payment-core/zod';
 import type { CommitUtxoFilter } from '@/lib/hydra';
 import { executeHydraTopup } from '@/services/hydra-topup/execute';
 import { recoverHydraDeposit } from '@/services/hydra-topup/recover';
+import { DEFAULT_PERIODS } from '@/services/hydra-invite/provisioning';
 
 export const topupInput = z.object({
 	headId: z.string().describe('The Hydra head to top up'),
@@ -116,12 +117,17 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }) => {
 		const head = await prisma.hydraHead.findUnique({
 			where: { id: input.headId },
-			select: { HydraRelation: { select: { network: true } } },
+			select: {
+				HydraRelation: { select: { network: true } },
+				Invite: { select: { depositPeriodSeconds: true } },
+			},
 		});
 		if (!head) {
 			throw createHttpError(404, 'Hydra head not found');
 		}
 		const slotConfig = SLOT_CONFIG_NETWORK[convertNetwork(head.HydraRelation.network)];
+		// The period this head runs on, as signed into the invite that opened it.
+		const depositPeriodSeconds = head.Invite?.depositPeriodSeconds ?? DEFAULT_PERIODS.depositPeriodSeconds;
 		const deadlineMsOf = (slot: bigint) =>
 			slotConfig.zeroTime + (Number(slot) - slotConfig.zeroSlot) * slotConfig.slotLength;
 
@@ -146,12 +152,16 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 				// The node writes the deadline as `deposit + 3·DP` and will not touch
 				// the deposit before `deposit + DP`, so a third of the way there is
 				// exactly when it becomes eligible.
+				// Two periods before the deadline, not a third of the way from
+				// `createdAt`. The node writes the deadline as `deposit + 3·DP` and
+				// will not take the deposit before `deposit + DP`. Measuring from
+				// `createdAt` was right only while the row was created at deposit
+				// time; it is now created when the operator asks, a whole pre-split
+				// earlier, which pushed the reported time too early.
 				usableFrom:
 					row.invalidHereafterSlot === null
 						? null
-						: new Date(
-								row.createdAt.getTime() + (deadlineMsOf(row.invalidHereafterSlot) - row.createdAt.getTime()) / 3,
-							).toISOString(),
+						: new Date(deadlineMsOf(row.invalidHereafterSlot) - 2 * depositPeriodSeconds * 1000).toISOString(),
 				committedAssets: (row.committedAssets ?? {}) as Record<string, string>,
 			})),
 		};

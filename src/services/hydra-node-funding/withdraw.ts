@@ -137,7 +137,7 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 	// Nodes provisioned before the Cardano key was captured cannot be swept: the
 	// key exists only on the Host, and without it nothing here can authorise a
 	// spend from that address.
-	const nodeSigningKey = participant.HydraSecretKey.cardanoSK;
+	const nodeSigningKey = participant.HydraSecretKey?.cardanoSK ?? null;
 	if (nodeSigningKey === null) {
 		return {
 			address,

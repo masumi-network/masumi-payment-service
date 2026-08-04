@@ -13,6 +13,8 @@ jest.unstable_mockModule('@/services/payment-source-types', () => ({
 		collectL2: jest.fn(async () => undefined),
 		authorizeRefundL2: jest.fn(async () => undefined),
 		collectRefundL2: jest.fn(async () => undefined),
+		requestRefundL2: jest.fn(async () => undefined),
+		authorizeWithdrawalL2: jest.fn(async () => undefined),
 		// Present so the test would notice if the nudge ever reached for the whole
 		// cycle instead of the head-only pass.
 		batchLatestPaymentEntries: mockBatchLatestPaymentEntries,

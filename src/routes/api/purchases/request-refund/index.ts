@@ -133,8 +133,9 @@ export const requestPurchaseRefundPost = payAuthenticatedEndpointFactory.build({
 
 		const decoded = decodeBlockchainIdentifier(newPurchase.blockchainIdentifier);
 
-		// A refund request can free the buyer side immediately when the head carries it.
-		nudgeHydraCycle('collectRefund');
+		// This posts SetRefundRequested, which is its own head path; collecting the
+		// refund is a later action with its own trigger.
+		nudgeHydraCycle('requestRefund');
 
 		return {
 			...newPurchase,

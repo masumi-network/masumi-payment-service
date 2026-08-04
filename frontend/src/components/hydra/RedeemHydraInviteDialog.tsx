@@ -129,6 +129,12 @@ export function RedeemHydraInviteDialog({
       setErrors({ wallet: 'Choose the wallet that will identify you on this head.' });
       return;
     }
+    if (!selectableWallets.some((wallet) => wallet.id === hotWalletId)) {
+      // Reachable by picking a wallet, going Back, and reading an invite from
+      // the other side: the server would refuse it, but later and less clearly.
+      setErrors({ wallet: 'That wallet is not on the side this invite needs. Choose another.' });
+      return;
+    }
     setIsLoading(true);
     try {
       const result = await redeemHydraInvite(apiClient, { code: code.trim(), hotWalletId });
@@ -368,8 +374,12 @@ export function RedeemHydraInviteDialog({
                 type="button"
                 variant="outline"
                 onClick={() => {
+                  // The next invite may be from the other side, which makes a
+                  // wallet chosen here invalid rather than merely stale.
                   setPreview(null);
                   setAcceptedTerms(false);
+                  setHotWalletId('');
+                  setErrors({});
                 }}
               >
                 Back

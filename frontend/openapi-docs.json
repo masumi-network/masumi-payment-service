@@ -32591,16 +32591,6 @@
                     },
                     {
                         "schema": {
-                            "type": "string",
-                            "description": "Cursor ID for pagination"
-                        },
-                        "required": false,
-                        "description": "Cursor ID for pagination",
-                        "name": "cursorId",
-                        "in": "query"
-                    },
-                    {
-                        "schema": {
                             "type": "integer",
                             "minimum": 1,
                             "maximum": 100,

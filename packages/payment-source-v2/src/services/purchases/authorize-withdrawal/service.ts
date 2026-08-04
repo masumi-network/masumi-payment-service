@@ -1118,6 +1118,70 @@ async function processL2AuthorizeWithdrawal(
 	return outcome.status !== 'definitively-rejected';
 }
 
+/** The L2 portion of the AuthorizeWithdrawal cycle, shared by the timer and the on-demand run. */
+async function runAuthorizeWithdrawalL2Pass(): Promise<void> {
+	// --- Hydra L2: dedicated single-item head authorize-withdrawal path ---
+	// In-head timing differs from L1; validated on a Hydra devnet
+	// (see docs/hydra-l2-devnet-findings.md).
+	const l2PaymentContracts = await lockAndQueryPurchases({
+		purchasingAction: PurchasingAction.AuthorizeWithdrawalRequested,
+		onChainState: { in: [OnChainState.Disputed] },
+		// One wallet can own only one durable L2 reservation at a time.
+		maxBatchSize: 1,
+		paymentSourceType: PaymentSourceType.Web3CardanoV2,
+		layer: TransactionLayer.L2,
+	});
+	await Promise.allSettled(
+		l2PaymentContracts.map(async (paymentContract) => {
+			if (paymentContract.PurchaseRequests.length === 0) return;
+			const network = convertNetwork(paymentContract.network);
+			await Promise.allSettled(
+				paymentContract.PurchaseRequests.map(async (request) => {
+					try {
+						await processL2AuthorizeWithdrawal(request, paymentContract, network);
+					} catch (error) {
+						if (isLookupDeferred(error)) {
+							logger.info('L2 authorize-withdrawal deferred to next tick', { requestId: request.id, error });
+						} else {
+							logger.error('L2 authorize-withdrawal failed', { requestId: request.id, error });
+						}
+						await unlockHotWalletIfNoPendingTransaction(
+							request.SmartContractWallet!.id,
+							'authorize-withdrawal-l2-pre-reservation',
+							request.SmartContractWallet!.lockedAt!,
+						);
+					}
+				}),
+			);
+		}),
+	);
+}
+
+/**
+ * The head path on its own, so it can run the moment the work appears.
+ *
+ * Same reasoning as the other head passes: L1 is batched because the chain
+ * paces it, while this finishes in under a second inside an open head. Running
+ * the whole cycle early would drag the L1 pass forward with it.
+ */
+export async function authorizeWithdrawalsL2V2(): Promise<void> {
+	let release: MutexInterface.Releaser | null;
+	try {
+		release = await tryAcquire(mutex).acquire();
+	} catch {
+		logger.info('authorize_withdrawals_v2 is already running, skipping the on-demand L2 pass');
+		return;
+	}
+
+	try {
+		await runAuthorizeWithdrawalL2Pass();
+	} catch (error) {
+		logger.error('Error in the on-demand AuthorizeWithdrawal L2 pass', { error });
+	} finally {
+		release();
+	}
+}
+
 export async function authorizeWithdrawalsV2() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -1164,41 +1228,7 @@ export async function authorizeWithdrawalsV2() {
 			}),
 		);
 
-		// --- Hydra L2: dedicated single-item head authorize-withdrawal path ---
-		// In-head timing differs from L1; validated on a Hydra devnet
-		// (see docs/hydra-l2-devnet-findings.md).
-		const l2PaymentContracts = await lockAndQueryPurchases({
-			purchasingAction: PurchasingAction.AuthorizeWithdrawalRequested,
-			onChainState: { in: [OnChainState.Disputed] },
-			// One wallet can own only one durable L2 reservation at a time.
-			maxBatchSize: 1,
-			paymentSourceType: PaymentSourceType.Web3CardanoV2,
-			layer: TransactionLayer.L2,
-		});
-		await Promise.allSettled(
-			l2PaymentContracts.map(async (paymentContract) => {
-				if (paymentContract.PurchaseRequests.length === 0) return;
-				const network = convertNetwork(paymentContract.network);
-				await Promise.allSettled(
-					paymentContract.PurchaseRequests.map(async (request) => {
-						try {
-							await processL2AuthorizeWithdrawal(request, paymentContract, network);
-						} catch (error) {
-							if (isLookupDeferred(error)) {
-								logger.info('L2 authorize-withdrawal deferred to next tick', { requestId: request.id, error });
-							} else {
-								logger.error('L2 authorize-withdrawal failed', { requestId: request.id, error });
-							}
-							await unlockHotWalletIfNoPendingTransaction(
-								request.SmartContractWallet!.id,
-								'authorize-withdrawal-l2-pre-reservation',
-								request.SmartContractWallet!.lockedAt!,
-							);
-						}
-					}),
-				);
-			}),
-		);
+		await runAuthorizeWithdrawalL2Pass();
 	} catch (error) {
 		logger.error('Error authorizing V2 withdrawals', { error });
 	} finally {

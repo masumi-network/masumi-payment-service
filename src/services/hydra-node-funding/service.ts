@@ -18,8 +18,9 @@
  * possible, on L1, and against a different address.
  */
 
-import { HydraInviteStatus, TransactionStatus } from '@/generated/prisma/client';
+import { HydraInviteStatus, Prisma, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { nodeCardanoAddress } from './node-address';
@@ -66,6 +67,38 @@ function recentlySentTo() {
 		createdAt: { gte: new Date(Date.now() - RECENT_TRANSFER_WINDOW_MS) },
 		status: { in: [TransactionStatus.Pending, TransactionStatus.Confirmed] },
 	};
+}
+
+/**
+ * Claim the right to fund one node, or decline.
+ *
+ * Checking for a recent transfer and then creating one are two statements, and
+ * between them a second caller can pass the same check: the funding cycle and an
+ * on-demand `fundHydraNodeNow` run from different callers entirely. Serializable
+ * makes the pair atomic, so exactly one of them writes and the other sees the
+ * transfer it would have duplicated.
+ */
+async function claimFunding(args: {
+	hotWalletId: string;
+	address: string;
+	amount: bigint;
+}): Promise<'claimed' | 'already-in-flight'> {
+	return await withSerializableSlotRetry(() =>
+		prisma.$transaction(
+			async (tx) => {
+				const inFlight = await tx.walletFundTransfer.findFirst({
+					where: { toAddress: args.address, ...recentlySentTo() },
+				});
+				if (inFlight !== null) return 'already-in-flight' as const;
+
+				await tx.walletFundTransfer.create({
+					data: { hotWalletId: args.hotWalletId, toAddress: args.address, lovelaceAmount: args.amount },
+				});
+				return 'claimed' as const;
+			},
+			{ isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+		),
+	);
 }
 
 export type NodeFundingOutcome = {
@@ -163,18 +196,6 @@ export async function runHydraNodeFundingCycle(): Promise<NodeFundingOutcome> {
 			continue;
 		}
 
-		// One recent transfer per node. The balance does not move until a transfer
-		// confirms on chain, so anything asking again inside that window reads zero
-		// and pays again. The window runs past confirmation deliberately: see
-		// RECENT_TRANSFER_WINDOW_MS.
-		const inFlight = await prisma.walletFundTransfer.findFirst({
-			where: { toAddress: address, ...recentlySentTo() },
-		});
-		if (inFlight !== null) {
-			outcome.skipped += 1;
-			continue;
-		}
-
 		outcome.checked += 1;
 		const balance = await readLovelaceAt(
 			address,
@@ -185,14 +206,14 @@ export async function runHydraNodeFundingCycle(): Promise<NodeFundingOutcome> {
 			continue;
 		}
 
+		// Claimed atomically rather than checked and then written: this cycle and an
+		// on-demand `fundHydraNodeNow` are different callers, and between a separate
+		// check and create both can pass. See `claimFunding`.
 		const amount = NODE_TARGET_LOVELACE - balance;
-		await prisma.walletFundTransfer.create({
-			data: {
-				hotWalletId: participant.walletId,
-				toAddress: address,
-				lovelaceAmount: amount,
-			},
-		});
+		if ((await claimFunding({ hotWalletId: participant.walletId, address, amount })) === 'already-in-flight') {
+			outcome.skipped += 1;
+			continue;
+		}
 		outcome.funded += 1;
 		logger.info(
 			`hydra: funding node ${participant.hostNodeId} with ${amount} lovelace ` +
@@ -281,17 +302,12 @@ export async function fundHydraNodeNow(localParticipantId: string): Promise<{
 	// inside that window sees zero and pays again. Redeeming an invite funds the
 	// node immediately and the cycle funds it too, which is exactly this window —
 	// it sent 10 ADA twice to every node opened so far.
-	const inFlight = await prisma.walletFundTransfer.findFirst({
-		where: { toAddress: address, ...recentlySentTo() },
-	});
-	if (inFlight !== null) {
+	const amount = NODE_TARGET_LOVELACE - balance;
+	const claim = await claimFunding({ hotWalletId: participant.walletId, address, amount });
+	if (claim === 'already-in-flight') {
 		return { address, balanceLovelace: balance.toString(), transferredLovelace: null };
 	}
 
-	const amount = NODE_TARGET_LOVELACE - balance;
-	await prisma.walletFundTransfer.create({
-		data: { hotWalletId: participant.walletId, toAddress: address, lovelaceAmount: amount },
-	});
 	logger.info(`hydra: funding node ${participant.hostNodeId} with ${amount} lovelace on request`);
 	return { address, balanceLovelace: balance.toString(), transferredLovelace: amount.toString() };
 }

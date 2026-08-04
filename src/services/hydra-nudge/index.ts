@@ -33,11 +33,14 @@ import { web3CardanoV2 } from '@/services/payment-source-types';
  * pass.
  */
 const CYCLES = {
+	// One per redeemer the V2 contract accepts that has a head path.
 	lockFunds: web3CardanoV2.lockFundsL2,
-	submitResult: web3CardanoV2.submitResultL2,
-	collect: web3CardanoV2.collectL2,
-	authorizeRefund: web3CardanoV2.authorizeRefundL2,
-	collectRefund: web3CardanoV2.collectRefundL2,
+	submitResult: web3CardanoV2.submitResultL2, // SubmitResult
+	collect: web3CardanoV2.collectL2, // Withdraw
+	requestRefund: web3CardanoV2.requestRefundL2, // SetRefundRequested
+	authorizeWithdrawal: web3CardanoV2.authorizeWithdrawalL2, // AuthorizeWithdrawal
+	authorizeRefund: web3CardanoV2.authorizeRefundL2, // AuthorizeRefund
+	collectRefund: web3CardanoV2.collectRefundL2, // WithdrawRefund
 } as const;
 
 export type HydraNudgeKind = keyof typeof CYCLES;

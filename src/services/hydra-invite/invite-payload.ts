@@ -61,7 +61,17 @@ export type HydraHeadInvitePayloadInput = {
 	ledgerParamsHash: string | null;
 };
 
-/** Version tag, so a future field change is a rejected signature rather than a silent misread. */
+/**
+ * Version tag, so a field change is a rejected signature rather than a silent
+ * misread.
+ *
+ * Moving it is a coordinated upgrade, not a rolling one: an invite signed as v1
+ * no longer verifies here, and a peer still on v1 cannot verify what we issue.
+ * Both sides must deploy before either issues an invite the other will accept.
+ * Accepting both versions was considered and rejected — the version exists to
+ * make a payload shape unambiguous, and honouring the old one would keep the
+ * ambiguity it was added to remove.
+ */
 export const HYDRA_INVITE_PAYLOAD_VERSION = 'masumi.hydra.invite.v2';
 
 /**

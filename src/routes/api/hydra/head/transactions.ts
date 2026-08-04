@@ -8,6 +8,14 @@
  * and infer it, and an operator asking "what has this head done at all?" had no
  * answer available.
  *
+ * Deliberately unpaginated. The list merges three sources — ledger rows, the
+ * head's own deposits, and the transfers that fuel its node — and a single row
+ * cursor cannot walk three tables: page two would skip rows from two of them and
+ * repeat rows from the third. A head's history is bounded and this returns the
+ * newest `limit` of it, which is the question anyone actually asks. Paging it
+ * properly needs a composite cursor over (createdAt, kind), and offering a
+ * broken `cursorId` in the meantime would be worse than offering none.
+ *
  * Its own file rather than another export in index.ts, which is long past the
  * point where anything new should be added to it.
  */
@@ -44,7 +52,6 @@ export const headTransactionSchema = z.object({
 
 export const listHeadTransactionsInput = z.object({
 	headId: z.string().min(1).describe('The Hydra head whose transactions to list'),
-	cursorId: z.string().optional().describe('Cursor ID for pagination'),
 	limit: z.coerce.number().int().min(1).max(100).default(25).describe('Number of results'),
 });
 
@@ -75,7 +82,6 @@ export const listHeadTransactionsGet = adminAuthenticatedEndpointFactory.build({
 			// just happened, not something from last week.
 			orderBy: { createdAt: 'desc' },
 			take: input.limit,
-			cursor: input.cursorId ? { id: input.cursorId } : undefined,
 			select: {
 				id: true,
 				createdAt: true,
