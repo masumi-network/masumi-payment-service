@@ -25,6 +25,7 @@ import { HydraHeadWallets } from '@/components/hydra/HydraHeadWallets';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { HydraWalletLink } from '@/components/hydra/HydraWalletLink';
 import { HydraHeadTransactions } from '@/components/hydra/HydraHeadTransactions';
+import { formatDuration } from '@/components/hydra/DurationPicker';
 import { HydraHeadConnectionPanel } from '@/components/hydra/HydraHeadConnection';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraInitDialog } from '@/components/hydra/HydraInitDialog';
@@ -651,14 +652,11 @@ function HydraHeadDetailsDialog({
                 copyValue={head.headIdentifier ?? head.id}
                 mono
               />
-              <DetailField
-                label="Relation"
-                value={head.hydraRelationId}
-                copyValue={head.hydraRelationId}
-                mono
-              />
               <DetailField label="Snapshot" value={head.latestSnapshotNumber} />
-              <DetailField label="Contestation period" value={`${head.contestationPeriod}s`} />
+              <DetailField
+                label="Dispute window"
+                value={formatDuration(Number(head.contestationPeriod))}
+              />
               <DetailField label="Transactions" value={String(head._count?.Transactions ?? 0)} />
               <DetailField label="Created" value={formatDate(head.createdAt)} />
               <DetailField label="Updated" value={formatDate(head.updatedAt)} />
@@ -760,7 +758,7 @@ function HydraHeadTable({
               Activity
             </th>
             <th scope="col" className="p-4 pr-6 text-left text-sm font-medium">
-              Relation
+              Counterparty
             </th>
             <th scope="col" className="p-4 pr-6 text-right text-sm font-medium">
               Action
@@ -901,9 +899,23 @@ function HydraHeadTable({
                   </div>
                 </td>
                 <td className="p-4 pr-6">
+                  {/* Who the head is with, rather than the id of the join row
+                      that records it. The address is what an operator can match
+                      against an agent's seller wallet. */}
                   <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
-                    <span>{shortenAddress(head.hydraRelationId, 8)}</span>
-                    <CopyButton value={head.hydraRelationId} className="h-7 w-7" />
+                    {head.RemoteParticipants?.[0]?.Wallet?.walletAddress ? (
+                      <>
+                        <span>
+                          {shortenAddress(head.RemoteParticipants[0].Wallet.walletAddress, 8)}
+                        </span>
+                        <CopyButton
+                          value={head.RemoteParticipants[0].Wallet.walletAddress}
+                          className="h-7 w-7"
+                        />
+                      </>
+                    ) : (
+                      <span>Not recorded</span>
+                    )}
                   </div>
                 </td>
                 <td className="p-4 pr-6">
