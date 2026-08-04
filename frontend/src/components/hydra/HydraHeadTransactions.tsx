@@ -43,8 +43,17 @@ function TransactionRow({
     <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
       <div className="min-w-0 space-y-1">
         <div className="flex items-center gap-2">
+          {/* Named by what the money was for, not by which table it came from.
+              A deposit and a node top-up are both L1 transactions, and telling
+              them apart is the whole reason someone opens this list. */}
           <Badge variant={transaction.layer === 'L2' ? 'secondary' : 'outline'}>
-            {transaction.layer === 'L2' ? 'In head' : 'On chain'}
+            {transaction.kind === 'Deposit'
+              ? 'Into the head'
+              : transaction.kind === 'NodeFunding'
+                ? 'Node fuel'
+                : transaction.layer === 'L2'
+                  ? 'In head'
+                  : 'On chain'}
           </Badge>
           <Badge variant={statusVariant(transaction.status)}>{transaction.status}</Badge>
           {transaction.txHash === null && transaction.intendedTxHash !== null && (
@@ -73,6 +82,11 @@ function TransactionRow({
       </div>
       <div className="text-right text-xs text-muted-foreground">
         <p>{formatDateTime(transaction.createdAt)}</p>
+        {transaction.lovelace != null && (
+          <p className="tabular-nums">
+            {(Number(transaction.lovelace) / 1_000_000).toFixed(2)} ADA
+          </p>
+        )}
         {transaction.fees !== null && (
           <p className="tabular-nums">
             {(Number(transaction.fees) / 1_000_000).toFixed(2)} ADA fee
@@ -97,8 +111,9 @@ export function HydraHeadTransactions({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          Newest first. In-head transactions never reach the explorer. The head settles as one
-          transaction when it closes.
+          Everything this head has moved, newest first: payments it carried, deposits into it, and
+          ADA sent to its node to pay on-chain fees. In-head transactions never reach the explorer,
+          because the head settles as one transaction when it closes.
         </p>
         <Button
           type="button"

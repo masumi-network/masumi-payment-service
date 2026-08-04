@@ -320,15 +320,23 @@ export async function startApp() {
 			const adminDistDir = path.resolve(__dirname, 'frontend/dist');
 			app.use('/admin', express.static(adminDistDir));
 			app.use('/_next', express.static(path.join(adminDistDir, '_next')));
-			// Catch all routes for admin and serve the correct HTML file for each route
-			app.get('/admin/*name', (req, res, next) => {
-				// Skip static files (files with extensions)
+			// Every admin route, served as its own pre-rendered page.
+			//
+			// Mounted as middleware rather than a wildcard `get`: a hard reload of
+			// /admin/hydra-heads fell through the wildcard and was answered by the
+			// API's JSON 404, so the admin worked until someone pressed refresh.
+			// Prefix mounting has no pattern to get wrong.
+			app.use('/admin', (req, res, next) => {
+				if (req.method !== 'GET' && req.method !== 'HEAD') {
+					return next();
+				}
+				// Static assets were already handled above; anything with an
+				// extension that reached here does not exist.
 				if (req.path.match(/\.[a-zA-Z0-9]+$/)) {
 					return next();
 				}
 
-				const routeName = req.path.replace('/admin/', '').replace(/\/$/, '');
-
+				const routeName = req.path.replace(/^\/+/, '').replace(/\/+$/, '');
 				const htmlFile = routeName === '' ? 'index.html' : `${routeName}.html`;
 				const requestedPath = path.resolve(adminDistDir, htmlFile);
 
@@ -336,11 +344,20 @@ export async function startApp() {
 				const relativeToBase = path.relative(adminDistDir, requestedPath);
 				const isOutsideBase = relativeToBase.startsWith('..') || path.isAbsolute(relativeToBase);
 
-				if (isOutsideBase || !fs.existsSync(requestedPath)) {
-					res.sendFile(path.join(adminDistDir, '404.html'));
-					return;
+				// Read and send rather than `res.sendFile`: sendFile hands its errors
+				// to the API's error handler, which answers them as a JSON 404 — so a
+				// hard reload of a real admin page returned an API error instead of
+				// the page, and the page was there the whole time.
+				const isMissing = isOutsideBase || !fs.existsSync(requestedPath);
+				const fileToSend = isMissing ? path.join(adminDistDir, '404.html') : requestedPath;
+				try {
+					res
+						.status(isMissing ? 404 : 200)
+						.type('html')
+						.send(fs.readFileSync(fileToSend));
+				} catch {
+					next();
 				}
-				res.sendFile(requestedPath);
 			});
 		},
 		http: {

@@ -44,11 +44,12 @@ export type ConnectHydraHostRequest = {
   name: string;
   network: 'Preprod' | 'Mainnet';
   baseUrl: string;
-  publicPeerHost: string;
-  /** Runtime token: proxied node API access. */
-  userToken: string;
-  /** Fleet token. Omit to connect for runtime use only, without provisioning. */
-  adminToken?: string;
+  /** Defaults to the hostname in baseUrl, which is right unless peers dial a different name. */
+  publicPeerHost?: string;
+  /** A lower-privilege runtime key. Omitted means the admin key is used for runtime calls too. */
+  userToken?: string;
+  /** Opens and runs heads. Required: without it no head can be opened on this node. */
+  adminToken: string;
 };
 
 export type UpdateHydraHostRequest = {

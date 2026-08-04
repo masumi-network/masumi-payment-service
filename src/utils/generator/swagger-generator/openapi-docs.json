@@ -30824,27 +30824,26 @@
                                         "type": "string",
                                         "minLength": 1,
                                         "maxLength": 250,
-                                        "description": "Hostname the Host advertises for per-head peer ports; the counterparty dials this"
+                                        "description": "Hostname the counterparty dials for this head’s peer port. Defaults to the host in baseUrl, which is right unless peers reach the Host by a different name than this service does."
                                     },
                                     "userToken": {
                                         "type": "string",
                                         "minLength": 32,
                                         "maxLength": 512,
-                                        "description": "Runtime token: proxied node API access"
+                                        "description": "Runtime token for proxied node API access. Optional: the admin token also satisfies runtime calls, so supply this only to keep a lower-privilege token for day-to-day use."
                                     },
                                     "adminToken": {
                                         "type": "string",
                                         "minLength": 32,
                                         "maxLength": 512,
-                                        "description": "Fleet token: provision, escrow-ack, reconfigure, delete. Omit to register for runtime use only."
+                                        "description": "Provision, escrow-ack, reconfigure, delete. Required: without it no head can be opened here."
                                     }
                                 },
                                 "required": [
                                     "name",
                                     "network",
                                     "baseUrl",
-                                    "publicPeerHost",
-                                    "userToken"
+                                    "adminToken"
                                 ]
                             }
                         }
@@ -32620,6 +32619,15 @@
                                                             "id": {
                                                                 "type": "string"
                                                             },
+                                                            "kind": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Ledger",
+                                                                    "Deposit",
+                                                                    "NodeFunding"
+                                                                ],
+                                                                "description": "Ledger is a payment this head carried. Deposit is money being moved into the head. NodeFunding is ADA sent to the node key that pays this head’s on-chain fees."
+                                                            },
                                                             "createdAt": {
                                                                 "type": "string",
                                                                 "format": "date-time"
@@ -32659,6 +32667,11 @@
                                                                 "type": "string",
                                                                 "nullable": true
                                                             },
+                                                            "lovelace": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "The amount moved, for deposits and node funding. Null for ledger rows."
+                                                            },
                                                             "blockTime": {
                                                                 "type": "number",
                                                                 "nullable": true
@@ -32671,6 +32684,7 @@
                                                         },
                                                         "required": [
                                                             "id",
+                                                            "kind",
                                                             "createdAt",
                                                             "txHash",
                                                             "intendedTxHash",
@@ -32678,6 +32692,7 @@
                                                             "layer",
                                                             "confirmations",
                                                             "fees",
+                                                            "lovelace",
                                                             "blockTime",
                                                             "lastCheckedAt"
                                                         ]

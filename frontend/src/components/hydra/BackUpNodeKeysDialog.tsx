@@ -105,10 +105,11 @@ export function BackUpNodeKeysDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <KeyRound className="h-4 w-4" />
-            Back up this node&apos;s keys
+            Back up this head&apos;s node keys
           </DialogTitle>
           <DialogDescription>
-            These identify the node on chain and sign for it in the head. They are shown once.
+            A node serves one head and is never reused, so this pair belongs to this head alone.
+            They identify it on chain and sign for it inside the head, and they are shown once.
           </DialogDescription>
         </DialogHeader>
 

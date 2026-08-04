@@ -137,6 +137,21 @@ const TOKEN_INNER_WHITESPACE = /\s/;
  * `assertUsableHydraAuthToken`, which also runs against tokens already stored
  * and must not start rejecting them.
  */
+/**
+ * The hostname a counterparty should dial, taken from the control-plane URL.
+ *
+ * Right in every deployment where peers and this service reach the Host by the
+ * same name, which is the normal case. Asking for it separately made an
+ * operator supply a value they had already typed, and get it wrong.
+ */
+function hostOfUrl(baseUrl: string): string {
+	try {
+		return new URL(baseUrl).hostname;
+	} catch {
+		return baseUrl;
+	}
+}
+
 export function normalizeHostToken(token: string, field: string): string {
 	const trimmed = token.trim();
 	try {
@@ -179,13 +194,18 @@ export async function registerHydraHost(input: {
 	name: string;
 	network: Network;
 	baseUrl: string;
-	publicPeerHost: string;
-	userToken: string;
-	adminToken?: string;
+	publicPeerHost?: string;
+	userToken?: string;
+	adminToken: string;
 }): Promise<PublicHydraHost> {
 	const baseUrl = normalizeHostBaseUrl(input.baseUrl);
-	const encryptedUserToken = validateToken(input.userToken, 'userToken');
-	const encryptedAdminToken = input.adminToken === undefined ? null : validateToken(input.adminToken, 'adminToken');
+	// The admin token satisfies every runtime call too, so a Host registered with
+	// only an admin token works completely. Storing it in both slots keeps the
+	// runtime path unchanged and leaves room to rotate a lower-privilege token in
+	// later without a migration.
+	const encryptedAdminToken = validateToken(input.adminToken, 'adminToken');
+	const encryptedUserToken =
+		input.userToken === undefined ? encryptedAdminToken : validateToken(input.userToken, 'userToken');
 
 	// Rely on the unique index rather than a read-then-write check: two
 	// concurrent registrations would both pass a pre-check, and the caller
@@ -196,7 +216,7 @@ export async function registerHydraHost(input: {
 				name: input.name,
 				network: input.network,
 				baseUrl,
-				publicPeerHost: input.publicPeerHost,
+				publicPeerHost: input.publicPeerHost ?? hostOfUrl(input.baseUrl),
 				encryptedUserToken,
 				encryptedAdminToken,
 			},

@@ -15,6 +15,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, ShieldAlert, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Button } from '@/components/ui/button';
@@ -68,6 +69,7 @@ export function RedeemHydraInviteDialog({
 }: RedeemHydraInviteDialogProps) {
   const { apiClient } = useAppContext();
   const { wallets } = useWallets();
+  const queryClient = useQueryClient();
   const [code, setCode] = useState('');
   const [hotWalletId, setHotWalletId] = useState('');
 
@@ -121,6 +123,12 @@ export function RedeemHydraInviteDialog({
     try {
       const result = await redeemHydraInvite(apiClient, { code: code.trim(), hotWalletId });
       toast.success(`Head opened with ${result.counterpartyWalletAddress.slice(0, 20)}…`);
+      // Redeeming creates a head, a participant and an invite record at once, so
+      // refreshing only the head list left the rest of the page describing a
+      // world that no longer existed until the operator navigated away.
+      await queryClient.invalidateQueries({
+        predicate: (query) => String(query.queryKey[0]).startsWith('hydra'),
+      });
       onRedeemed();
       handleOpenChange(false);
     } catch (error) {

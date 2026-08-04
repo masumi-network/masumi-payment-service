@@ -15,6 +15,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Loader2, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { HydraNotice } from '@/components/hydra/HydraNotice';

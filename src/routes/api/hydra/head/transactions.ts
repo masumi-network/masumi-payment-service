@@ -17,9 +17,15 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
 import { z } from '@masumi/payment-core/zod';
 import { TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import { nodeCardanoAddress } from '@/services/hydra-node-funding/node-address';
 
 export const headTransactionSchema = z.object({
 	id: z.string(),
+	kind: z
+		.enum(['Ledger', 'Deposit', 'NodeFunding'])
+		.describe(
+			'Ledger is a payment this head carried. Deposit is money being moved into the head. NodeFunding is ADA sent to the node key that pays this head\u2019s on-chain fees.',
+		),
 	createdAt: z.date(),
 	txHash: z
 		.string()
@@ -31,6 +37,7 @@ export const headTransactionSchema = z.object({
 	confirmations: z.number().nullable(),
 	/** Lovelace, as a string: fees are BigInt and JSON has no such thing. */
 	fees: z.string().nullable(),
+	lovelace: z.string().nullable().describe('The amount moved, for deposits and node funding. Null for ledger rows.'),
 	blockTime: z.number().nullable(),
 	lastCheckedAt: z.date().nullable(),
 });
@@ -50,7 +57,14 @@ export const listHeadTransactionsGet = adminAuthenticatedEndpointFactory.build({
 	input: listHeadTransactionsInput,
 	output: listHeadTransactionsOutput,
 	handler: async ({ input }) => {
-		const head = await prisma.hydraHead.findUnique({ where: { id: input.headId }, select: { id: true } });
+		const head = await prisma.hydraHead.findUnique({
+			where: { id: input.headId },
+			select: {
+				id: true,
+				HydraRelation: { select: { network: true } },
+				LocalParticipant: { select: { cardanoVkey: true } },
+			},
+		});
 		if (!head) {
 			throw createHttpError(404, 'Hydra head not found');
 		}
@@ -76,11 +90,89 @@ export const listHeadTransactionsGet = adminAuthenticatedEndpointFactory.build({
 			},
 		});
 
-		return {
-			transactions: transactions.map((transaction) => ({
-				...transaction,
+		// Deposits and node funding are money moving on this head's behalf, and
+		// neither is a Transaction row: a deposit is tracked by the head's own
+		// top-up record, and node funding is a wallet transfer to an address the
+		// head does not reference. Read separately and merged, because an operator
+		// asking what this head has done means all three, and the pending ones
+		// most of all.
+		const deposits = await prisma.hydraTopup.findMany({
+			where: { hydraHeadId: input.headId },
+			orderBy: { createdAt: 'desc' },
+			take: input.limit,
+			select: { id: true, createdAt: true, depositTxHash: true, status: true, committedLovelace: true },
+		});
+
+		// Matched by address rather than by relation: a transfer is to a node key,
+		// and only this head's participant holds that key.
+		const nodeAddress =
+			head.LocalParticipant === null
+				? null
+				: nodeCardanoAddress(head.LocalParticipant.cardanoVkey, head.HydraRelation.network);
+		const funding =
+			nodeAddress === null
+				? []
+				: await prisma.walletFundTransfer.findMany({
+						where: { toAddress: nodeAddress },
+						orderBy: { createdAt: 'desc' },
+						take: input.limit,
+						select: { id: true, createdAt: true, txHash: true, status: true, lovelaceAmount: true },
+					});
+
+		const merged = [
+			...transactions.map((transaction) => ({
+				id: transaction.id,
+				kind: 'Ledger' as const,
+				createdAt: transaction.createdAt,
+				txHash: transaction.txHash,
+				intendedTxHash: transaction.intendedTxHash,
+				status: transaction.status,
+				layer: transaction.layer,
+				confirmations: transaction.confirmations,
 				fees: transaction.fees === null ? null : transaction.fees.toString(),
+				lovelace: null as string | null,
+				blockTime: transaction.blockTime,
+				lastCheckedAt: transaction.lastCheckedAt,
 			})),
-		};
+			...deposits.map((deposit) => ({
+				id: deposit.id,
+				kind: 'Deposit' as const,
+				createdAt: deposit.createdAt,
+				txHash: deposit.depositTxHash,
+				intendedTxHash: null,
+				// A deposit's three states map onto the ledger vocabulary directly.
+				// Failed has to carry across as a failure rather than collapsing into
+				// Pending, or a deposit that expired unclaimed would show as still on
+				// its way for ever.
+				status:
+					deposit.status === 'Confirmed'
+						? TransactionStatus.Confirmed
+						: deposit.status === 'Failed'
+							? TransactionStatus.FailedViaTimeout
+							: TransactionStatus.Pending,
+				layer: TransactionLayer.L1,
+				confirmations: null,
+				fees: null,
+				lovelace: deposit.committedLovelace.toString(),
+				blockTime: null,
+				lastCheckedAt: null,
+			})),
+			...funding.map((transfer) => ({
+				id: transfer.id,
+				kind: 'NodeFunding' as const,
+				createdAt: transfer.createdAt,
+				txHash: transfer.txHash,
+				intendedTxHash: null,
+				status: transfer.status,
+				layer: TransactionLayer.L1,
+				confirmations: null,
+				fees: null,
+				lovelace: transfer.lovelaceAmount.toString(),
+				blockTime: null,
+				lastCheckedAt: null,
+			})),
+		].sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+
+		return { transactions: merged.slice(0, input.limit) };
 	},
 });

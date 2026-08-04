@@ -13075,17 +13075,17 @@ export type PostHydraHostData = {
          */
         baseUrl: string;
         /**
-         * Hostname the Host advertises for per-head peer ports; the counterparty dials this
+         * Hostname the counterparty dials for this head’s peer port. Defaults to the host in baseUrl, which is right unless peers reach the Host by a different name than this service does.
          */
-        publicPeerHost: string;
+        publicPeerHost?: string;
         /**
-         * Runtime token: proxied node API access
+         * Runtime token for proxied node API access. Optional: the admin token also satisfies runtime calls, so supply this only to keep a lower-privilege token for day-to-day use.
          */
-        userToken: string;
+        userToken?: string;
         /**
-         * Fleet token: provision, escrow-ack, reconfigure, delete. Omit to register for runtime use only.
+         * Provision, escrow-ack, reconfigure, delete. Required: without it no head can be opened here.
          */
-        adminToken?: string;
+        adminToken: string;
     };
     path?: never;
     query?: never;
@@ -13796,6 +13796,10 @@ export type GetHydraHeadTransactionsResponses = {
         data: {
             transactions: Array<{
                 id: string;
+                /**
+                 * Ledger is a payment this head carried. Deposit is money being moved into the head. NodeFunding is ADA sent to the node key that pays this head’s on-chain fees.
+                 */
+                kind: 'Ledger' | 'Deposit' | 'NodeFunding';
                 createdAt: Date;
                 /**
                  * Null while a transaction is built but not yet broadcast; intendedTxHash names it in the meantime
@@ -13809,6 +13813,10 @@ export type GetHydraHeadTransactionsResponses = {
                 layer: 'L1' | 'L2';
                 confirmations: number | null;
                 fees: string | null;
+                /**
+                 * The amount moved, for deposits and node funding. Null for ledger rows.
+                 */
+                lovelace: string | null;
                 blockTime: number | null;
                 lastCheckedAt: Date | null;
             }>;

@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -123,14 +124,21 @@ export function ConnectHydraNodeDialog({
     if (!isEditing) {
       const urlProblem = baseUrlProblem(trimmedBaseUrl);
       if (urlProblem) return urlProblem;
-      const peerProblem = peerHostProblem(trimmedPeerHost);
-      if (peerProblem) return peerProblem;
-      if (userToken.trim().length < MIN_TOKEN_LENGTH) {
-        return `The user key must be at least ${MIN_TOKEN_LENGTH} characters.`;
+      // Only when overridden: left blank it is taken from the URL above, which
+      // is right unless peers reach the Host by a different name.
+      if (trimmedPeerHost.length > 0) {
+        const peerProblem = peerHostProblem(trimmedPeerHost);
+        if (peerProblem) return peerProblem;
+      }
+      if (adminToken.trim().length < MIN_TOKEN_LENGTH) {
+        return `The admin key must be at least ${MIN_TOKEN_LENGTH} characters.`;
       }
     }
     if (adminToken.length > 0 && adminToken.trim().length < MIN_TOKEN_LENGTH) {
       return `The admin key must be at least ${MIN_TOKEN_LENGTH} characters.`;
+    }
+    if (userToken.trim().length > 0 && userToken.trim().length < MIN_TOKEN_LENGTH) {
+      return `The user key must be at least ${MIN_TOKEN_LENGTH} characters.`;
     }
     if (isEditing && userToken.length > 0 && userToken.trim().length < MIN_TOKEN_LENGTH) {
       return `The user key must be at least ${MIN_TOKEN_LENGTH} characters.`;
@@ -163,9 +171,9 @@ export function ConnectHydraNodeDialog({
           name: name.trim(),
           network,
           baseUrl: trimmedBaseUrl,
-          publicPeerHost: trimmedPeerHost,
-          userToken: userToken.trim(),
-          ...(adminToken.trim().length > 0 ? { adminToken: adminToken.trim() } : {}),
+          ...(trimmedPeerHost.length > 0 ? { publicPeerHost: trimmedPeerHost } : {}),
+          ...(userToken.trim().length > 0 ? { userToken: userToken.trim() } : {}),
+          adminToken: adminToken.trim(),
         });
         toast.success(`Connected ${name.trim()}`);
       }
@@ -230,44 +238,12 @@ export function ConnectHydraNodeDialog({
                   Where this service reaches the node. TLS terminates in front of it.
                 </p>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="hydra-node-peer-host">Public peer host</Label>
-                <Input
-                  id="hydra-node-peer-host"
-                  value={publicPeerHost}
-                  onChange={(event) => setPublicPeerHost(event.target.value)}
-                  placeholder="hydra1.example.com"
-                  autoComplete="off"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Hostname the counterparty’s node dials for each head’s peer port. A bare hostname
-                  or IP, with no scheme or port.
-                </p>
-              </div>
             </>
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="hydra-node-user-key">
-              User key{isEditing ? ' (leave blank to keep)' : ''}
-            </Label>
-            <Input
-              id="hydra-node-user-key"
-              type="password"
-              value={userToken}
-              onChange={(event) => setUserToken(event.target.value)}
-              placeholder={isEditing ? 'Unchanged' : 'At least 32 characters'}
-              autoComplete="off"
-            />
-            <p className="text-xs text-muted-foreground">
-              Used at runtime to reach the node’s API through its proxy.
-            </p>
-          </div>
-
-          <div className="space-y-2">
             <Label htmlFor="hydra-node-admin-key">
-              Admin key{isEditing ? ' (leave blank to keep)' : ' (optional)'}
+              Admin key{isEditing ? ' (leave blank to keep)' : ''}
             </Label>
             <Input
               id="hydra-node-admin-key"
@@ -278,15 +254,53 @@ export function ConnectHydraNodeDialog({
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              Provisions and reconfigures heads. Without it this node can run existing heads but
-              cannot open new ones.
+              Opens heads on this node and runs them. Stored encrypted and never shown again.
             </p>
           </div>
 
-          <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            Both keys are stored encrypted and never shown again. Keep a copy where you generated
-            them.
-          </p>
+          {/* The two values that were required and almost never differ from their
+              defaults: the admin key satisfies runtime calls on its own, and peers
+              reach the Host at the same hostname this service does. Asking for
+              both up front made a two-field form into a four-field one. */}
+          <HydraDetailSection title="Advanced" summary="Peer hostname, separate runtime key">
+            <div className="space-y-4">
+              {!isEditing && (
+                <div className="space-y-2">
+                  <Label htmlFor="hydra-node-peer-host">Public peer host</Label>
+                  <Input
+                    id="hydra-node-peer-host"
+                    value={publicPeerHost}
+                    onChange={(event) => setPublicPeerHost(event.target.value)}
+                    placeholder="taken from the URL above"
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Hostname the counterparty’s node dials for each head’s peer port. Set this only
+                    when peers reach the node by a different name than this service does. A bare
+                    hostname or IP, no scheme or port.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="hydra-node-user-key">
+                  User key{isEditing ? ' (leave blank to keep)' : ''}
+                </Label>
+                <Input
+                  id="hydra-node-user-key"
+                  type="password"
+                  value={userToken}
+                  onChange={(event) => setUserToken(event.target.value)}
+                  placeholder="the admin key is used when this is blank"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-muted-foreground">
+                  A lower-privilege key for day-to-day node access. The admin key already covers it,
+                  so set this only if you would rather not use the admin key at runtime.
+                </p>
+              </div>
+            </div>
+          </HydraDetailSection>
         </div>
 
         <DialogFooter>

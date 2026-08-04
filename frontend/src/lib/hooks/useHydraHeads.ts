@@ -701,6 +701,10 @@ export function useHydraHeadErrors(headId: string | null) {
 
 export type HydraHeadTransaction = {
   id: string;
+  /** What kind of money movement this row is. Absent on older payloads. */
+  kind?: 'Ledger' | 'Deposit' | 'NodeFunding';
+  /** Amount moved, for deposits and node funding. */
+  lovelace?: string | null;
   createdAt: string;
   txHash: string | null;
   intendedTxHash: string | null;

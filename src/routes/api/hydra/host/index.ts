@@ -74,11 +74,18 @@ export const registerHydraHostSchemaInput = z.object({
 		.string()
 		.min(1)
 		.max(250)
-		.describe('Hostname the Host advertises for per-head peer ports; the counterparty dials this'),
-	userToken: tokenSchema.describe('Runtime token: proxied node API access'),
-	adminToken: tokenSchema
 		.optional()
-		.describe('Fleet token: provision, escrow-ack, reconfigure, delete. Omit to register for runtime use only.'),
+		.describe(
+			'Hostname the counterparty dials for this head\u2019s peer port. Defaults to the host in baseUrl, which is right unless peers reach the Host by a different name than this service does.',
+		),
+	userToken: tokenSchema
+		.optional()
+		.describe(
+			'Runtime token for proxied node API access. Optional: the admin token also satisfies runtime calls, so supply this only to keep a lower-privilege token for day-to-day use.',
+		),
+	adminToken: tokenSchema.describe(
+		'Provision, escrow-ack, reconfigure, delete. Required: without it no head can be opened here.',
+	),
 });
 
 export const registerHydraHostPost = adminAuthenticatedEndpointFactory.build({
