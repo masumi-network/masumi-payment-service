@@ -49,17 +49,41 @@ not open.
 
 ### 1. Start the Host
 
-Use the reference compose file in `packages/hydra-host/`, which builds the
-image and spells out the port mapping. It is not published to a registry:
+The image is built from `packages/hydra-host/Dockerfile` and is not published to
+a registry. **In production, run that image under whatever you already use** —
+Kubernetes, Nomad, systemd, your own `docker run`. The compose file next to it
+is for local testing and as a worked example of the settings that matter; it is
+a single unmanaged container with a local volume, which is not what you want
+holding a mainnet head.
 
 ```bash
+# Local testing.
 cd packages/hydra-host
 HYDRA_HOST_PUBLIC_HOST=hydra.example.com \
-HYDRA_HOST_NETWORK=mainnet \
+HYDRA_HOST_NETWORK=preprod \
 HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
 HYDRA_HOST_USER_TOKEN="$(openssl rand -hex 32)" \
+BLOCKFROST_PROJECT_FILE=/srv/secrets/blockfrost.txt \
 docker compose up -d --build
 ```
+
+Four settings carry over to any deployment, and three of them are the kind that
+only hurt later:
+
+- **A durable volume at `/data`.** It holds a SQLite event store and etcd's raft
+  WAL, both of which need real fsync — block storage, not a network filesystem.
+  Losing it loses the heads.
+- **A shutdown grace period of about two minutes** (`--stop-timeout 120`, or
+  `terminationGracePeriodSeconds: 120`). The supervisor drains a snapshot round
+  before stopping, and etcd's raft WAL does not tolerate being cut off
+  mid-round. The default 10 seconds will eventually corrupt it.
+- **One instance per Host identity.** The peer ports, the advertise address and
+  the volume all belong to a specific Host. Do not scale it horizontally.
+- **The Blockfrost file, mounted read-only.**
+
+Compose also shows a healthcheck worth copying: an unauthenticated request to
+an authenticated route, expecting `401`. That proves the server is up *and*
+that auth is wired, without adding a health route reachable without a token.
 
 Both tokens must be at least 32 characters and must differ — the admin token
 manages the fleet, the user token drives a node that already exists, and the
@@ -87,10 +111,13 @@ allow-list from `GET /v1/peer-allowlist` — it renders an nftables ruleset — 
 re-apply it whenever a head is added or removed. Skipping this leaves your peer
 ports open to the internet.
 
-Other defaults worth knowing: `HYDRA_HOST_PEER_PORT_COUNT` (32) caps how many
-heads one Host runs, and `BLOCKFROST_PROJECT_FILE`
-(`/run/secrets/blockfrost.txt`) is a path to a file holding the project id, not
-the id itself.
+`BLOCKFROST_PROJECT_FILE` is a **path to a file** containing the project id,
+not the id itself: it is handed to `hydra-node` as `--blockfrost` and the node
+opens it. Mount it read-only. A Host with no such file starts fine and then
+every node it spawns dies, which reads as a node problem rather than a missing
+secret.
+
+`HYDRA_HOST_PEER_PORT_COUNT` (32) caps how many heads one Host runs.
 
 ### 2. Connect the Host to your payment service
 
