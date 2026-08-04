@@ -59,43 +59,53 @@ const DEFAULT_TTL_HOURS = 168;
  * deposit is only one period wide. Below a couple of minutes that window is the
  * same size as the jitter it has to survive.
  */
-const DEFAULT_SETTLE_MINUTES = 10;
 const MIN_SETTLE_MINUTES = 2;
 
 /**
- * The wait between closing a head and being able to settle it on chain.
+ * Defaults per network, matching what the service would pick on its own.
  *
- * It is the dispute window: until it elapses either side may contest the final
- * state, and nobody can fan out. It also sets how long a node may go without
- * seeing a block before it declares itself out of sync, since hydra derives
- * that from half this value unless told otherwise.
+ * They pull in opposite directions. Settle time is a cost on every top-up, so
+ * it wants to be short — but on mainnet it is how long a rollback has to be
+ * ruled out before real funds count, so twenty minutes buys confidence for a
+ * wait an operator will accept. The dispute window is the reverse: it is the
+ * only protection against a counterparty closing on a stale state, and the cost
+ * of a long one is merely that settling takes longer. An hour on mainnet, five
+ * minutes on a testnet where the worst case is a re-run.
  */
-const DEFAULT_CONTESTATION_SECONDS = 220;
-const DEFAULT_UNSYNCED_SECONDS = 1800;
+function defaultsFor(network: string) {
+  const isMainnet = network === 'Mainnet';
+  const contestation = isMainnet ? 3600 : 300;
+  return {
+    settleMinutes: isMainnet ? 20 : 10,
+    contestation,
+    // Hydra's own rule, and a ceiling rather than a preference: an in-sync node
+    // is guaranteed half the dispute window to see an on-chain event and react.
+    unsynced: Math.floor(contestation / 2),
+  };
+}
 
 export function IssueHydraInviteDialog({
   open,
   onOpenChange,
   onIssued,
 }: IssueHydraInviteDialogProps) {
-  const { apiClient } = useAppContext();
+  const { apiClient, network } = useAppContext();
   const { wallets } = useWallets();
+  const defaults = defaultsFor(network);
   const [hotWalletId, setHotWalletId] = useState('');
   const [ttlHours, setTtlHours] = useState(String(DEFAULT_TTL_HOURS));
-  const [settleMinutes, setSettleMinutes] = useState(String(DEFAULT_SETTLE_MINUTES));
-  const [contestationSeconds, setContestationSeconds] = useState(
-    String(DEFAULT_CONTESTATION_SECONDS),
-  );
-  const [unsyncedSeconds, setUnsyncedSeconds] = useState(String(DEFAULT_UNSYNCED_SECONDS));
+  const [settleMinutes, setSettleMinutes] = useState(String(defaults.settleMinutes));
+  const [contestationSeconds, setContestationSeconds] = useState(String(defaults.contestation));
+  const [unsyncedSeconds, setUnsyncedSeconds] = useState(String(defaults.unsynced));
   const [isLoading, setIsLoading] = useState(false);
   const [issued, setIssued] = useState<{ code: string; expiresAt: string } | null>(null);
 
   function reset() {
     setHotWalletId('');
     setTtlHours(String(DEFAULT_TTL_HOURS));
-    setSettleMinutes(String(DEFAULT_SETTLE_MINUTES));
-    setContestationSeconds(String(DEFAULT_CONTESTATION_SECONDS));
-    setUnsyncedSeconds(String(DEFAULT_UNSYNCED_SECONDS));
+    setSettleMinutes(String(defaults.settleMinutes));
+    setContestationSeconds(String(defaults.contestation));
+    setUnsyncedSeconds(String(defaults.unsynced));
     setIssued(null);
   }
 
@@ -132,6 +142,12 @@ export function IssueHydraInviteDialog({
       }
       if (!Number.isInteger(unsynced) || unsynced < 60) {
         toast.error('The out-of-sync limit must be at least 60 seconds.');
+        return;
+      }
+      if (unsynced > Math.floor(contestation / 2)) {
+        toast.error(
+          `The out-of-sync limit cannot exceed half the dispute window (${Math.floor(contestation / 2)}s).`,
+        );
         return;
       }
       const invite = await createHydraInvite(apiClient, {
@@ -272,7 +288,10 @@ export function IssueHydraInviteDialog({
                   />
                   <p className="text-xs text-muted-foreground">
                     How long a node may see no new block before it declares itself out of sync and
-                    refuses commands, rather than acting on a stale view of the chain.
+                    refuses commands, rather than acting on a stale view of the chain. It cannot
+                    exceed half the dispute window ({Math.floor(Number(contestationSeconds) / 2)}s
+                    here): past that a node can believe it is in sync while it has already run out
+                    of time to contest a close.
                   </p>
                 </div>
               </div>

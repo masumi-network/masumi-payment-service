@@ -34,34 +34,37 @@ export type HeadPeriods = {
 };
 
 /**
- * How long a deposit must settle before a head will take it.
+ * The three periods a head runs on, and why they differ by network.
  *
- * This is a risk setting, not a correctness one. A node ignores a deposit until
- * it is older than the period, so the period is exactly how long a rollback has
- * to be ruled out before those funds are treated as real on L2. Hydra's guidance
- * puts an hour at roughly 180 blocks on mainnet, where a deposit rolled back
- * after the fact would be a double spend.
+ * They answer different questions and pull in opposite directions, so one set
+ * of numbers for both networks would be wrong twice over.
  *
- * Preprod carries no such stake, and waiting an hour to find out whether an
- * incremental commit works is its own kind of failure. Ten minutes there, an
- * hour on mainnet.
+ * **Settle time** is how long a deposit must age before the head will take it,
+ * which is exactly how long a rollback has to be ruled out before those funds
+ * count on L2. It is a cost on every top-up, so it wants to be short — but on
+ * mainnet the funds are real, so twenty minutes buys meaningful confidence
+ * against a reorg for a wait an operator will tolerate. Ten on a testnet, where
+ * a rollback costs nothing.
  *
- * The knock-on effects are worth stating, because the period sets three things
- * at once: a node writes the deadline as `deposit + 3·DP`, will take the deposit
- * only between `+DP` and `+2·DP`, and the depositor cannot recover it until the
- * deadline. So the period is how long funds are unusable, and three times it is
- * how long they are stuck if nobody takes them.
+ * **Dispute window** is the opposite: it is how long after closing either side
+ * may contest a stale final state, and the only protection against a
+ * counterparty closing on an outdated snapshot while your node is briefly down.
+ * Short is dangerous, and the cost of long is only that settling takes longer.
+ * An hour on mainnet, five minutes on a testnet where the worst case is a
+ * re-run.
+ *
+ * **Out-of-sync limit** follows hydra's own rule of half the dispute window: a
+ * node that has seen no block for that long stops acting on its view of the
+ * chain. Deriving it keeps the two consistent, which is what hydra assumes when
+ * the flag is not given.
  */
-function depositPeriodFor(network: Network): number {
-	return network === Network.Mainnet ? 3600 : 600;
-}
-
-/** Matches what a two-party head on preprod has been run with. */
 export function defaultPeriodsFor(network: Network): HeadPeriods {
+	const isMainnet = network === Network.Mainnet;
+	const contestationPeriodSeconds = isMainnet ? 3600 : 300;
 	return {
-		contestationPeriodSeconds: 220,
-		depositPeriodSeconds: depositPeriodFor(network),
-		unsyncedPeriodSeconds: 1800,
+		contestationPeriodSeconds,
+		depositPeriodSeconds: isMainnet ? 1200 : 600,
+		unsyncedPeriodSeconds: Math.round(contestationPeriodSeconds / 2),
 	};
 }
 

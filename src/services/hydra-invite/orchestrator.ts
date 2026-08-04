@@ -135,6 +135,20 @@ export async function mintHeadInvite(input: {
 		...(input.contestationPeriodSeconds != null ? { contestationPeriodSeconds: input.contestationPeriodSeconds } : {}),
 		...(input.unsyncedPeriodSeconds != null ? { unsyncedPeriodSeconds: input.unsyncedPeriodSeconds } : {}),
 	};
+
+	// Half the dispute window is a ceiling, not a preference. Hydra's guarantee is
+	// that an in-sync node always has at least that long to observe an on-chain
+	// event and react to it; a node allowed to go quiet for longer can still
+	// believe it is in sync while it has already lost the time it needs to
+	// contest. Raising it trades away the only protection the dispute window
+	// provides, so it is refused rather than warned about.
+	const syncCeiling = Math.floor(periods.contestationPeriodSeconds / 2);
+	if (periods.unsyncedPeriodSeconds > syncCeiling) {
+		throw createHttpError(
+			400,
+			`the out-of-sync limit cannot exceed half the dispute window (${syncCeiling}s here). Past that a node can think it is in sync while it has already run out of time to contest a close`,
+		);
+	}
 	const nonce = createId();
 	const expiresAt = new Date(Date.now() + (input.ttlMs ?? INVITE_TTL_MS));
 
