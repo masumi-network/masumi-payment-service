@@ -1,5 +1,5 @@
 import createHttpError from 'http-errors';
-import { HydraErrorType, HydraHeadStatus } from '@/generated/prisma/client';
+import { HydraErrorType, HydraHeadStatus, HydraTopupStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import {
@@ -112,7 +112,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			where: { hydraLocalParticipantId: localParticipant.id, status: 'Pending' },
 			orderBy: { createdAt: 'desc' },
 		});
-		if (pending) {
+		if (pending && pending.depositTxHash !== null && pending.invalidHereafterSlot !== null) {
 			const reconciliation = await reconcilePendingHydraTopup({
 				id: pending.id,
 				status: pending.status,
@@ -128,6 +128,24 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 				throw createHttpError(503, 'Could not reconcile the prior Hydra top-up against L1; retry shortly');
 			}
 		}
+
+		// Recorded before any of the slow work starts. An exact-amount top-up
+		// carves a UTxO on L1 and waits for it to confirm before a deposit can even
+		// be built, and until this row existed the operator saw nothing at all in
+		// that window: no pending entry, and none after a refresh either.
+		const preparing = await prisma.hydraTopup.create({
+			data: {
+				hydraHeadId: head.id,
+				hydraLocalParticipantId: localParticipant.id,
+				committedLovelace: params.exact?.unit === 'lovelace' ? BigInt(params.exact.amount) : 0n,
+				committedAssets:
+					params.exact && params.exact.unit !== 'lovelace'
+						? { [params.exact.unit]: params.exact.amount.toString() }
+						: {},
+				status: HydraTopupStatus.Preparing,
+			},
+			select: { id: true },
+		});
 
 		const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(hotWallet.PaymentSource.network));
 		if (!slotConfig) throw createHttpError(500, 'Hydra L1 slot configuration is incomplete or invalid');
@@ -205,6 +223,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		try {
 			({ topupId, submitResult } = await reserveAndSubmitHydraTopup(
 				{
+					topupId: preparing.id,
 					hydraHeadId: head.id,
 					hydraLocalParticipantId: localParticipant.id,
 					depositTxHash: validatedDraft.txId,

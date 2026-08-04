@@ -48,7 +48,7 @@ export const listTopupsOutput = z.object({
 			createdAt: z.string(),
 			updatedAt: z.string(),
 			status: z.nativeEnum(HydraTopupStatus),
-			depositTxHash: z.string(),
+			depositTxHash: z.string().nullable(),
 			committedLovelace: z.string(),
 			committedAssets: z.record(z.string(), z.string()),
 			/**
@@ -59,7 +59,7 @@ export const listTopupsOutput = z.object({
 			 * this moment it never will. Without the deadline the UI could only say
 			 * "being folded in", which stays true-looking forever.
 			 */
-			deadline: z.string(),
+			deadline: z.string().nullable(),
 			/**
 			 * When the head can first take this deposit.
 			 *
@@ -68,7 +68,7 @@ export const listTopupsOutput = z.object({
 			 * so between those two moments the money is on chain, spoken for, and
 			 * unusable. Reporting only "Confirmed" made that gap look like success.
 			 */
-			usableFrom: z.string(),
+			usableFrom: z.string().nullable(),
 		}),
 	),
 });
@@ -78,7 +78,7 @@ export const recoverTopupInput = z.object({
 });
 
 export const recoverTopupOutput = z.object({
-	depositTxHash: z.string(),
+	depositTxHash: z.string().nullable(),
 	requested: z.boolean(),
 	reason: z.string().nullable(),
 });
@@ -134,13 +134,19 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 				status: row.status,
 				depositTxHash: row.depositTxHash,
 				committedLovelace: row.committedLovelace.toString(),
-				deadline: new Date(deadlineMsOf(row.invalidHereafterSlot)).toISOString(),
+				// Both are unknown until the deposit is built: a preparing top-up has
+				// no signed validity slot to derive them from.
+				deadline:
+					row.invalidHereafterSlot === null ? null : new Date(deadlineMsOf(row.invalidHereafterSlot)).toISOString(),
 				// The node writes the deadline as `deposit + 3·DP` and will not touch
 				// the deposit before `deposit + DP`, so a third of the way there is
 				// exactly when it becomes eligible.
-				usableFrom: new Date(
-					row.createdAt.getTime() + (deadlineMsOf(row.invalidHereafterSlot) - row.createdAt.getTime()) / 3,
-				).toISOString(),
+				usableFrom:
+					row.invalidHereafterSlot === null
+						? null
+						: new Date(
+								row.createdAt.getTime() + (deadlineMsOf(row.invalidHereafterSlot) - row.createdAt.getTime()) / 3,
+							).toISOString(),
 				committedAssets: (row.committedAssets ?? {}) as Record<string, string>,
 			})),
 		};

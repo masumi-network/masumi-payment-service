@@ -22,7 +22,8 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { HydraTransportAmbiguousError } from '@/lib/hydra/hydra/errors';
 
 export type DepositRecovery = {
-	depositTxHash: string;
+	/** Null while the top-up is still being prepared and has no deposit yet. */
+	depositTxHash: string | null;
 	/** Null when nothing was posted, with `reason` saying why. */
 	requested: boolean;
 	reason: string | null;
@@ -45,6 +46,16 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 			hydraHeadId: true,
 		},
 	});
+
+	if (topup.depositTxHash === null) {
+		// Still being prepared: there is no deposit on chain to recover, and the
+		// funds have not left the wallet.
+		return {
+			depositTxHash: null,
+			requested: false,
+			reason: 'this top-up is still being prepared, so nothing has been deposited yet',
+		};
+	}
 
 	if (topup.status === HydraTopupStatus.Pending) {
 		// Still in flight. Recovering now would race the increment it is waiting

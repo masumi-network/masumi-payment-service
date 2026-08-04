@@ -17,6 +17,8 @@ export const HYDRA_TOPUP_SLOT_GRACE = 60n;
 const MAX_TOPUPS_PER_TICK = 50;
 
 export type HydraTopupReservation = {
+	/** The row created when the request was accepted, now bound to a real deposit. */
+	topupId: string;
 	hydraHeadId: string;
 	hydraLocalParticipantId: string;
 	depositTxHash: string;
@@ -63,10 +65,13 @@ export async function reserveAndSubmitHydraTopup<T>(
 ): Promise<{ topupId: string; submitResult: T }> {
 	let topupId: string;
 	try {
-		const created = await prisma.hydraTopup.create({
+		// The row already exists: it was created when the operator asked, so the
+		// work would be visible while the pre-split confirmed. What happens here is
+		// the promotion that binds it to a real deposit — and the unique constraint
+		// on the hash still does the reservation work it always did.
+		const promoted = await prisma.hydraTopup.update({
+			where: { id: reservation.topupId },
 			data: {
-				hydraHeadId: reservation.hydraHeadId,
-				hydraLocalParticipantId: reservation.hydraLocalParticipantId,
 				depositTxHash: reservation.depositTxHash,
 				invalidHereafterSlot: reservation.invalidHereafterSlot,
 				committedLovelace: reservation.committedLovelace,
@@ -75,7 +80,7 @@ export async function reserveAndSubmitHydraTopup<T>(
 			},
 			select: { id: true },
 		});
-		topupId = created.id;
+		topupId = promoted.id;
 	} catch (error) {
 		if (isUniqueConstraintError(error)) throw new HydraTopupReservationConflictError();
 		throw error;
@@ -157,6 +162,11 @@ export async function reconcilePendingHydraTopups(): Promise<void> {
 				logger.error('hydra-topup-reconciliation: pending top-up is missing trusted L1 lookup context', {
 					topupId: candidate.id,
 				});
+				return;
+			}
+			// A Preparing row has no deposit to look for yet: it is waiting on its
+			// own pre-split, and the API request that owns it will promote it.
+			if (candidate.depositTxHash === null || candidate.invalidHereafterSlot === null) {
 				return;
 			}
 			try {

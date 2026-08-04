@@ -221,10 +221,10 @@ export type HydraTopupResult = {
   confirmed: boolean;
   committedLovelace: string;
   committedAssets: Record<string, string>;
-  /** After this, the head can no longer absorb the deposit. */
-  deadline?: string;
+  /** After this, the head can no longer absorb the deposit. Null while preparing. */
+  deadline?: string | null;
   /** Before this, the head will not take it however confirmed the transaction is. */
-  usableFrom?: string;
+  usableFrom?: string | null;
 };
 
 export type HydraTopupRequest = {
@@ -786,14 +786,15 @@ export type HydraTopup = {
   id: string;
   createdAt: string;
   updatedAt: string;
-  status: 'Pending' | 'Confirmed' | 'Failed';
-  depositTxHash: string;
+  status: 'Preparing' | 'Pending' | 'Confirmed' | 'Failed';
+  /** Null until the deposit is built; a preparing top-up has no transaction yet. */
+  depositTxHash: string | null;
   committedLovelace: string;
   committedAssets: Record<string, string>;
-  /** After this, the head can no longer absorb the deposit. */
-  deadline?: string;
+  /** After this, the head can no longer absorb the deposit. Null while preparing. */
+  deadline?: string | null;
   /** Before this, the head will not take it however confirmed the transaction is. */
-  usableFrom?: string;
+  usableFrom?: string | null;
 };
 
 /**

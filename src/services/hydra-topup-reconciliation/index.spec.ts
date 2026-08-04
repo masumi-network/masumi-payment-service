@@ -5,6 +5,7 @@ type AnyMock = Mock<(...args: any[]) => any>;
 
 const mockLookupConfirmedChainTx = jest.fn() as AnyMock;
 const mockBlocksLatest = jest.fn() as AnyMock;
+const mockUpdate = jest.fn() as AnyMock;
 const mockCreate = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn() as AnyMock;
 const mockFindMany = jest.fn() as AnyMock;
@@ -24,7 +25,12 @@ jest.unstable_mockModule('@masumi/payment-core/config', () => ({
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
-		hydraTopup: { create: mockCreate, updateMany: mockUpdateMany, findMany: mockFindMany },
+		hydraTopup: {
+			create: mockCreate,
+			update: mockUpdate,
+			updateMany: mockUpdateMany,
+			findMany: mockFindMany,
+		},
 	},
 }));
 
@@ -63,6 +69,7 @@ function candidate(overrides: Partial<Parameters<typeof reconcilePendingHydraTop
 beforeEach(() => {
 	jest.clearAllMocks();
 	mockCreate.mockResolvedValue({ id: 'topup-1' });
+	mockUpdate.mockResolvedValue({ id: 'topup-1' });
 	mockUpdateMany.mockResolvedValue({ count: 1 });
 	mockFindMany.mockResolvedValue([]);
 	mockLookupConfirmedChainTx.mockResolvedValue('confirmed-valid');
@@ -72,6 +79,7 @@ beforeEach(() => {
 
 describe('reserveAndSubmitHydraTopup', () => {
 	const reservation = {
+		topupId: 'topup-1',
 		hydraHeadId: 'head-1',
 		hydraLocalParticipantId: 'participant-1',
 		depositTxHash: DEPOSIT_TX_HASH,
@@ -80,24 +88,29 @@ describe('reserveAndSubmitHydraTopup', () => {
 		committedAssets: {},
 	};
 
-	it('creates the pending row then returns the topup id and submit result', async () => {
+	// The row is created when the operator asks, so the reservation promotes it
+	// rather than inserting: that is what makes the work visible while the
+	// pre-split confirms.
+	it('promotes the prepared row then returns the topup id and submit result', async () => {
 		const submit = jest.fn<() => Promise<string>>().mockResolvedValue('ok');
 		await expect(reserveAndSubmitHydraTopup(reservation, submit)).resolves.toEqual({
 			topupId: 'topup-1',
 			submitResult: 'ok',
 		});
-		expect(mockCreate).toHaveBeenCalledTimes(1);
+		expect(mockUpdate).toHaveBeenCalledTimes(1);
 	});
 
 	it('retains the pending row when submission throws ambiguously', async () => {
 		const submit = jest.fn<() => Promise<unknown>>().mockRejectedValue(new Error('connection reset'));
 		await expect(reserveAndSubmitHydraTopup(reservation, submit)).rejects.toThrow('connection reset');
-		expect(mockCreate).toHaveBeenCalledTimes(1);
+		expect(mockUpdate).toHaveBeenCalledTimes(1);
 		expect(mockUpdateMany).not.toHaveBeenCalled();
 	});
 
+	// The unique index on the deposit hash is what actually reserves the deposit,
+	// and it now fires on the promotion rather than on an insert.
 	it('maps a unique-index violation to a reservation conflict', async () => {
-		mockCreate.mockRejectedValue(new Error('unique'));
+		mockUpdate.mockRejectedValue(new Error('unique'));
 		mockIsUniqueConstraintError.mockReturnValue(true);
 		await expect(reserveAndSubmitHydraTopup(reservation, jest.fn<() => Promise<unknown>>())).rejects.toBeInstanceOf(
 			HydraTopupReservationConflictError,

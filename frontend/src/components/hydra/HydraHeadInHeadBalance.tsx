@@ -42,11 +42,14 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
     // Before the first tick nothing is called expired: claiming a deadline has
     // passed is the assertion that needs evidence.
     const isStillFoldable = (topup: HydraTopup) =>
-      now === null || topup.deadline === undefined || new Date(topup.deadline).getTime() > now;
+      now === null || topup.deadline == null || new Date(topup.deadline).getTime() > now;
     return {
       hasSettlingDeposit: topups.some(
         (topup) =>
-          (topup.status === 'Confirmed' || topup.status === 'Pending') && isStillFoldable(topup),
+          (topup.status === 'Confirmed' ||
+            topup.status === 'Pending' ||
+            topup.status === 'Preparing') &&
+          isStillFoldable(topup),
       ),
       hasExpiredDeposit: topups.some(
         (topup) => topup.status === 'Confirmed' && !isStillFoldable(topup),

@@ -1527,6 +1527,10 @@ enum HydraErrorType {
 
 /// Lifecycle of a single incremental-commit (top-up) deposit into an Open head.
 enum HydraTopupStatus {
+  /// Accepted and being built: an exact amount is carved into its own L1 UTxO
+  /// and has to confirm before the deposit can even be signed. Minutes, with no
+  /// deposit hash yet.
+  Preparing
   /// Deposit submitted to L1; awaiting independent confirmation + head finalization.
   Pending
   /// Deposit confirmed on L1 by the independent observer.
@@ -1870,12 +1874,19 @@ model HydraTopup {
   LocalParticipant        HydraLocalParticipant @relation(fields: [hydraLocalParticipantId], references: [id], onDelete: Cascade)
 
   /// The incremental-commit deposit L1 transaction hash (64 hex).
-  depositTxHash String
+  ///
+  /// Null while the top-up is still being prepared. An exact-amount top-up first
+  /// carves a dedicated UTxO on L1 and waits for it to confirm, which is minutes
+  /// during which no deposit exists yet. The row is created up front regardless,
+  /// because an operator who has just moved funds needs to see that something is
+  /// happening far more than the record needs to be complete.
+  depositTxHash String?
 
   /// Signed invalid-hereafter slot retained with the deposit hash. A retry is
   /// safe only after this slot plus the rollback/indexer grace window has passed
-  /// with the hash absent from the trusted L1 observer.
-  invalidHereafterSlot BigInt
+  /// with the hash absent from the trusted L1 observer. Null until the deposit
+  /// itself is built.
+  invalidHereafterSlot BigInt?
 
   /// Lovelace committed by this top-up (sum of the committed UTxOs), for display.
   committedLovelace BigInt

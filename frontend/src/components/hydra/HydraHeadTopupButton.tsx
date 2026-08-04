@@ -143,7 +143,7 @@ function HydraTopupList({
   // Until the clock is read, nothing is claimed to be usable: saying money is
   // in the head when it is not is the error that matters here.
   const isUsable = (topup: HydraTopup) =>
-    now !== null && topup.usableFrom !== undefined && new Date(topup.usableFrom).getTime() <= now;
+    now !== null && topup.usableFrom != null && new Date(topup.usableFrom).getTime() <= now;
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
 
   async function handleRecover(topupId: string) {
@@ -190,36 +190,48 @@ function HydraTopupList({
                       : 'text-amber-600 dark:text-amber-400'
                 }
               >
-                {topup.status === 'Pending' && <Spinner className="mr-1 h-3 w-3" />}
+                {(topup.status === 'Pending' || topup.status === 'Preparing') && (
+                  <Spinner className="mr-1 h-3 w-3" />
+                )}
                 {topup.status === 'Failed'
                   ? 'Expired'
-                  : topup.status === 'Pending'
-                    ? 'Sending'
-                    : isUsable(topup)
-                      ? 'In the head'
-                      : 'Settling'}
+                  : topup.status === 'Preparing'
+                    ? 'Preparing'
+                    : topup.status === 'Pending'
+                      ? 'Sending'
+                      : isUsable(topup)
+                        ? 'In the head'
+                        : 'Settling'}
               </Badge>
               <span className="font-mono text-sm">
                 {formatLovelace(topup.committedLovelace, network)}
               </span>
-              {topup.status === 'Confirmed' &&
-                !isUsable(topup) &&
-                topup.usableFrom !== undefined && (
-                  <span className="text-xs text-muted-foreground">
-                    usable {new Date(topup.usableFrom).toLocaleTimeString()}
-                  </span>
-                )}
+              {topup.status === 'Confirmed' && !isUsable(topup) && topup.usableFrom != null && (
+                <span className="text-xs text-muted-foreground">
+                  usable {new Date(topup.usableFrom).toLocaleTimeString()}
+                </span>
+              )}
             </div>
             <span className="flex items-center gap-1">
-              <span className="font-mono text-xs text-muted-foreground">
-                {topup.depositTxHash.slice(0, 10)}…
-              </span>
-              <CopyButton value={topup.depositTxHash} className="h-6 w-6" />
+              {topup.depositTxHash === null ? (
+                // Nothing to copy yet: an exact amount is being carved into its
+                // own UTxO on L1, which has to confirm before a deposit exists.
+                <span className="text-xs text-muted-foreground">
+                  splitting the amount on chain first
+                </span>
+              ) : (
+                <>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {topup.depositTxHash.slice(0, 10)}…
+                  </span>
+                  <CopyButton value={topup.depositTxHash} className="h-6 w-6" />
+                </>
+              )}
               {/* A confirmed deposit the head never took still holds the funds
                   at the deposit script. Only the node can spend them back, and
                   only after the deadline, so this is offered rather than done
                   automatically. */}
-              {topup.status === 'Confirmed' && (
+              {topup.status === 'Confirmed' && topup.depositTxHash !== null && (
                 <Button
                   type="button"
                   variant="outline"
