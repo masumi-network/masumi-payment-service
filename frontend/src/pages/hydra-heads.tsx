@@ -42,6 +42,7 @@ import { ConnectHydraNodeDialog } from '@/components/hydra/ConnectHydraNodeDialo
 import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
 import { HydraHeadInHeadBalance } from '@/components/hydra/HydraHeadInHeadBalance';
 import { HydraHeadTopupButton } from '@/components/hydra/HydraHeadTopupButton';
+import { HydraHeadWithdrawButton } from '@/components/hydra/HydraHeadWithdrawButton';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -569,6 +570,8 @@ function HydraHeadDetailsDialog({
           />
 
           <HydraHeadTopupButton headId={head.id} isOpen={head.status === 'Open'} />
+
+          <HydraHeadWithdrawButton headId={head.id} isOpen={head.status === 'Open'} />
 
           {(head._count?.Errors ?? 0) > 0 && (
             <HydraDetailSection

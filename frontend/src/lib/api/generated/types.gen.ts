@@ -14283,6 +14283,114 @@ export type PostHydraHeadTopupResponses = {
 
 export type PostHydraHeadTopupResponse = PostHydraHeadTopupResponses[keyof PostHydraHeadTopupResponses];
 
+export type GetHydraHeadWithdrawData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Hydra head whose withdrawals to list
+         */
+        headId: string;
+        limit?: number;
+    };
+    url: '/hydra/head/withdraw';
+};
+
+export type GetHydraHeadWithdrawErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadWithdrawResponses = {
+    /**
+     * Withdrawals
+     */
+    200: {
+        status: 'success';
+        data: {
+            withdrawals: Array<{
+                id: string;
+                createdAt: string;
+                updatedAt: string;
+                status: 'Preparing' | 'Pending' | 'Approved' | 'Finalized' | 'Failed';
+                splitTxId: string | null;
+                decommitTxId: string | null;
+                requestedLovelace: string;
+                destinationAddress: string;
+                failureReason: string | null;
+                approvedAt: string | null;
+                finalizedAt: string | null;
+            }>;
+        };
+    };
+};
+
+export type GetHydraHeadWithdrawResponse = GetHydraHeadWithdrawResponses[keyof GetHydraHeadWithdrawResponses];
+
+export type PostHydraHeadWithdrawData = {
+    body?: {
+        /**
+         * The Hydra head to withdraw from
+         */
+        headId: string;
+        /**
+         * Exact lovelace to withdraw. Omit to withdraw every eligible in-head UTxO whole. An exact amount is split off inside the head first, which costs nothing and takes about a second.
+         */
+        lovelace?: string;
+        /**
+         * Also withdraw the UTxO held back as collateral. Without collateral this wallet can no longer spend escrows inside the head, so this is for winding a head down.
+         */
+        drain?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/withdraw';
+};
+
+export type PostHydraHeadWithdrawErrors = {
+    /**
+     * No eligible in-head funds, or less is eligible than was requested
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head not open, or a withdrawal from it is already in progress
+     */
+    409: unknown;
+    /**
+     * The node rejected the withdrawal request
+     */
+    502: unknown;
+};
+
+export type PostHydraHeadWithdrawResponses = {
+    /**
+     * Withdrawal accepted
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            accepted: true;
+        };
+    };
+};
+
+export type PostHydraHeadWithdrawResponse = PostHydraHeadWithdrawResponses[keyof PostHydraHeadWithdrawResponses];
+
 export type GetHydraHeadBalanceData = {
     body?: never;
     path?: never;

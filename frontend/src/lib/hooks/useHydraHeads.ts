@@ -832,6 +832,80 @@ export function useHydraTopups(headId: string | null, isOpen: boolean) {
   return { ...query, topups: query.data ?? [] };
 }
 
+export type HydraWithdrawal = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: 'Preparing' | 'Pending' | 'Approved' | 'Finalized' | 'Failed';
+  /** The in-head split that carved the exact amount. Null when whole UTxOs went. */
+  splitTxId: string | null;
+  decommitTxId: string | null;
+  requestedLovelace: string;
+  destinationAddress: string;
+  failureReason: string | null;
+  /** The point of no return: the head has signed the removal. */
+  approvedAt: string | null;
+  /** When the funds became spendable on L1. */
+  finalizedAt: string | null;
+};
+
+/**
+ * Withdrawals out of a head, newest first.
+ *
+ * Polled until every one has settled. A withdrawal crosses two systems — the
+ * head signs the removal, then its node posts the L1 payout — and neither leg
+ * reports back to the request that started it, so the list is the only place
+ * progress appears.
+ */
+export function useHydraWithdrawals(headId: string | null, isOpen: boolean) {
+  const { apiClient } = useAppContext();
+
+  const query = useQuery<HydraWithdrawal[]>({
+    queryKey: ['hydra-withdrawals', headId],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          apiClient.get<{ 200: ApiEnvelope<{ withdrawals: HydraWithdrawal[] }> }>({
+            responseType: 'json',
+            url: '/hydra/head/withdraw',
+            query: { headId, limit: 10 },
+          }),
+        { errorMessage: 'Failed to load the withdrawals' },
+      );
+      return response?.data?.data?.withdrawals ?? [];
+    },
+    enabled: !!apiClient && headId !== null && isOpen,
+    staleTime: 5000,
+    // Approved counts as in flight: the funds have left the head but L1 has not
+    // reported them yet, which is exactly when an operator is watching.
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some((row) =>
+        ['Preparing', 'Pending', 'Approved'].includes(row.status),
+      )
+        ? 5_000
+        : false,
+  });
+
+  return { ...query, withdrawals: query.data ?? [] };
+}
+
+export async function withdrawFromHydraHead(
+  apiClient: Client,
+  payload: { headId: string; lovelace?: string; drain?: boolean },
+) {
+  const response = await handleApiCall(
+    () =>
+      apiClient.post<{ 200: ApiEnvelope<{ headId: string; accepted: true }> }>({
+        responseType: 'json',
+        url: '/hydra/head/withdraw',
+        body: payload,
+      }),
+    { errorMessage: 'Failed to withdraw from the Hydra head' },
+  );
+
+  return ensureData(response?.data?.data, 'The withdrawal response was not returned by the API');
+}
+
 /** Forget a head's errors. They are a log, so clearing them changes nothing but the display. */
 export async function clearHydraHeadErrors(apiClient: Client, payload: { headId: string }) {
   const response = await handleApiCall(

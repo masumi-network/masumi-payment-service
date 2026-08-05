@@ -33937,6 +33937,276 @@
                 }
             }
         },
+        "/hydra/head/withdraw": {
+            "post": {
+                "summary": "Withdraw funds from an open head back to L1. (admin access required)",
+                "description": "Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One UTxO of 5 ADA is held back as collateral so the wallet can still spend escrows inside the head; `drain` takes that too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "headId": {
+                                        "type": "string",
+                                        "description": "The Hydra head to withdraw from"
+                                    },
+                                    "lovelace": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$",
+                                        "description": "Exact lovelace to withdraw. Omit to withdraw every eligible in-head UTxO whole. An exact amount is split off inside the head first, which costs nothing and takes about a second."
+                                    },
+                                    "drain": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Also withdraw the UTxO held back as collateral. Without collateral this wallet can no longer spend escrows inside the head, so this is for winding a head down."
+                                    }
+                                },
+                                "required": [
+                                    "headId"
+                                ],
+                                "example": {
+                                    "headId": "cuid_v2_auto_generated",
+                                    "lovelace": "10000000",
+                                    "drain": false
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Withdrawal accepted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "headId": {
+                                                    "type": "string"
+                                                },
+                                                "accepted": {
+                                                    "type": "boolean",
+                                                    "enum": [
+                                                        true
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "headId",
+                                                "accepted"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "headId": "cuid_v2_auto_generated",
+                                            "accepted": true
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "No eligible in-head funds, or less is eligible than was requested"
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "Head not open, or a withdrawal from it is already in progress"
+                    },
+                    "502": {
+                        "description": "The node rejected the withdrawal request"
+                    }
+                }
+            },
+            "get": {
+                "summary": "List withdrawals from a head. (admin access required)",
+                "description": "Withdrawals out of this head, newest first. `approvedAt` is the point of no return: the head has signed the removal and the funds have left it, whether or not L1 has them yet. `finalizedAt` is when they became spendable on L1.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "The Hydra head whose withdrawals to list"
+                        },
+                        "required": true,
+                        "description": "The Hydra head whose withdrawals to list",
+                        "name": "headId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 10
+                        },
+                        "required": false,
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Withdrawals",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "withdrawals": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Preparing",
+                                                                    "Pending",
+                                                                    "Approved",
+                                                                    "Finalized",
+                                                                    "Failed"
+                                                                ]
+                                                            },
+                                                            "splitTxId": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "decommitTxId": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "requestedLovelace": {
+                                                                "type": "string"
+                                                            },
+                                                            "destinationAddress": {
+                                                                "type": "string"
+                                                            },
+                                                            "failureReason": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "approvedAt": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "finalizedAt": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "status",
+                                                            "splitTxId",
+                                                            "decommitTxId",
+                                                            "requestedLovelace",
+                                                            "destinationAddress",
+                                                            "failureReason",
+                                                            "approvedAt",
+                                                            "finalizedAt"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "withdrawals"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "withdrawals": [
+                                                {
+                                                    "id": "cuid_v2_auto_generated",
+                                                    "createdAt": "1970-01-01T00:00:00.000Z",
+                                                    "updatedAt": "1970-01-01T00:00:00.000Z",
+                                                    "status": "Approved",
+                                                    "splitTxId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                                                    "decommitTxId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                                    "requestedLovelace": "10000000",
+                                                    "destinationAddress": "addr_test1...",
+                                                    "failureReason": null,
+                                                    "approvedAt": "1970-01-01T00:00:00.000Z",
+                                                    "finalizedAt": null
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    }
+                }
+            }
+        },
         "/hydra/head/balance": {
             "get": {
                 "summary": "Read this node's own in-head balance. (admin access required)",
