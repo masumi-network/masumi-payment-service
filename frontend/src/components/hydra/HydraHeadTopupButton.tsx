@@ -148,16 +148,20 @@ function HydraTopupList({
   const isUsable = (topup: HydraTopup) =>
     now !== null && topup.usableFrom != null && new Date(topup.usableFrom).getTime() <= now;
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
+  // The server posts the recovery but does not mark the deposit, so without
+  // this the row looks untouched and the button invites a second press.
+  const [recoveryRequested, setRecoveryRequested] = useState<Set<string>>(new Set());
 
   async function handleRecover(topupId: string) {
     setRecoveringId(topupId);
     try {
       const result = await recoverHydraTopup(apiClient, { topupId });
+      if (result.requested) {
+        setRecoveryRequested((current) => new Set(current).add(topupId));
+      }
       await resync('hydra', 'wallets');
       toast[result.requested ? 'success' : 'info'](
-        result.requested
-          ? 'Recovery posted. The funds return to the wallet once it confirms.'
-          : (result.reason ?? 'Nothing to recover'),
+        result.requested ? 'Recovery posted. Funds return once it confirms.' : (result.reason ?? 'Nothing to recover'),
       );
       await refetch();
     } catch (error) {
@@ -253,20 +257,24 @@ function HydraTopupList({
                   at the deposit script. Only the node can spend them back, and
                   only after the deadline, so this is offered rather than done
                   automatically. */}
-              {topup.status === 'Confirmed' && topup.depositTxHash !== null && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="ml-1"
-                  disabled={recoveringId === topup.id}
-                  onClick={() => void handleRecover(topup.id)}
-                  title="Ask the node to return this deposit, if the head never took it"
-                >
-                  {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
-                  Recover
-                </Button>
-              )}
+              {topup.status === 'Confirmed' &&
+                topup.depositTxHash !== null &&
+                (recoveryRequested.has(topup.id) ? (
+                  <span className="ml-1 text-xs text-muted-foreground">Recovery posted</span>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-1"
+                    disabled={recoveringId === topup.id}
+                    onClick={() => void handleRecover(topup.id)}
+                    title="Ask the node to return this deposit, if the head never took it"
+                  >
+                    {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
+                    Recover
+                  </Button>
+                ))}
               {/* Offered for ADA only. A token deposit would need its unit and
                   its own decimals filled back in, and guessing either of those
                   into a form that moves funds is worse than retyping them. */}
@@ -356,10 +364,19 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
     setIsSubmitting(true);
     try {
       await topupHydraHead(apiClient, payload);
-      toast.success('Deposit started. It appears below, and in the head once it confirms.');
+      toast.success('Deposit started.');
       await resync('hydra', 'wallets');
       setAmount('');
-      await queryClient.invalidateQueries({ queryKey: ['hydra-topups', headId] });
+      // The request returns before the deposit row exists: the work is
+      // fire-and-forget, so a single refetch here races it and finds nothing.
+      // Telling the operator it "appears below" and then not showing it is
+      // worse than waiting the second it actually takes.
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        await queryClient.invalidateQueries({ queryKey: ['hydra-topups', headId] });
+        const rows = queryClient.getQueryData<HydraTopup[]>(['hydra-topups', headId]);
+        if ((rows?.length ?? 0) > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 750));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -370,8 +387,7 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
       <div>
         <h4 className="text-sm font-medium">Add funds</h4>
         <p className="text-xs text-muted-foreground">
-          Moves funds from this head&apos;s wallet into the head. They arrive once the deposit
-          confirms on chain.
+          Arrives once the deposit confirms on chain.
         </p>
       </div>
 

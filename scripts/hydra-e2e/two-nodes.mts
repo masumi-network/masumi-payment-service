@@ -130,6 +130,22 @@ async function seed(side: Side): Promise<Seeded | null> {
 	const purchase = await brew();
 	const selling = await brew();
 
+	// Always, not just when the database is new. A database reused across
+	// branches is the normal case here, and a missing column does not fail
+	// loudly: every query throws P2022, the API answers 500, and the admin UI
+	// concludes nothing is configured and offers the first-run wizard. That
+	// looks like a seeding problem and is not one.
+	const migrated = await runTsx(
+		`node-${side.label}-migrate`,
+		path.join(REPO_ROOT, 'node_modules', 'prisma', 'build', 'index.js'),
+		{ ...serviceEnv(side) },
+		['migrate', 'deploy', '--config', path.join(REPO_ROOT, 'prisma', 'prisma.config.ts')],
+	);
+	if (migrated.code !== 0) {
+		console.error(`  node ${side.label} migrate failed: ${migrated.stderr.split('\n').slice(-4).join(' ').slice(0, 400)}`);
+		return null;
+	}
+
 	const result = await runTsx(`node-${side.label}-seed`, path.join(REPO_ROOT, 'prisma', 'seed.ts'), {
 		...serviceEnv(side),
 		BLOCKFROST_API_KEY_PREPROD: side.blockfrostKey,
@@ -142,6 +158,7 @@ async function seed(side: Side): Promise<Seeded | null> {
 		console.error(`  node ${side.label} seed failed: ${result.stderr.split('\n').slice(-4).join(' ').slice(0, 400)}`);
 		return null;
 	}
+
 	return { purchaseAddress: purchase.address, sellingAddress: selling.address };
 }
 

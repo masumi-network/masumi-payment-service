@@ -59,9 +59,11 @@ export function runTsx(
 	name: string,
 	entry: string,
 	env: NodeJS.ProcessEnv,
+	/** Arguments for the entry itself, e.g. a Prisma subcommand. */
+	args: readonly string[] = [],
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
 	return new Promise((resolve) => {
-		const child = spawn(process.execPath, [...NODE_ARGS, entry], {
+		const child = spawn(process.execPath, [...NODE_ARGS, entry, ...args], {
 			cwd: REPO_ROOT,
 			env,
 			stdio: ['ignore', 'pipe', 'pipe'],
