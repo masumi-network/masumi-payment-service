@@ -23,7 +23,7 @@ import { HydraDecommitStatus, HydraErrorType, HydraHeadStatus, Network, Prisma }
 import { prisma } from '@masumi/payment-core/db';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { logger } from '@masumi/payment-core/logger';
-import { CustomHydraHead, HydraProvider, HydraTransactionType } from '@/lib/hydra';
+import { CustomHydraHead, HydraProvider, HydraTransactionType, HydraTransportAmbiguousError } from '@/lib/hydra';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
@@ -266,9 +266,29 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 				localParticipant.walletId,
 			);
 		} catch (error) {
-			// The node refused to take the request at all, which is unambiguous in a
-			// way a submitted transaction never is: nothing was proposed to the head,
-			// so nothing can be approved later.
+			// Only an answer from the node proves it never took the request. A
+			// timeout, a dropped connection or a 5xx proves nothing: the node may
+			// have accepted the decommit and be proposing it to the head right now,
+			// and the head may approve it seconds later. Marking such a withdrawal
+			// Failed would tell an operator "nothing left the head, safe to try
+			// again" while the funds were on their way out — the same reason the L2
+			// lock path keeps an ambiguous submit fail-closed rather than releasing
+			// its reservation.
+			//
+			// So an ambiguous outcome stays Pending and is left to the head's own
+			// DecommitApproved/DecommitInvalid, which is the only thing that can
+			// settle it either way.
+			if (error instanceof HydraTransportAmbiguousError) {
+				logger.warn('[HydraDecommit] withdrawal request outcome is ambiguous; leaving it for the head to settle', {
+					decommitId: claim.id,
+					decommitTxId,
+					error: errorMessage(error),
+				});
+				throw createHttpError(
+					502,
+					`The withdrawal could not be confirmed as requested (${decommitTxId}). It stays pending until the head settles it`,
+				);
+			}
 			await prisma.hydraDecommit.updateMany({
 				where: { id: claim.id, status: HydraDecommitStatus.Pending },
 				data: {
