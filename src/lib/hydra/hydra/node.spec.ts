@@ -625,6 +625,32 @@ describe('HydraNode', () => {
 			expect(node.getVerifiedFanoutReference(hydraReference, 3)).toBeNull();
 		});
 
+		// Hydra 2.2.0 renamed HeadIsFinalized's `utxo` to `finalizedUTxO`, and 2.3.0
+		// — the version pinned in the Dockerfile — sends only the new name. Reading
+		// only the old one meant the fanout map was never recorded on a current
+		// node, so no closed head could ever finish reconciling and every escrow
+		// stayed marked L2 against a head that no longer existed. Every other test
+		// here uses the old name, which is precisely why it went unnoticed.
+		it('records the fanout map under the 2.3.0 field name', async () => {
+			const { node, historyConnection, liveConnection } = await startSignedNode();
+			const chain = signedHistoryChain();
+			for (const frame of chain.frames) historyConnection.emit('message', JSON.stringify(frame));
+			finishHistoryReplay(historyConnection);
+			const fanoutTxHash = '58'.repeat(32);
+			liveConnection.emit(
+				'message',
+				JSON.stringify({
+					tag: 'HeadIsFinalized',
+					headId: HEAD_ID_A,
+					finalizedUTxO: { [`${fanoutTxHash}#0`]: snapshotOutput(7_000_000) },
+				}),
+			);
+
+			expect(node.getVerifiedFanoutReference(`${chain.transactions[2].txId}#0`, 3)).toEqual(
+				expect.objectContaining({ txHash: fanoutTxHash, outputIndex: 0, snapshotNumber: 3 }),
+			);
+		});
+
 		it('derives the surviving output from producer CBOR despite an unsigned reference-map permutation', async () => {
 			const { node, historyConnection, liveConnection } = await startSignedNode();
 			const chain = signedTwoOutputHistory();

@@ -16,6 +16,8 @@ import {
 	decommitFinalizedMessageSchema,
 	decommitInvalidMessageSchema,
 	greetingsIdentityMessageSchema,
+	finalizedUtxoOf,
+	hasFinalizedUtxoField,
 	headClockMessageSchema,
 	headIsFinalizedMessageSchema,
 	headPartiesMessageSchema,
@@ -672,12 +674,7 @@ export class HydraNode extends EventEmitter {
 			) {
 				this.recordHistoryOpenAnchor(historyHeadIsOpenMessageSchema.parse(message));
 			}
-			if (
-				parsedEnvelope.tag === 'HeadIsFinalized' &&
-				typeof message === 'object' &&
-				message !== null &&
-				'utxo' in message
-			) {
+			if (parsedEnvelope.tag === 'HeadIsFinalized' && hasFinalizedUtxoField(message)) {
 				this.recordFinalizedFanout(headIsFinalizedMessageSchema.parse(message));
 			}
 
@@ -750,7 +747,7 @@ export class HydraNode extends EventEmitter {
 	private recordFinalizedFanout(parsedMessage: ReturnType<typeof headIsFinalizedMessageSchema.parse>): void {
 		this.assertExpectedHeadId(parsedMessage);
 		const fanoutOutputs = new Map<string, string>();
-		for (const [reference, output] of Object.entries(parsedMessage.utxo)) {
+		for (const [reference, output] of Object.entries(finalizedUtxoOf(parsedMessage))) {
 			fanoutOutputs.set(reference.toLowerCase(), serializeHydraSnapshotOutput(output));
 		}
 		if (this._finalizedFanoutOutputs && !stringMapsEqual(this._finalizedFanoutOutputs, fanoutOutputs)) {
@@ -884,7 +881,7 @@ export class HydraNode extends EventEmitter {
 				}
 				if (this.isLiveSessionReady()) this.emit(LIVE_SESSION_READY_EVENT);
 			}
-			if (envelope.tag === 'HeadIsFinalized' && typeof message === 'object' && message !== null && 'utxo' in message) {
+			if (envelope.tag === 'HeadIsFinalized' && hasFinalizedUtxoField(message)) {
 				this.recordFinalizedFanout(headIsFinalizedMessageSchema.parse(message));
 			}
 			// A deposit is folded in over two events, and in between the head has

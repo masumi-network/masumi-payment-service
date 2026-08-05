@@ -243,11 +243,44 @@ export const historyHeadIsOpenMessageSchema = z.looseObject({
  * references. Callers must still compare the complete serialized TxOut
  * multiset with the signature-verified final snapshot before trusting it.
  */
-export const headIsFinalizedMessageSchema = z.looseObject({
-	tag: z.literal('HeadIsFinalized'),
-	headId: canonicalHydraHeadIdSchema,
-	utxo: hydraSnapshotUtxoSchema,
-});
+/**
+ * The head's final L1 state, as the node observed it.
+ *
+ * The field was called `utxo` until Hydra 2.2.0 renamed it to `finalizedUTxO`,
+ * which is what 2.3.0 sends. Both are accepted and normalised onto one name:
+ * reading only the old one meant the map was never recorded on a current node,
+ * and the map is what binds each in-head escrow to the L1 output that replaced
+ * it. Without it no closed head can ever finish reconciling.
+ *
+ * The shape did not change with the rename — still a map keyed by `txId#index`.
+ */
+export const headIsFinalizedMessageSchema = z
+	.looseObject({
+		tag: z.literal('HeadIsFinalized'),
+		headId: canonicalHydraHeadIdSchema,
+		utxo: hydraSnapshotUtxoSchema.optional(),
+		finalizedUTxO: hydraSnapshotUtxoSchema.optional(),
+	})
+	.refine((message) => message.finalizedUTxO !== undefined || message.utxo !== undefined, {
+		message: 'HeadIsFinalized carried no finalized UTxO map under either field name',
+	});
+
+/** The finalized map, whichever name the node used for it. */
+export function finalizedUtxoOf(
+	message: z.infer<typeof headIsFinalizedMessageSchema>,
+): NonNullable<z.infer<typeof headIsFinalizedMessageSchema>['finalizedUTxO']> {
+	const finalized = message.finalizedUTxO ?? message.utxo;
+	if (finalized === undefined) {
+		// Unreachable through the schema, which refuses a message carrying neither.
+		throw new Error('HeadIsFinalized carried no finalized UTxO map');
+	}
+	return finalized;
+}
+
+/** Whether a frame carries a finalized UTxO map under either field name. */
+export function hasFinalizedUtxoField(message: unknown): boolean {
+	return typeof message === 'object' && message !== null && ('finalizedUTxO' in message || 'utxo' in message);
+}
 
 export const greetingsIdentityMessageSchema = z.looseObject({
 	tag: z.literal('Greetings'),
