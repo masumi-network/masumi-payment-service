@@ -71,6 +71,17 @@ interface ExtractedPaymentFields {
    * pointing at the cause.
    */
   sellerReturnAddress?: string | null;
+  /**
+   * Which entry of the agent's `supported_payment_sources` the seller priced
+   * against. V2 signs this into the identifier too, but unlike the fields above
+   * it cannot be read back: `createPayment` takes it as input only and no
+   * response echoes it. Omitting it drops the key from the payload the server
+   * reconstructs, so the purchase is rejected as "signature invalid" — the same
+   * failure the seller-return-address note above describes. Defaulted to 0 for
+   * V2 identifiers, which is correct whenever the agent advertises a single
+   * Cardano source.
+   */
+  supportedPaymentSourceIndex?: number | null;
 }
 
 function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
@@ -118,9 +129,26 @@ function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
       rawSellerForce === 'L1' || rawSellerForce === 'Hydra'
         ? (rawSellerForce as 'L1' | 'Hydra')
         : null;
+    // Never present on a payment response, so fall back to 0 whenever the
+    // identifier is V2 (only V2 carries a smartContractAddress, and only V2
+    // signs this key at all).
+    const supportedPaymentSourceIndex =
+      typeof obj.supportedPaymentSourceIndex === 'number'
+        ? obj.supportedPaymentSourceIndex
+        : fields.blockchainIdentifier &&
+            decodeBlockchainIdentifier(fields.blockchainIdentifier)?.smartContractAddress != null
+          ? 0
+          : null;
     // Only return if we got at least blockchainIdentifier
     if (fields.blockchainIdentifier)
-      return { formFields: fields, pricingType, amounts, paymentForceLayer, sellerReturnAddress };
+      return {
+        formFields: fields,
+        pricingType,
+        amounts,
+        paymentForceLayer,
+        sellerReturnAddress,
+        supportedPaymentSourceIndex,
+      };
     return null;
   } catch {
     return null;
@@ -148,6 +176,12 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   // are part of the signed identifier and MUST be sent back on the purchase.
   const [paymentForceLayer, setPaymentForceLayer] = useState<'L1' | 'Hydra' | null>(null);
   const [sellerReturnAddress, setSellerReturnAddress] = useState<string | null>(null);
+  // Also signed into a V2 identifier, but not recoverable from any response —
+  // see ExtractedPaymentFields. Editable so agents advertising more than one
+  // Cardano source can select the one the seller actually priced against.
+  const [supportedPaymentSourceIndex, setSupportedPaymentSourceIndex] = useState<number | null>(
+    null,
+  );
   // The buyer's own optional routing override ('Auto' omits the field).
   const [buyerForceLayer, setBuyerForceLayer] = useState<'Auto' | 'L1' | 'Hydra'>('Auto');
 
@@ -237,6 +271,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setExtractedAmounts(undefined);
         setPaymentForceLayer(null);
         setSellerReturnAddress(null);
+        setSupportedPaymentSourceIndex(null);
         return;
       }
       const result = tryExtractPaymentFields(value);
@@ -247,6 +282,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setExtractedAmounts(result.amounts);
         setPaymentForceLayer(result.paymentForceLayer ?? null);
         setSellerReturnAddress(result.sellerReturnAddress ?? null);
+        setSupportedPaymentSourceIndex(result.supportedPaymentSourceIndex ?? null);
         if (result.formFields.identifierFromPurchaser) {
           toast.success('Fields populated from pasted response');
         } else {
@@ -306,6 +342,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         );
         setPaymentForceLayer(payment.forceLayer ?? null);
         setSellerReturnAddress(payment.sellerReturnAddress ?? null);
+        setSupportedPaymentSourceIndex(decoded?.smartContractAddress != null ? 0 : null);
 
         if (decoded) {
           setValue('identifierFromPurchaser', decoded.purchaserId);
@@ -355,6 +392,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
           // match and the purchase is rejected.
           ...(paymentForceLayer != null ? { paymentForceLayer } : {}),
           ...(sellerReturnAddress != null ? { sellerReturnAddress } : {}),
+          ...(supportedPaymentSourceIndex != null ? { supportedPaymentSourceIndex } : {}),
           ...(buyerForceLayer !== 'Auto' ? { forceLayer: buyerForceLayer } : {}),
         };
 
@@ -396,6 +434,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
       extractedAmounts,
       paymentForceLayer,
       sellerReturnAddress,
+      supportedPaymentSourceIndex,
       buyerForceLayer,
     ],
   );
@@ -408,6 +447,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
     setExtractedAmounts(undefined);
     setPaymentForceLayer(null);
     setSellerReturnAddress(null);
+    setSupportedPaymentSourceIndex(null);
     setBuyerForceLayer('Auto');
     setResponse(null);
     setError(null);
@@ -697,6 +737,33 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                     : 'Auto uses Hydra when an open head is available, otherwise L1. Force Hydra fails the funds-lock instead of falling back to L1.'}
                 </p>
               </div>
+
+              {/* supportedPaymentSourceIndex — signed into V2 identifiers but not
+                  returned by any endpoint, so it is defaulted rather than read back. */}
+              {supportedPaymentSourceIndex != null && (
+                <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-5">
+                  <Label htmlFor="supportedPaymentSourceIndex">
+                    Supported Payment Source Index
+                  </Label>
+                  <Input
+                    id="supportedPaymentSourceIndex"
+                    type="number"
+                    min={0}
+                    max={24}
+                    value={supportedPaymentSourceIndex}
+                    onChange={(e) => {
+                      const next = Number.parseInt(e.target.value, 10);
+                      setSupportedPaymentSourceIndex(Number.isNaN(next) ? 0 : next);
+                    }}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The seller signed this into the payment terms and it must be sent back
+                    unchanged. It is not returned by any endpoint, so it defaults to 0 — correct
+                    when the agent advertises a single Cardano source. Change it only if the seller
+                    priced against a different entry.
+                  </p>
+                </div>
+              )}
 
               <Separator />
               <div className="flex justify-end items-center gap-2">
