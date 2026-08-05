@@ -31,13 +31,13 @@ cannot come back.
 
 ## What you need
 
-| | |
-| --- | --- |
-| **A Hydra Host** | Supervises one `hydra-node` process per head. Ships as a container; see [hydra-host-native-mode.md](hydra-host-native-mode.md) for macOS and arm64 Linux, where it runs as a plain Node process instead. |
-| **A public address** | Your counterparty's node connects to yours directly. A hostname or IP that resolves from outside, and one open TCP port per head. |
-| **A Blockfrost project** | The node follows the chain through it. Same network as your payment source. |
-| **ADA in a purchasing wallet** | For the funds you put in the head, plus about 10 ADA per head for its node to pay the on-chain fees. |
-| **A counterparty who also runs one** | Both sides need a node. There is no one-sided head. |
+|                                      |                                                                                                                                                                                                          |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A Hydra Host**                     | Supervises one `hydra-node` process per head. Ships as a container; see [hydra-host-native-mode.md](hydra-host-native-mode.md) for macOS and arm64 Linux, where it runs as a plain Node process instead. |
+| **A public address**                 | Your counterparty's node connects to yours directly. A hostname or IP that resolves from outside, and one open TCP port per head.                                                                        |
+| **A Blockfrost project**             | The node follows the chain through it. Same network as your payment source.                                                                                                                              |
+| **ADA in a purchasing wallet**       | For the funds you put in the head, plus about 10 ADA per head for its node to pay the on-chain fees.                                                                                                     |
+| **A counterparty who also runs one** | Both sides need a node. There is no one-sided head.                                                                                                                                                      |
 
 Both nodes must run the **same `hydra-node` version** (2.3.0 at the time of
 writing) and the **same ledger protocol parameters**. Mismatched versions
@@ -82,7 +82,7 @@ only hurt later:
 - **The Blockfrost file, mounted read-only.**
 
 Compose also shows a healthcheck worth copying: an unauthenticated request to
-an authenticated route, expecting `401`. That proves the server is up *and*
+an authenticated route, expecting `401`. That proves the server is up _and_
 that auth is wired, without adding a health route reachable without a token.
 
 Both tokens must be at least 32 characters and must differ — the admin token
@@ -95,13 +95,13 @@ node's advertise identity and must not change for a head's lifetime.
 The ports are the security boundary. Four ranges exist and only three may leave
 the machine:
 
-| Port | Plane | Exposed? |
-| --- | --- | --- |
-| `8443` | Control. Your payment service talks to this. | Yes, bearer-token gated |
-| `8444` | Exchange. Where invites are redeemed. | Yes, to whoever you invite |
-| `5001-5032` | Peer. One per head. | Yes — and see below |
-| `4001-4032` | `hydra-node` API | **Never.** Unauthenticated, can close a head. |
-| `6001-6032` | Prometheus | **Never.** No bind-host option exists, so `HYDRA_HOST_MONITORING_ENABLED` defaults off. |
+| Port        | Plane                                        | Exposed?                                                                                |
+| ----------- | -------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `8443`      | Control. Your payment service talks to this. | Yes, bearer-token gated                                                                 |
+| `8444`      | Exchange. Where invites are redeemed.        | Yes, to whoever you invite                                                              |
+| `5001-5032` | Peer. One per head.                          | Yes — and see below                                                                     |
+| `4001-4032` | `hydra-node` API                             | **Never.** Unauthenticated, can close a head.                                           |
+| `6001-6032` | Prometheus                                   | **Never.** No bind-host option exists, so `HYDRA_HOST_MONITORING_ENABLED` defaults off. |
 
 The API range is additionally bound to `127.0.0.1` inside the container, so it
 stays shut even if someone switches to host networking.
@@ -149,7 +149,7 @@ wallets and all four durations. Neither side can change the terms afterwards.
 your wallet, and confirm the terms. **The side that redeems is the side that
 opens the head** — there is nothing to click afterwards.
 
-The head appears as *awaiting counterparty*, then *Initializing*, then *Open*.
+The head appears as _awaiting counterparty_, then _Initializing_, then _Open_.
 Reaching Open takes a few minutes: it is two on-chain transactions and both
 nodes have to see each other.
 
@@ -174,20 +174,56 @@ recover it back to the wallet
 
 So money added to a head is **confirmed on chain but unspendable for the
 deposit period**, and if the head never takes it, it is recovered rather than
-lost. The deposit row shows *Submitted* in yellow the whole time; it never goes
+lost. The deposit row shows _Submitted_ in yellow the whole time; it never goes
 green, because nothing available proves the head absorbed that particular
 deposit.
+
+### 5. Take money out
+
+**Take funds out** on the head moves funds back to L1 without closing it. A head
+meant to stay open for months would otherwise only accumulate.
+
+It runs the opposite way round to a deposit, and the difference matters:
+
+```
+you ask for an amount
+        │
+        │  ← split inside the head (free, ~1s) if the amount is partial
+        ▼
+both nodes sign it away      ← the point of no return
+        │
+        │  ← your node posts the payout
+        ▼
+funds spendable on L1
+```
+
+Once both nodes have signed, the value is out of the head whether or not L1 has
+it yet. There is no recovery step on this side — a deposit the head refuses
+stays at a script and comes back, but a withdrawal the head approves is gone
+from the head for good. The panel says _Paying out_ from that moment.
+
+Two things follow from how Hydra works here:
+
+- **Your counterparty has to be reachable.** Removing funds needs a snapshot
+  both parties sign. A counterparty whose node is down cannot be withdrawn
+  around; closing the head is the only way out in that case.
+- **5 ADA stays behind.** Spending an escrow inside the head requires collateral,
+  and collateral has to be a plain UTxO the wallet already holds. Take the last
+  one and the wallet can no longer submit results, collect or refund in this
+  head — while the balance still reads as healthy, because the escrows are
+  untouched. Withdrawing everything is offered separately, for winding a head
+  down.
 
 ## The four durations
 
 Set once per head, in the invite, and fixed for its life.
 
-| | Preprod | Mainnet | What it does |
-| --- | --- | --- | --- |
-| **Dispute window** | 12 hours | 5 days | After a head closes, how long either side may challenge the final balances. Nothing settles until it passes, so it is also how long after closing before you have your funds back. Long is the safe direction. |
-| **Out-of-sync limit** | 6 hours | 2.5 days | How long a node may fall behind before it refuses to keep transacting. Capped at half the dispute window: a node returning later than that has too little time left to defend the head. |
-| **Deposit settle time** | 10 min | 20 min | The deposit period above. |
-| **Invite lifetime** | 7 days | 7 days | How long the node and peer port stay reserved for an unredeemed invite. |
+|                         | Preprod  | Mainnet  | What it does                                                                                                                                                                                                   |
+| ----------------------- | -------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Dispute window**      | 12 hours | 5 days   | After a head closes, how long either side may challenge the final balances. Nothing settles until it passes, so it is also how long after closing before you have your funds back. Long is the safe direction. |
+| **Out-of-sync limit**   | 6 hours  | 2.5 days | How long a node may fall behind before it refuses to keep transacting. Capped at half the dispute window: a node returning later than that has too little time left to defend the head.                        |
+| **Deposit settle time** | 10 min   | 20 min   | The deposit period above.                                                                                                                                                                                      |
+| **Invite lifetime**     | 7 days   | 7 days   | How long the node and peer port stay reserved for an unredeemed invite.                                                                                                                                        |
 
 The dispute window is the one to think about. It protects you from a
 counterparty closing on a stale state while your node is down — but you cannot
@@ -213,6 +249,11 @@ dialog warns until you do it.
 **Closing.** Close from the head's action menu. The funds return to L1 after
 the dispute window, then fan out. Nothing needs watching in between.
 
+**Closing is not how you get funds out.** It costs you the dispute window — five
+days on mainnet — and ends the head. Use **Take funds out** for anything you
+want back while the head keeps working, and close only when you are done with
+the counterparty.
+
 ## Problems you are likely to meet
 
 ### The head will not reach Open
@@ -222,14 +263,14 @@ Check, in this order:
 1. **Both nodes reachable.** The Connection panel reports your node, your
    service's session to it, and whether the counterparty's node is in the
    cluster. All three must be green on both sides.
-2. **Same `hydra-node` version and ledger parameters.** Under *Version and
-   hashes* in the node details. A mismatch cannot open a head, and it does not
+2. **Same `hydra-node` version and ledger parameters.** Under _Version and
+   hashes_ in the node details. A mismatch cannot open a head, and it does not
    say so directly — it just never opens.
 3. **The peer port is actually reachable from outside.** This is the common
    one. `nc -vz your.host 5001` from somewhere else, not from the same machine.
 
 Connectivity in Hydra's network layer is cluster-wide, not per peer: a node
-reports itself connected or not, not "connected to X". Both sides being *Ready*
+reports itself connected or not, not "connected to X". Both sides being _Ready_
 is the signal, not one side.
 
 ### Nodes exit immediately with SIGILL
@@ -294,7 +335,7 @@ deposit is visible in the head's balance and cannot be spent. It is a window of
 a few minutes, and every deposit has one — not just a head's first.
 
 The service leaves those funds out of coin selection during the window, so the
-rest of the head keeps working. If the arriving deposit is the *only* money in
+rest of the head keeps working. If the arriving deposit is the _only_ money in
 the head, there is nothing to work with and payments wait for the fold to
 finish. That is expected; it resolves itself.
 
