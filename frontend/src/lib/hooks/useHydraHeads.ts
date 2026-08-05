@@ -786,7 +786,7 @@ export type HydraTopup = {
   id: string;
   createdAt: string;
   updatedAt: string;
-  status: 'Preparing' | 'Pending' | 'Confirmed' | 'Failed';
+  status: 'Preparing' | 'Pending' | 'Confirmed' | 'Failed' | 'Recovered';
   /** Null until the deposit is built; a preparing top-up has no deposit yet. */
   depositTxHash: string | null;
   /** The L1 split that carves the exact amount, present while preparing. */

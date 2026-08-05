@@ -12,7 +12,7 @@
  * plainly that it is not a secret but is single-use.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
@@ -98,6 +98,23 @@ export function IssueHydraInviteDialog({
   const { wallets } = useWallets();
   const defaults = defaultsFor(network);
   const [hotWalletId, setHotWalletId] = useState('');
+  /**
+   * Which side of the head this invite puts us on.
+   *
+   * Asked first, and as a choice rather than a consequence. The wallet list
+   * used to carry both sides at once with a Buyer/Seller badge per row, which
+   * inverted the decision: an operator knows which side they are before they
+   * know which wallet, and had to infer the side from a list of addresses.
+   * Picking the side first also makes the wallet list short enough to read.
+   */
+  const [role, setRole] = useState<'Buyer' | 'Seller' | null>(null);
+  const roleWallets = useMemo(
+    () =>
+      role === null
+        ? []
+        : wallets.filter((wallet) => (role === 'Buyer' ? wallet.type === 'Purchasing' : wallet.type === 'Selling')),
+    [wallets, role],
+  );
   const [ttlSeconds, setTtlSeconds] = useState(DEFAULT_TTL_HOURS * HOUR_SECONDS);
   const [settleSeconds, setSettleSeconds] = useState(defaults.settleMinutes * 60);
   const [contestationSeconds, setContestationSeconds] = useState(defaults.contestation);
@@ -108,6 +125,7 @@ export function IssueHydraInviteDialog({
   const [issued, setIssued] = useState<{ code: string; expiresAt: string } | null>(null);
 
   function reset() {
+    setRole(null);
     setHotWalletId('');
     setTtlSeconds(DEFAULT_TTL_HOURS * HOUR_SECONDS);
     setSettleSeconds(defaults.settleMinutes * 60);
@@ -134,7 +152,11 @@ export function IssueHydraInviteDialog({
    */
   function validate(): Record<string, string> {
     const problems: Record<string, string> = {};
-    if (hotWalletId.length === 0) {
+    if (role === null) {
+      // Named separately from the wallet: with the side unchosen there is no
+      // wallet field on screen to point at.
+      problems.role = 'Choose whether you buy or sell on this head.';
+    } else if (hotWalletId.length === 0) {
       problems.wallet = 'Choose the wallet that will identify you on this head.';
     }
     // The API takes whole hours, so anything under one would round to nothing.
@@ -204,7 +226,56 @@ export function IssueHydraInviteDialog({
         {issued === null ? (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="hydra-invite-wallet">Our wallet</Label>
+              <Label>Our side of this head</Label>
+              {/* Two buttons rather than a dropdown: there are exactly two
+                  answers, both always available, and the choice governs
+                  everything below it. A select would hide half the question
+                  behind a click. */}
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    { value: 'Buyer', title: 'We buy', detail: 'We pay for work' },
+                    { value: 'Seller', title: 'We sell', detail: 'We are paid for work' },
+                  ] as const
+                ).map((option) => {
+                  const isSelected = role === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => {
+                        setRole(option.value);
+                        // The previous pick belongs to the other side's list.
+                        setHotWalletId('');
+                        setErrors({});
+                      }}
+                      className={`rounded-md border p-3 text-left transition-colors ${
+                        isSelected
+                          ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                          : 'hover:border-muted-foreground/40'
+                      }`}
+                    >
+                      <span className="block text-sm font-medium">{option.title}</span>
+                      <span className="block text-xs text-muted-foreground">{option.detail}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {errors.role && <p className="text-xs text-destructive">{errors.role}</p>}
+            </div>
+
+            {role !== null && (
+            <div className="space-y-2">
+              <Label htmlFor="hydra-invite-wallet">
+                {role === 'Buyer' ? 'Which purchasing wallet' : 'Which selling wallet'}
+              </Label>
+              {roleWallets.length === 0 ? (
+                <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                  No {role === 'Buyer' ? 'purchasing' : 'selling'} wallet on this payment source. Create one
+                  before inviting a counterparty to this side.
+                </p>
+              ) : (
               <Select
                 value={hotWalletId}
                 onValueChange={(value) => {
@@ -216,25 +287,20 @@ export function IssueHydraInviteDialog({
                   <SelectValue placeholder="Choose a wallet" />
                 </SelectTrigger>
                 <SelectContent>
-                  {wallets.map((wallet) => (
+                  {roleWallets.map((wallet) => (
                     <SelectItem key={wallet.id} value={wallet.id}>
-                      {/* The role is always shown, even when the wallet has a
-                          note. A head is between two wallets and which side
-                          each plays decides whether payments can route through
-                          it — a name alone does not say that. */}
-                      <span className="flex items-center gap-2">
-                        <Badge variant="outline" className="shrink-0">
-                          {wallet.type === 'Purchasing' ? 'Buyer' : 'Seller'}
-                        </Badge>
-                        <span className="truncate">
-                          {wallet.note?.trim() ? `${wallet.note.trim()} · ` : ''}
-                          {wallet.walletAddress.slice(0, 16)}…
-                        </span>
+                      {/* No role badge here any more: every wallet in this list
+                          is on the side just chosen, so repeating it would be
+                          noise rather than information. */}
+                      <span className="truncate">
+                        {wallet.note?.trim() ? `${wallet.note.trim()} · ` : ''}
+                        {wallet.walletAddress.slice(0, 16)}…
                       </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              )}
               {/* One line of consequence, three paragraphs of detail behind the
                   icon. All of it was true and none of it was read: an operator
                   choosing from a two-item list does not stop to read six lines
@@ -260,6 +326,7 @@ export function IssueHydraInviteDialog({
               </p>
               {errors.wallet && <p className="text-xs text-destructive">{errors.wallet}</p>}
             </div>
+            )}
 
             {/* Every period behind one disclosure. The defaults are chosen per
                 network and are right for almost every head, so the form asks

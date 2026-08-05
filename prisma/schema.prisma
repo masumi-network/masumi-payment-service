@@ -1597,6 +1597,14 @@ enum HydraTopupStatus {
   Confirmed
   /// Deposit was rejected/absent past its validity window; retry is safe.
   Failed
+  /// The deposit was spent back to the wallet and the funds have arrived.
+  ///
+  /// Distinct from asking for a recovery: `recoveryRequestedAt` records the
+  /// request, and this records the outcome. Without it a recovered deposit read
+  /// as "Submitted" forever, because the status describes what the head did
+  /// with the deposit and the head never did anything — leaving an operator no
+  /// way to tell posted-and-pending from home-and-safe.
+  Recovered
 }
 
 /// Lifecycle of a withdrawal out of an open head.

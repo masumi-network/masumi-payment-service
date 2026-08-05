@@ -193,21 +193,25 @@ function HydraTopupList({
                 className={
                   topup.status === 'Failed'
                     ? 'text-red-600 dark:text-red-400'
-                    : 'text-amber-600 dark:text-amber-400'
+                    : topup.status === 'Recovered'
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-amber-600 dark:text-amber-400'
                 }
               >
                 {(topup.status === 'Pending' || topup.status === 'Preparing') && (
                   <Spinner className="mr-1 h-3 w-3" />
                 )}
-                {topup.status === 'Failed'
-                  ? 'Expired'
-                  : topup.status === 'Preparing'
-                    ? 'Preparing'
-                    : topup.status === 'Pending'
-                      ? 'Sending'
-                      : isUsable(topup)
-                        ? 'Submitted'
-                        : 'Settling'}
+                {topup.status === 'Recovered'
+                  ? 'Returned'
+                  : topup.status === 'Failed'
+                    ? 'Expired'
+                    : topup.status === 'Preparing'
+                      ? 'Preparing'
+                      : topup.status === 'Pending'
+                        ? 'Sending'
+                        : isUsable(topup)
+                          ? 'Submitted'
+                          : 'Settling'}
               </Badge>
               <span className="font-mono text-sm">
                 {/* A whole-UTxO top-up commits whatever the selection turns out
@@ -251,11 +255,15 @@ function HydraTopupList({
                   at the deposit script. Only the node can spend them back, and
                   only after the deadline, so this is offered rather than done
                   automatically. */}
+              {topup.status === 'Recovered' && (
+                <span className="ml-1 text-xs text-muted-foreground">back in the wallet</span>
+              )}
               {topup.status === 'Confirmed' &&
                 topup.depositTxHash !== null &&
                 (topup.recoveryRequestedAt != null ? (
                   <span className="ml-1 text-xs text-muted-foreground">
-                    Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}
+                    Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()} — waiting for it on
+                    chain
                   </span>
                 ) : (
                   <Button
