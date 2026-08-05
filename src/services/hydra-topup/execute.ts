@@ -22,7 +22,7 @@ import {
 	reserveAndSubmitHydraTopup,
 } from '@/services/hydra-topup-reconciliation';
 import { buildHydraCommitFlowDeps } from '@/routes/api/hydra/head/commit-flow-deps';
-import { recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
+import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import { carveExactUtxo, HydraPreSplitError } from './pre-split';
 
 /**
@@ -100,6 +100,10 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	const cm = getHydraConnectionManager();
 	const hydraHead = cm.getHead(head.id);
 	if (!hydraHead) throw createHttpError(502, 'No active connection to Hydra head');
+	// Same reasoning as the initial commit: a deposit made while the node is
+	// still catching up is on chain immediately and unabsorbable until it is not,
+	// and its deadline can pass in the meantime.
+	await assertNodeReadyForDeposit(localParticipant.id);
 
 	// Hoisted so the outer catch can resolve the row it created: a Preparing row
 	// is invisible to reconciliation, which has no deposit hash to look for.

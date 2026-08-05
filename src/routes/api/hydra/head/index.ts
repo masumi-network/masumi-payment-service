@@ -6,6 +6,7 @@ import createHttpError from 'http-errors';
 import {
 	HydraHeadStatus,
 	HydraErrorType,
+	HydraTopupStatus,
 	HydraInviteRole,
 	Network,
 	Prisma,
@@ -704,6 +705,30 @@ export async function createBoundHydraHead(input: {
 
 // --- PATCH: update isEnabled ---
 
+/**
+ * Refuse a deposit while the node cannot absorb it.
+ *
+ * A deposit is only takeable between one deposit period and three, measured in
+ * the node's own chain time. A node still catching up is not going to fold one
+ * in, and the deposit is on chain the moment it is submitted — so accepting the
+ * request puts the operator's funds behind a deadline that passes while nothing
+ * is watching. The admin UI already said "still catching up"; the API took the
+ * funds anyway.
+ *
+ * Applies to the initial commit and to every later top-up: they are the same
+ * on-chain object with the same deadline.
+ */
+export async function assertNodeReadyForDeposit(localParticipantId: string): Promise<void> {
+	const node = await readParticipantNodeState(localParticipantId);
+	if (!node.isReady) {
+		throw createHttpError(
+			409,
+			node.reason ??
+				`The Hydra node is not ready to take a deposit (state ${node.state}). It is still catching up on chain, and funds sent now would expire before the head could absorb them.`,
+		);
+	}
+}
+
 export const updateHeadSchemaInput = z.object({
 	id: z.string().min(1).describe('ID of the HydraHead to update'),
 	isEnabled: z.boolean().describe('Whether the head should be enabled'),
@@ -1145,6 +1170,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 		if (!hydraHead) {
 			throw createHttpError(502, 'No active connection to Hydra head');
 		}
+		await assertNodeReadyForDeposit(localParticipant.id);
 
 		try {
 			let verifiedHead: Awaited<ReturnType<typeof verifyPersistedHydraHeadOnChain>>;
@@ -1290,6 +1316,48 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 					throw createHttpError(409, error.message);
 				}
 				throw error;
+			}
+
+			// Record the commit as a deposit, the same way a top-up is recorded.
+			//
+			// A commit IS an incremental commit — same deposit script, same period,
+			// same deadline — but only top-ups were being written down. So the very
+			// first funding of a head was the one an operator could neither see in
+			// the deposits list nor recover when the head failed to absorb it, which
+			// is exactly the deposit most likely to expire: it is made while the node
+			// is still catching up on chain. Writing it here gives it the list entry
+			// and the Recover button every later deposit already had.
+			const committedLovelace = validatedDraft.committedValue.get('lovelace') ?? 0n;
+			const committedAssets: Record<string, string> = {};
+			for (const [unit, quantity] of validatedDraft.committedValue) {
+				if (unit !== 'lovelace') committedAssets[unit] = quantity.toString();
+			}
+			const alreadyRecorded = await prisma.hydraTopup.findFirst({
+				where: { hydraHeadId: head.id, depositTxHash: commitTxHash },
+				select: { id: true },
+			});
+			if (alreadyRecorded == null) {
+				await prisma.hydraTopup
+					.create({
+						data: {
+							hydraHeadId: head.id,
+							hydraLocalParticipantId: localParticipant.id,
+							depositTxHash: commitTxHash,
+							invalidHereafterSlot: validatedDraft.invalidHereafterSlot,
+							committedLovelace,
+							committedAssets,
+							status: HydraTopupStatus.Pending,
+						},
+					})
+					.catch((recordError: unknown) => {
+						// The commit itself is already submitted and reconciles on its own
+						// evidence; failing to write the display row must not fail it.
+						logger.warn('[HydraAPI] could not record the commit deposit for display', {
+							headId: head.id,
+							commitTxHash,
+							error: recordError instanceof Error ? recordError.message : recordError,
+						});
+					});
 			}
 
 			// hydra-node replies `{ tag: 'TransactionSubmitted' }` on success or
