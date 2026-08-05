@@ -55,6 +55,25 @@ export enum HydraNodeEvent {
 	 * between a payment settling now and settling in half a minute.
 	 */
 	IncrementFinalized = 'IncrementFinalized',
+	/**
+	 * A withdrawal reached a durable outcome in the head.
+	 *
+	 * Carries the decommit transaction's id and which outcome it reached, because
+	 * unlike a deposit a withdrawal is identified from the moment it is requested
+	 * and several may be recorded over a head's life. The value has already left
+	 * the head at `Approved`; `Finalized` only adds that L1 has it.
+	 */
+	DecommitSettled = 'DecommitSettled',
+}
+
+/** What a head decided about a requested withdrawal. */
+export type HydraDecommitOutcome = 'approved' | 'finalized' | 'invalid';
+
+export interface DecommitSettledData {
+	decommitTxId: string;
+	outcome: HydraDecommitOutcome;
+	/** The node's own words when it refused, kept verbatim. */
+	reason?: string;
 }
 
 export interface StatusChangeData {

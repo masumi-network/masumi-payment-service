@@ -17,6 +17,12 @@ import {
 	listHeadErrorsSchemaOutput,
 } from '@/routes/api/hydra/head';
 import { topupInput, topupOutput } from '@/routes/api/hydra/head/topup';
+import {
+	withdrawInput,
+	withdrawOutput,
+	listWithdrawalsInput,
+	listWithdrawalsOutput,
+} from '@/routes/api/hydra/head/withdraw';
 import { listHeadTransactionsInput, listHeadTransactionsOutput } from '@/routes/api/hydra/head/transactions';
 import {
 	listHydraLowBalanceRulesSchemaInput,
@@ -389,6 +395,55 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			400: { description: 'No plain wallet UTxOs match the requested asset filter' },
 			409: { description: 'Head not open, initial commit missing, or a prior top-up is still pending' },
 			502: { description: 'The node returned an unsafe or invalid top-up draft' },
+		},
+	});
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/head/withdraw',
+		summary: 'Withdraw funds from an open head back to L1. (admin access required)',
+		description:
+			"Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One UTxO of 5 ADA is held back as collateral so the wallet can still spend escrows inside the head; `drain` takes that too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.",
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(withdrawInput, { headId: HEAD_ID, lovelace: '10000000', drain: false }) },
+		responses: {
+			200: successResponse('Withdrawal accepted', withdrawOutput, { headId: HEAD_ID, accepted: true }),
+			...unauthorized,
+			...notFound,
+			400: { description: 'No eligible in-head funds, or less is eligible than was requested' },
+			409: { description: 'Head not open, or a withdrawal from it is already in progress' },
+			502: { description: 'The node rejected the withdrawal request' },
+		},
+	});
+	registry.registerPath({
+		method: 'get',
+		path: '/hydra/head/withdraw',
+		summary: 'List withdrawals from a head. (admin access required)',
+		description:
+			'Withdrawals out of this head, newest first. `approvedAt` is the point of no return: the head has signed the removal and the funds have left it, whether or not L1 has them yet. `finalizedAt` is when they became spendable on L1.',
+		tags: TAG,
+		security: secured,
+		request: { query: listWithdrawalsInput },
+		responses: {
+			200: successResponse('Withdrawals', listWithdrawalsOutput, {
+				withdrawals: [
+					{
+						id: 'cuid_v2_auto_generated',
+						createdAt: '1970-01-01T00:00:00.000Z',
+						updatedAt: '1970-01-01T00:00:00.000Z',
+						status: 'Approved',
+						splitTxId: 'b'.repeat(64),
+						decommitTxId: 'a'.repeat(64),
+						requestedLovelace: '10000000',
+						destinationAddress: 'addr_test1...',
+						failureReason: null,
+						approvedAt: '1970-01-01T00:00:00.000Z',
+						finalizedAt: null,
+					},
+				],
+			}),
+			...unauthorized,
+			...notFound,
 		},
 	});
 	registry.registerPath({

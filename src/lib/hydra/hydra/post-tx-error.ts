@@ -44,6 +44,30 @@ export function describePostTxError(postTxError: unknown): string {
 	return EXPLANATIONS[tag] ?? tag;
 }
 
+/**
+ * Why the head refused a withdrawal, in whatever shape the node sent it.
+ *
+ * `DecommitInvalid` carries a free-form reason rather than the tagged union
+ * `postTxError` uses: sometimes a tagged object, sometimes a bare string. Both
+ * are worth keeping verbatim, because the reason names the ledger rule that was
+ * broken and that is the difference between "split the amount differently" and
+ * "the counterparty is not cooperating".
+ */
+export function describeDecommitInvalidReason(reason: unknown): string {
+	if (typeof reason === 'string' && reason.length > 0) {
+		return reason.slice(0, 2000);
+	}
+	const tag = postTxErrorTag(reason);
+	if (tag !== null) {
+		return EXPLANATIONS[tag] ?? tag;
+	}
+	if (isPlainObject(reason)) {
+		const nested = getOwnValue(reason, 'reason');
+		if (typeof nested === 'string' && nested.length > 0) return nested.slice(0, 2000);
+	}
+	return 'no reason given';
+}
+
 /** Whether this refusal is fixed by putting ADA on the node's key. */
 export function isNodeUnfundedError(postTxError: unknown): boolean {
 	const tag = postTxErrorTag(postTxError);

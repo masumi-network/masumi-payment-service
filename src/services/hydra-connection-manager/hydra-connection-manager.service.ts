@@ -8,6 +8,7 @@ import {
 	HydraHeadEvent,
 	HydraNodeEvent,
 	StatusChangeData,
+	type DecommitSettledData,
 	buildHydraHttpEndpoint,
 	getHydraPlaintextHosts,
 	type HydraConfirmedTransaction,
@@ -21,6 +22,7 @@ import { HydraHeadStatus, Network, OnChainState, Prisma, TransactionStatus } fro
 import { HydraHeadUpdateInput } from '@/generated/prisma/models';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
 import { HydraNode } from '@/lib/hydra/hydra/node';
+import { applyDecommitOutcome } from '@/services/hydra-decommit/settle';
 import { deserializeDatum } from '@meshsdk/core';
 import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import { smartContractStateToOnChainState } from '@/utils/logic/l2-datum-validation';
@@ -749,6 +751,25 @@ export class HydraConnectionManager {
 		// that was waiting on them should run now rather than on the next tick.
 		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {
 			this.runL2LockPassNow(hydraHeadId);
+		});
+
+		// A withdrawal's outcome. The request that asked for it returned long ago —
+		// possibly in a process that has since restarted — so this is the only place
+		// its record is ever completed.
+		head.mainNode.on(HydraNodeEvent.DecommitSettled, (data: DecommitSettledData) => {
+			void applyDecommitOutcome({
+				hydraHeadId,
+				decommitTxId: data.decommitTxId,
+				outcome: data.outcome,
+				reason: data.reason,
+			}).catch((error: unknown) => {
+				logger.error('[HydraConnectionManager] could not record a withdrawal outcome', {
+					hydraHeadId,
+					decommitTxId: data.decommitTxId,
+					outcome: data.outcome,
+					error: error instanceof Error ? error.message : error,
+				});
+			});
 		});
 
 		head.mainNode.on(HydraNodeEvent.TxConfirmed, (txId: string, confirmedTransaction?: HydraConfirmedTransaction) => {

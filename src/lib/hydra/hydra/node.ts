@@ -12,6 +12,9 @@ import {
 	canonicalHydraHeadIdSchema,
 	canonicalHydraTransactionIdSchema,
 	commandFailedMessageSchema,
+	decommitApprovedMessageSchema,
+	decommitFinalizedMessageSchema,
+	decommitInvalidMessageSchema,
 	greetingsIdentityMessageSchema,
 	headClockMessageSchema,
 	headIsFinalizedMessageSchema,
@@ -30,8 +33,15 @@ import {
 	txInvalidMessageSchema,
 	txValidMessageSchema,
 } from './schemas';
-import { describePostTxError } from './post-tx-error';
-import { HydraConfirmedTransaction, HydraNodeEvent, HydraTransaction, HydraUTxO, StatusChangeData } from './types';
+import { describeDecommitInvalidReason, describePostTxError } from './post-tx-error';
+import {
+	DecommitSettledData,
+	HydraConfirmedTransaction,
+	HydraNodeEvent,
+	HydraTransaction,
+	HydraUTxO,
+	StatusChangeData,
+} from './types';
 import {
 	HydraCommandRejectedError,
 	HydraProtocolError,
@@ -157,6 +167,7 @@ export interface IHydraNode {
 	init(): Promise<unknown>;
 	commit(utxos: UTxO[], blueprintTx?: string): Promise<HydraTransaction>;
 	cardanoTransaction(transaction: HydraTransaction): Promise<unknown>;
+	decommit(transaction: HydraTransaction): Promise<unknown>;
 	snapshotUTxO(): Promise<UTxO[]>;
 	fetchProtocolParameters(): Promise<Protocol>;
 	fetchRawCostModels(): Promise<HydraRawCostModels>;
@@ -886,6 +897,35 @@ export class HydraNode extends EventEmitter {
 				this._pendingIncrementCount += 1;
 				this.recordPendingIncrementUtxos(message);
 			}
+			// A withdrawal's outcome, reported once per decommit. Approved is the
+			// point of no return — the head has signed the removal, so the value is
+			// gone from it whatever L1 does next — which is why it is surfaced
+			// rather than waiting for the finalization that follows it.
+			if (envelope.tag === 'DecommitApproved') {
+				const approved = decommitApprovedMessageSchema.parse(message);
+				this.emit(HydraNodeEvent.DecommitSettled, {
+					decommitTxId: approved.decommitTxId,
+					outcome: 'approved',
+				} satisfies DecommitSettledData);
+			}
+			if (envelope.tag === 'DecommitFinalized') {
+				const finalized = decommitFinalizedMessageSchema.parse(message);
+				this.emit(HydraNodeEvent.DecommitSettled, {
+					decommitTxId: finalized.decommitTxId,
+					outcome: 'finalized',
+				} satisfies DecommitSettledData);
+			}
+			if (envelope.tag === 'DecommitInvalid') {
+				const invalid = decommitInvalidMessageSchema.parse(message);
+				// The node returns the body it refused rather than an id, so the id has
+				// to be recovered from it — the same way TxInvalid is matched back to
+				// the request that produced it.
+				this.emit(HydraNodeEvent.DecommitSettled, {
+					decommitTxId: resolveTxHash(invalid.decommitTx.cborHex),
+					outcome: 'invalid',
+					reason: describeDecommitInvalidReason(invalid.decommitInvalidReason),
+				} satisfies DecommitSettledData);
+			}
 			if (envelope.tag === 'CommitFinalized' || envelope.tag === 'CommitRecovered') {
 				this._pendingIncrementCount = Math.max(0, this._pendingIncrementCount - 1);
 				// Only once nothing is in flight. A finalization names its deposit but
@@ -1394,6 +1434,19 @@ export class HydraNode extends EventEmitter {
 
 	async cardanoTransaction(transaction: HydraTransaction) {
 		const response = await this.post('/cardano-transaction', transaction);
+		return response;
+	}
+
+	/**
+	 * Ask the head to take this transaction's outputs out and pay them on L1.
+	 *
+	 * Every output leaves — there is no change staying behind — so a partial
+	 * withdrawal has to split the amount off inside the head first. A 200 here
+	 * means the node accepted the request, not that the head agreed: that arrives
+	 * later as DecommitApproved, or does not, as DecommitInvalid.
+	 */
+	async decommit(transaction: HydraTransaction) {
+		const response = await this.post('/decommit', transaction);
 		return response;
 	}
 

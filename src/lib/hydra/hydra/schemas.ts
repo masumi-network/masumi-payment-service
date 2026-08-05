@@ -115,6 +115,44 @@ export const commandFailedMessageSchema = z.looseObject({
 	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
 });
 
+/**
+ * The head signed a snapshot that removes a withdrawal's outputs.
+ *
+ * The moment that matters: from here the value is out of the head, and the only
+ * question left is when L1 receives it. Anything watching a withdrawal has to
+ * treat this as the point of no return rather than waiting for finalization.
+ */
+export const decommitApprovedMessageSchema = z.looseObject({
+	tag: z.literal('DecommitApproved'),
+	decommitTxId: canonicalHydraTransactionIdSchema,
+	headId: canonicalHydraHeadIdSchema,
+	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
+});
+
+/** The node observed its own L1 decrement, so the funds are spendable on L1. */
+export const decommitFinalizedMessageSchema = z.looseObject({
+	tag: z.literal('DecommitFinalized'),
+	decommitTxId: canonicalHydraTransactionIdSchema,
+	headId: canonicalHydraHeadIdSchema,
+	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
+});
+
+/**
+ * The head refused a withdrawal. Nothing left the head.
+ *
+ * The transaction rather than its id, because the node reports the body it
+ * rejected — matching it back to a request means hashing that body, exactly as
+ * TxInvalid is handled.
+ */
+export const decommitInvalidMessageSchema = z.looseObject({
+	tag: z.literal('DecommitInvalid'),
+	decommitTx: hydraTransactionSchema,
+	/** Kept verbatim and never used for control flow, as with TxInvalid. */
+	decommitInvalidReason: z.unknown().optional(),
+	headId: canonicalHydraHeadIdSchema,
+	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
+});
+
 export const postTxOnChainFailedMessageSchema = z.looseObject({
 	tag: z.literal('PostTxOnChainFailed'),
 	postChainTx: z.looseObject({ tag: boundedTagSchema }).optional(),

@@ -106,6 +106,19 @@ export class CustomHydraHead extends HydraHead<HydraNode> {
 		return await node.cardanoTransaction(transaction);
 	}
 
+	async decommit(transaction: HydraTransaction, participant?: string | null): Promise<unknown> {
+		this.assertMutationAllowed();
+		if (!participant) {
+			participant = this.mainNodeName;
+		}
+
+		const node = this.getHydraNode(participant);
+		if (!node) {
+			throw new Error(`Participant ${participant} not found`);
+		}
+		return await node.decommit(transaction);
+	}
+
 	async newTx(transaction: HydraTransaction, participant?: string | null): Promise<string> {
 		this.assertMutationAllowed();
 		if (!participant) {

@@ -24,6 +24,7 @@ export {
 } from './head';
 
 export { topupHeadPost, listTopupsGet, recoverTopupPost } from './head/topup';
+export { withdrawHeadPost, listWithdrawalsGet } from './head/withdraw';
 export { listHeadTransactionsGet } from './head/transactions';
 
 export {

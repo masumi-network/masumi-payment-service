@@ -1599,6 +1599,28 @@ enum HydraTopupStatus {
   Failed
 }
 
+/// Lifecycle of a withdrawal out of an open head.
+///
+/// Read it as three questions in order: has the amount been separated out, have
+/// both parties agreed to give it up, and has L1 received it. The middle one is
+/// the point of no return — after Approved the funds have left the head whether
+/// or not the L1 half has been observed yet.
+enum HydraDecommitStatus {
+  /// Splitting the exact amount into its own in-head UTxO. Seconds, not minutes:
+  /// the split is an ordinary in-head transaction.
+  Preparing
+  /// Submitted to the head; awaiting the snapshot both parties sign.
+  Pending
+  /// The head has signed the removal. The value is out of the head, and the node
+  /// is posting the L1 decrement that pays it out.
+  Approved
+  /// The L1 decrement has been observed. The funds are spendable on L1.
+  Finalized
+  /// The head refused it, or the split never confirmed. Nothing left the head
+  /// and a retry is safe.
+  Failed
+}
+
 /// Persistent relation between a local wallet and a remote counterparty for Hydra L2.
 /// Each agent runs their own server, so this is stored from the local agent's perspective.
 /// The local side is a HotWallet (we have the secret), the remote side is a WalletBase (public info only).
@@ -1700,6 +1722,9 @@ model HydraHead {
   /// Incremental-commit top-ups into this head
   Topups HydraTopup[]
 
+  /// Incremental-decommit withdrawals out of this head
+  Withdrawals HydraDecommit[]
+
   /// The local participant in this head (this server's wallet + node)
   LocalParticipant HydraLocalParticipant?
 
@@ -1795,6 +1820,9 @@ model HydraLocalParticipant {
 
   /// Incremental-commit top-ups performed by this participant
   Topups HydraTopup[]
+
+  /// Incremental-decommit withdrawals performed by this participant
+  Withdrawals HydraDecommit[]
 
   /// Low in-head-balance monitoring rules for this participant
   LowBalanceRules HydraLowBalanceRule[]
@@ -1965,6 +1993,73 @@ model HydraTopup {
   @@index([hydraLocalParticipantId, status])
   @@index([status, updatedAt])
   @@index([hydraHeadId])
+}
+
+/// A withdrawal of funds from an open head back to L1 (Hydra "decommit").
+///
+/// The mirror of HydraTopup, and deliberately a separate model rather than a
+/// signed amount on that one: the two run opposite ways round. A top-up starts
+/// on L1 and waits for the head to absorb it; a withdrawal starts in the head
+/// and waits for L1 to receive it. Their failure modes, their recovery, and the
+/// question an operator asks while one is in flight share no fields beyond the
+/// amount.
+model HydraDecommit {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The head the funds are being withdrawn from.
+  hydraHeadId String
+  HydraHead   HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// The local participant performing the withdrawal.
+  hydraLocalParticipantId String
+  LocalParticipant        HydraLocalParticipant @relation(fields: [hydraLocalParticipantId], references: [id], onDelete: Cascade)
+
+  /// The in-head transaction that carved the exact amount into its own UTxO,
+  /// when an exact amount was asked for.
+  ///
+  /// A decommit takes ALL of its transaction's outputs out of the head, so an
+  /// exact amount has to be split off first — the same reason a top-up carves a
+  /// UTxO on L1, arrived at from the opposite direction. In-head, that split is
+  /// free and confirms in a second, which is why there is no Preparing wait
+  /// here worth the name.
+  splitTxId String?
+
+  /// The decommit transaction's id. Null only while the split is still being
+  /// confirmed. This is the id the head reports back in its Decommit events, so
+  /// it is what every later status transition is matched on.
+  decommitTxId String?
+
+  /// Lovelace this withdrawal removes from the head.
+  requestedLovelace BigInt
+
+  /// Native-asset amounts removed, as { unit: quantityString }.
+  requestedAssets Json
+
+  /// Where the funds land on L1. The participant's own wallet address, recorded
+  /// so an operator can check the arrival against something concrete rather than
+  /// being told to trust that it went somewhere sensible.
+  destinationAddress String
+
+  status HydraDecommitStatus @default(Preparing)
+
+  /// Why the head refused it, verbatim from DecommitInvalid. The node's own
+  /// wording is more use than any summary of it: it names the ledger rule.
+  failureReason String?
+
+  /// When the head signed the snapshot that removed the funds. From this moment
+  /// the value is gone from the head whatever happens next on L1.
+  approvedAt DateTime?
+
+  /// When the node observed its own L1 decrement transaction, i.e. when the
+  /// funds actually became spendable on L1.
+  finalizedAt DateTime?
+
+  @@index([hydraLocalParticipantId, status])
+  @@index([status, updatedAt])
+  @@index([hydraHeadId])
+  @@index([decommitTxId])
 }
 
 /// Encrypted Hydra signing key for the local participant (1:1 with HydraLocalParticipant).

@@ -88,6 +88,8 @@ export abstract class HydraHead<TNode extends IHydraNode = IHydraNode> extends E
 
 	abstract cardanoTransaction(transaction: HydraTransaction, participant?: string | null): Promise<unknown>;
 
+	abstract decommit(transaction: HydraTransaction, participant?: string | null): Promise<unknown>;
+
 	abstract newTx(transaction: HydraTransaction, participant?: string | null): Promise<string>;
 
 	abstract awaitTx(txHash: string, participant?: string | null): Promise<boolean>;

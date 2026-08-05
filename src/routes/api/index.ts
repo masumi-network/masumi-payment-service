@@ -142,6 +142,8 @@ import {
 	listHeadTransactionsGet,
 	recoverTopupPost,
 	listTopupsGet,
+	withdrawHeadPost,
+	listWithdrawalsGet,
 	listHydraLowBalanceRulesGet,
 	setHydraLowBalanceRulePost,
 	deleteHydraLowBalanceRuleDelete,
@@ -538,6 +540,11 @@ export const apiRouter: Routing = {
 					get: listTopupsGet,
 					// A deposit the head never absorbed does not return on its own.
 					recover: { post: recoverTopupPost },
+				},
+				// The other direction: funds leaving an open head, without closing it.
+				withdraw: {
+					post: withdrawHeadPost,
+					get: listWithdrawalsGet,
 				},
 				close: { post: closeHeadPost },
 				fanout: { post: fanoutHeadPost },

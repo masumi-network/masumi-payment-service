@@ -1,0 +1,163 @@
+/**
+ * Choosing which in-head UTxOs a withdrawal may take.
+ *
+ * Withdrawing is the one Hydra operation that can quietly break the head it acts
+ * on. A top-up that picks badly just moves less money than intended; a
+ * withdrawal that picks badly can leave a wallet holding escrows it can no
+ * longer spend, and the only way out of that is closing the head. So the
+ * selection is deliberately conservative and every exclusion here is a rule
+ * about what must stay behind, not an optimisation.
+ *
+ * Pure and provider-free, so the rules can be tested without a head.
+ */
+
+import type { UTxO } from '@meshsdk/core';
+
+/**
+ * Lovelace kept in a spendable UTxO so the wallet can still post script
+ * transactions inside the head.
+ *
+ * The head's parameters charge no fee, which makes it easy to believe a wallet
+ * needs nothing left over. It does: spending the escrow script requires
+ * collateral, and collateral must be a plain UTxO the wallet already holds.
+ * Withdraw the last one and every future submit-result, refund and collect in
+ * this head fails with nothing to offer as collateral — while the balance
+ * still reads as healthy, because the escrows themselves are untouched.
+ *
+ * Matches COLLATERAL_RESERVE_LOVELACE in the V2 collateral service, which is
+ * what actually picks collateral at build time. Duplicated rather than imported
+ * because that module sits on the V2 mesh line (ADR-0005) and this one does not.
+ */
+export const IN_HEAD_COLLATERAL_RESERVE_LOVELACE = 5_000_000n;
+
+export interface DecommitSelectionInput {
+	/** The local participant's in-head UTxOs, as the head reports them. */
+	utxos: readonly UTxO[];
+	/** Refs the head has promised to a deposit but not yet folded in. */
+	pendingIncrementRefs: ReadonlySet<string>;
+	/**
+	 * Take everything, including the collateral reserve.
+	 *
+	 * For winding a head down, where being unable to post further script
+	 * transactions is the intent rather than an accident.
+	 */
+	drain: boolean;
+}
+
+export interface DecommitSelectionResult {
+	/** UTxOs this withdrawal is allowed to spend. */
+	eligible: UTxO[];
+	/** Total lovelace across the eligible set. */
+	eligibleLovelace: bigint;
+	/** Why each excluded UTxO was held back, keyed by `txHash#index`. */
+	excluded: Map<string, string>;
+}
+
+export function utxoRef(utxo: UTxO): string {
+	return `${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase();
+}
+
+export function lovelaceOf(utxo: UTxO): bigint {
+	let total = 0n;
+	for (const asset of utxo.output.amount) {
+		if (asset.unit === '' || asset.unit.toLowerCase() === 'lovelace') total += BigInt(asset.quantity);
+	}
+	return total;
+}
+
+/**
+ * A UTxO that is only money, and nothing else.
+ *
+ * Anything carrying a datum or a reference script is part of some arrangement —
+ * an escrow, a reference input — and taking it out of the head would remove it
+ * from whatever depends on it while leaving that thing looking intact. The
+ * participant's own address should never hold one; refusing them anyway costs
+ * nothing and is the difference between a bug and a broken head.
+ */
+function isPlainValue(utxo: UTxO): boolean {
+	return (
+		(utxo.output.dataHash === undefined || utxo.output.dataHash === null) &&
+		(utxo.output.plutusData === undefined || utxo.output.plutusData === null) &&
+		(utxo.output.scriptRef === undefined || utxo.output.scriptRef === null) &&
+		(utxo.output.scriptHash === undefined || utxo.output.scriptHash === null)
+	);
+}
+
+/**
+ * Apply every rule about what must stay in the head, and report what is left.
+ *
+ * The collateral reserve is withheld as a whole UTxO rather than as an amount:
+ * collateral cannot be assembled from several inputs at build time, so leaving
+ * 5 ADA spread over three UTxOs would satisfy an amount check and still leave
+ * the wallet unable to post anything.
+ */
+export function selectDecommittableUtxos(input: DecommitSelectionInput): DecommitSelectionResult {
+	const excluded = new Map<string, string>();
+	const candidates: UTxO[] = [];
+
+	for (const utxo of input.utxos) {
+		const ref = utxoRef(utxo);
+		if (input.pendingIncrementRefs.has(ref)) {
+			excluded.set(ref, 'still being folded into the head by a deposit');
+			continue;
+		}
+		if (!isPlainValue(utxo)) {
+			excluded.set(ref, 'carries a datum or script, so it is not plain funds');
+			continue;
+		}
+		candidates.push(utxo);
+	}
+
+	if (!input.drain) {
+		// Hold back the smallest UTxO that can serve as collateral on its own.
+		// Smallest, so the reserve costs the withdrawal as little as possible;
+		// whole, because that is how collateral is chosen.
+		const reserveIndex = candidates
+			.map((utxo, index) => ({ index, lovelace: lovelaceOf(utxo) }))
+			.filter((entry) => entry.lovelace >= IN_HEAD_COLLATERAL_RESERVE_LOVELACE)
+			.sort((left, right) => (left.lovelace === right.lovelace ? 0 : left.lovelace < right.lovelace ? -1 : 1))[0];
+
+		if (reserveIndex === undefined) {
+			// Nothing here could act as collateral even before the withdrawal, so
+			// there is nothing to protect. Say so rather than silently taking it all.
+			return {
+				eligible: candidates,
+				eligibleLovelace: candidates.reduce((total, utxo) => total + lovelaceOf(utxo), 0n),
+				excluded,
+			};
+		}
+		const [reserved] = candidates.splice(reserveIndex.index, 1);
+		if (reserved) {
+			excluded.set(utxoRef(reserved), 'kept back as collateral so this wallet can still spend escrows in the head');
+		}
+	}
+
+	return {
+		eligible: candidates,
+		eligibleLovelace: candidates.reduce((total, utxo) => total + lovelaceOf(utxo), 0n),
+		excluded,
+	};
+}
+
+/**
+ * The fewest whole UTxOs whose lovelace reaches `amount`.
+ *
+ * Largest first, so a withdrawal spends as few inputs as possible and leaves the
+ * wallet's remaining UTxOs as usable as it found them. Returns null when the
+ * eligible set cannot reach the amount at all — the caller reports that as a
+ * refusal rather than withdrawing an unexpected sum.
+ */
+export function coverLovelace(utxos: readonly UTxO[], amount: bigint): UTxO[] | null {
+	const sorted = [...utxos].sort((left, right) => {
+		const difference = lovelaceOf(right) - lovelaceOf(left);
+		return difference === 0n ? 0 : difference < 0n ? -1 : 1;
+	});
+	const chosen: UTxO[] = [];
+	let total = 0n;
+	for (const utxo of sorted) {
+		if (total >= amount) break;
+		chosen.push(utxo);
+		total += lovelaceOf(utxo);
+	}
+	return total >= amount ? chosen : null;
+}
