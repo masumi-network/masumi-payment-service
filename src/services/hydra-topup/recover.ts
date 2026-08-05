@@ -85,6 +85,7 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 		// is what happened, with the caller told where to look.
 		if (error instanceof HydraTransportAmbiguousError) {
 			logger.info(`hydra: recovery of deposit ${topup.depositTxHash} was requested; the node did not answer in time`);
+			await markRecoveryRequested(topup.id);
 			return {
 				depositTxHash: topup.depositTxHash,
 				requested: true,
@@ -99,5 +100,30 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 	}
 
 	logger.info(`hydra: requested recovery of deposit ${topup.depositTxHash} for head ${topup.hydraHeadId}`);
+	await markRecoveryRequested(topup.id);
 	return { depositTxHash: topup.depositTxHash, requested: true, reason: null };
+}
+
+/**
+ * Record that this deposit's recovery was asked for.
+ *
+ * Recovery leaves no other trace on the row: the status describes what the head
+ * did with the deposit, and the head did nothing. Without this the row reads as
+ * untouched after a recovery — the button comes back on the next page load and
+ * invites a second press at funds already on their way home.
+ *
+ * Only ever set once, so a repeat press cannot move the timestamp forward and
+ * make an old recovery look new.
+ */
+async function markRecoveryRequested(topupId: string): Promise<void> {
+	try {
+		await prisma.hydraTopup.updateMany({
+			where: { id: topupId, recoveryRequestedAt: null },
+			data: { recoveryRequestedAt: new Date() },
+		});
+	} catch (error) {
+		// The recovery is already posted; failing to note it must not turn a
+		// successful request into an error the caller retries.
+		logger.warn(`hydra: could not record the recovery request for ${topupId}`, { error });
+	}
 }

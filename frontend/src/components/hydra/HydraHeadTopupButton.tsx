@@ -148,17 +148,11 @@ function HydraTopupList({
   const isUsable = (topup: HydraTopup) =>
     now !== null && topup.usableFrom != null && new Date(topup.usableFrom).getTime() <= now;
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
-  // The server posts the recovery but does not mark the deposit, so without
-  // this the row looks untouched and the button invites a second press.
-  const [recoveryRequested, setRecoveryRequested] = useState<Set<string>>(new Set());
 
   async function handleRecover(topupId: string) {
     setRecoveringId(topupId);
     try {
       const result = await recoverHydraTopup(apiClient, { topupId });
-      if (result.requested) {
-        setRecoveryRequested((current) => new Set(current).add(topupId));
-      }
       await resync('hydra', 'wallets');
       toast[result.requested ? 'success' : 'info'](
         result.requested ? 'Recovery posted. Funds return once it confirms.' : (result.reason ?? 'Nothing to recover'),
@@ -259,8 +253,10 @@ function HydraTopupList({
                   automatically. */}
               {topup.status === 'Confirmed' &&
                 topup.depositTxHash !== null &&
-                (recoveryRequested.has(topup.id) ? (
-                  <span className="ml-1 text-xs text-muted-foreground">Recovery posted</span>
+                (topup.recoveryRequestedAt != null ? (
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}
+                  </span>
                 ) : (
                   <Button
                     type="button"

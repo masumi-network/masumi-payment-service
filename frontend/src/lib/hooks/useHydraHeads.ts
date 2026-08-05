@@ -797,6 +797,14 @@ export type HydraTopup = {
   deadline?: string | null;
   /** Before this, the head will not take it however confirmed the transaction is. */
   usableFrom?: string | null;
+  /**
+   * Set once the node has been asked to send this deposit back to the wallet.
+   *
+   * Read from the record rather than remembered by the page: a recovery leaves
+   * no other mark on the deposit, so without this a reload offered the button
+   * again at funds already on their way home.
+   */
+  recoveryRequestedAt?: string | null;
 };
 
 /**

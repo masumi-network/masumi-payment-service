@@ -74,6 +74,14 @@ export const listTopupsOutput = z.object({
 			 * unusable. Reporting only "Confirmed" made that gap look like success.
 			 */
 			usableFrom: z.string().nullable(),
+			/**
+			 * When the node was asked to send this deposit back.
+			 *
+			 * Set, the deposit is on its way to the wallet and there is nothing left
+			 * to press. Read from the record rather than remembered by the page, so
+			 * a reload does not offer the button again.
+			 */
+			recoveryRequestedAt: z.string().nullable(),
 		}),
 	),
 });
@@ -163,6 +171,7 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 						? null
 						: new Date(deadlineMsOf(row.invalidHereafterSlot) - 2 * depositPeriodSeconds * 1000).toISOString(),
 				committedAssets: (row.committedAssets ?? {}) as Record<string, string>,
+				recoveryRequestedAt: row.recoveryRequestedAt?.toISOString() ?? null,
 			})),
 		};
 	},

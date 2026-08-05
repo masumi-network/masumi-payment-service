@@ -102,6 +102,24 @@ export class Supervisor {
 		this.logger.info(`[supervisor] loaded ${records.length} node record(s) from ${this.config.dataDir}`);
 		for (const record of records) {
 			if (record.state === 'Running' || record.state === 'Starting' || record.state === 'Draining') {
+				// A node outlives the host that supervises it: the host is an ordinary
+				// process and restarting it — a deploy, a crash, a developer — does not
+				// take the hydra-nodes with it. Assuming it did marked a node that was
+				// still serving on its own port as Stopped, and nothing ever corrected
+				// it: the record said down, so the payment service refused to connect,
+				// the admin UI reported "the node is not running", and every operation
+				// needing a live session failed against a perfectly healthy node.
+				//
+				// So ask it. A node that answers is adopted as Running; only silence
+				// means the host really did take it down, which is the case the unwedge
+				// check exists for.
+				if (await this.client(record).isResponsive()) {
+					this.logger.info(
+						`[supervisor] ${record.nodeId} was ${record.state} at shutdown and is still answering; adopting it`,
+					);
+					await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Running' }));
+					continue;
+				}
 				// The process is gone but the record still says it was up, so the host
 				// died without draining — an OOM kill, host failure or eviction. That
 				// is exactly the case the unwedge check exists for, so flag it;
@@ -148,12 +166,16 @@ export class Supervisor {
 	}
 
 	private async observe(record: NodeRecord): Promise<NodeObservation> {
-		if (!this.processes.isRunning(record.nodeId)) {
-			return { processRunning: false, drift: null, responsive: false, chainSynced: false, nowMs: Date.now() };
-		}
-
 		const client = this.client(record);
-		if (!(await client.isResponsive())) {
+		if (!this.processes.isRunning(record.nodeId)) {
+			// Not a child of THIS host does not mean not running. A host restart
+			// leaves its nodes serving but loses the handles to them, so judging by
+			// the child table alone would mark a live node dead one tick after boot
+			// adopted it — and keep doing so on every tick after that.
+			if (!(await client.isResponsive())) {
+				return { processRunning: false, drift: null, responsive: false, chainSynced: false, nowMs: Date.now() };
+			}
+		} else if (!(await client.isResponsive())) {
 			return { processRunning: true, drift: null, responsive: false, chainSynced: false, nowMs: Date.now() };
 		}
 
