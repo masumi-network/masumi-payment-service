@@ -41,6 +41,9 @@ import { Spinner } from '@/components/ui/spinner';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { InfoHint } from '@/components/ui/info-hint';
 
+/** Radix refuses an empty Select value, so ADA needs a name of its own. */
+const ADA_CHOICE = 'ada';
+
 interface HydraHeadWithdrawButtonProps {
   headId: string;
   /** Withdrawing is an incremental decommit, only possible on an Open head. */
@@ -176,7 +179,9 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
   // Offered from what the head actually holds rather than typed from memory: a
   // policy id and asset name is 100+ characters, and the head already knows
   // which ones are there to take.
-  const [assetUnit, setAssetUnit] = useState('');
+  // 'ada' rather than '' because Radix refuses an empty Select value, and the
+  // whole panel throws rather than the field misbehaving.
+  const [assetUnit, setAssetUnit] = useState(ADA_CHOICE);
   const { data: balance } = useHydraHeadBalance(headId, isOpen);
   const heldAssets = (balance?.balance ?? []).filter((asset) => asset.unit !== '');
 
@@ -204,7 +209,7 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
   }
 
   const handleWithdraw = async () => {
-    if (assetUnit !== '') {
+    if (assetUnit !== ADA_CHOICE) {
       // A native asset is counted in its own smallest unit, so there is no
       // decimal conversion to do and a fraction would be meaningless.
       const assetAmount = amount.trim();
@@ -253,7 +258,7 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">{adaLabel}</SelectItem>
+                <SelectItem value={ADA_CHOICE}>{adaLabel}</SelectItem>
                 {heldAssets.map((asset) => (
                   <SelectItem key={asset.unit} value={asset.unit}>
                     {formatFundUnit(asset.unit, network)}
@@ -276,7 +281,7 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
               className="w-44 pr-16 font-mono"
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-w-14 truncate text-xs text-muted-foreground">
-              {assetUnit === '' ? adaLabel : formatFundUnit(assetUnit, network)}
+              {assetUnit === ADA_CHOICE ? adaLabel : formatFundUnit(assetUnit, network)}
             </span>
           </div>
         </div>
