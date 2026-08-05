@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { planNodeAction, type NodeObservation, type PlanLimits } from './plan.js';
+import { planNodeAction, shouldAdoptAsRunning, type NodeObservation, type PlanLimits } from './plan.js';
 import type { NodeRecord } from '../registry/types.js';
 
 const LIMITS: PlanLimits = { maxStartAttempts: 5, escrowTtlSeconds: 3600 };
@@ -109,5 +109,50 @@ describe('planNodeAction', () => {
 			LIMITS,
 		);
 		expect(action.kind).toBe('Remove');
+	});
+});
+
+/**
+ * A host is an ordinary process and its nodes outlive it, so a restart used to
+ * leave a live node recorded as Stopped with nothing ever reconsidering it: the
+ * payment service read that state and refused to connect to a healthy node.
+ *
+ * Repairing it has to stop short of overriding intent, which is the part worth
+ * pinning — a drain, a failure and a teardown all look like "not Running" while
+ * a port still answers.
+ */
+describe('shouldAdoptAsRunning', () => {
+	const record = (state: NodeRecord['state'], desired: NodeRecord['desired']) => ({ state, desired });
+
+	it('adopts a responsive node the record calls stopped', () => {
+		expect(shouldAdoptAsRunning(record('Stopped', 'Running'), { responsive: true })).toBe(true);
+	});
+
+	it('adopts a responsive node that is still starting', () => {
+		expect(shouldAdoptAsRunning(record('Starting', 'Running'), { responsive: true })).toBe(true);
+	});
+
+	it('never adopts a node that is not answering', () => {
+		expect(shouldAdoptAsRunning(record('Stopped', 'Running'), { responsive: false })).toBe(false);
+	});
+
+	// A draining node answers for a while. Calling it Running would hand the
+	// payment service a node it is about to lose.
+	it('leaves a node alone while it is being drained', () => {
+		expect(shouldAdoptAsRunning(record('Stopped', 'Stopped'), { responsive: true })).toBe(false);
+		expect(shouldAdoptAsRunning(record('Starting', 'Stopped'), { responsive: true })).toBe(false);
+	});
+
+	// Failed is terminal until an operator looks at it; adopting it would hide
+	// the failure it exists to surface.
+	it('never resurrects a failed node', () => {
+		expect(shouldAdoptAsRunning(record('Failed', 'Running'), { responsive: true })).toBe(false);
+	});
+
+	// PendingEscrow gates key-material readability and Removing is a teardown.
+	// Neither means "in service" just because a port answers.
+	it('never adopts a node that was never put into service', () => {
+		expect(shouldAdoptAsRunning(record('PendingEscrow', 'Running'), { responsive: true })).toBe(false);
+		expect(shouldAdoptAsRunning(record('Removing', 'Running'), { responsive: true })).toBe(false);
 	});
 });

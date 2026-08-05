@@ -49,6 +49,34 @@ export type PlanLimits = {
 	escrowTtlSeconds: number;
 };
 
+/**
+ * Whether an answering node should be recorded as Running.
+ *
+ * `Running` means "answering its API" rather than "spawned", so a node that
+ * answers belongs in it — including one the record still calls Stopped, which
+ * is how a host restart used to strand a live node: the payment service reads
+ * this state, and a healthy node recorded as down is one it refuses to use.
+ *
+ * Intent is what separates a stale record from a deliberate one, so it is
+ * consulted rather than overridden:
+ *
+ *  - `desired === 'Stopped'` is a drain. A node being taken down still answers
+ *    for a while, and calling it Running hands the payment service a node it is
+ *    about to lose.
+ *  - `Failed` is terminal until an operator looks; adopting it hides the very
+ *    failure it exists to surface.
+ *  - `PendingEscrow` gates key-material readability and `Removing` is teardown.
+ *    Neither means "in service" just because a port answers.
+ */
+export function shouldAdoptAsRunning(
+	record: Pick<NodeRecord, 'state' | 'desired'>,
+	observation: Pick<NodeObservation, 'responsive'>,
+): boolean {
+	if (!observation.responsive) return false;
+	if (record.desired !== 'Running') return false;
+	return record.state === 'Starting' || record.state === 'Stopped';
+}
+
 function escrowExpired(record: NodeRecord, nowMs: number, ttlSeconds: number): boolean {
 	const created = Date.parse(record.createdAt);
 	if (!Number.isFinite(created)) {

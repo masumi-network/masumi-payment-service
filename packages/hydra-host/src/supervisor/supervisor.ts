@@ -22,7 +22,7 @@ import type { NodeRecord } from '../registry/types.js';
 import { buildHydraNodeArgs } from './args.js';
 import { waitForDrain } from './drain.js';
 import { classifyDrift, measureDrift, validateDriftThresholds, type SlotConfig } from './drift.js';
-import { planNodeAction, type NodeObservation, type PlanLimits } from './plan.js';
+import { planNodeAction, shouldAdoptAsRunning, type NodeObservation, type PlanLimits } from './plan.js';
 import { NodeProcessManager } from './process.js';
 import { unwedgeNode } from './unwedge.js';
 
@@ -219,7 +219,7 @@ export class Supervisor {
 	 */
 	private async recordObservation(record: NodeRecord, observation: NodeObservation): Promise<NodeRecord> {
 		const healthy = observation.responsive && observation.drift === 'Healthy';
-		const promote = record.state === 'Starting' && observation.responsive;
+		const promote = shouldAdoptAsRunning(record, observation);
 
 		const updated = await this.store.update(record.nodeId, (current) => ({
 			...current,
@@ -229,12 +229,14 @@ export class Supervisor {
 				chainSynced: observation.chainSynced,
 				drift: observation.drift,
 			},
-			...(promote && current.state === 'Starting' ? { state: 'Running' as const } : {}),
+			...(promote && shouldAdoptAsRunning(current, observation) ? { state: 'Running' as const } : {}),
 			...(healthy && current.startAttempts !== 0 ? { startAttempts: 0 } : {}),
 		}));
 
-		if (promote && updated?.state === 'Running') {
-			this.logger.info(`[supervisor] ${record.nodeId} is answering its API`);
+		if (promote && updated?.state === 'Running' && record.state !== 'Running') {
+			this.logger.info(
+				`[supervisor] ${record.nodeId} is answering its API${record.state === 'Stopped' ? ' despite being recorded as stopped; adopting it' : ''}`,
+			);
 		}
 		return updated ?? record;
 	}
