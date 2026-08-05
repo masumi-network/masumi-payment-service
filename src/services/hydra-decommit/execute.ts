@@ -19,7 +19,14 @@
 
 import createHttpError from 'http-errors';
 import { MeshTxBuilder, MeshWallet, resolveTxHash, type UTxO } from '@meshsdk/core';
-import { HydraDecommitStatus, HydraErrorType, HydraHeadStatus, Network, Prisma } from '@/generated/prisma/client';
+import {
+	HydraDecommitStatus,
+	HydraErrorType,
+	HydraHeadStatus,
+	Network,
+	Prisma,
+	TransactionLayer,
+} from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { logger } from '@masumi/payment-core/logger';
@@ -50,6 +57,17 @@ const SPLIT_POLL_MS = 500;
  * an in-head transaction, not an L1 confirmation.
  */
 const PREPARING_STALE_AFTER_MS = 10 * 60 * 1000;
+
+/**
+ * The least a split may leave behind.
+ *
+ * A split produces the exact amount plus a remainder, and an output below the
+ * ledger's minimum cannot exist — the builder would fail with a message about
+ * value conservation that says nothing about the amount being the problem.
+ * Comfortably above the minimum for a plain output at the head's
+ * utxoCostPerByte, since the point is a clear refusal rather than a tight fit.
+ */
+const MIN_SPLIT_REMAINDER_LOVELACE = 2_000_000n;
 
 export type ExecuteHydraDecommitParams = {
 	headId: string;
@@ -183,6 +201,22 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		});
 		await wallet.getUnusedAddresses();
 
+		// Taking the collateral is only safe once nothing is left to spend with it.
+		// The dialog explains the consequence, but a dialog is not a guard: an
+		// escrow still live in the head becomes unspendable the moment its wallet
+		// has no collateral, and the only way out of that is closing the head.
+		if (params.drain === true) {
+			const liveEscrows = await countLiveInHeadEscrows(head.id);
+			if (liveEscrows > 0) {
+				throw createHttpError(
+					409,
+					`Cannot withdraw the collateral while ${liveEscrows} escrow${liveEscrows === 1 ? ' is' : 's are'} still live in this head. ` +
+						'Without collateral they could not be settled, and closing the head would be the only way to recover them. ' +
+						'Settle them first, or withdraw an amount instead.',
+				);
+			}
+		}
+
 		const selection = selectDecommittableUtxos({
 			utxos: await provider.fetchAddressUTxOs(address),
 			pendingIncrementRefs: hydraHead.mainNode.pendingIncrementUtxoRefs,
@@ -215,6 +249,13 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 				// would be a transaction that changes nothing.
 				decommitInputs = covering;
 			} else {
+				if (covered - params.lovelace < MIN_SPLIT_REMAINDER_LOVELACE) {
+					throw createHttpError(
+						400,
+						`Withdrawing ${params.lovelace} lovelace would leave ${covered - params.lovelace} behind, which is below the minimum a UTxO may hold. ` +
+							'Withdraw a little less, or leave the amount out to take whole UTxOs.',
+					);
+				}
 				const split = await splitExactAmountInHead({
 					wallet,
 					provider,
@@ -396,4 +437,24 @@ async function splitExactAmountInHead(params: {
 	}
 	logger.info(`[HydraDecommit] split ${lovelace} lovelace into ${utxoRef(exact)} inside the head`);
 	return { txId: splitTxId, exact };
+}
+
+/**
+ * Escrows this head still holds that have not settled.
+ *
+ * "Live" means the request still points at an in-head UTxO: an escrow that has
+ * reached a terminal state has no `currentHydraUtxoTxHash` and needs nothing
+ * further from this wallet. Both sides are counted, because a wallet can be
+ * buyer on one escrow and seller on another in the same head.
+ */
+async function countLiveInHeadEscrows(hydraHeadId: string): Promise<number> {
+	const where = {
+		currentHydraUtxoTxHash: { not: null },
+		CurrentTransaction: { is: { hydraHeadId, layer: TransactionLayer.L2 } },
+	} as const;
+	const [payments, purchases] = await Promise.all([
+		prisma.paymentRequest.count({ where }),
+		prisma.purchaseRequest.count({ where }),
+	]);
+	return payments + purchases;
 }

@@ -116,6 +116,12 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 	input: withdrawInput,
 	output: withdrawOutput,
 	handler: async ({ input }) => {
+		// Checked before answering. The work itself outlives the request, but an
+		// operator asking about a head that does not exist should be told so rather
+		// than shown "Withdrawal started" and left to find the reason in a log.
+		const head = await prisma.hydraHead.findUnique({ where: { id: input.headId }, select: { id: true } });
+		if (!head) throw createHttpError(404, 'Hydra head not found');
+
 		void executeHydraDecommit({
 			headId: input.headId,
 			lovelace: input.lovelace ? BigInt(input.lovelace) : null,

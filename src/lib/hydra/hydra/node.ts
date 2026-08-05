@@ -830,6 +830,11 @@ export class HydraNode extends EventEmitter {
 
 	private processStatus(rawMessage: string) {
 		let envelope: ReturnType<typeof messageSchema.parse>;
+		// Validated with every other frame below, but emitted only once the live
+		// session has been authenticated. Unlike the increment bookkeeping beside
+		// it, this one writes to the database, so it waits for the same proof of
+		// identity every other persisted transition does.
+		let decommitSettled: DecommitSettledData | undefined;
 		try {
 			const message = parseBoundedJsonFrame(rawMessage);
 			this.assertPersistenceReplayIsSupported(message);
@@ -900,28 +905,22 @@ export class HydraNode extends EventEmitter {
 			// rather than waiting for the finalization that follows it.
 			if (envelope.tag === 'DecommitApproved') {
 				const approved = decommitApprovedMessageSchema.parse(message);
-				this.emit(HydraNodeEvent.DecommitSettled, {
-					decommitTxId: approved.decommitTxId,
-					outcome: 'approved',
-				} satisfies DecommitSettledData);
+				decommitSettled = { decommitTxId: approved.decommitTxId, outcome: 'approved' };
 			}
 			if (envelope.tag === 'DecommitFinalized') {
 				const finalized = decommitFinalizedMessageSchema.parse(message);
-				this.emit(HydraNodeEvent.DecommitSettled, {
-					decommitTxId: finalized.decommitTxId,
-					outcome: 'finalized',
-				} satisfies DecommitSettledData);
+				decommitSettled = { decommitTxId: finalized.decommitTxId, outcome: 'finalized' };
 			}
 			if (envelope.tag === 'DecommitInvalid') {
 				const invalid = decommitInvalidMessageSchema.parse(message);
 				// The node returns the body it refused rather than an id, so the id has
 				// to be recovered from it — the same way TxInvalid is matched back to
 				// the request that produced it.
-				this.emit(HydraNodeEvent.DecommitSettled, {
+				decommitSettled = {
 					decommitTxId: resolveTxHash(invalid.decommitTx.cborHex),
 					outcome: 'invalid',
 					reason: describeDecommitInvalidReason(invalid.decommitInvalidReason),
-				} satisfies DecommitSettledData);
+				};
 			}
 			if (envelope.tag === 'CommitFinalized' || envelope.tag === 'CommitRecovered') {
 				this._pendingIncrementCount = Math.max(0, this._pendingIncrementCount - 1);
@@ -952,6 +951,7 @@ export class HydraNode extends EventEmitter {
 		}
 
 		if (!this.isLiveSessionReady()) return;
+		if (decommitSettled) this.emit(HydraNodeEvent.DecommitSettled, decommitSettled);
 		const changeData = extractStatusChangeData(rawMessage, this._expectedHeadId);
 		if (changeData && changeData.status !== HydraHeadStatus.Final) {
 			// A history replay can contain a prior Final while the authenticated

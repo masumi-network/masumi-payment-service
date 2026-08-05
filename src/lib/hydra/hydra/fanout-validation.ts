@@ -63,14 +63,27 @@ const DEFAULT_FANOUT_OBSERVER_TIMEOUT_MS = 15_000;
  * Bounds on the work one verification may ask of the L1 observer.
  *
  * A fanout chain is driven by data hydra-node reports, and each step costs four
- * indexer requests. These are not protocol limits — they are the point past
- * which a malformed or hostile finalization stops being a verification failure
- * and becomes a way to keep this process busy. `MAX_HYDRA_SNAPSHOT_OUTPUTS` is
- * the head's own ceiling on outputs, and a step distributes at least one, so no
- * honest chain can exceed either.
+ * indexer requests with its own timeout. These are not protocol limits — they
+ * are the point past which a malformed or hostile finalization stops being a
+ * verification failure and becomes a way to keep this process busy. It matters
+ * more than it looks: this runs inside the reconcile pass, on a timer, and is
+ * retried every pass until it succeeds.
+ *
+ * The head's own ceiling bounds the references. The step count is bounded far
+ * more tightly, because a step distributes as many outputs as fit in a 16 KB
+ * transaction: even outputs carrying large datums run to tens of steps, not
+ * thousands, so anything beyond this is not a chain we could have produced.
  */
 const MAX_FANOUT_REFERENCES = MAX_HYDRA_SNAPSHOT_OUTPUTS;
-const MAX_FANOUT_STEPS = MAX_HYDRA_SNAPSHOT_OUTPUTS;
+const MAX_FANOUT_STEPS = 64;
+
+/**
+ * Total observer budget for one chain, across every step.
+ *
+ * The per-step timeout bounds a single hung request; without this, a long chain
+ * of merely slow ones could still hold the reconcile pass for many minutes.
+ */
+const MAX_FANOUT_CHAIN_OBSERVER_MS = 120_000;
 
 /**
  * A CSL output's value as the flat unit/quantity pairs the indexer reports.
@@ -449,7 +462,10 @@ export async function verifyHydraFanoutOnChain(options: {
 	// Verified independently; the chain they form is checked afterwards, because
 	// no single step can prove anything about the ones around it.
 	const steps = new Map<string, VerifiedFanoutStep>();
+	const chainDeadline = Date.now() + MAX_FANOUT_CHAIN_OBSERVER_MS;
 	for (const [txHash, references] of byTxHash) {
+		const remainingMs = chainDeadline - Date.now();
+		if (remainingMs <= 0) fail('Hydra fanout verification exceeded its total L1 observer budget');
 		steps.set(
 			txHash,
 			await verifyFanoutStep({
@@ -460,7 +476,7 @@ export async function verifyHydraFanoutOnChain(options: {
 				headScriptHash,
 				references,
 				requiredConfirmations: options.requiredConfirmations,
-				observerTimeoutMs,
+				observerTimeoutMs: Math.min(observerTimeoutMs, remainingMs),
 			}),
 		);
 	}
