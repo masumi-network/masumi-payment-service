@@ -45,9 +45,14 @@ jest.unstable_mockModule('./node-address', () => ({
 }));
 
 let fundHydraNodeNow: typeof import('./service').fundHydraNodeNow;
+// Read from the module rather than repeated as literals: these move when the
+// cost of a head's lifecycle changes, and a test asserting a stale number
+// reads as a regression when it is only out of date.
+let NODE_MINIMUM_LOVELACE: bigint;
+let NODE_TARGET_LOVELACE: bigint;
 
 beforeAll(async () => {
-	({ fundHydraNodeNow } = await import('./service'));
+	({ fundHydraNodeNow, NODE_MINIMUM_LOVELACE, NODE_TARGET_LOVELACE } = await import('./service'));
 });
 
 beforeEach(() => {
@@ -75,7 +80,7 @@ describe('fundHydraNodeNow', () => {
 	it('funds an empty node', async () => {
 		const result = await fundHydraNodeNow('participant-1');
 
-		expect(result.transferredLovelace).toBe('10000000');
+		expect(result.transferredLovelace).toBe(NODE_TARGET_LOVELACE.toString());
 		expect(mockCreateTransfer).toHaveBeenCalled();
 	});
 
@@ -110,7 +115,7 @@ describe('fundHydraNodeNow', () => {
 	});
 
 	it('leaves an already-funded node alone', async () => {
-		mockReadLovelaceAt.mockResolvedValue(9_000_000n);
+		mockReadLovelaceAt.mockResolvedValue(NODE_MINIMUM_LOVELACE + 1n);
 
 		const result = await fundHydraNodeNow('participant-1');
 

@@ -335,19 +335,23 @@ describe('Hydra live-snapshot reconciliation', () => {
 		mockTransactionUpdate.mockResolvedValue({ id: 'fanout-transaction' });
 		mockGetVerifiedFanoutReferences.mockReturnValue([FANOUT_REFERENCE]);
 		mockGetVerifiedFanoutReference.mockReturnValue(FANOUT_REFERENCE);
-		mockVerifyHydraFanout.mockResolvedValue({
-			txHash: FANOUT_TX_HASH,
-			confirmations: 8,
-			fees: 200000n,
-			blockHeight: 123,
-			blockTime: 456,
-			outputAmount: '[]',
-			utxoCount: 1,
-			withdrawalCount: 0,
-			assetMintOrBurnCount: 3,
-			redeemerCount: 1,
-			validContract: true,
-		});
+		// A chain, terminal last. One step here; the partial-fanout cases below
+		// cover a longer one.
+		mockVerifyHydraFanout.mockResolvedValue([
+			{
+				txHash: FANOUT_TX_HASH,
+				confirmations: 8,
+				fees: 200000n,
+				blockHeight: 123,
+				blockTime: 456,
+				outputAmount: '[]',
+				utxoCount: 1,
+				withdrawalCount: 0,
+				assetMintOrBurnCount: 3,
+				redeemerCount: 1,
+				validContract: true,
+			},
+		]);
 		mockFlushHeadStatus.mockResolvedValue();
 		mockFetchAddressUtxos.mockResolvedValue([]);
 		mockGetConfirmedTransaction.mockImplementation((txHash) => ({
@@ -443,6 +447,77 @@ describe('Hydra live-snapshot reconciliation', () => {
 			mockHydraHeadUpdateMany.mock.invocationCallOrder[0],
 		);
 		expect(mockDisconnect).toHaveBeenCalledWith('head-1');
+	});
+
+	// A head too large to empty in one transaction fans out over several. Each
+	// request has to adopt the step that actually paid out its own output:
+	// connecting every request to the terminal step would name a transaction
+	// that never produced their UTxO, and every later chain lookup against that
+	// hash would be looking in the wrong place.
+	it('adopts each request into the fanout step that paid out its own output', async () => {
+		const PARTIAL_TX_HASH = 'a'.repeat(64);
+		const partialReference = { ...FANOUT_REFERENCE, txHash: PARTIAL_TX_HASH };
+		const candidate = activeHandoffCandidate('payment-live');
+		mockPaymentRequestFindMany.mockResolvedValue([candidate]);
+		mockGetVerifiedFanoutReferences.mockReturnValue([partialReference]);
+		mockGetVerifiedFanoutReference.mockReturnValue(partialReference);
+		mockVerifyHydraFanout.mockResolvedValue([
+			{
+				txHash: PARTIAL_TX_HASH,
+				confirmations: 8,
+				fees: 100000n,
+				blockHeight: 120,
+				blockTime: 450,
+				outputAmount: '[]',
+				utxoCount: 1,
+				withdrawalCount: 0,
+				assetMintOrBurnCount: 0,
+				redeemerCount: 1,
+				validContract: true,
+			},
+			{
+				txHash: FANOUT_TX_HASH,
+				confirmations: 8,
+				fees: 200000n,
+				blockHeight: 123,
+				blockTime: 456,
+				outputAmount: '[]',
+				utxoCount: 1,
+				withdrawalCount: 0,
+				assetMintOrBurnCount: 3,
+				redeemerCount: 1,
+				validContract: true,
+			},
+		]);
+		mockTransactionCreate.mockImplementation(async (args: any) => ({
+			id: `l1-${args.data.txHash}`,
+		}));
+
+		await reconcileHydraHeadEscrowStates();
+
+		// One L1 row per step, each carrying that step's own chain metadata.
+		expect(mockTransactionCreate).toHaveBeenCalledWith({
+			data: expect.objectContaining({ txHash: PARTIAL_TX_HASH, fees: 100000n }),
+			select: { id: true },
+		});
+		expect(mockTransactionCreate).toHaveBeenCalledWith({
+			data: expect.objectContaining({ txHash: FANOUT_TX_HASH, fees: 200000n }),
+			select: { id: true },
+		});
+		// The request adopts the partial step that produced its output, not the
+		// terminal one.
+		expect(mockPaymentRequestUpdate).toHaveBeenCalledWith({
+			where: { id: candidate.id },
+			data: expect.objectContaining({
+				CurrentTransaction: { connect: { id: `l1-${PARTIAL_TX_HASH}` } },
+			}),
+		});
+		// The head still records the transaction that ended it on chain.
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ fanoutTxHash: FANOUT_TX_HASH }),
+			}),
+		);
 	});
 
 	it.each(['payment', 'purchase'] as const)(

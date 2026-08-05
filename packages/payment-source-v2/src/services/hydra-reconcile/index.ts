@@ -299,7 +299,7 @@ async function reconcileHead(
 			return;
 		const preparedHandoff = await prepareFinalHandoff(hydraHeadId, expectedSnapshotNumber, node);
 		if (!preparedHandoff) return;
-		const verifiedFanout = await verifyHydraFanoutOnChain({
+		const verifiedFanoutChain = await verifyHydraFanoutOnChain({
 			observer: getBlockfrostInstance(
 				source.network,
 				source.PaymentSourceConfig.rpcProviderApiKey,
@@ -317,7 +317,7 @@ async function reconcileHead(
 				headIdentifier,
 				node,
 				preparedHandoff,
-				verifiedFanout,
+				verifiedFanoutChain,
 			}))
 		)
 			return;
@@ -556,7 +556,14 @@ async function markFinalHeadReconciliationComplete(options: {
 	headIdentifier: string;
 	node: HydraNode;
 	preparedHandoff: PreparedFinalHandoff;
-	verifiedFanout: VerifiedHydraFanoutTransaction;
+	/**
+	 * The fanout's L1 transactions in chain order, terminal last.
+	 *
+	 * More than one when the head was too large to empty in a single transaction.
+	 * Each request adopts the step that actually paid out its own output, so the
+	 * chain is carried through rather than collapsed to a single hash here.
+	 */
+	verifiedFanoutChain: VerifiedHydraFanoutTransaction[];
 }): Promise<boolean> {
 	const {
 		hydraHeadId,
@@ -565,8 +572,12 @@ async function markFinalHeadReconciliationComplete(options: {
 		headIdentifier,
 		node,
 		preparedHandoff,
-		verifiedFanout,
+		verifiedFanoutChain,
 	} = options;
+	// The step that burned the head tokens, which is what ends the head on chain.
+	// This is the hash the head record carries, and for a head that fanned out in
+	// one transaction it is that transaction, exactly as before.
+	const terminalFanout = verifiedFanoutChain[verifiedFanoutChain.length - 1];
 	try {
 		return await prisma.$transaction(
 			async (tx) => {
@@ -611,12 +622,12 @@ async function markFinalHeadReconciliationComplete(options: {
 					head.finalizedAt == null ||
 					head.headIdentifier !== headIdentifier ||
 					head.latestSnapshotNumber !== BigInt(expectedSnapshotNumber) ||
-					(head.fanoutTxHash != null && head.fanoutTxHash !== verifiedFanout.txHash)
+					(head.fanoutTxHash != null && head.fanoutTxHash !== terminalFanout.txHash)
 				) {
 					return false;
 				}
 				if (head.reconciliationCompletedAt != null) {
-					return head.fanoutTxHash === verifiedFanout.txHash;
+					return head.fanoutTxHash === terminalFanout.txHash;
 				}
 				const currentFanoutReferences = node.getVerifiedFanoutReferences?.(expectedSnapshotNumber);
 				if (
@@ -686,41 +697,50 @@ async function markFinalHeadReconciliationComplete(options: {
 					return false;
 				}
 
-				const transactionData = {
-					status: TransactionStatus.Confirmed,
-					confirmations: verifiedFanout.confirmations,
-					lastCheckedAt: new Date(),
-					fees: verifiedFanout.fees,
-					blockHeight: verifiedFanout.blockHeight,
-					blockTime: verifiedFanout.blockTime,
-					outputAmount: verifiedFanout.outputAmount,
-					utxoCount: verifiedFanout.utxoCount,
-					withdrawalCount: verifiedFanout.withdrawalCount,
-					assetMintOrBurnCount: verifiedFanout.assetMintOrBurnCount,
-					redeemerCount: verifiedFanout.redeemerCount,
-					validContract: verifiedFanout.validContract,
-					layer: TransactionLayer.L1,
-					hydraHeadId,
-				} as const;
-				const existingL1Transaction = await tx.transaction.findFirst({
-					where: {
-						txHash: verifiedFanout.txHash,
+				// One L1 Transaction row per step of the chain. A request must end up
+				// pointing at the transaction that actually paid out its own output:
+				// connecting every request to the terminal step would name a
+				// transaction that never produced their UTxO, and every later lookup
+				// against that hash would be looking in the wrong place.
+				const l1TransactionIdByTxHash = new Map<string, string>();
+				for (const step of verifiedFanoutChain) {
+					const transactionData = {
+						status: TransactionStatus.Confirmed,
+						confirmations: step.confirmations,
+						lastCheckedAt: new Date(),
+						fees: step.fees,
+						blockHeight: step.blockHeight,
+						blockTime: step.blockTime,
+						outputAmount: step.outputAmount,
+						utxoCount: step.utxoCount,
+						withdrawalCount: step.withdrawalCount,
+						assetMintOrBurnCount: step.assetMintOrBurnCount,
+						redeemerCount: step.redeemerCount,
+						validContract: step.validContract,
 						layer: TransactionLayer.L1,
-						BlocksWallet: { is: null },
-					},
-					orderBy: { createdAt: 'asc' },
-					select: { id: true },
-				});
-				const l1Transaction = existingL1Transaction
-					? await tx.transaction.update({
-							where: { id: existingL1Transaction.id },
-							data: transactionData,
-							select: { id: true },
-						})
-					: await tx.transaction.create({
-							data: { txHash: verifiedFanout.txHash, ...transactionData },
-							select: { id: true },
-						});
+						hydraHeadId,
+					} as const;
+					const existingL1Transaction = await tx.transaction.findFirst({
+						where: {
+							txHash: step.txHash,
+							layer: TransactionLayer.L1,
+							BlocksWallet: { is: null },
+						},
+						orderBy: { createdAt: 'asc' },
+						select: { id: true },
+					});
+					const l1Transaction = existingL1Transaction
+						? await tx.transaction.update({
+								where: { id: existingL1Transaction.id },
+								data: transactionData,
+								select: { id: true },
+							})
+						: await tx.transaction.create({
+								data: { txHash: step.txHash, ...transactionData },
+								select: { id: true },
+							});
+					l1TransactionIdByTxHash.set(step.txHash, l1Transaction.id);
+				}
 
 				for (const candidate of preparedHandoff.candidates) {
 					const handoffMutation = {
@@ -765,6 +785,8 @@ async function markFinalHeadReconciliationComplete(options: {
 							: await tx.purchaseRequest.updateMany(handoffMutation);
 					if (handoffMarked.count !== 1) throw new FinalHandoffCasAbort();
 
+					const l1TransactionId = l1TransactionIdByTxHash.get(candidate.fanoutReference.txHash);
+					if (l1TransactionId === undefined) throw new FinalHandoffCasAbort();
 					const adoptionData = {
 						layer: TransactionLayer.L1,
 						currentHydraUtxoTxHash: null,
@@ -776,7 +798,7 @@ async function markFinalHeadReconciliationComplete(options: {
 						hydraFanoutHandoffTxHash: null,
 						hydraFanoutHandoffOutputIndex: null,
 						TransactionHistory: { connect: { id: candidate.currentTransactionId! } },
-						CurrentTransaction: { connect: { id: l1Transaction.id } },
+						CurrentTransaction: { connect: { id: l1TransactionId } },
 					} as const;
 					if (candidate.kind === 'payment') {
 						await tx.paymentRequest.update({ where: { id: candidate.id }, data: adoptionData });
@@ -839,10 +861,10 @@ async function markFinalHeadReconciliationComplete(options: {
 						reconciliationCompletedAt: null,
 						headIdentifier,
 						latestSnapshotNumber: BigInt(expectedSnapshotNumber),
-						OR: [{ fanoutTxHash: null }, { fanoutTxHash: verifiedFanout.txHash }],
+						OR: [{ fanoutTxHash: null }, { fanoutTxHash: terminalFanout.txHash }],
 					},
 					data: {
-						fanoutTxHash: verifiedFanout.txHash,
+						fanoutTxHash: terminalFanout.txHash,
 						reconciliationCompletedAt: new Date(),
 					},
 				});

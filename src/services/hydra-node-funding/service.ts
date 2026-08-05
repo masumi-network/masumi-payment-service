@@ -33,11 +33,23 @@ import { nodeCardanoAddress } from './node-address';
  * one contested close. Well under what an operator would notice, and the point
  * is availability rather than thrift — a node that cannot pay a Fanout fee
  * strands funds behind a contestation deadline.
+ *
+ * Raised for partial fanout. A head holding more UTxOs than fit in one
+ * transaction empties over several, each a script spend carrying a BLS
+ * accumulator membership proof, and each paid for out of this key. How many
+ * steps a head needs is not knowable in advance — it depends on how much the
+ * head accumulated — so this is deliberate headroom rather than a measured
+ * figure, and the reason the floor is generous instead of tight.
+ *
+ * Running dry mid-chain is recoverable rather than fatal: the fanout can be
+ * asked for again once the key is funded, and the refusal is recorded against
+ * the head as a NotEnoughFuel error rather than passing silently. Headroom is
+ * what keeps that from being something an operator has to notice at all.
  */
-export const NODE_MINIMUM_LOVELACE = 5_000_000n;
+export const NODE_MINIMUM_LOVELACE = 15_000_000n;
 
 /** Topped up to this, so a node is not refunded every cycle for a few lovelace. */
-export const NODE_TARGET_LOVELACE = 10_000_000n;
+export const NODE_TARGET_LOVELACE = 30_000_000n;
 
 /** Bounded so one bad cycle cannot drain a funding wallet. */
 const MAX_TOPUPS_PER_CYCLE = 5;

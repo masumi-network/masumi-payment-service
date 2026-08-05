@@ -599,9 +599,20 @@ export function resolveVerifiedHydraFanoutReferences(
 		references.push(parsed);
 	}
 	if (references.length === 0) return null;
-	if (new Set(references.map(({ txHash }) => txHash)).size !== 1) return null;
-	if (new Set(references.map(({ outputIndex }) => outputIndex)).size !== references.length) return null;
-	return references.sort((left, right) => left.outputIndex - right.outputIndex);
+	// A head too large to empty in one transaction is fanned out over several, so
+	// references legitimately span transactions and an output index only has to
+	// be unique within its own. Requiring one transaction here rejected every
+	// partial fanout outright; requiring globally unique indexes would have
+	// rejected them anyway, since each step numbers its outputs from zero.
+	// What still has to hold — that the steps form one chain ending in the head's
+	// token burn — is proved on chain by the fanout verifier, and that every
+	// signed output is accounted for exactly once is the multiset check above.
+	if (new Set(references.map(({ txHash, outputIndex }) => `${txHash}#${outputIndex}`)).size !== references.length) {
+		return null;
+	}
+	return references.sort(
+		(left, right) => left.txHash.localeCompare(right.txHash) || left.outputIndex - right.outputIndex,
+	);
 }
 
 /**
