@@ -19,6 +19,16 @@ import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import type { Network } from '@/generated/prisma/client';
 
+/**
+ * A script address, which the `w` prefix marks on Cardano.
+ *
+ * Used to tell a recovery from a fold-in: only a fold-in pays the head's state
+ * output back to a script.
+ */
+function isScriptAddress(address: string): boolean {
+	return address.startsWith('addr_test1w') || address.startsWith('addr1w');
+}
+
 /** Bounded so one tick cannot spend its whole budget on chain lookups. */
 const MAX_RECOVERY_CHECKS_PER_TICK = 20;
 
@@ -37,14 +47,27 @@ async function depositOutputsSpent(params: {
 	try {
 		const blockfrost = getBlockfrostInstance(params.network, params.rpcProviderApiKey);
 		const utxos = await blockfrost.txsUtxos(params.depositTxHash);
-		const scriptOutputs = utxos.outputs.filter(
-			(output) => output.address.startsWith('addr_test1w') || output.address.startsWith('addr1w'),
-		);
+		const scriptOutputs = utxos.outputs.filter((output) => isScriptAddress(output.address));
 		if (scriptOutputs.length === 0) return null;
+		const consumers = new Set<string>();
 		for (const output of scriptOutputs) {
 			// `consumed_by_tx` is absent while the output is still unspent.
 			const consumed = (output as { consumed_by_tx?: string | null }).consumed_by_tx;
 			if (consumed == null) return false;
+			consumers.add(consumed);
+		}
+
+		// Spent is not the same as recovered. The head absorbing a deposit spends
+		// it too, and calling that a recovery reported funds as back in the wallet
+		// while they were sitting in the head — the balance and the deposit list
+		// then disagreed, and the list was the wrong one.
+		//
+		// What tells them apart is what the spending transaction produces: a
+		// fold-in carries the head forward, so it pays the head's state output to a
+		// script address. A recovery pays only to wallets.
+		for (const consumer of consumers) {
+			const spend = await blockfrost.txsUtxos(consumer);
+			if (spend.outputs.some((output) => isScriptAddress(output.address))) return false;
 		}
 		return true;
 	} catch (error) {

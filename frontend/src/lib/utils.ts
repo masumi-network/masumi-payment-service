@@ -271,8 +271,11 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
     return unit;
   }
 
-  if (!unit) {
-    return 'ADA';
+  if (!unit || unit === 'lovelace') {
+    // An empty unit means lovelace, and lovelace on a testnet is tADA. Returning
+    // 'ADA' here regardless of network put "450.00 ADA" under a "tADA" heading
+    // in the same panel, which reads as two different assets.
+    return network.toLowerCase() === 'mainnet' ? 'ADA' : 'tADA';
   }
 
   const isUsdcx =
