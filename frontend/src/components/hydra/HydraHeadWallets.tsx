@@ -2,7 +2,7 @@
  * The two wallets a head is between.
  *
  * A head is not "with an organisation", it is between one of your wallets and
- * one of theirs — and payments route through it only when the agent's seller
+ * one of theirs, and payments route through it only when the agent's seller
  * wallet is that exact counterparty. Nothing in this dialog said so, which is
  * how a perfectly healthy open head sat unused while every payment went to L1:
  * the agent had been registered under a different selling wallet than the one
@@ -10,7 +10,7 @@
  *
  * The node keys are shown apart from the wallets on purpose. They look alike
  * and are routinely confused, but a node key is the head's on-chain identity
- * and holds only its own fees, while the wallet is what settles — keeping ADR
+ * and holds only its own fees, while the wallet is what settles, keeping ADR
  * 0010 §3's separation legible is worth the extra line.
  */
 

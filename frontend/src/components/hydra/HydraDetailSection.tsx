@@ -1,8 +1,8 @@
 /**
  * A collapsible block in the head details.
  *
- * The dialog had grown to eleven flat sections — identifiers, timestamps,
- * lifecycle transactions, participants, keys, balance, deposits, errors — all
+ * The dialog had grown to eleven flat sections, identifiers, timestamps,
+ * lifecycle transactions, participants, keys, balance, deposits, errors, all
  * at the same weight, so finding the one fact you came for meant reading all of
  * them. Most are reference material consulted rarely; only a few are read every
  * time.

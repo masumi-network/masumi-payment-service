@@ -1,8 +1,8 @@
 /**
  * Outstanding and spent invites.
  *
- * Exists mainly because an issued invite is not free — it holds a node and a
- * peer port — and there was otherwise nowhere to see what you were holding or
+ * Exists mainly because an issued invite is not free, it holds a node and a
+ * peer port, and there was otherwise nowhere to see what you were holding or
  * to give it back. Revoking is the only way a reservation returns before its
  * expiry.
  */

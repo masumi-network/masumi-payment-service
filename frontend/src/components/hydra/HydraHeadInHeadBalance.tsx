@@ -12,7 +12,7 @@ interface HydraHeadInHeadBalanceProps {
 }
 
 /**
- * Shows THIS node's own funds currently inside the head (ADA + native tokens) —
+ * Shows THIS node's own funds currently inside the head (ADA + native tokens),
  * the local participant's committed balance, not the counterparty's. Read live
  * from the head snapshot via GET /hydra/head/balance.
  */
@@ -84,7 +84,7 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
           Not connected to the head, so the balance is unavailable.
         </div>
       ) : data.balance.length === 0 ? (
-        // A confirmed deposit is on L1 but not yet folded into the L2 ledger —
+        // A confirmed deposit is on L1 but not yet folded into the L2 ledger,
         // Hydra increments the head separately, and until it does the in-head
         // balance is genuinely zero. Saying "nothing committed" while a deposit
         // sits Confirmed below reads as a contradiction.
@@ -112,6 +112,15 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
           <div className="px-4 py-1.5 text-xs text-muted-foreground">
             held in {data.utxoCount} piece{data.utxoCount === 1 ? '' : 's'}
           </div>
+          {/* Said here rather than left to the operator to spot by comparing
+              this panel with the deposits list, which is how it was found. */}
+          {data.hasUnbackedUtxos === true && (
+            <div className="border-t px-4 py-2 text-xs text-amber-600 dark:text-amber-400">
+              {formatAssetAmount(data.unbackedLovelace ?? '0', 'lovelace', network)} of this was
+              recovered to the wallet on chain, so the head is counting funds it no longer has.
+              Closing may fail until it is cleared.
+            </div>
+          )}
         </div>
       )}
     </div>

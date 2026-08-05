@@ -6,8 +6,8 @@
  * given no way to find out what. The endpoint existed the whole time.
  *
  * Newest first, because the last failure is the one being investigated. The
- * message carries the node's own reason — `NoSeedInput` and friends are the
- * difference between "fund the node" and "something is wrong with the head" —
+ * message carries the node's own reason, `NoSeedInput` and friends are the
+ * difference between "fund the node" and "something is wrong with the head",
  * so it is shown verbatim rather than summarised.
  */
 

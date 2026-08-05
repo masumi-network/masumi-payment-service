@@ -200,7 +200,7 @@ function getLifecycleActionDisabledReason(
   if (action === 'commit') {
     if (!head.LocalParticipant) return 'This head has no node on your side';
     if (head.LocalParticipant.hasCommitted) return 'You have already funded this head at open';
-    // The API accepts Initializing OR Open — an open head takes the same
+    // The API accepts Initializing OR Open, an open head takes the same
     // deposit, which is what Add funds does. Refusing Open here forbade
     // something the service allows, and told an operator who had not yet
     // funded a head that the one control for it was gone.
@@ -288,7 +288,7 @@ function HydraLifecycleActionMenu({
   onRequestLifecycle: (head: HydraHead, action: HydraLifecycleAction) => void;
 }) {
   // Only asked for a head with a node to ask about, and only polled while that
-  // node is not ready — a healthy head costs one request.
+  // node is not ready, a healthy head costs one request.
   const { connection } = useHydraHeadReadiness(head.id, head.LocalParticipant != null);
   const configs = getLifecycleButtonConfigs(head, connection);
 
@@ -330,7 +330,7 @@ function HydraLifecycleActionMenu({
               </span>
               {/* Spelled out rather than left to a tooltip. Hydra gates each
                   action to one stage, so most of this menu is greyed most of
-                  the time — and hover text on a disabled item is easy to miss,
+                  the time, and hover text on a disabled item is easy to miss,
                   which makes a correctly-gated menu look broken. */}
               {config.disabledReason && (
                 <span className="pl-6 text-xs font-normal text-muted-foreground">
@@ -370,7 +370,7 @@ function DetailField({
 /**
  * One lifecycle transaction, or why there isn't one yet.
  *
- * These arrive in order — init, then close, then fanout — so on any live head
+ * These arrive in order, init, then close, then fanout, so on any live head
  * most of them are legitimately absent. Saying "no transaction hash recorded"
  * for a step that simply has not happened reads as missing data, which is how a
  * perfectly healthy open head came to look broken.
@@ -726,7 +726,7 @@ function HydraHeadTable({
    * Invites nobody has redeemed yet, listed as the heads they are becoming.
    *
    * Issuing one already provisions the node and reserves its peer port, so the
-   * head's resources exist and only the counterparty is missing — which makes
+   * head's resources exist and only the counterparty is missing, which makes
    * "awaiting counterparty" the first stage of a head's life rather than a
    * separate kind of object. Showing them apart was what made invites look like
    * a third concept to learn.
@@ -877,7 +877,7 @@ function HydraHeadTable({
                     </Badge>
                     {head._count && head._count.Errors > 0 && (
                       // Muted once the head has moved past Idle: the errors are
-                      // then history — a failed Init that later succeeded, say —
+                      // then history, a failed Init that later succeeded, say,
                       // and colouring them like a live alarm makes a healthy
                       // head read as broken.
                       <span
@@ -968,7 +968,7 @@ export default function HydraHeadsPage() {
   const inviteCount = invites.length;
   // Read here rather than through the nodes card: the card now lives in a
   // dialog, so leaving the count to it reported zero until the operator happened
-  // to open one — and the page gates its primary action on this.
+  // to open one, and the page gates its primary action on this.
   const { hosts } = useHydraHosts(
     network === 'Preprod' || network === 'Mainnet' ? network : undefined,
   );
@@ -1048,7 +1048,7 @@ export default function HydraHeadsPage() {
     [heads, selectedHeadId],
   );
   // A head has to run somewhere, so the action is unavailable until a node is
-  // connected — which is the step above it on this page.
+  // connected, which is the step above it on this page.
   const connectedNodeCount = hosts.length;
   // A head runs on exactly one node for its whole life, so this is a property of
   // the head rather than a join: the chip can say what it is carrying.
@@ -1151,7 +1151,7 @@ export default function HydraHeadsPage() {
               </p>
             </div>
 
-            {/* Connecting a node stays reachable however many exist — a second
+            {/* Connecting a node stays reachable however many exist, a second
                 node is how an operator adds capacity. Opening a head is one
                 action with two ways in, so it is one button with a menu rather
                 than two competing buttons. */}

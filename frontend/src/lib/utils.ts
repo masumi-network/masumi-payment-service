@@ -350,7 +350,10 @@ export function groupDigits(value: string | null | undefined): string {
   return negative ? `-${digits}` : digits;
 }
 
-const SIX_DECIMAL_DISPLAY_UNITS = new Set(['ADA', 'USDM', 'tUSDM', 'USDCx']);
+// tADA belongs here for the same reason ADA does — it is lovelace, six
+// decimals. Left out, the formatter fell through to the raw-integer branch and
+// printed "450,000,000 tADA" for 450 ADA.
+const SIX_DECIMAL_DISPLAY_UNITS = new Set(['ADA', 'tADA', 'USDM', 'tUSDM', 'USDCx']);
 const SIX_DECIMAL_BASE = BigInt(10) ** BigInt(6);
 
 /**

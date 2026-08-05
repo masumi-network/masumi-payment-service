@@ -4,7 +4,7 @@
  * One form for the whole thing. A Hydra node here is a Hydra Host: a
  * reverse-proxied control plane that runs a hydra-node process per head and
  * generates that node's keys itself. Connecting it needs its URL and its two
- * tokens — nothing per-head, because heads are provisioned through this node
+ * tokens, nothing per-head, because heads are provisioned through this node
  * rather than configured by hand.
  *
  * The two tokens are separate on purpose. The admin key provisions and
@@ -58,7 +58,7 @@ function isCardanoNetwork(value: string | undefined): value is Network {
 
 /**
  * The peer host is dialled directly by the counterparty's node, so it is a bare
- * hostname or IP — not a URL. Catching that here avoids a head that only fails
+ * hostname or IP, not a URL. Catching that here avoids a head that only fails
  * much later, when the two nodes cannot form a cluster.
  */
 function peerHostProblem(value: string): string | null {

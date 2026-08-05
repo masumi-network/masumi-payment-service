@@ -86,8 +86,8 @@ export function DurationPicker({
   /**
    * The explanation behind the label, opened from the info icon beside it.
    *
-   * These run to three or four sentences — what the period does, which way is
-   * the safe direction, what it is capped by — and printing that under every
+   * These run to three or four sentences, what the period does, which way is
+   * the safe direction, what it is capped by, and printing that under every
    * field turned a two-field form into a page of prose nobody read.
    */
   hint?: ReactNode;

@@ -30,7 +30,7 @@ export type HydraParticipant = {
   hasCommitted: boolean;
   commitTxHash: string | null;
   /**
-   * The node's own Cardano key hash — the head's on-chain identity, kept
+   * The node's own Cardano key hash, the head's on-chain identity, kept
    * separate from the settling wallet so a node compromise cannot reach funds.
    */
   cardanoVkey?: string;
@@ -304,7 +304,7 @@ async function fetchHydraPages<T extends { id: string }>(
  * Head states that are waiting on the chain rather than on the operator.
  *
  * A head sits in one of these for a block or two after an action, and the
- * action's own request does not carry the result — the status arrives from
+ * action's own request does not carry the result, the status arrives from
  * frames the node pushes. Without polling, an operator who opened a head saw
  * Idle until they reloaded, which reads as "nothing happened".
  */
@@ -352,6 +352,14 @@ export type HydraHeadBalance = {
   /** False when the head has no live connection (balance unknown, not zero). */
   connected: boolean;
   utxoCount: number;
+  /**
+   * Lovelace the head reports holding that L1 no longer backs.
+   *
+   * hydra-node can keep a deposit in its L2 ledger that was never really
+   * absorbed, so the balance reads high by this much.
+   */
+  unbackedLovelace?: string;
+  hasUnbackedUtxos?: boolean;
   balance: HydraHeadBalanceAsset[];
 };
 
@@ -483,7 +491,7 @@ export function useHydraWalletBases(network?: 'Preprod' | 'Mainnet', paymentSour
  * Everything about invites.
  *
  * A head is opened by issuing an invite and having someone redeem it, or by
- * redeeming theirs — there is no other path. Relations are a consequence of a
+ * redeeming theirs, there is no other path. Relations are a consequence of a
  * redemption rather than something created here.
  */
 export type HydraInvite = {
@@ -553,7 +561,7 @@ export function useHydraInvites() {
  *
  * Reserves a node and a peer port on a Hydra Host and signs their material with
  * the chosen wallet. The reservation is held until someone redeems the invite,
- * it is revoked, or it expires — a node cannot be re-pointed at a different
+ * it is revoked, or it expires, a node cannot be re-pointed at a different
  * counterparty once issued.
  */
 export async function createHydraInvite(
@@ -585,7 +593,7 @@ export async function createHydraInvite(
  * Inspect an invite without acting on it.
  *
  * Nothing is provisioned and no counterparty is contacted, so this is safe to
- * call on an invite of unknown provenance — which is the point: the operator
+ * call on an invite of unknown provenance, which is the point: the operator
  * sees who signed it before anything is spent.
  */
 export async function previewHydraInvite(apiClient: Client, payload: { code: string }) {
@@ -642,7 +650,7 @@ export async function revokeHydraInvite(apiClient: Client, payload: { id: string
  *
  * The Hydra Host generates these and hands them over exactly once, at
  * provisioning; this service holds the only other copy. This call is therefore
- * also once-only — it seals itself server-side — so whatever comes back has to
+ * also once-only, it seals itself server-side, so whatever comes back has to
  * be saved now or recovered from the Host.
  */
 export async function revealHydraNodeKeys(apiClient: Client, payload: { id: string }) {
@@ -662,8 +670,8 @@ export async function revealHydraNodeKeys(apiClient: Client, payload: { id: stri
 /**
  * Top up the node's own Cardano key.
  *
- * A node cannot open a head from an empty address — Init consumes a seed UTxO
- * there — so a freshly provisioned node fails with `NoSeedInput` until this has
+ * A node cannot open a head from an empty address, Init consumes a seed UTxO
+ * there, so a freshly provisioned node fails with `NoSeedInput` until this has
  * run. A scheduled cycle does it too; this is for not waiting.
  */
 export type HydraHeadError = {
@@ -836,9 +844,9 @@ export type HydraTopup = {
 /**
  * Deposits into a head, newest first.
  *
- * Polled while any are pending: a top-up takes minutes — an exact amount is
+ * Polled while any are pending: a top-up takes minutes, an exact amount is
  * split into its own UTxO and that split must confirm before the deposit can be
- * built — so this is the only way to tell progress from failure.
+ * built, so this is the only way to tell progress from failure.
  */
 export function useHydraTopups(headId: string | null, isOpen: boolean) {
   const { apiClient } = useAppContext();
@@ -886,8 +894,8 @@ export type HydraWithdrawal = {
 /**
  * Withdrawals out of a head, newest first.
  *
- * Polled until every one has settled. A withdrawal crosses two systems — the
- * head signs the removal, then its node posts the L1 payout — and neither leg
+ * Polled until every one has settled. A withdrawal crosses two systems, the
+ * head signs the removal, then its node posts the L1 payout, and neither leg
  * reports back to the request that started it, so the list is the only place
  * progress appears.
  */

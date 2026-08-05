@@ -2,7 +2,7 @@
  * Put more funds into an open head.
  *
  * An amount, and nothing else. The previous form asked which UTxOs to commit
- * and then, separately, for an exact amount in lovelace — which is the
+ * and then, separately, for an exact amount in lovelace, which is the
  * machinery, not the decision. An operator wants to move 5 ADA into a head;
  * whether that needs a dedicated UTxO split first is the service's problem, and
  * it already solves it: an exact amount pre-splits an L1 UTxO and commits that.
@@ -47,7 +47,7 @@ import {
 
 interface HydraHeadTopupButtonProps {
   headId: string;
-  /** Top-ups are incremental commits — only possible on an Open head. */
+  /** Top-ups are incremental commits, only possible on an Open head. */
   isOpen: boolean;
 }
 
@@ -145,7 +145,9 @@ function TxLink({
   fallback: string | null;
 }) {
   if (hash === null) {
-    return fallback === null ? null : <span className="text-xs text-muted-foreground">{fallback}</span>;
+    return fallback === null ? null : (
+      <span className="text-xs text-muted-foreground">{fallback}</span>
+    );
   }
   return (
     <span className="flex items-center gap-1">
@@ -202,7 +204,9 @@ function HydraTopupList({
       const result = await recoverHydraTopup(apiClient, { topupId });
       await resync('hydra', 'wallets');
       toast[result.requested ? 'success' : 'info'](
-        result.requested ? 'Recovery posted. Funds return once it confirms.' : (result.reason ?? 'Nothing to recover'),
+        result.requested
+          ? 'Recovery posted. Funds return once it confirms.'
+          : (result.reason ?? 'Nothing to recover'),
       );
       await refetch();
     } catch (error) {
@@ -227,96 +231,96 @@ function HydraTopupList({
           <li key={topup.id} className="space-y-1 px-3 py-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-              {/* Confirmed is about the transaction, not about the head. Between
+                {/* Confirmed is about the transaction, not about the head. Between
                   the two the money is on chain, committed to this head, and
                   unusable, which read as success when both said "Confirmed". */}
-              <Badge
-                variant="outline"
-                // Never green. Nothing here can prove the head absorbed this
-                // particular deposit: the times say when it became eligible, and
-                // the in-head balance is the only thing that says it arrived.
-                className={
-                  topup.status === 'Failed'
-                    ? 'text-red-600 dark:text-red-400'
-                    : topup.status === 'Recovered'
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-amber-600 dark:text-amber-400'
-                }
-              >
-                {(topup.status === 'Pending' || topup.status === 'Preparing') && (
-                  <Spinner className="mr-1 h-3 w-3" />
-                )}
-                {topup.status === 'Recovered'
-                  ? 'Returned'
-                  : topup.status === 'Failed'
-                    ? 'Expired'
-                    : topup.status === 'Preparing'
-                      ? 'Preparing'
-                      : topup.status === 'Pending'
-                        ? 'Sending'
-                        : isUsable(topup)
-                          ? 'Submitted'
-                          : 'Settling'}
-              </Badge>
-              <span className="font-mono text-sm">
-                {/* A whole-UTxO top-up commits whatever the selection turns out
+                <Badge
+                  variant="outline"
+                  // Never green. Nothing here can prove the head absorbed this
+                  // particular deposit: the times say when it became eligible, and
+                  // the in-head balance is the only thing that says it arrived.
+                  className={
+                    topup.status === 'Failed'
+                      ? 'text-red-600 dark:text-red-400'
+                      : topup.status === 'Recovered'
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-amber-600 dark:text-amber-400'
+                  }
+                >
+                  {(topup.status === 'Pending' || topup.status === 'Preparing') && (
+                    <Spinner className="mr-1 h-3 w-3" />
+                  )}
+                  {topup.status === 'Recovered'
+                    ? 'Returned'
+                    : topup.status === 'Failed'
+                      ? 'Expired'
+                      : topup.status === 'Preparing'
+                        ? 'Preparing'
+                        : topup.status === 'Pending'
+                          ? 'Sending'
+                          : isUsable(topup)
+                            ? 'Submitted'
+                            : 'Settling'}
+                </Badge>
+                <span className="font-mono text-sm">
+                  {/* A whole-UTxO top-up commits whatever the selection turns out
                     to hold, so the amount is unknown until the deposit is built.
                     Zero would read as "nothing moved". */}
-                {topup.status === 'Preparing' && topup.committedLovelace === '0'
-                  ? 'amount pending'
-                  : formatLovelace(topup.committedLovelace, network)}
-              </span>
-              </div>
-            {/* One transaction per row, named for what it is. The hash used to
-                sit between two different notes depending on state — "splitting"
-                before it, "back in the wallet" after — so the same column read
-                in a different order on every line. */}
-            <TxLink
-              label={topup.depositTxHash === null ? 'split' : 'deposit'}
-              hash={topup.depositTxHash ?? topup.splitTxHash ?? null}
-              network={network}
-              fallback={topup.depositTxHash === null ? 'building the split' : null}
-            />
-          </div>
-
-          {/* Everything that is a note about the row, on its own line and in one
-              place, rather than trailing the hash. */}
-          <div className="flex w-full flex-wrap items-center gap-2">
-            {topup.status === 'Recovered' && (
-              <span className="text-xs text-muted-foreground">Back in the wallet.</span>
-            )}
-            {topup.status === 'Confirmed' && !isUsable(topup) && topup.usableFrom != null && (
-              <span className="text-xs text-muted-foreground">
-                Usable {new Date(topup.usableFrom).toLocaleTimeString()}.
-              </span>
-            )}
-            {topup.status === 'Confirmed' &&
-              topup.depositTxHash !== null &&
-              (topup.recoveryRequestedAt != null ? (
-                <span className="text-xs text-muted-foreground">
-                  Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()} — waiting for it
-                  on chain.
+                  {topup.status === 'Preparing' && topup.committedLovelace === '0'
+                    ? 'amount pending'
+                    : formatLovelace(topup.committedLovelace, network)}
                 </span>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={recoveringId === topup.id}
-                  onClick={() => void handleRecover(topup.id)}
-                  title="Ask the node to return this deposit, if the head never took it"
-                >
-                  {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
-                  Recover
-                </Button>
-              ))}
-            {topup.status === 'Failed' &&
-              Object.keys(topup.committedAssets ?? {}).length === 0 && (
-                <Button type="button" variant="outline" size="sm" onClick={() => onRetry(topup)}>
-                  Try again
-                </Button>
+              </div>
+              {/* One transaction per row, named for what it is. The hash used to
+                sit between two different notes depending on state, "splitting"
+                before it, "back in the wallet" after, so the same column read
+                in a different order on every line. */}
+              <TxLink
+                label={topup.depositTxHash === null ? 'split' : 'deposit'}
+                hash={topup.depositTxHash ?? topup.splitTxHash ?? null}
+                network={network}
+                fallback={topup.depositTxHash === null ? 'building the split' : null}
+              />
+            </div>
+
+            {/* Everything that is a note about the row, on its own line and in one
+              place, rather than trailing the hash. */}
+            <div className="flex w-full flex-wrap items-center gap-2">
+              {topup.status === 'Recovered' && (
+                <span className="text-xs text-muted-foreground">Back in the wallet.</span>
               )}
-          </div>
+              {topup.status === 'Confirmed' && !isUsable(topup) && topup.usableFrom != null && (
+                <span className="text-xs text-muted-foreground">
+                  Usable {new Date(topup.usableFrom).toLocaleTimeString()}.
+                </span>
+              )}
+              {topup.status === 'Confirmed' &&
+                topup.depositTxHash !== null &&
+                (topup.recoveryRequestedAt != null ? (
+                  <span className="text-xs text-muted-foreground">
+                    Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}.
+                    Waiting for it on chain.
+                  </span>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={recoveringId === topup.id}
+                    onClick={() => void handleRecover(topup.id)}
+                    title="Ask the node to return this deposit, if the head never took it"
+                  >
+                    {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
+                    Recover
+                  </Button>
+                ))}
+              {topup.status === 'Failed' &&
+                Object.keys(topup.committedAssets ?? {}).length === 0 && (
+                  <Button type="button" variant="outline" size="sm" onClick={() => onRetry(topup)}>
+                    Try again
+                  </Button>
+                )}
+            </div>
 
             {topup.status === 'Failed' && (
               // The only way a deposit reaches Failed is its transaction not
@@ -413,9 +417,7 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
     <div className="space-y-3 rounded-md border p-4">
       <div>
         <h4 className="text-sm font-medium">Add funds</h4>
-        <p className="text-xs text-muted-foreground">
-          Arrives once the deposit confirms on chain.
-        </p>
+        <p className="text-xs text-muted-foreground">Arrives once the deposit confirms on chain.</p>
       </div>
 
       <div className="flex flex-wrap items-end gap-2">

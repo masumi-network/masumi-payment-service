@@ -122,7 +122,7 @@ export default function TxSyncQuarantinePage() {
               <p className="text-sm text-muted-foreground max-w-3xl">
                 Transactions the chain scanner could not apply. The sync checkpoint has already
                 moved past them, so anything unresolved here is chain state the database has not
-                caught up with — the affected request is running on stale information until the
+                caught up with. The affected request is running on stale information until the
                 transaction is applied or reviewed.
               </p>
             </div>
@@ -204,7 +204,7 @@ export default function TxSyncQuarantinePage() {
           title="Delete quarantine entry"
           description={
             entryToDelete
-              ? `Deleting this entry does NOT apply transaction ${entryToDelete.txHash}. The database stays behind the chain for whatever that transaction would have changed, and nothing will retry it again.\n\nOnly delete entries that are genuinely irrelevant — a transaction belonging to another system, or one you have already repaired by hand.`
+              ? `Deleting this entry does NOT apply transaction ${entryToDelete.txHash}. The database stays behind the chain for whatever that transaction would have changed, and nothing will retry it again.\n\nOnly delete entries that are genuinely irrelevant: a transaction belonging to another system, or one you have already repaired by hand.`
               : ''
           }
           onConfirm={handleConfirmDelete}

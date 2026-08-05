@@ -3,7 +3,7 @@
  *
  * Two things have to be true and both were invisible: the node has to be
  * running and synced, and this service has to hold a live session to it. A head
- * can be perfectly valid on chain while neither holds — and the only evidence
+ * can be perfectly valid on chain while neither holds, and the only evidence
  * was an action failing minutes later with a gateway timeout, which says
  * nothing about which of the two was missing.
  *

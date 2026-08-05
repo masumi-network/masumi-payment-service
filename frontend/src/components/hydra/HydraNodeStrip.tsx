@@ -2,7 +2,7 @@
  * The nodes, and the heads that run on them.
  *
  * A head is not a free-floating object: it runs on exactly one node, for its
- * whole life, and cannot be moved. Hiding the nodes behind a dialog lost that —
+ * whole life, and cannot be moved. Hiding the nodes behind a dialog lost that,
  * the table listed heads with no sense of where they were, and adding a second
  * node had nowhere to live.
  *

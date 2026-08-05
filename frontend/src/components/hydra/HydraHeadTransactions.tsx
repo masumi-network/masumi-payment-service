@@ -1,7 +1,7 @@
 /**
  * What this head has done, newest first.
  *
- * The head record keeps three hashes — opening, closing, fanning out — which
+ * The head record keeps three hashes, opening, closing, fanning out, which
  * leaves out everything in between: the payments that ran inside the head and
  * the deposits that funded them. Those are the ones an operator is usually
  * looking for, because they are the ones that can go wrong quietly.
@@ -116,7 +116,7 @@ export function HydraHeadTransactions({
   network,
 }: {
   headId: string;
-  /** 'Preprod' or 'Mainnet' — passed straight to the explorer URL builder. */
+  /** 'Preprod' or 'Mainnet', passed straight to the explorer URL builder. */
   network: string;
 }) {
   const { transactions, isLoading, isFetching, refetch } = useHydraHeadTransactions(headId);

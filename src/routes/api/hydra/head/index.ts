@@ -977,6 +977,12 @@ export const headBalanceSchemaOutput = z.object({
 		.boolean()
 		.describe('True when a live head snapshot was read; false when the head has no active connection'),
 	utxoCount: z.number().describe('Number of in-head UTxOs held by the local address'),
+	unbackedLovelace: z
+		.string()
+		.describe(
+			'Lovelace the head reports holding whose L1 deposit was recovered to the wallet. hydra-node can keep a deposit in its L2 ledger that was never really absorbed, so the balance above reads high by this much and a close would fail on the overhead it implies.',
+		),
+	hasUnbackedUtxos: z.boolean().describe('True when any reported UTxO is unbacked, so the balance is optimistic'),
 	balance: z
 		.array(
 			z.object({

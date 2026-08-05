@@ -1,8 +1,8 @@
 /**
  * Redeem an invite someone sent you.
  *
- * Two steps on purpose. Pasting a code only reads it — nothing is provisioned
- * and the counterparty is not contacted — so the operator can look at who
+ * Two steps on purpose. Pasting a code only reads it, nothing is provisioned
+ * and the counterparty is not contacted, so the operator can look at who
  * signed it first. Redeeming is the second, deliberate step.
  *
  * That first step is the only human gate in the whole exchange. A signature
@@ -205,7 +205,7 @@ export function RedeemHydraInviteDialog({
             )}
 
             {/* Identity, not data. The wallet is what the signature proves, but
-                what an operator actually recognises is the agent name — so that
+                what an operator actually recognises is the agent name, so that
                 leads, the address is truncated with a copy, and the raw asset
                 ids move behind a disclosure where they belong. */}
             <section className="space-y-2">
@@ -266,7 +266,7 @@ export function RedeemHydraInviteDialog({
 
               {/* An explicit tick rather than a line of prose. The settle time is
                   the one term here with a running cost, it was chosen by someone
-                  else, and it cannot be changed once the head exists — so it is
+                  else, and it cannot be changed once the head exists, so it is
                   worth making the operator look at it. */}
               <label className="flex items-start gap-2 rounded-md border px-3 py-2 text-xs">
                 <Checkbox
@@ -324,7 +324,7 @@ export function RedeemHydraInviteDialog({
                       {/* The role is always shown, even when the wallet has a
                           note. A head is between two wallets and which side
                           each plays decides whether payments can route through
-                          it — a name alone does not say that. */}
+                          it, a name alone does not say that. */}
                       <span className="flex items-center gap-2">
                         <Badge variant="outline" className="shrink-0">
                           {wallet.type === 'Purchasing' ? 'Buyer' : 'Seller'}

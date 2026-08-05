@@ -9,7 +9,7 @@
  *
  * So the balance is read before the button is offered, and if it is short the
  * dialog says by how much and can send it. Checking after the fact would be
- * technically equivalent and practically useless — by then the operator has
+ * technically equivalent and practically useless, by then the operator has
  * waited minutes for a message that does not name the cause.
  */
 

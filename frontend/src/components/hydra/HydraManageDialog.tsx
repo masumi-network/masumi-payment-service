@@ -4,7 +4,7 @@
  * Both used to be full-width cards stacked above the table. Neither is read
  * often enough to earn that: a node is connected once, an invite is issued
  * occasionally, and the table is read constantly. Moving them behind a dialog
- * is progressive disclosure rather than hiding — the counts stay visible in the
+ * is progressive disclosure rather than hiding, the counts stay visible in the
  * context bar, which is also what opens this.
  *
  * Deliberately reuses the existing cards rather than reimplementing them: the

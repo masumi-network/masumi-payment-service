@@ -5,11 +5,11 @@
  * a button, and a list of what is in flight. What differs is what the operator
  * has to be told, because the two directions fail differently.
  *
- * Adding funds is forgiving — a deposit the head never takes sits at a script
+ * Adding funds is forgiving, a deposit the head never takes sits at a script
  * and can be recovered. Withdrawing is not: once the head signs the removal the
  * value is out of it, and there is no equivalent of recovery. So the copy here
  * leads with what stays behind rather than what leaves, and the one genuinely
- * dangerous option — taking the collateral too — is not a checkbox sitting next
+ * dangerous option, taking the collateral too, is not a checkbox sitting next
  * to the amount.
  */
 
@@ -34,7 +34,7 @@ import { InfoHint } from '@/components/ui/info-hint';
 
 interface HydraHeadWithdrawButtonProps {
   headId: string;
-  /** Withdrawing is an incremental decommit — only possible on an Open head. */
+  /** Withdrawing is an incremental decommit, only possible on an Open head. */
   isOpen: boolean;
 }
 
@@ -115,7 +115,10 @@ function HydraWithdrawalList({
         {withdrawals.map((row) => {
           const status = statusLabel(row);
           return (
-            <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+            <li
+              key={row.id}
+              className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+            >
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className={status.tone}>
                   {status.spinning && <Spinner className="mr-1 h-3 w-3" />}
@@ -240,7 +243,7 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
       </div>
 
       {/* Behind a confirmation rather than a checkbox beside the amount. Taking
-          the collateral is not a variation on withdrawing — it ends this
+          the collateral is not a variation on withdrawing, it ends this
           wallet's ability to settle anything in the head, and the balance gives
           no hint of that afterwards. */}
       {isDraining ? (

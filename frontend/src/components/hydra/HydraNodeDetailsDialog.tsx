@@ -2,8 +2,8 @@
  * One connected node: what it is running, and the head processes on it.
  *
  * This used to open with a block telling the operator to hand a counterparty
- * their service URL and wallet address. That flow no longer exists — invites
- * carry the address and the endpoint it named was deleted — so it was three
+ * their service URL and wallet address. That flow no longer exists, invites
+ * carry the address and the endpoint it named was deleted, so it was three
  * paragraphs of instructions for a screen that would 404. It is gone.
  *
  * What is left is ordered by how often it is read: the node's state, then its
@@ -220,7 +220,7 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
                     <div className="flex items-center gap-1">
                       {busyId === participant.id && <Loader2 className="h-4 w-4 animate-spin" />}
                       {/* Backing up is the one an operator comes here to do, and
-                          it can only be done once — so it stays a button while
+                          it can only be done once, so it stays a button while
                           the money actions sit behind the menu. */}
                       <Button
                         type="button"

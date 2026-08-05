@@ -3,8 +3,8 @@
  *
  * Two things make this different from a form that just posts and closes.
  *
- * Issuing spends real capacity — a node process and a peer port, held until
- * someone redeems or it expires — so the cost is stated before the button, not
+ * Issuing spends real capacity, a node process and a peer port, held until
+ * someone redeems or it expires, so the cost is stated before the button, not
  * discovered afterwards from a node list.
  *
  * And the result is the whole point. The code is what the operator carries to
@@ -69,7 +69,7 @@ const MIN_SETTLE_MINUTES = 2;
  * Defaults per network, matching what the service would pick on its own.
  *
  * They pull in opposite directions. Settle time is a cost on every top-up, so
- * it wants to be short — but on mainnet it is how long a rollback has to be
+ * it wants to be short, but on mainnet it is how long a rollback has to be
  * ruled out before real funds count, so twenty minutes buys confidence for a
  * wait an operator will accept. The dispute window is the reverse: it is the
  * only protection against a counterparty closing on a stale state, and the cost
@@ -112,7 +112,9 @@ export function IssueHydraInviteDialog({
     () =>
       role === null
         ? []
-        : wallets.filter((wallet) => (role === 'Buyer' ? wallet.type === 'Purchasing' : wallet.type === 'Selling')),
+        : wallets.filter((wallet) =>
+            role === 'Buyer' ? wallet.type === 'Purchasing' : wallet.type === 'Selling',
+          ),
     [wallets, role],
   );
   const [ttlSeconds, setTtlSeconds] = useState(DEFAULT_TTL_HOURS * HOUR_SECONDS);
@@ -266,71 +268,71 @@ export function IssueHydraInviteDialog({
             </div>
 
             {role !== null && (
-            <div className="space-y-2">
-              <Label htmlFor="hydra-invite-wallet">
-                {role === 'Buyer' ? 'Which purchasing wallet' : 'Which selling wallet'}
-              </Label>
-              {roleWallets.length === 0 ? (
-                <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                  No {role === 'Buyer' ? 'purchasing' : 'selling'} wallet on this payment source. Create one
-                  before inviting a counterparty to this side.
-                </p>
-              ) : (
-              <Select
-                value={hotWalletId}
-                onValueChange={(value) => {
-                  setHotWalletId(value);
-                  setErrors({});
-                }}
-              >
-                <SelectTrigger id="hydra-invite-wallet">
-                  <SelectValue placeholder="Choose a wallet" />
-                </SelectTrigger>
-                <SelectContent>
-                  {roleWallets.map((wallet) => (
-                    <SelectItem key={wallet.id} value={wallet.id}>
-                      {/* No role badge here any more: every wallet in this list
+              <div className="space-y-2">
+                <Label htmlFor="hydra-invite-wallet">
+                  {role === 'Buyer' ? 'Which purchasing wallet' : 'Which selling wallet'}
+                </Label>
+                {roleWallets.length === 0 ? (
+                  <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                    No {role === 'Buyer' ? 'purchasing' : 'selling'} wallet on this payment source.
+                    Create one before inviting a counterparty to this side.
+                  </p>
+                ) : (
+                  <Select
+                    value={hotWalletId}
+                    onValueChange={(value) => {
+                      setHotWalletId(value);
+                      setErrors({});
+                    }}
+                  >
+                    <SelectTrigger id="hydra-invite-wallet">
+                      <SelectValue placeholder="Choose a wallet" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roleWallets.map((wallet) => (
+                        <SelectItem key={wallet.id} value={wallet.id}>
+                          {/* No role badge here any more: every wallet in this list
                           is on the side just chosen, so repeating it would be
                           noise rather than information. */}
-                      <span className="truncate">
-                        {wallet.note?.trim() ? `${wallet.note.trim()} · ` : ''}
-                        {wallet.walletAddress.slice(0, 16)}…
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              )}
-              {/* One line of consequence, three paragraphs of detail behind the
+                          <span className="truncate">
+                            {wallet.note?.trim() ? `${wallet.note.trim()} · ` : ''}
+                            {wallet.walletAddress.slice(0, 16)}…
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {/* One line of consequence, three paragraphs of detail behind the
                   icon. All of it was true and none of it was read: an operator
                   choosing from a two-item list does not stop to read six lines
                   first. */}
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                Who you settle with, and what the counterparty must match.
-                <InfoHint label="wallet on this invite">
-                  <p>
-                    This wallet signs the invite and is who the counterparty sees. It is who you
-                    settle with, not the node&apos;s own key.
-                  </p>
-                  <p>
-                    It also fixes their side: pick a buying wallet and they must redeem with a
-                    selling one, and the other way round. A head carries payments in one direction
-                    only.
-                  </p>
-                  <p>
-                    Once they redeem, about 10 ADA moves from this wallet to the node to cover the
-                    head&apos;s on-chain fees. Nothing leaves the wallet while the invite is unused,
-                    and this is separate from whatever you later put into the head.
-                  </p>
-                </InfoHint>
-              </p>
-              {errors.wallet && <p className="text-xs text-destructive">{errors.wallet}</p>}
-            </div>
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  Who you settle with, and what the counterparty must match.
+                  <InfoHint label="wallet on this invite">
+                    <p>
+                      This wallet signs the invite and is who the counterparty sees. It is who you
+                      settle with, not the node&apos;s own key.
+                    </p>
+                    <p>
+                      It also fixes their side: pick a buying wallet and they must redeem with a
+                      selling one, and the other way round. A head carries payments in one direction
+                      only.
+                    </p>
+                    <p>
+                      Once they redeem, about 10 ADA moves from this wallet to the node to cover the
+                      head&apos;s on-chain fees. Nothing leaves the wallet while the invite is
+                      unused, and this is separate from whatever you later put into the head.
+                    </p>
+                  </InfoHint>
+                </p>
+                {errors.wallet && <p className="text-xs text-destructive">{errors.wallet}</p>}
+              </div>
             )}
 
             {/* Every period behind one disclosure. The defaults are chosen per
                 network and are right for almost every head, so the form asks
-                for one decision — which wallet — and keeps the four durations
+                for one decision, which wallet, and keeps the four durations
                 one click away for the operator who needs them. */}
             <HydraDetailSection
               title="Timings"

@@ -8,7 +8,9 @@
  * requires an active connection (open head); a head with no live provider returns
  * `connected: false` rather than a stale/guessed balance.
  */
+import { HydraTopupStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 import { getHydraConnectionManager } from './hydra-connection-manager.service';
 
 export interface HydraHeadBalanceAsset {
@@ -19,6 +21,22 @@ export interface HydraHeadBalanceAsset {
 }
 
 export interface HydraHeadOwnBalance {
+	/**
+	 * In-head UTxOs the head reports that nothing on L1 backs.
+	 *
+	 * The head's snapshot can keep a deposit that was never really absorbed —
+	 * hydra-node re-applies a deposit to the L2 ledger under two known bugs, one
+	 * fixed in 2.3.0 and one still open. The funds show as spendable in the head
+	 * while the L1 deposit has been recovered to the wallet, so the balance reads
+	 * high and a Close fails on the overhead it implies.
+	 *
+	 * Reported rather than silently dropped: the head really does say it has
+	 * them, and an operator comparing this screen with the deposits list needs to
+	 * see which side is wrong rather than watch the numbers disagree.
+	 */
+	unbackedLovelace: string;
+	/** Whether any UTxO here is unbacked, so the balance above is optimistic. */
+	hasUnbackedUtxos: boolean;
 	hydraHeadId: string;
 	/** The local participant's wallet address whose in-head funds are reported. */
 	address: string;
@@ -77,11 +95,56 @@ export async function getOwnInHeadBalance(hydraHeadId: string): Promise<HydraHea
 
 	const provider = getHydraConnectionManager().getProvider(hydraHeadId);
 	if (!provider) {
-		return { hydraHeadId, address, connected: false, utxoCount: 0, balance: [] };
+		return {
+			hydraHeadId,
+			address,
+			connected: false,
+			utxoCount: 0,
+			balance: [],
+			unbackedLovelace: '0',
+			hasUnbackedUtxos: false,
+		};
 	}
 
 	const utxos = await provider.fetchAddressUTxOs(address);
+
+	// Cross-check against what we know L1 did with this head's deposits. A
+	// recovered deposit's funds are back in the wallet, so an in-head UTxO still
+	// carrying its reference is one the head believes in and the chain does not.
+	// Matched on the committed UTxO's own transaction, because that is the
+	// reference the head keeps: for an exact-amount top-up that is the split, and
+	// otherwise the deposit itself.
+	const recovered = await prisma.hydraTopup.findMany({
+		where: { hydraHeadId, status: HydraTopupStatus.Recovered },
+		select: { depositTxHash: true, splitTxHash: true },
+	});
+	const recoveredOrigins = new Set(
+		recovered.flatMap((row) => [row.depositTxHash, row.splitTxHash]).filter((hash): hash is string => hash != null),
+	);
+	const unbacked = utxos.filter((utxo) => recoveredOrigins.has(utxo.input.txHash));
+	const unbackedLovelace = unbacked.reduce((total, utxo) => {
+		for (const asset of utxo.output.amount) {
+			if (asset.unit === '' || asset.unit.toLowerCase() === 'lovelace') return total + BigInt(asset.quantity);
+		}
+		return total;
+	}, 0n);
+	if (unbacked.length > 0) {
+		logger.warn('[HydraBalance] the head reports UTxOs whose deposits were recovered on L1', {
+			hydraHeadId,
+			unbackedUtxoCount: unbacked.length,
+			unbackedLovelace: unbackedLovelace.toString(),
+		});
+	}
+
 	const balance = aggregateInHeadAmounts(utxos.map((utxo) => utxo.output.amount));
 
-	return { hydraHeadId, address, connected: true, utxoCount: utxos.length, balance };
+	return {
+		hydraHeadId,
+		address,
+		connected: true,
+		utxoCount: utxos.length,
+		balance,
+		unbackedLovelace: unbackedLovelace.toString(),
+		hasUnbackedUtxos: unbacked.length > 0,
+	};
 }

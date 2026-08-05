@@ -6,7 +6,7 @@
  * confusingly if they drift: the hydra-node build (its script hashes) and the
  * ledger protocol parameters. A node whose hashes differ from its peers cannot
  * open a head with them, and the failure surfaces at first commit rather than
- * at connect time — so the hashes are worth showing.
+ * at connect time, so the hashes are worth showing.
  */
 
 import { useEffect, useState } from 'react';

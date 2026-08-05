@@ -4,7 +4,7 @@
  * The Hydra Host generates these keys and discloses them exactly once, at
  * provisioning; the payment service holds the only other copy. This dialog is
  * the operator's single chance to take one off-site, and the server seals the
- * path as it answers — so the keys are hidden until asked for, and the dialog
+ * path as it answers, so the keys are hidden until asked for, and the dialog
  * refuses to close as "done" until the operator says they have them.
  *
  * Deliberately shaped like the wallet mnemonic flow: reveal, copy, confirm.
