@@ -33736,10 +33736,16 @@
                                         "type": "string",
                                         "minLength": 1,
                                         "description": "ID of the HydraHead"
+                                    },
+                                    "lovelace": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$",
+                                        "description": "How much to put into the head. A dedicated UTxO of exactly this amount is carved on L1 first and only that is committed, so the rest of the wallet — its other ADA, its stablecoins, an agent's registry NFT — stays on L1 and spendable. Costs one L1 confirmation before the deposit is built."
                                     }
                                 },
                                 "required": [
-                                    "headId"
+                                    "headId",
+                                    "lovelace"
                                 ],
                                 "example": {
                                     "headId": "cuid_v2_auto_generated"
@@ -33963,6 +33969,16 @@
                                         "type": "string",
                                         "pattern": "^\\d+$",
                                         "description": "Exact lovelace to withdraw. Omit to withdraw every eligible in-head UTxO whole. An exact amount is split off inside the head first, which costs nothing and takes about a second."
+                                    },
+                                    "assetUnit": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-fA-F]{56,120}$",
+                                        "description": "Withdraw a native asset instead of ADA: policy id and asset name concatenated. Exactly the amount asked for is split off inside the head first, the same as an ADA withdrawal, so the rest stays where it is."
+                                    },
+                                    "assetAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$",
+                                        "description": "How much of assetUnit to withdraw, in that asset's own smallest unit."
                                     },
                                     "drain": {
                                         "type": "boolean",

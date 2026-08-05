@@ -305,7 +305,17 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
     return 'ADA';
   }
 
-  return unit ?? '—';
+  // An unrecognised asset falls back to its own identifier, which is a policy id
+  // and asset name concatenated: 100+ characters that wrap across the panel and
+  // tell an operator nothing they can read. Shortened to the ends, which is what
+  // identifies it at a glance, with the full value still available wherever the
+  // caller offers copy.
+  return unit ? shortenAssetUnit(unit) : '—';
+}
+
+/** First and last characters of a long asset identifier, elided in the middle. */
+export function shortenAssetUnit(unit: string): string {
+  return unit.length <= 20 ? unit : `${unit.slice(0, 10)}…${unit.slice(-6)}`;
 }
 
 /**

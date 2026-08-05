@@ -35,7 +35,7 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
-import { coverLovelace, lovelaceOf, selectDecommittableUtxos, utxoRef } from './select';
+import { amountOf, coverAsset, coverLovelace, lovelaceOf, selectDecommittableUtxos, utxoRef } from './select';
 
 /**
  * How long the in-head split gets to confirm before the withdrawal gives up.
@@ -69,6 +69,15 @@ const PREPARING_STALE_AFTER_MS = 10 * 60 * 1000;
  */
 const MIN_SPLIT_REMAINDER_LOVELACE = 2_000_000n;
 
+/**
+ * Lovelace carried by a carved token output.
+ *
+ * A Cardano output cannot hold a token without enough ADA to exist, so an exact
+ * token withdrawal takes this along and returns it to the wallet with the
+ * asset. Comfortably above the minimum for a single-asset output.
+ */
+const TOKEN_OUTPUT_LOVELACE = 2_000_000n;
+
 export type ExecuteHydraDecommitParams = {
 	headId: string;
 	/**
@@ -78,6 +87,15 @@ export type ExecuteHydraDecommitParams = {
 	 * not, and is the cheaper choice when the exact figure does not matter.
 	 */
 	lovelace?: bigint | null;
+	/**
+	 * Withdraw a native asset instead of ADA.
+	 *
+	 * A head can hold stablecoins and NFTs as readily as ADA, and until this
+	 * existed the only way to get one back out was closing the head. The unit is
+	 * policy id and asset name concatenated, and the amount is in that asset's
+	 * own smallest unit.
+	 */
+	asset?: { unit: string; amount: bigint } | null;
 	/** Withdraw the collateral reserve too. For winding a head down. */
 	drain?: boolean;
 };
@@ -241,7 +259,35 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		// Pick the inputs, and split off the exact amount when one was asked for.
 		let splitTxId: string | null = null;
 		let decommitInputs: UTxO[];
-		if (params.lovelace != null) {
+		const requestedAsset = params.asset ?? null;
+		if (requestedAsset != null) {
+			const covering = coverAsset(selection.eligible, requestedAsset.unit, requestedAsset.amount);
+			if (covering === null) {
+				const held = selection.eligible.reduce((total, utxo) => total + amountOf(utxo, requestedAsset.unit), 0n);
+				throw createHttpError(
+					400,
+					`Only ${held} of that asset is eligible to withdraw, which is less than the ${requestedAsset.amount} requested`,
+				);
+			}
+			const covered = covering.reduce((total, utxo) => total + amountOf(utxo, requestedAsset.unit), 0n);
+			if (covered === requestedAsset.amount) {
+				decommitInputs = covering;
+			} else {
+				const split = await splitExactAmountInHead({
+					wallet,
+					provider,
+					hydraHead,
+					address,
+					network,
+					inputs: covering,
+					unit: requestedAsset.unit,
+					amount: requestedAsset.amount,
+					decommitId: claim.id,
+				});
+				splitTxId = split.txId;
+				decommitInputs = [split.exact];
+			}
+		} else if (params.lovelace != null) {
 			const covering = coverLovelace(selection.eligible, params.lovelace);
 			if (covering === null) {
 				throw createHttpError(
@@ -269,7 +315,8 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					address,
 					network,
 					inputs: covering,
-					lovelace: params.lovelace,
+					unit: '',
+					amount: params.lovelace,
 					decommitId: claim.id,
 				});
 				splitTxId = split.txId;
@@ -394,17 +441,29 @@ async function splitExactAmountInHead(params: {
 	address: string;
 	network: Network;
 	inputs: UTxO[];
-	lovelace: bigint;
+	/** Empty unit means lovelace. */
+	unit: string;
+	amount: bigint;
 	decommitId: string;
 }): Promise<{ txId: string; exact: UTxO }> {
-	const { wallet, provider, hydraHead, address, network, inputs, lovelace, decommitId } = params;
+	const { wallet, provider, hydraHead, address, network, inputs, unit, amount, decommitId } = params;
+	const isLovelace = unit === '' || unit.toLowerCase() === 'lovelace';
 
 	const builder = new MeshTxBuilder({ fetcher: provider, submitter: provider, verbose: false });
 	for (const utxo of inputs) {
 		builder.txIn(utxo.input.txHash, utxo.input.outputIndex, utxo.output.amount, utxo.output.address);
 	}
+	// A token cannot travel on its own: every output needs enough lovelace to
+	// exist, so the carved UTxO carries the asked-for amount plus that floor, and
+	// the floor comes back with it when the withdrawal lands.
+	const carvedValue = isLovelace
+		? [{ unit: 'lovelace', quantity: amount.toString() }]
+		: [
+				{ unit: 'lovelace', quantity: TOKEN_OUTPUT_LOVELACE.toString() },
+				{ unit, quantity: amount.toString() },
+			];
 	const unsignedTx = await builder
-		.txOut(address, [{ unit: 'lovelace', quantity: lovelace.toString() }])
+		.txOut(address, carvedValue)
 		.changeAddress(address)
 		.setNetwork(convertNetwork(network))
 		.complete();
@@ -434,14 +493,19 @@ async function splitExactAmountInHead(params: {
 	// before the change, but reading the index off that convention would break
 	// silently if it ever changed; matching on the amount cannot.
 	const produced = await provider.fetchUTxOs(splitTxId);
-	const exact = produced.find((utxo) => utxo.output.address === address && lovelaceOf(utxo) === lovelace);
+	const exact = produced.find(
+		(utxo) =>
+			utxo.output.address === address &&
+			amountOf(utxo, isLovelace ? '' : unit) === amount &&
+			(isLovelace || lovelaceOf(utxo) === TOKEN_OUTPUT_LOVELACE),
+	);
 	if (!exact) {
 		throw createHttpError(
 			502,
-			`The in-head split ${splitTxId} confirmed but produced no output of exactly ${lovelace} lovelace`,
+			`The in-head split ${splitTxId} confirmed but produced no output of exactly ${amount} ${isLovelace ? 'lovelace' : unit}`,
 		);
 	}
-	logger.info(`[HydraDecommit] split ${lovelace} lovelace into ${utxoRef(exact)} inside the head`);
+	logger.info(`[HydraDecommit] split ${amount} ${isLovelace ? 'lovelace' : unit} into ${utxoRef(exact)} in head`);
 	return { txId: splitTxId, exact };
 }
 

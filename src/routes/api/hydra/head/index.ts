@@ -3,6 +3,7 @@ import { CONFIG } from '@masumi/payment-core/config';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { carveExactUtxo, HydraPreSplitError } from '@/services/hydra-topup/pre-split';
 import {
 	HydraHeadStatus,
 	HydraErrorType,
@@ -1130,6 +1131,12 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 
 export const commitInput = z.object({
 	headId: z.string().min(1).describe('ID of the HydraHead'),
+	lovelace: z
+		.string()
+		.regex(/^\d+$/)
+		.describe(
+			"How much to put into the head. A dedicated UTxO of exactly this amount is carved on L1 first and only that is committed, so the rest of the wallet — its other ADA, its stablecoins, an agent's registry NFT — stays on L1 and spendable. Costs one L1 confirmation before the deposit is built.",
+		),
 });
 
 export const commitOutput = z.object({
@@ -1251,17 +1258,40 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			// collateral and change from its OWN dedicated cardano key (not this
 			// participant's funding wallet), so every plain wallet UTxO can be
 			// committed and no fee-fuel input needs to be reserved.
-			const { commitUtxos, excludedUtxos } = selectCommitUtxos(utxos);
-			if (commitUtxos.length === 0) {
-				throw createHttpError(
-					400,
-					'Local participant wallet has no plain (datum- and reference-script-free) L1 UTxOs available to commit',
-				);
+			// Carve exactly what was asked for, then commit only that.
+			//
+			// This used to select UTxOs instead, which made "fund the head" mean
+			// "empty the wallet into it": every plain UTxO went, including the one
+			// carrying the agent's registry NFT and any stablecoin balance, and
+			// nothing inside a head can be spent or updated on L1 until it closes.
+			// Filtering to ADA would only have narrowed which things got swept. An
+			// amount is what an operator means, and a dedicated UTxO is the only
+			// way to commit one, because Hydra commits whole UTxOs.
+			let carved;
+			try {
+				carved = await carveExactUtxo({
+					wallet,
+					blockchainProvider,
+					walletAddress: hotWallet.walletAddress,
+					unit: 'lovelace',
+					amount: BigInt(input.lovelace),
+					network: hotWallet.PaymentSource.network,
+					rpcProviderApiKey,
+				});
+			} catch (splitError) {
+				if (splitError instanceof HydraPreSplitError) {
+					throw createHttpError(502, `Could not carve the amount to commit: ${splitError.message}`);
+				}
+				throw splitError;
 			}
+			const commitUtxos = [carved];
+			// The carve changed the wallet, so the input-safety snapshot has to be
+			// taken after it rather than before.
+			const walletUtxosAfterCarve = await wallet.getUtxos();
 
-			logger.info(`[HydraAPI] Selected L1 UTxOs for head ${head.id} commit`, {
+			logger.info(`[HydraAPI] Carved the commit amount for head ${head.id}`, {
 				commitUtxoCount: commitUtxos.length,
-				excludedUtxoCount: excludedUtxos.length,
+				committedLovelace: input.lovelace,
 			});
 
 			const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(hotWallet.PaymentSource.network));
@@ -1275,7 +1305,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				validatedDraft = await buildValidatedHydraCommit({
 					commitUtxos,
-					walletUtxos: utxos,
+					walletUtxos: walletUtxosAfterCarve,
 					walletPaymentKeyHash: vKey,
 					expectedHeadId: verifiedHead.headIdentifier,
 					slotConfig,

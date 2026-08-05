@@ -820,7 +820,7 @@ export type HydraTopup = {
   id: string;
   createdAt: string;
   updatedAt: string;
-  status: 'Preparing' | 'Pending' | 'Confirmed' | 'Failed' | 'Recovered';
+  status: 'Preparing' | 'Pending' | 'Confirmed' | 'Failed' | 'Recovered' | 'Absorbed';
   /** Null until the deposit is built; a preparing top-up has no deposit yet. */
   depositTxHash: string | null;
   /** The L1 split that carves the exact amount, present while preparing. */
@@ -933,7 +933,13 @@ export function useHydraWithdrawals(headId: string | null, isOpen: boolean) {
 
 export async function withdrawFromHydraHead(
   apiClient: Client,
-  payload: { headId: string; lovelace?: string; drain?: boolean },
+  payload: {
+    headId: string;
+    lovelace?: string;
+    assetUnit?: string;
+    assetAmount?: string;
+    drain?: boolean;
+  },
 ) {
   const response = await handleApiCall(
     () =>

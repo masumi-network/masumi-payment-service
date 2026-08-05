@@ -467,20 +467,6 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
         </Button>
       </div>
 
-      <HydraTopupList
-        headId={headId}
-        isOpen={isOpen}
-        network={network}
-        onRetry={(failed) => {
-          // Refills the form rather than resubmitting silently: a deposit moves
-          // real funds, and the amount should be confirmed by the person doing
-          // it, not replayed behind their back.
-          setAsset('ada');
-          setAmount((Number(failed.committedLovelace) / 1_000_000).toString());
-          toast.info('Amount filled in. Press Add funds to try the deposit again.');
-        }}
-      />
-
       {isCustom && (
         <div className="space-y-1.5">
           <Label htmlFor={`hydra-topup-unit-${headId}`}>Asset unit</Label>
@@ -496,6 +482,21 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
           </p>
         </div>
       )}
+
+      <HydraTopupList
+        headId={headId}
+        isOpen={isOpen}
+        network={network}
+        onRetry={(failed) => {
+          // Refills the form rather than resubmitting silently: a deposit moves
+          // real funds, and the amount should be confirmed by the person doing
+          // it, not replayed behind their back.
+          setAsset('ada');
+          setAmount((Number(failed.committedLovelace) / 1_000_000).toString());
+          toast.info('Amount filled in. Press Add funds to try the deposit again.');
+        }}
+      />
+
     </div>
   );
 }

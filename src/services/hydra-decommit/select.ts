@@ -58,9 +58,15 @@ export function utxoRef(utxo: UTxO): string {
 }
 
 export function lovelaceOf(utxo: UTxO): bigint {
+	return amountOf(utxo, '');
+}
+
+/** How much of one asset a UTxO holds. Empty unit means lovelace. */
+export function amountOf(utxo: UTxO, unit: string): bigint {
+	const wanted = unit === '' || unit.toLowerCase() === 'lovelace' ? ['', 'lovelace'] : [unit.toLowerCase()];
 	let total = 0n;
 	for (const asset of utxo.output.amount) {
-		if (asset.unit === '' || asset.unit.toLowerCase() === 'lovelace') total += BigInt(asset.quantity);
+		if (wanted.includes(asset.unit.toLowerCase())) total += BigInt(asset.quantity);
 	}
 	return total;
 }
@@ -148,16 +154,30 @@ export function selectDecommittableUtxos(input: DecommitSelectionInput): Decommi
  * refusal rather than withdrawing an unexpected sum.
  */
 export function coverLovelace(utxos: readonly UTxO[], amount: bigint): UTxO[] | null {
+	return coverAsset(utxos, '', amount);
+}
+
+/**
+ * The fewest whole UTxOs whose `unit` holding reaches `amount`.
+ *
+ * Largest first, so a withdrawal spends as few inputs as possible and leaves the
+ * wallet's remaining UTxOs as usable as it found them. Returns null when the
+ * eligible set cannot reach the amount at all: the caller reports that as a
+ * refusal rather than withdrawing an unexpected sum.
+ */
+export function coverAsset(utxos: readonly UTxO[], unit: string, amount: bigint): UTxO[] | null {
 	const sorted = [...utxos].sort((left, right) => {
-		const difference = lovelaceOf(right) - lovelaceOf(left);
+		const difference = amountOf(right, unit) - amountOf(left, unit);
 		return difference === 0n ? 0 : difference < 0n ? -1 : 1;
 	});
 	const chosen: UTxO[] = [];
 	let total = 0n;
 	for (const utxo of sorted) {
 		if (total >= amount) break;
+		// A UTxO holding none of the asset only adds size to the transaction.
+		if (amountOf(utxo, unit) === 0n) continue;
 		chosen.push(utxo);
-		total += lovelaceOf(utxo);
+		total += amountOf(utxo, unit);
 	}
 	return total >= amount ? chosen : null;
 }

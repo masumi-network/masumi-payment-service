@@ -19,10 +19,19 @@ import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
+  useHydraHeadBalance,
   useHydraWithdrawals,
   withdrawFromHydraHead,
   type HydraWithdrawal,
 } from '@/lib/hooks/useHydraHeads';
+import { formatFundUnit } from '@/lib/utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Button } from '@/components/ui/button';
@@ -164,12 +173,23 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
   const [amount, setAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDraining, setIsDraining] = useState(false);
+  // Offered from what the head actually holds rather than typed from memory: a
+  // policy id and asset name is 100+ characters, and the head already knows
+  // which ones are there to take.
+  const [assetUnit, setAssetUnit] = useState('');
+  const { data: balance } = useHydraHeadBalance(headId, isOpen);
+  const heldAssets = (balance?.balance ?? []).filter((asset) => asset.unit !== '');
 
   if (!isOpen) return null;
 
   const adaLabel = network?.toLowerCase() === 'mainnet' ? 'ADA' : 'tADA';
 
-  async function submit(payload: { lovelace?: string; drain?: boolean }) {
+  async function submit(payload: {
+    lovelace?: string;
+    assetUnit?: string;
+    assetAmount?: string;
+    drain?: boolean;
+  }) {
     setIsSubmitting(true);
     try {
       await withdrawFromHydraHead(apiClient, { headId, ...payload });
@@ -184,6 +204,17 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
   }
 
   const handleWithdraw = async () => {
+    if (assetUnit !== '') {
+      // A native asset is counted in its own smallest unit, so there is no
+      // decimal conversion to do and a fraction would be meaningless.
+      const assetAmount = amount.trim();
+      if (!/^\d+$/.test(assetAmount) || assetAmount === '0') {
+        toast.error('Enter how much to take out, as a whole number');
+        return;
+      }
+      await submit({ assetUnit, assetAmount });
+      return;
+    }
     const lovelace = adaToLovelace(amount);
     if (lovelace === null) {
       toast.error(`Enter how much ${adaLabel} to take out of the head`);
@@ -214,6 +245,25 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
       </div>
 
       <div className="flex flex-wrap items-end gap-2">
+        {heldAssets.length > 0 && (
+          <div className="space-y-1.5">
+            <Label htmlFor={`hydra-withdraw-asset-${headId}`}>Asset</Label>
+            <Select value={assetUnit} onValueChange={setAssetUnit}>
+              <SelectTrigger id={`hydra-withdraw-asset-${headId}`} className="w-[170px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">{adaLabel}</SelectItem>
+                {heldAssets.map((asset) => (
+                  <SelectItem key={asset.unit} value={asset.unit}>
+                    {formatFundUnit(asset.unit, network)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         <div className="space-y-1.5">
           <Label htmlFor={`hydra-withdraw-${headId}`}>Amount</Label>
           <div className="relative">
@@ -226,7 +276,7 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
               className="w-44 pr-16 font-mono"
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-w-14 truncate text-xs text-muted-foreground">
-              {adaLabel}
+              {assetUnit === '' ? adaLabel : formatFundUnit(assetUnit, network)}
             </span>
           </div>
         </div>

@@ -57,6 +57,17 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 		};
 	}
 
+	if (topup.status === HydraTopupStatus.Absorbed) {
+		// The head has it. Recovery spends the deposit back out of the deposit
+		// script, and the fold-in already spent it, so the node would refuse -
+		// after the row had told an operator a recovery was on its way.
+		return {
+			depositTxHash: topup.depositTxHash,
+			requested: false,
+			reason: 'the head has already taken this deposit in, so there is nothing at the deposit script to return',
+		};
+	}
+
 	if (topup.status === HydraTopupStatus.Pending) {
 		// Still in flight. Recovering now would race the increment it is waiting
 		// for, and the node would refuse anyway.

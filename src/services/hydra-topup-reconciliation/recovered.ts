@@ -39,37 +39,39 @@ const MAX_RECOVERY_CHECKS_PER_TICK = 20;
  * read rather than an inference from a balance, which would be wrong the moment
  * the wallet is used for anything else.
  */
-async function depositOutputsSpent(params: {
+/** What L1 did with a deposit, decided from the transaction that spent it. */
+type DepositOutcome = 'unspent' | 'recovered' | 'absorbed' | 'unknown';
+
+async function depositOutcome(params: {
 	network: Network;
 	rpcProviderApiKey: string;
 	depositTxHash: string;
-}): Promise<boolean | null> {
+}): Promise<DepositOutcome> {
 	try {
 		const blockfrost = getBlockfrostInstance(params.network, params.rpcProviderApiKey);
 		const utxos = await blockfrost.txsUtxos(params.depositTxHash);
 		const scriptOutputs = utxos.outputs.filter((output) => isScriptAddress(output.address));
-		if (scriptOutputs.length === 0) return null;
+		if (scriptOutputs.length === 0) return 'unknown';
 		const consumers = new Set<string>();
 		for (const output of scriptOutputs) {
 			// `consumed_by_tx` is absent while the output is still unspent.
 			const consumed = (output as { consumed_by_tx?: string | null }).consumed_by_tx;
-			if (consumed == null) return false;
+			if (consumed == null) return 'unspent';
 			consumers.add(consumed);
 		}
 
-		// Spent is not the same as recovered. The head absorbing a deposit spends
-		// it too, and calling that a recovery reported funds as back in the wallet
-		// while they were sitting in the head — the balance and the deposit list
-		// then disagreed, and the list was the wrong one.
+		// Spent is not the same as recovered. The head absorbing a deposit spends it
+		// too, and the two outcomes are opposites: one puts the funds back in the
+		// wallet, the other puts them on L2.
 		//
 		// What tells them apart is what the spending transaction produces: a
 		// fold-in carries the head forward, so it pays the head's state output to a
 		// script address. A recovery pays only to wallets.
 		for (const consumer of consumers) {
 			const spend = await blockfrost.txsUtxos(consumer);
-			if (spend.outputs.some((output) => isScriptAddress(output.address))) return false;
+			if (spend.outputs.some((output) => isScriptAddress(output.address))) return 'absorbed';
 		}
-		return true;
+		return 'recovered';
 	} catch (error) {
 		// A lookup failure is not evidence of anything; leave the row alone and
 		// let the next tick decide.
@@ -77,7 +79,7 @@ async function depositOutputsSpent(params: {
 			depositTxHash: params.depositTxHash,
 			error: error instanceof Error ? error.message : error,
 		});
-		return null;
+		return 'unknown';
 	}
 }
 
@@ -91,7 +93,9 @@ async function depositOutputsSpent(params: {
 export async function reconcileRecoveredHydraTopups(): Promise<void> {
 	const candidates = await prisma.hydraTopup.findMany({
 		where: {
-			recoveryRequestedAt: { not: null },
+			// Every confirmed deposit, not only ones a recovery was asked for: a
+			// deposit the head takes in needs saying so just as much, and that is
+			// the case that left Recover on offer for funds already on L2.
 			status: { in: [HydraTopupStatus.Confirmed, HydraTopupStatus.Failed] },
 			depositTxHash: { not: null },
 		},
@@ -109,19 +113,24 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 			const rpcProviderApiKey = candidate.LocalParticipant.Wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
 			if (rpcProviderApiKey == null || candidate.depositTxHash == null) return;
 
-			const spent = await depositOutputsSpent({
+			const outcome = await depositOutcome({
 				network: candidate.LocalParticipant.Wallet.PaymentSource.network,
 				rpcProviderApiKey,
 				depositTxHash: candidate.depositTxHash,
 			});
-			if (spent !== true) return;
+			if (outcome !== 'recovered' && outcome !== 'absorbed') return;
 
+			const status = outcome === 'recovered' ? HydraTopupStatus.Recovered : HydraTopupStatus.Absorbed;
 			const promoted = await prisma.hydraTopup.updateMany({
-				where: { id: candidate.id, recoveryRequestedAt: { not: null }, status: candidate.status },
-				data: { status: HydraTopupStatus.Recovered },
+				where: { id: candidate.id, status: candidate.status },
+				data: { status },
 			});
 			if (promoted.count === 1) {
-				logger.info(`hydra: deposit ${candidate.depositTxHash} was recovered; the funds are back in the wallet`);
+				logger.info(
+					outcome === 'recovered'
+						? `hydra: deposit ${candidate.depositTxHash} was recovered; the funds are back in the wallet`
+						: `hydra: deposit ${candidate.depositTxHash} was taken into the head`,
+				);
 			}
 		}),
 	);

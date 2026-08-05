@@ -15,6 +15,18 @@ export const withdrawInput = z.object({
 		.describe(
 			'Exact lovelace to withdraw. Omit to withdraw every eligible in-head UTxO whole. An exact amount is split off inside the head first, which costs nothing and takes about a second.',
 		),
+	assetUnit: z
+		.string()
+		.regex(/^[0-9a-fA-F]{56,120}$/)
+		.optional()
+		.describe(
+			'Withdraw a native asset instead of ADA: policy id and asset name concatenated. Exactly the amount asked for is split off inside the head first, the same as an ADA withdrawal, so the rest stays where it is.',
+		),
+	assetAmount: z
+		.string()
+		.regex(/^\d+$/)
+		.optional()
+		.describe("How much of assetUnit to withdraw, in that asset's own smallest unit."),
 	drain: z
 		.boolean()
 		.optional()
@@ -125,6 +137,7 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 		void executeHydraDecommit({
 			headId: input.headId,
 			lovelace: input.lovelace ? BigInt(input.lovelace) : null,
+			asset: input.assetUnit && input.assetAmount ? { unit: input.assetUnit, amount: BigInt(input.assetAmount) } : null,
 			drain: input.drain,
 		}).catch((error: unknown) => {
 			logger.error(`hydra: withdrawal from head ${input.headId} failed: ${(error as Error).message}`);
