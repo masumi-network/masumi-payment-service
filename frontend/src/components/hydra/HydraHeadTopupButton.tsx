@@ -17,8 +17,10 @@
  */
 
 import { useEffect, useState } from 'react';
+import { ExternalLink } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
+import { getExplorerUrl } from '@/lib/utils';
 import { useResync } from '@/lib/hooks/useResync';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -118,6 +120,51 @@ function formatLovelace(lovelace: string, network: string | undefined): string {
   return `${Number(whole).toLocaleString()}.${fraction} ${ticker}`;
 }
 
+/**
+ * One transaction on a deposit row, named and linkable.
+ *
+ * Every hash here is an ordinary L1 transaction, so it is worth linking: the
+ * only way an operator could previously check a deposit was to copy the hash
+ * and paste it into an explorer, which is precisely the moment they are least
+ * sure anything happened.
+ *
+ * Labelled, because a row shows the deposit once it exists and the split that
+ * precedes it until then, and those are different transactions moving different
+ * amounts.
+ */
+function TxLink({
+  label,
+  hash,
+  network,
+  fallback,
+}: {
+  label: string;
+  hash: string | null;
+  network: string | undefined;
+  /** Shown when there is no transaction yet, e.g. a split still being built. */
+  fallback: string | null;
+}) {
+  if (hash === null) {
+    return fallback === null ? null : <span className="text-xs text-muted-foreground">{fallback}</span>;
+  }
+  return (
+    <span className="flex items-center gap-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <a
+        href={getExplorerUrl(hash, network ?? 'Preprod', 'transaction')}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
+        title="Open on Cardanoscan"
+      >
+        {hash.slice(0, 10)}…
+        <ExternalLink className="h-3 w-3" />
+      </a>
+      <CopyButton value={hash} className="h-6 w-6" />
+    </span>
+  );
+}
+
 function HydraTopupList({
   headId,
   isOpen,
@@ -177,11 +224,9 @@ function HydraTopupList({
       </p>
       <ul className="divide-y rounded-md border">
         {topups.map((topup) => (
-          <li
-            key={topup.id}
-            className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
-          >
-            <div className="flex items-center gap-2">
+          <li key={topup.id} className="space-y-1 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
               {/* Confirmed is about the transaction, not about the head. Between
                   the two the money is on chain, committed to this head, and
                   unusable, which read as success when both said "Confirmed". */}
@@ -221,80 +266,58 @@ function HydraTopupList({
                   ? 'amount pending'
                   : formatLovelace(topup.committedLovelace, network)}
               </span>
-              {topup.status === 'Confirmed' && !isUsable(topup) && topup.usableFrom != null && (
+              </div>
+            {/* One transaction per row, named for what it is. The hash used to
+                sit between two different notes depending on state — "splitting"
+                before it, "back in the wallet" after — so the same column read
+                in a different order on every line. */}
+            <TxLink
+              label={topup.depositTxHash === null ? 'split' : 'deposit'}
+              hash={topup.depositTxHash ?? topup.splitTxHash ?? null}
+              network={network}
+              fallback={topup.depositTxHash === null ? 'building the split' : null}
+            />
+          </div>
+
+          {/* Everything that is a note about the row, on its own line and in one
+              place, rather than trailing the hash. */}
+          <div className="flex w-full flex-wrap items-center gap-2">
+            {topup.status === 'Recovered' && (
+              <span className="text-xs text-muted-foreground">Back in the wallet.</span>
+            )}
+            {topup.status === 'Confirmed' && !isUsable(topup) && topup.usableFrom != null && (
+              <span className="text-xs text-muted-foreground">
+                Usable {new Date(topup.usableFrom).toLocaleTimeString()}.
+              </span>
+            )}
+            {topup.status === 'Confirmed' &&
+              topup.depositTxHash !== null &&
+              (topup.recoveryRequestedAt != null ? (
                 <span className="text-xs text-muted-foreground">
-                  usable {new Date(topup.usableFrom).toLocaleTimeString()}
+                  Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()} — waiting for it
+                  on chain.
                 </span>
-              )}
-            </div>
-            <span className="flex items-center gap-1">
-              {topup.depositTxHash === null ? (
-                // The deposit does not exist yet, but the split that precedes it
-                // does, and it is the transaction that took the funds. Named so
-                // the wait can be checked on chain rather than taken on trust.
-                topup.splitTxHash ? (
-                  <>
-                    <span className="text-xs text-muted-foreground">splitting</span>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {topup.splitTxHash.slice(0, 10)}…
-                    </span>
-                    <CopyButton value={topup.splitTxHash} className="h-6 w-6" />
-                  </>
-                ) : (
-                  <span className="text-xs text-muted-foreground">building the split</span>
-                )
               ) : (
-                <>
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {topup.depositTxHash.slice(0, 10)}…
-                  </span>
-                  <CopyButton value={topup.depositTxHash} className="h-6 w-6" />
-                </>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={recoveringId === topup.id}
+                  onClick={() => void handleRecover(topup.id)}
+                  title="Ask the node to return this deposit, if the head never took it"
+                >
+                  {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
+                  Recover
+                </Button>
+              ))}
+            {topup.status === 'Failed' &&
+              Object.keys(topup.committedAssets ?? {}).length === 0 && (
+                <Button type="button" variant="outline" size="sm" onClick={() => onRetry(topup)}>
+                  Try again
+                </Button>
               )}
-              {/* A confirmed deposit the head never took still holds the funds
-                  at the deposit script. Only the node can spend them back, and
-                  only after the deadline, so this is offered rather than done
-                  automatically. */}
-              {topup.status === 'Recovered' && (
-                <span className="ml-1 text-xs text-muted-foreground">back in the wallet</span>
-              )}
-              {topup.status === 'Confirmed' &&
-                topup.depositTxHash !== null &&
-                (topup.recoveryRequestedAt != null ? (
-                  <span className="ml-1 text-xs text-muted-foreground">
-                    Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()} — waiting for it on
-                    chain
-                  </span>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="ml-1"
-                    disabled={recoveringId === topup.id}
-                    onClick={() => void handleRecover(topup.id)}
-                    title="Ask the node to return this deposit, if the head never took it"
-                  >
-                    {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
-                    Recover
-                  </Button>
-                ))}
-              {/* Offered for ADA only. A token deposit would need its unit and
-                  its own decimals filled back in, and guessing either of those
-                  into a form that moves funds is worse than retyping them. */}
-              {topup.status === 'Failed' &&
-                Object.keys(topup.committedAssets ?? {}).length === 0 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="ml-1"
-                    onClick={() => onRetry(topup)}
-                  >
-                    Try again
-                  </Button>
-                )}
-            </span>
+          </div>
+
             {topup.status === 'Failed' && (
               // The only way a deposit reaches Failed is its transaction not
               // being on chain by the deadline it was signed with. Nothing was
