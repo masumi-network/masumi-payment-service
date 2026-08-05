@@ -46,20 +46,32 @@ const CYCLES = {
 export type HydraNudgeKind = keyof typeof CYCLES;
 
 /**
- * How long after starting a cycle further nudges for it are ignored.
+ * How closely together two passes of the same kind may start.
  *
- * A cycle picks up everything eligible when it runs, so a second request
- * arriving while one is in flight is already covered. Without this, ten
- * purchases in a second would queue ten cycles, each doing the same scan.
+ * A pass picks up everything eligible when it runs, so ten purchases in a second
+ * do not need ten identical scans. This is a rate limit, not a filter: a nudge
+ * inside the window is remembered and run at the end of it, never dropped.
  *
- * Per process, deliberately. Two instances each get their own cooldown and can
+ * Per process, deliberately. Two instances each get their own window and can
  * therefore each start a pass, which is harmless: the passes share a mutex per
  * service, so the second finds the first already running and returns.
  */
 const NUDGE_COOLDOWN_MS = 1_000;
 
-const lastNudgedAt = new Map<HydraNudgeKind, number>();
+const lastStartedAt = new Map<HydraNudgeKind, number>();
 const running = new Set<HydraNudgeKind>();
+/**
+ * Kinds nudged while their pass was running or inside the rate-limit window.
+ *
+ * Dropping those was the reason a purchase could sit still while its head was
+ * open and idle. A pass reads each wallet once, near its start; a wallet that
+ * frees a moment later — which is exactly when the lock it was holding gets
+ * confirmed — is still busy as far as that pass is concerned. Discarding the
+ * nudge that reports it left the waiting purchase for the next timer tick, so
+ * the queue drained at one lock per tick instead of one per confirmation.
+ */
+const pending = new Set<HydraNudgeKind>();
+const timers = new Map<HydraNudgeKind, NodeJS.Timeout>();
 
 /**
  * Ask the matching cycle to run now.
@@ -68,14 +80,42 @@ const running = new Set<HydraNudgeKind>();
  * the scheduled tick remains the backstop.
  */
 export function nudgeHydraCycle(kind: HydraNudgeKind): void {
-	const now = Date.now();
-	const last = lastNudgedAt.get(kind);
-	if (running.has(kind) || (last !== undefined && now - last < NUDGE_COOLDOWN_MS)) {
+	if (running.has(kind)) {
+		// Run once more when this pass ends, against the state it could not see.
+		pending.add(kind);
 		return;
 	}
 
-	lastNudgedAt.set(kind, now);
+	const last = lastStartedAt.get(kind);
+	const waitMs = last === undefined ? 0 : NUDGE_COOLDOWN_MS - (Date.now() - last);
+	if (waitMs > 0) {
+		scheduleNudge(kind, waitMs);
+		return;
+	}
+
+	startNudge(kind);
+}
+
+/** Run at the end of the rate-limit window. One timer per kind. */
+function scheduleNudge(kind: HydraNudgeKind, waitMs: number): void {
+	if (timers.has(kind)) return;
+	const timer = setTimeout(() => {
+		timers.delete(kind);
+		if (running.has(kind)) {
+			pending.add(kind);
+			return;
+		}
+		startNudge(kind);
+	}, waitMs);
+	// A deferred nudge is an optimisation, never a reason to keep the process up.
+	timer.unref?.();
+	timers.set(kind, timer);
+}
+
+function startNudge(kind: HydraNudgeKind): void {
+	lastStartedAt.set(kind, Date.now());
 	running.add(kind);
+	pending.delete(kind);
 	void CYCLES[kind]()
 		.catch((error: unknown) => {
 			// The scheduled run will try again, so this is a note rather than an
@@ -84,5 +124,10 @@ export function nudgeHydraCycle(kind: HydraNudgeKind): void {
 		})
 		.finally(() => {
 			running.delete(kind);
+			if (pending.delete(kind)) {
+				// Straight back through the front door so the rate limit still applies:
+				// a pass shorter than the window defers rather than spinning.
+				nudgeHydraCycle(kind);
+			}
 		});
 }

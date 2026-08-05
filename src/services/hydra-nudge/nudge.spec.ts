@@ -71,6 +71,33 @@ describe('nudgeHydraCycle', () => {
 		expect(mockSubmitResultL2).toHaveBeenCalledTimes(1);
 	});
 
+	// The reason a purchase could sit still while its head was open and idle. A
+	// pass reads each wallet once, near its start; the wallet frees a moment later
+	// when the lock it was holding is confirmed. Dropping the nudge that reports
+	// that left the waiting purchase for the next timer tick.
+	it('runs again for a nudge that arrived mid-pass', async () => {
+		let releasePass: () => void = () => undefined;
+		mockLockFundsL2.mockReturnValueOnce(
+			new Promise<void>((resolve) => {
+				releasePass = resolve;
+			}),
+		);
+
+		nudgeHydraCycle('lockFunds');
+		expect(mockLockFundsL2).toHaveBeenCalledTimes(1);
+
+		// Arrives while the pass is still scanning, so that pass cannot have seen it.
+		nudgeHydraCycle('lockFunds');
+		expect(mockLockFundsL2).toHaveBeenCalledTimes(1);
+
+		// Far enough past the rate-limit window that the re-run starts immediately.
+		jest.spyOn(Date, 'now').mockReturnValue(clock + 60_000);
+		releasePass();
+		await new Promise((resolve) => setImmediate(resolve));
+
+		expect(mockLockFundsL2).toHaveBeenCalledTimes(2);
+	});
+
 	// The caller has already committed its own work durably, and the scheduled
 	// tick remains the backstop, so a failing pass must never reach the request.
 	it('never throws at the caller', async () => {

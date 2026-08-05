@@ -748,24 +748,21 @@ export class HydraConnectionManager {
 		// Funds that were promised to a deposit have just become spendable. Anything
 		// that was waiting on them should run now rather than on the next tick.
 		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {
-			// Loaded on demand: the nudge reaches the payment-source services, and
-			// importing that graph here would drag the whole settlement stack into
-			// every consumer of the connection manager.
-			void import('@/services/hydra-nudge')
-				.then(({ nudgeHydraCycle }) => nudgeHydraCycle('lockFunds'))
-				.catch((error: unknown) => {
-					// The batch tick remains the backstop, so this costs latency only.
-					logger.warn('[HydraConnectionManager] could not run the L2 lock pass after a deposit landed', {
-						hydraHeadId,
-						error: error instanceof Error ? error.message : error,
-					});
-				});
+			this.runL2LockPassNow(hydraHeadId);
 		});
 
 		head.mainNode.on(HydraNodeEvent.TxConfirmed, (txId: string, confirmedTransaction?: HydraConfirmedTransaction) => {
 			void (async () => {
 				try {
-					await this.handleTxConfirmed(hydraHeadId, txId, confirmedTransaction);
+					const outcome = await this.handleTxConfirmed(hydraHeadId, txId, confirmedTransaction);
+					// Applying a confirmation is what releases the wallet that submitted
+					// it, and a head has one participating wallet per side, so the next
+					// purchase in the queue was very likely waiting on exactly this. The
+					// lock it wants takes under a second inside the head; without this it
+					// would wait for the batch timer instead, and an auto-routed purchase
+					// that waits long enough is taken by the L1 pass — settled on chain
+					// with an open head sitting idle.
+					if (outcome === 'applied') this.runL2LockPassNow(hydraHeadId);
 				} catch (error) {
 					logger.error('[HydraConnectionManager] Error handling confirmed tx', {
 						txId,
@@ -775,6 +772,32 @@ export class HydraConnectionManager {
 				}
 			})();
 		});
+	}
+
+	/**
+	 * Start the L2 funds-lock pass now instead of at the next batch tick.
+	 *
+	 * Called whenever something the pass was blocked on has just changed: a
+	 * deposit has folded in and its funds became spendable, or a confirmation has
+	 * released the wallet the head locks with. Both are moments when a purchase
+	 * that the previous pass had to skip becomes lockable, and neither is visible
+	 * to the timer.
+	 *
+	 * Fire-and-forget by design. The batch tick is still the backstop, so a
+	 * failure here costs latency and nothing else.
+	 */
+	private runL2LockPassNow(hydraHeadId: string): void {
+		// Loaded on demand: the nudge reaches the payment-source services, and
+		// importing that graph here would drag the whole settlement stack into
+		// every consumer of the connection manager.
+		void import('@/services/hydra-nudge')
+			.then(({ nudgeHydraCycle }) => nudgeHydraCycle('lockFunds'))
+			.catch((error: unknown) => {
+				logger.warn('[HydraConnectionManager] could not run the L2 lock pass on demand', {
+					hydraHeadId,
+					error: error instanceof Error ? error.message : error,
+				});
+			});
 	}
 
 	/**
