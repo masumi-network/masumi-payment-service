@@ -74,6 +74,7 @@ import {
   commitHydraHead,
   fanoutHydraHead,
   initHydraHead,
+  useHydraHeadReadiness,
   useHydraHeads,
   type HydraHead,
   type HydraHeadStatus,
@@ -169,7 +170,22 @@ const lifecycleActions: Array<Omit<HydraLifecycleButtonConfig, 'disabledReason'>
   { action: 'fanout', label: 'Settle on chain' },
 ];
 
-function getLifecycleActionDisabledReason(head: HydraHead, action: HydraLifecycleAction) {
+/**
+ * Actions that need this node to be answering and caught up.
+ *
+ * All four post something the node must build or observe, so all four are
+ * gated. The API refuses them anyway; offering them regardless meant the
+ * operator learned the node's state from a failed action instead of from the
+ * control, having already been told in the panel directly above.
+ */
+function getLifecycleActionDisabledReason(
+  head: HydraHead,
+  action: HydraLifecycleAction,
+  readiness?: { isReady: boolean; reason: string | null } | null,
+) {
+  if (readiness != null && !readiness.isReady) {
+    return readiness.reason ?? 'The node is not ready yet.';
+  }
   if (action === 'init') {
     if (!head.LocalParticipant) return 'This head has no node on your side';
     // One side opens, and it is the side that redeemed: two Inits race for the
@@ -184,8 +200,12 @@ function getLifecycleActionDisabledReason(head: HydraHead, action: HydraLifecycl
   if (action === 'commit') {
     if (!head.LocalParticipant) return 'This head has no node on your side';
     if (head.LocalParticipant.hasCommitted) return 'You have already funded this head at open';
-    if (head.status !== 'Initializing')
-      return 'Only while the head is opening. Afterwards, use Top up.';
+    // The API accepts Initializing OR Open — an open head takes the same
+    // deposit, which is what Add funds does. Refusing Open here forbade
+    // something the service allows, and told an operator who had not yet
+    // funded a head that the one control for it was gone.
+    if (head.status !== 'Initializing' && head.status !== 'Open')
+      return 'Only while the head is opening or open';
     return undefined;
   }
 
@@ -199,10 +219,13 @@ function getLifecycleActionDisabledReason(head: HydraHead, action: HydraLifecycl
   return undefined;
 }
 
-function getLifecycleButtonConfigs(head: HydraHead): HydraLifecycleButtonConfig[] {
+function getLifecycleButtonConfigs(
+  head: HydraHead,
+  readiness?: { isReady: boolean; reason: string | null } | null,
+): HydraLifecycleButtonConfig[] {
   return lifecycleActions.map((actionConfig) => ({
     ...actionConfig,
-    disabledReason: getLifecycleActionDisabledReason(head, actionConfig.action),
+    disabledReason: getLifecycleActionDisabledReason(head, actionConfig.action, readiness),
   }));
 }
 
@@ -264,7 +287,10 @@ function HydraLifecycleActionMenu({
   isRunning: boolean;
   onRequestLifecycle: (head: HydraHead, action: HydraLifecycleAction) => void;
 }) {
-  const configs = getLifecycleButtonConfigs(head);
+  // Only asked for a head with a node to ask about, and only polled while that
+  // node is not ready — a healthy head costs one request.
+  const { connection } = useHydraHeadReadiness(head.id, head.LocalParticipant != null);
+  const configs = getLifecycleButtonConfigs(head, connection);
 
   return (
     <DropdownMenu>

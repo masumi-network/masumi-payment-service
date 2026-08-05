@@ -46,6 +46,9 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({
 jest.unstable_mockModule('@/routes/api/hydra/head', () => ({
 	verifyPersistedHydraHeadOnChain: async () => ({ headIdentifier: 'ab'.repeat(28) }),
 	recordHeadError: jest.fn(),
+	// A withdrawal needs a node that is answering and caught up, the same as a
+	// deposit does. Ready here; the refusal itself is covered where the guard lives.
+	assertNodeReadyForDeposit: async () => undefined,
 }));
 
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
@@ -55,7 +58,13 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 	}),
 }));
 
+// Enumerated rather than spread: a mock here applies to every transitively
+// loaded file, and importing the real module to spread it exhausts the worker.
+// Anything the import graph reaches must therefore be listed (see ADR-0005).
 jest.unstable_mockModule('@meshsdk/core', () => ({
+	BlockfrostProvider: class {},
+	castProtocol: (() => undefined) as unknown as never,
+	POLICY_ID_LENGTH: 56,
 	MeshWallet: class {
 		async getUnusedAddresses() {
 			return [];
@@ -79,6 +88,10 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 		}
 	},
 	resolveTxHash: () => 'cd'.repeat(32),
+	deserializeDatum: () => ({}),
+	resolvePaymentKeyHash: () => 'aa'.repeat(28),
+	resolveSlotNo: () => '0',
+	Transaction: class {},
 }));
 
 const { HydraTransportAmbiguousError } = await import('@/lib/hydra/hydra/errors');

@@ -631,6 +631,30 @@ describe('HydraNode', () => {
 		// node, so no closed head could ever finish reconciling and every escrow
 		// stayed marked L2 against a head that no longer existed. Every other test
 		// here uses the old name, which is precisely why it went unnoticed.
+		// hydra-node reports the peer link on connection EVENTS, and the live
+		// socket runs with history=no. A service attaching to an already-peered
+		// head therefore never hears one, and reported "not reported yet" for the
+		// life of the head — at precisely the times nothing was wrong.
+		it('learns the peer link from replay, not just from live frames', async () => {
+			const { node, historyConnection } = await startSignedNode();
+
+			expect(node.networkConnected).toBeNull();
+			historyConnection.emit('message', JSON.stringify({ tag: 'NetworkConnected', headId: HEAD_ID_A }));
+
+			expect(node.networkConnected).toBe(true);
+		});
+
+		// Order matters: a replay that ends in a disconnect must not report the
+		// earlier connect.
+		it('takes the last peer state in the replayed stream', async () => {
+			const { node, historyConnection } = await startSignedNode();
+
+			historyConnection.emit('message', JSON.stringify({ tag: 'NetworkConnected', headId: HEAD_ID_A }));
+			historyConnection.emit('message', JSON.stringify({ tag: 'NetworkDisconnected', headId: HEAD_ID_A }));
+
+			expect(node.networkConnected).toBe(false);
+		});
+
 		it('records the fanout map under the 2.3.0 field name', async () => {
 			const { node, historyConnection, liveConnection } = await startSignedNode();
 			const chain = signedHistoryChain();

@@ -767,6 +767,32 @@ export type HydraHeadConnection = {
   checkedAt: string;
 };
 
+/**
+ * Keep a head's node readiness fresh enough to gate its controls on.
+ *
+ * The Connection panel asks on demand, which is right for a diagnosis but wrong
+ * for a button: an action offered against a node that is still catching up is
+ * refused by the API, and the operator learns the state from the failure rather
+ * than from the control. Polled only while the node is NOT ready, so a healthy
+ * head costs one request.
+ */
+export function useHydraHeadReadiness(headId: string | null, enabled: boolean) {
+  const { apiClient } = useAppContext();
+
+  const query = useQuery<HydraHeadConnection | null>({
+    queryKey: ['hydra-head-connection', headId],
+    queryFn: async () => {
+      if (headId === null) return null;
+      return await readHydraHeadConnection(apiClient, { headId });
+    },
+    enabled: !!apiClient && headId !== null && enabled,
+    staleTime: 5000,
+    refetchInterval: (query) => (query.state.data?.isReady === true ? false : 10_000),
+  });
+
+  return { connection: query.data ?? null, ...query };
+}
+
 /** Whether the head's node is up and this service holds a live session to it. */
 export async function readHydraHeadConnection(apiClient: Client, payload: { headId: string }) {
   const response = await handleApiCall(

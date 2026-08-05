@@ -34,7 +34,7 @@ import { CustomHydraHead, HydraProvider, HydraTransactionType, HydraTransportAmb
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
-import { recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
+import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import { coverLovelace, lovelaceOf, selectDecommittableUtxos, utxoRef } from './select';
 
 /**
@@ -118,6 +118,12 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 	const hydraHead = cm.getHead(head.id);
 	const provider = cm.getProvider(head.id);
 	if (!hydraHead || !provider) throw createHttpError(502, 'No active connection to Hydra head');
+	// A withdrawal makes no L1 deposit, so it has no deadline to miss — but it
+	// still needs the head to sign, and a node that is catching up will not.
+	// Without this the request gets as far as a reservation the head then never
+	// resolves, which is a row an operator has to reason about rather than a
+	// refusal they can act on.
+	await assertNodeReadyForDeposit(localParticipant.id);
 
 	let preparingId: string | null = null;
 

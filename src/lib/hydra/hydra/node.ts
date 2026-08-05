@@ -658,6 +658,22 @@ export class HydraNode extends EventEmitter {
 			this.assertPersistenceReplayIsSupported(message);
 			const parsedEnvelope = messageSchema.parse(message);
 			this.assertExpectedHeadId(parsedEnvelope);
+			// Learn the peer link from replay as well as from live frames.
+			//
+			// hydra-node reports it on connection EVENTS, and the live socket is
+			// opened with history=no, so a service that attaches to an already-peered
+			// head is never told — and said "not reported yet" for the life of the
+			// head, which is exactly when everything is fine. Replay is the only
+			// place that answer still exists.
+			//
+			// Applied in stream order, so a later disconnect still wins over an
+			// earlier connect.
+			if (parsedEnvelope.tag === 'NetworkConnected' || parsedEnvelope.tag === 'PeerConnected') {
+				this._networkConnected = true;
+			}
+			if (parsedEnvelope.tag === 'NetworkDisconnected' || parsedEnvelope.tag === 'PeerDisconnected') {
+				this._networkConnected = false;
+			}
 			const suppliedHeadId = assertExpectedFrameHeadId(parsedEnvelope, this._expectedHeadId);
 			if (
 				parsedEnvelope.tag === 'HeadIsInitializing' ||
