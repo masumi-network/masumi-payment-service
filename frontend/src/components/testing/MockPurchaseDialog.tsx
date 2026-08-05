@@ -30,6 +30,8 @@ import { generatePurchaseCurl, decodeBlockchainIdentifier, extractErrorMessage }
 import { Search, ClipboardPaste, Wallet } from 'lucide-react';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { useWallets } from '@/lib/queries/useWallets';
+import { useAllAgents } from '@/lib/queries/useAgents';
+import { buildPaidAgentOptions } from './payment-options';
 import { shortenAddress } from '@/lib/utils';
 import { CopyButton } from '@/components/ui/copy-button';
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
@@ -77,9 +79,14 @@ interface ExtractedPaymentFields {
    * it cannot be read back: `createPayment` takes it as input only and no
    * response echoes it. Omitting it drops the key from the payload the server
    * reconstructs, so the purchase is rejected as "signature invalid" — the same
-   * failure the seller-return-address note above describes. Defaulted to 0 for
-   * V2 identifiers, which is correct whenever the agent advertises a single
-   * Cardano source.
+   * failure the seller-return-address note above describes.
+   *
+   * A non-null value here only marks the identifier as V2 — the actual index is
+   * resolved in the component, which can look the agent up. It is NOT safely 0:
+   * the index counts every entry of `supported_payment_sources`, x402/EVM ones
+   * included, and registration submits them in dialog row order (see
+   * buildOrderedSupportedPaymentSources), so an agent with a single Cardano
+   * source still sits at index 1 if an EVM source was listed above it.
    */
   supportedPaymentSourceIndex?: number | null;
 }
@@ -159,6 +166,24 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
   const resync = useResync();
   const { wallets } = useWallets();
+  const { agents } = useAllAgents();
+
+  /**
+   * The index the seller would have signed, resolved from our own registry copy
+   * of the agent rather than assumed. Returns null when the agent is not in this
+   * node's registry — a purchase from another organisation — and the caller then
+   * falls back to 0 and surfaces the field for the operator to correct.
+   */
+  const cardanoIndexForAgent = useCallback(
+    (agentIdentifier: string | null | undefined): number | null => {
+      if (!agentIdentifier) return null;
+      const match = buildPaidAgentOptions(agents, selectedPaymentSource?.paymentSourceType).find(
+        (option) => option.agentIdentifier === agentIdentifier,
+      );
+      return match?.supportedPaymentSourceIndex ?? null;
+    },
+    [agents, selectedPaymentSource?.paymentSourceType],
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [pasteValue, setPasteValue] = useState('');
@@ -282,7 +307,13 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setExtractedAmounts(result.amounts);
         setPaymentForceLayer(result.paymentForceLayer ?? null);
         setSellerReturnAddress(result.sellerReturnAddress ?? null);
-        setSupportedPaymentSourceIndex(result.supportedPaymentSourceIndex ?? null);
+        // Non-null marks the identifier as V2; resolve the real index from the
+        // agent, falling back to 0 only when we have no registry entry for it.
+        setSupportedPaymentSourceIndex(
+          result.supportedPaymentSourceIndex == null
+            ? null
+            : (cardanoIndexForAgent(result.formFields.agentIdentifier) ?? 0),
+        );
         if (result.formFields.identifierFromPurchaser) {
           toast.success('Fields populated from pasted response');
         } else {
@@ -297,7 +328,7 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         setExtractedAmounts(undefined);
       }
     },
-    [applyFields],
+    [applyFields, cardanoIndexForAgent],
   );
 
   const handleLookupPayment = async () => {
@@ -342,7 +373,11 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
         );
         setPaymentForceLayer(payment.forceLayer ?? null);
         setSellerReturnAddress(payment.sellerReturnAddress ?? null);
-        setSupportedPaymentSourceIndex(decoded?.smartContractAddress != null ? 0 : null);
+        setSupportedPaymentSourceIndex(
+          decoded?.smartContractAddress != null
+            ? (cardanoIndexForAgent(payment.agentIdentifier) ?? 0)
+            : null,
+        );
 
         if (decoded) {
           setValue('identifierFromPurchaser', decoded.purchaserId);
@@ -758,9 +793,12 @@ export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
                   />
                   <p className="text-xs text-muted-foreground">
                     The seller signed this into the payment terms and it must be sent back
-                    unchanged. It is not returned by any endpoint, so it defaults to 0 — correct
-                    when the agent advertises a single Cardano source. Change it only if the seller
-                    priced against a different entry.
+                    unchanged. No endpoint returns it, so it is resolved from this node&apos;s
+                    registry copy of the agent. If the agent is not registered here — a purchase
+                    from another organisation — it falls back to 0, which is only right when the
+                    agent&apos;s Cardano source is the first entry it advertises; x402/EVM entries
+                    occupy indexes too. A wrong value is rejected as &quot;does not select a Cardano
+                    payment source&quot;.
                   </p>
                 </div>
               )}
