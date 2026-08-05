@@ -20,6 +20,7 @@ import { logger } from '@masumi/payment-core/logger';
 import { HydraInviteRole, HydraInviteStatus, Network } from '@/generated/prisma/client';
 import { decrypt } from '@/utils/security/encryption';
 import { forgetHostInvite, removeHostNode } from '@/services/hydra-host/client';
+import { MIN_UNSYNCED_PERIOD_SECONDS } from '@/services/hydra-invite/provisioning';
 import { decodeInviteCode } from '@/services/hydra-invite/invite-code';
 import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
 import { mintHeadInvite, redeemHeadInvite } from '@/services/hydra-invite/orchestrator';
@@ -152,12 +153,17 @@ export const createInviteSchemaInput = z.object({
 	depositPeriodSeconds: z.coerce
 		.number()
 		.int()
-		// Two minutes is the floor worth allowing. A node measures the deposit's
-		// age in its own chain time, which trails real time by around half a
-		// minute, and the window in which any node will take the deposit is only
-		// one period wide. Below a couple of minutes that window is comparable to
-		// the observation jitter itself.
-		.min(120)
+		// Five minutes. A node measures a deposit's age in its OWN chain time, and
+		// the window in which it will take one is a single period wide: from
+		// deposit + period to deposit + three periods.
+		//
+		// The old floor of two minutes assumed a chain view about half a minute
+		// behind. A Blockfrost-backed node on preprod was measured 140 to 360
+		// seconds behind, so by the time its clock reached deposit + 120s, real
+		// time was often already past the deadline: every deposit expired without
+		// the node ever considering it. Five minutes keeps the window wider than
+		// the lag that closes it.
+		.min(300)
 		.max(86_400)
 		.optional()
 		.describe(
@@ -166,7 +172,17 @@ export const createInviteSchemaInput = z.object({
 	contestationPeriodSeconds: z.coerce
 		.number()
 		.int()
-		.min(60)
+		// Four minutes, which is the shortest window that still yields a workable
+		// out-of-sync limit rather than a round number.
+		//
+		// The binding constraint is not disputes but that limit: hydra derives it
+		// as half this window, and a node seeing no block for that long stops
+		// accepting commands. Preprod blocks arrive a median 13s apart with a
+		// widest measured gap of 71s, so the limit has to clear that tail. Four
+		// minutes gives exactly the 120s floor; two minutes gives 60s, which
+		// ordinary jitter crosses several times an hour, and the head then flaps
+		// out of sync and refuses commands for what looks like a fault.
+		.min(MIN_UNSYNCED_PERIOD_SECONDS * 2)
 		// Two weeks. Long windows are the safe direction — a head can settle over
 		// several transactions, and the window has to cover a node being down for
 		// a real outage rather than a slow block.
@@ -178,7 +194,10 @@ export const createInviteSchemaInput = z.object({
 	unsyncedPeriodSeconds: z.coerce
 		.number()
 		.int()
-		.min(60)
+		// Above the widest block gap actually seen on preprod (71s over 60
+		// consecutive blocks), so ordinary jitter cannot trip it. Shared with the
+		// derived-pair check so the two cannot drift apart.
+		.min(MIN_UNSYNCED_PERIOD_SECONDS)
 		.max(604_800)
 		.optional()
 		.describe(

@@ -31778,19 +31778,19 @@
                                     },
                                     "depositPeriodSeconds": {
                                         "type": "integer",
-                                        "minimum": 120,
+                                        "minimum": 300,
                                         "maximum": 86400,
                                         "description": "How long a deposit must settle before this head will take it. Both nodes run the value signed here. A top-up is unusable for one period and cannot be recovered for three. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2."
                                     },
                                     "contestationPeriodSeconds": {
                                         "type": "integer",
-                                        "minimum": 60,
+                                        "minimum": 240,
                                         "maximum": 1209600,
                                         "description": "How long after closing the head anyone may dispute the final state. Nobody can settle on chain until it elapses, so it is also the wait between closing a head and getting the funds back. Longer is the safe direction: it is the only protection against a counterparty closing on a stale state while your node is down, and settling can take several transactions. Defaults to 5 days on mainnet and 12 hours on preprod."
                                     },
                                     "unsyncedPeriodSeconds": {
                                         "type": "integer",
-                                        "minimum": 60,
+                                        "minimum": 120,
                                         "maximum": 604800,
                                         "description": "How long a node may see no new block before it declares itself out of sync and refuses commands, rather than acting on a stale view of the chain. Defaults to half the dispute window and may not exceed it, which is checked against the resolved pair when the invite is minted rather than here, since either field may be defaulted."
                                     }
@@ -34264,6 +34264,14 @@
                                                     "type": "number",
                                                     "description": "Number of in-head UTxOs held by the local address"
                                                 },
+                                                "unbackedLovelace": {
+                                                    "type": "string",
+                                                    "description": "Lovelace the head reports holding whose L1 deposit was recovered to the wallet. hydra-node can keep a deposit in its L2 ledger that was never really absorbed, so the balance above reads high by this much and a close would fail on the overhead it implies."
+                                                },
+                                                "hasUnbackedUtxos": {
+                                                    "type": "boolean",
+                                                    "description": "True when any reported UTxO is unbacked, so the balance is optimistic"
+                                                },
                                                 "balance": {
                                                     "type": "array",
                                                     "items": {
@@ -34291,6 +34299,8 @@
                                                 "address",
                                                 "connected",
                                                 "utxoCount",
+                                                "unbackedLovelace",
+                                                "hasUnbackedUtxos",
                                                 "balance"
                                             ]
                                         }

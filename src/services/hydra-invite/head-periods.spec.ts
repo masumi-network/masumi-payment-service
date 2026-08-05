@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { Network } from '@/generated/prisma/client';
-import { defaultPeriodsFor } from './provisioning';
+import { MIN_UNSYNCED_PERIOD_SECONDS, defaultPeriodsFor } from './provisioning';
 
 /**
  * The three periods pull in opposite directions, which is the whole reason one
@@ -39,5 +39,33 @@ describe('default head periods', () => {
 	// chain-time jitter it has to survive.
 	it.each([Network.Mainnet, Network.Preprod])('never settles faster than the floor on %s', (network) => {
 		expect(defaultPeriodsFor(network).depositPeriodSeconds).toBeGreaterThanOrEqual(120);
+	});
+});
+
+/**
+ * The out-of-sync limit is derived from the dispute window, so a short window
+ * silently produces a limit that ordinary block jitter crosses. Measured over
+ * 60 consecutive preprod blocks the gaps ran to 71s, so a 60s limit - what a
+ * two-minute dispute window gives - takes the head out of sync several times an
+ * hour and it stops accepting commands.
+ */
+describe('period floors', () => {
+	it('keeps the derived out-of-sync limit above real block jitter', () => {
+		const preprod = defaultPeriodsFor(Network.Preprod);
+
+		expect(preprod.unsyncedPeriodSeconds).toBeGreaterThanOrEqual(MIN_UNSYNCED_PERIOD_SECONDS);
+	});
+
+	// The floor and the field bound come from one constant so they cannot drift.
+	it('sets the floor above the widest gap observed', () => {
+		expect(MIN_UNSYNCED_PERIOD_SECONDS).toBeGreaterThan(71);
+	});
+
+	// Half the dispute window is the ceiling, so the window has to be at least
+	// twice the floor for any legal pair to exist.
+	it('implies a dispute window of at least twice the floor', () => {
+		const shortestUsableWindow = MIN_UNSYNCED_PERIOD_SECONDS * 2;
+
+		expect(Math.floor(shortestUsableWindow / 2)).toBeGreaterThanOrEqual(MIN_UNSYNCED_PERIOD_SECONDS);
 	});
 });

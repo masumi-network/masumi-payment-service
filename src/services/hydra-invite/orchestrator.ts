@@ -25,7 +25,12 @@ import {
 } from './invite-payload';
 import { encodeInviteCode, type DecodedInvite } from './invite-code';
 import { signHydraHeadInvite, signHydraRedemption, verifyHydraHeadInvite } from './invite-signing';
-import { defaultPeriodsFor, reserveNodeForExchange, type HeadPeriods } from './provisioning';
+import {
+	MIN_UNSYNCED_PERIOD_SECONDS,
+	defaultPeriodsFor,
+	reserveNodeForExchange,
+	type HeadPeriods,
+} from './provisioning';
 import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
 import { postRedemption } from './exchange-client';
 
@@ -149,6 +154,19 @@ export async function mintHeadInvite(input: {
 			`the out-of-sync limit cannot exceed half the dispute window (${syncCeiling}s here). Past that a node can think it is in sync while it has already run out of time to contest a close`,
 		);
 	}
+	// The floor matters as much as the ceiling, and it is the one that bit us.
+	// The out-of-sync limit is usually derived rather than given, so a short
+	// dispute window silently produces a short limit: two minutes of dispute
+	// window gives a sixty-second limit, and preprod block gaps reach 71s. The
+	// head then declares itself out of sync several times an hour and refuses
+	// commands, which reads as a broken node rather than a chosen setting.
+	if (periods.unsyncedPeriodSeconds < MIN_UNSYNCED_PERIOD_SECONDS) {
+		throw createHttpError(
+			400,
+			`the out-of-sync limit works out at ${periods.unsyncedPeriodSeconds}s, below the ${MIN_UNSYNCED_PERIOD_SECONDS}s floor. It is half the dispute window unless set, so raise the dispute window to at least ${MIN_UNSYNCED_PERIOD_SECONDS * 2}s. Ordinary block gaps cross a shorter limit and the head stops accepting commands`,
+		);
+	}
+
 	const nonce = createId();
 	const expiresAt = new Date(Date.now() + (input.ttlMs ?? INVITE_TTL_MS));
 

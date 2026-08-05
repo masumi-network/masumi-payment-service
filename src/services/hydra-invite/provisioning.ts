@@ -60,6 +60,17 @@ export type HeadPeriods = {
  * chain. Deriving it keeps the two consistent, which is what hydra assumes when
  * the flag is not given.
  */
+/**
+ * The shortest out-of-sync limit a head may run with.
+ *
+ * A node that sees no block for this long stops accepting commands. Preprod
+ * blocks arrive a median 13s apart, but the tail decides the floor: over 60
+ * consecutive blocks the p90 gap was 55s and the widest 71s, so anything near a
+ * minute is crossed by ordinary jitter. Shared with the invite input so the
+ * field bound and the derived-pair check cannot drift apart.
+ */
+export const MIN_UNSYNCED_PERIOD_SECONDS = 120;
+
 export function defaultPeriodsFor(network: Network): HeadPeriods {
 	const isMainnet = network === Network.Mainnet;
 	const contestationPeriodSeconds = isMainnet ? 5 * 24 * 3600 : 12 * 3600;
