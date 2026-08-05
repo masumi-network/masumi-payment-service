@@ -172,17 +172,18 @@ export const createInviteSchemaInput = z.object({
 	contestationPeriodSeconds: z.coerce
 		.number()
 		.int()
-		// Four minutes, which is the shortest window that still yields a workable
-		// out-of-sync limit rather than a round number.
+		// Five minutes. This is also the wait between closing a head and being able
+		// to settle it, so it is the number an operator feels.
 		//
-		// The binding constraint is not disputes but that limit: hydra derives it
-		// as half this window, and a node seeing no block for that long stops
-		// accepting commands. Preprod blocks arrive a median 13s apart with a
-		// widest measured gap of 71s, so the limit has to clear that tail. Four
-		// minutes gives exactly the 120s floor; two minutes gives 60s, which
-		// ordinary jitter crosses several times an hour, and the head then flaps
-		// out of sync and refuses commands for what looks like a fault.
-		.min(MIN_UNSYNCED_PERIOD_SECONDS * 2)
+		// The binding constraint is not disputes but the out-of-sync limit: hydra
+		// derives that as half this window, and a node seeing no block for that
+		// long stops accepting commands. Preprod blocks arrive a median 13s apart
+		// with a widest measured gap of 71s, so the limit has to clear that tail.
+		// Five minutes gives 150s. The arithmetic floor is 240s, which yields
+		// exactly the 120s limit and no room; the extra minute buys margin on the
+		// side where being wrong means a head that flaps out of sync and refuses
+		// commands for what looks like a fault.
+		.min(300)
 		// Two weeks. Long windows are the safe direction — a head can settle over
 		// several transactions, and the window has to cover a node being down for
 		// a real outage rather than a slow block.
