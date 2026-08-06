@@ -696,6 +696,20 @@ export function verifyHydraSnapshot(
 	};
 }
 
+/**
+ * The larger count per output across two partitions.
+ *
+ * Not a sum: the same output can sit in both, and adding them would authorise
+ * twice the value actually pending.
+ */
+function mergeMultisets(left: Map<string, number>, right: Map<string, number>): Map<string, number> {
+	const merged = new Map(left);
+	for (const [output, count] of right) {
+		merged.set(output, Math.max(merged.get(output) ?? 0, count));
+	}
+	return merged;
+}
+
 /** Value-multiset of one signed snapshot partition (utxoToCommit/utxoToDecommit). */
 function partitionOutputMultiset(partition: SnapshotUtxo | null | undefined): Map<string, number> {
 	if (!partition) return new Map();
@@ -766,7 +780,33 @@ export function doesHydraTransactionTransitionReachSnapshot(
 		// (unauthenticated) confirmed-tx list — that path stays bound by strict
 		// created/consumed conservation and the externalInputCount tie below.
 		const injectionAllowance = current.committedMultiset;
-		const removalAllowance = previous.decommitMultiset;
+		// Two authenticated ways for value to leave without a transaction.
+		//
+		// A pending decommit is the obvious one. The second is a deposit that was
+		// recovered instead of absorbed: it sits in a signed snapshot's
+		// utxoToCommit, and if the increment never lands the depositor takes it
+		// back on L1 with a recoverTx, so the next snapshot drops it having never
+		// reached `utxo`. Both are covered by the multi-signature over the
+		// accumulator, and neither moves value anywhere the ledger does not
+		// already enforce: a recovered deposit returns to whoever deposited it.
+		//
+		// A pending commit that a transaction DID spend is excluded, because that
+		// removal is already accounted for by the transaction's input and would
+		// otherwise be counted twice — once as a spend and once as a recovery —
+		// breaking the tie below on exactly the transition where a decommit
+		// consumes the deposit it was carved from.
+		const consumedByTransactions = new Map<string, number>();
+		for (const reference of spentReferences) {
+			const value = previous.outputs.get(reference);
+			if (value === undefined) continue;
+			consumedByTransactions.set(value, (consumedByTransactions.get(value) ?? 0) + 1);
+		}
+		const recoverableCommits = new Map<string, number>();
+		for (const [value, count] of previous.committedMultiset) {
+			const recoverable = count - (consumedByTransactions.get(value) ?? 0);
+			if (recoverable > 0) recoverableCommits.set(value, recoverable);
+		}
+		const removalAllowance = mergeMultisets(previous.decommitMultiset, recoverableCommits);
 		const allOutputs = new Set([
 			...previous.outputMultiset.keys(),
 			...current.outputMultiset.keys(),
