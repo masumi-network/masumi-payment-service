@@ -877,7 +877,18 @@ export class HydraNode extends EventEmitter {
 			...this.resolvePendingDecommitTransactions(parsedMessage.snapshot.utxoToDecommit),
 		];
 		if (!doesHydraTransactionTransitionReachSnapshot(previousSnapshot, verifiedSnapshot, transitionTransactions)) {
-			throw new HydraProtocolError('Hydra history contained a non-consecutive or inconsistent signed-state transition');
+			// Name the transition. This rejection stops the head forming a live
+			// session at all, so it is the last thing anyone hears before every L2
+			// operation starts failing closed; "somewhere in the history" is not
+			// enough to act on, and re-deriving it means replaying the node's log by
+			// hand (see scripts/hydra-e2e/replay-check.mts).
+			throw new HydraProtocolError(
+				`Hydra history contained a non-consecutive or inconsistent signed-state transition ` +
+					`(snapshot ${previousSnapshot.number} to ${verifiedSnapshot.number}, ` +
+					`${transitionTransactions.length} transaction(s), ` +
+					`${verifiedSnapshot.committedMultiset.size} pending commit output(s), ` +
+					`${verifiedSnapshot.decommitMultiset.size} pending decommit output(s))`,
+			);
 		}
 		this._verifiedHistorySnapshot = verifiedSnapshot;
 		this._lastHistorySequence = parsedMessage.seq;
