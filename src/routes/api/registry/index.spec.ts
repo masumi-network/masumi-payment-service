@@ -1113,9 +1113,7 @@ describe('registerAgentPost', () => {
 		});
 
 		expect(responseMock.statusCode).toBe(200);
-		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.recipientWalletAddress).toBe(
-			externalAddress,
-		);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.recipientWalletAddress).toBe(externalAddress);
 		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.RecipientWallet).toBeUndefined();
 	});
 
@@ -1130,8 +1128,7 @@ describe('registerAgentPost', () => {
 				body: {
 					network: Network.Preprod,
 					sellingWalletVkey: 'b'.repeat(56),
-					recipientWalletAddress:
-						'addr1qwrongnetwork000000000000000000000000000000000000000000000000000',
+					recipientWalletAddress: 'addr1qwrongnetwork000000000000000000000000000000000000000000000000000',
 					name: 'Test Agent',
 					description: 'Agent description',
 					apiBaseUrl: 'https://example.com/agent',
