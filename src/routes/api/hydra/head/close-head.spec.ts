@@ -133,6 +133,34 @@ describe('beginHydraHeadClose', () => {
 		expect(mockClaimClose).not.toHaveBeenCalled();
 	});
 
+	/**
+	 * Refusing by default is right; refusing absolutely is a trap.
+	 *
+	 * A head that is busy enough to be worth closing always has escrows in it,
+	 * so an unconditional guard means it can never be closed at all. Closing
+	 * fans them out to L1, where they stay collectible against the same datums
+	 * and deadlines — a change of settlement layer, not a loss.
+	 */
+	it('closes with live escrows once the operator has acknowledged them', async () => {
+		mockPaymentCount.mockResolvedValue(71);
+		mockTransactionCount.mockResolvedValue(1);
+
+		await expect(beginHydraHeadClose('head-1', true)).resolves.toBeUndefined();
+		expect(mockClaimClose).toHaveBeenCalled();
+	});
+
+	// Without the acknowledgement the refusal stands, and says what closing would
+	// do rather than only that it refused.
+	it('says what closing would cost when it refuses', async () => {
+		mockPaymentCount.mockResolvedValue(71);
+
+		await expect(beginHydraHeadClose('head-1')).rejects.toMatchObject({
+			statusCode: 409,
+			message: expect.stringContaining('fanned out to L1'),
+		});
+		expect(mockClaimClose).not.toHaveBeenCalled();
+	});
+
 	it('claims the durable admission gate only after all blocking work is drained', async () => {
 		await expect(beginHydraHeadClose('head-1')).resolves.toBeUndefined();
 

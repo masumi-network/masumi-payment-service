@@ -1460,7 +1460,7 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 
 // --- Lifecycle: POST close ---
 
-export async function beginHydraHeadClose(headId: string): Promise<void> {
+export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscrows = false): Promise<void> {
 	await withSerializableSlotRetry(
 		() =>
 			prisma.$transaction(
@@ -1526,12 +1526,19 @@ export async function beginHydraHeadClose(headId: string): Promise<void> {
 							],
 						},
 					});
-					if (pendingL2Transactions > 0 || activePaymentEscrows > 0 || activePurchaseEscrows > 0) {
+					const activeEscrows = activePaymentEscrows + activePurchaseEscrows;
+					// Refused by default, but never forbidden. Closing with live escrows
+					// fans them out to L1, where they stay collectible against the same
+					// datums and deadlines — a change of settlement layer, not a loss.
+					// Making it impossible turned a busy head into one that could never
+					// be closed at all, which is the worse failure: the escrows keep
+					// their deadlines whether or not the head can be shut down.
+					if (!acknowledgedActiveEscrows && (pendingL2Transactions > 0 || activeEscrows > 0)) {
 						throw createHttpError(
 							409,
-							`Cannot close Hydra head with ${pendingL2Transactions} pending L2 transaction(s) and ${
-								activePaymentEscrows + activePurchaseEscrows
-							} active escrow output(s)`,
+							`Cannot close Hydra head with ${pendingL2Transactions} pending L2 transaction(s) and ` +
+								`${activeEscrows} active escrow output(s). They will be fanned out to L1 and have to be ` +
+								'collected there. Confirm to close anyway.',
 						);
 					}
 
@@ -1564,9 +1571,19 @@ async function releaseHydraHeadCloseAdmission(headId: string): Promise<void> {
 	});
 }
 
+export const closeHeadInput = lifecycleInput.extend({
+	/**
+	 * Close even though the head still holds escrows or unconfirmed work.
+	 *
+	 * Named rather than a bare force flag: what the operator is accepting is
+	 * that those escrows move to L1 and must be collected there.
+	 */
+	acknowledgeActiveEscrows: z.boolean().optional(),
+});
+
 export const closeHeadPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
-	input: lifecycleInput,
+	input: closeHeadInput,
 	output: lifecycleOutput,
 	handler: async ({ input }) => {
 		const head = await prisma.hydraHead.findUnique({ where: { id: input.headId } });
@@ -1589,7 +1606,7 @@ export const closeHeadPost = adminAuthenticatedEndpointFactory.build({
 		}
 
 		try {
-			await beginHydraHeadClose(head.id);
+			await beginHydraHeadClose(head.id, input.acknowledgeActiveEscrows === true);
 			await hydraHead.close();
 			await cm.flushHeadStatus(head.id);
 			const persistedHead = await prisma.hydraHead.findUnique({

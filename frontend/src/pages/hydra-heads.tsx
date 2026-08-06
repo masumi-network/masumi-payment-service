@@ -1095,7 +1095,17 @@ export default function HydraHeadsPage() {
         await commitHydraHead(apiClient, { headId: head.id });
         toast.success('Local Hydra commit submitted');
       } else if (action === 'close') {
-        await closeHydraHead(apiClient, { headId: head.id });
+        try {
+          await closeHydraHead(apiClient, { headId: head.id });
+        } catch (error) {
+          // The refusal names what closing would do to the escrows still in the
+          // head, so it is what the operator is asked to confirm — rather than
+          // a generic "are you sure" that carries none of the detail.
+          const reason = error instanceof Error ? error.message : String(error);
+          if (!reason.includes('fanned out to L1')) throw error;
+          if (!window.confirm(`${reason}\n\nClose the head anyway?`)) return;
+          await closeHydraHead(apiClient, { headId: head.id, acknowledgeActiveEscrows: true });
+        }
         toast.success('Hydra head close started');
       } else {
         await fanoutHydraHead(apiClient, { headId: head.id });

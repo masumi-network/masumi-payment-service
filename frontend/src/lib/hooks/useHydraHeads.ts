@@ -1153,7 +1153,19 @@ export async function topupHydraHead(apiClient: Client, payload: HydraTopupReque
   return ensureData(response?.data?.data, 'Hydra head top-up response was not returned by the API');
 }
 
-export async function closeHydraHead(apiClient: Client, payload: { headId: string }) {
+export async function closeHydraHead(
+  apiClient: Client,
+  payload: {
+    headId: string;
+    /**
+     * Close even though the head still holds escrows or unconfirmed work.
+     *
+     * They are fanned out to L1 and collected there against the same datums
+     * and deadlines. Refused without this, so it is never the accident.
+     */
+    acknowledgeActiveEscrows?: boolean;
+  },
+) {
   const response = await handleApiCall(
     () =>
       apiClient.post<HydraHeadLifecycleResponse>({
