@@ -43,8 +43,20 @@ async function api<T>(side: Side, method: 'GET' | 'POST', path: string, body?: u
 	return parsed.data;
 }
 
-/** The seller's V2 wallet, which owns the agent and receives payment. */
+/**
+ * The seller's V2 wallet, which owns the agent and receives payment.
+ *
+ * SELLER_VKEY short-circuits the lookup. The list endpoints report a payment
+ * source's admin and fee wallets but not its hot wallets, so discovery only
+ * works where a node exposes them; being able to name it keeps the script
+ * usable against one that does not.
+ */
 async function sellerWalletVkey(): Promise<string> {
+	const supplied = process.env.SELLER_VKEY?.trim();
+	if (supplied) {
+		log(`seller wallet supplied: ${supplied.slice(0, 16)}…`);
+		return supplied;
+	}
 	const sources = await api<{
 		PaymentSources: Array<{
 			paymentSourceType: string;

@@ -142,7 +142,9 @@ async function seed(side: Side): Promise<Seeded | null> {
 		['migrate', 'deploy', '--config', path.join(REPO_ROOT, 'prisma', 'prisma.config.ts')],
 	);
 	if (migrated.code !== 0) {
-		console.error(`  node ${side.label} migrate failed: ${migrated.stderr.split('\n').slice(-4).join(' ').slice(0, 400)}`);
+		console.error(
+			`  node ${side.label} migrate failed: ${migrated.stderr.split('\n').slice(-4).join(' ').slice(0, 400)}`,
+		);
 		return null;
 	}
 
