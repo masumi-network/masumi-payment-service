@@ -109,8 +109,15 @@ export function planNodeAction(record: NodeRecord, observation: NodeObservation,
 	}
 
 	if (record.state === 'Failed') {
-		// Terminal until an operator intervenes. Retrying on a timer would hide
-		// the failure and keep the head unusable.
+		// Terminal to the TIMER, so a failure is never hidden by silent retrying.
+		// Not terminal to an operator: this check used to sit above the
+		// restart-request check below, so /restart and /start both answered 202
+		// and then did nothing, and a Failed node could not be recovered through
+		// the API at all. "Until an operator intervenes" has to leave the
+		// operator something to do.
+		if (record.restartRequested === true) {
+			return { kind: 'Restart', reason: 'operator restarted a failed node' };
+		}
 		return { kind: 'Idle' };
 	}
 

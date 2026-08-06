@@ -129,3 +129,27 @@ describe('buildHydraNodeArgs — rejected specs', () => {
 		expect(() => buildHydraNodeArgs({ ...SPEC, contestationPeriodSeconds: 0 })).toThrow(/positive whole number/);
 	});
 });
+
+describe('start-chain-from', () => {
+	it('is omitted for a normal start', () => {
+		expect(buildHydraNodeArgs(SPEC).join(' ')).not.toContain('--start-chain-from');
+	});
+
+	/**
+	 * For a node so far behind that replaying the gap costs more than the head
+	 * has left — after long downtime over a rate-limited chain backend, catching
+	 * up can take days. The node ignores this if its own head state is newer, so
+	 * it can only move the starting point forward.
+	 */
+	it('is passed through when an operator set one', () => {
+		const point = '130370414.e364500a42220ea47314215679b7e42e9bbb81fa69d1366fe738d8aef900f7ee';
+
+		expect(buildHydraNodeArgs({ ...SPEC, startChainFrom: point })).toEqual(
+			expect.arrayContaining(['--start-chain-from', point]),
+		);
+	});
+
+	it('is omitted when set to an empty string', () => {
+		expect(buildHydraNodeArgs({ ...SPEC, startChainFrom: '' }).join(' ')).not.toContain('--start-chain-from');
+	});
+});

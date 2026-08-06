@@ -329,6 +329,7 @@ export class Supervisor {
 			nodeDir,
 			network: record.network,
 			apiPort: record.apiPort,
+			startChainFrom: record.startChainFrom,
 			peerPort: record.peerPort,
 			// Null unless explicitly enabled: the Prometheus server binds every
 			// interface and hydra-node offers no way to confine it.

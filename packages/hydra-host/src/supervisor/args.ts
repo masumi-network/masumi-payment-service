@@ -29,6 +29,8 @@ export type HydraNodeLaunchSpec = {
 	nodeId: string;
 	nodeDir: string;
 	network: 'preprod' | 'mainnet';
+	/** `SLOT.HEADER_HASH` to start observing from. Omitted for a normal start. */
+	startChainFrom?: string;
 	apiPort: number;
 	peerPort: number;
 	/** Prometheus port, or null to leave the monitoring server unstarted. See the module note. */
@@ -122,6 +124,17 @@ export function buildHydraNodeArgs(spec: HydraNodeLaunchSpec): string[] {
 		'--advertise',
 		spec.advertise,
 	];
+
+	// Where to start observing, when the node is further behind than its head
+	// state needs it to be. The node ignores this if its own last known head
+	// state is newer, so it can only ever move the starting point forward.
+	//
+	// It skips observation of the window it jumps, so it is an operator decision
+	// and never a default: safe when nothing involving this head happened in
+	// that window, and not otherwise.
+	if (spec.startChainFrom != null && spec.startChainFrom !== '') {
+		args.push('--start-chain-from', spec.startChainFrom);
+	}
 
 	if (spec.monitoringPort !== null) {
 		args.push('--monitoring-port', String(spec.monitoringPort));

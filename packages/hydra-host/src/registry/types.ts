@@ -135,6 +135,16 @@ export type NodeRecord = {
 	/** Last supervisor probe. Absent until the node has been observed at least once. */
 	lastObservation?: NodeObservationRecord;
 	/** True when the last stop could not be drained, so the unwedge check looks harder on the way up. */
+	/**
+	 * `SLOT.HEADER_HASH` to start observing the chain from, when set.
+	 *
+	 * For a node so far behind that replaying the gap is not worth it — after
+	 * long downtime, where catching up over a rate-limited chain backend can take
+	 * longer than the head has left. The node ignores it if its own head state is
+	 * newer, so it can only move the starting point forward, and it skips
+	 * observation of the window it jumps: an operator decision, never a default.
+	 */
+	startChainFrom?: string;
 	lastStopUndrained: boolean;
 	/**
 	 * Set by an explicit restart request and cleared once the supervisor has
