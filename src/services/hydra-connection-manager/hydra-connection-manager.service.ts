@@ -779,7 +779,7 @@ export class HydraConnectionManager {
 		});
 
 		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {
-			this.runL2LockPassNow(hydraHeadId);
+			this.runL2PassesNow(hydraHeadId);
 		});
 
 		// A withdrawal's outcome. The request that asked for it returned long ago —
@@ -814,7 +814,7 @@ export class HydraConnectionManager {
 					// would wait for the batch timer instead, and an auto-routed purchase
 					// that waits long enough is taken by the L1 pass — settled on chain
 					// with an open head sitting idle.
-					if (outcome === 'applied') this.runL2LockPassNow(hydraHeadId);
+					if (outcome === 'applied') this.runL2PassesNow(hydraHeadId);
 				} catch (error) {
 					logger.error('[HydraConnectionManager] Error handling confirmed tx', {
 						txId,
@@ -827,25 +827,30 @@ export class HydraConnectionManager {
 	}
 
 	/**
-	 * Start the L2 funds-lock pass now instead of at the next batch tick.
+	 * Start every in-head pass now instead of at the next batch tick.
 	 *
-	 * Called whenever something the pass was blocked on has just changed: a
-	 * deposit has folded in and its funds became spendable, or a confirmation has
-	 * released the wallet the head locks with. Both are moments when a purchase
-	 * that the previous pass had to skip becomes lockable, and neither is visible
-	 * to the timer.
+	 * Called whenever something a pass was blocked on has just changed: a deposit
+	 * has folded in and its funds became spendable, or a confirmation has released
+	 * the wallet the head transacts with. Neither is visible to a timer.
+	 *
+	 * Every pass, not only the lock: a head has one participating wallet per side,
+	 * so a confirmation unblocks whatever that side had queued, whether that is
+	 * locking funds, submitting a result, or collecting. Nudging the lock alone
+	 * left the rest on their own timers — fifteen seconds by default — which made
+	 * submitting a result an order of magnitude slower than locking the funds it
+	 * answers, inside the same head.
 	 *
 	 * Fire-and-forget by design. The batch tick is still the backstop, so a
 	 * failure here costs latency and nothing else.
 	 */
-	private runL2LockPassNow(hydraHeadId: string): void {
+	private runL2PassesNow(hydraHeadId: string): void {
 		// Loaded on demand: the nudge reaches the payment-source services, and
 		// importing that graph here would drag the whole settlement stack into
 		// every consumer of the connection manager.
 		void import('@/services/hydra-nudge')
-			.then(({ nudgeHydraCycle }) => nudgeHydraCycle('lockFunds'))
+			.then(({ nudgeAllHydraCycles }) => nudgeAllHydraCycles())
 			.catch((error: unknown) => {
-				logger.warn('[HydraConnectionManager] could not run the L2 lock pass on demand', {
+				logger.warn('[HydraConnectionManager] could not run the L2 passes on demand', {
 					hydraHeadId,
 					error: error instanceof Error ? error.message : error,
 				});

@@ -131,3 +131,20 @@ function startNudge(kind: HydraNudgeKind): void {
 			}
 		});
 }
+
+/**
+ * Run every in-head cycle now.
+ *
+ * For the moment a head confirms something: whatever it was, it released the
+ * wallet that submitted it, and a head has one participating wallet per side —
+ * so anything else queued for that side was very likely waiting on exactly
+ * this. Nudging only the lock cycle left every other action to its own timer,
+ * fifteen seconds by default, which is what made submitting a result an order
+ * of magnitude slower than locking funds for it inside the same head.
+ *
+ * Cheap to over-nudge: a cycle with nothing to do reads its requests and
+ * returns, and each kind is rate-limited independently.
+ */
+export function nudgeAllHydraCycles(): void {
+	for (const kind of Object.keys(CYCLES) as HydraNudgeKind[]) nudgeHydraCycle(kind);
+}
