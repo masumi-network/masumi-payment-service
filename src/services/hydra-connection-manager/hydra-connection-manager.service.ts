@@ -18,7 +18,15 @@ import {
 	deriveHydraVerificationKeyCborHex,
 	normalizeHydraVerificationKeyCborHex,
 } from '@/lib/hydra/hydra/snapshot-verification';
-import { HydraHeadStatus, Network, OnChainState, Prisma, TransactionStatus } from '@/generated/prisma/client';
+import { recordHeadError } from '@/services/hydra-head-error/record';
+import {
+	HydraErrorType,
+	HydraHeadStatus,
+	Network,
+	OnChainState,
+	Prisma,
+	TransactionStatus,
+} from '@/generated/prisma/client';
 import { HydraHeadUpdateInput } from '@/generated/prisma/models';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
 import { HydraNode } from '@/lib/hydra/hydra/node';
@@ -749,6 +757,27 @@ export class HydraConnectionManager {
 
 		// Funds that were promised to a deposit have just become spendable. Anything
 		// that was waiting on them should run now rather than on the next tick.
+		// A rejected history is the most consequential failure this service has and
+		// used to be its quietest: the session never forms, so there is no head
+		// clock, so every L2 escrow operation fails closed — while the connection
+		// retries forever and the head goes on reporting itself as Open. Recorded
+		// as a head error so the reason is visible where an operator is already
+		// looking, instead of only in a log line they have no reason to read.
+		head.mainNode.on(HydraNodeEvent.HistoryReplayFailed, (error: unknown) => {
+			void recordHeadError(
+				hydraHeadId,
+				HydraHeadStatus.Connecting,
+				HydraErrorType.CommandFailed,
+				error,
+				'HistoryReplay',
+			).catch((recordError: unknown) => {
+				logger.error('[HydraConnectionManager] could not record a rejected history replay', {
+					hydraHeadId,
+					error: recordError instanceof Error ? recordError.message : recordError,
+				});
+			});
+		});
+
 		head.mainNode.on(HydraNodeEvent.IncrementFinalized, () => {
 			this.runL2LockPassNow(hydraHeadId);
 		});

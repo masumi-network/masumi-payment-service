@@ -15,6 +15,10 @@ import {
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+// Re-exported so callers that reach for it here keep working; it lives apart to
+// stay reachable from the connection manager without a cycle.
+export { recordHeadError } from '@/services/hydra-head-error/record';
+import { recordHeadError } from '@/services/hydra-head-error/record';
 import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 import { logger } from '@masumi/payment-core/logger';
@@ -1654,30 +1658,6 @@ export const fanoutHeadPost = adminAuthenticatedEndpointFactory.build({
 });
 
 // --- Helpers ---
-
-export async function recordHeadError(
-	hydraHeadId: string,
-	headStatus: HydraHeadStatus,
-	errorType: HydraErrorType,
-	error: unknown,
-	clientInput: string,
-): Promise<void> {
-	try {
-		const errorMessage = error instanceof Error ? error.message : String(error);
-		await prisma.hydraHeadError.create({
-			data: {
-				hydraHeadId,
-				errorType,
-				errorMessage,
-				headStatus,
-				clientInput,
-				errorAt: new Date(),
-			},
-		});
-	} catch (logError) {
-		logger.error('[HydraAPI] Failed to record head error', { hydraHeadId, logError });
-	}
-}
 
 function getErrorMessage(error: unknown): string {
 	if (error instanceof Error) {
