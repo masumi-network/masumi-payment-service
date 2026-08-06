@@ -166,3 +166,22 @@ describe('processL2PurchaseLocks throughput', () => {
 		expect(mockHotWalletFindUnique.mock.calls.length).toBe(3);
 	});
 });
+
+/**
+ * A wallet the pass itself just used is worth waiting for; one busy for any
+ * other reason is not.
+ */
+describe('processL2PurchaseLocks wallet waiting', () => {
+	it('does not wait on a wallet that was already busy when the pass began', async () => {
+		reportWalletBusy();
+		mockPaymentSourceFindMany.mockResolvedValue([sourceWithBusyHeadWallet(new Date())]);
+
+		const startedAt = Date.now();
+		await processL2PurchaseLocks();
+
+		// Straight through: blocking here would be waiting on work this pass has
+		// no part in and cannot see the end of.
+		expect(Date.now() - startedAt).toBeLessThan(1_000);
+		expect(mockHotWalletFindUnique).toHaveBeenCalled();
+	});
+});

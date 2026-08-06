@@ -569,6 +569,39 @@ export interface L2LockPassResult {
  * Invoked under the batch-payments per-tick mutex, so L2 selection is serialized
  * with the L1 pass within a process.
  */
+/**
+ * How long to wait for a wallet this pass just used to come back.
+ *
+ * An in-head transaction confirms in milliseconds, and the wallet is released
+ * the moment the head says so. This only has to outlast that round trip, not a
+ * chain confirmation, so it is short: past it, something other than ordinary
+ * settlement is going on and the next pass is the right place to find out.
+ */
+const WALLET_SETTLE_TIMEOUT_MS = 3_000;
+const WALLET_SETTLE_POLL_MS = 25;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Whether a wallet is free to build with, waiting briefly when it is worth it.
+ *
+ * Always re-read: the snapshot the pass started with says busy for the whole
+ * pass once a wallet has been used, which is what made it stop after one lock.
+ */
+async function waitForFreeWallet(walletId: string, mayWait: boolean): Promise<boolean> {
+	const deadline = Date.now() + (mayWait ? WALLET_SETTLE_TIMEOUT_MS : 0);
+	for (;;) {
+		const wallet = await prisma.hotWallet.findUnique({
+			where: { id: walletId },
+			select: { lockedAt: true, pendingTransactionId: true },
+		});
+		if (wallet == null) return false;
+		if (wallet.lockedAt == null && wallet.pendingTransactionId == null) return true;
+		if (Date.now() >= deadline) return false;
+		await sleep(WALLET_SETTLE_POLL_MS);
+	}
+}
+
 export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 	// Requests this pass wanted to route into a head but could not, only because
 	// the head's wallet was busy. Handed to the L1 pass so it leaves them alone
@@ -619,6 +652,8 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 		// Track wallets used this tick in addition to the durable DB lease. The set
 		// avoids repeated probes against this query's now-stale wallet objects.
 		const usedWalletIds = new Set<string>();
+		/** Wallets this pass submitted with, whose confirmation it may wait on. */
+		const awaitingConfirmation = new Set<string>();
 
 		for (const request of paymentContract.PurchaseRequests) {
 			// Resolve the buyer override against the seller choice authenticated by
@@ -684,13 +719,19 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 				// whole queue at one lock per nudge, which is one per second, while the
 				// head itself confirms in milliseconds.
 				if (usedWalletIds.has(hotWallet.id)) continue;
-				const walletState = await prisma.hotWallet.findUnique({
-					where: { id: hotWallet.id },
-					select: { lockedAt: true, pendingTransactionId: true },
-				});
-				if (walletState == null || walletState.lockedAt != null || walletState.pendingTransactionId != null) {
-					// Genuinely busy right now; another wallet may be free, and if none is
-					// the request retries next tick (not failed).
+				// Wait for a wallet this pass itself just used, rather than skipping it.
+				// It is held from submit until the head confirms, which takes
+				// milliseconds — but giving up on it ended the pass's useful work, and
+				// the next one only starts on a nudge, rate-limited to one a second.
+				// That, not Hydra, is what made a queue of escrows drain at 1/s.
+				//
+				// Only for wallets this pass used: one busy for any other reason
+				// belongs to something else, and blocking on it would be waiting on
+				// work this pass cannot see the end of.
+				const free = await waitForFreeWallet(hotWallet.id, awaitingConfirmation.has(hotWallet.id));
+				if (!free) {
+					// Genuinely busy; another wallet may be free, and if none is the
+					// request retries next tick (not failed).
 					continue;
 				}
 
@@ -707,6 +748,7 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 					// again would be building on an unknown balance. A clean outcome
 					// releases it, and the re-read above will see that.
 					if (outcome.status === 'ambiguous') usedWalletIds.add(hotWallet.id);
+					else awaitingConfirmation.add(hotWallet.id);
 					locked = true;
 					if (outcome.status === 'ambiguous') {
 						logger.warn('L2 funds-lock outcome ambiguous; reservation retained for Hydra reconciliation', {
