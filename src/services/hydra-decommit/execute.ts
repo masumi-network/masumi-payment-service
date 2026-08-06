@@ -35,7 +35,17 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { decrypt } from '@/utils/security/encryption';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
-import { amountOf, coverAsset, coverLovelace, lovelaceOf, selectDecommittableUtxos, utxoRef } from './select';
+import {
+	amountOf,
+	coverAsset,
+	coverLovelace,
+	isAlreadyCarved,
+	requiredChangeLovelace,
+	topUpCarveInputs,
+	lovelaceOf,
+	selectDecommittableUtxos,
+	utxoRef,
+} from './select';
 
 /**
  * How long the in-head split gets to confirm before the withdrawal gives up.
@@ -68,6 +78,17 @@ const PREPARING_STALE_AFTER_MS = 10 * 60 * 1000;
  * utxoCostPerByte, since the point is a clear refusal rather than a tight fit.
  */
 const MIN_SPLIT_REMAINDER_LOVELACE = 2_000_000n;
+
+/**
+ * Added to the remainder for each native asset that stays on the change.
+ *
+ * Minimum ADA is charged per byte of the output, so a change output holding a
+ * dozen tokens needs more than a plain one. Generous rather than exact: the
+ * change returns to the operator's own address inside the head, so overshooting
+ * costs nothing, while undershooting costs a withdrawal that the ledger refuses
+ * after the split has already been built.
+ */
+const PER_ASSET_CHANGE_LOVELACE = 500_000n;
 
 /**
  * Lovelace carried by a carved token output.
@@ -190,7 +211,9 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 							hydraHeadId: head.id,
 							hydraLocalParticipantId: localParticipant.id,
 							requestedLovelace: params.lovelace ?? 0n,
-							requestedAssets: {},
+							// From the request, so a token withdrawal does not read as
+							// "0.00 tADA" for the whole time it is being prepared.
+							requestedAssets: params.asset == null ? {} : { [params.asset.unit]: params.asset.amount.toString() },
 							destinationAddress: localParticipant.Wallet.walletAddress,
 							status: HydraDecommitStatus.Preparing,
 						},
@@ -269,17 +292,41 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					`Only ${held} of that asset is eligible to withdraw, which is less than the ${requestedAsset.amount} requested`,
 				);
 			}
-			const covered = covering.reduce((total, utxo) => total + amountOf(utxo, requestedAsset.unit), 0n);
-			if (covered === requestedAsset.amount) {
+			if (isAlreadyCarved(covering, requestedAsset.unit, requestedAsset.amount, TOKEN_OUTPUT_LOVELACE)) {
 				decommitInputs = covering;
 			} else {
+				// The carve produces two outputs — the token on its carrier, and the
+				// remainder — so the inputs have to fund both. A token sitting on a
+				// bare minimum-ADA UTxO cannot, which is ordinary rather than
+				// exotic, so lovelace is borrowed from elsewhere in the head instead
+				// of refusing.
+				// Sized from what the change will actually hold, not from a flat
+				// figure: every asset that does not leave on the carved output stays
+				// on the change, and minimum ADA grows with them.
+				const changeFloor = requiredChangeLovelace({
+					inputs: covering,
+					carvedUnit: requestedAsset.unit,
+					carvedAmount: requestedAsset.amount,
+					baseLovelace: MIN_SPLIT_REMAINDER_LOVELACE,
+					perAssetLovelace: PER_ASSET_CHANGE_LOVELACE,
+				});
+				const neededLovelace = TOKEN_OUTPUT_LOVELACE + changeFloor;
+				const extra = topUpCarveInputs({ chosen: covering, eligible: selection.eligible, needed: neededLovelace });
+				if (extra === null) {
+					const available = selection.eligibleLovelace;
+					throw createHttpError(
+						400,
+						`Carving that asset onto its own UTxO needs ${neededLovelace} lovelace across the inputs, and only ` +
+							`${available} is eligible in this head. Add funds, or withdraw without naming an amount to take whole UTxOs.`,
+					);
+				}
 				const split = await splitExactAmountInHead({
 					wallet,
 					provider,
 					hydraHead,
 					address,
 					network,
-					inputs: covering,
+					inputs: [...covering, ...extra],
 					unit: requestedAsset.unit,
 					amount: requestedAsset.amount,
 					decommitId: claim.id,
@@ -327,6 +374,17 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		}
 
 		const withdrawnLovelace = decommitInputs.reduce((total, utxo) => total + lovelaceOf(utxo), 0n);
+		// Everything else leaving with it. A decommit takes whole outputs, so an
+		// NFT withdrawal carries the ADA that output happened to hold, and an
+		// amount alone described neither: the row read "5.00 tADA" for a
+		// withdrawal whose point was the token.
+		const withdrawnAssets: Record<string, string> = {};
+		for (const utxo of decommitInputs) {
+			for (const asset of utxo.output.amount) {
+				if (asset.unit === '' || asset.unit.toLowerCase() === 'lovelace') continue;
+				withdrawnAssets[asset.unit] = (BigInt(withdrawnAssets[asset.unit] ?? '0') + BigInt(asset.quantity)).toString();
+			}
+		}
 
 		// The decommit transaction itself: spend the chosen inputs, send everything
 		// to the participant's own address. Every output leaves the head, so there
@@ -349,6 +407,7 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 				decommitTxId,
 				splitTxId,
 				requestedLovelace: withdrawnLovelace,
+				requestedAssets: withdrawnAssets,
 				status: HydraDecommitStatus.Pending,
 			},
 		});

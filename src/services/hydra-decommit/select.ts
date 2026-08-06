@@ -158,6 +158,32 @@ export function coverLovelace(utxos: readonly UTxO[], amount: bigint): UTxO[] | 
 }
 
 /**
+ * Whether an asset withdrawal can spend these inputs as they are.
+ *
+ * Holding the right quantity is not enough. A decommit removes whole outputs,
+ * so a UTxO carrying 1000 tUSDM alongside 450 ADA would send both out when only
+ * the token was asked for. The asset is therefore carved onto its own UTxO
+ * first, and the carve is skipped only when the input already is what the carve
+ * would produce: one UTxO, this asset and no other, and no more lovelace than
+ * `carrierLovelace`, which is what an output needs to exist at all.
+ */
+export function isAlreadyCarved(
+	utxos: readonly UTxO[],
+	unit: string,
+	amount: bigint,
+	carrierLovelace: bigint,
+): boolean {
+	const [only] = utxos;
+	if (utxos.length !== 1 || only === undefined) return false;
+	if (amountOf(only, unit) !== amount) return false;
+	if (lovelaceOf(only) > carrierLovelace) return false;
+	return only.output.amount.every(
+		(asset) =>
+			asset.unit === '' || asset.unit.toLowerCase() === 'lovelace' || asset.unit.toLowerCase() === unit.toLowerCase(),
+	);
+}
+
+/**
  * The fewest whole UTxOs whose `unit` holding reaches `amount`.
  *
  * Largest first, so a withdrawal spends as few inputs as possible and leaves the
@@ -180,4 +206,99 @@ export function coverAsset(utxos: readonly UTxO[], unit: string, amount: bigint)
 		total += amountOf(utxo, unit);
 	}
 	return total >= amount ? chosen : null;
+}
+
+/**
+ * Extra inputs so a carve has enough lovelace to pay for its own outputs.
+ *
+ * Carving a token needs `needed` lovelace across the inputs: enough to put on
+ * the carved output, plus enough left over for the remainder to be a legal UTxO.
+ * The UTxOs holding the token frequently do not have it — a token minted onto a
+ * bare minimum-ADA output is the normal case, not an edge one — and without this
+ * a partial withdrawal of that token was simply impossible, with an error
+ * message suggesting a whole-UTxO withdrawal that could not express it either.
+ *
+ * Asset-free UTxOs first, then smallest first. Ordering by size alone would
+ * happily borrow a token-heavy UTxO, and every asset on a borrowed input lands
+ * on the carve's change output — where the minimum ADA a UTxO needs grows with
+ * the assets it holds, so the change can fall below it and the builder fails
+ * with a value-conservation error that names neither the borrow nor the amount.
+ *
+ * Returns null when even every eligible UTxO together falls short.
+ */
+export function topUpCarveInputs(params: {
+	chosen: readonly UTxO[];
+	eligible: readonly UTxO[];
+	needed: bigint;
+}): UTxO[] | null {
+	const { chosen, eligible, needed } = params;
+	const taken = new Set(chosen.map(utxoRef));
+	let total = chosen.reduce((sum, utxo) => sum + lovelaceOf(utxo), 0n);
+	const extra: UTxO[] = [];
+	if (total >= needed) return extra;
+
+	const spare = eligible
+		.filter((utxo) => !taken.has(utxoRef(utxo)))
+		.sort((left, right) => {
+			const byAssets = countNativeAssets(left) - countNativeAssets(right);
+			if (byAssets !== 0) return byAssets;
+			const difference = lovelaceOf(left) - lovelaceOf(right);
+			return difference === 0n ? 0 : difference < 0n ? -1 : 1;
+		});
+
+	for (const utxo of spare) {
+		if (total >= needed) break;
+		if (lovelaceOf(utxo) === 0n) continue;
+		extra.push(utxo);
+		total += lovelaceOf(utxo);
+	}
+	return total >= needed ? extra : null;
+}
+
+/** How many distinct native assets a UTxO carries. Lovelace is not one. */
+export function countNativeAssets(utxo: UTxO): number {
+	const units = new Set<string>();
+	for (const asset of utxo.output.amount) {
+		if (asset.unit === '' || asset.unit.toLowerCase() === 'lovelace') continue;
+		units.add(asset.unit.toLowerCase());
+	}
+	return units.size;
+}
+
+/**
+ * The least lovelace the carve's change output can hold and still exist.
+ *
+ * A minimum-ADA figure is not a constant: it is charged per byte of the output,
+ * and every native asset that does not leave on the carved output ends up on the
+ * change. Withdrawing one token from a wallet that holds a dozen therefore needs
+ * a bigger remainder than the flat two ADA a plain output needs, and using the
+ * flat figure meant the split was built and only then refused by the ledger.
+ *
+ * Approximate and deliberately generous. Being a little over costs the operator
+ * nothing — the change returns to their own address inside the head — while
+ * being under costs them a failed withdrawal with an opaque reason.
+ */
+export function requiredChangeLovelace(params: {
+	inputs: readonly UTxO[];
+	carvedUnit: string;
+	carvedAmount: bigint;
+	baseLovelace: bigint;
+	perAssetLovelace: bigint;
+}): bigint {
+	const { inputs, carvedUnit, carvedAmount, baseLovelace, perAssetLovelace } = params;
+	const remaining = new Map<string, bigint>();
+	for (const utxo of inputs) {
+		for (const asset of utxo.output.amount) {
+			if (asset.unit === '' || asset.unit.toLowerCase() === 'lovelace') continue;
+			const unit = asset.unit.toLowerCase();
+			remaining.set(unit, (remaining.get(unit) ?? 0n) + BigInt(asset.quantity));
+		}
+	}
+	const carved = carvedUnit === '' || carvedUnit.toLowerCase() === 'lovelace' ? null : carvedUnit.toLowerCase();
+	if (carved !== null) {
+		const left = (remaining.get(carved) ?? 0n) - carvedAmount;
+		if (left <= 0n) remaining.delete(carved);
+		else remaining.set(carved, left);
+	}
+	return baseLovelace + perAssetLovelace * BigInt(remaining.size);
 }

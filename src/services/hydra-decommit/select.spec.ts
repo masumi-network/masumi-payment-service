@@ -1,6 +1,14 @@
 import { describe, expect, it } from '@jest/globals';
 import type { UTxO } from '@meshsdk/core';
-import { coverLovelace, IN_HEAD_COLLATERAL_RESERVE_LOVELACE, selectDecommittableUtxos, utxoRef } from './select';
+import {
+	coverLovelace,
+	IN_HEAD_COLLATERAL_RESERVE_LOVELACE,
+	isAlreadyCarved,
+	requiredChangeLovelace,
+	selectDecommittableUtxos,
+	topUpCarveInputs,
+	utxoRef,
+} from './select';
 
 function utxo(txHash: string, lovelace: bigint, extra: Partial<UTxO['output']> = {}, outputIndex = 0): UTxO {
 	return {
@@ -143,5 +151,190 @@ describe('coverLovelace', () => {
 describe('utxoRef', () => {
 	it('normalises case so refs compare against the head consistently', () => {
 		expect(utxoRef(utxo('A'.repeat(64), 1n, {}, 3))).toBe(`${'a'.repeat(64)}#3`);
+	});
+});
+
+describe('isAlreadyCarved', () => {
+	const TOKEN = 'aa'.repeat(28) + '7444';
+	const CARRIER = 2_000_000n;
+
+	function tokenUtxo(lovelace: bigint, quantity: bigint, extraUnit?: string): UTxO {
+		const amount = [
+			{ unit: 'lovelace', quantity: lovelace.toString() },
+			{ unit: TOKEN, quantity: quantity.toString() },
+		];
+		if (extraUnit) amount.push({ unit: extraUnit, quantity: '1' });
+		return utxo('carve', lovelace, { amount });
+	}
+
+	// The bug this exists to prevent: a withdrawal of 1000 tUSDM that also sent
+	// out the 450 ADA the token happened to share a UTxO with, because the
+	// quantity matched and a decommit takes whole outputs.
+	it('refuses to spend whole when the UTxO carries more ADA than a carrier needs', () => {
+		expect(isAlreadyCarved([tokenUtxo(450_000_000n, 1000n)], TOKEN, 1000n, CARRIER)).toBe(false);
+	});
+
+	it('accepts a UTxO that already is what the carve would produce', () => {
+		expect(isAlreadyCarved([tokenUtxo(CARRIER, 1000n)], TOKEN, 1000n, CARRIER)).toBe(true);
+	});
+
+	it('refuses when another asset would leave with it', () => {
+		expect(isAlreadyCarved([tokenUtxo(CARRIER, 1000n, 'bb'.repeat(28))], TOKEN, 1000n, CARRIER)).toBe(false);
+	});
+
+	it('refuses when the quantity does not match exactly', () => {
+		expect(isAlreadyCarved([tokenUtxo(CARRIER, 1500n)], TOKEN, 1000n, CARRIER)).toBe(false);
+	});
+
+	// Two inputs cannot be the output of a carve, whatever they add up to.
+	it('refuses more than one input', () => {
+		expect(isAlreadyCarved([tokenUtxo(CARRIER, 500n), tokenUtxo(CARRIER, 500n)], TOKEN, 1000n, CARRIER)).toBe(false);
+	});
+
+	it('refuses an empty set', () => {
+		expect(isAlreadyCarved([], TOKEN, 1000n, CARRIER)).toBe(false);
+	});
+});
+
+describe('topUpCarveInputs', () => {
+	const TOKEN = 'cc'.repeat(28) + '7444';
+	const NEEDED = 4_000_000n;
+
+	function tokenUtxo(txHash: string, lovelace: bigint): UTxO {
+		return utxo(txHash, lovelace, {
+			amount: [
+				{ unit: 'lovelace', quantity: lovelace.toString() },
+				{ unit: TOKEN, quantity: '1000' },
+			],
+		});
+	}
+
+	// The case that made partial token withdrawals impossible: a token minted
+	// onto a bare minimum-ADA UTxO cannot fund the two outputs a carve produces.
+	it('borrows lovelace when the token’s own UTxO cannot fund the carve', () => {
+		const holder = tokenUtxo('holder', 1_200_000n);
+		const spare = utxo('spare', 10_000_000n);
+
+		const extra = topUpCarveInputs({ chosen: [holder], eligible: [holder, spare], needed: NEEDED });
+
+		expect(extra).toEqual([spare]);
+	});
+
+	// Smallest first, so topping the carve up leaves the bigger UTxOs whole.
+	it('takes the smallest UTxOs that get there', () => {
+		const holder = tokenUtxo('holder', 1_000_000n);
+		const small = utxo('small', 3_500_000n);
+		const large = utxo('large', 50_000_000n);
+
+		const extra = topUpCarveInputs({ chosen: [holder], eligible: [holder, large, small], needed: NEEDED });
+
+		expect(extra).toEqual([small]);
+	});
+
+	it('borrows nothing when the inputs already cover it', () => {
+		const holder = tokenUtxo('holder', 9_000_000n);
+
+		expect(topUpCarveInputs({ chosen: [holder], eligible: [holder], needed: NEEDED })).toEqual([]);
+	});
+
+	// Reported as a refusal rather than a carve that cannot be built.
+	it('returns null when the whole head falls short', () => {
+		const holder = tokenUtxo('holder', 1_000_000n);
+
+		expect(topUpCarveInputs({ chosen: [holder], eligible: [holder], needed: NEEDED })).toBeNull();
+	});
+
+	// Borrowing a token-heavy UTxO puts its assets on the carve's change, where
+	// minimum ADA grows with them. Prefer plain lovelace even when it is larger.
+	it('prefers an asset-free UTxO over a smaller token-bearing one', () => {
+		const holder = tokenUtxo('holder', 1_000_000n);
+		const tokenHeavy = utxo('heavy', 3_200_000n, {
+			amount: [
+				{ unit: 'lovelace', quantity: '3200000' },
+				{ unit: 'ee'.repeat(28), quantity: '1' },
+			],
+		});
+		const plain = utxo('plain', 8_000_000n);
+
+		const extra = topUpCarveInputs({
+			chosen: [holder],
+			eligible: [holder, tokenHeavy, plain],
+			needed: NEEDED,
+		});
+
+		expect(extra).toEqual([plain]);
+	});
+
+	// A UTxO already being spent must not be counted twice.
+	it('never returns a UTxO that is already an input', () => {
+		const holder = tokenUtxo('holder', 1_000_000n);
+		const spare = utxo('spare', 10_000_000n);
+
+		const extra = topUpCarveInputs({ chosen: [holder, spare], eligible: [holder, spare], needed: NEEDED });
+
+		expect(extra).toEqual([]);
+	});
+});
+
+describe('requiredChangeLovelace', () => {
+	const BASE = 2_000_000n;
+	const PER_ASSET = 500_000n;
+	const TOKEN = 'dd'.repeat(28) + '7444';
+	const OTHER = 'ee'.repeat(28);
+
+	function withAssets(assets: Array<{ unit: string; quantity: string }>): UTxO {
+		return utxo('input', 10_000_000n, {
+			amount: [{ unit: 'lovelace', quantity: '10000000' }, ...assets],
+		});
+	}
+
+	it('charges only the base when nothing stays on the change', () => {
+		const inputs = [withAssets([{ unit: TOKEN, quantity: '100' }])];
+
+		expect(
+			requiredChangeLovelace({
+				inputs,
+				carvedUnit: TOKEN,
+				carvedAmount: 100n,
+				baseLovelace: BASE,
+				perAssetLovelace: PER_ASSET,
+			}),
+		).toBe(BASE);
+	});
+
+	// The failure this prevents: borrowing a token-heavy UTxO puts every one of
+	// its assets on the change, where minimum ADA grows with them, and a flat
+	// floor let the split be built and then refused by the ledger.
+	it('charges per asset that stays behind', () => {
+		const inputs = [
+			withAssets([
+				{ unit: TOKEN, quantity: '100' },
+				{ unit: OTHER, quantity: '1' },
+			]),
+		];
+
+		expect(
+			requiredChangeLovelace({
+				inputs,
+				carvedUnit: TOKEN,
+				carvedAmount: 40n,
+				baseLovelace: BASE,
+				perAssetLovelace: PER_ASSET,
+			}),
+		).toBe(BASE + PER_ASSET * 2n);
+	});
+
+	it('counts a lovelace carve as leaving every asset behind', () => {
+		const inputs = [withAssets([{ unit: TOKEN, quantity: '100' }])];
+
+		expect(
+			requiredChangeLovelace({
+				inputs,
+				carvedUnit: '',
+				carvedAmount: 1_000_000n,
+				baseLovelace: BASE,
+				perAssetLovelace: PER_ASSET,
+			}),
+		).toBe(BASE + PER_ASSET);
 	});
 });
