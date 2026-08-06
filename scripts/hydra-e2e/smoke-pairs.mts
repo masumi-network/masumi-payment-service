@@ -17,6 +17,14 @@ const SELLER = { label: 'B', base: 'http://127.0.0.1:3002', key: 'node-b-admin-k
 const BUYER = { label: 'A', base: 'http://127.0.0.1:3001', key: 'node-a-admin-key-0123456789abcdef' };
 const NETWORK = 'Preprod';
 const PAIRS = Number(process.env.PAIRS ?? '10');
+/**
+ * Which of the agent's advertised payment sources to buy through.
+ *
+ * A V2 agent may advertise several, so the price is not inferable from the
+ * agent alone and both endpoints require the index explicitly. 0 is the first
+ * one it registered.
+ */
+const SOURCE_INDEX = Number(process.env.SOURCE_INDEX ?? '0');
 
 type Side = typeof SELLER;
 
@@ -92,10 +100,18 @@ async function resolveAgent(): Promise<string> {
 	return identifier;
 }
 
-/** Deadlines far enough out that none of them is what fails. */
+/**
+ * Deadlines far enough out that none of them is what fails.
+ *
+ * ISO strings, because the payment endpoint parses them with `ez.dateIn()`.
+ * The purchase endpoint takes the same four as epoch-millisecond strings and
+ * the payment's response returns them that way, so they are converted on the
+ * way back rather than recomputed: they are signed into the identifier the
+ * seller minted, and a recomputed deadline would not match it.
+ */
 function deadlines(): Record<string, string> {
 	const now = Date.now();
-	const minutes = (count: number) => String(now + count * 60_000);
+	const minutes = (count: number) => new Date(now + count * 60_000).toISOString();
 	return {
 		payByTime: minutes(20),
 		submitResultTime: minutes(40),
@@ -107,8 +123,12 @@ function deadlines(): Record<string, string> {
 type Pair = { index: number; blockchainIdentifier: string; purchaseId: string };
 
 async function runPair(index: number, agentIdentifier: string, sellerVkey: string): Promise<Pair> {
-	const identifierFromPurchaser = `smoke${String(index).padStart(2, '0')}${Date.now().toString(36)}`.slice(0, 26);
-	const inputHash = `smoke-input-${index}-${Date.now()}`;
+	// Hex of even length, 14-26 characters, unique per pair. Even because the
+	// validator reads it as bytes, and unique because a repeat collides with an
+	// earlier escrow.
+	const identifierFromPurchaser = `${Date.now().toString(16).padStart(12, '0')}${index.toString(16).padStart(4, '0')}`;
+	// Also read as bytes, so it gets the same treatment.
+	const inputHash = `${Date.now().toString(16).padStart(12, '0')}${index.toString(16).padStart(4, '0')}`;
 
 	const payment = await api<{
 		blockchainIdentifier: string;
@@ -122,6 +142,7 @@ async function runPair(index: number, agentIdentifier: string, sellerVkey: strin
 		inputHash,
 		identifierFromPurchaser,
 		paymentSourceType: 'Web3CardanoV2',
+		supportedPaymentSourceIndex: SOURCE_INDEX,
 		...deadlines(),
 	});
 
@@ -135,6 +156,7 @@ async function runPair(index: number, agentIdentifier: string, sellerVkey: strin
 		inputHash,
 		identifierFromPurchaser,
 		paymentSourceType: 'Web3CardanoV2',
+		supportedPaymentSourceIndex: SOURCE_INDEX,
 		payByTime: payment.payByTime,
 		submitResultTime: payment.submitResultTime,
 		unlockTime: payment.unlockTime,
