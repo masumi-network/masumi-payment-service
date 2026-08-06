@@ -210,7 +210,9 @@ async function executeL2Lock(
 	// funds it already had — only a wallet whose entire balance is the arriving
 	// deposit has to wait, and that falls out of selection below.
 	const pendingIncrementRefs = hydraProvider.getPendingIncrementUtxoRefs?.() ?? new Set<string>();
+	const tFetchUtxos = Date.now();
 	const allWalletUtxos = await wallet.getUtxos();
+	const fetchUtxosMs = Date.now() - tFetchUtxos;
 	const walletUtxos = allWalletUtxos.filter(
 		(utxo) => !pendingIncrementRefs.has(`${utxo.input.txHash}#${utxo.input.outputIndex}`.toLowerCase()),
 	);
@@ -299,6 +301,7 @@ async function executeL2Lock(
 	// followed by a DB outage must leave durable evidence that this exact signed
 	// body owns the request; otherwise the loop below can submit it from another head wallet and
 	// the same scheduler tick can also pick it up in the L1 pass.
+	const tReserve = Date.now();
 	const reservation = await reserveL2LockBeforeSubmit({
 		request,
 		hotWallet,
@@ -309,6 +312,8 @@ async function executeL2Lock(
 		collateralReturnLovelace: valuePlan.collateralReturnLovelace,
 		trustedHeadTimeMs: reservationHeadTimeMs,
 	});
+
+	const reserveMs = Date.now() - tReserve;
 
 	const tSubmit = Date.now();
 	let txHash: string;
@@ -344,11 +349,17 @@ async function executeL2Lock(
 	}
 	const submitMs = Date.now() - tSubmit;
 
+	// Every phase, not just the transaction. The transaction was never the
+	// expensive part — build, sign and submit come to about twenty milliseconds
+	// against a lock that takes a quarter of a second — and without the rest
+	// measured beside them it is impossible to say where the other 90% goes.
 	logger.info('L2 lock tx timing', {
 		purchaseRequestId: request.id,
 		hydraHeadId,
+		fetchUtxosMs,
 		buildMs,
 		signMs,
+		reserveMs,
 		submitMs,
 	});
 
@@ -363,11 +374,17 @@ async function executeL2Lock(
 		return { status: 'ambiguous', intendedTxHash, error };
 	}
 
+	const tFinalize = Date.now();
 	try {
 		await finalizeAcceptedL2Lock({
 			request,
 			reservation,
 			txHash,
+		});
+		logger.info('L2 lock finalize timing', {
+			purchaseRequestId: request.id,
+			hydraHeadId,
+			finalizeMs: Date.now() - tFinalize,
 		});
 	} catch (error) {
 		// A positive node acknowledgement is not consensus proof. The pre-submit
@@ -696,7 +713,15 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 				// Only for wallets this pass used: one busy for any other reason
 				// belongs to something else, and blocking on it would be waiting on
 				// work this pass cannot see the end of.
+				const tWait = Date.now();
 				const free = await waitForFreeWallet(hotWallet.id, awaitingConfirmation.has(hotWallet.id));
+				const waitMs = Date.now() - tWait;
+				// The gap between one lock and the next, which is everything the
+				// per-transaction timings above do not account for: the head
+				// confirming, and this service noticing that it did.
+				if (waitMs > 0) {
+					logger.info('L2 lock wallet wait', { walletId: hotWallet.id, waitMs, free });
+				}
 				if (!free) {
 					// Genuinely busy; another wallet may be free, and if none is the
 					// request retries next tick (not failed).
