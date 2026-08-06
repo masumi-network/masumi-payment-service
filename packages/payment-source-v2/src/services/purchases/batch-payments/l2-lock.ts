@@ -38,6 +38,7 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { resolveUsableHydraHeadForPurchase } from '@/utils/hydra/resolve-hydra-head';
 import { resolveEffectiveForceLayer } from '@/utils/logic/force-layer';
 import { asV2Provider } from '../../provider-cast';
+import { waitForFreeWallet } from '../../l2-pass';
 import { createDatumFromBlockchainIdentifierV2 } from '@masumi/payment-source-v2';
 import { SmartContractState } from '@masumi/payment-core/smart-contract-state';
 import {
@@ -569,39 +570,6 @@ export interface L2LockPassResult {
  * Invoked under the batch-payments per-tick mutex, so L2 selection is serialized
  * with the L1 pass within a process.
  */
-/**
- * How long to wait for a wallet this pass just used to come back.
- *
- * An in-head transaction confirms in milliseconds, and the wallet is released
- * the moment the head says so. This only has to outlast that round trip, not a
- * chain confirmation, so it is short: past it, something other than ordinary
- * settlement is going on and the next pass is the right place to find out.
- */
-const WALLET_SETTLE_TIMEOUT_MS = 3_000;
-const WALLET_SETTLE_POLL_MS = 25;
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-/**
- * Whether a wallet is free to build with, waiting briefly when it is worth it.
- *
- * Always re-read: the snapshot the pass started with says busy for the whole
- * pass once a wallet has been used, which is what made it stop after one lock.
- */
-async function waitForFreeWallet(walletId: string, mayWait: boolean): Promise<boolean> {
-	const deadline = Date.now() + (mayWait ? WALLET_SETTLE_TIMEOUT_MS : 0);
-	for (;;) {
-		const wallet = await prisma.hotWallet.findUnique({
-			where: { id: walletId },
-			select: { lockedAt: true, pendingTransactionId: true },
-		});
-		if (wallet == null) return false;
-		if (wallet.lockedAt == null && wallet.pendingTransactionId == null) return true;
-		if (Date.now() >= deadline) return false;
-		await sleep(WALLET_SETTLE_POLL_MS);
-	}
-}
-
 export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 	// Requests this pass wanted to route into a head but could not, only because
 	// the head's wallet was busy. Handed to the L1 pass so it leaves them alone

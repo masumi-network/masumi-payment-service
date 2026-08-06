@@ -1350,10 +1350,18 @@ async function runSubmitResultL2Pass(): Promise<void> {
 					try {
 						await processL2SubmitResult(request, paymentContract, network);
 					} catch (error) {
+						// Spelled out rather than passed as an object: an Error serialises to
+						// `{}` here, so every failure in this path logged as "L2
+						// submit-result failed {}" and said nothing about why.
+						const reason = error instanceof Error ? error.message : String(error);
 						if (isLookupDeferred(error)) {
-							logger.info('L2 submit-result deferred to next tick', { requestId: request.id, error });
+							logger.info('L2 submit-result deferred to next tick', { requestId: request.id, reason });
 						} else {
-							logger.error('L2 submit-result failed', { requestId: request.id, error });
+							logger.error('L2 submit-result failed', {
+								requestId: request.id,
+								reason,
+								stack: error instanceof Error ? error.stack?.slice(0, 1200) : undefined,
+							});
 						}
 						await unlockHotWalletIfNoPendingTransaction(
 							request.SmartContractWallet!.id,

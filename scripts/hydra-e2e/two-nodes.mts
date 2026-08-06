@@ -84,7 +84,13 @@ const SIDES: Side[] = [
 function serviceEnv(side: Side): NodeJS.ProcessEnv {
 	return {
 		...process.env,
-		DATABASE_URL: `postgresql://sandro@localhost:5432/${side.database}?schema=public`,
+		// connection_limit is explicit because Prisma's default (cpus * 2 + 1) is
+		// small enough to become the bottleneck under load: with ~100 in-flight
+		// requests the serializable transactions hold every pooled connection,
+		// callers start failing with "timeout exceeded when trying to connect",
+		// and the head connection itself cannot be established — which presents as
+		// Hydra being stuck rather than as a database pool being too small.
+		DATABASE_URL: `postgresql://sandro@localhost:5432/${side.database}?schema=public&connection_limit=25&pool_timeout=30`,
 		ENCRYPTION_KEY,
 		ADMIN_KEY: side.adminKey,
 		PORT: String(side.port),
