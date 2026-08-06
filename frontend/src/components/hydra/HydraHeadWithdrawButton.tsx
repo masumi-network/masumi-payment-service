@@ -100,12 +100,15 @@ function HydraWithdrawalList({
   headId,
   isOpen,
   network,
+  startedAt,
 }: {
   headId: string;
   isOpen: boolean;
   network: string | undefined;
+  /** When one was last started here, so a new row is watched for. */
+  startedAt: number | null;
 }) {
-  const { withdrawals } = useHydraWithdrawals(headId, isOpen);
+  const { withdrawals } = useHydraWithdrawals(headId, isOpen, startedAt);
 
   if (withdrawals.length === 0) return null;
 
@@ -193,6 +196,7 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
   const queryClient = useQueryClient();
   const [amount, setAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [isDraining, setIsDraining] = useState(false);
   // Offered from what the head actually holds rather than typed from memory: a
   // policy id and asset name is 100+ characters, and the head already knows
@@ -220,6 +224,7 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
       await resync('hydra', 'wallets');
       setAmount('');
       setIsDraining(false);
+      setStartedAt(Date.now());
       await queryClient.invalidateQueries({ queryKey: ['hydra-withdrawals', headId] });
     } finally {
       setIsSubmitting(false);
@@ -367,7 +372,12 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
         </button>
       )}
 
-      <HydraWithdrawalList headId={headId} isOpen={isOpen} network={network} />
+      <HydraWithdrawalList
+        headId={headId}
+        isOpen={isOpen}
+        network={network}
+        startedAt={startedAt}
+      />
     </div>
   );
 }

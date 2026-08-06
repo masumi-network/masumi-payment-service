@@ -917,7 +917,27 @@ export type HydraWithdrawal = {
  * reports back to the request that started it, so the list is the only place
  * progress appears.
  */
-export function useHydraWithdrawals(headId: string | null, isOpen: boolean) {
+/**
+ * How long to watch for a newly started withdrawal to appear.
+ *
+ * Generous: it covers an in-head split being confirmed by the head before the
+ * decommit is even requested.
+ */
+const WITHDRAWAL_APPEARS_WITHIN_MS = 90_000;
+
+export function useHydraWithdrawals(
+  headId: string | null,
+  isOpen: boolean,
+  /**
+   * When a withdrawal was last started here, if one was.
+   *
+   * The request returns before the row exists — starting one is several steps,
+   * including an in-head split — so refetching on the reply found nothing and
+   * the row only appeared on a manual reload. Polling keyed on the rows alone
+   * cannot close that gap, because at that moment there are no rows to key on.
+   */
+  startedAt: number | null = null,
+) {
   const { apiClient } = useAppContext();
 
   const query = useQuery<HydraWithdrawal[]>({
@@ -938,12 +958,17 @@ export function useHydraWithdrawals(headId: string | null, isOpen: boolean) {
     staleTime: 5000,
     // Approved counts as in flight: the funds have left the head but L1 has not
     // reported them yet, which is exactly when an operator is watching.
-    refetchInterval: (query) =>
-      (query.state.data ?? []).some((row) =>
+    refetchInterval: (query) => {
+      const inFlight = (query.state.data ?? []).some((row) =>
         ['Preparing', 'Pending', 'Approved'].includes(row.status),
-      )
-        ? 5_000
-        : false,
+      );
+      if (inFlight) return 5_000;
+      // Nothing in flight yet, but one was just asked for: watch briefly for it
+      // to appear rather than leaving the operator looking at an empty list
+      // after being told it would show up here.
+      if (startedAt !== null && Date.now() - startedAt < WITHDRAWAL_APPEARS_WITHIN_MS) return 2_000;
+      return false;
+    },
   });
 
   return { ...query, withdrawals: query.data ?? [] };
