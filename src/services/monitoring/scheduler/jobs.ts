@@ -24,6 +24,10 @@ import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service'
 import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
 import { reconcileRecoveredHydraTopups } from '@/services/hydra-topup-reconciliation/recovered';
+import {
+	PAYOUT_LOOKUP_INTERVAL_MS,
+	reconcileUnidentifiedDecommitPayouts,
+} from '@/services/hydra-decommit/payout-lookup';
 import { runHydraLowBalanceMonitoringCycle } from '@/services/hydra-low-balance/monitor';
 import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
@@ -83,6 +87,19 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting recovered Hydra deposit reconciliation',
 		finishMessage: 'Finished recovered Hydra deposit reconciliation',
 		run: reconcileRecoveredHydraTopups,
+	},
+	{
+		initialDelayMs: 15000,
+		// Its own interval, not the shared Hydra one: each row costs a walk of
+		// address history, and nothing is waiting on the answer.
+		intervalMs: PAYOUT_LOOKUP_INTERVAL_MS,
+		startMessage: 'Starting Hydra withdrawal payout identification',
+		finishMessage: 'Finished Hydra withdrawal payout identification',
+		// The head never reports which L1 transaction paid a withdrawal out, so it
+		// is observed on chain — and that observation is allowed to fail, because a
+		// settled withdrawal must not depend on a chain lookup succeeding. This is
+		// what makes the failure temporary rather than permanent.
+		run: reconcileUnidentifiedDecommitPayouts,
 	},
 	{
 		initialDelayMs: 16000,
