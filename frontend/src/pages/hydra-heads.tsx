@@ -599,11 +599,15 @@ function HydraHeadDetailsDialog({
 
           <HydraHeadWithdrawButton headId={head.id} isOpen={head.status === 'Open'} />
 
+          {/* Open whenever there are any. The section only renders when the count
+              is non-zero, so collapsing it by default meant the card advertised
+              "2 errors" while the details underneath looked empty, which reads as
+              though something had cleared them. */}
           {(head._count?.Errors ?? 0) > 0 && (
             <HydraDetailSection
               title="Errors"
               summary={`${head._count?.Errors ?? 0} recorded`}
-              defaultOpen={head.status === 'Idle'}
+              defaultOpen
             >
               <HydraHeadErrors
                 headId={head.id}

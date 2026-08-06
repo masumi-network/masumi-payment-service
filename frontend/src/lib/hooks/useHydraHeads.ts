@@ -882,7 +882,25 @@ export type HydraWithdrawal = {
   /** The in-head split that carved the exact amount. Null when whole UTxOs went. */
   splitTxId: string | null;
   decommitTxId: string | null;
+  /**
+   * The L1 transaction that paid it out, once identified. The head does not
+   * report this, so it is observed on chain; null until then.
+   */
+  l1TxId: string | null;
   requestedLovelace: string;
+  /**
+   * Native assets that left with it, as unit to quantity. A decommit removes
+   * whole outputs, so the lovelace above is what carried them rather than the
+   * point of the withdrawal.
+   */
+  requestedAssets: Record<string, string>;
+  /**
+   * What actually reached L1, once the withdrawal finalized. Null until then,
+   * and routinely different from what was requested: a decommit takes whole
+   * outputs and the decrement's fee comes out of the value that travels.
+   */
+  settledLovelace: string | null;
+  settledAssets: Record<string, string> | null;
   destinationAddress: string;
   failureReason: string | null;
   /** The point of no return: the head has signed the removal. */

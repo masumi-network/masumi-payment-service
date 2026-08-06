@@ -31778,19 +31778,19 @@
                                     },
                                     "depositPeriodSeconds": {
                                         "type": "integer",
-                                        "minimum": 120,
+                                        "minimum": 300,
                                         "maximum": 86400,
                                         "description": "How long a deposit must settle before this head will take it. Both nodes run the value signed here. A top-up is unusable for one period and cannot be recovered for three. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2."
                                     },
                                     "contestationPeriodSeconds": {
                                         "type": "integer",
-                                        "minimum": 60,
+                                        "minimum": 300,
                                         "maximum": 1209600,
                                         "description": "How long after closing the head anyone may dispute the final state. Nobody can settle on chain until it elapses, so it is also the wait between closing a head and getting the funds back. Longer is the safe direction: it is the only protection against a counterparty closing on a stale state while your node is down, and settling can take several transactions. Defaults to 5 days on mainnet and 12 hours on preprod."
                                     },
                                     "unsyncedPeriodSeconds": {
                                         "type": "integer",
-                                        "minimum": 60,
+                                        "minimum": 120,
                                         "maximum": 604800,
                                         "description": "How long a node may see no new block before it declares itself out of sync and refuses commands, rather than acting on a stale view of the chain. Defaults to half the dispute window and may not exceed it, which is checked against the resolved pair when the invite is minted rather than here, since either field may be defaulted."
                                     }
@@ -33736,10 +33736,16 @@
                                         "type": "string",
                                         "minLength": 1,
                                         "description": "ID of the HydraHead"
+                                    },
+                                    "lovelace": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$",
+                                        "description": "How much to put into the head. A dedicated UTxO of exactly this amount is carved on L1 first and only that is committed, so the rest of the wallet — its other ADA, its stablecoins, an agent's registry NFT — stays on L1 and spendable. Costs one L1 confirmation before the deposit is built."
                                     }
                                 },
                                 "required": [
-                                    "headId"
+                                    "headId",
+                                    "lovelace"
                                 ],
                                 "example": {
                                     "headId": "cuid_v2_auto_generated"
@@ -33964,6 +33970,16 @@
                                         "pattern": "^\\d+$",
                                         "description": "Exact lovelace to withdraw. Omit to withdraw every eligible in-head UTxO whole. An exact amount is split off inside the head first, which costs nothing and takes about a second."
                                     },
+                                    "assetUnit": {
+                                        "type": "string",
+                                        "pattern": "^[0-9a-fA-F]{56,120}$",
+                                        "description": "Withdraw a native asset instead of ADA: policy id and asset name concatenated. Exactly the amount asked for is split off inside the head first, the same as an ADA withdrawal, so the rest stays where it is."
+                                    },
+                                    "assetAmount": {
+                                        "type": "string",
+                                        "pattern": "^\\d+$",
+                                        "description": "How much of assetUnit to withdraw, in that asset's own smallest unit."
+                                    },
                                     "drain": {
                                         "type": "boolean",
                                         "default": false,
@@ -34130,8 +34146,30 @@
                                                                 "type": "string",
                                                                 "nullable": true
                                                             },
+                                                            "l1TxId": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
                                                             "requestedLovelace": {
                                                                 "type": "string"
+                                                            },
+                                                            "requestedAssets": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "string"
+                                                                },
+                                                                "description": "Native assets this withdrawal set out to remove, as { unit: quantity }."
+                                                            },
+                                                            "settledLovelace": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "settledAssets": {
+                                                                "type": "object",
+                                                                "nullable": true,
+                                                                "additionalProperties": {
+                                                                    "type": "string"
+                                                                }
                                                             },
                                                             "destinationAddress": {
                                                                 "type": "string"
@@ -34156,7 +34194,11 @@
                                                             "status",
                                                             "splitTxId",
                                                             "decommitTxId",
+                                                            "l1TxId",
                                                             "requestedLovelace",
+                                                            "requestedAssets",
+                                                            "settledLovelace",
+                                                            "settledAssets",
                                                             "destinationAddress",
                                                             "failureReason",
                                                             "approvedAt",
@@ -34264,6 +34306,14 @@
                                                     "type": "number",
                                                     "description": "Number of in-head UTxOs held by the local address"
                                                 },
+                                                "unbackedLovelace": {
+                                                    "type": "string",
+                                                    "description": "Lovelace the head reports holding whose L1 deposit was recovered to the wallet. hydra-node can keep a deposit in its L2 ledger that was never really absorbed, so the balance above reads high by this much and a close would fail on the overhead it implies."
+                                                },
+                                                "hasUnbackedUtxos": {
+                                                    "type": "boolean",
+                                                    "description": "True when any reported UTxO is unbacked, so the balance is optimistic"
+                                                },
                                                 "balance": {
                                                     "type": "array",
                                                     "items": {
@@ -34291,6 +34341,8 @@
                                                 "address",
                                                 "connected",
                                                 "utxoCount",
+                                                "unbackedLovelace",
+                                                "hasUnbackedUtxos",
                                                 "balance"
                                             ]
                                         }

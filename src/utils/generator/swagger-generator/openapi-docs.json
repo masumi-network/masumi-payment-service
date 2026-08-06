@@ -34146,8 +34146,30 @@
                                                                 "type": "string",
                                                                 "nullable": true
                                                             },
+                                                            "l1TxId": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
                                                             "requestedLovelace": {
                                                                 "type": "string"
+                                                            },
+                                                            "requestedAssets": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "string"
+                                                                },
+                                                                "description": "Native assets this withdrawal set out to remove, as { unit: quantity }."
+                                                            },
+                                                            "settledLovelace": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "settledAssets": {
+                                                                "type": "object",
+                                                                "nullable": true,
+                                                                "additionalProperties": {
+                                                                    "type": "string"
+                                                                }
                                                             },
                                                             "destinationAddress": {
                                                                 "type": "string"
@@ -34172,7 +34194,11 @@
                                                             "status",
                                                             "splitTxId",
                                                             "decommitTxId",
+                                                            "l1TxId",
                                                             "requestedLovelace",
+                                                            "requestedAssets",
+                                                            "settledLovelace",
+                                                            "settledAssets",
                                                             "destinationAddress",
                                                             "failureReason",
                                                             "approvedAt",

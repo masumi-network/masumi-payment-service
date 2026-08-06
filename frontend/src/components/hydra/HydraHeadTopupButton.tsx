@@ -32,6 +32,7 @@ import {
 } from '@/lib/hooks/useHydraHeads';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
+import { TxLink } from '@/components/hydra/TxLink';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -132,41 +133,6 @@ function formatLovelace(lovelace: string, network: string | undefined): string {
  * precedes it until then, and those are different transactions moving different
  * amounts.
  */
-function TxLink({
-  label,
-  hash,
-  network,
-  fallback,
-}: {
-  label: string;
-  hash: string | null;
-  network: string | undefined;
-  /** Shown when there is no transaction yet, e.g. a split still being built. */
-  fallback: string | null;
-}) {
-  if (hash === null) {
-    return fallback === null ? null : (
-      <span className="text-xs text-muted-foreground">{fallback}</span>
-    );
-  }
-  return (
-    <span className="flex items-center gap-1">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <a
-        href={getExplorerUrl(hash, network ?? 'Preprod', 'transaction')}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1 font-mono text-xs text-primary hover:underline"
-        title="Open on Cardanoscan"
-      >
-        {hash.slice(0, 10)}…
-        <ExternalLink className="h-3 w-3" />
-      </a>
-      <CopyButton value={hash} className="h-6 w-6" />
-    </span>
-  );
-}
-
 function HydraTopupList({
   headId,
   isOpen,
@@ -496,7 +462,6 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
           toast.info('Amount filled in. Press Add funds to try the deposit again.');
         }}
       />
-
     </div>
   );
 }

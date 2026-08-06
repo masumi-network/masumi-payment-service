@@ -24,7 +24,7 @@ import {
   withdrawFromHydraHead,
   type HydraWithdrawal,
 } from '@/lib/hooks/useHydraHeads';
-import { formatFundUnit } from '@/lib/utils';
+import { formatAssetAmount, formatFundUnit } from '@/lib/utils';
 import {
   Select,
   SelectContent,
@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/ui/copy-button';
+import { InHeadTxId, TxLink } from '@/components/hydra/TxLink';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -136,20 +137,37 @@ function HydraWithdrawalList({
                   {status.spinning && <Spinner className="mr-1 h-3 w-3" />}
                   {status.label}
                 </Badge>
-                <span className="font-mono text-sm">
-                  {formatLovelace(row.requestedLovelace, network)}
+                {/* What settled once L1 has it, what was asked for until then.
+                    Both are on the row and they differ routinely: a decommit
+                    takes whole outputs, and the decrement's fee comes out of
+                    the value that travels. */}
+                <span className="flex flex-wrap items-baseline gap-x-2 font-mono text-sm">
+                  {Object.entries(row.settledAssets ?? row.requestedAssets ?? {}).map(
+                    ([unit, quantity]) => (
+                      <span key={unit}>{formatAssetAmount(quantity, unit, network)}</span>
+                    ),
+                  )}
+                  <span
+                    className={
+                      Object.keys(row.settledAssets ?? row.requestedAssets ?? {}).length > 0
+                        ? 'text-xs text-muted-foreground'
+                        : undefined
+                    }
+                  >
+                    {formatLovelace(row.settledLovelace ?? row.requestedLovelace, network)}
+                  </span>
                 </span>
               </div>
+              {/* The payout when there is one, and the in-head id otherwise.
+                  Never the in-head id as a link: it names a transaction that
+                  only existed inside the head, so an explorer 404s on it. */}
               <span className="flex items-center gap-1">
-                {row.decommitTxId === null ? (
+                {row.l1TxId !== null ? (
+                  <TxLink label="Paid out by" hash={row.l1TxId} network={network} fallback={null} />
+                ) : row.decommitTxId === null ? (
                   <span className="text-xs text-muted-foreground">building</span>
                 ) : (
-                  <>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {row.decommitTxId.slice(0, 10)}…
-                    </span>
-                    <CopyButton value={row.decommitTxId} className="h-6 w-6" />
-                  </>
+                  <InHeadTxId label="In head" hash={row.decommitTxId} />
                 )}
               </span>
               {row.status === 'Failed' && (
@@ -284,6 +302,15 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
               {assetUnit === ADA_CHOICE ? adaLabel : formatFundUnit(assetUnit, network)}
             </span>
           </div>
+          {assetUnit !== ADA_CHOICE && (
+            /* Worth saying before the click, not after: a token cannot travel
+               alone, so the payout arrives with roughly 2 ADA carrying it and
+               the rest of the ADA it was sitting on stays in the head. */
+            <p className="max-w-sm text-xs text-muted-foreground">
+              The token is moved onto its own UTxO first, so about 2 {adaLabel} goes out with it to
+              carry it. Any other {adaLabel} it shares a UTxO with stays in the head.
+            </p>
+          )}
         </div>
 
         <Button onClick={() => void handleWithdraw()} disabled={isSubmitting}>

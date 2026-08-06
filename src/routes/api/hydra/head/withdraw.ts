@@ -58,8 +58,28 @@ export const listWithdrawalsOutput = z.object({
 			 * needed. Null for a whole-UTxO withdrawal, which needs no split.
 			 */
 			splitTxId: z.string().nullable(),
+			/**
+			 * The in-head decommit transaction. Not on L1 and not linkable: it
+			 * only ever existed inside the head.
+			 */
 			decommitTxId: z.string().nullable(),
+			/**
+			 * The L1 transaction that paid it out, once identified. Null while it
+			 * is still in the head, and also when the search did not find it.
+			 */
+			l1TxId: z.string().nullable(),
 			requestedLovelace: z.string(),
+			requestedAssets: z
+				.record(z.string(), z.string())
+				.describe('Native assets this withdrawal set out to remove, as { unit: quantity }.'),
+			/**
+			 * What actually reached L1. Null until the withdrawal finalizes, and
+			 * routinely different from what was requested: a decommit takes whole
+			 * outputs, so a token withdrawal also moves whatever ADA that output
+			 * held, and the decrement's fee comes out of the value that travels.
+			 */
+			settledLovelace: z.string().nullable(),
+			settledAssets: z.record(z.string(), z.string()).nullable(),
 			destinationAddress: z.string(),
 			failureReason: z.string().nullable(),
 			/**
@@ -104,7 +124,11 @@ export const listWithdrawalsGet = adminAuthenticatedEndpointFactory.build({
 				status: row.status,
 				splitTxId: row.splitTxId,
 				decommitTxId: row.decommitTxId,
+				l1TxId: row.l1TxId,
 				requestedLovelace: row.requestedLovelace.toString(),
+				requestedAssets: (row.requestedAssets ?? {}) as Record<string, string>,
+				settledLovelace: row.settledLovelace?.toString() ?? null,
+				settledAssets: (row.settledAssets as Record<string, string> | null) ?? null,
 				destinationAddress: row.destinationAddress,
 				failureReason: row.failureReason,
 				approvedAt: row.approvedAt?.toISOString() ?? null,

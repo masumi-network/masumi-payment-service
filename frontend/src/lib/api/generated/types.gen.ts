@@ -14180,6 +14180,10 @@ export type PostHydraHeadCommitData = {
          * ID of the HydraHead
          */
         headId: string;
+        /**
+         * How much to put into the head. A dedicated UTxO of exactly this amount is carved on L1 first and only that is committed, so the rest of the wallet — its other ADA, its stablecoins, an agent's registry NFT — stays on L1 and spendable. Costs one L1 confirmation before the deposit is built.
+         */
+        lovelace: string;
     };
     path?: never;
     query?: never;
@@ -14321,7 +14325,18 @@ export type GetHydraHeadWithdrawResponses = {
                 status: 'Preparing' | 'Pending' | 'Approved' | 'Finalized' | 'Failed';
                 splitTxId: string | null;
                 decommitTxId: string | null;
+                l1TxId: string | null;
                 requestedLovelace: string;
+                /**
+                 * Native assets this withdrawal set out to remove, as { unit: quantity }.
+                 */
+                requestedAssets: {
+                    [key: string]: string;
+                };
+                settledLovelace: string | null;
+                settledAssets: {
+                    [key: string]: string;
+                } | null;
                 destinationAddress: string;
                 failureReason: string | null;
                 approvedAt: string | null;
@@ -14343,6 +14358,14 @@ export type PostHydraHeadWithdrawData = {
          * Exact lovelace to withdraw. Omit to withdraw every eligible in-head UTxO whole. An exact amount is split off inside the head first, which costs nothing and takes about a second.
          */
         lovelace?: string;
+        /**
+         * Withdraw a native asset instead of ADA: policy id and asset name concatenated. Exactly the amount asked for is split off inside the head first, the same as an ADA withdrawal, so the rest stays where it is.
+         */
+        assetUnit?: string;
+        /**
+         * How much of assetUnit to withdraw, in that asset's own smallest unit.
+         */
+        assetAmount?: string;
         /**
          * Also withdraw the UTxO held back as collateral. Without collateral this wallet can no longer spend escrows inside the head, so this is for winding a head down.
          */
@@ -14434,6 +14457,14 @@ export type GetHydraHeadBalanceResponses = {
              * Number of in-head UTxOs held by the local address
              */
             utxoCount: number;
+            /**
+             * Lovelace the head reports holding whose L1 deposit was recovered to the wallet. hydra-node can keep a deposit in its L2 ledger that was never really absorbed, so the balance above reads high by this much and a close would fail on the overhead it implies.
+             */
+            unbackedLovelace: string;
+            /**
+             * True when any reported UTxO is unbacked, so the balance is optimistic
+             */
+            hasUnbackedUtxos: boolean;
             /**
              * This node's own funds currently inside the head (ADA + native tokens). Excludes the counterparty.
              */

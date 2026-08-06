@@ -28,7 +28,6 @@ import {
 	HydraTransportError,
 	interpretCardanoTxSubmitResult,
 	normalizeHydraVerificationKeyCborHex,
-	selectCommitUtxos,
 	verifyHydraHeadInitOnChain,
 } from '@/lib/hydra';
 import { toPrismaJsonValue } from '@/utils/json-value';
