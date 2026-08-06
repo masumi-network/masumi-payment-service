@@ -173,15 +173,34 @@ export class Supervisor {
 			// the child table alone would mark a live node dead one tick after boot
 			// adopted it — and keep doing so on every tick after that.
 			if (!(await client.isResponsive())) {
-				return { processRunning: false, drift: null, responsive: false, chainSynced: false, nowMs: Date.now() };
+				return {
+					processRunning: false,
+					drift: null,
+					driftSeconds: null,
+					responsive: false,
+					chainSynced: false,
+					nowMs: Date.now(),
+				};
 			}
 		} else if (!(await client.isResponsive())) {
-			return { processRunning: true, drift: null, responsive: false, chainSynced: false, nowMs: Date.now() };
+			return {
+				processRunning: true,
+				drift: null,
+				driftSeconds: null,
+				responsive: false,
+				chainSynced: false,
+				nowMs: Date.now(),
+			};
 		}
 
 		const chain = await client.probeChain();
-		const slot = chain.synced ? chain.slot : null;
+		// Measured whenever the node reports a slot, in sync or not. Drift on a
+		// synced node is a warning; drift on a catching-up node is the whole
+		// diagnosis, and computing it only for the former left operators staring
+		// at "still catching up" with no way to tell minutes from days.
+		const slot = chain.slot;
 		let drift: NodeObservation['drift'] = null;
+		let driftSeconds: number | null = null;
 		if (slot !== null) {
 			// Validate against THIS node's unsynced period, not the host default: a
 			// node provisioned with a shorter period needs a guard that still fires
@@ -192,10 +211,19 @@ export class Supervisor {
 			} catch (error) {
 				this.logger.warn(`[supervisor] ${record.nodeId}: ${(error as Error).message}`);
 			}
-			drift = classifyDrift(measureDrift(slot, this.slotConfig, Date.now()), thresholds);
+			const sample = measureDrift(slot, this.slotConfig, Date.now());
+			drift = classifyDrift(sample, thresholds);
+			driftSeconds = Math.round(sample.driftMs / 1000);
 		}
 
-		return { processRunning: true, drift, responsive: true, chainSynced: chain.synced, nowMs: Date.now() };
+		return {
+			processRunning: true,
+			drift,
+			driftSeconds,
+			responsive: true,
+			chainSynced: chain.synced,
+			nowMs: Date.now(),
+		};
 	}
 
 	/**
@@ -228,6 +256,7 @@ export class Supervisor {
 				responsive: observation.responsive,
 				chainSynced: observation.chainSynced,
 				drift: observation.drift,
+				driftSeconds: observation.driftSeconds,
 			},
 			...(promote && shouldAdoptAsRunning(current, observation) ? { state: 'Running' as const } : {}),
 			...(healthy && current.startAttempts !== 0 ? { startAttempts: 0 } : {}),

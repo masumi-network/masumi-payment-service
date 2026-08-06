@@ -56,8 +56,16 @@ export type NodeObservationRecord = {
 	 * head that will not open.
 	 */
 	chainSynced: boolean;
-	/** Null until the node is synced enough for the measurement to mean anything. */
+	/** Null until the node reports a slot at all. */
 	drift: DriftVerdict | null;
+	/**
+	 * How far behind the wall clock the node's chain follower is, in seconds.
+	 *
+	 * The verdict alone cannot tell an operator whether to wait or intervene:
+	 * "Unsynced" reads the same at thirty seconds behind and at fifteen hours.
+	 * Null only when the node reported no slot.
+	 */
+	driftSeconds: number | null;
 };
 
 export type NodeDesiredState = 'Running' | 'Stopped';

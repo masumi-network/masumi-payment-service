@@ -37,6 +37,8 @@ export type PublicNode = {
 	/** False while the chain follower is still catching up, when commands are refused. */
 	chainSynced: boolean | null;
 	drift: string | null;
+	/** How far behind the chain the node is, in seconds. Null when unknown. */
+	driftSeconds: number | null;
 	lastCheckedAt: string | null;
 	failureReason?: string;
 };
@@ -74,6 +76,7 @@ export function toPublicNode(record: NodeRecord): PublicNode {
 		responsive: record.lastObservation?.responsive ?? null,
 		chainSynced: record.lastObservation?.chainSynced ?? null,
 		drift: record.lastObservation?.drift ?? null,
+		driftSeconds: record.lastObservation?.driftSeconds ?? null,
 		lastCheckedAt: record.lastObservation?.checkedAt ?? null,
 	};
 	if (record.failureReason !== undefined) {

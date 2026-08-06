@@ -351,6 +351,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 					usable: isUsable(record),
 					responsive: record.lastObservation?.responsive ?? null,
 					chainSynced: record.lastObservation?.chainSynced ?? null,
+					driftSeconds: record.lastObservation?.driftSeconds ?? null,
 					drift: record.lastObservation?.drift ?? null,
 					lastCheckedAt: record.lastObservation?.checkedAt ?? null,
 					restartCount: restartCountOf(record),

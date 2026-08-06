@@ -33,6 +33,7 @@ function observed(responsive: boolean, chainSynced = responsive): NodeRecord['la
 		responsive,
 		chainSynced,
 		drift: chainSynced ? 'Healthy' : null,
+		driftSeconds: chainSynced ? 0 : null,
 	};
 }
 

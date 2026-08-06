@@ -29,6 +29,8 @@ export type NodeObservation = {
 	processRunning: boolean;
 	/** Latest drift verdict, or null when the node is down or not yet probed. */
 	drift: 'Healthy' | 'Degraded' | 'Unsynced' | null;
+	/** How far behind the node is, in seconds. Null when it reported no slot. */
+	driftSeconds: number | null;
 	/** True once the node has answered at least one probe since starting. */
 	responsive: boolean;
 	/** Whether the node's chain follower has caught up. False while it is still syncing. */

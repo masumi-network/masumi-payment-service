@@ -23,6 +23,7 @@ const LOOPBACK = '127.0.0.1';
  */
 export type ChainProbe = { synced: boolean; slot: number | null };
 
+/** Used only when the probe learns nothing at all: no answer, or no Greetings. */
 const NOT_SYNCED: ChainProbe = { synced: false, slot: null };
 
 function decode(data: RawData): string {
@@ -146,12 +147,17 @@ export class NodeClient {
 				if (!isPlainObject(parsed) || getOwnValue(parsed, 'tag') !== 'Greetings') {
 					return;
 				}
-				if (getOwnValue(parsed, 'chainSyncedStatus') !== 'InSync') {
-					return finish(NOT_SYNCED);
-				}
+				// The slot is read whether or not the node is in sync. A catching-up
+				// node reports how far it has got, and that number is the only thing
+				// that distinguishes "thirty seconds behind" from "fifteen hours
+				// behind" — which is the difference between waiting and intervening.
+				// Discarding it left every catching-up node reporting a null drift,
+				// so the one measurement an operator needs was missing exactly when
+				// it mattered.
 				const slot = getOwnValue(parsed, 'currentSlot');
 				const usable = typeof slot === 'number' && Number.isSafeInteger(slot) && slot >= 0;
-				finish({ synced: true, slot: usable ? slot : null });
+				const synced = getOwnValue(parsed, 'chainSyncedStatus') === 'InSync';
+				finish({ synced, slot: usable ? slot : null });
 			});
 			socket.on('error', () => finish(NOT_SYNCED));
 			socket.on('close', () => finish(NOT_SYNCED));

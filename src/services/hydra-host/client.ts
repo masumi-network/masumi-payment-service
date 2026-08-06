@@ -214,6 +214,8 @@ export type HostNodeHealth = {
 	usable: boolean;
 	responsive: boolean;
 	chainSynced: boolean;
+	/** How far behind the chain the node is, in seconds. Null when unknown. */
+	driftSeconds: number | null;
 };
 
 /**
@@ -234,6 +236,8 @@ export async function fetchHostNodeHealth(baseUrl: string, userToken: string, no
 		usable: getOwnValue(body, 'usable') === true,
 		responsive: getOwnValue(body, 'responsive') === true,
 		chainSynced: getOwnValue(body, 'chainSynced') === true,
+		driftSeconds:
+			typeof getOwnValue(body, 'driftSeconds') === 'number' ? (getOwnValue(body, 'driftSeconds') as number) : null,
 	};
 }
 

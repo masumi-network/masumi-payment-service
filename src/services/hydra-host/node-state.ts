@@ -58,11 +58,36 @@ export async function readParticipantNodeState(localParticipantId: string): Prom
 			return {
 				state: health.state,
 				isReady: false,
-				reason: 'The node is running but still catching up on chain, and will reject commands until it has.',
+				reason: describeCatchingUp(health.driftSeconds),
 			};
 		}
 		return { state: health.state, isReady: false, reason: 'The node is not answering its own API.' };
 	} catch {
 		return { state: 'Unknown', isReady: true, reason: null };
 	}
+}
+
+/**
+ * How far behind the node is, in words an operator can act on.
+ *
+ * "Still catching up" reads the same at thirty seconds behind and at fifteen
+ * hours, and the two call for opposite responses: wait, or go and fix the node.
+ * A head whose node has been offline longer than its unsynced period refuses
+ * everything — L2 included — until it catches up, so the size of the gap is the
+ * whole decision.
+ */
+function describeCatchingUp(driftSeconds: number | null): string {
+	const base = 'The node is running but still catching up on chain, and will reject commands until it has.';
+	if (driftSeconds == null || driftSeconds <= 0) return base;
+	return `${base} It is ${formatBehind(driftSeconds)} behind.`;
+}
+
+/** Rounded to the unit that answers "wait, or intervene?" rather than to the second. */
+function formatBehind(seconds: number): string {
+	if (seconds < 90) return `${Math.round(seconds)} seconds`;
+	const minutes = seconds / 60;
+	if (minutes < 90) return `${Math.round(minutes)} minutes`;
+	const hours = minutes / 60;
+	if (hours < 48) return `${hours.toFixed(1)} hours`;
+	return `${(hours / 24).toFixed(1)} days`;
 }

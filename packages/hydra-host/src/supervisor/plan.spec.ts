@@ -32,7 +32,15 @@ function record(overrides: Partial<NodeRecord> = {}): NodeRecord {
 }
 
 function observe(overrides: Partial<NodeObservation> = {}): NodeObservation {
-	return { processRunning: true, drift: 'Healthy', responsive: true, chainSynced: true, nowMs: NOW, ...overrides };
+	return {
+		processRunning: true,
+		drift: 'Healthy',
+		driftSeconds: 0,
+		responsive: true,
+		chainSynced: true,
+		nowMs: NOW,
+		...overrides,
+	};
 }
 
 describe('planNodeAction', () => {
