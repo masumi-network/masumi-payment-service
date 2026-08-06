@@ -13,6 +13,7 @@ import {
 	canonicalHydraTransactionIdSchema,
 	commandFailedMessageSchema,
 	decommitApprovedMessageSchema,
+	decommitRequestedMessageSchema,
 	decommitFinalizedMessageSchema,
 	decommitInvalidMessageSchema,
 	greetingsIdentityMessageSchema,
@@ -37,6 +38,7 @@ import {
 } from './schemas';
 import { describeDecommitInvalidReason, describePostTxError } from './post-tx-error';
 import {
+	DecommitDistributedValue,
 	DecommitSettledData,
 	HydraConfirmedTransaction,
 	HydraNodeEvent,
@@ -232,6 +234,22 @@ export interface HydraNodeClientConfig {
 	/** Explicit aggregate budget for retained confirmation CBOR. */
 	maxRetainedTransactionCborBytes?: number;
 }
+
+/**
+ * How many replayed decommit outcomes are worth holding.
+ *
+ * A head replays its entire history on every connection; only the tail can
+ * still describe a withdrawal this service has not finished recording.
+ */
+const MAX_REPLAYED_DECOMMITS = 32;
+
+/**
+ * How many decommit transactions to keep for transition checking.
+ *
+ * Only one can be pending at a time, so this is generous by design: it exists so
+ * a long history cannot grow the map without bound.
+ */
+const MAX_TRACKED_DECOMMIT_TRANSACTIONS = 64;
 
 export class HydraNode extends EventEmitter {
 	// Upper bound on how long init() waits to observe HeadIsInitializing after
@@ -694,6 +712,13 @@ export class HydraNode extends EventEmitter {
 				this.recordFinalizedFanout(headIsFinalizedMessageSchema.parse(message));
 			}
 
+			// Before the snapshot that reflects it, always: the head reports the
+			// request first, and the transaction it carries is what accounts for the
+			// value change that snapshot signs.
+			if (parsedEnvelope.tag === 'DecommitRequested') {
+				this.rememberDecommitTransaction(decommitRequestedMessageSchema.parse(message).decommitTx);
+			}
+
 			if (parsedEnvelope.tag === 'SnapshotConfirmed') {
 				const parsedMessage = historySnapshotConfirmedMessageSchema.parse(message);
 				this.assertExpectedHeadId(parsedMessage);
@@ -772,6 +797,47 @@ export class HydraNode extends EventEmitter {
 		this._finalizedFanoutOutputs = fanoutOutputs;
 	}
 
+	/**
+	 * Decommit transactions seen so far, by transaction id.
+	 *
+	 * Bounded: a head replays its whole history on every connection, and only a
+	 * decommit still named by a snapshot's pending partition can be needed.
+	 */
+	private _decommitTransactions = new Map<string, HydraTransaction>();
+
+	private rememberDecommitTransaction(transaction: HydraTransaction): void {
+		const txId = transaction.txId?.toLowerCase();
+		if (!txId) return;
+		if (this._decommitTransactions.has(txId)) return;
+		this._decommitTransactions.set(txId, transaction);
+		if (this._decommitTransactions.size > MAX_TRACKED_DECOMMIT_TRANSACTIONS) {
+			const oldest = this._decommitTransactions.keys().next().value;
+			if (oldest !== undefined) this._decommitTransactions.delete(oldest);
+		}
+	}
+
+	/**
+	 * The transactions that produced a snapshot's pending decommit outputs.
+	 *
+	 * Matched by the transaction id embedded in each output reference, so only a
+	 * transaction the signed state actually names is ever handed to the check.
+	 */
+	private resolvePendingDecommitTransactions(
+		partition: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>['snapshot']['utxoToDecommit'],
+	): HydraTransaction[] {
+		if (!partition) return [];
+		const resolved: HydraTransaction[] = [];
+		const seen = new Set<string>();
+		for (const reference of Object.keys(partition)) {
+			const txId = reference.slice(0, reference.indexOf('#')).toLowerCase();
+			if (txId === '' || seen.has(txId)) continue;
+			seen.add(txId);
+			const transaction = this._decommitTransactions.get(txId);
+			if (transaction) resolved.push(transaction);
+		}
+		return resolved;
+	}
+
 	private recordHistorySnapshot(parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>): void {
 		if (this._lastHistorySequence != null && parsedMessage.seq <= this._lastHistorySequence) {
 			throw new HydraProtocolError('Hydra history sequence was duplicate or non-monotonic');
@@ -797,9 +863,20 @@ export class HydraNode extends EventEmitter {
 			this._lastHistorySequence = parsedMessage.seq;
 			return;
 		}
-		if (
-			!doesHydraTransactionTransitionReachSnapshot(previousSnapshot, verifiedSnapshot, parsedMessage.snapshot.confirmed)
-		) {
+		// A decommit is a state-changing transaction that Hydra reports outside the
+		// `confirmed` list, so the conservation walk has to be given it explicitly.
+		// Without it a legitimate withdrawal looks like value appearing and
+		// vanishing for no reason — the head's whole history is rejected, the live
+		// session never forms, and every L2 escrow operation fails closed.
+		//
+		// Passed as a transaction rather than waved through as an allowance: it
+		// carries its own L1 fee, and running it through the same created/consumed
+		// accounting accounts for that fee exactly, with nothing relaxed.
+		const transitionTransactions = [
+			...parsedMessage.snapshot.confirmed,
+			...this.resolvePendingDecommitTransactions(parsedMessage.snapshot.utxoToDecommit),
+		];
+		if (!doesHydraTransactionTransitionReachSnapshot(previousSnapshot, verifiedSnapshot, transitionTransactions)) {
 			throw new HydraProtocolError('Hydra history contained a non-consecutive or inconsistent signed-state transition');
 		}
 		this._verifiedHistorySnapshot = verifiedSnapshot;
@@ -842,6 +919,33 @@ export class HydraNode extends EventEmitter {
 			this._cursorPrefixProducerTxIds.delete(txId);
 		}
 		this.trimConfirmedTransactionCache();
+	}
+
+	/**
+	 * Decommit outcomes seen before the live session was authenticated.
+	 *
+	 * Bounded, because a head's whole history replays on every connection and
+	 * only the most recent outcomes can still be about an unsettled withdrawal.
+	 */
+	private _replayedDecommits: DecommitSettledData[] = [];
+
+	private rememberReplayedDecommit(data: DecommitSettledData): void {
+		this._replayedDecommits.push(data);
+		if (this._replayedDecommits.length > MAX_REPLAYED_DECOMMITS) this._replayedDecommits.shift();
+	}
+
+	/**
+	 * Emit what the replay held back, oldest first, exactly once.
+	 *
+	 * Order matters: an approval must not be applied after the finalization that
+	 * followed it, and the settlement code relies on seeing them in the order the
+	 * head produced them.
+	 */
+	private flushReplayedDecommits(): void {
+		if (this._replayedDecommits.length === 0) return;
+		const pending = this._replayedDecommits;
+		this._replayedDecommits = [];
+		for (const data of pending) this.emit(HydraNodeEvent.DecommitSettled, data);
 	}
 
 	private processStatus(rawMessage: string) {
@@ -925,7 +1029,13 @@ export class HydraNode extends EventEmitter {
 			}
 			if (envelope.tag === 'DecommitFinalized') {
 				const finalized = decommitFinalizedMessageSchema.parse(message);
-				decommitSettled = { decommitTxId: finalized.decommitTxId, outcome: 'finalized' };
+				const producedAt = finalized.timestamp === undefined ? undefined : new Date(finalized.timestamp);
+				decommitSettled = {
+					decommitTxId: finalized.decommitTxId,
+					outcome: 'finalized',
+					distributed: summarizeDistributedUtxo(finalized.distributedUTxO),
+					observedAt: producedAt !== undefined && Number.isFinite(producedAt.getTime()) ? producedAt : undefined,
+				};
 			}
 			if (envelope.tag === 'DecommitInvalid') {
 				const invalid = decommitInvalidMessageSchema.parse(message);
@@ -959,6 +1069,10 @@ export class HydraNode extends EventEmitter {
 				this._liveSessionHeadId = undefined;
 				this._livePartyIdentityVerified = false;
 				this._headClock = undefined;
+				// Whatever the replay held back came over a socket whose identity has
+				// just been rejected. Keeping it would mean applying, on the next
+				// authenticated session, outcomes this node never accepted.
+				this._replayedDecommits = [];
 				this.emit(LIVE_SESSION_REJECTED_EVENT, identityError);
 				this._connection.invalidate(identityError);
 			}
@@ -966,7 +1080,15 @@ export class HydraNode extends EventEmitter {
 			return;
 		}
 
-		if (!this.isLiveSessionReady()) return;
+		if (!this.isLiveSessionReady()) {
+			// Held rather than dropped. A withdrawal settles on L1 minutes after it
+			// leaves the head, so a node restarted in between sees its finalization
+			// only in the replayed history — and dropping it left the withdrawal
+			// reading as still paying out forever, with nothing to correct it.
+			if (decommitSettled) this.rememberReplayedDecommit(decommitSettled);
+			return;
+		}
+		this.flushReplayedDecommits();
 		if (decommitSettled) this.emit(HydraNodeEvent.DecommitSettled, decommitSettled);
 		const changeData = extractStatusChangeData(rawMessage, this._expectedHeadId);
 		if (changeData && changeData.status !== HydraHeadStatus.Final) {
@@ -2181,4 +2303,37 @@ function extractStatusChangeData(rawMessage: string, expectedHeadId?: string): S
 		logger.error('[HydraNode] Rejected status frame', { error: protocolErrorToString(error) });
 		return null;
 	}
+}
+
+/**
+ * What a finalized withdrawal put on L1, flattened out of the head's report.
+ *
+ * The head reports a map of in-head references to outputs, each with a value
+ * keyed by policy id and then by asset name. Flattened here to the concatenated
+ * unit the rest of the service speaks, so nothing downstream has to know the
+ * head's nesting.
+ */
+type HydraAssetQuantity = number | string;
+type HydraOutputValue = Record<string, HydraAssetQuantity | Record<string, HydraAssetQuantity>>;
+
+function summarizeDistributedUtxo(
+	distributed: Record<string, { value: HydraOutputValue }> | undefined,
+): DecommitDistributedValue | undefined {
+	if (!distributed) return undefined;
+	let lovelace = 0n;
+	const assets: Record<string, string> = {};
+	for (const entry of Object.values(distributed)) {
+		for (const [policyId, held] of Object.entries(entry.value)) {
+			if (policyId === 'lovelace') {
+				lovelace += BigInt(held as HydraAssetQuantity);
+				continue;
+			}
+			if (typeof held !== 'object') continue;
+			for (const [assetName, quantity] of Object.entries(held)) {
+				const unit = `${policyId}${assetName}`;
+				assets[unit] = (BigInt(assets[unit] ?? '0') + BigInt(quantity)).toString();
+			}
+		}
+	}
+	return { lovelace, assets };
 }

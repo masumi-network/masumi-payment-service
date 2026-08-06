@@ -129,10 +129,60 @@ export const decommitApprovedMessageSchema = z.looseObject({
 	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
 });
 
-/** The node observed its own L1 decrement, so the funds are spendable on L1. */
+/**
+ * An output's value as a head reports it.
+ *
+ * Lovelace sits at the top level under its own name; every other key is a policy
+ * id whose value maps asset name to quantity. Quantities arrive as JSON numbers,
+ * so they are accepted as numbers or strings and converted to BigInt by the
+ * caller rather than being trusted as JavaScript numbers.
+ */
+const hydraAssetQuantitySchema = z.union([z.number(), z.string()]);
+const hydraOutputValueSchema = z.record(
+	z.string(),
+	z.union([hydraAssetQuantitySchema, z.record(z.string(), hydraAssetQuantitySchema)]),
+);
+
+/**
+ * The node observed its own L1 decrement, so the funds are spendable on L1.
+ *
+ * Deliberately does NOT require `decommitTxId`: unlike DecommitApproved, this
+ * message does not carry one. Requiring it made every finalization fail to
+ * parse, which left settled withdrawals reading as still paying out forever.
+ *
+ * What it does carry is `distributedUTxO` — what landed, keyed by the in-head
+ * reference of the output that was removed. That reference names a transaction
+ * that only ever existed inside the head, so it is a description of the value
+ * rather than a chain-explorer link.
+ */
 export const decommitFinalizedMessageSchema = z.looseObject({
 	tag: z.literal('DecommitFinalized'),
-	decommitTxId: canonicalHydraTransactionIdSchema,
+	decommitTxId: canonicalHydraTransactionIdSchema.optional(),
+	distributedUTxO: z
+		.record(z.string(), z.looseObject({ address: z.string(), value: hydraOutputValueSchema }))
+		.optional(),
+	/**
+	 * When the head produced this. Load-bearing, not decoration: the whole
+	 * history replays on every reconnection, so an old finalization must not be
+	 * attributed to a withdrawal that was requested after it.
+	 */
+	timestamp: z.string().optional(),
+	headId: canonicalHydraHeadIdSchema,
+	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
+});
+
+/**
+ * A withdrawal the head has taken in, with the transaction that performs it.
+ *
+ * The transaction matters beyond bookkeeping: it is the only thing that
+ * explains the state change the following snapshot signs. A decommit is a real
+ * Cardano transaction with a real L1 fee, and it is reported here rather than in
+ * the snapshot's `confirmed` list, so a conservation check that walks only
+ * `confirmed` sees value change with nothing to account for it.
+ */
+export const decommitRequestedMessageSchema = z.looseObject({
+	tag: z.literal('DecommitRequested'),
+	decommitTx: hydraTransactionSchema,
 	headId: canonicalHydraHeadIdSchema,
 	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
 });
