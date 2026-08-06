@@ -2060,11 +2060,26 @@ model HydraDecommit {
   /// it is what every later status transition is matched on.
   decommitTxId String?
 
-  /// Lovelace this withdrawal removes from the head.
+  /// Lovelace this withdrawal set out to remove from the head.
+  ///
+  /// What was asked for, and never overwritten: it is the record of intent, and
+  /// comparing it against what actually settled is how a surprise gets noticed.
   requestedLovelace BigInt
 
-  /// Native-asset amounts removed, as { unit: quantityString }.
+  /// Native-asset amounts it set out to remove, as { unit: quantityString }.
   requestedAssets Json
+
+  /// Lovelace that actually reached L1, as the head reported it. Null until the
+  /// withdrawal finalizes.
+  ///
+  /// Rarely equal to the requested amount, and the difference is not a bug: a
+  /// decommit removes whole outputs, so a token withdrawal carries the ADA that
+  /// output held, and the L1 decrement's fee comes out of the value that travels.
+  settledLovelace BigInt?
+
+  /// Native assets that actually reached L1, as { unit: quantityString }. Null
+  /// until the withdrawal finalizes.
+  settledAssets Json?
 
   /// Where the funds land on L1. The participant's own wallet address, recorded
   /// so an operator can check the arrival against something concrete rather than
@@ -2084,6 +2099,15 @@ model HydraDecommit {
   /// When the node observed its own L1 decrement transaction, i.e. when the
   /// funds actually became spendable on L1.
   finalizedAt DateTime?
+
+  /// The L1 transaction that paid the withdrawal out.
+  ///
+  /// Not the same thing as decommitTxId, and this is the distinction the admin
+  /// UI got wrong: decommitTxId names a transaction that only ever existed
+  /// inside the head, so linking it to a chain explorer 404s. The head does not
+  /// report this id at all, so it is observed on chain after finalization and
+  /// stays null when the search does not find it.
+  l1TxId String?
 
   @@index([hydraLocalParticipantId, status])
   @@index([status, updatedAt])

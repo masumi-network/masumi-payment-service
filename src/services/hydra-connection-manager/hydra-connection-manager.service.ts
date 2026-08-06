@@ -762,6 +762,8 @@ export class HydraConnectionManager {
 				decommitTxId: data.decommitTxId,
 				outcome: data.outcome,
 				reason: data.reason,
+				distributed: data.distributed,
+				observedAt: data.observedAt,
 			}).catch((error: unknown) => {
 				logger.error('[HydraConnectionManager] could not record a withdrawal outcome', {
 					hydraHeadId,

@@ -17,19 +17,40 @@
 import { HydraDecommitStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import type { HydraDecommitOutcome } from '@/lib/hydra';
+import type { DecommitDistributedValue, HydraDecommitOutcome } from '@/lib/hydra';
+import { resolveDecommitPayoutTx } from './payout-lookup';
 
 /** Statuses a later event is still allowed to move away from. */
 const OPEN_STATUSES = [HydraDecommitStatus.Preparing, HydraDecommitStatus.Pending, HydraDecommitStatus.Approved];
 
 export async function applyDecommitOutcome(params: {
 	hydraHeadId: string;
-	decommitTxId: string;
+	/**
+	 * Absent on finalization, which the head reports without one. The row is
+	 * then matched by head and open status, which is unambiguous because a
+	 * participant may only have one withdrawal in flight at a time.
+	 */
+	decommitTxId?: string;
 	outcome: HydraDecommitOutcome;
 	reason?: string;
+	/** What reached L1, when the head said so. Only meaningful on finalization. */
+	distributed?: DecommitDistributedValue;
+	/** When the head produced the event. See finalizeDecommit for why it matters. */
+	observedAt?: Date;
 }): Promise<boolean> {
-	const { hydraHeadId, decommitTxId, outcome, reason } = params;
+	const { hydraHeadId, decommitTxId, outcome, reason, distributed, observedAt } = params;
 	const now = new Date();
+
+	if (outcome === 'finalized') {
+		return finalizeDecommit({ hydraHeadId, decommitTxId, distributed, observedAt, now });
+	}
+	if (decommitTxId === undefined) {
+		// Only finalization arrives without one; anything else that does is a
+		// message shape this service does not understand, and guessing which
+		// withdrawal it meant would be worse than ignoring it.
+		logger.warn(`[HydraDecommit] ignoring a ${outcome} outcome that named no withdrawal`);
+		return false;
+	}
 
 	// Scoped by head as well as by transaction id. The id alone is unique in
 	// practice, but a withdrawal belongs to one head and an event from another
@@ -65,19 +86,86 @@ export async function applyDecommitOutcome(params: {
 		return count > 0;
 	}
 
-	// Finalized. Stamp the approval too when it was never seen — a replay that
-	// starts mid-history, or a restart between the two events, would otherwise
-	// leave a finalized withdrawal claiming it was never approved.
-	const { count } = await prisma.hydraDecommit.updateMany({
-		where,
-		data: { status: HydraDecommitStatus.Finalized, finalizedAt: now },
+	logger.warn(`[HydraDecommit] unhandled withdrawal outcome ${String(outcome)}`);
+	return false;
+}
+
+/**
+ * Record that L1 has the funds.
+ *
+ * Split out because it is the one transition the head reports anonymously.
+ * DecommitFinalized carries no transaction id, so the row is found by head and
+ * open status; the id it does not carry is then looked up on chain, because the
+ * in-head decommit id is not a transaction any explorer has ever seen.
+ */
+async function finalizeDecommit(params: {
+	hydraHeadId: string;
+	decommitTxId?: string;
+	distributed?: DecommitDistributedValue;
+	observedAt?: Date;
+	now: Date;
+}): Promise<boolean> {
+	const { hydraHeadId, decommitTxId, distributed, observedAt, now } = params;
+
+	const open = await prisma.hydraDecommit.findMany({
+		where: {
+			hydraHeadId,
+			status: { in: OPEN_STATUSES },
+			...(decommitTxId === undefined ? {} : { decommitTxId }),
+			// A head replays its entire history on every reconnection, so a
+			// finalization from weeks ago arrives again alongside today's pending
+			// withdrawal. Without this the old event is attributed to the new
+			// withdrawal and reports money as paid out that is still in the head.
+			//
+			// Filtered on the approval rather than on creation: a finalization
+			// cannot precede the approval it follows, so this excludes a withdrawal
+			// that was merely requested in the seconds before the replayed event.
+			...(observedAt === undefined ? {} : { approvedAt: { lte: observedAt } }),
+		},
+		orderBy: { createdAt: 'desc' },
 	});
-	if (count > 0) {
-		await prisma.hydraDecommit.updateMany({
-			where: { hydraHeadId, decommitTxId, approvedAt: null },
-			data: { approvedAt: now },
-		});
-		logger.info(`[HydraDecommit] withdrawal ${decommitTxId} settled on L1`);
+	if (open.length === 0) return false;
+	// An anonymous finalization can only be attributed when there is exactly one
+	// candidate. Normally there is, because a participant may have only one
+	// withdrawal in flight; if that ever stops holding, refusing to guess is the
+	// only safe answer, since guessing wrong marks the wrong withdrawal paid.
+	if (decommitTxId === undefined && open.length > 1) {
+		logger.warn(
+			`[HydraDecommit] head ${hydraHeadId} reported a finalization while ${open.length} withdrawals were open; ` +
+				'leaving them alone rather than attributing it to the wrong one',
+		);
+		return false;
 	}
-	return count > 0;
+	const [row] = open;
+	if (!row) return false;
+
+	// Stamp the approval too when it was never seen — a replay that starts
+	// mid-history, or a restart between the two events, would otherwise leave a
+	// finalized withdrawal claiming it was never approved.
+	await prisma.hydraDecommit.update({
+		where: { id: row.id },
+		data: {
+			status: HydraDecommitStatus.Finalized,
+			finalizedAt: now,
+			...(row.approvedAt === null ? { approvedAt: now } : {}),
+			// Beside what was asked for, never over it. The two differ routinely —
+			// a decommit takes whole outputs and the decrement's fee comes out of
+			// the value that travels — and that difference is only visible while
+			// both are on the row.
+			...(distributed === undefined
+				? {}
+				: { settledLovelace: distributed.lovelace, settledAssets: distributed.assets }),
+		},
+	});
+	logger.info(`[HydraDecommit] withdrawal ${row.id} settled on L1`);
+
+	// After the status, and never blocking it. Identifying the payout is a
+	// convenience for whoever reads the row; failing to identify it must not make
+	// a settled withdrawal look unsettled.
+	if (distributed) {
+		void resolveDecommitPayoutTx({ decommitId: row.id, distributed }).catch((error: unknown) => {
+			logger.warn(`[HydraDecommit] could not identify the payout transaction for ${row.id}: ${String(error)}`);
+		});
+	}
+	return true;
 }

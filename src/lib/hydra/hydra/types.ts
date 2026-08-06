@@ -69,11 +69,33 @@ export enum HydraNodeEvent {
 /** What a head decided about a requested withdrawal. */
 export type HydraDecommitOutcome = 'approved' | 'finalized' | 'invalid';
 
+/** What landed on L1, as the head described it. Lovelace separated out. */
+export interface DecommitDistributedValue {
+	lovelace: bigint;
+	/** Native assets, as concatenated policy id and asset name to quantity. */
+	assets: Record<string, string>;
+}
+
 export interface DecommitSettledData {
-	decommitTxId: string;
+	/**
+	 * Absent on finalization: DecommitFinalized does not carry one. The row is
+	 * then found by head and open status instead, which is sound because a
+	 * participant may only have one withdrawal in flight at a time.
+	 */
+	decommitTxId?: string;
 	outcome: HydraDecommitOutcome;
 	/** The node's own words when it refused, kept verbatim. */
 	reason?: string;
+	/** What reached L1. Only on finalization, and only when the head reported it. */
+	distributed?: DecommitDistributedValue;
+	/**
+	 * When the head produced the event, as it reported it.
+	 *
+	 * Needed because a head replays its whole history on every reconnection: an
+	 * outcome that names no withdrawal can only be attributed to one that already
+	 * existed when the head produced it.
+	 */
+	observedAt?: Date;
 }
 
 export interface StatusChangeData {
