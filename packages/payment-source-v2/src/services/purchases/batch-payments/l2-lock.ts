@@ -676,18 +676,37 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 				// A head exists for this pair — record it BEFORE the wallet-busy check so
 				// a busy wallet never masquerades as "no head".
 				headAvailable = true;
-				if (usedWalletIds.has(hotWallet.id) || hotWallet.lockedAt != null || hotWallet.pendingTransactionId != null) {
-					// Wallet already built a lock tx this tick; try another wallet, and if
-					// none is free the request retries next tick (not failed).
+				// Re-read rather than trusting the snapshot this pass started with. A
+				// wallet that just built a lock is busy for as long as that lock takes
+				// to settle, and it frees again the moment it does — but the pass's own
+				// copy still says busy, so it used to skip every remaining request and
+				// leave them for the next nudge. With one buying wallet that capped the
+				// whole queue at one lock per nudge, which is one per second, while the
+				// head itself confirms in milliseconds.
+				if (usedWalletIds.has(hotWallet.id)) continue;
+				const walletState = await prisma.hotWallet.findUnique({
+					where: { id: hotWallet.id },
+					select: { lockedAt: true, pendingTransactionId: true },
+				});
+				if (walletState == null || walletState.lockedAt != null || walletState.pendingTransactionId != null) {
+					// Genuinely busy right now; another wallet may be free, and if none is
+					// the request retries next tick (not failed).
 					continue;
 				}
 
 				try {
 					const outcome = await executeL2Lock(request, paymentContract, hotWallet, head.hydraHead.id);
 					// Accepted, accepted-but-not-finalized, and ambiguous outcomes all
-					// retain the durable pre-submit reservation. Treat the request as
-					// handled so neither another wallet nor this tick's L1 pass can touch it.
-					usedWalletIds.add(hotWallet.id);
+					// retain the durable pre-submit reservation, so the request is
+					// handled either way and neither another wallet nor this tick's L1
+					// pass may touch it.
+					//
+					// The WALLET, though, is only withdrawn from this pass when its state
+					// is in doubt. An ambiguous outcome leaves a reservation that only
+					// Hydra reconciliation can settle, and building against that wallet
+					// again would be building on an unknown balance. A clean outcome
+					// releases it, and the re-read above will see that.
+					if (outcome.status === 'ambiguous') usedWalletIds.add(hotWallet.id);
 					locked = true;
 					if (outcome.status === 'ambiguous') {
 						logger.warn('L2 funds-lock outcome ambiguous; reservation retained for Hydra reconciliation', {

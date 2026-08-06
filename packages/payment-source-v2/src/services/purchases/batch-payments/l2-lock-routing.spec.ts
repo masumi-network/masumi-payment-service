@@ -4,10 +4,16 @@ import { HotWalletType, PaymentSourceType, PurchasingAction } from '@/generated/
 const mockPaymentSourceFindMany = jest.fn<(_args: unknown) => Promise<unknown[]>>().mockResolvedValue([]);
 const mockResolveHead = jest.fn<(..._args: unknown[]) => Promise<unknown>>();
 const mockGetProvider = jest.fn<(..._args: unknown[]) => unknown>();
+// The pass re-reads each wallet's state instead of trusting the snapshot it
+// started with, so that a wallet freed mid-pass can take the next request.
+const mockHotWalletFindUnique = jest
+	.fn<(_args: unknown) => Promise<unknown>>()
+	.mockResolvedValue({ lockedAt: null, pendingTransactionId: null });
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		paymentSource: { findMany: mockPaymentSourceFindMany },
+		hotWallet: { findUnique: mockHotWalletFindUnique },
 	},
 }));
 
@@ -59,6 +65,18 @@ function sourceWithBusyHeadWallet(createdAt: Date) {
 	};
 }
 
+/**
+ * Report the wallet as busy when the pass re-reads it.
+ *
+ * The snapshot above is no longer what decides: the pass re-reads each wallet
+ * so one freed mid-pass can take the next request. A fixture that says busy
+ * therefore has to say so in both places, or the test silently stops covering
+ * the deferral it was written for.
+ */
+function reportWalletBusy(): void {
+	mockHotWalletFindUnique.mockResolvedValue({ lockedAt: new Date(), pendingTransactionId: 'tx-1' });
+}
+
 beforeEach(() => {
 	jest.clearAllMocks();
 	mockPaymentSourceFindMany.mockResolvedValue([]);
@@ -92,6 +110,7 @@ describe('processL2PurchaseLocks routing scope', () => {
  */
 describe('processL2PurchaseLocks deferral', () => {
 	it('holds an auto request off L1 while its head wallet is busy', async () => {
+		reportWalletBusy();
 		mockPaymentSourceFindMany.mockResolvedValue([sourceWithBusyHeadWallet(new Date())]);
 
 		await expect(processL2PurchaseLocks()).resolves.toEqual({ deferredRequestIds: ['purchase-1'] });
@@ -100,6 +119,7 @@ describe('processL2PurchaseLocks deferral', () => {
 	// The bound is what stops a permanently stuck wallet from parking purchases
 	// forever: past it, L1 takes the request on its usual cadence.
 	it('releases the request to L1 once the wait has gone on too long', async () => {
+		reportWalletBusy();
 		mockPaymentSourceFindMany.mockResolvedValue([sourceWithBusyHeadWallet(new Date(Date.now() - 10 * 60 * 1000))]);
 
 		await expect(processL2PurchaseLocks()).resolves.toEqual({ deferredRequestIds: [] });
@@ -107,8 +127,42 @@ describe('processL2PurchaseLocks deferral', () => {
 
 	it('does not defer when no head exists for the pair', async () => {
 		mockResolveHead.mockResolvedValue(null);
+		reportWalletBusy();
 		mockPaymentSourceFindMany.mockResolvedValue([sourceWithBusyHeadWallet(new Date())]);
 
 		await expect(processL2PurchaseLocks()).resolves.toEqual({ deferredRequestIds: [] });
+	});
+});
+
+/**
+ * Throughput, which is a correctness property here in the way that matters to
+ * anyone watching a queue drain.
+ *
+ * A pass used to retire a wallet after one lock, so with a single buying wallet
+ * it locked one purchase and left the rest for the next nudge — one per second,
+ * against a head that confirms in milliseconds. The pass now re-reads the
+ * wallet, so a freed one takes the next request immediately.
+ */
+describe('processL2PurchaseLocks throughput', () => {
+	it('re-reads the wallet for every request instead of retiring it after one', async () => {
+		mockHotWalletFindUnique.mockResolvedValue({ lockedAt: null, pendingTransactionId: null });
+		const busy = sourceWithBusyHeadWallet(new Date());
+		// A free wallet, and three requests waiting on it.
+		const source = {
+			...busy,
+			HotWallets: [{ ...busy.HotWallets[0]!, lockedAt: null, pendingTransactionId: null }],
+			PurchaseRequests: [
+				{ ...busy.PurchaseRequests[0]!, id: 'purchase-1' },
+				{ ...busy.PurchaseRequests[0]!, id: 'purchase-2' },
+				{ ...busy.PurchaseRequests[0]!, id: 'purchase-3' },
+			],
+		};
+		mockPaymentSourceFindMany.mockResolvedValue([source]);
+
+		await processL2PurchaseLocks();
+
+		// One read per request. Retiring the wallet after the first would have
+		// stopped at one, which is the bug this covers.
+		expect(mockHotWalletFindUnique.mock.calls.length).toBe(3);
 	});
 });
