@@ -9,6 +9,9 @@
  *
  *   pnpm exec tsx scripts/hydra-e2e/replay-check.mts <path-to>/node.log
  *
+ * Run it as step 2 of the hydra-node upgrade checklist in
+ * docs/adr/0012-hydra-snapshot-verification-and-upgrades.md.
+ *
  * Test support only.
  */
 import fs from 'node:fs';

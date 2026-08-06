@@ -731,6 +731,11 @@ function partitionOutputMultiset(partition: SnapshotUtxo | null | undefined): Ma
  *
  * The first signed snapshot is intentionally only an anchor: without a signed
  * predecessor its `confirmed` list is not even state-delta evidence.
+ *
+ * Before changing what this accepts, and before upgrading hydra-node, read
+ * docs/adr/0012-hydra-snapshot-verification-and-upgrades.md: it carries the
+ * upgrade checklist and the record of the two legitimate protocol behaviours
+ * this check has already been wrong about.
  */
 export function doesHydraTransactionTransitionReachSnapshot(
 	previous: VerifiedHydraSnapshot,

@@ -1,0 +1,73 @@
+{
+	"description": "Key shape of every SnapshotConfirmed frame a real hydra-node 2.3 emitted. Payloads elided; only the field names are asserted.",
+	"frames": [
+		{
+			"headId": "\u2026",
+			"seq": 58,
+			"signatures": "\u2026",
+			"snapshot": {
+				"accumulator": "\u2026",
+				"confirmed": "\u2026",
+				"headId": "\u2026",
+				"number": "\u2026",
+				"utxo": "\u2026",
+				"utxoToCommit": "\u2026",
+				"utxoToDecommit": "\u2026",
+				"version": "\u2026"
+			},
+			"tag": "SnapshotConfirmed",
+			"timestamp": "\u2026"
+		},
+		{
+			"headId": "\u2026",
+			"seq": 73,
+			"signatures": "\u2026",
+			"snapshot": {
+				"accumulator": "\u2026",
+				"confirmed": "\u2026",
+				"headId": "\u2026",
+				"number": "\u2026",
+				"utxo": "\u2026",
+				"utxoToCommit": "\u2026",
+				"utxoToDecommit": "\u2026",
+				"version": "\u2026"
+			},
+			"tag": "SnapshotConfirmed",
+			"timestamp": "\u2026"
+		},
+		{
+			"headId": "\u2026",
+			"seq": 170,
+			"signatures": "\u2026",
+			"snapshot": {
+				"accumulator": "\u2026",
+				"confirmed": "\u2026",
+				"headId": "\u2026",
+				"number": "\u2026",
+				"utxo": "\u2026",
+				"utxoToCommit": "\u2026",
+				"utxoToDecommit": "\u2026",
+				"version": "\u2026"
+			},
+			"tag": "SnapshotConfirmed",
+			"timestamp": "\u2026"
+		},
+		{
+			"headId": "\u2026",
+			"seq": 365,
+			"signatures": "\u2026",
+			"snapshot": {
+				"accumulator": "\u2026",
+				"confirmed": "\u2026",
+				"headId": "\u2026",
+				"number": "\u2026",
+				"utxo": "\u2026",
+				"utxoToCommit": "\u2026",
+				"utxoToDecommit": "\u2026",
+				"version": "\u2026"
+			},
+			"tag": "SnapshotConfirmed",
+			"timestamp": "\u2026"
+		}
+	]
+}

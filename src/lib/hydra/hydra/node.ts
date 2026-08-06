@@ -7,6 +7,7 @@ import { castProtocol, Protocol, resolveTxHash, UTxO } from '@meshsdk/core';
 
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { hydraAuthHeaders } from './auth';
+import { describeProtocolDrift, detectSnapshotDrift, type ProtocolDrift } from './protocol-drift';
 import { Connection } from './connection';
 import {
 	canonicalHydraHeadIdSchema,
@@ -720,6 +721,7 @@ export class HydraNode extends EventEmitter {
 			}
 
 			if (parsedEnvelope.tag === 'SnapshotConfirmed') {
+				this.reportSnapshotDrift(message);
 				const parsedMessage = historySnapshotConfirmedMessageSchema.parse(message);
 				this.assertExpectedHeadId(parsedMessage);
 				// Signed states and transaction transitions are verified progressively.
@@ -804,6 +806,30 @@ export class HydraNode extends EventEmitter {
 	 * decommit still named by a snapshot's pending partition can be needed.
 	 */
 	private _decommitTransactions = new Map<string, HydraTransaction>();
+
+	/** Unknown snapshot fields already reported, so a replay says it once. */
+	private _reportedDriftFields = new Set<string>();
+
+	/**
+	 * Say when the node reports snapshot state this service does not model.
+	 *
+	 * Reports and continues, deliberately. Refusing here would turn a harmless
+	 * added field into the outage this is meant to give warning of; the value is
+	 * that someone hears about it while the head still works, rather than after
+	 * a rejected history has already taken it down.
+	 */
+	private reportSnapshotDrift(message: unknown): void {
+		const drift = detectSnapshotDrift(message);
+		if (drift.length === 0) return;
+		const fresh: ProtocolDrift[] = drift.filter((entry) =>
+			entry.fields.some((field) => !this._reportedDriftFields.has(field)),
+		);
+		if (fresh.length === 0) return;
+		for (const entry of fresh) for (const field of entry.fields) this._reportedDriftFields.add(field);
+		const description = describeProtocolDrift(fresh);
+		logger.warn(`[HydraNode] ${description}`);
+		this.emit(HydraNodeEvent.ProtocolDriftDetected, description);
+	}
 
 	private rememberDecommitTransaction(transaction: HydraTransaction): void {
 		const txId = transaction.txId?.toLowerCase();

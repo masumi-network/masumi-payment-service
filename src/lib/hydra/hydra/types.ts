@@ -48,6 +48,14 @@ export enum HydraNodeEvent {
 	TxConfirmed = 'TxConfirmed',
 	HistoryReplayFailed = 'HistoryReplayFailed',
 	/**
+	 * The node reports snapshot state this service does not model.
+	 *
+	 * A warning, not a failure: the head keeps running. It exists so a Hydra
+	 * upgrade is noticed while everything still works, instead of the first
+	 * sign being a rejected history that takes the head offline.
+	 */
+	ProtocolDriftDetected = 'ProtocolDriftDetected',
+	/**
 	 * A deposit finished folding in, so its funds are spendable at last.
 	 *
 	 * Worth an event rather than a poll: work that was waiting on those funds
