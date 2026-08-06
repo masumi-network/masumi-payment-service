@@ -212,8 +212,18 @@ export class Supervisor {
 				this.logger.warn(`[supervisor] ${record.nodeId}: ${(error as Error).message}`);
 			}
 			const sample = measureDrift(slot, this.slotConfig, Date.now());
-			drift = classifyDrift(sample, thresholds);
 			driftSeconds = Math.round(sample.driftMs / 1000);
+			// Measured always, judged only once the node says it is in sync.
+			//
+			// The verdict drives a restart, and a node that is still catching up is
+			// behind by definition — judging it would restart it for doing exactly
+			// what it is supposed to be doing, throwing away the progress it had
+			// made and guaranteeing it never finishes. Restarting is for a node
+			// that believes it is synced and is not; waiting is for one that knows
+			// it is behind.
+			if (chain.synced) {
+				drift = classifyDrift(sample, thresholds);
+			}
 		}
 
 		return {

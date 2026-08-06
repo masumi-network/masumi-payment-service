@@ -164,3 +164,32 @@ describe('shouldAdoptAsRunning', () => {
 		expect(shouldAdoptAsRunning(record('Removing', 'Running'), { responsive: true })).toBe(false);
 	});
 });
+
+/**
+ * A node that is behind and knows it is a node to leave alone.
+ *
+ * Restarting one throws away the catch-up it had made and starts it again from
+ * the same checkpoint, so it can never finish — a machine that slept for a few
+ * hours would restart forever. The verdict exists for a node that believes it
+ * is synced and is not; a catching-up node reports no verdict at all, however
+ * far behind it says it is.
+ */
+describe('planNodeAction while the node is catching up', () => {
+	it('leaves a catching-up node alone however far behind it is', () => {
+		const action = planNodeAction(record(), observe({ chainSynced: false, drift: null, driftSeconds: 54_700 }), LIMITS);
+
+		expect(action.kind).not.toBe('Restart');
+	});
+
+	// The guard still has to fire for the case it was written for: a node that
+	// claims to be in sync while its follower has fallen behind.
+	it('still restarts a node that claims sync while drifting', () => {
+		const action = planNodeAction(
+			record(),
+			observe({ chainSynced: true, drift: 'Unsynced', driftSeconds: 200 }),
+			LIMITS,
+		);
+
+		expect(action.kind).toBe('Restart');
+	});
+});
