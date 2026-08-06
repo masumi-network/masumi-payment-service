@@ -136,6 +136,7 @@ async function runPair(index: number, agentIdentifier: string, sellerVkey: strin
 		submitResultTime: string;
 		unlockTime: string;
 		externalDisputeUnlockTime: string;
+		sellerReturnAddress: string | null;
 	}>(SELLER, 'POST', '/payment/', {
 		network: NETWORK,
 		agentIdentifier,
@@ -157,6 +158,11 @@ async function runPair(index: number, agentIdentifier: string, sellerVkey: strin
 		identifierFromPurchaser,
 		paymentSourceType: 'Web3CardanoV2',
 		supportedPaymentSourceIndex: SOURCE_INDEX,
+		// Echoed like the deadlines, and for the same reason: the seller signs
+		// where it collects into the identifier, and the buyer node has no way to
+		// know that address on its own. Omitted rather than sent as null, since a
+		// seller with none never put the field in what it signed.
+		...(payment.sellerReturnAddress === null ? {} : { sellerReturnAddress: payment.sellerReturnAddress }),
 		payByTime: payment.payByTime,
 		submitResultTime: payment.submitResultTime,
 		unlockTime: payment.unlockTime,
