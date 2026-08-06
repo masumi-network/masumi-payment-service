@@ -99,6 +99,20 @@ const PER_ASSET_CHANGE_LOVELACE = 500_000n;
  */
 const TOKEN_OUTPUT_LOVELACE = 2_000_000n;
 
+/**
+ * Marks a refusal that is not a failure.
+ *
+ * The head accepted the withdrawal but the request could not confirm it, so it
+ * settles asynchronously. The caller still gets a 502 — they asked a question
+ * that has no answer yet — but nothing about the head has gone wrong, and it
+ * must not be recorded as though it had.
+ */
+const ACCEPTED_BUT_UNCONFIRMED = Symbol.for('masumi.hydra.decommit.acceptedButUnconfirmed');
+
+function isAcceptedButUnconfirmed(error: unknown): boolean {
+	return typeof error === 'object' && error !== null && ACCEPTED_BUT_UNCONFIRMED in error;
+}
+
 export type ExecuteHydraDecommitParams = {
 	headId: string;
 	/**
@@ -437,9 +451,18 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					decommitTxId,
 					error: errorMessage(error),
 				});
-				throw createHttpError(
-					502,
-					`The withdrawal could not be confirmed as requested (${decommitTxId}). It stays pending until the head settles it`,
+				// Not a head error. The request was accepted and the withdrawal is
+				// settling normally; recording one here put a CommandFailed against
+				// the head on every single withdrawal, describing something that had
+				// already succeeded by the time anyone read it. Errors that routinely
+				// mean nothing are worse than none, because they are what teaches an
+				// operator to ignore the ones that matter.
+				throw Object.assign(
+					createHttpError(
+						502,
+						`The withdrawal could not be confirmed as requested (${decommitTxId}). It stays pending until the head settles it`,
+					),
+					{ [ACCEPTED_BUT_UNCONFIRMED]: true },
 				);
 			}
 			await prisma.hydraDecommit.updateMany({
@@ -480,7 +503,9 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					logger.error(`[HydraDecommit] could not fail the preparing withdrawal ${preparingId}`, { error: markError });
 				});
 		}
-		await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Decommit');
+		if (!isAcceptedButUnconfirmed(error)) {
+			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Decommit');
+		}
 		throw error;
 	}
 }

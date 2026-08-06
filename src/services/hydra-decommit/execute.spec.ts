@@ -43,9 +43,11 @@ jest.unstable_mockModule('@/utils/security/encryption', () => ({
 	decrypt: () => 'a '.repeat(23).trim() + ' b',
 }));
 
+const mockRecordHeadError = jest.fn() as AnyMock;
+
 jest.unstable_mockModule('@/routes/api/hydra/head', () => ({
 	verifyPersistedHydraHeadOnChain: async () => ({ headIdentifier: 'ab'.repeat(28) }),
-	recordHeadError: jest.fn(),
+	recordHeadError: mockRecordHeadError,
 	// A withdrawal needs a node that is answering and caught up, the same as a
 	// deposit does. Ready here; the refusal itself is covered where the guard lives.
 	assertNodeReadyForDeposit: async () => undefined,
@@ -152,6 +154,28 @@ describe('executeHydraDecommit request outcomes', () => {
 	 * Failed tells an operator "nothing left the head, safe to try again" while
 	 * the funds are on their way out.
 	 */
+	// Every withdrawal takes this path, so recording a head error here put a
+	// CommandFailed against the head each time, describing something that had
+	// already settled by the time anyone read it. Errors that routinely mean
+	// nothing are what teach an operator to ignore the ones that matter.
+	it('does not record a head error when the request was accepted but unconfirmed', async () => {
+		mockDecommitCall.mockRejectedValue(new HydraTransportAmbiguousError('POST outcome is ambiguous'));
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toThrow('stays pending');
+
+		expect(mockRecordHeadError).not.toHaveBeenCalled();
+	});
+
+	// A refusal the node actually answered with is a different matter: something
+	// about this head or this request is wrong and should be on the record.
+	it('records a head error when the node answers with a rejection', async () => {
+		mockDecommitCall.mockRejectedValue(new Error('DecommitInvalid: nope'));
+
+		await expect(executeHydraDecommit({ headId: 'head-1' })).rejects.toThrow('rejected the withdrawal');
+
+		expect(mockRecordHeadError).toHaveBeenCalled();
+	});
+
 	it('leaves an ambiguous request Pending for the head to settle', async () => {
 		mockDecommitCall.mockRejectedValue(new HydraTransportAmbiguousError('POST outcome is ambiguous'));
 
