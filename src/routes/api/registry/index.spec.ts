@@ -1080,6 +1080,80 @@ describe('registerAgentPost', () => {
 		});
 	});
 
+	it('stores an external recipient address when it is not a managed hot wallet', async () => {
+		const externalAddress =
+			'addr_test1qzpzat7l9gnr93e6wdut6dlegy692wtl6qjgtcqlx0gzu8e75hpk9m2rkhl0grfh7fau00slzung053y7vxj7hntcsq2fy7qc';
+		mockFindRecipientWallet.mockResolvedValue(null);
+		mockCreateRegistryRequest.mockResolvedValue(buildRegistryRequestResponse(null));
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					recipientWalletAddress: externalAddress,
+					name: 'Test Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: {
+						name: 'demo',
+						version: '1.0.0',
+					},
+					supportedPaymentSources: [freeCardanoSource()],
+					Author: {
+						name: 'Author',
+					},
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(200);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.recipientWalletAddress).toBe(
+			externalAddress,
+		);
+		expect(mockCreateRegistryRequest.mock.calls[0]?.[0]?.data?.RecipientWallet).toBeUndefined();
+	});
+
+	it('rejects external recipient addresses on the wrong network', async () => {
+		mockFindRecipientWallet.mockResolvedValue(null);
+
+		const { responseMock } = await testEndpoint({
+			endpoint: registerAgentPost,
+			requestProps: {
+				method: 'POST',
+				headers: { token: 'valid' },
+				body: {
+					network: Network.Preprod,
+					sellingWalletVkey: 'b'.repeat(56),
+					recipientWalletAddress:
+						'addr1qwrongnetwork000000000000000000000000000000000000000000000000000',
+					name: 'Test Agent',
+					description: 'Agent description',
+					apiBaseUrl: 'https://example.com/agent',
+					Tags: ['demo'],
+					Capability: {
+						name: 'demo',
+						version: '1.0.0',
+					},
+					supportedPaymentSources: [freeCardanoSource()],
+					Author: {
+						name: 'Author',
+					},
+					ExampleOutputs: [],
+				},
+			},
+		});
+
+		expect(responseMock.statusCode).toBe(400);
+		expect(JSON.stringify(responseMock._getJSONData())).toContain('does not match Preprod');
+		expect(mockCreateRegistryRequest).not.toHaveBeenCalled();
+	});
+
 	it('stores a normalized send funding lovelace override when provided', async () => {
 		mockCreateRegistryRequest.mockResolvedValue(buildRegistryRequestResponse(null, BigInt(5_000_000)));
 
