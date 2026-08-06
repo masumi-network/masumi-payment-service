@@ -182,7 +182,7 @@ const SUBMIT_RESULT_WINDOW_SLACK_MS = 1000 * 60 * 5;
  * Throws a terminal (non-deferred) error when neither window is open so the
  * caller marks the row for manual action rather than re-queueing it forever.
  */
-function resolveSubmitResultConstrainAfterMs(decodedContract: DecodedV1ContractDatum, nowMs: number): bigint {
+export function resolveSubmitResultConstrainAfterMs(decodedContract: DecodedV1ContractDatum, nowMs: number): bigint {
 	const cutoff = BigInt(nowMs + SUBMIT_RESULT_WINDOW_SLACK_MS);
 	if (decodedContract.resultTime > cutoff) {
 		return decodedContract.resultTime;
@@ -190,11 +190,28 @@ function resolveSubmitResultConstrainAfterMs(decodedContract: DecodedV1ContractD
 	if (decodedContract.resultHash != null && decodedContract.externalDisputeUnlockTime > cutoff) {
 		return decodedContract.externalDisputeUnlockTime;
 	}
-	throw new Error(
+	throw new SubmitResultWindowClosedError(
 		decodedContract.resultHash == null
 			? 'SubmitResult window closed: past submit_result_time and no on-chain result to rotate during the dispute window; manual intervention required'
 			: 'SubmitResult window closed: past both submit_result_time and external_dispute_unlock_time; manual intervention required',
 	);
+}
+
+/**
+ * The deadline has passed, so no retry can succeed.
+ *
+ * Typed because the difference matters to the caller. An ordinary failure is
+ * worth retrying — a busy wallet, a slow node — and the request is left where
+ * the next pass will pick it up. This one never becomes possible again, and a
+ * pass that takes one request per wallet then picks the same doomed request
+ * every round: the queue behind it starves while its own deadlines expire, one
+ * expiry cascading into the next.
+ */
+export class SubmitResultWindowClosedError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'SubmitResultWindowClosedError';
+	}
 }
 
 const markRequestFailed = makePaymentRequestFailureMarker({
@@ -1354,6 +1371,18 @@ async function runSubmitResultL2Pass(): Promise<void> {
 						// `{}` here, so every failure in this path logged as "L2
 						// submit-result failed {}" and said nothing about why.
 						const reason = error instanceof Error ? error.message : String(error);
+						if (error instanceof SubmitResultWindowClosedError) {
+							// Park it. Retrying cannot help, and this pass takes one
+							// request per wallet — so leaving it eligible meant picking the
+							// same doomed request every round while everything behind it
+							// waited, until their deadlines passed too.
+							logger.warn('L2 submit-result window closed; parking for manual action', {
+								requestId: request.id,
+								reason,
+							});
+							await markRequestFailed(request, error);
+							return;
+						}
 						if (isLookupDeferred(error)) {
 							logger.info('L2 submit-result deferred to next tick', { requestId: request.id, reason });
 						} else {
