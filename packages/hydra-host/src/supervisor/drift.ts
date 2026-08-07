@@ -170,11 +170,18 @@ export function shouldRestartForDrift(
 /**
  * Where the guard sits inside the node's own unsynced period.
  *
- * The guard exists to restart a node BEFORE it starts refusing input, so it has
- * to fire inside that window with enough room left for the restart and the
- * catch-up that follows. Six tenths leaves four for both.
+ * The guard exists to restart a node that is about to stop accepting commands,
+ * so it sits just inside the node's unsynced period.
+ *
+ * It was six tenths, which was wrong in a way only a live node showed: the
+ * Blockfrost backend's own steady-state drift on this rig is 120-250s against a
+ * 150s unsynced period, so a 90s guard put a perfectly serviceable node in
+ * permanent breach. Drift then PLATEAUS rather than improving, the
+ * progress re-anchor never fires, and the node was restarted once per cooldown
+ * forever — throwing away catch-up each time. The guard has to mean "about to
+ * be unusable", not "some fraction of the way there".
  */
-const GUARD_FRACTION_OF_UNSYNCED = 0.6;
+const GUARD_FRACTION_OF_UNSYNCED = 0.95;
 /** Degraded is advisory; half the guard is enough to separate it from healthy. */
 const TARGET_FRACTION_OF_GUARD = 0.5;
 

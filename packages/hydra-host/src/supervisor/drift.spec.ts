@@ -183,8 +183,8 @@ describe('deriveDriftThresholds', () => {
 	});
 
 	it('scales with the node rather than the host', () => {
-		expect(deriveDriftThresholds(150_000).guardMs).toBe(90_000);
-		expect(deriveDriftThresholds(1_800_000).guardMs).toBe(1_080_000);
+		expect(deriveDriftThresholds(150_000).guardMs).toBe(142_500);
+		expect(deriveDriftThresholds(1_800_000).guardMs).toBe(1_710_000);
 	});
 
 	// The shortest period an invite may sign, against the widest preprod block
