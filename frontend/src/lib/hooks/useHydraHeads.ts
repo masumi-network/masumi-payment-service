@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { handleApiCall } from '@/lib/utils';
+import { extractApiErrorMessage } from '@/lib/api-error';
 import type { Client } from '@/lib/api/generated/client';
 
 export type HydraHeadStatus =
@@ -1166,6 +1167,12 @@ export async function closeHydraHead(
     acknowledgeActiveEscrows?: boolean;
   },
 ) {
+  // Throws instead of toasting, unlike its siblings. The refusal this endpoint
+  // gives for a head that still holds escrows is not a dead end — it is the
+  // question the operator has to answer — so the caller needs the message rather
+  // than the user needing a toast. `onError` suppresses the default toast; the
+  // caller owns what happens next, including reporting a real failure.
+  let apiError: unknown = null;
   const response = await handleApiCall(
     () =>
       apiClient.post<HydraHeadLifecycleResponse>({
@@ -1173,8 +1180,16 @@ export async function closeHydraHead(
         url: '/hydra/head/close',
         body: payload,
       }),
-    { errorMessage: 'Failed to close Hydra head' },
+    {
+      errorMessage: 'Failed to close Hydra head',
+      onError: (error: unknown) => {
+        apiError = error;
+      },
+    },
   );
+  if (apiError !== null) {
+    throw new Error(extractApiErrorMessage(apiError, 'Failed to close Hydra head'));
+  }
 
   return ensureData(response?.data?.data, 'Hydra head close response was not returned by the API');
 }

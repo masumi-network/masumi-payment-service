@@ -1102,7 +1102,12 @@ export default function HydraHeadsPage() {
           // head, so it is what the operator is asked to confirm — rather than
           // a generic "are you sure" that carries none of the detail.
           const reason = error instanceof Error ? error.message : String(error);
-          if (!reason.includes('fanned out to L1')) throw error;
+          // Anything else is a real failure: this call no longer toasts for
+          // itself, so saying so here is what keeps it from failing silently.
+          if (!reason.includes('fanned out to L1')) {
+            toast.error(reason);
+            return;
+          }
           if (!window.confirm(`${reason}\n\nClose the head anyway?`)) return;
           await closeHydraHead(apiClient, { headId: head.id, acknowledgeActiveEscrows: true });
         }
