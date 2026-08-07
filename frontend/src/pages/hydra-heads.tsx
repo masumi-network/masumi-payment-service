@@ -1307,11 +1307,16 @@ export default function HydraHeadsPage() {
           pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false
         }
       />
+      {/* Not a refusal — closing with live escrows is offered and always was.
+          The dialog exists to price the choice: settling in the head takes
+          about a second per escrow and costs nothing, and closing swaps that
+          for the contestation period plus an L1 settlement each. */}
       <ConfirmDialog
         open={Boolean(pendingEscrowClose)}
         onClose={() => setPendingEscrowClose(null)}
-        title="Close the head anyway?"
+        title="Closing now will take a while"
         description={pendingEscrowClose?.reason ?? ''}
+        confirmLabel="Close anyway"
         onConfirm={handleConfirmEscrowClose}
         isLoading={
           pendingEscrowClose ? runningLifecycleHeadId === pendingEscrowClose.head.id : false

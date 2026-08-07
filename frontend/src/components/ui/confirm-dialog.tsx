@@ -15,6 +15,15 @@ interface ConfirmDialogProps {
   requireConfirmation?: boolean;
   confirmationText?: string;
   confirmationLabel?: string;
+  /**
+   * The confirm button's wording. Defaults to "Confirm".
+   *
+   * Worth setting wherever the dialog is talking someone out of something: a
+   * button that names the action ("Close anyway") is answerable on its own,
+   * while "Confirm" only means anything to a reader who still has the question
+   * in their head.
+   */
+  confirmLabel?: string;
   /** Above elevated agent dialog (AI agents opened over transactions). */
   elevatedChildStack?: boolean;
   /** Above elevated-child dialogs (e.g. confirm inside wallet opened from elevated agent). */
@@ -31,6 +40,7 @@ export function ConfirmDialog({
   requireConfirmation = false,
   confirmationText = 'DELETE',
   confirmationLabel,
+  confirmLabel = 'Confirm',
   elevatedChildStack,
   elevatedGrandchildStack,
 }: ConfirmDialogProps) {
@@ -118,7 +128,7 @@ export function ConfirmDialog({
             disabled={isLoading || (requireConfirmation && !isConfirmationValid)}
           >
             <span className="transition-opacity duration-150">
-              {isLoading ? <Spinner size={16} /> : 'Confirm'}
+              {isLoading ? <Spinner size={16} /> : confirmLabel}
             </span>
           </Button>
         </div>

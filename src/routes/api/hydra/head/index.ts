@@ -23,6 +23,7 @@ import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-h
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 import { readHeadParamDrift } from '@/services/hydra-host/param-drift';
 import { describeL2FundingBlock } from '@/utils/hydra/l2-funding-block';
+import { describeCloseWithActiveWork } from '@/utils/hydra/close-with-active-work';
 import { logger } from '@masumi/payment-core/logger';
 import {
 	buildValidatedHydraCommit,
@@ -1526,9 +1527,10 @@ export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscr
 							isEnabled: boolean;
 							isClosing: boolean;
 							initTxHash: string | null;
+							contestationPeriod: bigint;
 						}>
 					>(Prisma.sql`
-						SELECT "id", "status", "isEnabled", "isClosing", "initTxHash"
+						SELECT "id", "status", "isEnabled", "isClosing", "initTxHash", "contestationPeriod"
 						FROM "HydraHead"
 						WHERE "id" = ${headId}
 						FOR UPDATE
@@ -1587,9 +1589,7 @@ export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscr
 					if (!acknowledgedActiveEscrows && (pendingL2Transactions > 0 || activeEscrows > 0)) {
 						throw createHttpError(
 							409,
-							`Cannot close Hydra head with ${pendingL2Transactions} pending L2 transaction(s) and ` +
-								`${activeEscrows} active escrow output(s). They will be fanned out to L1 and have to be ` +
-								'collected there. Confirm to close anyway.',
+							describeCloseWithActiveWork(head.contestationPeriod, pendingL2Transactions, activeEscrows),
 						);
 					}
 
