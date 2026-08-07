@@ -9,6 +9,7 @@ import {
 	HydraNodeEvent,
 	StatusChangeData,
 	type DecommitSettledData,
+	type DepositRecordedData,
 	buildHydraHttpEndpoint,
 	getHydraPlaintextHosts,
 	type HydraConfirmedTransaction,
@@ -801,6 +802,27 @@ export class HydraConnectionManager {
 					error: error instanceof Error ? error.message : error,
 				});
 			});
+		});
+
+		// The deadline the head holds a deposit to, which only the head knows: it
+		// is written into the deposit datum from the drafting node's chain time,
+		// and neither the deposit transaction nor the moment the operator asked
+		// for the top-up can reproduce it. Recorded for the head's own deposits
+		// and the counterparty's alike, since the frame does not distinguish them
+		// — the update simply matches nothing for a deposit that is not ours.
+		head.mainNode.on(HydraNodeEvent.DepositRecorded, (data: DepositRecordedData) => {
+			void prisma.hydraTopup
+				.updateMany({
+					where: { hydraHeadId, depositTxHash: data.depositTxId, nodeDeadline: null },
+					data: { nodeDeadline: data.deadline },
+				})
+				.catch((error: unknown) => {
+					logger.error('[HydraConnectionManager] could not record a deposit deadline', {
+						hydraHeadId,
+						depositTxId: data.depositTxId,
+						error: error instanceof Error ? error.message : error,
+					});
+				});
 		});
 
 		head.mainNode.on(HydraNodeEvent.TxConfirmed, (txId: string, confirmedTransaction?: HydraConfirmedTransaction) => {

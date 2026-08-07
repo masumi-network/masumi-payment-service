@@ -19,6 +19,7 @@ import {
 	decommitInvalidMessageSchema,
 	greetingsIdentityMessageSchema,
 	greetingsSnapshotMessageSchema,
+	commitRecordedMessageSchema,
 	finalizedUtxoOf,
 	hasFinalizedUtxoField,
 	headClockMessageSchema,
@@ -42,6 +43,7 @@ import { describeDecommitInvalidReason, describePostTxError } from './post-tx-er
 import {
 	DecommitDistributedValue,
 	DecommitSettledData,
+	DepositRecordedData,
 	HydraConfirmedTransaction,
 	HydraNodeEvent,
 	HydraTransaction,
@@ -714,6 +716,15 @@ export class HydraNode extends EventEmitter {
 				this.recordFinalizedFanout(headIsFinalizedMessageSchema.parse(message));
 			}
 
+			// A deposit stays pending for a deposit period or more, so a service
+			// that reconnected in between meets its CommitRecorded only here. Held
+			// with the rest until the live session authenticates, since it is
+			// written to the database like any other persisted transition.
+			if (parsedEnvelope.tag === 'CommitRecorded') {
+				const recorded = this.readDepositRecorded(message);
+				if (recorded) this.rememberReplayedDeposit(recorded);
+			}
+
 			// Before the snapshot that reflects it, always: the head reports the
 			// request first, and the transaction it carries is what accounts for the
 			// value change that snapshot signs.
@@ -1023,6 +1034,48 @@ export class HydraNode extends EventEmitter {
 		for (const data of pending) this.emit(HydraNodeEvent.DecommitSettled, data);
 	}
 
+	/**
+	 * Deposits seen before the live session was authenticated.
+	 *
+	 * A deposit is recorded once and then sits for a deposit period or more, so
+	 * a service that reconnects in between only ever sees its CommitRecorded in
+	 * the replayed history. Dropping it left the top-up with no deadline at all
+	 * — the state this whole path exists to fix.
+	 *
+	 * Keyed by deposit id rather than appended, because the same deposit is
+	 * replayed on every connection and re-emitting it costs a write each time.
+	 */
+	private _replayedDeposits = new Map<string, DepositRecordedData>();
+
+	private rememberReplayedDeposit(data: DepositRecordedData): void {
+		this._replayedDeposits.set(data.depositTxId, data);
+		if (this._replayedDeposits.size > MAX_REPLAYED_DECOMMITS) {
+			const oldest = this._replayedDeposits.keys().next();
+			if (!oldest.done) this._replayedDeposits.delete(oldest.value);
+		}
+	}
+
+	private flushReplayedDeposits(): void {
+		if (this._replayedDeposits.size === 0) return;
+		const pending = [...this._replayedDeposits.values()];
+		this._replayedDeposits.clear();
+		for (const data of pending) this.emit(HydraNodeEvent.DepositRecorded, data);
+	}
+
+	/**
+	 * A deposit frame's deadline, or undefined if it is not a usable date.
+	 *
+	 * Parsed rather than trusted: the deadline is written straight to the
+	 * database and shown to an operator deciding whether to recover funds, so an
+	 * unparseable one is better absent than stored as Invalid Date.
+	 */
+	private readDepositRecorded(message: unknown): DepositRecordedData | undefined {
+		const recorded = commitRecordedMessageSchema.parse(message);
+		const deadline = new Date(recorded.deadline);
+		if (!Number.isFinite(deadline.getTime())) return undefined;
+		return { depositTxId: recorded.pendingDeposit, deadline };
+	}
+
 	private processStatus(rawMessage: string) {
 		let envelope: ReturnType<typeof messageSchema.parse>;
 		// Validated with every other frame below, but emitted only once the live
@@ -1030,6 +1083,7 @@ export class HydraNode extends EventEmitter {
 		// it, this one writes to the database, so it waits for the same proof of
 		// identity every other persisted transition does.
 		let decommitSettled: DecommitSettledData | undefined;
+		let depositRecorded: DepositRecordedData | undefined;
 		try {
 			const message = parseBoundedJsonFrame(rawMessage);
 			this.assertPersistenceReplayIsSupported(message);
@@ -1094,6 +1148,12 @@ export class HydraNode extends EventEmitter {
 				this._pendingIncrementCount += 1;
 				this.recordPendingIncrementUtxos(message);
 			}
+			// The deadline the head will hold this deposit to. Set from the chain
+			// time of whichever node drafted the deposit, so it cannot be derived
+			// from the transaction or from when the operator asked.
+			if (envelope.tag === 'CommitRecorded') {
+				depositRecorded = this.readDepositRecorded(message);
+			}
 			// A withdrawal's outcome, reported once per decommit. Approved is the
 			// point of no return — the head has signed the removal, so the value is
 			// gone from it whatever L1 does next — which is why it is surfaced
@@ -1148,6 +1208,7 @@ export class HydraNode extends EventEmitter {
 				// just been rejected. Keeping it would mean applying, on the next
 				// authenticated session, outcomes this node never accepted.
 				this._replayedDecommits = [];
+				this._replayedDeposits.clear();
 				this.emit(LIVE_SESSION_REJECTED_EVENT, identityError);
 				this._connection.invalidate(identityError);
 			}
@@ -1161,10 +1222,13 @@ export class HydraNode extends EventEmitter {
 			// only in the replayed history — and dropping it left the withdrawal
 			// reading as still paying out forever, with nothing to correct it.
 			if (decommitSettled) this.rememberReplayedDecommit(decommitSettled);
+			if (depositRecorded) this.rememberReplayedDeposit(depositRecorded);
 			return;
 		}
 		this.flushReplayedDecommits();
+		this.flushReplayedDeposits();
 		if (decommitSettled) this.emit(HydraNodeEvent.DecommitSettled, decommitSettled);
+		if (depositRecorded) this.emit(HydraNodeEvent.DepositRecorded, depositRecorded);
 		const changeData = extractStatusChangeData(rawMessage, this._expectedHeadId);
 		if (changeData && changeData.status !== HydraHeadStatus.Final) {
 			// A history replay can contain a prior Final while the authenticated

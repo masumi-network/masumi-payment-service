@@ -130,6 +130,24 @@ export const decommitApprovedMessageSchema = z.looseObject({
 });
 
 /**
+ * A deposit the head has seen on chain, and the deadline it will hold it to.
+ *
+ * The deadline is written into the deposit datum by whichever node drafted the
+ * deposit, from that node's own chain time. Nothing this service holds can
+ * reproduce it — not the transaction's validity interval, not the time the
+ * operator asked for the top-up — so this frame is the only place it can be
+ * learned. `pendingDeposit` is the deposit transaction's id, which is what ties
+ * it back to a HydraTopup row.
+ */
+export const commitRecordedMessageSchema = z.looseObject({
+	tag: z.literal('CommitRecorded'),
+	headId: canonicalHydraHeadIdSchema,
+	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
+	pendingDeposit: canonicalHydraTransactionIdSchema,
+	deadline: z.string().min(1),
+});
+
+/**
  * An output's value as a head reports it.
  *
  * Lovelace sits at the top level under its own name; every other key is a policy

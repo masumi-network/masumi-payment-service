@@ -781,6 +781,78 @@ describe('HydraNode', () => {
 			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
 		});
 
+		// The deadline a head holds a deposit to is written into the deposit's
+		// datum from the drafting node's chain time. Nothing this service holds
+		// can reproduce it, so if this frame is not read the deadline is simply
+		// unknown — which is how a listing came to derive it from the deposit
+		// transaction's own TTL and report healthy deposits as long expired.
+		describe('deposit deadlines', () => {
+			const DEPOSIT_TX_ID = 'ab'.repeat(32);
+			const DEADLINE = '2026-08-07T11:56:24.073Z';
+
+			function commitRecorded(deadline: string = DEADLINE) {
+				return {
+					tag: 'CommitRecorded',
+					headId: HEAD_ID_A,
+					seq: 22,
+					pendingDeposit: DEPOSIT_TX_ID,
+					deadline,
+					utxoToCommit: {},
+				};
+			}
+
+			it('reports the deadline the head states for a deposit', async () => {
+				const { node, liveConnection } = await startSignedNode();
+				const seen: Array<{ depositTxId: string; deadline: Date }> = [];
+				node.on(HydraNodeEvent.DepositRecorded, (data) => seen.push(data as { depositTxId: string; deadline: Date }));
+
+				liveConnection.emit('message', JSON.stringify(commitRecorded()));
+
+				expect(seen).toEqual([{ depositTxId: DEPOSIT_TX_ID, deadline: new Date(DEADLINE) }]);
+			});
+
+			// A deposit sits pending for a deposit period or more, so a service that
+			// reconnects in between meets its CommitRecorded only in the replay.
+			it('holds a deposit seen during replay until the session authenticates', async () => {
+				const node = new HydraNode({
+					httpUrl: 'http://localhost:4001',
+					expectedHeadId: HEAD_ID_A,
+					snapshotVerificationKeys: TEST_PARTIES.map(({ cborVerificationKey }) => cborVerificationKey),
+					expectedNodeVerificationKey: TEST_PARTIES[0].cborVerificationKey,
+					trustLocalNodeSnapshotMetadata: true,
+				});
+				const connectPromise = node.connect();
+				const historyConnection = mockConnectionInstances[0];
+				const liveConnection = mockConnectionInstances[1];
+				const seen: Array<{ depositTxId: string; deadline: Date }> = [];
+				node.on(HydraNodeEvent.DepositRecorded, (data) => seen.push(data as { depositTxId: string; deadline: Date }));
+
+				// Arrives before anything has authenticated the session.
+				historyConnection.emit('message', JSON.stringify(commitRecorded()));
+				expect(seen).toEqual([]);
+
+				liveConnection.emit('message', JSON.stringify(headIsOpen()));
+				liveConnection.emit('message', JSON.stringify(liveGreetings()));
+				await connectPromise;
+				// Any authenticated frame drains what the replay held back.
+				liveConnection.emit('message', JSON.stringify(liveGreetings()));
+
+				expect(seen).toEqual([{ depositTxId: DEPOSIT_TX_ID, deadline: new Date(DEADLINE) }]);
+			});
+
+			// Written straight to the database and shown to someone deciding whether
+			// to recover funds, so an unusable date is better absent than stored.
+			it('reports nothing for a deadline that is not a date', async () => {
+				const { node, liveConnection } = await startSignedNode();
+				const seen: unknown[] = [];
+				node.on(HydraNodeEvent.DepositRecorded, (data) => seen.push(data));
+
+				liveConnection.emit('message', JSON.stringify(commitRecorded('not-a-date')));
+
+				expect(seen).toEqual([]);
+			});
+		});
+
 		// Hydra 2.3 stopped putting the opening ledger on HeadIsOpen and reports it
 		// on Greetings.snapshotUtxo instead. A head that opened with no commits
 		// never signs a snapshot until its first deposit is absorbed, so this is

@@ -72,6 +72,25 @@ export enum HydraNodeEvent {
 	 * the head at `Approved`; `Finalized` only adds that L1 has it.
 	 */
 	DecommitSettled = 'DecommitSettled',
+	/**
+	 * The head has observed a deposit on chain and stated the deadline it holds
+	 * it to.
+	 *
+	 * Emitted for the head's own top-ups and the counterparty's alike; a listener
+	 * matches on the deposit transaction id and ignores what it does not know.
+	 * The deadline is set from the drafting node's chain time and is not
+	 * derivable from anything this service holds, so it is only ever learned
+	 * here.
+	 */
+	DepositRecorded = 'DepositRecorded',
+}
+
+/** A deposit the head has seen, and the deadline it will hold it to. */
+export interface DepositRecordedData {
+	/** The deposit transaction's id, which identifies the top-up it belongs to. */
+	depositTxId: string;
+	/** When the head stops holding the deposit, from the deposit's own datum. */
+	deadline: Date;
 }
 
 /** What a head decided about a requested withdrawal. */

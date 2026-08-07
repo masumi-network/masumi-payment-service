@@ -1999,6 +1999,17 @@ model HydraTopup {
   /// itself is built.
   invalidHereafterSlot BigInt?
 
+  /// The deposit deadline the head itself enforces, as the node reported it on
+  /// CommitRecorded. This is the value written into the deposit datum by the
+  /// node that drafted it, and the only authoritative one: it is set from that
+  /// node's chain time, so it cannot be derived from anything this service
+  /// knows. Null until the node has observed the deposit on chain.
+  ///
+  /// Emphatically NOT invalidHereafterSlot above, which is the deposit
+  /// transaction's own submission TTL and stops meaning anything once the
+  /// transaction is in a block.
+  nodeDeadline DateTime?
+
   /// Lovelace committed by this top-up (sum of the committed UTxOs), for display.
   committedLovelace BigInt
 

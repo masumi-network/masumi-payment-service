@@ -1,7 +1,5 @@
 import createHttpError from 'http-errors';
-import { SLOT_CONFIG_NETWORK } from '@meshsdk/core';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
-import { convertNetwork } from '@/utils/converter/network-convert';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraTopupStatus } from '@/generated/prisma/client';
@@ -57,12 +55,19 @@ export const listTopupsOutput = z.object({
 			committedLovelace: z.string(),
 			committedAssets: z.record(z.string(), z.string()),
 			/**
-			 * When the head stops being able to absorb this deposit.
+			 * When the deposit may be sent back, from the deposit's own datum.
 			 *
-			 * A deposit confirming on L1 is only half the story: the head folds it
-			 * in with a snapshot both parties sign, and if that has not happened by
-			 * this moment it never will. Without the deadline the UI could only say
-			 * "being folded in", which stays true-looking forever.
+			 * The head writes this as `deposit + 3·depositPeriod` and will not
+			 * release the funds before it, so it is the moment recovery becomes
+			 * possible — NOT the last moment the head might still take the deposit,
+			 * which is `absorbBy` below and a whole period earlier.
+			 *
+			 * Null until the node has observed the deposit and said so. It is set
+			 * from the drafting node's chain time, so there is nothing to derive it
+			 * from in the meantime. It was previously derived from the deposit
+			 * transaction's own validity TTL, which is a different quantity
+			 * entirely and read roughly half an hour early — making healthy
+			 * deposits look expired while they were still perfectly on track.
 			 */
 			deadline: z.string().nullable(),
 			/**
@@ -74,6 +79,15 @@ export const listTopupsOutput = z.object({
 			 * unusable. Reporting only "Confirmed" made that gap look like success.
 			 */
 			usableFrom: z.string().nullable(),
+			/**
+			 * The last moment the head will still absorb this deposit.
+			 *
+			 * A node refuses a deposit that has less than one deposit period left
+			 * before its deadline, so the window to be folded in closes a period
+			 * before the deadline does — and the gap between the two is dead time
+			 * in which the deposit can neither be taken nor recovered.
+			 */
+			absorbBy: z.string().nullable(),
 			/**
 			 * When the node was asked to send this deposit back.
 			 *
@@ -111,6 +125,19 @@ export const recoverTopupPost = adminAuthenticatedEndpointFactory.build({
 });
 
 /**
+ * A deposit milestone, expressed as whole deposit periods from the deadline.
+ *
+ * The head states one time — the deadline in the deposit's datum — and the two
+ * that matter operationally sit a fixed number of periods before it. Anchored
+ * on the deadline rather than on the deposit time because the deadline is the
+ * only one of the three the head ever tells anyone.
+ */
+function shiftPeriods(deadline: Date | null, periods: number, depositPeriodSeconds: number): string | null {
+	if (deadline === null) return null;
+	return new Date(deadline.getTime() + periods * depositPeriodSeconds * 1000).toISOString();
+}
+
+/**
  * Deposits into this head, newest first.
  *
  * A top-up is not one transaction and not quick: an exact amount is split off
@@ -133,11 +160,8 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 		if (!head) {
 			throw createHttpError(404, 'Hydra head not found');
 		}
-		const slotConfig = SLOT_CONFIG_NETWORK[convertNetwork(head.HydraRelation.network)];
 		// The period this head runs on, as signed into the invite that opened it.
 		const depositPeriodSeconds = head.Invite?.depositPeriodSeconds ?? DEFAULT_PERIODS.depositPeriodSeconds;
-		const deadlineMsOf = (slot: bigint) =>
-			slotConfig.zeroTime + (Number(slot) - slotConfig.zeroSlot) * slotConfig.slotLength;
 
 		const rows = await prisma.hydraTopup.findMany({
 			where: { hydraHeadId: input.headId },
@@ -153,23 +177,19 @@ export const listTopupsGet = adminAuthenticatedEndpointFactory.build({
 				depositTxHash: row.depositTxHash,
 				splitTxHash: row.splitTxHash,
 				committedLovelace: row.committedLovelace.toString(),
-				// Both are unknown until the deposit is built: a preparing top-up has
-				// no signed validity slot to derive them from.
-				deadline:
-					row.invalidHereafterSlot === null ? null : new Date(deadlineMsOf(row.invalidHereafterSlot)).toISOString(),
-				// The node writes the deadline as `deposit + 3·DP` and will not touch
-				// the deposit before `deposit + DP`, so a third of the way there is
-				// exactly when it becomes eligible.
-				// Two periods before the deadline, not a third of the way from
-				// `createdAt`. The node writes the deadline as `deposit + 3·DP` and
-				// will not take the deposit before `deposit + DP`. Measuring from
-				// `createdAt` was right only while the row was created at deposit
-				// time; it is now created when the operator asks, a whole pre-split
-				// earlier, which pushed the reported time too early.
-				usableFrom:
-					row.invalidHereafterSlot === null
-						? null
-						: new Date(deadlineMsOf(row.invalidHereafterSlot) - 2 * depositPeriodSeconds * 1000).toISOString(),
+				// All three come from the one deadline the head itself stated, and are
+				// null together until it has: the deadline is set from the drafting
+				// node's chain time, and neither the deposit transaction nor the time
+				// the operator asked can stand in for it. Deriving them from the
+				// transaction's validity TTL, as this once did, read about half an
+				// hour early and made healthy deposits look expired.
+				deadline: row.nodeDeadline?.toISOString() ?? null,
+				// The node writes the deadline as `deposit + 3·DP` and will not take
+				// the deposit before `deposit + DP`, which is two periods before it.
+				usableFrom: shiftPeriods(row.nodeDeadline, -2, depositPeriodSeconds),
+				// And refuses one with less than a period left, which closes the
+				// window a period before the deadline rather than at it.
+				absorbBy: shiftPeriods(row.nodeDeadline, -1, depositPeriodSeconds),
 				committedAssets: (row.committedAssets ?? {}) as Record<string, string>,
 				recoveryRequestedAt: row.recoveryRequestedAt?.toISOString() ?? null,
 			})),
