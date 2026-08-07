@@ -22,6 +22,7 @@ import { recordHeadError } from '@/services/hydra-head-error/record';
 import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 import { readHeadParamDrift } from '@/services/hydra-host/param-drift';
+import { describeL2FundingBlock } from '@/utils/hydra/l2-funding-block';
 import { logger } from '@masumi/payment-core/logger';
 import {
 	buildValidatedHydraCommit,
@@ -952,24 +953,16 @@ export const headConnectionSchemaOutput = z.object({
 /**
  * Whether this node holds enough inside the head to build a transaction there.
  *
- * Only asked of an Open head: before that there is nothing to hold funds in,
- * and afterwards nothing left to build. A head this service cannot currently
- * read answers null — unknown, which the connection fields above already
- * report, rather than a confident "blocked" derived from no evidence.
+ * The decision itself lives in `@/utils/hydra/l2-funding-block`; this only
+ * fetches what it needs. Reading the balance can fail, and this is decoration
+ * on a readiness answer — the operator still needs the rest of it, so a failed
+ * snapshot read must not take the endpoint down with it.
  */
 async function readL2FundingBlock(headId: string, status: HydraHeadStatus): Promise<string | null> {
 	if (status !== HydraHeadStatus.Open) return null;
 	try {
-		const balance = await getOwnInHeadBalance(headId);
-		if (balance == null || !balance.connected || balance.utxoCount > 0) return null;
-		return (
-			"This node's wallet holds no UTxOs inside the head, so it cannot build L2 transactions. " +
-			'Every action from this side spends a script output and needs one of this wallet’s own in-head ' +
-			'outputs for collateral. Top the head up from this node; requests already made resume on their own.'
-		);
+		return describeL2FundingBlock(status, await getOwnInHeadBalance(headId));
 	} catch {
-		// Decoration on a readiness answer. The operator still needs the rest of
-		// it, so a failed snapshot read must not take the endpoint down.
 		return null;
 	}
 }
