@@ -153,6 +153,25 @@ export type NodeRecord = {
 	 * silent no-op.
 	 */
 	restartRequested?: boolean;
+	/**
+	 * When the chain follower first passed the drift guard without recovering.
+	 *
+	 * A restart is the only way a Blockfrost-backed node ever closes a gap: its
+	 * delay-free catch-up loop runs once at startup, and the steady-state poll it
+	 * then enters sleeps one average block time before every single block, so it
+	 * tracks the tip at best and never works off a backlog. A node that has
+	 * fallen behind therefore stays behind until something restarts it.
+	 *
+	 * Recorded rather than acted on immediately, because a node that is behind
+	 * and *closing the gap* is doing exactly what it should — that is the same
+	 * catch-up loop working. What warrants a restart is being behind and not
+	 * improving. Cleared as soon as drift drops back under the guard.
+	 */
+	driftBreachSince?: string;
+	/** Drift when the current breach began, so progress can be told from a stall. */
+	driftBreachSeconds?: number;
+	/** Guards against a node that restarts, fails to catch up, and restarts again. */
+	lastDriftRestartAt?: string;
 };
 
 export function isKeyMaterialReadable(record: NodeRecord): boolean {

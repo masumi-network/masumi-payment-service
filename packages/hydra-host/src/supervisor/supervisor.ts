@@ -21,7 +21,7 @@ import type { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
 import { buildHydraNodeArgs } from './args.js';
 import { waitForDrain } from './drain.js';
-import { classifyDrift, measureDrift, validateDriftThresholds, type SlotConfig } from './drift.js';
+import { classifyDrift, driftBreachFields, measureDrift, validateDriftThresholds, type SlotConfig } from './drift.js';
 import { planNodeAction, shouldAdoptAsRunning, type NodeObservation, type PlanLimits } from './plan.js';
 import { NodeProcessManager } from './process.js';
 import { unwedgeNode } from './unwedge.js';
@@ -213,17 +213,20 @@ export class Supervisor {
 			}
 			const sample = measureDrift(slot, this.slotConfig, Date.now());
 			driftSeconds = Math.round(sample.driftMs / 1000);
-			// Measured always, judged only once the node says it is in sync.
+			// Judged whether or not the node says it is in sync.
 			//
-			// The verdict drives a restart, and a node that is still catching up is
-			// behind by definition — judging it would restart it for doing exactly
-			// what it is supposed to be doing, throwing away the progress it had
-			// made and guaranteeing it never finishes. Restarting is for a node
-			// that believes it is synced and is not; waiting is for one that knows
-			// it is behind.
-			if (chain.synced) {
-				drift = classifyDrift(sample, thresholds);
-			}
+			// It used to be judged only when the node reported InSync, to avoid
+			// restarting one that was legitimately catching up. That reasoning
+			// assumed catching up always ends. With the Blockfrost backend it does
+			// not: the delay-free catch-up loop runs once at startup, and the poll
+			// loop it then enters sleeps a whole average block time before every
+			// block, so a node that falls behind reports `CatchingUp` forever and
+			// was never judged, never restarted, and never recovered.
+			//
+			// Telling "catching up" from "stuck" is not this verdict's job — both
+			// look identical in one sample. The plan decides, on whether the gap is
+			// closing across ticks.
+			drift = classifyDrift(sample, thresholds);
 		}
 
 		return {
@@ -268,6 +271,7 @@ export class Supervisor {
 				drift: observation.drift,
 				driftSeconds: observation.driftSeconds,
 			},
+			...driftBreachFields(current, observation),
 			...(promote && shouldAdoptAsRunning(current, observation) ? { state: 'Running' as const } : {}),
 			...(healthy && current.startAttempts !== 0 ? { startAttempts: 0 } : {}),
 		}));
@@ -300,7 +304,18 @@ export class Supervisor {
 				await this.stop(record, action.reason);
 				// Clear the request before starting, so a restart that fails partway
 				// is retried by the normal Start path rather than looping here.
-				await this.store.update(record.nodeId, (current) => ({ ...current, restartRequested: false }));
+				//
+				// The breach is cleared and stamped in the same write: the node is
+				// about to re-run its catch-up, so the stall that justified this
+				// restart is answered, and the stamp is what stops a node that cannot
+				// catch up from restarting every couple of minutes forever.
+				await this.store.update(record.nodeId, (current) => ({
+					...current,
+					restartRequested: false,
+					driftBreachSince: undefined,
+					driftBreachSeconds: undefined,
+					lastDriftRestartAt: new Date().toISOString(),
+				}));
 				await this.start(record);
 				return;
 			case 'Unwedge':

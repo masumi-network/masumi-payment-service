@@ -2,7 +2,11 @@ import { describe, expect, it } from '@jest/globals';
 import {
 	DriftError,
 	DriftThresholdError,
+	DRIFT_RESTART_COOLDOWN_MS,
+	DRIFT_STALL_MS,
 	classifyDrift,
+	driftBreachFields,
+	shouldRestartForDrift,
 	measureDrift,
 	slotToChainTimeMs,
 	validateDriftThresholds,
@@ -80,5 +84,85 @@ describe('classifyDrift', () => {
 		expect(classifyDrift(sampleAt(180_001), thresholds)).toBe('Degraded');
 		expect(classifyDrift(sampleAt(399_999), thresholds)).toBe('Degraded');
 		expect(classifyDrift(sampleAt(400_000), thresholds)).toBe('Unsynced');
+	});
+});
+
+describe('driftBreachFields', () => {
+	const NOW = 1_700_000_000_000;
+
+	it('opens a breach the first time drift passes the guard', () => {
+		expect(driftBreachFields({}, { drift: 'Unsynced', driftSeconds: 400, nowMs: NOW })).toEqual({
+			driftBreachSince: new Date(NOW).toISOString(),
+			driftBreachSeconds: 400,
+		});
+	});
+
+	// The whole point of the field: a node closing the gap is the catch-up loop
+	// working, and restarting it there throws the progress away.
+	it('re-anchors while the gap is closing, so a catching-up node never accumulates a stall', () => {
+		const open = { driftBreachSince: new Date(NOW).toISOString(), driftBreachSeconds: 400 };
+		expect(driftBreachFields(open, { drift: 'Unsynced', driftSeconds: 300, nowMs: NOW + 30_000 })).toEqual({
+			driftBreachSince: new Date(NOW + 30_000).toISOString(),
+			driftBreachSeconds: 300,
+		});
+	});
+
+	it('leaves the breach untouched while drift is stuck, so its age accumulates', () => {
+		const open = { driftBreachSince: new Date(NOW).toISOString(), driftBreachSeconds: 400 };
+		expect(driftBreachFields(open, { drift: 'Unsynced', driftSeconds: 402, nowMs: NOW + 30_000 })).toEqual({});
+	});
+
+	// Preprod block gaps reach 69s unaided, so small movement is noise.
+	it('treats a movement smaller than the epsilon as no progress', () => {
+		const open = { driftBreachSince: new Date(NOW).toISOString(), driftBreachSeconds: 400 };
+		expect(driftBreachFields(open, { drift: 'Unsynced', driftSeconds: 397, nowMs: NOW + 30_000 })).toEqual({});
+	});
+
+	it('clears the breach once drift is back under the guard', () => {
+		const open = { driftBreachSince: new Date(NOW).toISOString(), driftBreachSeconds: 400 };
+		expect(driftBreachFields(open, { drift: 'Healthy', driftSeconds: 10, nowMs: NOW + 30_000 })).toEqual({
+			driftBreachSince: undefined,
+			driftBreachSeconds: undefined,
+		});
+	});
+
+	it('writes nothing when there is no breach and none was recorded', () => {
+		expect(driftBreachFields({}, { drift: 'Healthy', driftSeconds: 10, nowMs: NOW })).toEqual({});
+	});
+});
+
+describe('shouldRestartForDrift', () => {
+	const NOW = 1_700_000_000_000;
+
+	it('does not restart a node that has never breached', () => {
+		expect(shouldRestartForDrift({}, NOW)).toBe(false);
+	});
+
+	it('does not restart before the stall window has elapsed', () => {
+		const since = new Date(NOW - (DRIFT_STALL_MS - 1_000)).toISOString();
+		expect(shouldRestartForDrift({ driftBreachSince: since }, NOW)).toBe(false);
+	});
+
+	it('restarts once the node has been stuck for the stall window', () => {
+		const since = new Date(NOW - DRIFT_STALL_MS).toISOString();
+		expect(shouldRestartForDrift({ driftBreachSince: since }, NOW)).toBe(true);
+	});
+
+	// A node that restarts and still cannot catch up must not restart every
+	// couple of minutes forever.
+	it('holds off inside the cooldown after a previous drift restart', () => {
+		const since = new Date(NOW - DRIFT_STALL_MS).toISOString();
+		const last = new Date(NOW - (DRIFT_RESTART_COOLDOWN_MS - 1_000)).toISOString();
+		expect(shouldRestartForDrift({ driftBreachSince: since, lastDriftRestartAt: last }, NOW)).toBe(false);
+	});
+
+	it('allows another restart once the cooldown has passed', () => {
+		const since = new Date(NOW - DRIFT_STALL_MS).toISOString();
+		const last = new Date(NOW - DRIFT_RESTART_COOLDOWN_MS).toISOString();
+		expect(shouldRestartForDrift({ driftBreachSince: since, lastDriftRestartAt: last }, NOW)).toBe(true);
+	});
+
+	it('ignores an unparseable timestamp rather than restarting on it', () => {
+		expect(shouldRestartForDrift({ driftBreachSince: 'not-a-date' }, NOW)).toBe(false);
 	});
 });

@@ -7,6 +7,7 @@
  */
 
 import type { NodeRecord } from '../registry/types.js';
+import { shouldRestartForDrift } from './drift.js';
 
 export type SupervisorAction =
 	/** Do nothing this tick. */
@@ -165,10 +166,22 @@ export function planNodeAction(record: NodeRecord, observation: NodeObservation,
 		return { kind: 'Restart', reason: 'restart requested through the API' };
 	}
 
-	if (observation.drift === 'Unsynced') {
+	// A restart is the only thing that closes a chain-follower gap. The node's
+	// delay-free catch-up runs once, at startup; the poll loop it then enters
+	// sleeps an average block time before every block, so it tracks the tip at
+	// best and never works off a backlog. Left alone, a node that falls behind
+	// reports "catching up" forever and stops accepting input.
+	//
+	// Waited out rather than acted on at the first breach, because a node that
+	// is behind and closing the gap is that same catch-up loop doing its job —
+	// restarting it there would throw away the progress. `driftBreachSince` is
+	// re-anchored by progress, so its age is time spent behind AND stuck.
+	if (shouldRestartForDrift(record, observation.nowMs)) {
 		return {
 			kind: 'Restart',
-			reason: 'chain follower drift passed the guard; the node will reject input until restarted',
+			reason:
+				`chain follower has been ${observation.driftSeconds ?? '?'}s behind without closing the gap; ` +
+				'only a restart re-runs the catch-up that recovers it',
 		};
 	}
 

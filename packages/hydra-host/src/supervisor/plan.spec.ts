@@ -76,8 +76,9 @@ describe('planNodeAction', () => {
 		});
 	});
 
-	it('restarts a node whose drift passed the guard', () => {
-		const action = planNodeAction(record(), observe({ drift: 'Unsynced' }), LIMITS);
+	it('restarts a node that has been past the guard without closing the gap', () => {
+		const stuck = record({ driftBreachSince: new Date(NOW - 5 * 60_000).toISOString(), driftBreachSeconds: 400 });
+		const action = planNodeAction(stuck, observe({ drift: 'Unsynced', driftSeconds: 400 }), LIMITS);
 		expect(action.kind).toBe('Restart');
 	});
 
@@ -166,30 +167,51 @@ describe('shouldAdoptAsRunning', () => {
 });
 
 /**
- * A node that is behind and knows it is a node to leave alone.
+ * A node that is behind is not automatically a node that is broken.
  *
- * Restarting one throws away the catch-up it had made and starts it again from
- * the same checkpoint, so it can never finish — a machine that slept for a few
- * hours would restart forever. The verdict exists for a node that believes it
- * is synced and is not; a catching-up node reports no verdict at all, however
- * far behind it says it is.
+ * With the Blockfrost backend, being behind is the normal state on the way up:
+ * the follower's delay-free catch-up runs at startup and closes the gap at
+ * roughly a block a second. Restarting it mid-catch-up throws that progress
+ * away and starts it again from the same checkpoint, so it never finishes.
+ *
+ * What cannot fix itself is being behind and STANDING STILL, which is where the
+ * same node ends up once catch-up has run: from then on it sleeps an average
+ * block time before every block and can only track the tip. Only a restart
+ * re-runs the catch-up, so the plan waits for a stall rather than a verdict.
  */
-describe('planNodeAction while the node is catching up', () => {
-	it('leaves a catching-up node alone however far behind it is', () => {
-		const action = planNodeAction(record(), observe({ chainSynced: false, drift: null, driftSeconds: 54_700 }), LIMITS);
+describe('planNodeAction while the node is behind', () => {
+	it('leaves a node that is closing the gap alone, however far behind it is', () => {
+		// No breach recorded: driftBreachFields re-anchors on every improvement,
+		// so a node making progress never presents one.
+		const action = planNodeAction(record(), observe({ chainSynced: false, drift: 'Unsynced', driftSeconds: 54_700 }), LIMITS);
 
 		expect(action.kind).not.toBe('Restart');
 	});
 
-	// The guard still has to fire for the case it was written for: a node that
-	// claims to be in sync while its follower has fallen behind.
-	it('still restarts a node that claims sync while drifting', () => {
-		const action = planNodeAction(
-			record(),
-			observe({ chainSynced: true, drift: 'Unsynced', driftSeconds: 200 }),
-			LIMITS,
-		);
+	it('leaves a node alone whose breach is younger than the stall window', () => {
+		const fresh = record({ driftBreachSince: new Date(NOW - 30_000).toISOString(), driftBreachSeconds: 400 });
+		const action = planNodeAction(fresh, observe({ drift: 'Unsynced', driftSeconds: 400 }), LIMITS);
+
+		expect(action.kind).not.toBe('Restart');
+	});
+
+	// The case the guard was written for, and the one that stranded three heads:
+	// a follower stuck behind, reporting "catching up" forever.
+	it('restarts a node stuck behind the tip even while it reports catching up', () => {
+		const stuck = record({ driftBreachSince: new Date(NOW - 5 * 60_000).toISOString(), driftBreachSeconds: 400 });
+		const action = planNodeAction(stuck, observe({ chainSynced: false, drift: 'Unsynced', driftSeconds: 402 }), LIMITS);
 
 		expect(action.kind).toBe('Restart');
+	});
+
+	it('does not restart again inside the cooldown', () => {
+		const stuck = record({
+			driftBreachSince: new Date(NOW - 5 * 60_000).toISOString(),
+			driftBreachSeconds: 400,
+			lastDriftRestartAt: new Date(NOW - 60_000).toISOString(),
+		});
+		const action = planNodeAction(stuck, observe({ drift: 'Unsynced', driftSeconds: 402 }), LIMITS);
+
+		expect(action.kind).not.toBe('Restart');
 	});
 });

@@ -107,3 +107,62 @@ export function classifyDrift(sample: DriftSample, thresholds: DriftThresholds):
 	}
 	return 'Healthy';
 }
+
+/** How long a node may sit above the guard without improving before a restart. */
+export const DRIFT_STALL_MS = 120_000;
+/** Minimum spacing between drift restarts, so a node that cannot catch up does not thrash. */
+export const DRIFT_RESTART_COOLDOWN_MS = 600_000;
+/** Improvement smaller than this is noise: preprod block gaps reach 69s on their own. */
+const DRIFT_PROGRESS_EPSILON_SECONDS = 5;
+
+type DriftBreachState = {
+	driftBreachSince?: string;
+	driftBreachSeconds?: number;
+};
+
+/**
+ * Track how long the follower has been behind *without closing the gap*.
+ *
+ * Being behind is not itself a fault — a node that has just started is behind
+ * and is busy fixing it, at roughly a block a second. What cannot fix itself is
+ * being behind and standing still, which is where a Blockfrost-backed node ends
+ * up once its startup catch-up has run: from then on it sleeps an average block
+ * time before every block and can only ever track the tip.
+ *
+ * So the clock is reset by progress rather than by the verdict. A node closing
+ * the gap re-anchors on every improvement and never accumulates a stall; one
+ * that is stuck accumulates from the moment it first passed the guard.
+ */
+export function driftBreachFields(
+	current: DriftBreachState,
+	observation: { drift: DriftVerdict | null; driftSeconds: number | null; nowMs: number },
+): DriftBreachState {
+	const breached = observation.drift === 'Unsynced' && observation.driftSeconds !== null;
+	if (!breached) {
+		// Undefined rather than omitted: this has to clear the stored fields.
+		return current.driftBreachSince === undefined ? {} : { driftBreachSince: undefined, driftBreachSeconds: undefined };
+	}
+	const seconds = observation.driftSeconds as number;
+	const since = current.driftBreachSince;
+	const anchor = current.driftBreachSeconds;
+	const improving = anchor !== undefined && seconds <= anchor - DRIFT_PROGRESS_EPSILON_SECONDS;
+	if (since === undefined || improving) {
+		return { driftBreachSince: new Date(observation.nowMs).toISOString(), driftBreachSeconds: seconds };
+	}
+	return {};
+}
+
+/** Whether a stalled follower has been stalled long enough, and is allowed another restart. */
+export function shouldRestartForDrift(
+	record: { driftBreachSince?: string; lastDriftRestartAt?: string },
+	nowMs: number,
+): boolean {
+	if (record.driftBreachSince === undefined) return false;
+	const since = Date.parse(record.driftBreachSince);
+	if (!Number.isFinite(since) || nowMs - since < DRIFT_STALL_MS) return false;
+	if (record.lastDriftRestartAt !== undefined) {
+		const last = Date.parse(record.lastDriftRestartAt);
+		if (Number.isFinite(last) && nowMs - last < DRIFT_RESTART_COOLDOWN_MS) return false;
+	}
+	return true;
+}
