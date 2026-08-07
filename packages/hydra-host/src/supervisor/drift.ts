@@ -166,3 +166,50 @@ export function shouldRestartForDrift(
 	}
 	return true;
 }
+
+/**
+ * Where the guard sits inside the node's own unsynced period.
+ *
+ * The guard exists to restart a node BEFORE it starts refusing input, so it has
+ * to fire inside that window with enough room left for the restart and the
+ * catch-up that follows. Six tenths leaves four for both.
+ */
+const GUARD_FRACTION_OF_UNSYNCED = 0.6;
+/** Degraded is advisory; half the guard is enough to separate it from healthy. */
+const TARGET_FRACTION_OF_GUARD = 0.5;
+
+/**
+ * Drift thresholds for one node, from that node's own unsynced period.
+ *
+ * Derived rather than configured because the value they must stay below is
+ * per-node — it is signed into the invite that opened the head — while any
+ * configured threshold is per-host. A host default that suits an 1800s node is
+ * simply wrong for a 150s one, and the mismatch is silent: the validation warns
+ * on every tick and the invalid value is used anyway, so a guard of 400s sat
+ * 250s ABOVE the point its node had already stopped accepting commands, and
+ * could never fire in time.
+ */
+export function deriveDriftThresholds(unsyncedPeriodMs: number): DriftThresholds {
+	const guardMs = Math.round(unsyncedPeriodMs * GUARD_FRACTION_OF_UNSYNCED);
+	return { guardMs, targetMs: Math.round(guardMs * TARGET_FRACTION_OF_GUARD) };
+}
+
+/**
+ * The thresholds to use, preferring an operator's explicit ones where they work.
+ *
+ * An override is honoured only while it still fires before the node refuses
+ * input. One that does not is the exact misconfiguration this derivation
+ * exists to remove, so the derived value wins rather than the operator's — a
+ * guard that cannot fire in time is not a preference, it is a broken watchdog.
+ */
+export function resolveDriftThresholds(unsyncedPeriodMs: number, override?: Partial<DriftThresholds>): DriftThresholds {
+	const derived = deriveDriftThresholds(unsyncedPeriodMs);
+	const guardMs = override?.guardMs;
+	if (guardMs === undefined || guardMs <= 0 || guardMs >= unsyncedPeriodMs) return derived;
+	const overrideTarget = override?.targetMs;
+	const targetMs =
+		overrideTarget !== undefined && overrideTarget > 0 && overrideTarget < guardMs
+			? overrideTarget
+			: Math.round(guardMs * TARGET_FRACTION_OF_GUARD);
+	return { guardMs, targetMs };
+}

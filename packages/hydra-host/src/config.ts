@@ -7,7 +7,7 @@
  * never fires in time to help.
  */
 
-import { validateDriftThresholds, type DriftThresholds } from './supervisor/drift.js';
+import { type DriftThresholds } from './supervisor/drift.js';
 import { validatePortLayout, type PortLayout } from './registry/ports.js';
 
 export type HostConfig = {
@@ -30,7 +30,8 @@ export type HostConfig = {
 	adminToken: string;
 	userToken: string;
 	ports: PortLayout;
-	drift: DriftThresholds;
+	/** Operator override. Absent keys are derived per node from its unsynced period. */
+	drift: Partial<DriftThresholds>;
 	defaultContestationPeriodSeconds: number;
 	defaultDepositPeriodSeconds: number;
 	defaultUnsyncedPeriodSeconds: number;
@@ -131,11 +132,19 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 	validatePortLayout(ports);
 
 	const defaultUnsyncedPeriodSeconds = integer(env, 'HYDRA_HOST_UNSYNCED_PERIOD_SECONDS', 1800);
-	const drift: DriftThresholds = {
-		targetMs: integer(env, 'HYDRA_HOST_DRIFT_TARGET_MS', 180_000),
-		guardMs: integer(env, 'HYDRA_HOST_DRIFT_GUARD_MS', 400_000),
+	// An override, not a default. Thresholds are derived per node from that
+	// node's own unsynced period, because that is the value they have to stay
+	// below and it is per node — a host-wide default that suits an 1800s node
+	// is silently unusable on a 150s one. Absent keys mean "derive"; a supplied
+	// one is honoured only where it can still fire in time.
+	const drift: Partial<DriftThresholds> = {
+		...(env.get('HYDRA_HOST_DRIFT_TARGET_MS') === undefined
+			? {}
+			: { targetMs: integer(env, 'HYDRA_HOST_DRIFT_TARGET_MS', 0) }),
+		...(env.get('HYDRA_HOST_DRIFT_GUARD_MS') === undefined
+			? {}
+			: { guardMs: integer(env, 'HYDRA_HOST_DRIFT_GUARD_MS', 0) }),
 	};
-	validateDriftThresholds(drift, defaultUnsyncedPeriodSeconds * 1000);
 
 	return {
 		dataDir: optional(env, 'HYDRA_HOST_DATA_DIR', '/data'),

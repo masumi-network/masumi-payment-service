@@ -21,7 +21,7 @@ import type { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
 import { buildHydraNodeArgs } from './args.js';
 import { waitForDrain } from './drain.js';
-import { classifyDrift, driftBreachFields, measureDrift, validateDriftThresholds, type SlotConfig } from './drift.js';
+import { classifyDrift, driftBreachFields, measureDrift, resolveDriftThresholds, type SlotConfig } from './drift.js';
 import { planNodeAction, shouldAdoptAsRunning, type NodeObservation, type PlanLimits } from './plan.js';
 import { NodeProcessManager } from './process.js';
 import { unwedgeNode } from './unwedge.js';
@@ -205,12 +205,7 @@ export class Supervisor {
 			// Validate against THIS node's unsynced period, not the host default: a
 			// node provisioned with a shorter period needs a guard that still fires
 			// before the node starts refusing input.
-			const thresholds = this.config.drift;
-			try {
-				validateDriftThresholds(thresholds, record.unsyncedPeriodSeconds * 1000);
-			} catch (error) {
-				this.logger.warn(`[supervisor] ${record.nodeId}: ${(error as Error).message}`);
-			}
+			const thresholds = resolveDriftThresholds(record.unsyncedPeriodSeconds * 1000, this.config.drift);
 			const sample = measureDrift(slot, this.slotConfig, Date.now());
 			driftSeconds = Math.round(sample.driftMs / 1000);
 			// Judged whether or not the node says it is in sync.

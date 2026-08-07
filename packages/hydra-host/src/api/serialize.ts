@@ -8,6 +8,7 @@
  */
 
 import { restartCountOf, isUsable, type NodeRecord } from '../registry/types.js';
+import { resolveDriftThresholds } from '../supervisor/drift.js';
 
 export type PublicNode = {
 	nodeId: string;
@@ -39,6 +40,17 @@ export type PublicNode = {
 	drift: string | null;
 	/** How far behind the chain the node is, in seconds. Null when unknown. */
 	driftSeconds: number | null;
+	/**
+	 * Drift at which this node is restarted, in seconds.
+	 *
+	 * Derived from the node's own unsynced period rather than configured, so it
+	 * always fires before the node starts refusing commands. Reported because
+	 * `driftSeconds` alone says nothing about whether it is a problem, and the
+	 * threshold it is measured against used to exist only inside the host.
+	 */
+	driftGuardSeconds: number;
+	/** When the follower last passed the guard without closing the gap. */
+	driftStalledSince: string | null;
 	lastCheckedAt: string | null;
 	failureReason?: string;
 };
@@ -77,6 +89,8 @@ export function toPublicNode(record: NodeRecord): PublicNode {
 		chainSynced: record.lastObservation?.chainSynced ?? null,
 		drift: record.lastObservation?.drift ?? null,
 		driftSeconds: record.lastObservation?.driftSeconds ?? null,
+		driftGuardSeconds: Math.round(resolveDriftThresholds(record.unsyncedPeriodSeconds * 1000).guardMs / 1000),
+		driftStalledSince: record.driftBreachSince ?? null,
 		lastCheckedAt: record.lastObservation?.checkedAt ?? null,
 	};
 	if (record.failureReason !== undefined) {

@@ -5,6 +5,8 @@ import {
 	DRIFT_RESTART_COOLDOWN_MS,
 	DRIFT_STALL_MS,
 	classifyDrift,
+	deriveDriftThresholds,
+	resolveDriftThresholds,
 	driftBreachFields,
 	shouldRestartForDrift,
 	measureDrift,
@@ -164,5 +166,55 @@ describe('shouldRestartForDrift', () => {
 
 	it('ignores an unparseable timestamp rather than restarting on it', () => {
 		expect(shouldRestartForDrift({ driftBreachSince: 'not-a-date' }, NOW)).toBe(false);
+	});
+});
+
+describe('deriveDriftThresholds', () => {
+	// The bug this removes: a host default of 400s on a node whose unsynced
+	// period is 150s, so the guard could only fire 250s after the node had
+	// already started refusing commands.
+	it('always leaves the guard below the node unsynced period', () => {
+		for (const seconds of [120, 150, 300, 1800, 43_200]) {
+			const { guardMs, targetMs } = deriveDriftThresholds(seconds * 1000);
+			expect(guardMs).toBeLessThan(seconds * 1000);
+			expect(targetMs).toBeLessThan(guardMs);
+			expect(() => validateDriftThresholds({ guardMs, targetMs }, seconds * 1000)).not.toThrow();
+		}
+	});
+
+	it('scales with the node rather than the host', () => {
+		expect(deriveDriftThresholds(150_000).guardMs).toBe(90_000);
+		expect(deriveDriftThresholds(1_800_000).guardMs).toBe(1_080_000);
+	});
+
+	// The shortest period an invite may sign, against the widest preprod block
+	// gap actually observed (69s) — the guard has to clear it.
+	it('keeps the guard above a plausible block gap at the minimum period', () => {
+		expect(deriveDriftThresholds(120_000).guardMs).toBeGreaterThan(69_000);
+	});
+});
+
+describe('resolveDriftThresholds', () => {
+	it('derives when no override is given', () => {
+		expect(resolveDriftThresholds(150_000)).toEqual(deriveDriftThresholds(150_000));
+		expect(resolveDriftThresholds(150_000, {})).toEqual(deriveDriftThresholds(150_000));
+	});
+
+	it('honours an override that can still fire in time', () => {
+		expect(resolveDriftThresholds(150_000, { guardMs: 100_000 })).toEqual({ guardMs: 100_000, targetMs: 50_000 });
+	});
+
+	// A guard at or above the unsynced period is not a preference; it is a
+	// watchdog that cannot fire before the thing it guards against.
+	it('ignores an override that could never fire in time', () => {
+		expect(resolveDriftThresholds(150_000, { guardMs: 400_000 })).toEqual(deriveDriftThresholds(150_000));
+		expect(resolveDriftThresholds(150_000, { guardMs: 150_000 })).toEqual(deriveDriftThresholds(150_000));
+	});
+
+	it('ignores a target that is not below its guard', () => {
+		expect(resolveDriftThresholds(150_000, { guardMs: 100_000, targetMs: 120_000 })).toEqual({
+			guardMs: 100_000,
+			targetMs: 50_000,
+		});
 	});
 });

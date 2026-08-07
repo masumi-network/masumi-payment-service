@@ -54,12 +54,18 @@ describe('loadHostConfig', () => {
 		expect(() => loadHostConfig(env({ HYDRA_HOST_PEER_PORT_COUNT: '2000' }))).toThrow(/overlaps/);
 	});
 
-	// A guard at or beyond the unsynced period fires only after the node has
-	// already started refusing input.
-	it('rejects a drift guard that cannot fire in time', () => {
-		expect(() =>
-			loadHostConfig(env({ HYDRA_HOST_DRIFT_GUARD_MS: '1800000', HYDRA_HOST_UNSYNCED_PERIOD_SECONDS: '1800' })),
-		).toThrow(/below the node's unsynced period/);
+	// Thresholds are no longer validated here, because the value a guard must
+	// stay below is per NODE — signed into the invite that opened its head —
+	// while this config is per host. The host cannot know it, so it carries an
+	// override and `resolveDriftThresholds` decides per node, discarding one
+	// that could never fire in time.
+	it('carries drift thresholds as an override rather than a default', () => {
+		expect(loadHostConfig(env()).drift).toEqual({});
+		expect(loadHostConfig(env({ HYDRA_HOST_DRIFT_GUARD_MS: '90000' })).drift).toEqual({ guardMs: 90_000 });
+	});
+
+	it('accepts a guard that could never fire, leaving it for the node to discard', () => {
+		expect(loadHostConfig(env({ HYDRA_HOST_DRIFT_GUARD_MS: '1800000' })).drift).toEqual({ guardMs: 1_800_000 });
 	});
 
 	it('rejects a non-numeric override', () => {
