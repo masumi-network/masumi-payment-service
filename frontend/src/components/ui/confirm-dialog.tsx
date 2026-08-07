@@ -24,6 +24,15 @@ interface ConfirmDialogProps {
    * in their head.
    */
   confirmLabel?: string;
+  /**
+   * What is happening while `isLoading`, shown in place of nothing.
+   *
+   * Set it wherever the work outlives the dialog. The action is dispatched
+   * before the spinner appears, so closing the window never cancels it — but a
+   * spinner alone implies the opposite, and an operator who cannot tell waits
+   * it out.
+   */
+  loadingNote?: string;
   /** Above elevated agent dialog (AI agents opened over transactions). */
   elevatedChildStack?: boolean;
   /** Above elevated-child dialogs (e.g. confirm inside wallet opened from elevated agent). */
@@ -41,6 +50,7 @@ export function ConfirmDialog({
   confirmationText = 'DELETE',
   confirmationLabel,
   confirmLabel = 'Confirm',
+  loadingNote,
   elevatedChildStack,
   elevatedGrandchildStack,
 }: ConfirmDialogProps) {
@@ -76,6 +86,10 @@ export function ConfirmDialog({
           <p className="text-sm text-muted-foreground whitespace-pre-line">
             {description ?? '...'}
           </p>
+
+          {isLoading && loadingNote !== undefined && (
+            <p className="mt-3 text-sm text-muted-foreground">{loadingNote}</p>
+          )}
 
           {requireConfirmation && (
             <div className="mt-4 space-y-2">
@@ -119,8 +133,12 @@ export function ConfirmDialog({
             left: '0',
           }}
         >
-          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isLoading}>
-            Cancel
+          {/* Never disabled. The work is already dispatched by the time this
+              spins, so closing cannot cancel it — and disabling the only way
+              out left an operator holding a dialog they could not dismiss. It
+              stops offering to cancel once there is nothing left to cancel. */}
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
+            {isLoading ? 'Close' : 'Cancel'}
           </Button>
           <Button
             variant="destructive"

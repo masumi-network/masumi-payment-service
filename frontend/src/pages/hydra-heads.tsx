@@ -1317,6 +1317,7 @@ export default function HydraHeadsPage() {
         title="Closing now will take a while"
         description={pendingEscrowClose?.reason ?? ''}
         confirmLabel="Close anyway"
+        loadingNote="Posted to the node. This carries on without the window, and the head's status updates on its own — you can close this."
         onConfirm={handleConfirmEscrowClose}
         isLoading={
           pendingEscrowClose ? runningLifecycleHeadId === pendingEscrowClose.head.id : false
@@ -1335,6 +1336,7 @@ export default function HydraHeadsPage() {
         isLoading={
           pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false
         }
+        loadingNote="Posted to the node. This carries on without the window, and the head's status updates on its own — you can close this."
       />
       <BackUpNodeKeysDialog
         open={backUpKeysParticipantId !== null}
