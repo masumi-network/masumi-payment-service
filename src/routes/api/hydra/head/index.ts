@@ -21,6 +21,7 @@ export { recordHeadError } from '@/services/hydra-head-error/record';
 import { recordHeadError } from '@/services/hydra-head-error/record';
 import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
+import { readHeadParamDrift } from '@/services/hydra-host/param-drift';
 import { logger } from '@masumi/payment-core/logger';
 import {
 	buildValidatedHydraCommit,
@@ -915,6 +916,25 @@ export const headConnectionSchemaOutput = z.object({
 			"Whether this node is in its Hydra cluster, which for a two-party head means the counterparty's node is up and reachable. Null until the node reports either way. Not a statement about their chain sync.",
 		),
 	reason: z.string().nullable(),
+	/**
+	 * Ways the head's own ledger no longer matches the chain it settles on.
+	 *
+	 * Empty in the normal case. A head's ledger is frozen at initialisation, so
+	 * a chain that moves afterwards can leave the head creating outputs L1 will
+	 * refuse to accept back at fanout — and value cannot be added to an output
+	 * on its way out. Surfaced per head because the decision it drives is per
+	 * head: close before the gap grows.
+	 */
+	paramDrift: z
+		.array(
+			z.object({
+				parameter: z.string(),
+				head: z.number(),
+				chain: z.number(),
+				blocksFanout: z.boolean(),
+			}),
+		)
+		.describe('Empty when the head ledger matches the chain.'),
 	checkedAt: z.string(),
 });
 
@@ -963,6 +983,7 @@ export const getHeadConnectionGet = adminAuthenticatedEndpointFactory.build({
 			isReady: node.isReady,
 			reason: node.reason,
 			peerConnected: peerLink,
+			paramDrift: await readHeadParamDrift(head.id),
 			checkedAt: new Date().toISOString(),
 		};
 	},

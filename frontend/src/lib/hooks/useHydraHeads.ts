@@ -773,6 +773,14 @@ export type HydraHeadConnection = {
   nodeState: string;
   isReady: boolean;
   reason: string | null;
+  /**
+   * Ways the head's own ledger no longer matches the chain it settles on.
+   *
+   * Empty in the normal case. A head's ledger is frozen when it opens, so a
+   * chain that moves afterwards can leave the head holding outputs L1 will
+   * refuse to take back at settlement.
+   */
+  paramDrift?: Array<{ parameter: string; head: number; chain: number; blocksFanout: boolean }>;
   checkedAt: string;
 };
 

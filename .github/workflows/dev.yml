@@ -70,6 +70,17 @@ jobs:
           # `pnpm run swagger-json` locally and commit the regenerated JSON.
           git diff --exit-code -- src/utils/generator/swagger-generator/openapi-docs.json
 
+      # A head's ledger is frozen at initialisation from these files. If the
+      # chain moves and the file does not, the head can create outputs L1 will
+      # refuse to accept back at fanout, and value cannot be added to an output
+      # on the way out — the head becomes impossible to settle. Catching it here
+      # means it is found before a head is opened across the gap. Skips cleanly
+      # when the secret is unavailable, so forks are not blocked by it.
+      - name: Check Hydra head ledger against the chain
+        env:
+          BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
+        run: pnpm exec tsx scripts/check-hydra-params-drift.mts
+
       - name: Run Backend ESLint
         run: pnpm run lint:backend
 

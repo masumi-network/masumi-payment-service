@@ -121,6 +121,29 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
               sit in Initializing until their node is back and posts its commit.
             </p>
           )}
+          {/* A head's ledger is frozen when it opens and does not follow the
+              chain afterwards. Settlement is an L1 transaction, and value
+              cannot be added to an output on its way out, so a chain that
+              moves can leave this head holding outputs L1 will refuse to take
+              back — with no way to fix them from inside. Shown here because
+              the decision it drives is about THIS head: settle it before the
+              gap grows. */}
+          {(state.paramDrift?.length ?? 0) > 0 && (
+            <HydraNotice tone={state.paramDrift?.some((d) => d.blocksFanout) ? 'warn' : 'info'}>
+              <p>
+                {state.paramDrift?.some((d) => d.blocksFanout)
+                  ? 'The chain has changed since this head opened, in a way that can stop it being settled. Close it soon rather than adding to it.'
+                  : 'The chain has changed since this head opened. Nothing is stranded, but this head is now stricter than the chain and will refuse funds the chain accepts.'}
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {state.paramDrift?.map((entry) => (
+                  <li key={entry.parameter} className="font-mono text-xs">
+                    {entry.parameter}: head {entry.head}, chain {entry.chain}
+                  </li>
+                ))}
+              </ul>
+            </HydraNotice>
+          )}
           {/* When this was read, not something that was read. Set apart so it
               stops scanning as another row of the list above it. */}
           <p className="border-t pt-2 text-xs text-muted-foreground">
