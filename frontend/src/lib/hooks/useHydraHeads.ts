@@ -222,10 +222,17 @@ export type HydraTopupResult = {
   confirmed: boolean;
   committedLovelace: string;
   committedAssets: Record<string, string>;
-  /** After this, the head can no longer absorb the deposit. Null while preparing. */
+  /**
+   * When the deposit may be sent back. Null until the head has stated it.
+   *
+   * NOT the last moment it might still be absorbed — that is `absorbBy`, a
+   * whole deposit period earlier.
+   */
   deadline?: string | null;
   /** Before this, the head will not take it however confirmed the transaction is. */
   usableFrom?: string | null;
+  /** After this the head will no longer absorb it, and recovery is not yet open. */
+  absorbBy?: string | null;
 };
 
 export type HydraTopupRequest = {
@@ -844,10 +851,17 @@ export type HydraTopup = {
   splitTxHash?: string | null;
   committedLovelace: string;
   committedAssets: Record<string, string>;
-  /** After this, the head can no longer absorb the deposit. Null while preparing. */
+  /**
+   * When the deposit may be sent back. Null until the head has stated it.
+   *
+   * NOT the last moment it might still be absorbed — that is `absorbBy`, a
+   * whole deposit period earlier.
+   */
   deadline?: string | null;
   /** Before this, the head will not take it however confirmed the transaction is. */
   usableFrom?: string | null;
+  /** After this the head will no longer absorb it, and recovery is not yet open. */
+  absorbBy?: string | null;
   /**
    * Set once the node has been asked to send this deposit back to the wallet.
    *

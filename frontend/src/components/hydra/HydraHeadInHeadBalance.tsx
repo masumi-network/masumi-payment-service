@@ -42,8 +42,13 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
   const { hasSettlingDeposit, hasExpiredDeposit } = useMemo(() => {
     // Before the first tick nothing is called expired: claiming a deadline has
     // passed is the assertion that needs evidence.
+    //
+    // Measured against absorbBy, not the deadline. A node refuses a deposit
+    // with less than one deposit period left, so the head stops taking it a
+    // whole period before the deadline — and judging by the deadline called a
+    // dead deposit "settling" for that entire period.
     const isStillFoldable = (topup: HydraTopup) =>
-      now === null || topup.deadline == null || new Date(topup.deadline).getTime() > now;
+      now === null || topup.absorbBy == null || new Date(topup.absorbBy).getTime() > now;
     return {
       hasSettlingDeposit: topups.some(
         (topup) =>
