@@ -781,6 +781,101 @@ describe('HydraNode', () => {
 			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
 		});
 
+		// Hydra 2.3 stopped putting the opening ledger on HeadIsOpen and reports it
+		// on Greetings.snapshotUtxo instead. A head that opened with no commits
+		// never signs a snapshot until its first deposit is absorbed, so this is
+		// its only state anchor — without it the head can never form a live
+		// session and every L2 operation fails closed for its whole life.
+		it('anchors an Open head on Greetings.snapshotUtxo when no snapshot has been signed', async () => {
+			const node = new HydraNode({
+				httpUrl: 'http://localhost:4001',
+				expectedHeadId: HEAD_ID_A,
+				snapshotVerificationKeys: TEST_PARTIES.map(({ cborVerificationKey }) => cborVerificationKey),
+				expectedNodeVerificationKey: TEST_PARTIES[0].cborVerificationKey,
+				trustLocalNodeSnapshotMetadata: true,
+			});
+			const connectPromise = node.connect();
+			const historyConnection = mockConnectionInstances[0];
+			const liveConnection = mockConnectionInstances[1];
+			liveConnection.emit('message', JSON.stringify(headIsOpen()));
+			liveConnection.emit('message', JSON.stringify(liveGreetings()));
+			await connectPromise;
+
+			// Exactly what a 2.3 node replays for a head opened with empty commits.
+			historyConnection.emit('message', JSON.stringify(headIsOpen()));
+			historyConnection.emit('message', JSON.stringify({ ...liveGreetings(), snapshotUtxo: {} }));
+
+			expect(node.confirmedTransactionHistoryError).toBeUndefined();
+			expect(node.confirmedTransactionHistoryReady).toBe(true);
+			expect(historyConnection.invalidate).not.toHaveBeenCalled();
+		});
+
+		it('anchors on a non-empty Greetings.snapshotUtxo', async () => {
+			const node = new HydraNode({
+				httpUrl: 'http://localhost:4001',
+				expectedHeadId: HEAD_ID_A,
+				snapshotVerificationKeys: TEST_PARTIES.map(({ cborVerificationKey }) => cborVerificationKey),
+				expectedNodeVerificationKey: TEST_PARTIES[0].cborVerificationKey,
+				trustLocalNodeSnapshotMetadata: true,
+			});
+			const connectPromise = node.connect();
+			const historyConnection = mockConnectionInstances[0];
+			const liveConnection = mockConnectionInstances[1];
+			liveConnection.emit('message', JSON.stringify(headIsOpen()));
+			liveConnection.emit('message', JSON.stringify(liveGreetings()));
+			await connectPromise;
+
+			const snapshotUtxo = { [`${'11'.repeat(32)}#0`]: snapshotOutput(10_000_000) };
+			historyConnection.emit('message', JSON.stringify(headIsOpen()));
+			historyConnection.emit('message', JSON.stringify({ ...liveGreetings(), snapshotUtxo }));
+
+			expect(node.confirmedTransactionHistoryError).toBeUndefined();
+			expect(node.confirmedTransactionHistoryReady).toBe(true);
+		});
+
+		// The unsigned fallback must never displace a signed one: a head that HAS
+		// signed snapshots is anchored on a signature, and a node reporting a
+		// different ledger on Greetings must not be able to talk it down to its own
+		// unsigned word.
+		it('keeps a signed snapshot anchor rather than the Greetings ledger', async () => {
+			const { node, historyConnection } = await startSignedNode();
+			const { frames } = signedHistoryChain();
+
+			for (const frame of frames) historyConnection.emit('message', JSON.stringify(frame));
+			historyConnection.emit(
+				'message',
+				JSON.stringify({ ...liveGreetings(), snapshotUtxo: { [`${'99'.repeat(32)}#0`]: snapshotOutput(1) } }),
+			);
+
+			expect(node.confirmedTransactionHistoryError).toBeUndefined();
+			expect(node.confirmedTransactionHistoryReady).toBe(true);
+			expect(historyConnection.invalidate).not.toHaveBeenCalled();
+		});
+
+		// Untrusted metadata stays untrusted: the fallback is the node's own
+		// unsigned word, so it may only be taken where that word is already relied
+		// on for everything else.
+		it('refuses the Greetings ledger when local node metadata is not trusted', async () => {
+			const node = new HydraNode({
+				httpUrl: 'http://localhost:4001',
+				expectedHeadId: HEAD_ID_A,
+				snapshotVerificationKeys: TEST_PARTIES.map(({ cborVerificationKey }) => cborVerificationKey),
+				expectedNodeVerificationKey: TEST_PARTIES[0].cborVerificationKey,
+				trustLocalNodeSnapshotMetadata: false,
+			});
+			const connectPromise = node.connect();
+			const historyConnection = mockConnectionInstances[0];
+			const liveConnection = mockConnectionInstances[1];
+			liveConnection.emit('message', JSON.stringify(headIsOpen()));
+			liveConnection.emit('message', JSON.stringify(liveGreetings()));
+			await connectPromise;
+
+			historyConnection.emit('message', JSON.stringify({ ...liveGreetings(), snapshotUtxo: {} }));
+
+			expect(node.confirmedTransactionHistoryReady).toBe(false);
+			expect(node.confirmedTransactionHistoryError?.message).toMatch(/without an authenticated Open/);
+		});
+
 		it('uses only the history socket and exposes verified positive evidence before Greetings', async () => {
 			const { node, historyConnection, liveConnection } = await startSignedNode();
 			const { frames, transactions } = signedHistoryChain();

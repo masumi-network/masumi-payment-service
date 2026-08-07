@@ -18,6 +18,7 @@ import {
 	decommitFinalizedMessageSchema,
 	decommitInvalidMessageSchema,
 	greetingsIdentityMessageSchema,
+	greetingsSnapshotMessageSchema,
 	finalizedUtxoOf,
 	hasFinalizedUtxoField,
 	headClockMessageSchema,
@@ -742,6 +743,20 @@ export class HydraNode extends EventEmitter {
 				if (this._verifiedHistorySnapshot && suppliedHeadId !== this._verifiedHistorySnapshot.headId) {
 					throw new HydraProtocolError('Hydra history Greetings did not identify the signed snapshot head');
 				}
+				// Hydra 2.3 reports the head's confirmed ledger here rather than on
+				// HeadIsOpen. A head that has not signed a snapshot yet — one that has
+				// just opened, or that opened with no commits at all — states its
+				// ledger nowhere else, so without this it has no anchor and every L2
+				// operation fails closed for the life of the head.
+				if (
+					HISTORY_STATUS_REQUIRING_STATE_ANCHOR.has(parsedHeadStatus.data) &&
+					this._verifiedHistorySnapshot == null &&
+					this._trustLocalNodeSnapshotMetadata &&
+					suppliedHeadId
+				) {
+					const greeting = greetingsSnapshotMessageSchema.parse(message);
+					if (greeting.snapshotUtxo) this.recordUnsignedLedgerAnchor(suppliedHeadId, greeting.snapshotUtxo);
+				}
 				if (HISTORY_STATUS_REQUIRING_STATE_ANCHOR.has(parsedHeadStatus.data) && this._verifiedHistorySnapshot == null) {
 					throw new HydraProtocolError(
 						'Hydra history ended without an authenticated Open or signed snapshot state anchor',
@@ -764,24 +779,47 @@ export class HydraNode extends EventEmitter {
 	}
 
 	private recordHistoryOpenAnchor(parsedMessage: ReturnType<typeof historyHeadIsOpenMessageSchema.parse>): void {
+		this.recordUnsignedLedgerAnchor(parsedMessage.headId, parsedMessage.utxo);
+	}
+
+	/**
+	 * Anchor the head's state on the node's own report of its ledger.
+	 *
+	 * Used where no signed snapshot exists yet: a head that has just opened has
+	 * nothing to verify a signature against, so the alternative to trusting the
+	 * local node here is refusing to work with such a head at all. Gated on
+	 * `_trustLocalNodeSnapshotMetadata` by both callers, which is the same
+	 * condition already governing every other unsigned field taken from this
+	 * endpoint, so it grants nothing new.
+	 *
+	 * Number and version are zero: this is the state before any snapshot the
+	 * parties have signed, and the first live `SnapshotConfirmed` is checked as a
+	 * transition out of it. If a head that HAS signed snapshots ever reached
+	 * here, that check rejects the jump and the head stays fail-closed rather
+	 * than proceeding from a state nobody signed.
+	 */
+	private recordUnsignedLedgerAnchor(
+		headId: string,
+		utxo: Record<string, Parameters<typeof serializeHydraSnapshotOutput>[0]>,
+	): void {
 		if (this._verifiedHistorySnapshot) {
 			throw new HydraProtocolError('Hydra history attempted to replace an established signed-state anchor');
 		}
 		const outputs = new Map<string, string>();
 		const outputMultiset = new Map<string, number>();
-		for (const [reference, output] of Object.entries(parsedMessage.utxo)) {
+		for (const [reference, output] of Object.entries(utxo)) {
 			const serializedOutput = serializeHydraSnapshotOutput(output);
 			outputs.set(reference.toLowerCase(), serializedOutput);
 			outputMultiset.set(serializedOutput, (outputMultiset.get(serializedOutput) ?? 0) + 1);
 		}
 		this._verifiedHistorySnapshot = {
-			headId: parsedMessage.headId,
+			headId,
 			number: 0,
 			version: 0,
 			outputs,
 			outputMultiset,
-			// HeadIsOpen carries only the collected ledger UTxO; there is no pending
-			// incremental commit/decommit at open.
+			// The collected ledger only; an incremental commit or decommit still in
+			// flight is reported separately and is not part of this state.
 			committedMultiset: new Map(),
 			decommitMultiset: new Map(),
 		};

@@ -288,6 +288,25 @@ export const historyHeadIsOpenMessageSchema = z.looseObject({
 });
 
 /**
+ * The head's confirmed ledger, as the end-of-history marker reports it.
+ *
+ * Hydra 2.3 does not put the opening UTxO set on `HeadIsOpen` any more — that
+ * frame carries only `headId`, `parties` and `seq` — and reports the current
+ * confirmed set on `Greetings.snapshotUtxo` instead. It is the only place a
+ * head that has not yet signed a snapshot states its ledger at all, so without
+ * it such a head has no state anchor and never forms a live session.
+ *
+ * Optional, because a node too old to send it is answered by the `HeadIsOpen`
+ * path above, and because an anchor is only required for the head statuses in
+ * HISTORY_STATUS_REQUIRING_STATE_ANCHOR.
+ */
+export const greetingsSnapshotMessageSchema = z.looseObject({
+	tag: z.literal('Greetings'),
+	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
+	snapshotUtxo: hydraSnapshotUtxoSchema.optional(),
+});
+
+/**
  * `HeadIsFinalized.utxo` comes from hydra-node's chain observer. Its keys are
  * the actual L1 fanout transaction outputs (`txHash#index`), not the former L2
  * references. Callers must still compare the complete serialized TxOut
