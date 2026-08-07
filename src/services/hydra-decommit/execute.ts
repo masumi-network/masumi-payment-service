@@ -403,7 +403,29 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 		// The decommit transaction itself: spend the chosen inputs, send everything
 		// to the participant's own address. Every output leaves the head, so there
 		// is deliberately no change output beyond that one.
-		const builder = new MeshTxBuilder({ fetcher: provider, submitter: provider, verbose: false });
+		// The head's OWN ledger parameters, fetched from the head, never assumed.
+		//
+		// An in-head transaction is validated by the head's ledger, not L1's, and
+		// this head charges no fee at all (txFeeFixed 0, txFeePerByte 0, execution
+		// prices 0) while still enforcing a real minimum-UTxO and 150% collateral.
+		// Built without them, Mesh applied mainnet fee parameters to a transaction
+		// that never leaves the head: the fee was simply burned, and burning it
+		// changed the head's ADA overhead. `headAdaOverhead` is an invariant the
+		// head validator checks on every transition — mustPreserveHeadAdaOverhead,
+		// error H65 — so each fee-paying withdrawal moved the head one step further
+		// from ever being closeable.
+		//
+		// Fetched rather than flagged. MeshTxBuilder's `isHydra` shortcut zeroes the
+		// fee knobs but also sets collateralPercent to 0, which this head does not
+		// agree with, and it would silently diverge from any head configured
+		// differently.
+		const headParameters = await provider.fetchProtocolParameters();
+		const builder = new MeshTxBuilder({
+			fetcher: provider,
+			submitter: provider,
+			params: headParameters,
+			verbose: false,
+		});
 		for (const utxo of decommitInputs) {
 			builder.txIn(utxo.input.txHash, utxo.input.outputIndex, utxo.output.amount, utxo.output.address);
 		}
@@ -533,7 +555,29 @@ async function splitExactAmountInHead(params: {
 	const { wallet, provider, hydraHead, address, network, inputs, unit, amount, decommitId } = params;
 	const isLovelace = unit === '' || unit.toLowerCase() === 'lovelace';
 
-	const builder = new MeshTxBuilder({ fetcher: provider, submitter: provider, verbose: false });
+	// The head's OWN ledger parameters, fetched from the head, never assumed.
+	//
+	// An in-head transaction is validated by the head's ledger, not L1's, and
+	// this head charges no fee at all (txFeeFixed 0, txFeePerByte 0, execution
+	// prices 0) while still enforcing a real minimum-UTxO and 150% collateral.
+	// Built without them, Mesh applied mainnet fee parameters to a transaction
+	// that never leaves the head: the fee was simply burned, and burning it
+	// changed the head's ADA overhead. `headAdaOverhead` is an invariant the
+	// head validator checks on every transition — mustPreserveHeadAdaOverhead,
+	// error H65 — so each fee-paying withdrawal moved the head one step further
+	// from ever being closeable.
+	//
+	// Fetched rather than flagged. MeshTxBuilder's `isHydra` shortcut zeroes the
+	// fee knobs but also sets collateralPercent to 0, which this head does not
+	// agree with, and it would silently diverge from any head configured
+	// differently.
+	const headParameters = await provider.fetchProtocolParameters();
+	const builder = new MeshTxBuilder({
+		fetcher: provider,
+		submitter: provider,
+		params: headParameters,
+		verbose: false,
+	});
 	for (const utxo of inputs) {
 		builder.txIn(utxo.input.txHash, utxo.input.outputIndex, utxo.output.amount, utxo.output.address);
 	}

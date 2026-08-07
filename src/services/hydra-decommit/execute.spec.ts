@@ -10,6 +10,13 @@ const mockHeadFindUnique = jest.fn() as AnyMock;
 const mockHeadUpdate = jest.fn() as AnyMock;
 const mockDecommitCall = jest.fn() as AnyMock;
 const mockFetchAddressUTxOs = jest.fn() as AnyMock;
+/**
+ * The head's own ledger parameters, which every in-head build must use.
+ *
+ * Zero fees and a real minimum-UTxO is what a Hydra head actually charges; L1
+ * defaults are not a safe stand-in, and using them burned ADA inside the head.
+ */
+const mockFetchProtocolParameters = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
@@ -56,7 +63,10 @@ jest.unstable_mockModule('@/routes/api/hydra/head', () => ({
 jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-manager.service', () => ({
 	getHydraConnectionManager: () => ({
 		getHead: () => ({ decommit: mockDecommitCall, mainNode: { pendingIncrementUtxoRefs: new Set<string>() } }),
-		getProvider: () => ({ fetchAddressUTxOs: mockFetchAddressUTxOs }),
+		getProvider: () => ({
+			fetchAddressUTxOs: mockFetchAddressUTxOs,
+			fetchProtocolParameters: mockFetchProtocolParameters,
+		}),
 	}),
 }));
 
@@ -123,6 +133,15 @@ beforeEach(() => {
 	mockDecommitUpdate.mockResolvedValue({});
 	mockDecommitUpdateMany.mockResolvedValue({ count: 1 });
 	mockHeadUpdate.mockResolvedValue({});
+	mockFetchProtocolParameters.mockResolvedValue({
+		minFeeA: 0,
+		minFeeB: 0,
+		priceMem: 0,
+		priceStep: 0,
+		coinsPerUtxoSize: 4310,
+		collateralPercent: 150,
+		maxTxSize: 16384,
+	});
 	mockFetchAddressUTxOs.mockResolvedValue([
 		{
 			input: { txHash: 'a'.repeat(64), outputIndex: 0 },
@@ -184,5 +203,28 @@ describe('executeHydraDecommit request outcomes', () => {
 		// Nothing was written to Failed — not by this path, and not by the outer
 		// handler either, which only owns rows still in Preparing.
 		expect(mockDecommitUpdateMany.mock.calls.filter((call) => call[0]?.data?.status === 'Failed')).toHaveLength(0);
+	});
+});
+
+/**
+ * The bug this exists to prevent, which cost a head its ability to close.
+ *
+ * An in-head transaction is validated by the head's ledger, not L1's. This head
+ * charges no fee at all while still enforcing a real minimum-UTxO and 150%
+ * collateral. Built with Mesh's defaults, every withdrawal paid a mainnet fee on
+ * a transaction that never leaves the head — the fee was simply burned, and
+ * burning it moved the head's ADA overhead.
+ *
+ * `headAdaOverhead` is an invariant the head validator re-checks on every
+ * transition (mustPreserveHeadAdaOverhead, error H65), so each fee-paying
+ * withdrawal took the head one step further from ever being closeable. Three
+ * such transactions drifted it by 509,351 lovelace and the close became
+ * impossible: not recoverable by contesting, which enforces the same invariant.
+ */
+describe('in-head transactions use the head’s own ledger parameters', () => {
+	it('asks the head for its parameters before building', async () => {
+		await executeHydraDecommit({ headId: 'head-1' }).catch(() => undefined);
+
+		expect(mockFetchProtocolParameters).toHaveBeenCalled();
 	});
 });
