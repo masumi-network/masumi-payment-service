@@ -144,6 +144,11 @@ export function HydraHeadConnectionPanel({ headId }: { headId: string }) {
               </ul>
             </HydraNotice>
           )}
+          {/* A head can be open, synced and peered while this side still cannot
+              do anything in it. Requests are accepted and then retried quietly
+              forever, so without this the operator sees work that stays pending
+              against a head that reports itself healthy. */}
+          {state.l2Blocked && <HydraNotice tone="warn">{state.l2Blocked}</HydraNotice>}
           {/* When this was read, not something that was read. Set apart so it
               stops scanning as another row of the list above it. */}
           <p className="border-t pt-2 text-xs text-muted-foreground">

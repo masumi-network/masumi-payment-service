@@ -935,8 +935,44 @@ export const headConnectionSchemaOutput = z.object({
 			}),
 		)
 		.describe('Empty when the head ledger matches the chain.'),
+	/**
+	 * Why this node cannot act inside the head, though the head itself is fine.
+	 *
+	 * Null in the normal case. Every L2 action this side initiates is a Plutus
+	 * spend, which needs one of this wallet's own in-head UTxOs for collateral —
+	 * so a participant with none can lock, submit and collect nothing, however
+	 * healthy the head and the counterparty are. The services retry rather than
+	 * park, which is right, but it left the operator with a request that stayed
+	 * accepted and pending with no stated reason.
+	 */
+	l2Blocked: z.string().nullable(),
 	checkedAt: z.string(),
 });
+
+/**
+ * Whether this node holds enough inside the head to build a transaction there.
+ *
+ * Only asked of an Open head: before that there is nothing to hold funds in,
+ * and afterwards nothing left to build. A head this service cannot currently
+ * read answers null — unknown, which the connection fields above already
+ * report, rather than a confident "blocked" derived from no evidence.
+ */
+async function readL2FundingBlock(headId: string, status: HydraHeadStatus): Promise<string | null> {
+	if (status !== HydraHeadStatus.Open) return null;
+	try {
+		const balance = await getOwnInHeadBalance(headId);
+		if (balance == null || !balance.connected || balance.utxoCount > 0) return null;
+		return (
+			"This node's wallet holds no UTxOs inside the head, so it cannot build L2 transactions. " +
+			'Every action from this side spends a script output and needs one of this wallet’s own in-head ' +
+			'outputs for collateral. Top the head up from this node; requests already made resume on their own.'
+		);
+	} catch {
+		// Decoration on a readiness answer. The operator still needs the rest of
+		// it, so a failed snapshot read must not take the endpoint down.
+		return null;
+	}
+}
 
 /**
  * Whether anything can be done with this head at this moment.
@@ -984,6 +1020,7 @@ export const getHeadConnectionGet = adminAuthenticatedEndpointFactory.build({
 			reason: node.reason,
 			peerConnected: peerLink,
 			paramDrift: await readHeadParamDrift(head.id),
+			l2Blocked: await readL2FundingBlock(head.id, head.status),
 			checkedAt: new Date().toISOString(),
 		};
 	},

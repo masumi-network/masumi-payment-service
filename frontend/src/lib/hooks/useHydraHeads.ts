@@ -781,6 +781,14 @@ export type HydraHeadConnection = {
    * refuse to take back at settlement.
    */
   paramDrift?: Array<{ parameter: string; head: number; chain: number; blocksFanout: boolean }>;
+  /**
+   * Why this node cannot act inside the head, though the head itself is fine.
+   *
+   * Null in the normal case. A participant holding no funds inside the head can
+   * lock, submit and collect nothing: every action from this side spends a
+   * script output and needs one of its own in-head outputs for collateral.
+   */
+  l2Blocked?: string | null;
   checkedAt: string;
 };
 
