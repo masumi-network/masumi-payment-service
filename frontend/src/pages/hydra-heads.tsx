@@ -979,6 +979,18 @@ export default function HydraHeadsPage() {
   const [backUpKeysParticipantId, setBackUpKeysParticipantId] = useState<string | null>(null);
   const [selectedHeadId, setSelectedHeadId] = useState<string | null>(null);
   const [runningLifecycleHeadId, setRunningLifecycleHeadId] = useState<string | null>(null);
+  /**
+   * The head whose close was refused for still holding escrows, and the reason.
+   *
+   * Held as state rather than answered inline: the API's refusal names the
+   * counts and what closing does to them, and that wording is what the operator
+   * has to agree to. Re-writing it as a generic warning would drop the only part
+   * that makes the decision informed.
+   */
+  const [pendingEscrowClose, setPendingEscrowClose] = useState<{
+    head: HydraHead;
+    reason: string;
+  } | null>(null);
   const [pendingLifecycleAction, setPendingLifecycleAction] =
     useState<PendingLifecycleAction | null>(null);
 
@@ -1085,6 +1097,24 @@ export default function HydraHeadsPage() {
     ? getLifecycleActionConfirmCopy(pendingLifecycleAction.head, pendingLifecycleAction.action)
     : null;
 
+  /** Close the head having accepted that its escrows move to L1. */
+  const handleConfirmEscrowClose = async () => {
+    const pending = pendingEscrowClose;
+    if (!pending) return;
+    setRunningLifecycleHeadId(pending.head.id);
+    try {
+      await closeHydraHead(apiClient, { headId: pending.head.id, acknowledgeActiveEscrows: true });
+      toast.success('Hydra head close started');
+      await resync('hydra');
+      await refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRunningLifecycleHeadId(null);
+      setPendingEscrowClose(null);
+    }
+  };
+
   const handleRunLifecycleAction = async (head: HydraHead, action: HydraLifecycleAction) => {
     setRunningLifecycleHeadId(head.id);
     try {
@@ -1098,9 +1128,6 @@ export default function HydraHeadsPage() {
         try {
           await closeHydraHead(apiClient, { headId: head.id });
         } catch (error) {
-          // The refusal names what closing would do to the escrows still in the
-          // head, so it is what the operator is asked to confirm — rather than
-          // a generic "are you sure" that carries none of the detail.
           const reason = error instanceof Error ? error.message : String(error);
           // Anything else is a real failure: this call no longer toasts for
           // itself, so saying so here is what keeps it from failing silently.
@@ -1108,8 +1135,10 @@ export default function HydraHeadsPage() {
             toast.error(reason);
             return;
           }
-          if (!window.confirm(`${reason}\n\nClose the head anyway?`)) return;
-          await closeHydraHead(apiClient, { headId: head.id, acknowledgeActiveEscrows: true });
+          // Ask, with the API's own wording. Answered in its own dialog rather
+          // than here, so the operator reads the counts before agreeing.
+          setPendingEscrowClose({ head, reason });
+          return;
         }
         toast.success('Hydra head close started');
       } else {
@@ -1278,6 +1307,17 @@ export default function HydraHeadsPage() {
           pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false
         }
       />
+      <ConfirmDialog
+        open={Boolean(pendingEscrowClose)}
+        onClose={() => setPendingEscrowClose(null)}
+        title="Close the head anyway?"
+        description={pendingEscrowClose?.reason ?? ''}
+        onConfirm={handleConfirmEscrowClose}
+        isLoading={
+          pendingEscrowClose ? runningLifecycleHeadId === pendingEscrowClose.head.id : false
+        }
+      />
+
       <ConfirmDialog
         open={Boolean(pendingLifecycleAction) && pendingLifecycleAction?.action !== 'init'}
         onClose={() => setPendingLifecycleAction(null)}
