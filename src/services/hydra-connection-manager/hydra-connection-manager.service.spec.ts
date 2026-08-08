@@ -638,7 +638,12 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		const manager = new HydraConnectionManager();
 		const closeTx = 'f'.repeat(64);
 		const fetchHeadOutputTxId = jest.fn(async () => closeTx);
-		const head = new EventEmitter() as EventEmitter & { mainNode: EventEmitter & Record<string, jest.Mock> };
+		const head = new EventEmitter() as EventEmitter & {
+			mainNode: EventEmitter & {
+				pinExpectedHeadId: jest.Mock;
+				fetchHeadOutputTxId: jest.Mock<() => Promise<string | undefined>>;
+			};
+		};
 		head.mainNode = Object.assign(new EventEmitter(), { pinExpectedHeadId: jest.fn(), fetchHeadOutputTxId });
 		mockHydraHeadFindUnique.mockResolvedValue({
 			isEnabled: true,
@@ -667,10 +672,15 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('still closes the head when the close transaction cannot be read', async () => {
 		const manager = new HydraConnectionManager();
-		const head = new EventEmitter() as EventEmitter & { mainNode: EventEmitter & Record<string, jest.Mock> };
+		const head = new EventEmitter() as EventEmitter & {
+			mainNode: EventEmitter & {
+				pinExpectedHeadId: jest.Mock;
+				fetchHeadOutputTxId: jest.Mock<() => Promise<string | undefined>>;
+			};
+		};
 		head.mainNode = Object.assign(new EventEmitter(), {
 			pinExpectedHeadId: jest.fn(),
-			fetchHeadOutputTxId: jest.fn(async () => {
+			fetchHeadOutputTxId: jest.fn(async (): Promise<string | undefined> => {
 				throw new Error('node unreachable');
 			}),
 		});
