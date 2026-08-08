@@ -8,6 +8,8 @@ import { castProtocol, Protocol, resolveTxHash, UTxO } from '@meshsdk/core';
 import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
 import { hydraAuthHeaders } from './auth';
 import { describeProtocolDrift, detectSnapshotDrift, type ProtocolDrift } from './protocol-drift';
+import { reportParamsDrift } from './params-drift';
+import { extractHeadOutputTxId } from './head-output-tx';
 import { Connection } from './connection';
 import {
 	canonicalHydraHeadIdSchema,
@@ -858,6 +860,9 @@ export class HydraNode extends EventEmitter {
 
 	/** Unknown snapshot fields already reported, so a replay says it once. */
 	private _reportedDriftFields = new Set<string>();
+
+	/** Parameter drift already warned about, so a misconfigured head says it once. */
+	private _reportedParamsDrift = new Set<string>();
 
 	/**
 	 * Say when the node reports snapshot state this service does not model.
@@ -1737,8 +1742,39 @@ export class HydraNode extends EventEmitter {
 		return utxos;
 	}
 
+	/**
+	 * The L1 transaction that produced the head's current state output.
+	 *
+	 * At the moment the head reaches `Closed`, before any fanout step, this is
+	 * the close transaction — the one thing `HeadIsClosed` does not carry. After
+	 * a partial fanout it becomes that step's transaction instead, so callers
+	 * must capture it on the transition and not re-derive it later.
+	 *
+	 * Returns undefined rather than throwing on any failure: this names a
+	 * transaction for operators, and a head whose close cannot be named must
+	 * still be allowed to close.
+	 */
+	async fetchHeadOutputTxId(): Promise<string | undefined> {
+		const headIdentifier = this._expectedHeadId ?? this._liveSessionHeadId;
+		if (!headIdentifier) return undefined;
+		try {
+			return extractHeadOutputTxId(await this.get('/head'), headIdentifier);
+		} catch (error) {
+			logger.warn('[HydraNode] Could not read the head state output transaction', {
+				headIdentifier,
+				error: protocolErrorToString(error),
+			});
+			return undefined;
+		}
+	}
+
 	async fetchProtocolParameters() {
-		const response = hydraProtocolParametersSchema.safeParse(await this.get('/protocol-parameters'));
+		const raw = await this.get('/protocol-parameters');
+		// Checked on the raw payload rather than the parsed one: castProtocol drops
+		// the cost models, and the schema is deliberately loose, so this is the only
+		// point where what the head actually reports is still intact.
+		reportParamsDrift(raw, this._reportedParamsDrift);
+		const response = hydraProtocolParametersSchema.safeParse(raw);
 		if (!response.success) {
 			throw new HydraProtocolError('Hydra protocol parameters failed schema validation', { cause: response.error });
 		}

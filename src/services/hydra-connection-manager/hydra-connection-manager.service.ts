@@ -1254,8 +1254,17 @@ export class HydraConnectionManager {
 					updateData.latestSnapshotNumber = BigInt(snapshotNumber);
 				}
 				if (status === HydraHeadStatus.Open && current.openedAt == null) updateData.openedAt = now;
-				else if (status === HydraHeadStatus.Closed && current.closedAt == null) updateData.closedAt = now;
-				else if (status === HydraHeadStatus.Final && current.finalizedAt == null) updateData.finalizedAt = now;
+				else if (status === HydraHeadStatus.Closed && current.closedAt == null) {
+					updateData.closedAt = now;
+					// Only here, and only once. HeadIsClosed carries no transaction id, so
+					// this reads the head's own state output from the node — which is the
+					// close transaction's output right now, and becomes a fanout step's
+					// output as soon as fanout starts. Best-effort on purpose: naming the
+					// close transaction is for operators, and a head whose close cannot be
+					// named must still close. Same reasoning as contestationDeadline above.
+					const closeTxHash = await this.getHead(hydraHeadId)?.mainNode.fetchHeadOutputTxId();
+					if (closeTxHash) updateData.closeTxHash = closeTxHash;
+				} else if (status === HydraHeadStatus.Final && current.finalizedAt == null) updateData.finalizedAt = now;
 
 				const updated = await prisma.hydraHead.updateMany({
 					where: {
