@@ -97,6 +97,24 @@ export async function reserveAndSubmitHydraTopup<T>(
  * Failed (retry-safe) only once a trusted current slot is beyond the signed TTL
  * plus grace with the hash absent. Every mutation binds the exact hash to keep
  * concurrent scheduler/API reconciliation idempotent.
+ *
+ * Deliberately NOT driven by the node's `CommitRecorded` / `DepositRecorded`
+ * event, which looks like it would make this redundant. Three reasons it cannot:
+ *
+ *  - Liveness. The node's Blockfrost chain follower sleeps a full block time
+ *    before every block and only runs its delay-free catch-up at startup, so it
+ *    is structurally slower than the chain and does not recover lost ground
+ *    without a restart. Confirmation would inherit that.
+ *  - Absence is not observable. Marking a deposit Failed requires proving the
+ *    hash is not on chain past TTL plus grace. No event stream can carry that;
+ *    it needs a trusted current slot from an independent source.
+ *  - Depth. Promotion waits for BLOCK_CONFIRMATIONS_THRESHOLD, which the frame
+ *    does not report.
+ *
+ * The node is authoritative for exactly one thing here, and we do take it from
+ * the event: the deadline in the deposit datum, which is derived from the
+ * drafting node's chain time and cannot be reconstructed from the deposit
+ * transaction. See the DepositRecorded handler in hydra-connection-manager.
  */
 export async function reconcilePendingHydraTopup(
 	candidate: PendingHydraTopupCandidate,

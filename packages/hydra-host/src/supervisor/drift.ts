@@ -10,6 +10,20 @@
  * Drift is read from the `Greetings` frame's `currentSlot` rather than by
  * parsing the node's stdout, so the supervisor never depends on log files. The
  * payment service already uses this technique to keep its head clock fresh.
+ *
+ * Deliberately computed here from that slot rather than taken from the node's
+ * own `SyncedStatusReport.drift`, which looks like the more direct source:
+ *
+ *  - It is not reliably there. Hydra 2.3 does not stream `Tick` /
+ *    `SyncedStatusReport` on a quiet head, so a probe holding an 8s budget
+ *    would often see none. `Greetings` arrives on connect, every time.
+ *  - It points the dependency the wrong way. This supervisor exists to judge a
+ *    node that may be unhealthy; a wedged follower's self-reported drift is
+ *    precisely the number that cannot be trusted. `currentSlot` is a claim
+ *    about how far it believes it has got, which wall clock can falsify.
+ *  - The arithmetic is not a reimplementation of anything. `slotToChainTimeMs`
+ *    uses the network's Shelley genesis constants (see slot-config.ts), which
+ *    are immutable historical facts, not configuration that can go stale.
  */
 
 export type SlotConfig = {

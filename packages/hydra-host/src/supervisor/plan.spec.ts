@@ -183,7 +183,11 @@ describe('planNodeAction while the node is behind', () => {
 	it('leaves a node that is closing the gap alone, however far behind it is', () => {
 		// No breach recorded: driftBreachFields re-anchors on every improvement,
 		// so a node making progress never presents one.
-		const action = planNodeAction(record(), observe({ chainSynced: false, drift: 'Unsynced', driftSeconds: 54_700 }), LIMITS);
+		const action = planNodeAction(
+			record(),
+			observe({ chainSynced: false, drift: 'Unsynced', driftSeconds: 54_700 }),
+			LIMITS,
+		);
 
 		expect(action.kind).not.toBe('Restart');
 	});
