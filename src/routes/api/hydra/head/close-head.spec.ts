@@ -75,6 +75,10 @@ const openHead = {
 	isEnabled: true,
 	isClosing: false,
 	initTxHash: 'a'.repeat(64),
+	// The refusal message quotes this back. Omitting it let the message render
+	// "NaN days" and the test still pass, because it only asserted on wording
+	// that did not include the number.
+	contestationPeriod: 86_400n,
 };
 
 beforeEach(() => {
@@ -154,9 +158,12 @@ describe('beginHydraHeadClose', () => {
 	it('says what closing would cost when it refuses', async () => {
 		mockPaymentCount.mockResolvedValue(71);
 
+		// The count and the wait are the two facts the operator decides on, so
+		// assert both. Asserting the real duration is also what stops a missing
+		// contestationPeriod rendering "NaN days" unnoticed.
 		await expect(beginHydraHeadClose('head-1')).rejects.toMatchObject({
 			statusCode: 409,
-			message: expect.stringContaining('fanned out to L1'),
+			message: expect.stringMatching(/71 escrows still holding funds[\s\S]*contestation period of 1 day/),
 		});
 		expect(mockClaimClose).not.toHaveBeenCalled();
 	});

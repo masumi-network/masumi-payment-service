@@ -41,4 +41,19 @@ describe('describeCloseWithActiveWork', () => {
 	it('recommends settling in the head first', () => {
 		expect(describeCloseWithActiveWork(300n, 0, 10)).toMatch(/Settling inside the head first/);
 	});
+
+	/**
+	 * Every comparison against NaN is false, so an unreadable period fell through
+	 * to the days branch and told the operator to wait "NaN days". The column is
+	 * non-nullable with a default, so this should not be reachable — but a number
+	 * this message quotes is not the place to find that assumption was wrong.
+	 */
+	it('never renders a number it does not have', () => {
+		for (const unreadable of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+			const message = describeCloseWithActiveWork(unreadable, 0, 1);
+			expect(message).not.toContain('NaN');
+			expect(message).not.toContain('Infinity');
+			expect(message).toContain('its configured length');
+		}
+	});
 });

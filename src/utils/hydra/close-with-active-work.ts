@@ -18,6 +18,11 @@
 
 /** Seconds as something an operator reads, not arithmetic they perform. */
 function describeDuration(seconds: number): string {
+	// The column is non-nullable with a default, so this should be unreachable —
+	// but every comparison below is false for NaN, which would fall through and
+	// tell an operator to wait "NaN days". Naming the period vaguely is worse
+	// than naming it precisely and better than naming it wrongly.
+	if (!Number.isFinite(seconds) || seconds < 0) return 'its configured length';
 	if (seconds < 60) return `${seconds} seconds`;
 	if (seconds < 3600) {
 		const minutes = Math.round(seconds / 60);
