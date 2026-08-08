@@ -1228,6 +1228,8 @@ export class HydraConnectionManager {
 				}
 				const now = new Date();
 				const updateData: HydraHeadUpdateInput = { status, latestActivityAt: now };
+				/** Set when this frame is the one that moves the head into Closed. */
+				let isClosingTransition = false;
 				if (HYDRA_HEAD_STATUS_RANK[status] >= HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Closed]) {
 					// A peer can close the head without using this process's API. Persist the
 					// admission gate from the authenticated lifecycle frame as well.
@@ -1256,14 +1258,11 @@ export class HydraConnectionManager {
 				if (status === HydraHeadStatus.Open && current.openedAt == null) updateData.openedAt = now;
 				else if (status === HydraHeadStatus.Closed && current.closedAt == null) {
 					updateData.closedAt = now;
-					// Only here, and only once. HeadIsClosed carries no transaction id, so
-					// this reads the head's own state output from the node — which is the
-					// close transaction's output right now, and becomes a fanout step's
-					// output as soon as fanout starts. Best-effort on purpose: naming the
-					// close transaction is for operators, and a head whose close cannot be
-					// named must still close. Same reasoning as contestationDeadline above.
-					const closeTxHash = await this.getHead(hydraHeadId)?.mainNode.fetchHeadOutputTxId();
-					if (closeTxHash) updateData.closeTxHash = closeTxHash;
+					// Deliberately not fetched here. The write below is a compare-and-set
+					// against the status read above, and a failed CAS fails the head
+					// closed — so an HTTP round trip inside that window trades a real
+					// outage risk for a cosmetic field. Captured after the CAS instead.
+					isClosingTransition = true;
 				} else if (status === HydraHeadStatus.Final && current.finalizedAt == null) updateData.finalizedAt = now;
 
 				const updated = await prisma.hydraHead.updateMany({
@@ -1280,6 +1279,10 @@ export class HydraConnectionManager {
 					// Only now may HydraNode drain history buffered before identity was
 					// known: the exact head id is durably committed by the CAS above.
 					if (headId) head.mainNode.pinExpectedHeadId(headId);
+					// Awaited, not fired and forgotten. Close happens once per head, so
+					// the cost is a single bounded round trip in a head's lifetime, and
+					// awaiting keeps it ordered, testable and free of a floating promise.
+					if (isClosingTransition) await this.recordCloseTransaction(hydraHeadId, head.mainNode);
 					return;
 				}
 			}
@@ -1291,6 +1294,36 @@ export class HydraConnectionManager {
 		} catch (error) {
 			logger.error('[HydraConnectionManager] Failed to update head status', { hydraHeadId, error });
 			await this.failClosedAfterStatusPersistenceFailure(hydraHeadId, head);
+		}
+	}
+
+	/**
+	 * Name the transaction that closed a head, once the close is durable.
+	 *
+	 * `HeadIsClosed` carries no transaction id, so this reads the head's own
+	 * state output from the node — which right now is the close transaction's
+	 * output, and becomes a fanout step's output as soon as fanout starts. Run
+	 * only on the transition, never as a backfill: after fanout begins the same
+	 * read would confidently record the wrong transaction.
+	 *
+	 * Failures are swallowed. This names a transaction for operators, and a head
+	 * whose close cannot be named is still closed.
+	 */
+	private async recordCloseTransaction(hydraHeadId: string, node: HydraNode): Promise<void> {
+		try {
+			const closeTxHash = await node.fetchHeadOutputTxId();
+			if (!closeTxHash) return;
+			// Guarded on null so a rollback that cleared the field, or a racing
+			// observer, cannot be overwritten by a late read.
+			await prisma.hydraHead.updateMany({
+				where: { id: hydraHeadId, closeTxHash: null },
+				data: { closeTxHash },
+			});
+		} catch (error) {
+			logger.warn('[HydraConnectionManager] Could not record the close transaction', {
+				hydraHeadId,
+				error: error instanceof Error ? error.message : 'Non-error failure',
+			});
 		}
 	}
 

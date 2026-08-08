@@ -53,7 +53,7 @@ describe('describeCloseWithActiveWork', () => {
 			const message = describeCloseWithActiveWork(unreadable, 0, 1);
 			expect(message).not.toContain('NaN');
 			expect(message).not.toContain('Infinity');
-			expect(message).toContain('its configured length');
+			expect(message).toContain('an unknown length');
 		}
 	});
 });

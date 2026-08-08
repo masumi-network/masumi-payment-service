@@ -43,6 +43,12 @@ import {
  * here is deliberately not done: this module is V1-pinned like the rest of
  * `src/`, so it cannot import the V2 arrays the head is configured with without
  * resolving to the wrong ones.
+ *
+ * These same counts are asserted against the shipped file in
+ * `packages/hydra-host/src/ledger-params.spec.ts`. Kept as two copies on
+ * purpose: `src/` does not otherwise depend on `@masumi/hydra-host`, and a new
+ * cross-package dependency costs more than three integers are worth. Change one
+ * and change the other.
  */
 export const EXPECTED_COST_MODEL_LENGTHS: ReadonlyMap<string, number> = new Map([
 	['PlutusV1', 166],
@@ -131,7 +137,19 @@ export function detectParamsDrift(params: unknown): ParamsDrift[] {
 
 	const drift: ParamsDrift[] = [...detectCostModelDrift(source)];
 
-	compareNumber(drift, 'maxTxSize', 'maxTxSize', readNumber(source, 'maxTxSize'), EXPECTED_MAX_TX_SIZE);
+	// Reported when absent, unlike the fields below. A head that stops naming its
+	// maxTxSize is indistinguishable from one that matches under the usual
+	// ignore-what-you-cannot-read rule — and this is the field that decides
+	// whether the head can accept an output no fanout transaction can distribute.
+	const maxTxSize = readNumber(source, 'maxTxSize');
+	if (maxTxSize === null) {
+		// "No usable" rather than "no": readNumber also rejects a present but
+		// non-finite value, and reporting that one as absent would send whoever
+		// reads this looking for a missing field.
+		drift.push({ key: 'maxTxSize', detail: 'the head reports no usable maxTxSize' });
+	} else {
+		compareNumber(drift, 'maxTxSize', 'maxTxSize', maxTxSize, EXPECTED_MAX_TX_SIZE);
+	}
 
 	const executionUnits = getOwnPlainObject(source, 'maxTxExecutionUnits');
 	compareNumber(

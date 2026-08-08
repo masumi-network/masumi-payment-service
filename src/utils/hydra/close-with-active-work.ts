@@ -22,7 +22,11 @@ function describeDuration(seconds: number): string {
 	// but every comparison below is false for NaN, which would fall through and
 	// tell an operator to wait "NaN days". Naming the period vaguely is worse
 	// than naming it precisely and better than naming it wrongly.
-	if (!Number.isFinite(seconds) || seconds < 0) return 'its configured length';
+	//
+	// Negative lands here too. It means different damage — arithmetic rather than
+	// a missing field — but the operator's move is the same either way, so it
+	// does not earn its own wording.
+	if (!Number.isFinite(seconds) || seconds < 0) return 'an unknown length';
 	if (seconds < 60) return `${seconds} seconds`;
 	if (seconds < 3600) {
 		const minutes = Math.round(seconds / 60);

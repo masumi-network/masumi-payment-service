@@ -628,6 +628,80 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		);
 	});
 
+	/**
+	 * HeadIsClosed carries no transaction id, so the close transaction is read
+	 * from the node's own state output. Written after the status CAS and guarded
+	 * on null: it is an informational field and must never be able to disturb the
+	 * transition itself.
+	 */
+	it('names the transaction that closed the head', async () => {
+		const manager = new HydraConnectionManager();
+		const closeTx = 'f'.repeat(64);
+		const fetchHeadOutputTxId = jest.fn(async () => closeTx);
+		const head = new EventEmitter() as EventEmitter & { mainNode: EventEmitter & Record<string, jest.Mock> };
+		head.mainNode = Object.assign(new EventEmitter(), { pinExpectedHeadId: jest.fn(), fetchHeadOutputTxId });
+		mockHydraHeadFindUnique.mockResolvedValue({
+			isEnabled: true,
+			status: HydraHeadStatus.Open,
+			headIdentifier: 'a'.repeat(56),
+			openedAt: new Date('2026-07-22T10:00:00Z'),
+			closedAt: null,
+			finalizedAt: null,
+			contestationDeadline: null,
+			latestSnapshotNumber: 0n,
+		});
+		(manager as unknown as { setupEventHandlers: (id: string, value: unknown) => void }).setupEventHandlers(
+			'head-1',
+			head,
+		);
+
+		head.emit('StatusChange', { status: HydraHeadStatus.Closed, headId: 'a'.repeat(56) });
+		await manager.flushHeadStatus('head-1');
+
+		expect(fetchHeadOutputTxId).toHaveBeenCalledTimes(1);
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'head-1', closeTxHash: null },
+			data: { closeTxHash: closeTx },
+		});
+	});
+
+	it('still closes the head when the close transaction cannot be read', async () => {
+		const manager = new HydraConnectionManager();
+		const head = new EventEmitter() as EventEmitter & { mainNode: EventEmitter & Record<string, jest.Mock> };
+		head.mainNode = Object.assign(new EventEmitter(), {
+			pinExpectedHeadId: jest.fn(),
+			fetchHeadOutputTxId: jest.fn(async () => {
+				throw new Error('node unreachable');
+			}),
+		});
+		mockHydraHeadFindUnique.mockResolvedValue({
+			isEnabled: true,
+			status: HydraHeadStatus.Open,
+			headIdentifier: 'a'.repeat(56),
+			openedAt: new Date('2026-07-22T10:00:00Z'),
+			closedAt: null,
+			finalizedAt: null,
+			contestationDeadline: null,
+			latestSnapshotNumber: 0n,
+		});
+		(manager as unknown as { setupEventHandlers: (id: string, value: unknown) => void }).setupEventHandlers(
+			'head-1',
+			head,
+		);
+
+		head.emit('StatusChange', { status: HydraHeadStatus.Closed, headId: 'a'.repeat(56) });
+		await expect(manager.flushHeadStatus('head-1')).resolves.toBeUndefined();
+
+		expect(mockHydraHeadUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ status: HydraHeadStatus.Closed }),
+			}),
+		);
+		expect(mockHydraHeadUpdateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ closeTxHash: expect.anything() }) }),
+		);
+	});
+
 	it('pins a fresh head only after its identifier is durably CAS-persisted', async () => {
 		const manager = new HydraConnectionManager();
 		const order: string[] = [];

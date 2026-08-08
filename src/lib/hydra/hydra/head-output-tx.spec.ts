@@ -1,6 +1,12 @@
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it, jest } from '@jest/globals';
 
-import { extractHeadOutputTxId } from './head-output-tx';
+const mockWarn = jest.fn();
+
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
+	logger: { debug: jest.fn(), info: jest.fn(), warn: mockWarn, error: jest.fn() },
+}));
+
+const { extractHeadOutputTxId } = await import('./head-output-tx');
 
 const HEAD_ID = 'd7f3a349772cb36206c2005f108b77bdad46da96b1a6378702feed00';
 const CLOSE_TX = 'f96e9b1375c44ac6865c19682df5043911f15682db436ba27948421d75ccc2f5';
@@ -67,6 +73,20 @@ describe('extractHeadOutputTxId', () => {
 		expect(extractHeadOutputTxId(state, HEAD_ID.toUpperCase())).toBe(CLOSE_TX);
 	});
 
+	it('matches when the node emits the policy id in a different case than ours', () => {
+		// Our side is normalised by canonicalHydraHeadIdSchema; the key in this map
+		// is the node's. An exact-key lookup would report the head output absent
+		// and say nothing about why.
+		const state = headState({
+			[`${CLOSE_TX}#0`]: {
+				address: 'addr_test1wq2b91a7e6',
+				value: { lovelace: 232498020, [HEAD_ID.toUpperCase()]: { HydraHeadV1: 1 } },
+			},
+		});
+
+		expect(extractHeadOutputTxId(state, HEAD_ID)).toBe(CLOSE_TX);
+	});
+
 	it('skips keys that are not output references', () => {
 		const state = headState({ 'not-a-reference': headOutput(), [`${CLOSE_TX}#1`]: headOutput() });
 
@@ -104,6 +124,36 @@ describe('extractHeadOutputTxId', () => {
 			[`${CLOSE_TX}#0`]: headOutput(),
 			[`${OTHER_TX}#1`]: { address: 'addr_test1vz', value: { lovelace: 2000000, [HEAD_ID]: { HydraHeadV1: 1 } } },
 		});
+
+		expect(extractHeadOutputTxId(state, HEAD_ID)).toBeUndefined();
+	});
+
+	it('gives up loudly on an implausibly large state, rather than silently', () => {
+		// Reaching the cap and finding nothing return the same value, so the log is
+		// the only thing that tells them apart. An unlogged bail would read as "this
+		// head has no state output", which is a very different problem.
+		mockWarn.mockClear();
+		const huge: Record<string, unknown> = {};
+		for (let index = 0; index <= 5_000; index += 1) {
+			huge[`${OTHER_TX.slice(0, 60)}${index.toString(16).padStart(4, '0')}#0`] = {
+				address: 'addr_test1vz',
+				value: { lovelace: 1 },
+			};
+		}
+
+		expect(extractHeadOutputTxId(headState(huge), HEAD_ID)).toBeUndefined();
+		expect(mockWarn).toHaveBeenCalledTimes(1);
+	});
+
+	it('stays quiet when it simply does not find the head output', () => {
+		mockWarn.mockClear();
+
+		expect(extractHeadOutputTxId(headState({}), HEAD_ID)).toBeUndefined();
+		expect(mockWarn).not.toHaveBeenCalled();
+	});
+
+	it('skips an output index too large to be real', () => {
+		const state = headState({ [`${CLOSE_TX}#4294967296`]: headOutput() });
 
 		expect(extractHeadOutputTxId(state, HEAD_ID)).toBeUndefined();
 	});

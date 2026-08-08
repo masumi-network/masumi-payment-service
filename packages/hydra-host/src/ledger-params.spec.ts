@@ -34,6 +34,9 @@ describe('shipped L2 ledger params', () => {
 	// The V3 model gained entries in the Hydra 2.2.0 era; a file carrying the
 	// older 251-entry model against a 297-entry ledger fails every in-head
 	// script spend with PPViewHashesDontMatch.
+	// These lengths are also asserted against the RUNNING head by
+	// src/lib/hydra/hydra/params-drift.ts. Two copies on purpose — src/ does not
+	// depend on this package — so change one and change the other.
 	it('carries all three Plutus cost models at their pinned lengths', () => {
 		const { costModels } = load('preprod');
 		expect(Object.keys(costModels).sort()).toEqual(['PlutusV1', 'PlutusV2', 'PlutusV3']);

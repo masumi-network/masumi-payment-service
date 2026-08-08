@@ -112,11 +112,35 @@ describe('detectParamsDrift', () => {
 		});
 	});
 
+	it('reports an absent maxTxSize instead of treating it as a match', () => {
+		// The one field exempt from ignore-what-you-cannot-read: it decides whether
+		// the head can accept an output no fanout transaction can distribute.
+		const params = shippedParams();
+		delete params.maxTxSize;
+
+		expect(detectParamsDrift(params)).toEqual([{ key: 'maxTxSize', detail: 'the head reports no usable maxTxSize' }]);
+	});
+
+	it('reports a present but unreadable maxTxSize the same way', () => {
+		// Wording says "no usable" rather than "no" precisely so this case does not
+		// send someone hunting for a field that is right there.
+		const params = shippedParams();
+		params.maxTxSize = Number.POSITIVE_INFINITY;
+
+		expect(detectParamsDrift(params)).toEqual([{ key: 'maxTxSize', detail: 'the head reports no usable maxTxSize' }]);
+	});
+
 	it('ignores fields it cannot read rather than inventing drift', () => {
 		// A field absent or non-numeric is a payload we do not understand, which
 		// is protocol-drift's job to notice. Reporting it here as a value change
-		// would be a false positive on every older node.
-		expect(detectParamsDrift({ costModels: shippedParams().costModels })).toEqual([]);
+		// would be a false positive on every older node. maxTxSize is the one
+		// exception and is asserted separately above.
+		const params = shippedParams();
+		delete params.maxTxExecutionUnits;
+		delete params.txFeeFixed;
+		delete params.executionUnitPrices;
+
+		expect(detectParamsDrift(params)).toEqual([]);
 	});
 });
 

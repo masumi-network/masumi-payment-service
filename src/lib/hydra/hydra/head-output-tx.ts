@@ -23,12 +23,27 @@
  * afterwards.
  */
 
+import { logger } from '@masumi/payment-core/logger';
 import { getOwnPlainObject, getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 
-/** `txId#index`, as hydra keys a UTxO map. */
-const OUTPUT_REFERENCE = /^([0-9a-fA-F]{64})#[0-9]+$/;
+/**
+ * `txId#index`, as hydra keys a UTxO map.
+ *
+ * The index is bounded to what a uint32 can express, matching
+ * `hydraSnapshotOutputReferenceSchema`. Only the transaction id is read, so a
+ * longer index would be harmless — but accepting a shape the rest of the
+ * codebase rejects is how two parsers of the same string drift apart.
+ */
+const OUTPUT_REFERENCE = /^([0-9a-fA-F]{64})#([0-9]{1,10})$/;
 
-/** Bound the scan; a head's spendable set is small, and this is untrusted JSON. */
+/**
+ * Bound the scan over another process's JSON.
+ *
+ * Arbitrary, and far above anything real: the head's spendable set is the head
+ * output and little else. It exists so a malformed or hostile payload cannot
+ * make this walk forever, not because a legitimate head approaches it — which
+ * is why reaching it is logged rather than treated as "not found".
+ */
 const MAX_SCANNED_OUTPUTS = 5_000;
 
 /**
@@ -41,7 +56,13 @@ const MAX_SCANNED_OUTPUTS = 5_000;
 function carriesHeadToken(output: object, headIdentifier: string): boolean {
 	const value = getOwnPlainObject(output, 'value');
 	if (value === undefined) return false;
-	const assets = getOwnValue(value, headIdentifier);
+	// Matched case-insensitively rather than by exact key. Our side of the
+	// comparison is normalised by canonicalHydraHeadIdSchema, but the key comes
+	// from the node's JSON, and a mismatch there would not fail loudly — it would
+	// silently report the head output as absent.
+	const policy = Object.keys(value).find((key) => key.toLowerCase() === headIdentifier);
+	if (policy === undefined) return false;
+	const assets = getOwnValue(value, policy);
 	// A policy entry is an object of assetName -> quantity. Anything else (a bare
 	// number under a 56-hex key) is not a policy bucket and does not count.
 	return isPlainObject(assets) && Object.keys(assets).length > 0;
@@ -73,9 +94,18 @@ export function extractHeadOutputTxId(headState: unknown, headIdentifier: string
 	const producers = new Set<string>();
 	let scanned = 0;
 	for (const reference of Object.keys(spendable)) {
-		if (++scanned > MAX_SCANNED_OUTPUTS) return undefined;
+		if (++scanned > MAX_SCANNED_OUTPUTS) {
+			// Distinguished from "not found" in the log, because the two mean very
+			// different things and the return value cannot tell them apart.
+			logger.warn('[HydraNode] Gave up scanning the head state for its output transaction', {
+				headIdentifier: wanted,
+				scanned: MAX_SCANNED_OUTPUTS,
+			});
+			return undefined;
+		}
 		const match = OUTPUT_REFERENCE.exec(reference);
 		if (match === null) continue;
+		if (Number(match[2]) > 0xffff_ffff) continue;
 		const output = getOwnValue(spendable, reference);
 		if (!isPlainObject(output)) continue;
 		if (!carriesHeadToken(output, wanted)) continue;
