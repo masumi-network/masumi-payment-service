@@ -295,6 +295,9 @@ model RegistryRequest {
   paymentSourceId                String
   smartContractWalletId          String
   recipientHotWalletId           String?
+  /// External bech32 recipient when the NFT + min-UTXO should land outside
+  /// managed hot wallets (browser / paper / existing user addresses).
+  recipientWalletAddress         String?
   deregistrationHotWalletId      String?
   sendFundingLovelace            BigInt?
   name                           String
@@ -666,6 +669,9 @@ model InboxAgentRegistrationRequest {
   paymentSourceId                String
   smartContractWalletId          String
   recipientHotWalletId           String?
+  /// External bech32 recipient when the NFT + min-UTXO should land outside
+  /// managed hot wallets (browser / paper / existing user addresses).
+  recipientWalletAddress         String?
   deregistrationHotWalletId      String?
   sendFundingLovelace            BigInt?
   name                           String
