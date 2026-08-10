@@ -9,7 +9,6 @@ import {
 	HydraNodeEvent,
 	StatusChangeData,
 	buildHydraHttpEndpoint,
-	getHydraPlaintextHosts,
 	type HydraConfirmedTransaction,
 	validateHydraNodeUrls,
 } from '@/lib/hydra';
@@ -347,14 +346,19 @@ export class HydraConnectionManager {
 			}
 		});
 
+		const hostTransport = configuredHead.LocalParticipant.HydraHost;
+		const persistedNodeHttpUrl = new URL(configuredHead.LocalParticipant.nodeHttpUrl);
+		if (persistedNodeHttpUrl.protocol === 'http:' && !hostTransport.allowInsecureHttp) {
+			throw new Error(`Hydra head ${head.id} uses HTTP without the Host's explicit allowInsecureHttp opt-in`);
+		}
 		const nodeUrls = validateHydraNodeUrls(
 			configuredHead.LocalParticipant.nodeHttpUrl,
 			configuredHead.LocalParticipant.nodeUrl,
 			{
-				plaintextHosts: getHydraPlaintextHosts(),
+				plaintextHosts: hostTransport.allowInsecureHttp ? [persistedNodeHttpUrl.hostname] : [],
 			},
 		);
-		const nodeAuthToken = this.resolveNodeAuthToken(configuredHead.LocalParticipant.HydraHost);
+		const nodeAuthToken = this.resolveNodeAuthToken(hostTransport);
 		const isReachable = await this.probeNode(nodeUrls.httpUrl, nodeAuthToken);
 		if (!isReachable) {
 			throw new Error(`Local Hydra node unreachable for head ${head.id}`);

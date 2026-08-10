@@ -21,6 +21,13 @@ export type HydraParticipant = {
   updatedAt?: string;
   hydraHeadId?: string | null;
   walletId: string;
+  Wallet: {
+    walletVkey: string;
+    walletAddress: string;
+    collectionAddress: string | null;
+    note: string | null;
+    type: 'Purchasing' | 'Selling' | 'Funding';
+  };
   nodeUrl: string;
   nodeHttpUrl: string;
   hasCommitted: boolean;
@@ -50,7 +57,14 @@ export type HydraNodeKeys = {
  * No node URL: their API sits behind their own Host's proxy and we hold no
  * token for it. What we have is the peer-plane address etcd dials.
  */
-export type HydraRemoteParticipant = Omit<HydraParticipant, 'nodeUrl' | 'nodeHttpUrl'> & {
+export type HydraRemoteParticipant = Omit<
+  HydraParticipant,
+  'nodeUrl' | 'nodeHttpUrl' | 'Wallet'
+> & {
+  Wallet: {
+    walletVkey: string;
+    walletAddress: string;
+  };
   advertise: string;
   hydraVerificationKeyId: string;
 };
@@ -486,6 +500,8 @@ export type HydraInvitePreview = {
   contestationPeriodSeconds: number;
   depositPeriodSeconds: number;
   unsyncedPeriodSeconds: number;
+  exchangeUsesPrivateNetwork: boolean | null;
+  exchangeNetworkWarning: string | null;
   signatureValid: boolean;
   alreadyKnown: boolean;
   identity: {
@@ -570,7 +586,12 @@ export async function previewHydraInvite(apiClient: Client, payload: { code: str
 /** Accept an invite: provisions our node, answers the issuer, records the head. */
 export async function redeemHydraInvite(
   apiClient: Client,
-  payload: { code: string; hotWalletId: string },
+  payload: {
+    code: string;
+    hotWalletId: string;
+    allowInsecureExchangeHttp: boolean;
+    allowPrivateExchangeNetwork: boolean;
+  },
 ) {
   const response = await handleApiCall(
     () =>

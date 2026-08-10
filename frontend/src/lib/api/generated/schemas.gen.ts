@@ -5390,6 +5390,9 @@ export const HydraHostSchema = {
         baseUrl: {
             type: 'string'
         },
+        allowInsecureHttp: {
+            type: 'boolean'
+        },
         publicPeerHost: {
             type: 'string'
         },
@@ -5436,6 +5439,7 @@ export const HydraHostSchema = {
         'name',
         'network',
         'baseUrl',
+        'allowInsecureHttp',
         'publicPeerHost',
         'hasAdminToken',
         'hydraVersion',
@@ -5746,6 +5750,40 @@ export const HydraHeadSchema = {
                 walletId: {
                     type: 'string'
                 },
+                Wallet: {
+                    type: 'object',
+                    properties: {
+                        walletVkey: {
+                            type: 'string'
+                        },
+                        walletAddress: {
+                            type: 'string'
+                        },
+                        collectionAddress: {
+                            type: 'string',
+                            nullable: true
+                        },
+                        note: {
+                            type: 'string',
+                            nullable: true
+                        },
+                        type: {
+                            type: 'string',
+                            enum: [
+                                'Selling',
+                                'Purchasing',
+                                'Funding'
+                            ]
+                        }
+                    },
+                    required: [
+                        'walletVkey',
+                        'walletAddress',
+                        'collectionAddress',
+                        'note',
+                        'type'
+                    ]
+                },
                 nodeUrl: {
                     type: 'string'
                 },
@@ -5759,6 +5797,15 @@ export const HydraHeadSchema = {
                     type: 'string',
                     nullable: true
                 },
+                hydraHostId: {
+                    type: 'string'
+                },
+                hostNodeId: {
+                    type: 'string'
+                },
+                cardanoVkey: {
+                    type: 'string'
+                },
                 keysDisclosedAt: {
                     type: 'string',
                     nullable: true
@@ -5768,10 +5815,14 @@ export const HydraHeadSchema = {
                 'id',
                 'createdAt',
                 'walletId',
+                'Wallet',
                 'nodeUrl',
                 'nodeHttpUrl',
                 'hasCommitted',
                 'commitTxHash',
+                'hydraHostId',
+                'hostNodeId',
+                'cardanoVkey',
                 'keysDisclosedAt'
             ]
         },
@@ -5789,6 +5840,21 @@ export const HydraHeadSchema = {
                     walletId: {
                         type: 'string'
                     },
+                    Wallet: {
+                        type: 'object',
+                        properties: {
+                            walletVkey: {
+                                type: 'string'
+                            },
+                            walletAddress: {
+                                type: 'string'
+                            }
+                        },
+                        required: [
+                            'walletVkey',
+                            'walletAddress'
+                        ]
+                    },
                     advertise: {
                         type: 'string'
                     },
@@ -5801,16 +5867,21 @@ export const HydraHeadSchema = {
                     },
                     hydraVerificationKeyId: {
                         type: 'string'
+                    },
+                    cardanoVkey: {
+                        type: 'string'
                     }
                 },
                 required: [
                     'id',
                     'createdAt',
                     'walletId',
+                    'Wallet',
                     'advertise',
                     'hasCommitted',
                     'commitTxHash',
-                    'hydraVerificationKeyId'
+                    'hydraVerificationKeyId',
+                    'cardanoVkey'
                 ]
             }
         },

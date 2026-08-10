@@ -9,10 +9,14 @@
 import createHttpError from 'http-errors';
 import { HydraHeadStatus, HydraHostStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
+import { logger } from '@masumi/payment-core/logger';
 import { decrypt, encrypt } from '@/utils/security/encryption';
 import { assertUsableHydraAuthToken } from '@/lib/hydra/hydra/auth';
+import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
 import { getOwnString, isPlainObject } from '@masumi/payment-core/object-properties';
 import { fetchHostCapabilities, type HostCapabilities } from './client';
+import { expectedHostCapabilitiesForNetwork } from './compatibility';
+import { assertHostCompatible } from './placement';
 
 /** Shape returned to operators. Deliberately excludes both tokens. */
 export type PublicHydraHost = {
@@ -22,6 +26,7 @@ export type PublicHydraHost = {
 	name: string;
 	network: Network;
 	baseUrl: string;
+	allowInsecureHttp: boolean;
 	publicPeerHost: string;
 	hasAdminToken: boolean;
 	hydraVersion: string | null;
@@ -40,6 +45,7 @@ type HostRow = {
 	name: string;
 	network: Network;
 	baseUrl: string;
+	allowInsecureHttp: boolean;
 	publicPeerHost: string;
 	encryptedAdminToken: string | null;
 	hydraVersion: string | null;
@@ -59,6 +65,7 @@ export function toPublicHydraHost(row: HostRow): PublicHydraHost {
 		name: row.name,
 		network: row.network,
 		baseUrl: row.baseUrl,
+		allowInsecureHttp: row.allowInsecureHttp,
 		publicPeerHost: row.publicPeerHost,
 		// Presence, never the value: an operator needs to know whether this Host
 		// can be provisioned on, not what the credential is.
@@ -94,7 +101,7 @@ function truncateError(message: string, limit = 500): string {
 }
 
 /** A control-plane URL must be an absolute https/http origin with no credentials. */
-export function normalizeHostBaseUrl(rawUrl: string): string {
+export function normalizeHostBaseUrl(rawUrl: string, allowInsecureHttp = false): string {
 	let parsed: URL;
 	try {
 		parsed = new URL(rawUrl);
@@ -109,6 +116,19 @@ export function normalizeHostBaseUrl(rawUrl: string): string {
 	}
 	if (parsed.search.length > 0 || parsed.hash.length > 0) {
 		throw createHttpError(400, 'baseUrl must not carry a query string or fragment');
+	}
+	if (parsed.protocol === 'http:' && !allowInsecureHttp) {
+		throw createHttpError(
+			400,
+			'baseUrl uses HTTP; set allowInsecureHttp to acknowledge that bearer tokens will cross plaintext transport',
+		);
+	}
+	try {
+		validateHydraHttpUrl(rawUrl, {
+			plaintextHosts: parsed.protocol === 'http:' ? [parsed.hostname] : [],
+		});
+	} catch (error) {
+		throw createHttpError(400, (error as Error).message);
 	}
 	// Trailing slashes are stripped so the unique (network, baseUrl) constraint
 	// cannot be sidestepped by registering the same Host twice.
@@ -146,11 +166,18 @@ export async function registerHydraHost(input: {
 	name: string;
 	network: Network;
 	baseUrl: string;
+	allowInsecureHttp: boolean;
 	publicPeerHost: string;
 	userToken: string;
 	adminToken?: string;
 }): Promise<PublicHydraHost> {
-	const baseUrl = normalizeHostBaseUrl(input.baseUrl);
+	const baseUrl = normalizeHostBaseUrl(input.baseUrl, input.allowInsecureHttp);
+	const allowInsecureHttp = new URL(baseUrl).protocol === 'http:' && input.allowInsecureHttp;
+	if (allowInsecureHttp) {
+		logger.warn(
+			`hydra: registering ${input.name} at ${baseUrl} with explicitly allowed HTTP; bearer tokens are not transport-encrypted`,
+		);
+	}
 	const encryptedUserToken = validateToken(input.userToken, 'userToken');
 	const encryptedAdminToken = input.adminToken === undefined ? null : validateToken(input.adminToken, 'adminToken');
 
@@ -163,9 +190,13 @@ export async function registerHydraHost(input: {
 				name: input.name,
 				network: input.network,
 				baseUrl,
+				allowInsecureHttp,
 				publicPeerHost: input.publicPeerHost,
 				encryptedUserToken,
 				encryptedAdminToken,
+				// A new Host has not yet proved it matches the service-owned
+				// compatibility manifest. The first successful check activates it.
+				status: HydraHostStatus.Unreachable,
 			},
 			include: { _count: { select: { Participants: true } } },
 		});
@@ -180,11 +211,20 @@ export async function registerHydraHost(input: {
 
 export async function updateHydraHost(
 	id: string,
-	input: { name?: string; status?: HydraHostStatus; userToken?: string; adminToken?: string | null },
+	input: {
+		name?: string;
+		status?: HydraHostStatus;
+		userToken?: string;
+		adminToken?: string | null;
+		allowInsecureHttp?: boolean;
+	},
 ): Promise<PublicHydraHost> {
 	const existing = await prisma.hydraHost.findUnique({ where: { id } });
 	if (!existing) {
 		throw createHttpError(404, 'hydra host not found');
+	}
+	if (input.allowInsecureHttp === true) {
+		normalizeHostBaseUrl(existing.baseUrl, true);
 	}
 
 	const updated = await prisma.hydraHost.update({
@@ -192,6 +232,11 @@ export async function updateHydraHost(
 		data: {
 			...(input.name === undefined ? {} : { name: input.name }),
 			...(input.status === undefined ? {} : { status: input.status }),
+			...(input.allowInsecureHttp === undefined
+				? {}
+				: {
+						allowInsecureHttp: new URL(existing.baseUrl).protocol === 'http:' && input.allowInsecureHttp,
+					}),
 			...(input.userToken === undefined ? {} : { encryptedUserToken: validateToken(input.userToken, 'userToken') }),
 			...(input.adminToken === undefined
 				? {}
@@ -199,6 +244,11 @@ export async function updateHydraHost(
 		},
 		include: { _count: { select: { Participants: true } } },
 	});
+	if (input.allowInsecureHttp === true && updated.allowInsecureHttp) {
+		logger.warn(
+			`hydra: HTTP explicitly enabled for ${updated.name} at ${updated.baseUrl}; bearer tokens are not transport-encrypted`,
+		);
+	}
 	return toPublicHydraHost(updated);
 }
 
@@ -256,7 +306,9 @@ export async function refreshHydraHostCapabilities(id: string): Promise<PublicHy
 
 	let capabilities: HostCapabilities;
 	try {
-		capabilities = await fetchHostCapabilities(host.baseUrl, decrypt(host.encryptedAdminToken));
+		capabilities = await fetchHostCapabilities(host.baseUrl, decrypt(host.encryptedAdminToken), {
+			allowInsecureHttp: host.allowInsecureHttp,
+		});
 	} catch (error) {
 		const updated = await prisma.hydraHost.update({
 			where: { id },
@@ -270,15 +322,22 @@ export async function refreshHydraHostCapabilities(id: string): Promise<PublicHy
 		return toPublicHydraHost(updated);
 	}
 
+	let compatibilityError: string | null = null;
+	try {
+		assertHostCompatible(capabilities, expectedHostCapabilitiesForNetwork(host.network));
+	} catch (error) {
+		compatibilityError = (error as Error).message;
+	}
+
 	const updated = await prisma.hydraHost.update({
 		where: { id },
 		data: {
 			hydraVersion: capabilities.hydraVersion || null,
 			scriptCatalogueHash: capabilities.scriptCatalogueHash,
 			ledgerParamsHash: capabilities.ledgerParamsHash,
-			status: nextHostStatus(host.status, true),
+			status: nextHostStatus(host.status, compatibilityError === null),
 			lastHealthAt: new Date(),
-			lastHealthError: null,
+			lastHealthError: compatibilityError === null ? null : truncateError(compatibilityError),
 		},
 		include: { _count: { select: { Participants: true } } },
 	});

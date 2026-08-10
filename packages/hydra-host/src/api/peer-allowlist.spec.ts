@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { buildPeerAllowlist, hostOfAdvertise, renderNftables } from './peer-allowlist.js';
+import { buildPeerAllowlist, hostOfAdvertise, renderNftables, resolvePeerAllowlist } from './peer-allowlist.js';
 import type { NodeRecord } from '../registry/types.js';
 
 function node(overrides: Partial<NodeRecord>): NodeRecord {
@@ -35,9 +35,16 @@ describe('hostOfAdvertise', () => {
 		expect(hostOfAdvertise('peer.example.com')).toBe('peer.example.com');
 	});
 
-	// IPv6 literals carry colons of their own; only the last one is the port.
-	it('splits an IPv6 literal at the final colon', () => {
-		expect(hostOfAdvertise('[2001:db8::1]:5101')).toBe('[2001:db8::1]');
+	// The launcher does not accept IPv6 advertise addresses, so the firewall
+	// renderer must fail closed instead of interpreting one differently.
+	it('rejects an unsupported IPv6 literal', () => {
+		expect(() => hostOfAdvertise('[2001:db8::1]:5101')).toThrow(/invalid peer advertise address/);
+	});
+
+	it('rejects values that could inject nftables statements', () => {
+		expect(() => hostOfAdvertise('peer.example:5001 } accept\n}\nflush ruleset\n# :5101')).toThrow(
+			/invalid peer advertise address/,
+		);
 	});
 });
 
@@ -77,19 +84,94 @@ describe('buildPeerAllowlist', () => {
 });
 
 describe('renderNftables', () => {
-	it('accepts the peer and drops the rest of the range', () => {
+	const resolveTestAddresses = async (host: string) => [
+		{ address: host === 'them.example.com' ? '203.0.113.10' : '203.0.113.11', family: 4 },
+	];
+
+	it('accepts the resolved peer and drops the rest of the range', async () => {
 		const ruleset = renderNftables(
-			buildPeerAllowlist([node({ peers: [peer('them.example.com:5101')] })], RANGE),
+			await resolvePeerAllowlist(
+				buildPeerAllowlist([node({ peers: [peer('them.example.com:5101')] })], RANGE),
+				resolveTestAddresses,
+			),
 			RANGE,
 		);
-		expect(ruleset).toContain('tcp dport 5001 ip saddr { them.example.com } accept');
+		expect(ruleset).toContain('tcp dport 5001 ip saddr { 203.0.113.10 } accept');
+		expect(ruleset).not.toContain('them.example.com } accept');
 		expect(ruleset).toContain('tcp dport 5001-5004 drop');
 	});
 
+	it('filters both host-network and Docker-forwarded peer traffic', async () => {
+		const ruleset = renderNftables(
+			await resolvePeerAllowlist(
+				buildPeerAllowlist([node({ peers: [peer('them.example.com:5101')] })], RANGE),
+				resolveTestAddresses,
+			),
+			RANGE,
+		);
+		expect(ruleset).toContain('chain input {');
+		expect(ruleset).toContain('hook input');
+		expect(ruleset).toContain('chain forward {');
+		expect(ruleset).toContain('hook forward');
+	});
+
+	it('replaces all rules from a previous application in one batch', async () => {
+		const ruleset = renderNftables(
+			await resolvePeerAllowlist(buildPeerAllowlist([node({ peers: [] })], RANGE), resolveTestAddresses),
+			RANGE,
+		);
+		expect(ruleset.indexOf('add table inet hydra_peer')).toBeLessThan(ruleset.indexOf('flush table inet hydra_peer'));
+		expect(ruleset.indexOf('flush table inet hydra_peer')).toBeLessThan(ruleset.indexOf('table inet hydra_peer {'));
+	});
+
 	// A node removed between two applications must not leave its port open.
-	it('emits no accept for an unpeered node', () => {
-		const ruleset = renderNftables(buildPeerAllowlist([node({ peers: [] })], RANGE), RANGE);
+	it('emits no accept for an unpeered node', async () => {
+		const ruleset = renderNftables(
+			await resolvePeerAllowlist(buildPeerAllowlist([node({ peers: [] })], RANGE), resolveTestAddresses),
+			RANGE,
+		);
 		expect(ruleset).not.toContain('accept\n');
-		expect(ruleset).toContain('no peers yet');
+		expect(ruleset).toContain('no resolved peers');
+	});
+
+	it('closes a rule when DNS resolution fails', async () => {
+		const allowlist = await resolvePeerAllowlist(
+			buildPeerAllowlist([node({ peers: [peer('missing.example.com:5101')] })], RANGE),
+			async () => {
+				throw new Error('ENOTFOUND');
+			},
+		);
+		expect(allowlist.rules[0]).toMatchObject({ closed: true, allowedIpv4Addresses: [] });
+		expect(renderNftables(allowlist, RANGE)).not.toContain('missing.example.com } accept');
+	});
+
+	it('never interprets a hostname-shaped nftables interval as an address', async () => {
+		const allowlist = await resolvePeerAllowlist(
+			buildPeerAllowlist([node({ peers: [peer('0.0.0.0-255.255.255.255:5101')] })], RANGE),
+			async () => {
+				throw new Error('ENOTFOUND');
+			},
+		);
+		const ruleset = renderNftables(allowlist, RANGE);
+		expect(ruleset).not.toContain('0.0.0.0-255.255.255.255');
+		expect(ruleset).not.toContain('tcp dport 5001 ip saddr');
+	});
+
+	it('rejects a non-literal address even if a caller bypasses resolution', () => {
+		expect(() =>
+			renderNftables(
+				{
+					rules: [
+						{
+							...buildPeerAllowlist([node({ peers: [peer('them.example.com:5101')] })], RANGE).rules[0],
+							allowedIpv4Addresses: ['0.0.0.0-255.255.255.255'],
+							resolutionErrors: [],
+						},
+					],
+					unusedPorts: [],
+				},
+				RANGE,
+			),
+		).toThrow(/non-IPv4/);
 	});
 });

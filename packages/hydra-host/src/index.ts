@@ -49,7 +49,11 @@ async function main(): Promise<void> {
 	// Refuse to boot if another Host already owns this volume: both would spawn a
 	// process per node, giving duplicate hydra-nodes and two etcd members
 	// claiming one participant identity.
-	const lock = new HostLock(config.dataDir, os.hostname());
+	let handleLeaseLoss = (reason: string): void => {
+		logger.error(`[host] data-volume lease lost during startup: ${reason}`);
+		process.exit(1);
+	};
+	const lock = new HostLock(config.dataDir, os.hostname(), Date.now, (reason) => handleLeaseLoss(reason));
 	await lock.acquire();
 
 	const store = new NodeRegistryStore(config.dataDir);
@@ -66,6 +70,11 @@ async function main(): Promise<void> {
 
 	const supervisor = new Supervisor(config, store, allocator, resolveSlotConfig(config.network), logger);
 	await supervisor.boot();
+	const tickSupervisor = (source: string): void => {
+		void supervisor.tick().catch((error: unknown) => {
+			logger.error(`[host] supervisor tick from ${source} failed: ${(error as Error).message}`);
+		});
+	};
 
 	const provisionDeps = {
 		store,
@@ -128,7 +137,7 @@ async function main(): Promise<void> {
 				provisionDeps,
 			);
 			await requestStart(store, hostNodeId);
-			void supervisor.tick();
+			tickSupervisor('exchange redemption');
 			logger.info(`[exchange] invite ${nonce} redeemed; node ${hostNodeId} starting`);
 		},
 	});
@@ -141,7 +150,7 @@ async function main(): Promise<void> {
 		logger.info(`[host] exchange plane listening on :${config.exchangePort}`);
 	});
 
-	const timer = setInterval(() => void supervisor.tick(), TICK_INTERVAL_MS);
+	const timer = setInterval(() => tickSupervisor('interval'), TICK_INTERVAL_MS);
 
 	let shuttingDown = false;
 	const shutdown = (signal: string): void => {
@@ -174,6 +183,10 @@ async function main(): Promise<void> {
 				logger.error(`[host] shutdown failed: ${(error as Error).message}`);
 				process.exit(1);
 			});
+	};
+	handleLeaseLoss = (reason: string): void => {
+		logger.error(`[host] data-volume lease lost: ${reason}`);
+		shutdown('LOCK_LOST');
 	};
 
 	process.on('SIGTERM', () => shutdown('SIGTERM'));

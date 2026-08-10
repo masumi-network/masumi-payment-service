@@ -1920,8 +1920,13 @@ model HydraHost {
   network Network
 
   /// Base URL of the Host control plane, e.g. https://hydra1.example.com.
-  /// TLS terminates in front of the Host; the container itself serves plain HTTP.
+  /// Prefer TLS terminated in front of the Host. Plain HTTP requires the
+  /// explicit allowInsecureHttp opt-in below.
   baseUrl String
+
+  /// Explicit operator opt-in for sending bearer tokens to an HTTP Host URL.
+  /// Intended for loopback or a separately secured private network only.
+  allowInsecureHttp Boolean @default(false)
 
   /// Hostname the Host advertises for per-head peer ports. Recorded so the
   /// counterparty handshake can be checked against what the Host actually

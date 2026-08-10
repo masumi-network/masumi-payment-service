@@ -4,16 +4,13 @@
  * A separate listener rather than a path on the control plane, because the two
  * have opposite security models and mixing them means one routing mistake
  * exposes fleet management. Nothing here can provision, delete, reconfigure or
- * proxy a node; the entire vocabulary is "redeem an invite I issued" and "leave
- * an invite for my operator".
+ * proxy a node; its entire vocabulary is "redeem an invite I issued".
  *
  * It is unauthenticated by design — the invite is the credential and its
  * authority is a signature. But it is not an open door:
  *
  *  - redemption requires a nonce this Host issued, unspent and unexpired;
- *  - a POSTed invite requires an issuer on the allow-list the payment service
- *    pushed, so a stranger cannot write here at all;
- *  - bodies are capped, and the inbox is bounded.
+ *  - bodies are capped and connection timeouts are short.
  *
  * No signature is checked here. That is the payment service's job when it
  * polls, and the division is deliberate: everything this plane can do without
@@ -28,6 +25,8 @@ import type { SupervisorLogger } from '../supervisor/supervisor.js';
 
 /** Smaller than the control plane's: an invite is a few hundred bytes. */
 const MAX_BODY_BYTES = 64 * 1024;
+const DEFAULT_MAX_IN_FLIGHT = 16;
+const DEFAULT_REQUESTS_PER_MINUTE = 120;
 
 export type ExchangeDeps = {
 	store: ExchangeStore;
@@ -40,6 +39,8 @@ export type ExchangeDeps = {
 	 * counterparty who can do nothing about it.
 	 */
 	onRedeemed: (nonce: string, hostNodeId: string) => Promise<void>;
+	/** Test/deployment tuning. Defaults protect a small single-host process. */
+	limits?: { maxInFlight?: number; requestsPerMinute?: number };
 };
 
 function send(response: ServerResponse, status: number, body: unknown): void {
@@ -83,43 +84,50 @@ function readRedeemBody(body: unknown): RedeemBody | null {
 	return { nonce: candidate.nonce, redeemer: candidate.redeemer, signature: candidate.signature };
 }
 
-type InboundBody = { payload: string; signature: unknown; nonce: string; issuerWalletAddress: string };
-
-function readInboundBody(body: unknown): InboundBody | null {
-	if (typeof body !== 'object' || body === null) {
-		return null;
-	}
-	const candidate = body as Partial<InboundBody>;
-	if (
-		typeof candidate.payload !== 'string' ||
-		typeof candidate.nonce !== 'string' ||
-		!NONCE_PATTERN.test(candidate.nonce) ||
-		typeof candidate.issuerWalletAddress !== 'string' ||
-		candidate.issuerWalletAddress.length === 0
-	) {
-		return null;
-	}
-	return {
-		payload: candidate.payload,
-		signature: candidate.signature,
-		nonce: candidate.nonce,
-		issuerWalletAddress: candidate.issuerWalletAddress,
-	};
-}
-
 export function createExchangePlane(deps: ExchangeDeps): Server {
 	const { store, logger, onRedeemed } = deps;
+	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
+	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
+	let inFlight = 0;
+	let requestWindowStartedAt = Date.now();
+	let requestsInWindow = 0;
 
-	return createServer((request, response) => {
-		void handle(request, response).catch((error: unknown) => {
-			// Never echo the message: this is an unauthenticated surface and the
-			// error text can describe internal state.
-			logger.error(`[exchange] ${(error as Error).message}`);
-			if (!response.headersSent) {
-				send(response, 400, { error: 'bad request' });
-			}
-		});
+	const server = createServer((request, response) => {
+		const now = Date.now();
+		if (now - requestWindowStartedAt >= 60_000) {
+			requestWindowStartedAt = now;
+			requestsInWindow = 0;
+		}
+		requestsInWindow += 1;
+		if (requestsInWindow > requestsPerMinute) {
+			response.setHeader('Retry-After', '60');
+			send(response, 429, { error: 'too many requests' });
+			return;
+		}
+		if (inFlight >= maxInFlight) {
+			response.setHeader('Retry-After', '1');
+			send(response, 503, { error: 'exchange is busy' });
+			return;
+		}
+
+		inFlight += 1;
+		void handle(request, response)
+			.catch((error: unknown) => {
+				// Never echo the message: this is an unauthenticated surface and the
+				// error text can describe internal state.
+				logger.error(`[exchange] ${(error as Error).message}`);
+				if (!response.headersSent) {
+					send(response, 400, { error: 'bad request' });
+				}
+			})
+			.finally(() => {
+				inFlight -= 1;
+			});
 	});
+	server.headersTimeout = 15_000;
+	server.requestTimeout = 30_000;
+	server.keepAliveTimeout = 10_000;
+	return server;
 
 	async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
 		const pathname = new URL(request.url ?? '/', 'http://exchange.invalid').pathname.replace(/\/+$/, '');
@@ -133,11 +141,6 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			await handleRedeem(request, response);
 			return;
 		}
-		if (pathname === '/exchange/invite') {
-			await handleInbound(request, response);
-			return;
-		}
-
 		// Anything else, including every control-plane path, is simply absent
 		// here. There is no proxy and no node route to reach.
 		send(response, 404, { error: 'not found' });
@@ -170,31 +173,5 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			logger.error(`[exchange] node ${result.invite.hostNodeId} failed to start after redemption: ${message}`);
 			await store.recordStartError(body.nonce, message).catch(() => undefined);
 		}
-	}
-
-	async function handleInbound(request: IncomingMessage, response: ServerResponse): Promise<void> {
-		const body = readInboundBody(await readBody(request));
-		if (body === null || !isExchangeSignature(body.signature)) {
-			send(response, 400, { error: 'malformed invite' });
-			return;
-		}
-
-		const allowed = await store.allowedIssuers();
-		if (!allowed.includes(body.issuerWalletAddress)) {
-			// Identical to a malformed body from the caller's side: an unlisted
-			// issuer learns nothing about who is listed.
-			logger.warn(`[exchange] refused an invite from an unlisted issuer`);
-			send(response, 403, { error: 'not accepted from this issuer' });
-			return;
-		}
-
-		await store.acceptInbound({
-			nonce: body.nonce,
-			receivedAt: Date.now(),
-			payload: body.payload,
-			signature: body.signature,
-			issuerWalletAddress: body.issuerWalletAddress,
-		});
-		send(response, 202, { accepted: true });
 	}
 }

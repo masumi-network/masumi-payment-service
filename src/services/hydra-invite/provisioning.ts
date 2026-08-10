@@ -24,6 +24,7 @@ import {
 	provisionNodeOnHost,
 } from '@/services/hydra-host/client';
 import { assertHostCompatible, selectPlacementHost } from '@/services/hydra-host/placement';
+import { expectedHostCapabilitiesForNetwork } from '@/services/hydra-host/compatibility';
 import { deriveNodeCardanoVkey } from './node-keys';
 
 export type HeadPeriods = {
@@ -42,6 +43,7 @@ export const DEFAULT_PERIODS: HeadPeriods = {
 export type ReservedNode = {
 	hostId: string;
 	hostBaseUrl: string;
+	allowInsecureHttp: boolean;
 	adminToken: string;
 	nodeId: string;
 	advertise: string;
@@ -56,8 +58,8 @@ export type ReservedNode = {
 export async function selectHostForNetwork(network: Network): Promise<{
 	id: string;
 	baseUrl: string;
+	allowInsecureHttp: boolean;
 	adminToken: string;
-	ledgerParamsHash: string | null;
 }> {
 	const hosts = await prisma.hydraHost.findMany({ where: { network } });
 	const chosen = selectPlacementHost(
@@ -78,8 +80,8 @@ export async function selectHostForNetwork(network: Network): Promise<{
 	return {
 		id: row.id,
 		baseUrl: row.baseUrl,
+		allowInsecureHttp: row.allowInsecureHttp,
 		adminToken: decrypt(row.encryptedAdminToken),
-		ledgerParamsHash: row.ledgerParamsHash,
 	};
 }
 
@@ -100,11 +102,16 @@ export async function reserveNodeForExchange(
 
 	// Checked before provisioning, not at first use: a head placed on a host
 	// whose ledger differs fails at commit time, far from the cause.
-	const capabilities = await fetchHostCapabilities(host.baseUrl, host.adminToken);
-	assertHostCompatible(capabilities, { network: capabilities.network, ledgerParamsHash: host.ledgerParamsHash });
+	const transport = { allowInsecureHttp: host.allowInsecureHttp };
+	const capabilities = await fetchHostCapabilities(host.baseUrl, host.adminToken, transport);
+	try {
+		assertHostCompatible(capabilities, expectedHostCapabilitiesForNetwork(network));
+	} catch (error) {
+		throw createHttpError(409, (error as Error).message);
+	}
 
-	const provisioned = await provisionNodeOnHost(host.baseUrl, host.adminToken, nonce, periods);
-	const urls = hostNodeUrls(host.baseUrl, provisioned.nodeId);
+	const provisioned = await provisionNodeOnHost(host.baseUrl, host.adminToken, nonce, periods, transport);
+	const urls = hostNodeUrls(host.baseUrl, provisioned.nodeId, transport);
 
 	// A replayed provision returns no secrets, because the Host discloses them
 	// exactly once. That is not an error — it means this nonce already reserved a
@@ -150,18 +157,19 @@ export async function reserveNodeForExchange(
 			},
 		});
 		localParticipantId = participant.id;
-		await acknowledgeEscrowOnHost(host.baseUrl, host.adminToken, provisioned.nodeId);
+		await acknowledgeEscrowOnHost(host.baseUrl, host.adminToken, provisioned.nodeId, transport);
 	}
 
 	return {
 		hostId: host.id,
 		hostBaseUrl: host.baseUrl,
+		allowInsecureHttp: host.allowInsecureHttp,
 		adminToken: host.adminToken,
 		nodeId: provisioned.nodeId,
 		advertise: provisioned.advertise,
 		hydraVerificationKey: provisioned.hydraVerificationKey,
 		cardanoVerificationKey: provisioned.cardanoVerificationKey,
-		ledgerParamsHash: host.ledgerParamsHash,
+		ledgerParamsHash: capabilities.ledgerParamsHash,
 		localParticipantId,
 	};
 }

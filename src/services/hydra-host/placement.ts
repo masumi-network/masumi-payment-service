@@ -69,8 +69,12 @@ export function selectPlacementHost(hosts: PlaceableHost[], network: string): Pl
 
 export type ExpectedHostCapabilities = {
 	network: string;
+	/** Exact Hydra release this service has reviewed. */
+	hydraVersion: string;
+	/** Fingerprint of the full reviewed `--hydra-script-catalogue` output. */
+	scriptCatalogueHash: string;
 	/** Hash of the ledger params this service builds transactions against. */
-	ledgerParamsHash?: string | null;
+	ledgerParamsHash: string;
 };
 
 /**
@@ -95,6 +99,28 @@ export function assertHostCompatible(capabilities: HostCapabilities, expected: E
 		);
 	}
 
+	const versionMatches =
+		capabilities.hydraVersion === expected.hydraVersion ||
+		capabilities.hydraVersion.startsWith(`${expected.hydraVersion} `) ||
+		capabilities.hydraVersion.startsWith(`${expected.hydraVersion}+`);
+	if (!versionMatches) {
+		throw new HostIncompatibleError(
+			`the hydra host runs ${capabilities.hydraVersion || 'an unknown version'} but this service expects ` +
+				expected.hydraVersion,
+		);
+	}
+
+	if (capabilities.scriptCatalogueHash === null) {
+		throw new HostIncompatibleError(
+			'the hydra host reports no script catalogue; its on-chain scripts cannot be verified',
+		);
+	}
+	if (capabilities.scriptCatalogueHash !== expected.scriptCatalogueHash) {
+		throw new HostIncompatibleError(
+			'the hydra host script catalogue does not match the catalogue reviewed by this service',
+		);
+	}
+
 	if (capabilities.nodeSlots.capacity > 0 && capabilities.nodeSlots.used >= capabilities.nodeSlots.capacity) {
 		throw new HostIncompatibleError(
 			`the hydra host has no free node slots (${capabilities.nodeSlots.used}/${capabilities.nodeSlots.capacity}); ` +
@@ -108,8 +134,7 @@ export function assertHostCompatible(capabilities: HostCapabilities, expected: E
 		);
 	}
 
-	const expectedLedger = expected.ledgerParamsHash;
-	if (expectedLedger != null && expectedLedger !== capabilities.ledgerParamsHash) {
+	if (expected.ledgerParamsHash !== capabilities.ledgerParamsHash) {
 		throw new HostIncompatibleError(
 			'the hydra host ledger protocol parameters do not match the ones this service builds against; ' +
 				'in-head script spends would fail PPViewHashesDontMatch. Regenerate the host params from the pinned mesh line',

@@ -17,6 +17,7 @@ import { AlertTriangle, CheckCircle2, Loader2, ShieldAlert, Ticket } from 'lucid
 import { toast } from 'react-toastify';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -57,6 +58,14 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
+function usesInsecureHttp(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 export function RedeemHydraInviteDialog({
   open,
   onOpenChange,
@@ -67,13 +76,21 @@ export function RedeemHydraInviteDialog({
   const [code, setCode] = useState('');
   const [hotWalletId, setHotWalletId] = useState('');
   const [preview, setPreview] = useState<HydraInvitePreview | null>(null);
+  const [allowInsecureExchangeHttp, setAllowInsecureExchangeHttp] = useState(false);
+  const [allowPrivateExchangeNetwork, setAllowPrivateExchangeNetwork] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  const isInsecureExchangeHttp = preview !== null && usesInsecureHttp(preview.exchangeUrl);
+  const needsPrivateNetworkConsent =
+    preview !== null && preview.exchangeUsesPrivateNetwork !== false;
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen) {
       setCode('');
       setHotWalletId('');
       setPreview(null);
+      setAllowInsecureExchangeHttp(false);
+      setAllowPrivateExchangeNetwork(false);
     }
     onOpenChange(nextOpen);
   }
@@ -85,6 +102,8 @@ export function RedeemHydraInviteDialog({
     }
     setIsLoading(true);
     try {
+      setAllowInsecureExchangeHttp(false);
+      setAllowPrivateExchangeNetwork(false);
       setPreview(await previewHydraInvite(apiClient, { code: code.trim() }));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to read the invite');
@@ -98,9 +117,24 @@ export function RedeemHydraInviteDialog({
       toast.error('Choose the wallet that will identify you on this head.');
       return;
     }
+    if (isInsecureExchangeHttp && !allowInsecureExchangeHttp) {
+      toast.error('Confirm that the HTTP exchange is protected by a separately secured network.');
+      return;
+    }
+    if (needsPrivateNetworkConsent && !allowPrivateExchangeNetwork) {
+      toast.error(
+        'Confirm that this exchange may connect to private or special-use network space.',
+      );
+      return;
+    }
     setIsLoading(true);
     try {
-      const result = await redeemHydraInvite(apiClient, { code: code.trim(), hotWalletId });
+      const result = await redeemHydraInvite(apiClient, {
+        code: code.trim(),
+        hotWalletId,
+        allowInsecureExchangeHttp,
+        allowPrivateExchangeNetwork,
+      });
       toast.success(`Head opened with ${result.counterpartyWalletAddress.slice(0, 20)}…`);
       onRedeemed();
       handleOpenChange(false);
@@ -183,6 +217,48 @@ export function RedeemHydraInviteDialog({
               )}
             </section>
 
+            {isInsecureExchangeHttp && (
+              <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                <p className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Their signed exchange URL uses unencrypted HTTP. Anyone on that network path can
+                    read or disrupt redemption. Continue only on loopback or a private network
+                    protected separately.
+                  </span>
+                </p>
+                <label className="flex cursor-pointer items-start gap-2 font-medium">
+                  <Checkbox
+                    checked={allowInsecureExchangeHttp}
+                    onCheckedChange={(checked) => setAllowInsecureExchangeHttp(checked === true)}
+                    aria-label="Allow invite redemption over HTTP"
+                  />
+                  <span>Allow this redemption over HTTP</span>
+                </label>
+              </div>
+            )}
+
+            {needsPrivateNetworkConsent && (
+              <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                <p className="flex items-start gap-2">
+                  <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {preview.exchangeUsesPrivateNetwork === true
+                      ? 'Their exchange resolves to private, loopback, link-local, or other special-use network space. That can reach internal services. Continue only when this exact network path is expected.'
+                      : `The exchange network could not be classified${preview.exchangeNetworkWarning ? `: ${preview.exchangeNetworkWarning}` : '.'} Private access stays blocked unless you explicitly allow it.`}
+                  </span>
+                </p>
+                <label className="flex cursor-pointer items-start gap-2 font-medium">
+                  <Checkbox
+                    checked={allowPrivateExchangeNetwork}
+                    onCheckedChange={(checked) => setAllowPrivateExchangeNetwork(checked === true)}
+                    aria-label="Allow invite redemption to private network space"
+                  />
+                  <span>Allow this redemption to private network space</span>
+                </label>
+              </div>
+            )}
+
             <section className="space-y-2">
               <h3 className="text-sm font-semibold">What you would be agreeing to</h3>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -239,13 +315,26 @@ export function RedeemHydraInviteDialog({
             </>
           ) : (
             <>
-              <Button type="button" variant="outline" onClick={() => setPreview(null)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setPreview(null);
+                  setAllowInsecureExchangeHttp(false);
+                  setAllowPrivateExchangeNetwork(false);
+                }}
+              >
                 Back
               </Button>
               <Button
                 type="button"
                 onClick={() => void handleRedeem()}
-                disabled={isLoading || !preview.signatureValid}
+                disabled={
+                  isLoading ||
+                  !preview.signatureValid ||
+                  (isInsecureExchangeHttp && !allowInsecureExchangeHttp) ||
+                  (needsPrivateNetworkConsent && !allowPrivateExchangeNetwork)
+                }
               >
                 {isLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

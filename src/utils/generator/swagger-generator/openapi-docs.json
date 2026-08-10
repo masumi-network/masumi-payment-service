@@ -5370,6 +5370,9 @@
                     "baseUrl": {
                         "type": "string"
                     },
+                    "allowInsecureHttp": {
+                        "type": "boolean"
+                    },
                     "publicPeerHost": {
                         "type": "string"
                     },
@@ -5416,6 +5419,7 @@
                     "name",
                     "network",
                     "baseUrl",
+                    "allowInsecureHttp",
                     "publicPeerHost",
                     "hasAdminToken",
                     "hydraVersion",
@@ -5723,6 +5727,40 @@
                             "walletId": {
                                 "type": "string"
                             },
+                            "Wallet": {
+                                "type": "object",
+                                "properties": {
+                                    "walletVkey": {
+                                        "type": "string"
+                                    },
+                                    "walletAddress": {
+                                        "type": "string"
+                                    },
+                                    "collectionAddress": {
+                                        "type": "string",
+                                        "nullable": true
+                                    },
+                                    "note": {
+                                        "type": "string",
+                                        "nullable": true
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "Selling",
+                                            "Purchasing",
+                                            "Funding"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "walletVkey",
+                                    "walletAddress",
+                                    "collectionAddress",
+                                    "note",
+                                    "type"
+                                ]
+                            },
                             "nodeUrl": {
                                 "type": "string"
                             },
@@ -5754,6 +5792,7 @@
                             "id",
                             "createdAt",
                             "walletId",
+                            "Wallet",
                             "nodeUrl",
                             "nodeHttpUrl",
                             "hasCommitted",
@@ -5778,6 +5817,21 @@
                                 "walletId": {
                                     "type": "string"
                                 },
+                                "Wallet": {
+                                    "type": "object",
+                                    "properties": {
+                                        "walletVkey": {
+                                            "type": "string"
+                                        },
+                                        "walletAddress": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "walletVkey",
+                                        "walletAddress"
+                                    ]
+                                },
                                 "advertise": {
                                     "type": "string"
                                 },
@@ -5799,6 +5853,7 @@
                                 "id",
                                 "createdAt",
                                 "walletId",
+                                "Wallet",
                                 "advertise",
                                 "hasCommitted",
                                 "commitTxHash",
@@ -30441,6 +30496,14 @@
                                                 "unsyncedPeriodSeconds": {
                                                     "type": "number"
                                                 },
+                                                "exchangeUsesPrivateNetwork": {
+                                                    "type": "boolean",
+                                                    "nullable": true
+                                                },
+                                                "exchangeNetworkWarning": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
                                                 "signatureValid": {
                                                     "type": "boolean"
                                                 },
@@ -30499,6 +30562,8 @@
                                                 "contestationPeriodSeconds",
                                                 "depositPeriodSeconds",
                                                 "unsyncedPeriodSeconds",
+                                                "exchangeUsesPrivateNetwork",
+                                                "exchangeNetworkWarning",
                                                 "signatureValid",
                                                 "alreadyKnown",
                                                 "identity"
@@ -30552,6 +30617,16 @@
                                         "type": "string",
                                         "minLength": 1,
                                         "description": "Wallet that will identify us on the resulting head"
+                                    },
+                                    "allowInsecureExchangeHttp": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Explicitly allow redemption over HTTP when a separately secured network protects the exchange"
+                                    },
+                                    "allowPrivateExchangeNetwork": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Explicitly allow redemption to private, loopback, link-local, or other special-use IP space"
                                     }
                                 },
                                 "required": [
@@ -30727,7 +30802,12 @@
                                     "baseUrl": {
                                         "type": "string",
                                         "maxLength": 250,
-                                        "description": "Control-plane URL, e.g. https://hydra1.example.com. TLS terminates in front of the Host."
+                                        "description": "Control-plane URL, e.g. https://hydra1.example.com. HTTPS is recommended."
+                                    },
+                                    "allowInsecureHttp": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Explicitly allow bearer tokens over HTTP. Use only on a separately secured network."
                                     },
                                     "publicPeerHost": {
                                         "type": "string",
@@ -30843,6 +30923,10 @@
                                         "minLength": 32,
                                         "maxLength": 512,
                                         "description": "Null clears the admin token, disabling provisioning"
+                                    },
+                                    "allowInsecureHttp": {
+                                        "type": "boolean",
+                                        "description": "Explicitly allow bearer tokens over this Host HTTP connection"
                                     }
                                 },
                                 "required": [

@@ -14,9 +14,10 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -84,6 +85,14 @@ function baseUrlProblem(value: string): string | null {
   return null;
 }
 
+function usesInsecureHttp(value: string): boolean {
+  try {
+    return new URL(value).protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
 export function ConnectHydraNodeDialog({
   open,
   onOpenChange,
@@ -96,6 +105,7 @@ export function ConnectHydraNodeDialog({
   const [name, setName] = useState('');
   const [network, setNetwork] = useState<Network>('Preprod');
   const [baseUrl, setBaseUrl] = useState('');
+  const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
   const [publicPeerHost, setPublicPeerHost] = useState('');
   const [adminToken, setAdminToken] = useState('');
   const [userToken, setUserToken] = useState('');
@@ -106,6 +116,7 @@ export function ConnectHydraNodeDialog({
     setName(host?.name ?? '');
     setNetwork(host?.network ?? (isCardanoNetwork(contextNetwork) ? contextNetwork : 'Preprod'));
     setBaseUrl(host?.baseUrl ?? '');
+    setAllowInsecureHttp(host?.allowInsecureHttp ?? false);
     setPublicPeerHost(host?.publicPeerHost ?? '');
     // Never prefilled: the API does not return tokens, and an empty field on an
     // edit means "leave the stored one alone".
@@ -115,10 +126,14 @@ export function ConnectHydraNodeDialog({
 
   const trimmedBaseUrl = baseUrl.trim().replace(/\/+$/, '');
   const trimmedPeerHost = publicPeerHost.trim();
+  const isInsecureHttp = usesInsecureHttp(trimmedBaseUrl);
 
   function validate(): string | null {
     if (name.trim().length === 0) {
       return 'A name is required.';
+    }
+    if (!isEditing && isInsecureHttp && !allowInsecureHttp) {
+      return 'Confirm that this HTTP connection is protected by loopback or a separately secured network.';
     }
     if (!isEditing) {
       const urlProblem = baseUrlProblem(trimmedBaseUrl);
@@ -154,6 +169,7 @@ export function ConnectHydraNodeDialog({
         await updateHydraHost(apiClient, {
           id: host.id,
           name: name.trim(),
+          allowInsecureHttp,
           ...(userToken.trim().length > 0 ? { userToken: userToken.trim() } : {}),
           ...(adminToken.trim().length > 0 ? { adminToken: adminToken.trim() } : {}),
         });
@@ -163,6 +179,7 @@ export function ConnectHydraNodeDialog({
           name: name.trim(),
           network,
           baseUrl: trimmedBaseUrl,
+          allowInsecureHttp,
           publicPeerHost: trimmedPeerHost,
           userToken: userToken.trim(),
           ...(adminToken.trim().length > 0 ? { adminToken: adminToken.trim() } : {}),
@@ -227,7 +244,7 @@ export function ConnectHydraNodeDialog({
                   autoComplete="off"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Where this service reaches the node. TLS terminates in front of it.
+                  Where this service reaches the node. HTTPS is recommended.
                 </p>
               </div>
 
@@ -246,6 +263,29 @@ export function ConnectHydraNodeDialog({
                 </p>
               </div>
             </>
+          )}
+
+          {isInsecureHttp && (
+            <div className="space-y-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+              <p className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  HTTP sends the Hydra admin and user bearer keys without transport encryption.
+                  Enable it only for loopback or a private network protected separately.
+                  {isEditing && !allowInsecureHttp
+                    ? ' Saving now disables all HTTP connections to this Host.'
+                    : ''}
+                </span>
+              </p>
+              <label className="flex cursor-pointer items-start gap-2 font-medium">
+                <Checkbox
+                  checked={allowInsecureHttp}
+                  onCheckedChange={(checked) => setAllowInsecureHttp(checked === true)}
+                  aria-label="Allow Hydra bearer keys over HTTP"
+                />
+                <span>Allow bearer keys over HTTP</span>
+              </label>
+            </div>
           )}
 
           <div className="space-y-2">

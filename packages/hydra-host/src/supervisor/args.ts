@@ -21,6 +21,7 @@
  */
 
 import path from 'node:path';
+import { parsePeerAdvertise } from '../peer-address.js';
 
 /** Never configurable. See the module note. */
 export const API_BIND_HOST = '127.0.0.1';
@@ -54,15 +55,14 @@ export class LaunchSpecError extends Error {
 	}
 }
 
-const HOST_PORT_PATTERN = /^[A-Za-z0-9._-]+:\d{1,5}$/;
-
 function assertHostPort(value: string, field: string): void {
-	if (!HOST_PORT_PATTERN.test(value)) {
+	if (parsePeerAdvertise(value) === null) {
+		const portText = value.slice(value.lastIndexOf(':') + 1);
+		const port = Number(portText);
+		if (/^\d{1,5}$/.test(portText) && (!Number.isSafeInteger(port) || port < 1 || port > 65_535)) {
+			throw new LaunchSpecError(`${field} carries an invalid port: ${JSON.stringify(value)}`);
+		}
 		throw new LaunchSpecError(`${field} must be "<host>:<port>", received ${JSON.stringify(value)}`);
-	}
-	const port = Number(value.slice(value.lastIndexOf(':') + 1));
-	if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
-		throw new LaunchSpecError(`${field} carries an invalid port: ${JSON.stringify(value)}`);
 	}
 }
 

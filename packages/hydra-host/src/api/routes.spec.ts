@@ -44,6 +44,9 @@ describe('matchRoute', () => {
 		expect(matchRoute('PUT', '/v1/nodes')).toBeNull();
 		expect(matchRoute('POST', '/v1/nodes/abc')).toBeNull();
 		expect(matchRoute('POST', '/v1/nodes/abc/unknown')).toBeNull();
+		expect(matchRoute('GET', '/v1/inbound-invites')).toBeNull();
+		expect(matchRoute('DELETE', '/v1/inbound-invites/invite-1')).toBeNull();
+		expect(matchRoute('PUT', '/v1/allowed-issuers')).toBeNull();
 	});
 
 	it('tolerates trailing and duplicated slashes', () => {

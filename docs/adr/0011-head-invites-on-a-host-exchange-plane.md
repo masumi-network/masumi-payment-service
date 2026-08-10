@@ -39,7 +39,7 @@ Two facts about `hydra-node` 2.3.0 constrain any alternative:
 ## Decision
 
 Replace the wire Head Offer with a **[[Head Invite]]**: a signed, single-use
-capability carrying the issuer's *complete* public head material, redeemed at a
+capability carrying the issuer's _complete_ public head material, redeemed at a
 new unauthenticated **[[Exchange Plane]]** on the Host.
 
 **1. Issuing pre-allocates; redeeming starts.** The payment service provisions
@@ -59,6 +59,13 @@ been necessary had the reply carried material. We rejected trusting the
 transport — TLS plus a signed URL — because ADR 0010 §7 has the Host serving
 plain HTTP behind a load balancer, so the Host cannot guarantee the property
 the security would then rest on.
+
+Transport still provides defence in depth. Host control and exchange URLs use
+HTTPS by default. HTTP remains available for loopback and separately secured
+private networks, but only through explicit operator consent: a persisted
+`allowInsecureHttp` flag for Host bearer-token traffic and a separate
+`allowInsecureExchangeHttp` confirmation for each redemption. The frontend
+warns before either opt-in.
 
 **3. Bearer, single-use, auto-start, reviewable after.** Anyone holding an
 invite may redeem it once, and the node starts immediately. Binding the invite
@@ -84,18 +91,18 @@ a missed tick replays rather than loses. Notice is not urgent: under auto-start
 the node is already running, and the poll exists for visibility and the kill
 switch.
 
-**6. Delivery is manual only when it must be.** The first invite to a
-counterparty is pasted, because their Exchange Plane URL is not yet known.
-Afterwards it is POSTed to it. Same object, same signature, same verification —
-paste and POST are two deliveries of one protocol, not two protocols. The
-payment service's `receiveHydraOfferPost` and `declineHydraOfferPost` are
-deleted.
+**6. Delivery is manual until authenticated delivery exists.** Invites are
+pasted through a channel the operator trusts. The rejected automatic-delivery
+design accepted arbitrary payloads into an unauthenticated Host inbox before
+verifying their signatures, which made the listener a spoofing and storage
+exhaustion surface. A future automatic path must authenticate and verify before
+it persists anything. The payment service's `receiveHydraOfferPost` and
+`declineHydraOfferPost` are deleted.
 
-**7. The Exchange Plane is unauthenticated but not an open inbox.** A POSTed
-invite is accepted only from a wallet vkey on an allow-list the payment service
-pushes to its own Host — public material, pushed outbound. Strangers reach you
-by pasting, where a human approves, so nothing is lost and there is no
-unauthenticated write buffer to bound.
+**7. The Exchange Plane is not an inbox.** Its only public operation redeems a
+nonce this Host issued, while it is unspent and unexpired. It validates every
+redeemer value before persistence. Unknown public paths return 404, request
+bodies are bounded, and connection timeouts are short.
 
 **8. Approval names the counterparty.** Before redeeming, the operator is shown
 the issuer's registry entries — assets at that address under the network's V2
@@ -113,6 +120,6 @@ check people click past; an agent name is one they perform.
 - An operator can be in a Head with a party they have not yet reviewed, for as
   long as one poll interval. Acceptable only because reaching L1 stays a
   deliberate admin action.
-- The allow-list is a second place where "who are my counterparties" is
-  recorded, and it must be re-pushed when a Relation is created. A Host with a
-  stale allow-list silently refuses legitimate invites.
+- Automatic delivery is deferred. Operators must transfer each invite through
+  a trusted channel until a design can authenticate the sender before writing
+  to Host storage.

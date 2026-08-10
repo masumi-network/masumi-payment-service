@@ -6,6 +6,7 @@ import createHttpError from 'http-errors';
 import {
 	HydraHeadStatus,
 	HydraErrorType,
+	HotWalletType,
 	Network,
 	Prisma,
 	TransactionLayer,
@@ -51,6 +52,13 @@ export const localParticipantSchema = z.object({
 	id: z.string(),
 	createdAt: z.string(),
 	walletId: z.string(),
+	Wallet: z.object({
+		walletVkey: z.string(),
+		walletAddress: z.string(),
+		collectionAddress: z.string().nullable(),
+		note: z.string().nullable(),
+		type: z.nativeEnum(HotWalletType),
+	}),
 	nodeUrl: z.string(),
 	nodeHttpUrl: z.string(),
 	hasCommitted: z.boolean(),
@@ -79,6 +87,10 @@ export const remoteParticipantSchema = z.object({
 	id: z.string(),
 	createdAt: z.string(),
 	walletId: z.string(),
+	Wallet: z.object({
+		walletVkey: z.string(),
+		walletAddress: z.string(),
+	}),
 	/** Peer-plane `host:port`, as the counterparty advertised it. Not an API URL. */
 	advertise: z.string(),
 	hasCommitted: z.boolean(),
@@ -174,6 +186,15 @@ const headInclude = {
 			id: true,
 			createdAt: true,
 			walletId: true,
+			Wallet: {
+				select: {
+					walletVkey: true,
+					walletAddress: true,
+					collectionAddress: true,
+					note: true,
+					type: true,
+				},
+			},
 			nodeUrl: true,
 			nodeHttpUrl: true,
 			hasCommitted: true,
@@ -192,6 +213,7 @@ const headInclude = {
 			id: true,
 			createdAt: true,
 			walletId: true,
+			Wallet: { select: { walletVkey: true, walletAddress: true } },
 			advertise: true,
 			hasCommitted: true,
 			commitTxHash: true,

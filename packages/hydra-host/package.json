@@ -20,7 +20,7 @@
 		"./supervisor/unwedge": "./src/supervisor/unwedge.ts"
 	},
 	"dependencies": {
-		"ws": "8.18.0"
+		"ws": "8.21.1"
 	},
 	"devDependencies": {
 		"@jest/globals": "30.4.1",

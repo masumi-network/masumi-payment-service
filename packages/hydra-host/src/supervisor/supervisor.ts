@@ -307,7 +307,9 @@ export class Supervisor {
 		await this.processes.start(
 			{ nodeId: record.nodeId, binary: this.config.hydraNodeBin, args, nodeDir },
 			(nodeId, code, signal) => {
-				void this.onExit(nodeId, code, signal);
+				void this.onExit(nodeId, code, signal).catch((error: unknown) => {
+					this.logger.error(`[supervisor] recording exit for ${nodeId} failed: ${(error as Error).message}`);
+				});
 			},
 		);
 	}

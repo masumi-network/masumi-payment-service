@@ -24,6 +24,7 @@ import { decodeInviteCode } from '@/services/hydra-invite/invite-code';
 import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
 import { mintHeadInvite, redeemHeadInvite } from '@/services/hydra-invite/orchestrator';
 import { hydraExchangePort } from '@/utils/config/hydra-exchange';
+import { inspectExchangeNetwork } from '@/services/hydra-invite/exchange-client';
 import {
 	registryPolicyIdFor,
 	resolveCounterpartyIdentity,
@@ -189,6 +190,8 @@ export const previewInviteSchemaOutput = z.object({
 	contestationPeriodSeconds: z.number(),
 	depositPeriodSeconds: z.number(),
 	unsyncedPeriodSeconds: z.number(),
+	exchangeUsesPrivateNetwork: z.boolean().nullable(),
+	exchangeNetworkWarning: z.string().nullable(),
 	signatureValid: z.boolean(),
 	alreadyKnown: z.boolean(),
 	identity: z
@@ -227,6 +230,13 @@ export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 		const existing = await prisma.hydraHeadInvite.findUnique({ where: { nonce: decoded.payload.nonce } });
 		const network = decoded.payload.network as Network;
 		const identity = await resolveIssuerIdentity(decoded.payload.issuerWalletAddress, network);
+		let exchangeUsesPrivateNetwork: boolean | null = null;
+		let exchangeNetworkWarning: string | null = null;
+		try {
+			exchangeUsesPrivateNetwork = (await inspectExchangeNetwork(decoded.payload.exchangeUrl)).usesPrivateNetwork;
+		} catch (error) {
+			exchangeNetworkWarning = (error as Error).message;
+		}
 
 		return {
 			nonce: decoded.payload.nonce,
@@ -238,6 +248,8 @@ export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 			contestationPeriodSeconds: decoded.payload.contestationPeriodSeconds,
 			depositPeriodSeconds: decoded.payload.depositPeriodSeconds,
 			unsyncedPeriodSeconds: decoded.payload.unsyncedPeriodSeconds,
+			exchangeUsesPrivateNetwork,
+			exchangeNetworkWarning,
 			signatureValid,
 			alreadyKnown: existing !== null,
 			identity,
@@ -250,6 +262,14 @@ export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 export const redeemInviteSchemaInput = z.object({
 	code: z.string().min(1),
 	hotWalletId: z.string().min(1).describe('Wallet that will identify us on the resulting head'),
+	allowInsecureExchangeHttp: z
+		.boolean()
+		.default(false)
+		.describe('Explicitly allow redemption over HTTP when a separately secured network protects the exchange'),
+	allowPrivateExchangeNetwork: z
+		.boolean()
+		.default(false)
+		.describe('Explicitly allow redemption to private, loopback, link-local, or other special-use IP space'),
 });
 
 export const redeemInviteSchemaOutput = z.object({
@@ -267,6 +287,8 @@ export const redeemInvitePost = adminAuthenticatedEndpointFactory.build({
 			invite: decodeInviteCode(input.code),
 			localHotWalletId: input.hotWalletId,
 			exchangePort: hydraExchangePort(),
+			allowInsecureExchangeHttp: input.allowInsecureExchangeHttp,
+			allowPrivateExchangeNetwork: input.allowPrivateExchangeNetwork,
 		});
 		return {
 			id: redeemed.inviteId,
@@ -313,8 +335,12 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		const adminToken = decrypt(invite.HydraHost.encryptedAdminToken);
 		// Host first: while it still honours the nonce, a redemption in flight
 		// could start the node we are about to delete.
-		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce);
-		await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, { force: false });
+		const transport = { allowInsecureHttp: invite.HydraHost.allowInsecureHttp };
+		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
+		await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
+			force: false,
+			...transport,
+		});
 
 		await prisma.hydraLocalParticipant.deleteMany({
 			where: { hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId, hydraHeadId: null },

@@ -5,7 +5,7 @@
  * Separate from the Exchange Plane's own handlers because the trust direction
  * is opposite. Everything here arrives with an admin token from a service that
  * already holds the node keys; everything there arrives from a stranger. Only
- * this side may create an invite or change who is allowed to send one.
+ * this side may create an invite.
  */
 
 import { ProvisionError } from './provision.js';
@@ -66,21 +66,4 @@ export async function registerInvite(store: ExchangeStore, body: unknown): Promi
 	};
 	await store.registerInvite(record);
 	return { nonce: record.nonce };
-}
-
-/**
- * The wallet addresses whose POSTed invites this Host will accept.
- *
- * Public material only — an address is not a secret — which is what makes it
- * safe to push here rather than requiring the Host to ask the service.
- */
-export function readAllowedIssuers(body: unknown): string[] {
-	if (typeof body !== 'object' || body === null) {
-		throw new ProvisionError('expected an object with an allowedIssuers array', 400);
-	}
-	const candidate = (body as { allowedIssuers?: unknown }).allowedIssuers;
-	if (!Array.isArray(candidate) || candidate.some((entry) => typeof entry !== 'string' || entry.length === 0)) {
-		throw new ProvisionError('allowedIssuers must be an array of wallet addresses', 400);
-	}
-	return candidate as string[];
 }

@@ -19,6 +19,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { generateCardanoKeyPair, generateHydraKeyPair, serializeEnvelope } from '../keys.js';
+import { parsePeerAdvertise } from '../peer-address.js';
 import type { PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord, PeerRecord } from '../registry/types.js';
@@ -214,6 +215,9 @@ export async function setPeers(nodeId: string, peers: PeerRecord[], deps: Provis
 	const record = await requireQuiescentForPeerChange(deps.store, nodeId);
 	if (peers.length === 0) {
 		throw new ProvisionError('at least one peer is required', 400);
+	}
+	if (peers.some((peer) => parsePeerAdvertise(peer.advertise) === null)) {
+		throw new ProvisionError('every peer advertise address must be a valid host:port', 400);
 	}
 	if (peers.some((peer) => peer.advertise === record.advertise)) {
 		throw new ProvisionError('a node cannot list its own advertise address as a peer', 400);

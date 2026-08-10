@@ -1,14 +1,12 @@
 /**
  * Durable state for the Exchange Plane.
  *
- * Three things live here, all on the persistence volume because all three
- * survive a restart by necessity:
+ * Issued invites live here on the persistence volume because they must survive
+ * a restart:
  *
  *  - invites this Host will honour, and whether each has been redeemed. A
  *    redemption that were forgotten would let the same nonce open a second
- *    head, which is the one thing single-use is meant to prevent;
- *  - invites that arrived from counterparties, waiting for the operator;
- *  - the wallet addresses allowed to POST an invite here at all.
+ *    head, which is the one thing single-use is meant to prevent.
  *
  * Writes are serialised through one queue rather than per-key. The exchange is
  * a low-rate path — a handful of invites per operator per day — and a single
@@ -19,12 +17,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { writeFileAtomic } from './atomic-write.js';
 import { isPlainObject } from './json.js';
-import type { ExchangeMaterial, ExchangeSignature, InboundInviteRecord, InviteRecord } from './exchange-types.js';
+import type { ExchangeMaterial, ExchangeSignature, InviteRecord } from './exchange-types.js';
 
 const EXCHANGE_FILE = 'exchange.json';
-
-/** Bounds the inbox so an allow-listed but misbehaving peer cannot fill the volume. */
-export const MAX_INBOUND_INVITES = 256;
+/** Replay tombstones need not live forever after the invite can no longer be used. */
+export const INVITE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export class ExchangeStoreError extends Error {
 	constructor(message: string) {
@@ -35,13 +32,10 @@ export class ExchangeStoreError extends Error {
 
 type ExchangeState = {
 	invites: InviteRecord[];
-	inbound: InboundInviteRecord[];
-	/** Wallet addresses whose POSTed invites are accepted. */
-	allowedIssuers: string[];
 };
 
 function emptyState(): ExchangeState {
-	return { invites: [], inbound: [], allowedIssuers: [] };
+	return { invites: [] };
 }
 
 function parseState(raw: string): ExchangeState {
@@ -57,14 +51,13 @@ function parseState(raw: string): ExchangeState {
 	const state = parsed as unknown as Partial<ExchangeState>;
 	return {
 		invites: Array.isArray(state.invites) ? state.invites : [],
-		inbound: Array.isArray(state.inbound) ? state.inbound : [],
-		allowedIssuers: Array.isArray(state.allowedIssuers) ? state.allowedIssuers : [],
 	};
 }
 
 export class ExchangeStore {
 	private readonly file: string;
 	private queue: Promise<unknown> = Promise.resolve();
+	private state: ExchangeState | undefined;
 
 	constructor(dataDir: string) {
 		this.file = path.join(dataDir, EXCHANGE_FILE);
@@ -77,14 +70,19 @@ export class ExchangeStore {
 	}
 
 	private async read(): Promise<ExchangeState> {
+		if (this.state !== undefined) {
+			return this.state;
+		}
 		try {
-			return parseState(await fs.readFile(this.file, 'utf8'));
+			this.state = parseState(await fs.readFile(this.file, 'utf8'));
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-				return emptyState();
+				this.state = emptyState();
+			} else {
+				throw error;
 			}
-			throw error;
 		}
+		return this.state;
 	}
 
 	private async write(state: ExchangeState): Promise<void> {
@@ -93,21 +91,22 @@ export class ExchangeStore {
 	}
 
 	async listInvites(): Promise<InviteRecord[]> {
-		return (await this.read()).invites;
-	}
-
-	async listInbound(): Promise<InboundInviteRecord[]> {
-		return (await this.read()).inbound;
-	}
-
-	async allowedIssuers(): Promise<string[]> {
-		return (await this.read()).allowedIssuers;
+		return await this.enqueue(async () => {
+			const state = await this.read();
+			if (pruneRetainedInvites(state, Date.now())) {
+				await this.write(state);
+			}
+			// Callers must not be able to mutate the cached durable state outside
+			// this store's serial queue.
+			return state.invites.map(copyInvite);
+		});
 	}
 
 	/** Register an invite the Host must honour. Idempotent on nonce. */
 	async registerInvite(record: InviteRecord): Promise<void> {
 		await this.enqueue(async () => {
 			const state = await this.read();
+			pruneRetainedInvites(state, Date.now());
 			const existing = state.invites.findIndex((invite) => invite.nonce === record.nonce);
 			if (existing === -1) {
 				state.invites.push(record);
@@ -134,6 +133,7 @@ export class ExchangeStore {
 	): Promise<{ ok: true; invite: InviteRecord } | { ok: false; reason: string; status: 404 | 409 | 410 }> {
 		return await this.enqueue(async () => {
 			const state = await this.read();
+			pruneRetainedInvites(state, now);
 			const invite = state.invites.find((candidate) => candidate.nonce === nonce);
 			if (invite === undefined) {
 				// Deliberately the same shape as a redeemed invite's refusal would
@@ -169,39 +169,6 @@ export class ExchangeStore {
 		});
 	}
 
-	/** Accept an invite from a counterparty. Idempotent on nonce. */
-	async acceptInbound(record: InboundInviteRecord): Promise<void> {
-		await this.enqueue(async () => {
-			const state = await this.read();
-			if (state.inbound.some((candidate) => candidate.nonce === record.nonce)) {
-				return;
-			}
-			state.inbound.push(record);
-			// Oldest first, so a flood cannot push out an invite the operator has
-			// not seen while leaving newer ones they also have not seen.
-			if (state.inbound.length > MAX_INBOUND_INVITES) {
-				state.inbound = state.inbound.slice(state.inbound.length - MAX_INBOUND_INVITES);
-			}
-			await this.write(state);
-		});
-	}
-
-	async forgetInbound(nonce: string): Promise<void> {
-		await this.enqueue(async () => {
-			const state = await this.read();
-			state.inbound = state.inbound.filter((candidate) => candidate.nonce !== nonce);
-			await this.write(state);
-		});
-	}
-
-	async setAllowedIssuers(addresses: string[]): Promise<void> {
-		await this.enqueue(async () => {
-			const state = await this.read();
-			state.allowedIssuers = [...new Set(addresses)].sort();
-			await this.write(state);
-		});
-	}
-
 	async forgetInvite(nonce: string): Promise<void> {
 		await this.enqueue(async () => {
 			const state = await this.read();
@@ -218,4 +185,22 @@ function pickRedemption(invite: InviteRecord) {
 		redeemerSignature: invite.redeemerSignature,
 		startError: invite.startError,
 	};
+}
+
+function copyInvite(invite: InviteRecord): InviteRecord {
+	return {
+		...invite,
+		redeemer: invite.redeemer === null ? null : { ...invite.redeemer },
+		redeemerSignature: invite.redeemerSignature === null ? null : { ...invite.redeemerSignature },
+	};
+}
+
+function pruneRetainedInvites(state: ExchangeState, now: number): boolean {
+	const cutoff = now - INVITE_RETENTION_MS;
+	const retained = state.invites.filter((invite) => (invite.redeemedAt ?? invite.expiresAt) > cutoff);
+	if (retained.length === state.invites.length) {
+		return false;
+	}
+	state.invites = retained;
+	return true;
 }

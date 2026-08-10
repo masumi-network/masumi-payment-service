@@ -76,11 +76,20 @@ export class NodeProcessManager {
 		};
 		this.running.set(request.nodeId, entry);
 
-		child.once('exit', (code, signal) => {
+		let completed = false;
+		const complete = (code: number | null, signal: NodeJS.Signals | null): void => {
+			if (completed) {
+				return;
+			}
+			completed = true;
 			this.running.delete(request.nodeId);
 			void handle.close().catch(() => undefined);
 			onExit(request.nodeId, code, signal);
-		});
+		};
+		child.once('exit', complete);
+		// spawn errors (notably ENOENT/EACCES) emit `error`; without a listener
+		// EventEmitter throws and terminates the Host.
+		child.once('error', () => complete(null, null));
 
 		return entry;
 	}
@@ -96,9 +105,10 @@ export class NodeProcessManager {
 		}
 
 		const exited = new Promise<StopResult>((resolve) => {
-			entry.child.once('exit', (code, signal) => {
+			const settle = (code: number | null, signal: NodeJS.Signals | null): void =>
 				resolve({ graceful: signal !== 'SIGKILL', exitCode: code, signal });
-			});
+			entry.child.once('exit', settle);
+			entry.child.once('error', () => settle(null, null));
 		});
 
 		entry.child.kill('SIGTERM');

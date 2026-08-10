@@ -26,10 +26,7 @@ export type RouteKind =
 	| 'peerAllowlist'
 	| 'registerInvite'
 	| 'listInvites'
-	| 'forgetInvite'
-	| 'listInboundInvites'
-	| 'forgetInboundInvite'
-	| 'setAllowedIssuers';
+	| 'forgetInvite';
 
 export type RouteMatch = {
 	kind: RouteKind;
@@ -79,20 +76,6 @@ export function matchRoute(method: string, pathname: string): RouteMatch | null 
 			return { kind: 'forgetInvite', tier: 'admin', nonce: segments[2] };
 		}
 		return null;
-	}
-
-	if (segments[1] === 'inbound-invites') {
-		if (segments.length === 2 && method === 'GET') {
-			return { kind: 'listInboundInvites', tier: 'admin' };
-		}
-		if (segments.length === 3 && method === 'DELETE' && NONCE_PATTERN.test(segments[2])) {
-			return { kind: 'forgetInboundInvite', tier: 'admin', nonce: segments[2] };
-		}
-		return null;
-	}
-
-	if (segments.length === 2 && segments[1] === 'allowed-issuers' && method === 'PUT') {
-		return { kind: 'setAllowedIssuers', tier: 'admin' };
 	}
 
 	if (segments[1] !== 'nodes') {

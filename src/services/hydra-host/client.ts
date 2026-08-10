@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto';
 import { HydraProtocolError } from '@/lib/hydra/hydra/errors';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
+import { validateHydraHttpUrl } from '@/lib/hydra/hydra/node-url';
 import { getOwnString, getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -49,14 +50,26 @@ export type HostPeer = {
 	cardanoVerificationKey: string;
 };
 
-function joinUrl(baseUrl: string, path: string): string {
-	return `${baseUrl.replace(/\/+$/, '')}${path}`;
+export type HostTransportOptions = {
+	allowInsecureHttp: boolean;
+};
+
+function joinUrl(baseUrl: string, path: string, transport: HostTransportOptions): string {
+	const parsed = new URL(baseUrl);
+	if (parsed.protocol === 'http:' && !transport.allowInsecureHttp) {
+		throw new Error('Hydra Host URL uses HTTP without the explicit allowInsecureHttp opt-in');
+	}
+	const validatedBaseUrl = validateHydraHttpUrl(baseUrl, {
+		plaintextHosts: parsed.protocol === 'http:' ? [parsed.hostname] : [],
+	});
+	return `${validatedBaseUrl}${path}`;
 }
 
 async function request(
 	baseUrl: string,
 	path: string,
 	token: string,
+	transport: HostTransportOptions,
 	init: { method?: string; body?: unknown; idempotencyKey?: string } = {},
 ): Promise<unknown> {
 	// Built before the try: a malformed stored token throws here, and wrapping it
@@ -70,7 +83,7 @@ async function request(
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 	try {
-		const response = await fetch(joinUrl(baseUrl, path), {
+		const response = await fetch(joinUrl(baseUrl, path, transport), {
 			method: init.method ?? 'GET',
 			headers,
 			redirect: 'error',
@@ -119,8 +132,12 @@ function requireString(value: unknown, field: string): string {
 	return found;
 }
 
-export async function fetchHostCapabilities(baseUrl: string, adminToken: string): Promise<HostCapabilities> {
-	const body = await request(baseUrl, '/v1/capabilities', adminToken);
+export async function fetchHostCapabilities(
+	baseUrl: string,
+	adminToken: string,
+	transport: HostTransportOptions,
+): Promise<HostCapabilities> {
+	const body = await request(baseUrl, '/v1/capabilities', adminToken, transport);
 	if (!isPlainObject(body)) {
 		throw new HydraProtocolError('hydra host returned a malformed capabilities response');
 	}
@@ -161,9 +178,10 @@ export async function provisionNodeOnHost(
 	baseUrl: string,
 	adminToken: string,
 	idempotencyKey: string,
-	options: { contestationPeriodSeconds?: number; depositPeriodSeconds?: number; unsyncedPeriodSeconds?: number } = {},
+	options: { contestationPeriodSeconds?: number; depositPeriodSeconds?: number; unsyncedPeriodSeconds?: number },
+	transport: HostTransportOptions,
 ): Promise<ProvisionedNode> {
-	const body = await request(baseUrl, '/v1/nodes', adminToken, {
+	const body = await request(baseUrl, '/v1/nodes', adminToken, transport, {
 		method: 'POST',
 		idempotencyKey,
 		body: options,
@@ -192,8 +210,13 @@ export async function provisionNodeOnHost(
 }
 
 /** Seal the disclosure path and hand the node to the Host's supervisor. */
-export async function acknowledgeEscrowOnHost(baseUrl: string, adminToken: string, nodeId: string): Promise<void> {
-	await request(baseUrl, `/v1/nodes/${nodeId}/escrow-ack`, adminToken, { method: 'POST' });
+export async function acknowledgeEscrowOnHost(
+	baseUrl: string,
+	adminToken: string,
+	nodeId: string,
+	transport: HostTransportOptions,
+): Promise<void> {
+	await request(baseUrl, `/v1/nodes/${nodeId}/escrow-ack`, adminToken, transport, { method: 'POST' });
 }
 
 export async function setHostNodePeers(
@@ -201,23 +224,29 @@ export async function setHostNodePeers(
 	adminToken: string,
 	nodeId: string,
 	peers: HostPeer[],
+	transport: HostTransportOptions,
 ): Promise<void> {
-	await request(baseUrl, `/v1/nodes/${nodeId}`, adminToken, { method: 'PATCH', body: { peers } });
+	await request(baseUrl, `/v1/nodes/${nodeId}`, adminToken, transport, { method: 'PATCH', body: { peers } });
 }
 
 /** Ask the Host's supervisor to run this node. Idempotent; the Host owns the transition. */
-export async function startHostNode(baseUrl: string, adminToken: string, nodeId: string): Promise<void> {
-	await request(baseUrl, `/v1/nodes/${nodeId}/start`, adminToken, { method: 'POST' });
+export async function startHostNode(
+	baseUrl: string,
+	adminToken: string,
+	nodeId: string,
+	transport: HostTransportOptions,
+): Promise<void> {
+	await request(baseUrl, `/v1/nodes/${nodeId}/start`, adminToken, transport, { method: 'POST' });
 }
 
 export async function removeHostNode(
 	baseUrl: string,
 	adminToken: string,
 	nodeId: string,
-	options: { force: boolean },
+	options: { force: boolean; allowInsecureHttp: boolean },
 ): Promise<void> {
 	const query = options.force ? '?force=true' : '';
-	await request(baseUrl, `/v1/nodes/${nodeId}${query}`, adminToken, { method: 'DELETE' });
+	await request(baseUrl, `/v1/nodes/${nodeId}${query}`, adminToken, options, { method: 'DELETE' });
 }
 
 /**
@@ -229,8 +258,12 @@ export async function removeHostNode(
  * appends `/protocol-parameters` and `withHistorySetting` appends `?history=`,
  * both of which the proxy allows.
  */
-export function hostNodeUrls(baseUrl: string, nodeId: string): { nodeUrl: string; nodeHttpUrl: string } {
-	const httpUrl = joinUrl(baseUrl, `/v1/nodes/${nodeId}/api`);
+export function hostNodeUrls(
+	baseUrl: string,
+	nodeId: string,
+	transport: HostTransportOptions,
+): { nodeUrl: string; nodeHttpUrl: string } {
+	const httpUrl = joinUrl(baseUrl, `/v1/nodes/${nodeId}/api`, transport);
 	return {
 		nodeHttpUrl: httpUrl,
 		nodeUrl: httpUrl.replace(/^http/, 'ws'),
@@ -268,8 +301,9 @@ export async function registerInviteOnHost(
 	baseUrl: string,
 	adminToken: string,
 	invite: { nonce: string; hostNodeId: string; expiresAt: number },
+	transport: HostTransportOptions,
 ): Promise<void> {
-	await request(baseUrl, '/v1/invites', adminToken, { method: 'POST', body: invite });
+	await request(baseUrl, '/v1/invites', adminToken, transport, { method: 'POST', body: invite });
 }
 
 /** Redemptions since the watermark. One request however many invites are outstanding. */
@@ -277,8 +311,9 @@ export async function fetchHostRedemptions(
 	baseUrl: string,
 	adminToken: string,
 	redeemedSince: number,
+	transport: HostTransportOptions,
 ): Promise<{ invites: HostInviteRecord[]; now: number }> {
-	const body = await request(baseUrl, `/v1/invites?redeemedSince=${redeemedSince}`, adminToken);
+	const body = await request(baseUrl, `/v1/invites?redeemedSince=${redeemedSince}`, adminToken, transport);
 	if (!isPlainObject(body)) {
 		throw new HydraProtocolError('hydra host returned a malformed invite list');
 	}
@@ -290,43 +325,11 @@ export async function fetchHostRedemptions(
 	};
 }
 
-/** Invites counterparties have left for the operator to consider. */
-export type HostInboundInvite = {
-	nonce: string;
-	payload: string;
-	signature: { signature: string; key: string };
-	issuerWalletAddress: string;
-	receivedAt: number;
-};
-
-export async function fetchHostInboundInvites(baseUrl: string, adminToken: string): Promise<HostInboundInvite[]> {
-	const body = await request(baseUrl, '/v1/inbound-invites', adminToken);
-	if (!isPlainObject(body)) {
-		throw new HydraProtocolError('hydra host returned a malformed inbound invite list');
-	}
-	const inbound = getOwnValue(body, 'inbound');
-	return Array.isArray(inbound) ? (inbound as HostInboundInvite[]) : [];
-}
-
-export async function forgetHostInboundInvite(baseUrl: string, adminToken: string, nonce: string): Promise<void> {
-	await request(baseUrl, `/v1/inbound-invites/${nonce}`, adminToken, { method: 'DELETE' });
-}
-
-export async function forgetHostInvite(baseUrl: string, adminToken: string, nonce: string): Promise<void> {
-	await request(baseUrl, `/v1/invites/${nonce}`, adminToken, { method: 'DELETE' });
-}
-
-/**
- * Replace the set of wallets whose POSTed invites this Host accepts.
- *
- * Sent whole rather than incrementally: a Host that missed one add would
- * silently refuse a legitimate counterparty, and the list is small enough that
- * resending it is cheaper than reconciling it.
- */
-export async function setHostAllowedIssuers(
+export async function forgetHostInvite(
 	baseUrl: string,
 	adminToken: string,
-	allowedIssuers: string[],
+	nonce: string,
+	transport: HostTransportOptions,
 ): Promise<void> {
-	await request(baseUrl, '/v1/allowed-issuers', adminToken, { method: 'PUT', body: { allowedIssuers } });
+	await request(baseUrl, `/v1/invites/${nonce}`, adminToken, transport, { method: 'DELETE' });
 }
