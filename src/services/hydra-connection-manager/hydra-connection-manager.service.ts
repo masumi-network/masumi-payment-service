@@ -220,11 +220,21 @@ export class HydraConnectionManager {
 		// increment per acquisition, carried by every lifecycle write. Re-check the
 		// process-local generation afterwards — the acquisition awaits, and a
 		// disconnect during that window must still win.
-		const { ownerEpoch } = await prisma.hydraHead.update({
-			where: { id: head.id },
-			data: { ownerEpoch: { increment: 1 } },
-			select: { ownerEpoch: true },
-		});
+		let ownerEpoch: bigint;
+		try {
+			({ ownerEpoch } = await prisma.hydraHead.update({
+				where: { id: head.id },
+				data: { ownerEpoch: { increment: 1 } },
+				select: { ownerEpoch: true },
+			}));
+		} catch (error) {
+			// P2025: the row vanished between the configuration load and the
+			// acquisition. Surface the same domain error the load would have.
+			if ((error as { code?: string } | null)?.code === 'P2025') {
+				throw new Error(`Hydra head ${head.id} not found`);
+			}
+			throw error;
+		}
 		if (session.transportGeneration !== transportGeneration) {
 			throw new Error(`Hydra head ${head.id} transport was revoked while connecting`);
 		}
@@ -459,14 +469,12 @@ export class HydraConnectionManager {
 			scheduleRecovery: () => this.scheduleStatusPersistenceRecovery(hydraHeadId),
 			onStaleOwner: () => {
 				// A newer session owns this head durably. Tear down without touching
-				// the durable row and without scheduling a reconnect: rejoin policy
-				// belongs to whoever fenced us out (ADR-0014).
-				void this.queueDisconnect(hydraHeadId).catch((error: unknown) => {
-					logger.error('[HydraConnectionManager] Failed to tear down a superseded head session', {
-						hydraHeadId,
-						error: error instanceof Error ? error.message : error,
-					});
-				});
+				// the durable row, then re-read durable enablement through the control
+				// queue. Single-instance, the stale epoch means this process already
+				// re-acquired the head (a connect raced a disconnect), so reconciling
+				// self-heals the race; under Phase 2 the lease gate will decide
+				// whether re-attachment is permitted (ADR-0014).
+				this.scheduleStatusPersistenceRecovery(hydraHeadId);
 			},
 		};
 		head.on(HydraHeadEvent.StatusChange, (data: StatusChangeData) => {

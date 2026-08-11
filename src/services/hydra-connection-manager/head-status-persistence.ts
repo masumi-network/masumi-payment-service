@@ -37,8 +37,8 @@ export interface HeadStatusPersistenceHost {
 	scheduleRecovery(): void;
 	/**
 	 * A newer session owns this head durably. Tear down this transport without
-	 * disabling the head and without scheduling a reconnect: rejoin policy
-	 * belongs to whoever fenced us out.
+	 * disabling the head, then reconcile against durable enablement — never
+	 * quarantine or fail closed, because the head itself is healthy.
 	 */
 	onStaleOwner(): void;
 }

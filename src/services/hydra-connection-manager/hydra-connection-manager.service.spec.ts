@@ -389,6 +389,47 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		}
 	});
 
+	it('does not publish a transport revoked while its owner epoch is being acquired', async () => {
+		// The second revocation window: epoch acquisition awaits the database
+		// after the probe's generation check passed, so a disconnect landing in
+		// that gap must still win over the connect.
+		const manager = new HydraConnectionManager();
+		mockHydraHeadFindUnique.mockResolvedValue(connectableConfiguredHead());
+		let releaseEpoch!: () => void;
+		let markEpochAcquisitionStarted!: () => void;
+		const epochAcquisitionStarted = new Promise<void>((resolve) => {
+			markEpochAcquisitionStarted = resolve;
+		});
+		const epochResult = new Promise<{ ownerEpoch: bigint }>((resolve) => {
+			releaseEpoch = () => resolve({ ownerEpoch: 1n });
+		});
+		mockHydraHeadUpdate.mockImplementation(async () => {
+			markEpochAcquisitionStarted();
+			return await epochResult;
+		});
+		const probeSpy = jest
+			.spyOn(
+				manager as unknown as { probeNode: (httpUrl: string, timeoutMs?: number) => Promise<boolean> },
+				'probeNode',
+			)
+			.mockResolvedValue(true);
+		const connectSpy = jest.spyOn(CustomHydraHead.prototype, 'connect').mockImplementation(async () => undefined);
+
+		try {
+			const pendingConnect = manager.connect({ id: 'head-1' });
+			await epochAcquisitionStarted;
+			await manager.disconnect('head-1');
+			releaseEpoch();
+
+			await expect(pendingConnect).rejects.toThrow('transport was revoked while connecting');
+			expect(connectSpy).not.toHaveBeenCalled();
+			expect(manager.isConnected('head-1')).toBe(false);
+		} finally {
+			probeSpy.mockRestore();
+			connectSpy.mockRestore();
+		}
+	});
+
 	it.each([
 		['disabled', { isEnabled: false, initTxHash: 'a'.repeat(64) }],
 		['not independently verified', { isEnabled: true, initTxHash: null }],

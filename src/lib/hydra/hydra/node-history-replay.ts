@@ -190,11 +190,6 @@ export class HydraHistoryReplay {
 		}
 	}
 
-	/** Forget the verified anchor entirely (full disconnect, not a pass reset). */
-	clearVerifiedSnapshot(): void {
-		this._verifiedSnapshot = undefined;
-	}
-
 	setErrorToRotationLatch(): void {
 		this._error = this.host.persistenceRotationError;
 	}

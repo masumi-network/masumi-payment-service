@@ -73,8 +73,11 @@ chokepoint we control on every durable effect is Postgres.
    transport down locally and touches nothing durable — in particular it must
    NOT durably disable the head, because the head now belongs to a newer
    session and disabling it would be the stale instance vandalising the fresh
-   one. It also does not schedule its own rejoin; rejoin policy belongs to
-   whoever holds the lease (Phase 2).
+   one. It then re-reads durable enablement through the per-head control
+   queue: single-instance, a stale epoch means this same process already
+   re-acquired the head (a connect raced a disconnect), so reconciling
+   self-heals the race. Under Phase 2 the lease gate inside connect decides
+   whether that re-attachment is actually permitted.
 
 4. **Commands stay serialized behind the fenced DB gate.** No source we found
    answers whether duplicated head commands (two owners both sending

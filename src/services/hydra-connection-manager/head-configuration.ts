@@ -13,7 +13,7 @@ import {
 	deriveHydraVerificationKeyCborHex,
 	normalizeHydraVerificationKeyCborHex,
 } from '@/lib/hydra/hydra/snapshot-verification';
-import { HydraHeadStatus, Network, Prisma } from '@/generated/prisma/client';
+import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { decrypt } from '@/utils/security/encryption';
 
 export const HYDRA_PRE_INIT_STATUSES = new Set<HydraHeadStatus>([
@@ -51,10 +51,6 @@ export type ConfiguredHead = Prisma.HydraHeadGetPayload<{ include: typeof headCo
 		Prisma.HydraHeadGetPayload<{ include: typeof headConfigurationInclude }>['LocalParticipant']
 	>;
 };
-
-export interface HeadNetworkConfiguration {
-	network: Network;
-}
 
 export interface LoadedHeadConfiguration {
 	configuredHead: ConfiguredHead;
