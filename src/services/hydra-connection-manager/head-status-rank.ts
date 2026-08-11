@@ -27,6 +27,7 @@ export type LockedHydraHeadLifecycle = {
 	status: HydraHeadStatus;
 	headIdentifier: string | null;
 	fanoutTxHash: string | null;
+	ownerEpoch: bigint;
 };
 
 export type RegressiveStatusResult =
@@ -34,4 +35,6 @@ export type RegressiveStatusResult =
 	| 'quarantined-confirmed-finality-conflict'
 	| 'quarantined-relation-conflict'
 	| 'not-regressive'
-	| 'ignored';
+	| 'ignored'
+	/** The head's durable ownerEpoch moved past this session's: self-demote. */
+	| 'stale-owner';

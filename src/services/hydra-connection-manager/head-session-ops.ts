@@ -35,6 +35,7 @@ export async function persistRegressiveHeadStatus(
 	status: HydraHeadStatus,
 	headId: string | undefined,
 	snapshotNumber: number | undefined,
+	ownerEpoch: bigint,
 ): Promise<RegressiveStatusResult> {
 	const persistAttempt = async (): Promise<RegressiveStatusResult> =>
 		await prisma.$transaction(
@@ -50,7 +51,7 @@ export async function persistRegressiveHeadStatus(
 				`);
 				if (relations.length !== 1) return 'ignored';
 				const rows = await tx.$queryRaw<LockedHydraHeadLifecycle[]>(Prisma.sql`
-					SELECT "id", "hydraRelationId", "isEnabled", "status", "headIdentifier", "fanoutTxHash"
+					SELECT "id", "hydraRelationId", "isEnabled", "status", "headIdentifier", "fanoutTxHash", "ownerEpoch"
 					FROM "HydraHead"
 					WHERE "hydraRelationId" = ${hydraRelationId}
 					ORDER BY "id"
@@ -58,6 +59,9 @@ export async function persistRegressiveHeadStatus(
 				`);
 				const current = rows.find((row) => row.id === hydraHeadId);
 				if (!current) return 'ignored';
+				// Fenced under the row lock: a rollback (and the relation quarantines
+				// it can trigger) must never be driven by a superseded session.
+				if (current.ownerEpoch !== ownerEpoch) return 'stale-owner';
 				if (headId && current.headIdentifier != null && current.headIdentifier !== headId) return 'ignored';
 				if (HYDRA_HEAD_STATUS_RANK[status] >= HYDRA_HEAD_STATUS_RANK[current.status]) {
 					return 'not-regressive';

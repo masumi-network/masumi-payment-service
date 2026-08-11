@@ -14,6 +14,7 @@ import { encrypt } from '@/utils/security/encryption';
 const mockTransactionFindFirst = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockTransactionFindUnique = jest.fn<(_args: unknown) => Promise<unknown>>();
 const mockHydraHeadFindUnique = jest.fn<(_args: unknown) => Promise<unknown>>();
+const mockHydraHeadUpdate = jest.fn<(_args: unknown) => Promise<{ ownerEpoch: bigint }>>();
 const mockHydraHeadUpdateMany = jest.fn<(_args: unknown) => Promise<{ count: number }>>();
 const mockPrismaTransaction = jest.fn<(...args: any[]) => Promise<unknown>>();
 const mockQueryRaw = jest.fn<(...args: any[]) => Promise<unknown[]>>();
@@ -38,7 +39,11 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		$transaction: mockPrismaTransaction,
 		transaction: { findFirst: mockTransactionFindFirst, findUnique: mockTransactionFindUnique },
-		hydraHead: { findUnique: mockHydraHeadFindUnique, updateMany: mockHydraHeadUpdateMany },
+		hydraHead: {
+			findUnique: mockHydraHeadFindUnique,
+			update: mockHydraHeadUpdate,
+			updateMany: mockHydraHeadUpdateMany,
+		},
 	},
 }));
 
@@ -67,6 +72,7 @@ jest.unstable_mockModule('@/utils/converter/string-datum-convert', () => ({
 }));
 
 const { HydraConnectionManager } = await import('./hydra-connection-manager.service');
+const { failClosedAfterStatusPersistenceFailure } = await import('./head-status-persistence');
 
 function confirmedTransaction(txId: string): HydraConfirmedTransaction {
 	return {
@@ -119,9 +125,28 @@ function connectableConfiguredHead(id = 'head-1') {
 	};
 }
 
+/**
+ * Reach into the private per-head session the way these tests used to reach
+ * into the manager's parallel maps: fabricate an attachment, or inspect the
+ * one the code under test left behind.
+ */
+type FabricatedAttachment = { head: unknown; provider: unknown; ownerEpoch: bigint };
+type SessionReachIn = {
+	attach: (attachment: FabricatedAttachment) => void;
+	attachment: { head: unknown; provider: unknown } | null;
+	_statusQueue?: Promise<void> | null;
+};
+function sessionOf(manager: unknown, hydraHeadId: string): SessionReachIn {
+	return (manager as { sessionFor: (id: string) => SessionReachIn }).sessionFor(hydraHeadId);
+}
+function attachFabricatedHead(manager: unknown, hydraHeadId: string, head: unknown, provider: unknown = {}): void {
+	sessionOf(manager, hydraHeadId).attach({ head, provider, ownerEpoch: 1n });
+}
+
 describe('HydraConnectionManager confirmed transaction output sync', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		mockHydraHeadUpdate.mockResolvedValue({ ownerEpoch: 1n });
 		mockPrismaTransaction.mockImplementation(
 			async (operation: (tx: unknown) => Promise<unknown>) => await operation(transactionClient),
 		);
@@ -443,11 +468,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			'head-1',
 			head,
 		);
-		(manager as unknown as { _heads: Map<string, unknown> })._heads.set('head-1', {
-			hydraHeadId: 'head-1',
-			head,
-			provider: {},
-		});
+		attachFabricatedHead(manager, 'head-1', head);
 
 		await manager.disconnect('head-1');
 
@@ -461,7 +482,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 				}),
 			}),
 		);
-		expect((manager as unknown as { _heads: Map<string, unknown> })._heads.has('head-1')).toBe(false);
+		expect(sessionOf(manager, 'head-1').attachment).toBeNull();
 	});
 
 	it('does not let an older disconnect tear down a replacement transport or its status queue', async () => {
@@ -484,32 +505,21 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		const replacementHead = Object.assign(new EventEmitter(), {
 			mainNode: Object.assign(new EventEmitter(), { disconnect: jest.fn(async () => undefined) }),
 		});
-		const internal = manager as unknown as {
-			_heads: Map<string, unknown>;
-			_headStatusQueues: Map<string, Promise<void>>;
-		};
-		internal._heads.set('head-1', {
-			hydraHeadId: 'head-1',
-			head: oldHead,
-			provider: { generation: 'old' },
-		});
+		attachFabricatedHead(manager, 'head-1', oldHead, { generation: 'old' });
 
 		const draining = manager.disconnect('head-1');
 		await disconnectStarted;
-		const replacementManaged = {
-			hydraHeadId: 'head-1',
-			head: replacementHead,
-			provider: { generation: 'replacement' },
-		};
+		const session = sessionOf(manager, 'head-1');
+		const replacementAttachment = { head: replacementHead, provider: { generation: 'replacement' }, ownerEpoch: 2n };
 		const replacementStatus = Promise.resolve();
-		internal._heads.set('head-1', replacementManaged);
-		internal._headStatusQueues.set('head-1', replacementStatus);
+		session.attach(replacementAttachment);
+		session._statusQueue = replacementStatus;
 		finishDisconnect();
 
 		await draining;
 
-		expect(internal._heads.get('head-1')).toBe(replacementManaged);
-		expect(internal._headStatusQueues.get('head-1')).toBe(replacementStatus);
+		expect(session.attachment).toBe(replacementAttachment);
+		expect(session._statusQueue).toBe(replacementStatus);
 		expect(oldMainNode.disconnect).toHaveBeenCalledTimes(1);
 	});
 
@@ -562,6 +572,9 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			finalizedAt: null,
 			contestationDeadline: null,
 			latestSnapshotNumber: 4n,
+			// Matches the epoch this connect acquires: the rollback below must pass
+			// the ownership fence, not be mistaken for a superseded session's write.
+			ownerEpoch: 1n,
 		});
 		mockQueryRaw.mockResolvedValue([
 			{
@@ -571,6 +584,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 				status: HydraHeadStatus.Open,
 				headIdentifier: 'a'.repeat(56),
 				fanoutTxHash: null,
+				ownerEpoch: 1n,
 			},
 		]);
 		let createdHead: CustomHydraHead | undefined;
@@ -601,10 +615,8 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		);
 		expect(createdHead?.listenerCount('StatusChange')).toBe(0);
 		expect(createdHead?.mainNode.listenerCount('StatusChange')).toBe(0);
-		expect((manager as unknown as { _headStatusQueues: Map<string, unknown> })._headStatusQueues.has('head-1')).toBe(
-			false,
-		);
-		expect((manager as unknown as { _heads: Map<string, unknown> })._heads.has('head-1')).toBe(false);
+		expect(sessionOf(manager, 'head-1')._statusQueue ?? null).toBeNull();
+		expect(sessionOf(manager, 'head-1').attachment).toBeNull();
 	});
 
 	it('persists the close admission gate when another participant closes the head', async () => {
@@ -1005,24 +1017,24 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			markWriteStarted();
 			return await writeResult;
 		});
-		const scheduleRecovery = jest
-			.spyOn(
-				manager as unknown as { scheduleStatusPersistenceRecovery: (hydraHeadId: string) => void },
-				'scheduleStatusPersistenceRecovery',
-			)
-			.mockImplementation(() => undefined);
-
-		const failClosed = (
-			manager as unknown as {
-				failClosedAfterStatusPersistenceFailure: (hydraHeadId: string, failedHead: CustomHydraHead) => Promise<void>;
-			}
-		).failClosedAfterStatusPersistenceFailure('head-1', head);
+		const scheduleRecovery = jest.fn();
+		const failClosed = failClosedAfterStatusPersistenceFailure(
+			{
+				quarantine: jest.fn(),
+				clearQuarantineAfterReobservation: jest.fn(),
+				scheduleRecovery,
+				onStaleOwner: jest.fn(),
+			},
+			'head-1',
+			head,
+			1n,
+		);
 		await writeStarted;
 
 		expect(scheduleRecovery).not.toHaveBeenCalled();
 		resolveWrite({ count: 1 });
 		await failClosed;
-		expect(scheduleRecovery).toHaveBeenCalledWith('head-1');
+		expect(scheduleRecovery).toHaveBeenCalledTimes(1);
 	});
 
 	it('fails closed and re-observes without deadlocking when status persistence exhausts retries', async () => {
@@ -1032,11 +1044,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			pinExpectedHeadId: jest.fn(),
 		});
 		const head = Object.assign(new EventEmitter(), { mainNode });
-		(manager as unknown as { _heads: Map<string, unknown> })._heads.set('head-1', {
-			head,
-			provider: {},
-			hydraHeadId: 'head-1',
-		});
+		attachFabricatedHead(manager, 'head-1', head);
 		mockHydraHeadFindUnique.mockResolvedValue({
 			isEnabled: true,
 			status: HydraHeadStatus.Final,
@@ -1442,17 +1450,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('applies T1 then T2 from each immutable CBOR body even when the current snapshot has neither output', async () => {
 		const manager = new HydraConnectionManager();
-		const managedHeads = new Map([
-			[
-				'head-1',
-				{
-					hydraHeadId: 'head-1',
-					provider: { fetchUTxOs: mockFetchUtxos },
-					head: { mainNode: {} },
-				},
-			],
-		]);
-		(manager as unknown as { _heads: Map<string, unknown> })._heads = managedHeads;
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
 
 		await expect(manager.handleTxConfirmed('head-1', 't1', confirmedTransaction('t1'))).resolves.toBe('applied');
 		await expect(manager.handleTxConfirmed('head-1', 't2', confirmedTransaction('t2'))).resolves.toBe('applied');
@@ -1475,16 +1473,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('finds and confirms a pending reservation by its exact intended hash', async () => {
 		const manager = new HydraConnectionManager();
-		(manager as unknown as { _heads: Map<string, unknown> })._heads = new Map([
-			[
-				'head-1',
-				{
-					hydraHeadId: 'head-1',
-					provider: { fetchUTxOs: mockFetchUtxos },
-					head: { mainNode: {} },
-				},
-			],
-		]);
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
 		mockTransactionFindFirst.mockResolvedValue({ id: 'intended-only-reservation' });
 		mockTransactionFindUnique.mockResolvedValue({ status: TransactionStatus.Confirmed });
 
@@ -1511,16 +1500,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('returns retry when confirmed CBOR cannot be parsed', async () => {
 		const manager = new HydraConnectionManager();
-		(manager as unknown as { _heads: Map<string, unknown> })._heads = new Map([
-			[
-				'head-1',
-				{
-					hydraHeadId: 'head-1',
-					provider: { fetchUTxOs: mockFetchUtxos },
-					head: { mainNode: {} },
-				},
-			],
-		]);
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
 		mockParseEvidence.mockReturnValue(null);
 
 		await expect(manager.handleTxConfirmed('head-1', 'broken', confirmedTransaction('broken'))).resolves.toBe('retry');
@@ -1529,16 +1509,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('keeps duplicate identifiers retryable so ambiguous lineage evidence is never discarded', async () => {
 		const manager = new HydraConnectionManager();
-		(manager as unknown as { _heads: Map<string, unknown> })._heads = new Map([
-			[
-				'head-1',
-				{
-					hydraHeadId: 'head-1',
-					provider: { fetchUTxOs: mockFetchUtxos },
-					head: { mainNode: {} },
-				},
-			],
-		]);
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
 		mockParseEvidence.mockReturnValue({
 			inputs: [],
 			spends: [],
@@ -1565,16 +1536,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('ignores duplicate contract outputs whose identifier has no local request', async () => {
 		const manager = new HydraConnectionManager();
-		(manager as unknown as { _heads: Map<string, unknown> })._heads = new Map([
-			[
-				'head-1',
-				{
-					hydraHeadId: 'head-1',
-					provider: { fetchUTxOs: mockFetchUtxos },
-					head: { mainNode: {} },
-				},
-			],
-		]);
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
 		mockFindLocallyRelevantIdentifiers.mockResolvedValue(new Set());
 		mockDecodeV2ContractDatum.mockReturnValue({
 			blockchainIdentifier: 'external-duplicate',
@@ -1602,16 +1564,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('leaves a pending terminal action Pending when no exact terminal spend is proven', async () => {
 		const manager = new HydraConnectionManager();
-		(manager as unknown as { _heads: Map<string, unknown> })._heads = new Map([
-			[
-				'head-1',
-				{
-					hydraHeadId: 'head-1',
-					provider: { fetchUTxOs: mockFetchUtxos },
-					head: { mainNode: {} },
-				},
-			],
-		]);
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
 		mockTransactionFindFirst.mockResolvedValue({ id: 'pending-terminal' });
 		mockTransactionFindUnique.mockResolvedValue({ status: TransactionStatus.Pending });
 		mockParseEvidence.mockReturnValue({
@@ -1630,16 +1583,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('retains replay evidence when one escrow applies but another remains retryable', async () => {
 		const manager = new HydraConnectionManager();
-		(manager as unknown as { _heads: Map<string, unknown> })._heads = new Map([
-			[
-				'head-1',
-				{
-					hydraHeadId: 'head-1',
-					provider: { fetchUTxOs: mockFetchUtxos },
-					head: { mainNode: {} },
-				},
-			],
-		]);
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
 		mockTransactionFindFirst.mockResolvedValue({ id: 'shared-transaction' });
 		mockTransactionFindUnique.mockResolvedValue({ status: TransactionStatus.Confirmed });
 		mockApplyDatum.mockResolvedValue('retry');
@@ -1651,16 +1595,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 
 	it('still applies a terminal spend when an unrelated contract output has a malformed datum', async () => {
 		const manager = new HydraConnectionManager();
-		(manager as unknown as { _heads: Map<string, unknown> })._heads = new Map([
-			[
-				'head-1',
-				{
-					hydraHeadId: 'head-1',
-					provider: { fetchUTxOs: mockFetchUtxos },
-					head: { mainNode: {} },
-				},
-			],
-		]);
+		attachFabricatedHead(manager, 'head-1', { mainNode: {} }, { fetchUTxOs: mockFetchUtxos });
 		mockDecodeV2ContractDatum.mockImplementation(() => {
 			throw new Error('malformed datum');
 		});

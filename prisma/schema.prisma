@@ -1733,6 +1733,12 @@ model HydraHead {
   closeTxHash  String?
   fanoutTxHash String?
 
+  /// Monotonic ownership fence (fencing token): incremented once per
+  /// head-session acquisition. Lifecycle writes carry it, so a stale session's
+  /// late write misses its guarded UPDATE and self-demotes instead of
+  /// clobbering (or durably disabling) a head a newer session owns.
+  ownerEpoch BigInt @default(0)
+
   /// Errors that have occurred during the head's lifecycle
   Errors HydraHeadError[]
 

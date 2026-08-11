@@ -1,5 +1,16 @@
+/**
+ * The registry of this process's Hydra Head sessions.
+ *
+ * The manager owns discovery and acquisition — which enabled heads should have
+ * a session, loading and validating their configuration, wiring event handlers
+ * — and delegates everything per-head to that head's `HeadSession` slot:
+ * serialization queues, reconnect policy, the transport generation and the two
+ * fences. Durable lifecycle writes live in `head-status-persistence` (fenced on
+ * the attachment's ownerEpoch, ADR-0014); applying confirmed transactions
+ * lives in `head-tx-confirmed`.
+ */
+
 import { prisma } from '@masumi/payment-core/db';
-import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
 import { logger } from '@masumi/payment-core/logger';
 import {
 	CustomHydraHead,
@@ -11,137 +22,58 @@ import {
 	type DepositRecordedData,
 	buildHydraHttpEndpoint,
 	type HydraConfirmedTransaction,
-	validateHydraNodeUrls,
 } from '@/lib/hydra';
-import {
-	deriveHydraVerificationKeyCborHex,
-	normalizeHydraVerificationKeyCborHex,
-} from '@/lib/hydra/hydra/snapshot-verification';
 import { recordHeadError } from '@/services/hydra-head-error/record';
-import { HydraErrorType, HydraHeadStatus, Network, OnChainState, TransactionStatus } from '@/generated/prisma/client';
-import { HydraHeadUpdateInput } from '@/generated/prisma/models';
+import { HydraErrorType, HydraHeadStatus, Network } from '@/generated/prisma/client';
 import { HydraNodeConfig } from '@/lib/hydra/hydra/types';
 import { HydraNode } from '@/lib/hydra/hydra/node';
 import { applyDecommitOutcome } from '@/services/hydra-decommit/settle';
-import { deserializeDatum } from '@meshsdk/core';
-import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
-import { smartContractStateToOnChainState } from '@/utils/logic/l2-datum-validation';
-import {
-	applyDatumStateToLocalRequests,
-	findLocallyRelevantHydraRequestIdentifiers,
-	type HydraDatumApplyOutcome,
-} from './hydra-datum-sync';
-import { applyTerminalHydraSpends } from './hydra-datum-terminal';
-import { parseHydraTransactionEvidence } from './hydra-transaction-evidence';
-import { decrypt } from '@/utils/security/encryption';
+import { type HydraDatumApplyOutcome } from './hydra-datum-sync';
 import { hydraAuthHeaders } from '@/lib/hydra/hydra/auth';
 import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context';
 import { convertNetwork } from '@/utils/converter/network-convert';
-import { HYDRA_HEAD_STATUS_RANK } from './head-status-rank';
-import { persistRegressiveHeadStatus, probeHeadCurrentSlot } from './head-session-ops';
-
-interface ManagedHead {
-	head: CustomHydraHead;
-	provider: HydraProvider;
-	hydraHeadId: string;
-}
-
-const HYDRA_RECONNECT_INITIAL_DELAY_MS = 1_000;
-const HYDRA_RECONNECT_MAX_DELAY_MS = 30_000;
-const HYDRA_PRE_INIT_STATUSES = new Set<HydraHeadStatus>([
-	HydraHeadStatus.Disconnected,
-	HydraHeadStatus.Connecting,
-	HydraHeadStatus.Connected,
-	HydraHeadStatus.Idle,
-]);
-
-export interface HydraHeadWithLocalParticipant {
-	id: string;
-	isEnabled?: boolean;
-	status?: HydraHeadStatus;
-	initTxHash?: string | null;
-	headIdentifier?: string | null;
-	lastReconciledSnapshotSequence?: bigint | null;
-	lastReconciledSnapshotTransactionIndex?: number | null;
-	LocalParticipant?: {
-		walletId: string;
-		nodeHttpUrl: string;
-		nodeUrl: string;
-		HydraSecretKey: { hydraSK: string };
-	} | null;
-	RemoteParticipants?: Array<{
-		walletId: string;
-		HydraVerificationKey: { hydraVK: string };
-	}>;
-	HydraRelation?: {
-		network: Network;
-		localHotWalletId: string;
-		remoteWalletId: string;
-		LocalHotWallet: {
-			deletedAt: Date | null;
-			PaymentSource: { network: Network; deletedAt: Date | null; disableSyncAt: Date | null };
-		};
-		RemoteWallet: {
-			PaymentSource: { network: Network; deletedAt: Date | null; disableSyncAt: Date | null };
-		};
-	};
-}
-
-const hydraRelationSecuritySelect = {
-	network: true,
-	localHotWalletId: true,
-	remoteWalletId: true,
-	LocalHotWallet: {
-		select: {
-			deletedAt: true,
-			PaymentSource: { select: { network: true, deletedAt: true, disableSyncAt: true } },
-		},
-	},
-	RemoteWallet: {
-		select: {
-			PaymentSource: { select: { network: true, deletedAt: true, disableSyncAt: true } },
-		},
-	},
-} as const;
-
-function resolvePersistedHistoryCursor(
-	head: HydraHeadWithLocalParticipant,
-): { snapshotSequence: number; snapshotTransactionIndex: number } | undefined {
-	const sequence = head.lastReconciledSnapshotSequence;
-	const index = head.lastReconciledSnapshotTransactionIndex;
-	if (sequence == null && index == null) return undefined;
-	if (sequence == null || index == null || sequence < 0n || !Number.isSafeInteger(index) || index < 0) {
-		throw new Error(`Hydra head ${head.id} has an invalid persisted reconciliation cursor`);
-	}
-	const sequenceNumber = Number(sequence);
-	if (!Number.isSafeInteger(sequenceNumber)) {
-		throw new Error(`Hydra head ${head.id} reconciliation cursor exceeds the supported sequence range`);
-	}
-	return { snapshotSequence: sequenceNumber, snapshotTransactionIndex: index };
-}
+import { probeHeadCurrentSlot } from './head-session-ops';
+import { HeadSession } from './head-session';
+import { persistHeadStatus, type HeadStatusPersistenceHost } from './head-status-persistence';
+import { applyConfirmedHydraTransaction, type TxConfirmedHost } from './head-tx-confirmed';
+import {
+	HYDRA_PRE_INIT_STATUSES,
+	headConfigurationInclude,
+	loadValidatedHeadConfiguration,
+} from './head-configuration';
 
 export class HydraConnectionManager {
-	private _heads: Map<string, ManagedHead> = new Map();
-	private _reconnectTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
-	private _reconnectAttempts: Map<string, number> = new Map();
-	private _headConnectWork: Map<string, Promise<void>> = new Map();
-	private _transportGeneration: Map<string, number> = new Map();
-	private _headControlQueues: Map<string, Promise<boolean>> = new Map();
-	private _txWorkById: Map<string, Promise<HydraDatumApplyOutcome>> = new Map();
-	private _headTxQueues: Map<string, Promise<unknown>> = new Map();
-	private _headStatusQueues: Map<string, Promise<void>> = new Map();
-	private _statusPersistenceQuarantine: Map<string, CustomHydraHead> = new Map();
-	private _commandRevokedHeads: Map<string, CustomHydraHead> = new Map();
-	private _headClockRefreshers: Map<string, ReturnType<typeof setInterval>> = new Map();
+	/**
+	 * One slot per head this process has ever touched. Slots are permanent for
+	 * the process lifetime (matching the old per-map entries, several of which
+	 * were also never deleted); the transport inside them comes and goes.
+	 */
+	private readonly _sessions = new Map<string, HeadSession>();
+
+	private sessionFor(hydraHeadId: string): HeadSession {
+		let session = this._sessions.get(hydraHeadId);
+		if (!session) {
+			session = new HeadSession(hydraHeadId);
+			this._sessions.set(hydraHeadId, session);
+		}
+		return session;
+	}
+
+	private getSession(hydraHeadId: string): HeadSession | undefined {
+		return this._sessions.get(hydraHeadId);
+	}
+
+	private readonly _txConfirmedHost: TxConfirmedHost = {
+		getProvider: (hydraHeadId) => this.getProvider(hydraHeadId),
+		getNode: (hydraHeadId) => this.getNode(hydraHeadId),
+		flushHeadStatus: (hydraHeadId) => this.flushHeadStatus(hydraHeadId),
+		isStatusQuarantined: (hydraHeadId) => this.getSession(hydraHeadId)?.isQuarantined ?? false,
+	};
 
 	async initialize(): Promise<void> {
 		const enabledHeads = await prisma.hydraHead.findMany({
 			where: { isEnabled: true },
-			include: {
-				LocalParticipant: { include: { HydraSecretKey: true, HydraHost: true } },
-				RemoteParticipants: { include: { HydraVerificationKey: true } },
-				HydraRelation: { select: hydraRelationSecuritySelect },
-			},
+			include: headConfigurationInclude,
 		});
 
 		logger.info(`[HydraConnectionManager] Found ${enabledHeads.length} enabled heads to check`);
@@ -155,7 +87,7 @@ export class HydraConnectionManager {
 			await this.reconcileEnabledState(head.id);
 		}
 
-		logger.info(`[HydraConnectionManager] Initialization complete, connected to ${this._heads.size} heads`);
+		logger.info(`[HydraConnectionManager] Initialization complete, connected to ${this.connectedHeadIds.length} heads`);
 	}
 
 	/**
@@ -193,14 +125,9 @@ export class HydraConnectionManager {
 
 	/** Converge the in-memory transport to the latest durable enable flag. */
 	async reconcileEnabledState(hydraHeadId: string): Promise<boolean> {
-		const previous = this._headControlQueues.get(hydraHeadId) ?? Promise.resolve(false);
-		const work = previous.catch(() => false).then(async () => await this.reconcileEnabledStateInner(hydraHeadId));
-		this._headControlQueues.set(hydraHeadId, work);
-		try {
-			return await work;
-		} finally {
-			if (this._headControlQueues.get(hydraHeadId) === work) this._headControlQueues.delete(hydraHeadId);
-		}
+		return await this.sessionFor(hydraHeadId).runControl(
+			async () => await this.reconcileEnabledStateInner(hydraHeadId),
+		);
 	}
 
 	private async reconcileEnabledStateInner(hydraHeadId: string): Promise<boolean> {
@@ -210,25 +137,26 @@ export class HydraConnectionManager {
 		});
 		if (!durable?.isEnabled) {
 			await this.disconnect(hydraHeadId);
-			this._statusPersistenceQuarantine.delete(hydraHeadId);
+			this.getSession(hydraHeadId)?.clearQuarantine();
 			return false;
 		}
 		if (durable.initTxHash == null && !HYDRA_PRE_INIT_STATUSES.has(durable.status)) {
 			await this.disconnect(hydraHeadId);
-			this._statusPersistenceQuarantine.delete(hydraHeadId);
+			this.getSession(hydraHeadId)?.clearQuarantine();
 			logger.warn(`[HydraConnectionManager] Refusing unverified initialized head ${hydraHeadId}`);
 			return false;
 		}
-		const managed = this._heads.get(hydraHeadId);
-		if (managed) {
-			if (!this.isManagedHeadMutationAllowed(hydraHeadId, managed.head)) return false;
-			this.clearReconnect(hydraHeadId);
+		const session = this.sessionFor(hydraHeadId);
+		const attachment = session.attachment;
+		if (attachment) {
+			if (!session.isMutationAllowed(attachment.head)) return false;
+			session.clearReconnect();
 			return true;
 		}
 
 		try {
 			await this.connect({ id: hydraHeadId });
-			this.clearReconnect(hydraHeadId);
+			session.clearReconnect();
 			return true;
 		} catch (error) {
 			logger.warn(`[HydraConnectionManager] Enabled head ${hydraHeadId} is not connected; retry scheduled`, {
@@ -240,12 +168,7 @@ export class HydraConnectionManager {
 	}
 
 	private scheduleReconnect(hydraHeadId: string): void {
-		if (this._reconnectTimers.has(hydraHeadId)) return;
-		const attempt = this._reconnectAttempts.get(hydraHeadId) ?? 0;
-		const delay = Math.min(HYDRA_RECONNECT_MAX_DELAY_MS, HYDRA_RECONNECT_INITIAL_DELAY_MS * 2 ** Math.min(attempt, 10));
-		this._reconnectAttempts.set(hydraHeadId, attempt + 1);
-		const timer = setTimeout(() => {
-			this._reconnectTimers.delete(hydraHeadId);
+		this.sessionFor(hydraHeadId).scheduleReconnect(() => {
 			void this.reconcileEnabledState(hydraHeadId).catch((error: unknown) => {
 				// A warning, not an error, because the next line schedules another
 				// attempt: this is the same "not reachable yet" that the first
@@ -259,125 +182,50 @@ export class HydraConnectionManager {
 				});
 				this.scheduleReconnect(hydraHeadId);
 			});
-		}, delay);
-		timer.unref?.();
-		this._reconnectTimers.set(hydraHeadId, timer);
+		});
 	}
 
-	private clearReconnect(hydraHeadId: string): void {
-		const timer = this._reconnectTimers.get(hydraHeadId);
-		if (timer) clearTimeout(timer);
-		this._reconnectTimers.delete(hydraHeadId);
-		this._reconnectAttempts.delete(hydraHeadId);
+	async connect(head: { id: string }): Promise<void> {
+		const session = this.sessionFor(head.id);
+		await session.runConnect(() => this.connectInner(head, session, session.transportGeneration));
 	}
 
-	async connect(head: Pick<HydraHeadWithLocalParticipant, 'id'>): Promise<void> {
-		const existingWork = this._headConnectWork.get(head.id);
-		if (existingWork) {
-			await existingWork;
-			return;
-		}
-		const transportGeneration = this._transportGeneration.get(head.id) ?? 0;
-		const work = this.connectInner(head, transportGeneration);
-		this._headConnectWork.set(head.id, work);
-		try {
-			await work;
-		} finally {
-			if (this._headConnectWork.get(head.id) === work) this._headConnectWork.delete(head.id);
-		}
-	}
-
-	private async connectInner(
-		head: Pick<HydraHeadWithLocalParticipant, 'id'>,
-		transportGeneration: number,
-	): Promise<void> {
-		const existingManagedHead = this._heads.get(head.id);
-		if (existingManagedHead) {
-			if (!this.isManagedHeadMutationAllowed(head.id, existingManagedHead.head)) {
+	private async connectInner(head: { id: string }, session: HeadSession, transportGeneration: number): Promise<void> {
+		const existingAttachment = session.attachment;
+		if (existingAttachment) {
+			if (!session.isMutationAllowed(existingAttachment.head)) {
 				throw new Error(`Hydra head ${head.id} has a revoked or quarantined transport`);
 			}
 			logger.info(`[HydraConnectionManager] Already connected to head ${head.id}`);
 			return;
 		}
 
-		const configuredHead = await prisma.hydraHead.findUnique({
-			where: { id: head.id },
-			include: {
-				LocalParticipant: { include: { HydraSecretKey: true, HydraHost: true } },
-				RemoteParticipants: { include: { HydraVerificationKey: true } },
-				HydraRelation: { select: hydraRelationSecuritySelect },
-			},
-		});
-		if (!configuredHead) {
-			throw new Error(`Hydra head ${head.id} not found`);
-		}
-		if (configuredHead.isEnabled !== true) {
-			throw new Error(`Hydra head ${head.id} is disabled`);
-		}
-		if (configuredHead.initTxHash == null && !HYDRA_PRE_INIT_STATUSES.has(configuredHead.status)) {
-			throw new Error(`Hydra head ${head.id} has not passed independent InitTx verification`);
-		}
-		if (!configuredHead.LocalParticipant) {
-			throw new Error('No local participant provided');
-		}
-		if (configuredHead.RemoteParticipants.length !== 1) {
-			throw new Error('Hydra two-party heads require exactly one configured remote participant verification key');
-		}
-		if (
-			configuredHead.LocalParticipant.walletId !== configuredHead.HydraRelation.localHotWalletId ||
-			configuredHead.RemoteParticipants[0].walletId !== configuredHead.HydraRelation.remoteWalletId
-		) {
-			throw new Error('Hydra participants did not match the wallets bound by their Hydra relation');
-		}
+		const {
+			configuredHead,
+			nodeUrls,
+			nodeAuthToken,
+			localVerificationKey,
+			remoteVerificationKeys,
+			reconciledHistoryCursor,
+		} = await loadValidatedHeadConfiguration(head.id);
 		const relation = configuredHead.HydraRelation;
-		const localPaymentSource = relation.LocalHotWallet.PaymentSource;
-		const remotePaymentSource = relation.RemoteWallet.PaymentSource;
-		if (relation.network !== localPaymentSource.network || relation.network !== remotePaymentSource.network) {
-			throw new Error('Hydra relation and participant payment sources must use the same network');
-		}
-		if (
-			relation.LocalHotWallet.deletedAt !== null ||
-			localPaymentSource.deletedAt !== null ||
-			remotePaymentSource.deletedAt !== null ||
-			localPaymentSource.disableSyncAt !== null ||
-			remotePaymentSource.disableSyncAt !== null
-		) {
-			throw new Error('Hydra relation participants must belong to active, sync-enabled payment sources');
-		}
-		const decryptedSigningKey = decrypt(configuredHead.LocalParticipant.HydraSecretKey.hydraSK);
-		const localVerificationKey = deriveHydraVerificationKeyCborHex(decryptedSigningKey);
-		const remoteVerificationKeys = configuredHead.RemoteParticipants.map(({ HydraVerificationKey }) => {
-			try {
-				return normalizeHydraVerificationKeyCborHex(HydraVerificationKey.hydraVK);
-			} catch (plaintextError) {
-				// Compatibility for rows created by the legacy seed/reconciliation
-				// scripts, which encrypted this public key by mistake.
-				try {
-					return normalizeHydraVerificationKeyCborHex(decrypt(HydraVerificationKey.hydraVK));
-				} catch {
-					throw plaintextError;
-				}
-			}
-		});
-
-		const hostTransport = configuredHead.LocalParticipant.HydraHost;
-		const persistedNodeHttpUrl = new URL(configuredHead.LocalParticipant.nodeHttpUrl);
-		if (persistedNodeHttpUrl.protocol === 'http:' && !hostTransport.allowInsecureHttp) {
-			throw new Error(`Hydra head ${head.id} uses HTTP without the Host's explicit allowInsecureHttp opt-in`);
-		}
-		const nodeUrls = validateHydraNodeUrls(
-			configuredHead.LocalParticipant.nodeHttpUrl,
-			configuredHead.LocalParticipant.nodeUrl,
-			{
-				plaintextHosts: hostTransport.allowInsecureHttp ? [persistedNodeHttpUrl.hostname] : [],
-			},
-		);
-		const nodeAuthToken = this.resolveNodeAuthToken(hostTransport);
 		const isReachable = await this.probeNode(nodeUrls.httpUrl, nodeAuthToken);
 		if (!isReachable) {
 			throw new Error(`Local Hydra node unreachable for head ${head.id}`);
 		}
-		if ((this._transportGeneration.get(head.id) ?? 0) !== transportGeneration) {
+		if (session.transportGeneration !== transportGeneration) {
+			throw new Error(`Hydra head ${head.id} transport was revoked while connecting`);
+		}
+		// Acquire the durable ownership fence for this attachment (ADR-0014): one
+		// increment per acquisition, carried by every lifecycle write. Re-check the
+		// process-local generation afterwards — the acquisition awaits, and a
+		// disconnect during that window must still win.
+		const { ownerEpoch } = await prisma.hydraHead.update({
+			where: { id: head.id },
+			data: { ownerEpoch: { increment: 1 } },
+			select: { ownerEpoch: true },
+		});
+		if (session.transportGeneration !== transportGeneration) {
 			throw new Error(`Hydra head ${head.id} transport was revoked while connecting`);
 		}
 
@@ -386,7 +234,7 @@ export class HydraConnectionManager {
 			wsUrl: nodeUrls.wsUrl,
 			walletId: configuredHead.LocalParticipant.walletId,
 			expectedHeadId: configuredHead.headIdentifier ?? undefined,
-			reconciledHistoryCursor: resolvePersistedHistoryCursor(configuredHead),
+			reconciledHistoryCursor,
 			snapshotVerificationKeys: [localVerificationKey, ...remoteVerificationKeys],
 			expectedNodeVerificationKey: localVerificationKey,
 			// Hydra 2.3 signs the TxOut multiset, not reference mappings or the
@@ -396,36 +244,31 @@ export class HydraConnectionManager {
 		};
 
 		const hydraHead: CustomHydraHead = new CustomHydraHead([nodeConfig], {
-			isMutationAllowed: () => this.isManagedHeadMutationAllowed(head.id, hydraHead),
+			isMutationAllowed: () => session.isMutationAllowed(hydraHead),
 		});
 		const provider: HydraProvider = new HydraProvider({
 			node: hydraHead.mainNode,
 			autoConnect: false,
-			isSubmissionAllowed: () =>
-				this.isManagedHeadMutationAllowed(head.id, hydraHead) && this._heads.get(head.id)?.provider === provider,
+			isSubmissionAllowed: () => session.isMutationAllowed(hydraHead) && session.attachment?.provider === provider,
 		});
-		this.setupEventHandlers(head.id, hydraHead);
-		this._heads.set(head.id, {
-			head: hydraHead,
-			provider,
-			hydraHeadId: head.id,
-		});
+		this.setupEventHandlers(head.id, hydraHead, ownerEpoch);
+		session.attach({ head: hydraHead, provider, ownerEpoch });
 		try {
-			// Publish the managed head before transport startup: a fast Greetings or
+			// Publish the attachment before transport startup: a fast Greetings or
 			// TxConfirmed frame must already have handlers and provider lookup state.
 			await hydraHead.connect(configuredHead.LocalParticipant.walletId);
-			if (this._statusPersistenceQuarantine.has(head.id)) {
+			if (session.isQuarantined) {
 				// Recovery reconnects are not admitted until the fresh authenticated
 				// Greetings status has passed through the normal durable status queue.
 				await this.flushHeadStatus(head.id);
-				if (this._statusPersistenceQuarantine.has(head.id)) {
+				if (session.isQuarantined) {
 					throw new Error(`Hydra head ${head.id} did not durably re-observe its lifecycle status`);
 				}
 			}
 		} catch (error) {
 			// A failed pinned-session handshake can still emit an authenticated
 			// headless Idle Greetings that rolls durable Open state back. Keep the
-			// managed entry/listeners alive until that queued regression and any frame
+			// attachment/listeners alive until that queued regression and any frame
 			// received during socket shutdown have both been persisted.
 			await this.flushHeadStatus(head.id);
 			try {
@@ -439,10 +282,7 @@ export class HydraConnectionManager {
 				await this.flushHeadStatus(head.id);
 				hydraHead.removeAllListeners();
 				hydraHead.mainNode.removeAllListeners();
-				if (this._heads.get(head.id)?.head === hydraHead) {
-					this._headStatusQueues.delete(head.id);
-					this._heads.delete(head.id);
-				}
+				session.detachIfCurrent(hydraHead);
 			}
 			throw error;
 		}
@@ -452,7 +292,7 @@ export class HydraConnectionManager {
 		// stale — permanently fail-closing initial funds-lock. Keep it fresh by
 		// periodically probing the node's Greetings currentSlot.
 		this.startHeadClockRefresh(
-			head.id,
+			session,
 			hydraHead.mainNode,
 			nodeUrls.wsUrl,
 			configuredHead.headIdentifier,
@@ -471,14 +311,14 @@ export class HydraConnectionManager {
 	 * config is unavailable.
 	 */
 	private startHeadClockRefresh(
-		hydraHeadId: string,
+		session: HeadSession,
 		node: HydraNode,
 		wsUrl: string,
 		expectedHeadId: string | null,
 		network: Network,
 		authToken?: string,
 	): void {
-		this.stopHeadClockRefresh(hydraHeadId);
+		session.stopClockRefresh();
 		const slotConfig = resolveHydraL2EvidenceSlotConfig(convertNetwork(network));
 		if (!slotConfig) return;
 		const refresh = async (): Promise<void> => {
@@ -492,35 +332,25 @@ export class HydraConnectionManager {
 				// stays fail-closed until a fresh clock lands.
 			}
 		};
-		void refresh();
-		const timer = setInterval(() => void refresh(), HydraConnectionManager.HEAD_CLOCK_REFRESH_INTERVAL_MS);
-		timer.unref?.();
-		this._headClockRefreshers.set(hydraHeadId, timer);
-	}
-
-	private stopHeadClockRefresh(hydraHeadId: string): void {
-		const timer = this._headClockRefreshers.get(hydraHeadId);
-		if (timer) {
-			clearInterval(timer);
-			this._headClockRefreshers.delete(hydraHeadId);
-		}
+		session.startClockRefresh(HydraConnectionManager.HEAD_CLOCK_REFRESH_INTERVAL_MS, () => void refresh());
 	}
 
 	async disconnect(hydraHeadId: string): Promise<void> {
+		const session = this.sessionFor(hydraHeadId);
 		// Invalidate a connect that has read durable enablement but has not yet
 		// published its transport. Once a transport is published, this synchronous
 		// generation bump is followed by the exact-instance command fence below.
-		this._transportGeneration.set(hydraHeadId, (this._transportGeneration.get(hydraHeadId) ?? 0) + 1);
-		this.clearReconnect(hydraHeadId);
-		this.stopHeadClockRefresh(hydraHeadId);
-		const managed = this._heads.get(hydraHeadId);
-		if (!managed) {
+		session.bumpTransportGeneration();
+		session.clearReconnect();
+		session.stopClockRefresh();
+		const attachment = session.attachment;
+		if (!attachment) {
 			return;
 		}
 		// Revoke captured command/provider references before waiting for status
 		// drain or websocket shutdown. A later transport uses a different head
 		// instance, so this fence does not block reconnect mechanics.
-		this._commandRevokedHeads.set(hydraHeadId, managed.head);
+		session.revokeCommands(attachment.head);
 
 		// Keep lifecycle listeners attached until both sockets are closed. A live
 		// rollback Greetings can arrive while websocket shutdown is in flight; if
@@ -528,22 +358,15 @@ export class HydraConnectionManager {
 		// forever after the transport disappears.
 		await this.flushHeadStatus(hydraHeadId);
 		try {
-			await managed.head.mainNode.disconnect();
+			await attachment.head.mainNode.disconnect();
 		} finally {
 			await this.flushHeadStatus(hydraHeadId);
-			managed.head.removeAllListeners();
-			managed.head.mainNode.removeAllListeners();
-			if (this._heads.get(hydraHeadId)?.head === managed.head) {
-				this._headStatusQueues.delete(hydraHeadId);
-				this._heads.delete(hydraHeadId);
-			}
-			// The revocation fence is instance-based and only meaningful while
-			// `_heads` still holds this instance (isManagedHeadMutationAllowed
-			// requires `_heads.get(id)?.head === head` first). Drop the retained
-			// object once the transport is gone; a newer instance is unaffected.
-			if (this._commandRevokedHeads.get(hydraHeadId) === managed.head) {
-				this._commandRevokedHeads.delete(hydraHeadId);
-			}
+			attachment.head.removeAllListeners();
+			attachment.head.mainNode.removeAllListeners();
+			// The revocation fence is instance-based and only meaningful while the
+			// attachment still holds this instance; `detachIfCurrent` drops both so
+			// a newer attachment is unaffected.
+			session.detachIfCurrent(attachment.head);
 		}
 
 		logger.info(`[HydraConnectionManager] Disconnected from head ${hydraHeadId}`);
@@ -557,92 +380,55 @@ export class HydraConnectionManager {
 	 * the direct path for immediate teardown.
 	 */
 	async queueDisconnect(hydraHeadId: string): Promise<void> {
-		const previous = this._headControlQueues.get(hydraHeadId) ?? Promise.resolve(false);
-		const work = previous
-			.catch(() => false)
-			.then(async () => {
-				await this.disconnect(hydraHeadId);
-				return false;
-			});
-		this._headControlQueues.set(hydraHeadId, work);
-		try {
-			await work;
-		} finally {
-			if (this._headControlQueues.get(hydraHeadId) === work) this._headControlQueues.delete(hydraHeadId);
-		}
+		await this.sessionFor(hydraHeadId).runControl(async () => {
+			await this.disconnect(hydraHeadId);
+			return false;
+		});
 	}
 
 	/** Wait until every status frame already queued for this head is durable. */
 	async flushHeadStatus(hydraHeadId: string): Promise<void> {
-		while (true) {
-			const queued = this._headStatusQueues.get(hydraHeadId);
-			if (!queued) return;
-			await queued.catch(() => undefined);
-			if (this._headStatusQueues.get(hydraHeadId) === queued) return;
-		}
+		const session = this.getSession(hydraHeadId);
+		if (session) await session.flushStatus();
 	}
 
 	getHead(hydraHeadId: string): CustomHydraHead | null {
-		const managed = this._heads.get(hydraHeadId);
-		if (!managed || !this.isManagedHeadMutationAllowed(hydraHeadId, managed.head)) return null;
-		return managed.head;
+		const session = this.getSession(hydraHeadId);
+		const attachment = session?.attachment;
+		if (!session || !attachment || !session.isMutationAllowed(attachment.head)) return null;
+		return attachment.head;
 	}
 
 	getNode(hydraHeadId: string): HydraNode | null {
-		const managed = this._heads.get(hydraHeadId);
-		if (!managed || !this.isManagedHeadMutationAllowed(hydraHeadId, managed.head)) return null;
-		return managed.head.mainNode;
+		return this.getHead(hydraHeadId)?.mainNode ?? null;
 	}
 
 	getProvider(hydraHeadId: string): HydraProvider | null {
-		const managed = this._heads.get(hydraHeadId);
-		if (!managed || !this.isManagedHeadMutationAllowed(hydraHeadId, managed.head)) return null;
-		return managed.provider;
+		const session = this.getSession(hydraHeadId);
+		const attachment = session?.attachment;
+		if (!session || !attachment || !session.isMutationAllowed(attachment.head)) return null;
+		return attachment.provider;
 	}
 
 	get connectedHeadIds(): string[] {
-		return Array.from(this._heads)
-			.filter(([hydraHeadId, managed]) => this.isManagedHeadMutationAllowed(hydraHeadId, managed.head))
+		return Array.from(this._sessions)
+			.filter(([, session]) => {
+				const attachment = session.attachment;
+				return attachment != null && session.isMutationAllowed(attachment.head);
+			})
 			.map(([hydraHeadId]) => hydraHeadId);
 	}
 
 	isConnected(hydraHeadId: string): boolean {
-		const managed = this._heads.get(hydraHeadId);
-		return managed != null && this.isManagedHeadMutationAllowed(hydraHeadId, managed.head);
-	}
-
-	private isManagedHeadMutationAllowed(hydraHeadId: string, head: CustomHydraHead): boolean {
-		return (
-			this._heads.get(hydraHeadId)?.head === head &&
-			!this._statusPersistenceQuarantine.has(hydraHeadId) &&
-			this._commandRevokedHeads.get(hydraHeadId) !== head
-		);
+		return this.getHead(hydraHeadId) != null;
 	}
 
 	async shutdown(): Promise<void> {
 		logger.info('[HydraConnectionManager] Shutting down all connections');
-		for (const [headId] of this._heads) {
-			await this.disconnect(headId);
+		for (const [headId, session] of this._sessions) {
+			if (session.attachment) await this.disconnect(headId);
+			session.stopClockRefresh();
 		}
-		for (const [headId] of this._headClockRefreshers) {
-			this.stopHeadClockRefresh(headId);
-		}
-	}
-
-	/**
-	 * The bearer token for reaching this head's node.
-	 *
-	 * A node configured by hand on loopback has nothing in front of it, so there
-	 * is nothing to authenticate to and this is undefined. A node placed on a
-	 * Hydra Host is reachable only through that Host's proxy, so its user token
-	 * is decrypted here — the single seam every caller reads, so the credential
-	 * cannot be threaded correctly in one place and forgotten in another.
-	 */
-	private resolveNodeAuthToken(host: { encryptedUserToken: string } | null | undefined): string | undefined {
-		if (host == null) {
-			return undefined;
-		}
-		return decrypt(host.encryptedUserToken);
 	}
 
 	private async probeNode(httpUrl: string, authToken?: string, timeoutMs = 5000): Promise<boolean> {
@@ -665,21 +451,26 @@ export class HydraConnectionManager {
 		}
 	}
 
-	private setupEventHandlers(hydraHeadId: string, head: CustomHydraHead): void {
-		head.on(HydraHeadEvent.StatusChange, (data: StatusChangeData) => {
-			const previous = this._headStatusQueues.get(hydraHeadId) ?? Promise.resolve();
-			const work = previous
-				.catch(() => undefined)
-				.then(async () => await this.persistHeadStatus(hydraHeadId, head, data));
-			this._headStatusQueues.set(hydraHeadId, work);
-			// `.finally` re-propagates a rejection, so without the catch this is a
-			// floating rejected promise and one unhandled rejection ends the
-			// process. The next enqueue above already assumes `work` can reject.
-			void work
-				.catch(() => undefined)
-				.finally(() => {
-					if (this._headStatusQueues.get(hydraHeadId) === work) this._headStatusQueues.delete(hydraHeadId);
+	private setupEventHandlers(hydraHeadId: string, head: CustomHydraHead, ownerEpoch: bigint): void {
+		const session = this.sessionFor(hydraHeadId);
+		const persistenceHost: HeadStatusPersistenceHost = {
+			quarantine: (failedHead) => session.quarantine(failedHead),
+			clearQuarantineAfterReobservation: (observingHead) => session.clearQuarantineAfterReobservation(observingHead),
+			scheduleRecovery: () => this.scheduleStatusPersistenceRecovery(hydraHeadId),
+			onStaleOwner: () => {
+				// A newer session owns this head durably. Tear down without touching
+				// the durable row and without scheduling a reconnect: rejoin policy
+				// belongs to whoever fenced us out (ADR-0014).
+				void this.queueDisconnect(hydraHeadId).catch((error: unknown) => {
+					logger.error('[HydraConnectionManager] Failed to tear down a superseded head session', {
+						hydraHeadId,
+						error: error instanceof Error ? error.message : error,
+					});
 				});
+			},
+		};
+		head.on(HydraHeadEvent.StatusChange, (data: StatusChangeData) => {
+			session.enqueueStatus(async () => await persistHeadStatus(persistenceHost, hydraHeadId, head, ownerEpoch, data));
 		});
 
 		// Funds that were promised to a deposit have just become spendable. Anything
@@ -812,254 +603,17 @@ export class HydraConnectionManager {
 	 * from the current status work would make disconnect's flush await itself.
 	 */
 	private scheduleStatusPersistenceRecovery(hydraHeadId: string): void {
-		const previous = this._headControlQueues.get(hydraHeadId) ?? Promise.resolve(false);
-		const work = previous
-			.catch(() => false)
-			.then(async () => {
-				await this.disconnect(hydraHeadId);
-				return await this.reconcileEnabledStateInner(hydraHeadId);
-			});
-		this._headControlQueues.set(hydraHeadId, work);
-		void work
-			.catch((error: unknown) => {
-				logger.error('[HydraConnectionManager] Failed lifecycle-persistence recovery', {
-					hydraHeadId,
-					error,
-				});
-				this.scheduleReconnect(hydraHeadId);
-			})
-			.finally(() => {
-				if (this._headControlQueues.get(hydraHeadId) === work) this._headControlQueues.delete(hydraHeadId);
-			});
-	}
-
-	private clearStatusPersistenceQuarantineAfterReobservation(
-		hydraHeadId: string,
-		observingHead: CustomHydraHead,
-	): void {
-		const failedHead = this._statusPersistenceQuarantine.get(hydraHeadId);
-		if (failedHead != null && failedHead !== observingHead) {
-			this._statusPersistenceQuarantine.delete(hydraHeadId);
-		}
-	}
-
-	private async failClosedAfterStatusPersistenceFailure(
-		hydraHeadId: string,
-		failedHead: CustomHydraHead,
-	): Promise<void> {
-		// A missed rollback below Open would otherwise leave stale init evidence
-		// available to L2 sync/submission. Block local access immediately, then
-		// durably disable the head when the database still accepts a simple write.
-		// Recovery is queued without awaiting it so status work cannot deadlock on
-		// disconnect's flush of that same queue.
-		this._statusPersistenceQuarantine.set(hydraHeadId, failedHead);
-		try {
-			await retryOnSerializationConflict(
-				async () =>
-					await prisma.hydraHead.updateMany({
-						where: { id: hydraHeadId },
-						data: {
-							isEnabled: false,
-							initTxHash: null,
-							reconciliationCompletedAt: null,
-						},
-					}),
-				{ label: 'hydra-status-persistence-fail-closed' },
-			);
-		} catch (quarantineError) {
-			logger.error('[HydraConnectionManager] Failed to durably quarantine head after status persistence error', {
-				hydraHeadId,
-				quarantineError,
-			});
-		} finally {
-			// Start recovery only after the durable quarantine attempt settles. If
-			// it ran earlier, a fast disconnect/re-read could reconnect and clear
-			// the local fence before the successful disable write became visible.
-			this.scheduleStatusPersistenceRecovery(hydraHeadId);
-		}
-	}
-
-	private async persistHeadStatus(hydraHeadId: string, head: CustomHydraHead, data: StatusChangeData): Promise<void> {
-		const { status, headId, contestationDeadline, snapshotNumber } = data;
-		logger.info(`[HydraConnectionManager] Head ${hydraHeadId} status changed to ${status}`, {
-			headId,
-			contestationDeadline,
-			snapshotNumber,
+		const work = this.sessionFor(hydraHeadId).runControl(async () => {
+			await this.disconnect(hydraHeadId);
+			return await this.reconcileEnabledStateInner(hydraHeadId);
 		});
-		try {
-			if (headId && !/^[0-9a-f]{56}$/.test(headId)) {
-				logger.error('[HydraConnectionManager] Rejected a non-canonical Hydra head identifier', {
-					hydraHeadId,
-				});
-				return;
-			}
-			for (let attempt = 0; attempt < 3; attempt += 1) {
-				const current = await prisma.hydraHead.findUnique({
-					where: { id: hydraHeadId },
-					select: {
-						isEnabled: true,
-						status: true,
-						hydraRelationId: true,
-						headIdentifier: true,
-						openedAt: true,
-						closedAt: true,
-						finalizedAt: true,
-						contestationDeadline: true,
-						latestSnapshotNumber: true,
-					},
-				});
-				if (!current) return;
-				if (current.isEnabled === false && HYDRA_HEAD_STATUS_RANK[status] >= HYDRA_HEAD_STATUS_RANK[current.status]) {
-					return;
-				}
-				if (headId && current.headIdentifier != null && current.headIdentifier !== headId) {
-					logger.error('[HydraConnectionManager] Rejected a Hydra status frame for a different durable head', {
-						hydraHeadId,
-					});
-					return;
-				}
-				if (HYDRA_HEAD_STATUS_RANK[status] < HYDRA_HEAD_STATUS_RANK[current.status]) {
-					const rollbackResult = await persistRegressiveHeadStatus(
-						hydraHeadId,
-						current.hydraRelationId,
-						status,
-						headId,
-						snapshotNumber,
-					);
-					if (rollbackResult === 'not-regressive') continue;
-					if (rollbackResult !== 'ignored') {
-						this.clearStatusPersistenceQuarantineAfterReobservation(hydraHeadId, head);
-					}
-					if (rollbackResult === 'persisted') {
-						logger.warn('[HydraConnectionManager] Persisted authenticated live Hydra lifecycle rollback', {
-							hydraHeadId,
-							currentStatus: current.status,
-							observedStatus: status,
-						});
-					}
-					if (rollbackResult === 'quarantined-relation-conflict') {
-						logger.error(
-							'[HydraConnectionManager] Quarantined relation after rollback conflicted with replacement head',
-							{
-								hydraHeadId,
-								hydraRelationId: current.hydraRelationId,
-								currentStatus: current.status,
-								observedStatus: status,
-							},
-						);
-					}
-					if (rollbackResult === 'quarantined-confirmed-finality-conflict') {
-						logger.error(
-							'[HydraConnectionManager] Quarantined relation after live status contradicted confirmed fanout',
-							{
-								hydraHeadId,
-								hydraRelationId: current.hydraRelationId,
-								currentStatus: current.status,
-								observedStatus: status,
-							},
-						);
-					}
-					return;
-				}
-				const now = new Date();
-				const updateData: HydraHeadUpdateInput = { status, latestActivityAt: now };
-				/** Set when this frame is the one that moves the head into Closed. */
-				let isClosingTransition = false;
-				if (HYDRA_HEAD_STATUS_RANK[status] >= HYDRA_HEAD_STATUS_RANK[HydraHeadStatus.Closed]) {
-					// A peer can close the head without using this process's API. Persist the
-					// admission gate from the authenticated lifecycle frame as well.
-					updateData.isClosing = true;
-				}
-				if (headId) updateData.headIdentifier = headId;
-				if (contestationDeadline && current.contestationDeadline == null) {
-					// Field-level parse guard (like the head-id regex above): the schema only
-					// bounds the string's length, so `new Date(garbage)` yields Invalid Date,
-					// the Prisma write throws, and the catch below would fail-closed the WHOLE
-					// head (durably disabled + InitTx attestation wiped) over one cosmetic
-					// field from a buggy node build. Skip the field instead of nuking the head.
-					const parsedDeadline = new Date(contestationDeadline);
-					if (Number.isFinite(parsedDeadline.getTime())) {
-						updateData.contestationDeadline = parsedDeadline;
-					} else {
-						logger.warn('[HydraConnectionManager] Ignoring unparseable contestationDeadline in status frame', {
-							hydraHeadId,
-							contestationDeadline,
-						});
-					}
-				}
-				if (snapshotNumber != null && BigInt(snapshotNumber) > current.latestSnapshotNumber) {
-					updateData.latestSnapshotNumber = BigInt(snapshotNumber);
-				}
-				if (status === HydraHeadStatus.Open && current.openedAt == null) updateData.openedAt = now;
-				else if (status === HydraHeadStatus.Closed && current.closedAt == null) {
-					updateData.closedAt = now;
-					// Deliberately not fetched here. The write below is a compare-and-set
-					// against the status read above, and a failed CAS fails the head
-					// closed — so an HTTP round trip inside that window trades a real
-					// outage risk for a cosmetic field. Captured after the CAS instead.
-					isClosingTransition = true;
-				} else if (status === HydraHeadStatus.Final && current.finalizedAt == null) updateData.finalizedAt = now;
-
-				const updated = await prisma.hydraHead.updateMany({
-					where: {
-						id: hydraHeadId,
-						isEnabled: true,
-						status: current.status,
-						headIdentifier: current.headIdentifier,
-					},
-					data: updateData,
-				});
-				if (updated.count === 1) {
-					this.clearStatusPersistenceQuarantineAfterReobservation(hydraHeadId, head);
-					// Only now may HydraNode drain history buffered before identity was
-					// known: the exact head id is durably committed by the CAS above.
-					if (headId) head.mainNode.pinExpectedHeadId(headId);
-					// Awaited, not fired and forgotten. Close happens once per head, so
-					// the cost is a single bounded round trip in a head's lifetime, and
-					// awaiting keeps it ordered, testable and free of a floating promise.
-					if (isClosingTransition) await this.recordCloseTransaction(hydraHeadId, head.mainNode);
-					return;
-				}
-			}
-			logger.warn('[HydraConnectionManager] Head status changed concurrently; observed frame retained in logs', {
+		void work.catch((error: unknown) => {
+			logger.error('[HydraConnectionManager] Failed lifecycle-persistence recovery', {
 				hydraHeadId,
-				status,
+				error,
 			});
-			await this.failClosedAfterStatusPersistenceFailure(hydraHeadId, head);
-		} catch (error) {
-			logger.error('[HydraConnectionManager] Failed to update head status', { hydraHeadId, error });
-			await this.failClosedAfterStatusPersistenceFailure(hydraHeadId, head);
-		}
-	}
-
-	/**
-	 * Name the transaction that closed a head, once the close is durable.
-	 *
-	 * `HeadIsClosed` carries no transaction id, so this reads the head's own
-	 * state output from the node — which right now is the close transaction's
-	 * output, and becomes a fanout step's output as soon as fanout starts. Run
-	 * only on the transition, never as a backfill: after fanout begins the same
-	 * read would confidently record the wrong transaction.
-	 *
-	 * Failures are swallowed. This names a transaction for operators, and a head
-	 * whose close cannot be named is still closed.
-	 */
-	private async recordCloseTransaction(hydraHeadId: string, node: HydraNode): Promise<void> {
-		try {
-			const closeTxHash = await node.fetchHeadOutputTxId();
-			if (!closeTxHash) return;
-			// Guarded on null so a rollback that cleared the field, or a racing
-			// observer, cannot be overwritten by a late read.
-			await prisma.hydraHead.updateMany({
-				where: { id: hydraHeadId, closeTxHash: null },
-				data: { closeTxHash },
-			});
-		} catch (error) {
-			logger.warn('[HydraConnectionManager] Could not record the close transaction', {
-				hydraHeadId,
-				error: error instanceof Error ? error.message : 'Non-error failure',
-			});
-		}
+			this.scheduleReconnect(hydraHeadId);
+		});
 	}
 
 	async handleTxConfirmed(
@@ -1067,244 +621,10 @@ export class HydraConnectionManager {
 		txId: string,
 		confirmedTransaction?: HydraConfirmedTransaction,
 	): Promise<HydraDatumApplyOutcome> {
-		const dedupeKey = `${hydraHeadId}:${txId}`;
-		const existingWork = this._txWorkById.get(dedupeKey);
-		if (existingWork) {
-			logger.debug(`[HydraConnectionManager] Skipping duplicate TxConfirmed for ${txId}`);
-			return await existingWork;
-		}
-		const previous = this._headTxQueues.get(hydraHeadId) ?? Promise.resolve();
-		const work = previous
-			.catch(() => undefined)
-			.then(() => this._handleTxConfirmedInner(hydraHeadId, txId, confirmedTransaction));
-		this._headTxQueues.set(hydraHeadId, work);
-		this._txWorkById.set(dedupeKey, work);
-
-		try {
-			return await work;
-		} finally {
-			this._txWorkById.delete(dedupeKey);
-			if (this._headTxQueues.get(hydraHeadId) === work) this._headTxQueues.delete(hydraHeadId);
-		}
-	}
-
-	private async _handleTxConfirmedInner(
-		hydraHeadId: string,
-		txId: string,
-		confirmedTransaction?: HydraConfirmedTransaction,
-	): Promise<HydraDatumApplyOutcome> {
-		// Lifecycle and transaction frames use separate queues, but a rollback
-		// observed first must close its durable admission gate before a later
-		// TxConfirmed frame can mutate escrow state.
-		await this.flushHeadStatus(hydraHeadId);
-		if (this._statusPersistenceQuarantine.has(hydraHeadId)) return 'retry';
-		const tx = await prisma.transaction.findFirst({
-			where: {
-				OR: [{ txHash: txId }, { txHash: null, intendedTxHash: txId }],
-				layer: 'L2',
-				hydraHeadId,
-				status: TransactionStatus.Pending,
-			},
-			select: { id: true },
-		});
-
-		if (!tx) {
-			return await this.syncHydraDatumStateFromConfirmedTx(hydraHeadId, txId, confirmedTransaction);
-		}
-
-		// Every L2 state change is confirmed from immutable snapshot evidence: a
-		// validated continuation datum, or an exact persisted UTxO spend with the
-		// expected terminal redeemer. Never derive confirmation from the requested
-		// action alone; that would turn a malformed/missing output into success.
-		const syncOutcome = await this.syncHydraDatumStateFromConfirmedTx(hydraHeadId, txId, confirmedTransaction);
-		if (syncOutcome === 'retry') {
-			// A transaction can touch multiple local escrows. Even if one output
-			// confirmed the shared Transaction row, retain the replay evidence until
-			// every dependent datum/spend has reached a durable outcome.
-			return 'retry';
-		}
-		const refreshed = await prisma.transaction.findUnique({
-			where: { id: tx.id },
-			select: { status: true },
-		});
-		if (refreshed?.status === TransactionStatus.Pending) {
-			logger.warn('[HydraConnectionManager] Refusing unvalidated L2 confirmation', {
-				hydraHeadId,
-				txId,
-			});
-			return 'retry';
-		}
-		return refreshed?.status === TransactionStatus.Confirmed ? 'applied' : 'retry';
-	}
-
-	private async syncHydraDatumStateFromConfirmedTx(
-		hydraHeadId: string,
-		txId: string,
-		confirmedTransaction?: HydraConfirmedTransaction,
-	): Promise<HydraDatumApplyOutcome> {
-		try {
-			if (this._statusPersistenceQuarantine.has(hydraHeadId)) return 'retry';
-			let hasApplied = false;
-			let hasRetry = false;
-			const provider = this.getProvider(hydraHeadId);
-
-			const hydraHead = await prisma.hydraHead.findUnique({
-				where: { id: hydraHeadId },
-				include: {
-					HydraRelation: {
-						include: {
-							LocalHotWallet: {
-								include: {
-									PaymentSource: true,
-								},
-							},
-						},
-					},
-				},
-			});
-
-			if (!hydraHead || !hydraHead.isEnabled || hydraHead.initTxHash == null) {
-				// Cross-replica disablement and independent InitTx verification are
-				// durable admission boundaries. A stale local socket may retain valid
-				// frames, but it must not mutate escrow state after either gate closes.
-				return 'retry';
-			}
-
-			const paymentSource = hydraHead.HydraRelation.LocalHotWallet.PaymentSource;
-			const network = paymentSource.network === Network.Mainnet ? 'mainnet' : 'preprod';
-			const resolvedConfirmedTransaction =
-				confirmedTransaction ?? this.getNode(hydraHeadId)?.getConfirmedTransaction(txId) ?? null;
-			const transactionEvidence = resolvedConfirmedTransaction
-				? parseHydraTransactionEvidence(resolvedConfirmedTransaction.cborHex)
-				: null;
-			if (resolvedConfirmedTransaction && !transactionEvidence) return 'retry';
-			const confirmationTimeMs = resolvedConfirmedTransaction?.confirmedAtMs ?? null;
-			type ObservedOutput = {
-				input: { txHash: string; outputIndex: number };
-				output: {
-					address: string;
-					plutusData: string | null;
-					amount: Array<{ unit: string; quantity: string }>;
-				};
-			};
-			let transactionOutputs: ObservedOutput[];
-			if (transactionEvidence) {
-				// Decode the confirmed transaction's own immutable outputs. Reading the
-				// current snapshot by tx hash loses T1 when one snapshot confirms T1→T2.
-				transactionOutputs = transactionEvidence.outputs.map((output) => ({
-					input: { txHash: txId, outputIndex: output.outputIndex },
-					output: {
-						address: output.address,
-						plutusData: output.plutusData,
-						amount: output.amount,
-					},
-				}));
-			} else if (provider) {
-				transactionOutputs = (await provider.fetchUTxOs(txId)).map((utxo) => ({
-					input: utxo.input,
-					output: {
-						address: utxo.output.address,
-						plutusData: utxo.output.plutusData ?? null,
-						amount: utxo.output.amount,
-					},
-				}));
-			} else {
-				transactionOutputs = [];
-			}
-
-			const contractOutputs = transactionOutputs.filter((utxo) => {
-				return utxo.output.address === paymentSource.smartContractAddress && utxo.output.plutusData != null;
-			});
-
-			const decodedOutputs: Array<{
-				output: (typeof contractOutputs)[number];
-				decoded: NonNullable<ReturnType<typeof decodeV2ContractDatum>>;
-				state: OnChainState;
-			}> = [];
-			for (const output of contractOutputs) {
-				try {
-					const outputDatum = output.output.plutusData;
-					if (!outputDatum) continue;
-					const decodedDatum: unknown = deserializeDatum(outputDatum);
-					const decodedNewContract = decodeV2ContractDatum(decodedDatum, network, paymentSource.smartContractAddress);
-					if (!decodedNewContract) continue;
-					// Strict 1:1 datum-state → OnChainState (shared with the reconciler).
-					const derivedOnChainState = smartContractStateToOnChainState(decodedNewContract.state);
-					if (!derivedOnChainState) continue;
-					decodedOutputs.push({ output, decoded: decodedNewContract, state: derivedOnChainState });
-				} catch (error) {
-					// Unrelated script-address outputs cannot suppress proof of a valid
-					// terminal spend elsewhere in the same confirmed transaction.
-					logger.warn('[HydraConnectionManager] Ignoring malformed contract output', {
-						hydraHeadId,
-						txId,
-						outputIndex: output.input.outputIndex,
-						error,
-					});
-				}
-			}
-
-			const identifierCounts = new Map<string, number>();
-			for (const decodedOutput of decodedOutputs) {
-				identifierCounts.set(
-					decodedOutput.decoded.blockchainIdentifier,
-					(identifierCounts.get(decodedOutput.decoded.blockchainIdentifier) ?? 0) + 1,
-				);
-			}
-			const duplicateIdentifiers = [...identifierCounts]
-				.filter(([, count]) => count > 1)
-				.map(([identifier]) => identifier);
-			const locallyRelevantDuplicateIdentifiers = await findLocallyRelevantHydraRequestIdentifiers(
-				paymentSource.id,
-				duplicateIdentifiers,
-			);
-			for (const decodedOutput of decodedOutputs) {
-				if ((identifierCounts.get(decodedOutput.decoded.blockchainIdentifier) ?? 0) !== 1) {
-					if (locallyRelevantDuplicateIdentifiers.has(decodedOutput.decoded.blockchainIdentifier)) {
-						hasRetry = true;
-						logger.warn('[HydraConnectionManager] duplicate outputs for local identifier; refusing ambiguous tx', {
-							hydraHeadId,
-							txId,
-							blockchainIdentifier: decodedOutput.decoded.blockchainIdentifier,
-						});
-					}
-					continue;
-				}
-				const datumOutcome = await applyDatumStateToLocalRequests({
-					hydraHeadId,
-					txId,
-					paymentSourceId: paymentSource.id,
-					network: paymentSource.network,
-					decoded: decodedOutput.decoded,
-					newOnChainState: decodedOutput.state,
-					outputAmounts: decodedOutput.output.output.amount,
-					outputReference: decodedOutput.output.input,
-					transactionEvidence,
-					confirmationTimeMs,
-				});
-				hasApplied ||= datumOutcome === 'applied';
-				hasRetry ||= datumOutcome === 'retry';
-			}
-
-			if (transactionEvidence) {
-				const terminalOutcome = await applyTerminalHydraSpends({
-					hydraHeadId,
-					txId,
-					paymentSourceId: paymentSource.id,
-					transactionEvidence,
-				});
-				hasApplied ||= terminalOutcome === 'applied';
-				hasRetry ||= terminalOutcome === 'retry';
-			}
-			return hasRetry ? 'retry' : hasApplied ? 'applied' : 'irrelevant';
-		} catch (error) {
-			logger.error('[HydraConnectionManager] Failed fallback L2 datum sync', {
-				hydraHeadId,
-				txId,
-				error,
-			});
-			return 'retry';
-		}
+		return await this.sessionFor(hydraHeadId).runTxConfirmed(
+			txId,
+			async () => await applyConfirmedHydraTransaction(this._txConfirmedHost, hydraHeadId, txId, confirmedTransaction),
+		);
 	}
 }
 
