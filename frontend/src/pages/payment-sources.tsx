@@ -49,6 +49,7 @@ import { PaymentSourceSyncBadge } from '@/components/payment-sources/PaymentSour
 import {
   DEFAULT_PAYMENT_SOURCE_TYPE,
   getPaymentSourceTypeLabel,
+  hasLegacyOnlyPaymentSources,
   isV2PaymentSource,
 } from '@/lib/payment-source-type';
 
@@ -197,7 +198,7 @@ export default function PaymentSourcesPage() {
     [paymentSources],
   );
   const hasV2Source = v2Sources.length > 0;
-  const hasLegacyOnly = legacySources.length > 0 && !hasV2Source;
+  const hasLegacyOnly = hasLegacyOnlyPaymentSources(paymentSources);
   // "A V2 row exists" is not the same as "V2 works": a source with no selling
   // wallet, no Blockfrost key or a retired contract would still have shown the
   // green "ready" banner. Readiness is the backend's call; the row count only
@@ -214,6 +215,7 @@ export default function PaymentSourcesPage() {
   const firstBlockingCheck = cardanoReadiness?.Checks.find((check) => !check.isComplete) ?? null;
   // Stay neutral rather than alarming while readiness is still resolving.
   const needsV2Setup = !isLoadingReadiness && !isV2Ready;
+  const showLegacyOperationalBanner = hasLegacyOnly && needsV2Setup;
 
   const [sourceToSelect, setSourceToSelect] = useState<PaymentSourceExtended | undefined>(
     undefined,
@@ -323,7 +325,7 @@ export default function PaymentSourcesPage() {
                         : hasV2Source
                           ? 'Finish V2 payment source setup'
                           : hasLegacyOnly
-                            ? 'Set up V2 before migrating agents'
+                            ? 'V1 source active — set up V2 when you are ready to migrate'
                             : 'Set up V2 for new agents'}
                     </p>
                     <PaymentSourceTypeBadge
@@ -334,9 +336,11 @@ export default function PaymentSourcesPage() {
                   <p className="max-w-3xl text-sm opacity-85">
                     {hasV2Source && !isV2Ready && firstBlockingCheck
                       ? `${firstBlockingCheck.label}: ${firstBlockingCheck.detail ?? 'not configured yet'}`
-                      : legacySources.length > 0
-                        ? 'V2 is the default for new agents. Create the V2 source, migrate V1 agents to the V2 registry, then delete the old source after it is no longer used.'
-                        : 'V2 is the default for new agents. Create a V2 source to use the new registry metadata and zero-fee payment source behavior.'}
+                      : showLegacyOperationalBanner
+                        ? `Your ${getPaymentSourceTypeLabel('Web3CardanoV1')} remains available below. Run V2 setup when you want to migrate agents to the new registry.`
+                        : legacySources.length > 0
+                          ? 'V2 is the default for new agents. Create the V2 source, migrate V1 agents to the V2 registry, then delete the old source after it is no longer used.'
+                          : 'V2 is the default for new agents. Create a V2 source to use the new registry metadata and zero-fee payment source behavior.'}
                   </p>
                 </div>
               </div>

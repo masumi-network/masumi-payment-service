@@ -7,6 +7,7 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { useQueryClient } from '@tanstack/react-query';
 import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
+import { useRailReadiness } from '@/lib/hooks/useRailReadiness';
 import { STEP_LABELS, type SetupWallet } from '@/components/setup/setup-helpers';
 import { WelcomeScreen } from '@/components/setup/screens/WelcomeScreen';
 import { SeedPhrasesScreen } from '@/components/setup/screens/SeedPhrasesScreen';
@@ -28,6 +29,9 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
   });
   const [hasAiAgent, setHasAiAgent] = useState(false);
   const { paymentSources } = usePaymentSourceExtendedAll();
+  const { cardano: cardanoReadiness, isUnavailable: isReadinessUnavailable } = useRailReadiness({
+    network: networkType as 'Preprod' | 'Mainnet',
+  });
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset wizard state when network changes (user switched network during setup)
@@ -35,17 +39,28 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     setWallets({ buying: null, selling: null });
   }, [networkType]);
 
-  // If the current network already has a V2 payment source and we're on the welcome step,
-  // exit setup automatically. Legacy V1-only networks should still be able to migrate.
+  // Exit only once V2 is actually ready — a half-created V2 row must not boot
+  // legacy-only operators out of the wizard while migration is still impossible.
   useEffect(() => {
     const hasV2SourceForNetwork = paymentSources.some(
       (ps) => ps.network === networkType && isV2PaymentSource(ps),
     );
-    if (currentStep === 0 && hasV2SourceForNetwork) {
+    const hasReadyV2SourceForNetwork = isReadinessUnavailable
+      ? hasV2SourceForNetwork
+      : cardanoReadiness?.isReady === true && hasV2SourceForNetwork;
+    if (currentStep === 0 && hasReadyV2SourceForNetwork) {
       setIsSetupMode(false);
       router.push('/');
     }
-  }, [networkType, paymentSources, currentStep, setIsSetupMode, router]);
+  }, [
+    networkType,
+    paymentSources,
+    cardanoReadiness?.isReady,
+    isReadinessUnavailable,
+    currentStep,
+    setIsSetupMode,
+    router,
+  ]);
 
   useEffect(() => {
     setSetupWizardStep(currentStep);
