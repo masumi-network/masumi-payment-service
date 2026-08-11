@@ -1,239 +1,69 @@
-/* eslint-disable @typescript-eslint/prefer-promise-reject-errors */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/**
+ * One session against one Hydra node: the pinned websocket pair, the checks
+ * every frame must pass, and the command surface the rest of the service uses.
+ *
+ * The node composes its collaborators rather than containing them:
+ * `HydraHttpClient` talks to the Host, `HydraPartyIdentity` holds the
+ * configured participant set both sockets authenticate against,
+ * `LiveFrameProcessor` folds live frames into the session's current beliefs,
+ * `HydraHistoryReplay` re-earns the verified state anchor on every connection
+ * (ADR-0012), `ConfirmedTransactionLedger` retains bounded confirmation
+ * evidence, `node-command-channel` resolves one command against the frames
+ * that answer it, and `node-control-queries` reads the Host's HTTP surface.
+ * What stays here is the binding: shared identity state, the fatal rotation
+ * latch, connect/disconnect, and the public API.
+ */
 import { EventEmitter } from 'node:events';
-import { FixedTransaction } from '@emurgo/cardano-serialization-lib-nodejs';
-import { castProtocol, Protocol, resolveTxHash, UTxO } from '@meshsdk/core';
+import { UTxO } from '@meshsdk/core';
 
-import { mapHydraUTxOToUTxO, mapUTxOToHydraUTxO } from './codec';
+import { logger } from '@masumi/payment-core/logger';
+import { HydraHeadStatus } from '@/generated/prisma/client';
 import { hydraAuthHeaders } from './auth';
-import { describeProtocolDrift, detectSnapshotDrift, type ProtocolDrift } from './protocol-drift';
-import { reportParamsDrift } from './params-drift';
-import { extractHeadOutputTxId } from './head-output-tx';
+import { Connection } from './connection';
+import { HydraProtocolError, HydraTransportError } from './errors';
+import { ConfirmedTransactionLedger } from './node-confirmed-ledger';
 import {
-	CircularBuffer,
-	HydraHttpResponseError,
+	HydraCommandOptions,
+	awaitHydraTxConfirmation,
+	prepareNewTxCommand,
+	sendHydraCommandAndWait,
+} from './node-command-channel';
+import {
+	buildHydraCommitRequest,
+	fetchHydraHeadOutputTxId,
+	fetchHydraProtocolParameters,
+	fetchHydraRawCostModels,
+	fetchHydraSnapshotUTxO,
+} from './node-control-queries';
+import { resolveNodeFanoutReference, resolveNodeFanoutReferences } from './node-fanout-references';
+import {
 	assertExpectedFrameHeadId,
 	createUnsupportedPersistenceRotationError,
-	extractStatusChangeData,
-	handleHttpResponse,
-	handleWsResponse,
-	isConnectionBindingFrame,
 	isEventLogRotatedFrame,
-	parseBoundedJsonFrame,
 	protocolErrorToString,
-	setsEqual,
 	stringMapsEqual,
-	summarizeDistributedUtxo,
-	type HydraResponseMessage,
 } from './node-frames';
-import { Connection } from './connection';
+import { HydraHistoryReplay, type HistoryReplayHost } from './node-history-replay';
+import { HydraHttpClient } from './node-http';
 import {
-	canonicalHydraHeadIdSchema,
-	canonicalHydraTransactionIdSchema,
-	decommitApprovedMessageSchema,
-	decommitRequestedMessageSchema,
-	decommitFinalizedMessageSchema,
-	decommitInvalidMessageSchema,
-	greetingsIdentityMessageSchema,
-	greetingsSnapshotMessageSchema,
-	commitRecordedMessageSchema,
-	finalizedUtxoOf,
-	hasFinalizedUtxoField,
-	headClockMessageSchema,
-	headIsFinalizedMessageSchema,
-	headPartiesMessageSchema,
-	historyHeadIsOpenMessageSchema,
-	historySnapshotConfirmedMessageSchema,
-	hydraCommandTransactionSchema,
-	hydraCostModelSchema,
-	hydraCostModelsEnvelopeSchema,
-	hydraHeadStatusSchema,
-	hydraProtocolParametersSchema,
-	hydraSnapshotUtxoSchema,
-	MAX_HYDRA_WS_FRAME_BYTES,
-	messageSchema,
-} from './schemas';
-import { describeDecommitInvalidReason } from './post-tx-error';
+	LIVE_SESSION_READY_EVENT,
+	LIVE_SESSION_REJECTED_EVENT,
+	LiveFrameProcessor,
+	type LiveFrameHost,
+} from './node-live-frames';
+import { HydraPartyIdentity } from './node-party-identity';
 import {
-	DecommitSettledData,
-	DepositRecordedData,
-	HydraConfirmedTransaction,
-	HydraNodeEvent,
-	HydraTransaction,
-	HydraUTxO,
-	StatusChangeData,
-} from './types';
-import { HydraProtocolError, HydraTransportAmbiguousError, HydraTransportError } from './errors';
-import {
-	doesHydraTransactionTransitionReachSnapshot,
-	hydraVerificationKeyRawHex,
-	normalizeHydraVerificationKeyCborHex,
-	resolveVerifiedHydraFanoutReference,
-	resolveVerifiedHydraFanoutReferences,
-	serializeCardanoTransactionOutput,
-	serializeHydraSnapshotOutput,
-	verifyHydraSnapshot,
-	type VerifiedHydraFanoutReference,
-	type VerifiedHydraSnapshot,
-} from './snapshot-verification';
-import { logger } from '@masumi/payment-core/logger';
-import { stringifyHydraJson } from './json';
-import { HydraHeadStatus } from '@/generated/prisma/client';
+	type HydraHeadClock,
+	type HydraNodeClientConfig,
+	type HydraRawCostModels,
+	validateHydraNodeLimits,
+} from './node-api';
+import { withHistorySetting } from './node-url';
+import { canonicalHydraHeadIdSchema, finalizedUtxoOf, headIsFinalizedMessageSchema } from './schemas';
+import { serializeHydraSnapshotOutput, type VerifiedHydraFanoutReference } from './snapshot-verification';
+import { HydraConfirmedTransaction, HydraNodeEvent, HydraTransaction } from './types';
 
-/**
- * The head's Plutus cost models, as returned by hydra-node's
- * `/protocol-parameters` endpoint under `costModels`. Same `{ PlutusVN: number[] }`
- * shape Blockfrost returns under `cost_models_raw`, so the V2 cost-model sync
- * helper consumes either source identically. Used to patch the V2 mesh line's
- * bundled `DEFAULT_V*_COST_MODEL_LIST` arrays so an in-head (isHydra) Plutus tx
- * computes a script-data-hash the head's ledger accepts (otherwise:
- * `PPViewHashesDontMatch`). See docs/adr/0005.
- */
-export type HydraRawCostModels = {
-	PlutusV1?: number[];
-	PlutusV2?: number[];
-	PlutusV3?: number[];
-};
-
-/**
- * The head's last observed L1 chain time, from the API websocket's
- * `Tick`/`SyncedStatusReport` broadcasts. This is the clock the head's ledger
- * checks tx validity intervals against — it can lag wall-clock time by many
- * minutes (Blockfrost-backed chain followers drift), so L2 validity windows
- * must anchor to it, not to `Date.now()`. `receivedAtMs` lets consumers judge
- * staleness.
- */
-export interface HydraHeadClock {
-	chainTimeMs: number;
-	chainSlot?: number;
-	receivedAtMs: number;
-}
-
-function withQuerySetting(url: string, key: string, value: string): string {
-	const fragmentIndex = url.indexOf('#');
-	const base = fragmentIndex === -1 ? url : url.slice(0, fragmentIndex);
-	const fragment = fragmentIndex === -1 ? '' : url.slice(fragmentIndex);
-	const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-	const existing = new RegExp(`([?&])${escapedKey}=[^&#]*`);
-	const updated = existing.test(base)
-		? base.replace(existing, `$1${key}=${value}`)
-		: `${base}${base.includes('?') ? '&' : '?'}${key}=${value}`;
-	return updated + fragment;
-}
-
-function withHistorySetting(url: string, history: boolean): string {
-	return withQuerySetting(withQuerySetting(url, 'history', history ? 'yes' : 'no'), 'snapshot-utxo', 'yes');
-}
-
-const LIVE_SESSION_READY_EVENT = 'hydraLiveSessionReady';
-const LIVE_SESSION_REJECTED_EVENT = 'hydraLiveSessionRejected';
-const EARLIEST_PLAUSIBLE_HEAD_CLOCK_MS = Date.UTC(2017, 8, 23);
-const MAX_HEAD_CLOCK_FUTURE_SKEW_MS = 5 * 60 * 1000;
-const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
-	HydraHeadStatus.Open,
-	HydraHeadStatus.Closed,
-	HydraHeadStatus.FanoutPossible,
-	HydraHeadStatus.Final,
-]);
-
-/** `txHash#index`, the reference form hydra-node keys its UTxO maps by. */
-const HYDRA_UTXO_REFERENCE_PATTERN = /^[0-9a-fA-F]{64}#\d{1,5}$/;
-
-function compareConfirmedTransactions(a: HydraConfirmedTransaction, b: HydraConfirmedTransaction): number {
-	const sequenceDifference =
-		(a.snapshotSequence ?? Number.MAX_SAFE_INTEGER) - (b.snapshotSequence ?? Number.MAX_SAFE_INTEGER);
-	if (sequenceDifference !== 0) return sequenceDifference;
-	const indexDifference = a.snapshotTransactionIndex - b.snapshotTransactionIndex;
-	if (indexDifference !== 0) return indexDifference;
-	return a.txId.localeCompare(b.txId);
-}
-
-export interface IHydraNode {
-	connect(): void | Promise<void>;
-	disconnect(): Promise<void>;
-	init(): Promise<unknown>;
-	commit(utxos: UTxO[], blueprintTx?: string): Promise<HydraTransaction>;
-	cardanoTransaction(transaction: HydraTransaction): Promise<unknown>;
-	decommit(transaction: HydraTransaction): Promise<unknown>;
-	snapshotUTxO(): Promise<UTxO[]>;
-	fetchProtocolParameters(): Promise<Protocol>;
-	fetchRawCostModels(): Promise<HydraRawCostModels>;
-	newTx(transaction: HydraTransaction): Promise<string>;
-	isTxConfirmed(txHash: string): boolean;
-	getConfirmedTransaction?(txHash: string): HydraConfirmedTransaction | null;
-	getConfirmedTransactions?(): HydraConfirmedTransaction[];
-	getConfirmedTransactionsForReconciliation?(): HydraConfirmedTransaction[];
-	markConfirmedTransactionReconciled?(txHash: string): void;
-	awaitTx(txHash: string, checkInterval?: number): Promise<boolean>;
-	close(): Promise<unknown>;
-	fanout(): Promise<unknown>;
-
-	// Raw hydra-node HTTP responses are untyped JSON; callers pass the expected
-	// shape via the type parameter (defaults to `unknown`, forcing narrowing).
-	get<T = unknown>(url: string): Promise<T>;
-	post<T = unknown>(url: string, payload: unknown): Promise<T>;
-
-	get status(): HydraHeadStatus;
-	get httpUrl(): string;
-	get wsUrl(): string;
-	get headClock(): HydraHeadClock | undefined;
-	readonly hasPendingIncrement?: boolean;
-	readonly pendingIncrementUtxoRefs?: ReadonlySet<string>;
-	readonly hasVerifiedPinnedSessions?: boolean;
-	readonly expectedHeadId?: string;
-	pinExpectedHeadId?(headId: string): void;
-	getVerifiedFanoutReference?(
-		hydraReference: string,
-		expectedSnapshotNumber: number,
-	): VerifiedHydraFanoutReference | null;
-	getVerifiedFanoutReferences?(expectedSnapshotNumber: number): VerifiedHydraFanoutReference[] | null;
-}
-
-export interface HydraNodeClientConfig {
-	httpUrl: string;
-	wsUrl?: string;
-	expectedHeadId?: string;
-	/** Durable high-water mark; replay entries at/before it are parsed but not retained. */
-	reconciledHistoryCursor?: { snapshotSequence: number; snapshotTransactionIndex: number };
-	/** Configured participant verification keys; on-chain events bind their signature order. */
-	snapshotVerificationKeys?: string[];
-	/** Verification key derived from this node's configured local signing key. */
-	expectedNodeVerificationKey?: string;
-	/**
-	 * Explicit trust in this configured local endpoint's TxIn/reference map and
-	 * `snapshot.confirmed` metadata. Hydra signatures commit only TxOut values.
-	 */
-	trustLocalNodeSnapshotMetadata?: boolean;
-	/** Bearer token when the node sits behind a Hydra Host; omitted on loopback. */
-	authToken?: string;
-	/** Bounds websocket-open and pinned Greetings authentication. */
-	connectTimeoutMs?: number;
-	/** Bounds every Hydra HTTP request. */
-	httpTimeoutMs?: number;
-	/** Primarily useful for bounded integration tests; defaults to 30 seconds. */
-	commandTimeoutMs?: number;
-	/** Explicit fail-closed replay cap; unresolved causal evidence is never evicted. */
-	maxUnreconciledTransactions?: number;
-	/** Explicit aggregate budget for retained confirmation CBOR. */
-	maxRetainedTransactionCborBytes?: number;
-}
-
-/**
- * How many replayed decommit outcomes are worth holding.
- *
- * A head replays its entire history on every connection; only the tail can
- * still describe a withdrawal this service has not finished recording.
- */
-const MAX_REPLAYED_DECOMMITS = 32;
-
-/**
- * How many decommit transactions to keep for transition checking.
- *
- * Only one can be pending at a time, so this is generous by design: it exists so
- * a long history cannot grow the map without bound.
- */
-const MAX_TRACKED_DECOMMIT_TRANSACTIONS = 64;
+export type { HydraHeadClock, HydraNodeClientConfig, HydraRawCostModels, IHydraNode } from './node-api';
 
 export class HydraNode extends EventEmitter {
 	// Upper bound on how long init() waits to observe HeadIsInitializing after
@@ -248,137 +78,163 @@ export class HydraNode extends EventEmitter {
 	static readonly LIFECYCLE_RESPONSE_TIMEOUT_MS = 300_000;
 	static readonly MAX_UNRECONCILED_CONFIRMED_TRANSACTIONS = 10_000;
 	static readonly MAX_RETAINED_TRANSACTION_CBOR_BYTES = 64 * 1024 * 1024;
-	static readonly MAX_UNPINNED_HISTORY_BUFFER_BYTES = 8 * 1024 * 1024;
 
 	/**
 	 * Whether this node is in its Hydra cluster, as the node last reported.
 	 *
 	 * Null until it says either way. A restart replays history, so an old
 	 * connectivity frame can arrive again; that is harmless here because the
-	 * newest one wins and the node re-reports on every reconnect.
+	 * newest one wins and the node re-reports on every reconnect. Shared: both
+	 * the live socket and replay learn it.
 	 */
 	private _networkConnected: boolean | null = null;
 	private readonly _httpUrl: string;
 	private readonly _wsUrl: string;
-	private readonly _confirmedTransactions = new Map<string, HydraConfirmedTransaction>();
-	private readonly _unreconciledConfirmedTransactions = new Map<string, HydraConfirmedTransaction>();
-	private _status: HydraHeadStatus;
 	private readonly _connection: Connection;
 	private readonly _historyConnection: Connection;
-	private readonly _txCircularBuffer: CircularBuffer<string>;
-	private _headClock: HydraHeadClock | undefined;
-	private _historyReplayComplete = false;
-	private _historyReplayFailed = false;
-	private _historyReplayError: Error | undefined;
 	private _unsupportedPersistenceRotationError: HydraProtocolError | undefined;
-	private _historySessionHeadId: string | undefined;
-	private _historyReplayTruncated = false;
-	private _historyReplayRestartRequested = false;
-	private _unpinnedHistoryFrames: string[] = [];
-	private _unpinnedHistoryBytes = 0;
-	private _lastHistorySequence: number | undefined;
 	private _listenersAttached = false;
 	private _connectionsStarted = false;
 	private _connectPromise: Promise<void> | undefined;
 	private _expectedHeadId: string | undefined;
-	private _liveSessionHeadId: string | undefined;
-	private _livePartyIdentityVerified = false;
-	private _historyPartyIdentityVerified = false;
-	private readonly _configuredPartyKeys: ReadonlySet<string>;
-	private readonly _expectedNodeVerificationKey: string | undefined;
 	private readonly _trustLocalNodeSnapshotMetadata: boolean;
-	private _orderedSnapshotVerificationKeys: string[] | undefined;
-	private _verifiedHistorySnapshot: VerifiedHydraSnapshot | undefined;
+	/** Shared between live and replay sightings; they must never disagree. */
 	private _finalizedFanoutOutputs: Map<string, string> | undefined;
-	private _currentSnapshotProducerTxIds = new Set<string>();
-	private _currentSnapshotProducerSnapshotNumber: number | undefined;
-	private _cursorPrefixProducerTxIds = new Set<string>();
 	private readonly _connectTimeoutMs: number;
-	private readonly _httpTimeoutMs: number;
 	private readonly _commandTimeoutMs: number;
-	private readonly _maxUnreconciledTransactions: number;
-	private readonly _maxRetainedTransactionCborBytes: number;
-	private _reconciledHistoryCursor: { snapshotSequence: number; snapshotTransactionIndex: number } | undefined;
-	private readonly _authHeaders: Record<string, string>;
-	/**
-	 * Deposits approved for folding in but not yet finalized.
-	 *
-	 * A counter rather than a flag: nothing stops a second deposit being approved
-	 * before the first finalizes, and a flag cleared by the first would reopen
-	 * the window the second is still inside.
-	 */
-	private _pendingIncrementCount = 0;
-	/**
-	 * UTxO references (`txHash#index`) belonging to deposits still being folded
-	 * in — visible in the snapshot, not yet spendable.
-	 */
-	private readonly _pendingIncrementUtxos = new Set<string>();
+
+	private readonly _partyIdentity: HydraPartyIdentity;
+	private readonly _ledger: ConfirmedTransactionLedger;
+	private readonly _replay: HydraHistoryReplay;
+	private readonly _live: LiveFrameProcessor;
+	private readonly _http: HydraHttpClient;
+
+	/** Parameter drift already warned about, so a misconfigured head says it once. */
+	private readonly _reportedParamsDrift = new Set<string>();
 
 	constructor(config: HydraNodeClientConfig) {
 		super();
 		this._httpUrl = config.httpUrl;
 		this._wsUrl = config.wsUrl ?? config.httpUrl.replace('http://', 'ws://').replace('https://', 'wss://');
-		this._status = HydraHeadStatus.Disconnected;
 		// Dedicated evidence-only history socket: replay must never feed lifecycle
 		// status or command listeners, which could regress head state or stampede
 		// handlers out of order. Construct the live socket last so existing test
 		// harnesses that capture the latest Connection still exercise live events.
-		this._authHeaders = hydraAuthHeaders(config.authToken);
-		// Both sockets need the credential: the evidence socket replays history and
-		// the live socket carries commands, and a Host authenticates each upgrade.
 		this._historyConnection = new Connection(withHistorySetting(this._wsUrl, true), config.authToken);
 		this._connection = new Connection(withHistorySetting(this._wsUrl, false), config.authToken);
-		this._txCircularBuffer = new CircularBuffer(10000);
 		this._connectTimeoutMs = config.connectTimeoutMs ?? HydraNode.CONNECTION_TIMEOUT_MS;
-		this._httpTimeoutMs = config.httpTimeoutMs ?? HydraNode.HTTP_TIMEOUT_MS;
 		this._commandTimeoutMs = config.commandTimeoutMs ?? HydraNode.COMMAND_RESPONSE_TIMEOUT_MS;
-		this._maxUnreconciledTransactions =
+		const httpTimeoutMs = config.httpTimeoutMs ?? HydraNode.HTTP_TIMEOUT_MS;
+		const maxUnreconciledTransactions =
 			config.maxUnreconciledTransactions ?? HydraNode.MAX_UNRECONCILED_CONFIRMED_TRANSACTIONS;
-		this._maxRetainedTransactionCborBytes =
+		const maxRetainedTransactionCborBytes =
 			config.maxRetainedTransactionCborBytes ?? HydraNode.MAX_RETAINED_TRANSACTION_CBOR_BYTES;
-		this._reconciledHistoryCursor = config.reconciledHistoryCursor ? { ...config.reconciledHistoryCursor } : undefined;
-		const configuredPartyKeys = (config.snapshotVerificationKeys ?? []).map((key) => {
-			return hydraVerificationKeyRawHex(normalizeHydraVerificationKeyCborHex(key));
-		});
-		if (new Set(configuredPartyKeys).size !== configuredPartyKeys.length) {
-			throw new HydraProtocolError('Hydra snapshot verification keys must be unique');
-		}
-		this._configuredPartyKeys = new Set(configuredPartyKeys);
-		this._expectedNodeVerificationKey = config.expectedNodeVerificationKey
-			? hydraVerificationKeyRawHex(normalizeHydraVerificationKeyCborHex(config.expectedNodeVerificationKey))
-			: undefined;
+		this._partyIdentity = new HydraPartyIdentity(config.snapshotVerificationKeys, config.expectedNodeVerificationKey);
 		this._trustLocalNodeSnapshotMetadata = config.trustLocalNodeSnapshotMetadata === true;
-		if (
-			(this._configuredPartyKeys.size > 0 || this._expectedNodeVerificationKey != null) &&
-			(this._expectedNodeVerificationKey == null || !this._configuredPartyKeys.has(this._expectedNodeVerificationKey))
-		) {
-			throw new HydraProtocolError('Hydra local verification key must belong to the configured participant set');
-		}
-		if (
-			this._reconciledHistoryCursor &&
-			(!Number.isSafeInteger(this._reconciledHistoryCursor.snapshotSequence) ||
-				this._reconciledHistoryCursor.snapshotSequence < 0 ||
-				!Number.isSafeInteger(this._reconciledHistoryCursor.snapshotTransactionIndex) ||
-				this._reconciledHistoryCursor.snapshotTransactionIndex < 0)
-		) {
-			throw new Error('reconciledHistoryCursor must contain non-negative safe integers');
-		}
-		if (!Number.isSafeInteger(this._connectTimeoutMs) || this._connectTimeoutMs <= 0) {
-			throw new Error('connectTimeoutMs must be a positive safe integer');
-		}
-		if (!Number.isSafeInteger(this._httpTimeoutMs) || this._httpTimeoutMs <= 0) {
-			throw new Error('httpTimeoutMs must be a positive safe integer');
-		}
-		if (!Number.isSafeInteger(this._commandTimeoutMs) || this._commandTimeoutMs <= 0) {
-			throw new Error('commandTimeoutMs must be a positive safe integer');
-		}
-		if (!Number.isSafeInteger(this._maxUnreconciledTransactions) || this._maxUnreconciledTransactions <= 0) {
-			throw new Error('maxUnreconciledTransactions must be a positive safe integer');
-		}
-		if (!Number.isSafeInteger(this._maxRetainedTransactionCborBytes) || this._maxRetainedTransactionCborBytes <= 0) {
-			throw new Error('maxRetainedTransactionCborBytes must be a positive safe integer');
-		}
+		validateHydraNodeLimits(
+			{
+				connectTimeoutMs: this._connectTimeoutMs,
+				httpTimeoutMs,
+				commandTimeoutMs: this._commandTimeoutMs,
+				maxUnreconciledTransactions,
+				maxRetainedTransactionCborBytes,
+			},
+			config.reconciledHistoryCursor,
+		);
+		this._http = new HydraHttpClient({
+			httpUrl: this._httpUrl,
+			authHeaders: hydraAuthHeaders(config.authToken),
+			timeoutMs: httpTimeoutMs,
+		});
+		this._ledger = new ConfirmedTransactionLedger({
+			maxUnreconciledTransactions,
+			maxRetainedTransactionCborBytes,
+			reconciledHistoryCursor: config.reconciledHistoryCursor,
+		});
+		this._live = new LiveFrameProcessor(this.liveFrameHost(), this);
+		this._replay = new HydraHistoryReplay(this._historyConnection, this._ledger, this.replayHost());
 		if (config.expectedHeadId) this.pinExpectedHeadId(config.expectedHeadId);
+	}
+
+	/**
+	 * The seams the two frame processors reach shared session state through.
+	 * Getters proxy live fields — both must always see the current pinned head
+	 * id and rotation latch, not the values at construction time.
+	 */
+	private liveFrameHost(): LiveFrameHost {
+		// eslint-disable-next-line @typescript-eslint/no-this-alias
+		const self = this;
+		return {
+			get expectedHeadId(): string | undefined {
+				return self._expectedHeadId;
+			},
+			get persistenceRotationError(): HydraProtocolError | undefined {
+				return self._unsupportedPersistenceRotationError;
+			},
+			get configuredKeyCount(): number {
+				return self._partyIdentity.configuredKeyCount;
+			},
+			assertPersistenceReplayIsSupported: (message) => this.assertPersistenceReplayIsSupported(message),
+			bindSnapshotPartyOrder: (message) => this.bindSnapshotPartyOrder(message),
+			verifyGreetingsPartyIdentity: (message) => this._partyIdentity.verifyGreetingsPartyIdentity(message),
+			recordFinalizedFanout: (message) => this.recordFinalizedFanout(message),
+			clearFinalizedFanout: () => {
+				this._finalizedFanoutOutputs = undefined;
+			},
+			setNetworkConnected: (connected) => {
+				this._networkConnected = connected;
+			},
+			onRotationError: (error) => this._replay.fail(error),
+			invalidateLiveConnection: (error) => this._connection.invalidate(error),
+		};
+	}
+
+	private replayHost(): HistoryReplayHost {
+		// eslint-disable-next-line @typescript-eslint/no-this-alias
+		const self = this;
+		return {
+			get expectedHeadId(): string | undefined {
+				return self._expectedHeadId;
+			},
+			trustLocalNodeSnapshotMetadata: this._trustLocalNodeSnapshotMetadata,
+			get persistenceRotationError(): HydraProtocolError | undefined {
+				return self._unsupportedPersistenceRotationError;
+			},
+			get orderedSnapshotVerificationKeys(): string[] | undefined {
+				return self._partyIdentity.orderedSnapshotVerificationKeys;
+			},
+			assertPersistenceReplayIsSupported: (message) => this.assertPersistenceReplayIsSupported(message),
+			bindSnapshotPartyOrder: (message) => this.bindSnapshotPartyOrder(message),
+			verifyGreetingsPartyIdentity: (message) => this._partyIdentity.verifyGreetingsPartyIdentity(message),
+			setNetworkConnected: (connected) => {
+				this._networkConnected = connected;
+			},
+			recordFinalizedFanout: (message) => this.recordFinalizedFanout(message),
+			rememberReplayedDeposit: (data) => this._live.rememberReplayedDeposit(data),
+			emitTxConfirmed: (txId, transaction) => {
+				this.emit(HydraNodeEvent.TxConfirmed, txId, transaction);
+			},
+			onProtocolDrift: (description) => {
+				this.emit(HydraNodeEvent.ProtocolDriftDetected, description);
+			},
+			onRotationReplayFailure: (error) => this.handleRotationReplayFailure(error),
+			onReplayFailed: (error) => {
+				this.emit(HydraNodeEvent.HistoryReplayFailed, error);
+			},
+		};
+	}
+
+	private handleRotationReplayFailure(error: HydraProtocolError): void {
+		const { hadLiveIdentity } = this._live.clearLiveIdentity();
+		if (hadLiveIdentity) this.emit(LIVE_SESSION_REJECTED_EVENT, error);
+		// Rotation is permanently unsupported for this client instance. A normal
+		// invalidation schedules Connection's auto-reconnect timer, so manually
+		// disconnect both transports to latch their no-reconnect state instead.
+		void this.disconnect().catch((disconnectError: unknown) => {
+			logger.error('[HydraNode] Failed to disconnect transports after persistence rotation', {
+				error: protocolErrorToString(disconnectError),
+			});
+		});
 	}
 
 	connect(): Promise<void> {
@@ -387,24 +243,22 @@ export class HydraNode extends EventEmitter {
 		}
 		if (!this._listenersAttached) {
 			this._listenersAttached = true;
-			this._connection.on('message', (data) => this.processStatus(data));
-			this._connection.on('message', (data) => this.processHeadClock(data));
+			this._connection.on('message', (data: string) => this._live.processStatus(data));
+			this._connection.on('message', (data: string) => this._live.processHeadClock(data));
 			this._connection.on('close', (reason) => {
-				this._liveSessionHeadId = undefined;
-				this._livePartyIdentityVerified = false;
-				this._headClock = undefined;
+				this._live.clearLiveIdentity();
 				this.emit(
 					LIVE_SESSION_REJECTED_EVENT,
 					new HydraTransportError('Hydra live session closed before identity verification', { cause: reason }),
 				);
 			});
-			this._historyConnection.on('message', (data) => this.processHistoryMessage(data));
-			this._historyConnection.on('close', () => this.resetHistoryReplayPass());
+			this._historyConnection.on('message', (data: string) => this._replay.processMessage(data));
+			this._historyConnection.on('close', () => this._replay.resetPass());
 		}
 		// Provider construction can call connect() again before Greetings changes
 		// the protocol status. Keep transport startup independent from head status.
 		if (this._connectPromise) return this._connectPromise;
-		if (this._connectionsStarted && this._connection.isOpen() && this.isLiveSessionReady()) {
+		if (this._connectionsStarted && this._connection.isOpen() && this._live.isLiveSessionReady()) {
 			return Promise.resolve();
 		}
 		this._connectionsStarted = true;
@@ -416,7 +270,7 @@ export class HydraNode extends EventEmitter {
 		// unhandled. Node treats that as fatal, so a transport failure on one head
 		// took down the whole payment service.
 		sessionReady.catch(() => undefined);
-		void this._historyConnection.connect().catch((error: unknown) => this.failHistoryReplay(error));
+		void this._historyConnection.connect().catch((error: unknown) => this._replay.fail(error));
 		const connectPromise = (async () => {
 			try {
 				await this._connection.waitUntilOpen(this._connectTimeoutMs);
@@ -434,7 +288,7 @@ export class HydraNode extends EventEmitter {
 	}
 
 	private waitForPinnedLiveSession(): Promise<void> {
-		if (this.isLiveSessionReady()) return Promise.resolve();
+		if (this._live.isLiveSessionReady()) return Promise.resolve();
 
 		return new Promise<void>((resolve, reject) => {
 			const cleanup = () => {
@@ -464,13 +318,6 @@ export class HydraNode extends EventEmitter {
 		});
 	}
 
-	private isLiveSessionReady(): boolean {
-		const isHeadReady = this._expectedHeadId == null || this._liveSessionHeadId === this._expectedHeadId;
-		const requiresIdentityBearingGreetings = this._expectedHeadId != null || this._configuredPartyKeys.size > 0;
-		const isPartyReady = !requiresIdentityBearingGreetings || this._livePartyIdentityVerified;
-		return this._unsupportedPersistenceRotationError == null && isHeadReady && isPartyReady;
-	}
-
 	private assertPersistenceReplayIsSupported(message: unknown): void {
 		if (!isEventLogRotatedFrame(message)) return;
 		this._unsupportedPersistenceRotationError ??= createUnsupportedPersistenceRotationError();
@@ -492,13 +339,13 @@ export class HydraNode extends EventEmitter {
 			);
 		}
 		if (
-			(this._liveSessionHeadId && this._liveSessionHeadId !== parsedHeadId.data) ||
-			(this._historySessionHeadId && this._historySessionHeadId !== parsedHeadId.data)
+			(this._live.liveSessionHeadId && this._live.liveSessionHeadId !== parsedHeadId.data) ||
+			(this._replay.sessionHeadId && this._replay.sessionHeadId !== parsedHeadId.data)
 		) {
 			throw new HydraProtocolError('Hydra head id did not match the already verified websocket sessions');
 		}
 		this._expectedHeadId = parsedHeadId.data;
-		this.processBufferedUnpinnedHistoryFrames();
+		this._replay.processBufferedUnpinnedFrames();
 	}
 
 	private assertExpectedHeadId(message: { headId?: string; hydraHeadId?: string | null }): void {
@@ -506,317 +353,15 @@ export class HydraNode extends EventEmitter {
 	}
 
 	private bindSnapshotPartyOrder(message: unknown): void {
-		if (this._configuredPartyKeys.size === 0) return;
-		const parsed = headPartiesMessageSchema.parse(message);
-		this.assertExpectedHeadId(parsed);
-		const orderedKeys = parsed.parties.map(({ vkey }) => vkey);
-		if (
-			orderedKeys.length !== this._configuredPartyKeys.size ||
-			new Set(orderedKeys).size !== orderedKeys.length ||
-			orderedKeys.some((key) => !this._configuredPartyKeys.has(key))
-		) {
-			throw new HydraProtocolError('Hydra on-chain party set did not match the configured verification keys');
-		}
-		if (
-			this._orderedSnapshotVerificationKeys &&
-			this._orderedSnapshotVerificationKeys.some((key, index) => key !== orderedKeys[index])
-		) {
-			throw new HydraProtocolError('Hydra on-chain party order changed within one configured head');
-		}
-		this._orderedSnapshotVerificationKeys = orderedKeys;
-	}
-
-	private verifyGreetingsPartyIdentity(message: unknown): void {
-		if (this._configuredPartyKeys.size === 0) return;
-		const parsed = greetingsIdentityMessageSchema.parse(message);
-		const localKey = this._expectedNodeVerificationKey;
-		if (localKey == null || parsed.me.vkey !== localKey || parsed.env.party.vkey !== localKey) {
-			throw new HydraProtocolError('Hydra Greetings did not identify the configured local signing key');
-		}
-		const otherKeys = parsed.env.otherParties.map(({ vkey }) => vkey);
-		const expectedOtherKeys = [...this._configuredPartyKeys].filter((key) => key !== localKey);
-		if (
-			otherKeys.length !== expectedOtherKeys.length ||
-			new Set(otherKeys).size !== otherKeys.length ||
-			otherKeys.some((key) => !this._configuredPartyKeys.has(key) || key === localKey)
-		) {
-			throw new HydraProtocolError('Hydra Greetings party set did not match the configured participants');
-		}
-	}
-
-	private failHistoryReplay(error: unknown): void {
-		const normalizedError =
-			error instanceof HydraProtocolError || error instanceof HydraTransportError
-				? error
-				: new HydraProtocolError('Hydra history replay failed protocol validation', { cause: error });
-		const isFirstFailure = !this._historyReplayFailed;
-		this._historyReplayFailed = true;
-		this._historyReplayComplete = false;
-		this._historyReplayError = normalizedError;
-		this._unpinnedHistoryFrames = [];
-		this._unpinnedHistoryBytes = 0;
-		const isUnsupportedPersistenceRotation = normalizedError === this._unsupportedPersistenceRotationError;
-		if (isUnsupportedPersistenceRotation) {
-			const hadLiveIdentity = this._liveSessionHeadId != null || this._livePartyIdentityVerified;
-			this._liveSessionHeadId = undefined;
-			this._livePartyIdentityVerified = false;
-			this._headClock = undefined;
-			if (hadLiveIdentity) this.emit(LIVE_SESSION_REJECTED_EVENT, normalizedError);
-			// Rotation is permanently unsupported for this client instance. A normal
-			// invalidation schedules Connection's auto-reconnect timer, so manually
-			// disconnect both transports to latch their no-reconnect state instead.
-			void this.disconnect().catch((disconnectError: unknown) => {
-				logger.error('[HydraNode] Failed to disconnect transports after persistence rotation', {
-					error: protocolErrorToString(disconnectError),
-				});
-			});
-		}
-		if (isFirstFailure) {
-			this.emit(HydraNodeEvent.HistoryReplayFailed, normalizedError);
-			logger.error('[HydraNode] History replay rejected a protocol frame', {
-				error: protocolErrorToString(normalizedError),
-			});
-			if (!isUnsupportedPersistenceRotation) {
-				// A malformed pass must never remain latched on the same byte stream.
-				// Connection invalidation closes the bad socket and schedules a clean replay.
-				this._historyConnection.invalidate(normalizedError);
-			}
-		}
-	}
-
-	private resetHistoryReplayPass(): void {
-		// A replacement history socket always scans from the beginning. Preserve
-		// already verified positive evidence until its durable cursor is advanced,
-		// but discard every unauthenticated/pass-local assertion.
-		this._historyReplayComplete = false;
-		this._historyReplayFailed = false;
-		this._historySessionHeadId = undefined;
-		this._historyReplayTruncated = false;
-		this._historyReplayRestartRequested = false;
-		this._unpinnedHistoryFrames = [];
-		this._unpinnedHistoryBytes = 0;
-		this._lastHistorySequence = undefined;
-		this._historyPartyIdentityVerified = false;
-		this._verifiedHistorySnapshot = undefined;
-		if (this._unsupportedPersistenceRotationError) {
-			this._historyReplayFailed = true;
-			this._historyReplayError = this._unsupportedPersistenceRotationError;
-		}
-	}
-
-	private maybeRestartTruncatedHistoryReplay(): void {
-		if (
-			!this._historyReplayTruncated ||
-			!this._historyPartyIdentityVerified ||
-			this._unreconciledConfirmedTransactions.size > 0 ||
-			this._historyReplayRestartRequested
-		) {
-			return;
-		}
-		this._historyReplayRestartRequested = true;
-		this._historyConnection.invalidate(
-			new HydraTransportError('Hydra bounded history page was durably reconciled; restarting replay'),
-		);
-	}
-
-	private processHistoryMessage(rawMessage: string): void {
-		if (this._historyReplayFailed || this._unsupportedPersistenceRotationError) return;
-		if (this._expectedHeadId == null) {
-			this.bufferUnpinnedHistoryFrame(rawMessage);
-			return;
-		}
-		this.processPinnedHistoryMessage(rawMessage);
-	}
-
-	private bufferUnpinnedHistoryFrame(rawMessage: string): void {
-		const frameBytes = Buffer.byteLength(rawMessage, 'utf8');
-		if (
-			frameBytes > MAX_HYDRA_WS_FRAME_BYTES ||
-			this._unpinnedHistoryBytes + frameBytes > HydraNode.MAX_UNPINNED_HISTORY_BUFFER_BYTES
-		) {
-			this.failHistoryReplay(
-				new HydraProtocolError('Hydra history exceeded the bounded buffer before its head id was pinned'),
-			);
-			return;
-		}
-		this._unpinnedHistoryFrames.push(rawMessage);
-		this._unpinnedHistoryBytes += frameBytes;
-	}
-
-	private processBufferedUnpinnedHistoryFrames(): void {
-		if (this._expectedHeadId == null || this._unpinnedHistoryFrames.length === 0) return;
-		const bufferedFrames = this._unpinnedHistoryFrames;
-		this._unpinnedHistoryFrames = [];
-		this._unpinnedHistoryBytes = 0;
-		for (const frame of bufferedFrames) {
-			if (this._historyReplayFailed) break;
-			this.processPinnedHistoryMessage(frame);
-		}
-	}
-
-	private processPinnedHistoryMessage(rawMessage: string): void {
-		try {
-			const message = parseBoundedJsonFrame(rawMessage);
-			this.assertPersistenceReplayIsSupported(message);
-			const parsedEnvelope = messageSchema.parse(message);
-			this.assertExpectedHeadId(parsedEnvelope);
-			// Learn the peer link from replay as well as from live frames.
-			//
-			// hydra-node reports it on connection EVENTS, and the live socket is
-			// opened with history=no, so a service that attaches to an already-peered
-			// head is never told — and said "not reported yet" for the life of the
-			// head, which is exactly when everything is fine. Replay is the only
-			// place that answer still exists.
-			//
-			// Applied in stream order, so a later disconnect still wins over an
-			// earlier connect.
-			if (parsedEnvelope.tag === 'NetworkConnected' || parsedEnvelope.tag === 'PeerConnected') {
-				this._networkConnected = true;
-			}
-			if (parsedEnvelope.tag === 'NetworkDisconnected' || parsedEnvelope.tag === 'PeerDisconnected') {
-				this._networkConnected = false;
-			}
-			const suppliedHeadId = assertExpectedFrameHeadId(parsedEnvelope, this._expectedHeadId);
-			if (
-				parsedEnvelope.tag === 'HeadIsInitializing' ||
-				(parsedEnvelope.tag === 'HeadIsOpen' && typeof message === 'object' && message !== null && 'parties' in message)
-			) {
-				this.bindSnapshotPartyOrder(message);
-			}
-			if (
-				parsedEnvelope.tag === 'HeadIsOpen' &&
-				this._trustLocalNodeSnapshotMetadata &&
-				typeof message === 'object' &&
-				message !== null &&
-				'utxo' in message
-			) {
-				this.recordHistoryOpenAnchor(historyHeadIsOpenMessageSchema.parse(message));
-			}
-			if (parsedEnvelope.tag === 'HeadIsFinalized' && hasFinalizedUtxoField(message)) {
-				this.recordFinalizedFanout(headIsFinalizedMessageSchema.parse(message));
-			}
-
-			// A deposit stays pending for a deposit period or more, so a service
-			// that reconnected in between meets its CommitRecorded only here. Held
-			// with the rest until the live session authenticates, since it is
-			// written to the database like any other persisted transition.
-			if (parsedEnvelope.tag === 'CommitRecorded') {
-				const recorded = this.readDepositRecorded(message);
-				if (recorded) this.rememberReplayedDeposit(recorded);
-			}
-
-			// Before the snapshot that reflects it, always: the head reports the
-			// request first, and the transaction it carries is what accounts for the
-			// value change that snapshot signs.
-			if (parsedEnvelope.tag === 'DecommitRequested') {
-				this.rememberDecommitTransaction(decommitRequestedMessageSchema.parse(message).decommitTx);
-			}
-
-			if (parsedEnvelope.tag === 'SnapshotConfirmed') {
-				this.reportSnapshotDrift(message);
-				const parsedMessage = historySnapshotConfirmedMessageSchema.parse(message);
-				this.assertExpectedHeadId(parsedMessage);
-				// Signed states and transaction transitions are verified progressively.
-				// This avoids retaining the unbounded raw prefix emitted before Greetings.
-				this.recordHistorySnapshot(parsedMessage);
-				return;
-			}
-
-			if (parsedEnvelope.tag === 'Greetings') {
-				this.verifyGreetingsPartyIdentity(message);
-				const parsedHeadStatus = hydraHeadStatusSchema.safeParse(parsedEnvelope.headStatus);
-				if (!parsedHeadStatus.success) {
-					throw new HydraProtocolError('History Greetings frame has an invalid headStatus');
-				}
-				if ((this._expectedHeadId || this._verifiedHistorySnapshot) && !suppliedHeadId) {
-					throw new HydraProtocolError('Pinned Hydra history Greetings omitted its head identifier');
-				}
-				if (this._verifiedHistorySnapshot && suppliedHeadId !== this._verifiedHistorySnapshot.headId) {
-					throw new HydraProtocolError('Hydra history Greetings did not identify the signed snapshot head');
-				}
-				// Hydra 2.3 reports the head's confirmed ledger here rather than on
-				// HeadIsOpen. A head that has not signed a snapshot yet — one that has
-				// just opened, or that opened with no commits at all — states its
-				// ledger nowhere else, so without this it has no anchor and every L2
-				// operation fails closed for the life of the head.
-				if (
-					HISTORY_STATUS_REQUIRING_STATE_ANCHOR.has(parsedHeadStatus.data) &&
-					this._verifiedHistorySnapshot == null &&
-					this._trustLocalNodeSnapshotMetadata &&
-					suppliedHeadId
-				) {
-					const greeting = greetingsSnapshotMessageSchema.parse(message);
-					if (greeting.snapshotUtxo) this.recordUnsignedLedgerAnchor(suppliedHeadId, greeting.snapshotUtxo);
-				}
-				if (HISTORY_STATUS_REQUIRING_STATE_ANCHOR.has(parsedHeadStatus.data) && this._verifiedHistorySnapshot == null) {
-					throw new HydraProtocolError(
-						'Hydra history ended without an authenticated Open or signed snapshot state anchor',
-					);
-				}
-				if (suppliedHeadId) this._historySessionHeadId = suppliedHeadId;
-				this._historyPartyIdentityVerified = true;
-				// Greetings authenticates the end marker, not the preceding transaction
-				// metadata. A truncated page remains fail-closed until every retained
-				// item has a durable cursor and a later full pass reaches this marker.
-				this._historyReplayComplete = !this._historyReplayTruncated;
-				if (this._historyReplayComplete) {
-					this._historyReplayError = undefined;
-					this.trimConfirmedTransactionCache();
-				} else this.maybeRestartTruncatedHistoryReplay();
-			}
-		} catch (error) {
-			this.failHistoryReplay(error);
-		}
-	}
-
-	private recordHistoryOpenAnchor(parsedMessage: ReturnType<typeof historyHeadIsOpenMessageSchema.parse>): void {
-		this.recordUnsignedLedgerAnchor(parsedMessage.headId, parsedMessage.utxo);
+		this._partyIdentity.bindSnapshotPartyOrder(message, (parsed) => this.assertExpectedHeadId(parsed));
 	}
 
 	/**
-	 * Anchor the head's state on the node's own report of its ledger.
-	 *
-	 * Used where no signed snapshot exists yet: a head that has just opened has
-	 * nothing to verify a signature against, so the alternative to trusting the
-	 * local node here is refusing to work with such a head at all. Gated on
-	 * `_trustLocalNodeSnapshotMetadata` by both callers, which is the same
-	 * condition already governing every other unsigned field taken from this
-	 * endpoint, so it grants nothing new.
-	 *
-	 * Number and version are zero: this is the state before any snapshot the
-	 * parties have signed, and the first live `SnapshotConfirmed` is checked as a
-	 * transition out of it. If a head that HAS signed snapshots ever reached
-	 * here, that check rejects the jump and the head stays fail-closed rather
-	 * than proceeding from a state nobody signed.
+	 * Record the finalized L1 fanout output map, from live frame or replay
+	 * alike. Both sockets can report it; they must never disagree.
 	 */
-	private recordUnsignedLedgerAnchor(
-		headId: string,
-		utxo: Record<string, Parameters<typeof serializeHydraSnapshotOutput>[0]>,
-	): void {
-		if (this._verifiedHistorySnapshot) {
-			throw new HydraProtocolError('Hydra history attempted to replace an established signed-state anchor');
-		}
-		const outputs = new Map<string, string>();
-		const outputMultiset = new Map<string, number>();
-		for (const [reference, output] of Object.entries(utxo)) {
-			const serializedOutput = serializeHydraSnapshotOutput(output);
-			outputs.set(reference.toLowerCase(), serializedOutput);
-			outputMultiset.set(serializedOutput, (outputMultiset.get(serializedOutput) ?? 0) + 1);
-		}
-		this._verifiedHistorySnapshot = {
-			headId,
-			number: 0,
-			version: 0,
-			outputs,
-			outputMultiset,
-			// The collected ledger only; an incremental commit or decommit still in
-			// flight is reported separately and is not part of this state.
-			committedMultiset: new Map(),
-			decommitMultiset: new Map(),
-		};
-	}
-
-	private recordFinalizedFanout(parsedMessage: ReturnType<typeof headIsFinalizedMessageSchema.parse>): void {
+	private recordFinalizedFanout(message: unknown): void {
+		const parsedMessage = headIsFinalizedMessageSchema.parse(message);
 		this.assertExpectedHeadId(parsedMessage);
 		const fanoutOutputs = new Map<string, string>();
 		for (const [reference, output] of Object.entries(finalizedUtxoOf(parsedMessage))) {
@@ -828,630 +373,25 @@ export class HydraNode extends EventEmitter {
 		this._finalizedFanoutOutputs = fanoutOutputs;
 	}
 
-	/**
-	 * Decommit transactions seen so far, by transaction id.
-	 *
-	 * Bounded: a head replays its whole history on every connection, and only a
-	 * decommit still named by a snapshot's pending partition can be needed.
-	 */
-	private _decommitTransactions = new Map<string, HydraTransaction>();
-
-	/** Unknown snapshot fields already reported, so a replay says it once. */
-	private _reportedDriftFields = new Set<string>();
-
-	/** Parameter drift already warned about, so a misconfigured head says it once. */
-	private _reportedParamsDrift = new Set<string>();
-
-	/**
-	 * Say when the node reports snapshot state this service does not model.
-	 *
-	 * Reports and continues, deliberately. Refusing here would turn a harmless
-	 * added field into the outage this is meant to give warning of; the value is
-	 * that someone hears about it while the head still works, rather than after
-	 * a rejected history has already taken it down.
-	 */
-	private reportSnapshotDrift(message: unknown): void {
-		const drift = detectSnapshotDrift(message);
-		if (drift.length === 0) return;
-		const fresh: ProtocolDrift[] = drift.filter((entry) =>
-			entry.fields.some((field) => !this._reportedDriftFields.has(field)),
-		);
-		if (fresh.length === 0) return;
-		for (const entry of fresh) for (const field of entry.fields) this._reportedDriftFields.add(field);
-		const description = describeProtocolDrift(fresh);
-		logger.warn(`[HydraNode] ${description}`);
-		this.emit(HydraNodeEvent.ProtocolDriftDetected, description);
-	}
-
-	private rememberDecommitTransaction(transaction: HydraTransaction): void {
-		const txId = transaction.txId?.toLowerCase();
-		if (!txId) return;
-		if (this._decommitTransactions.has(txId)) return;
-		this._decommitTransactions.set(txId, transaction);
-		if (this._decommitTransactions.size > MAX_TRACKED_DECOMMIT_TRANSACTIONS) {
-			const oldest = this._decommitTransactions.keys().next().value;
-			if (oldest !== undefined) this._decommitTransactions.delete(oldest);
-		}
-	}
-
-	/**
-	 * The transactions that produced a snapshot's pending decommit outputs.
-	 *
-	 * Matched by the transaction id embedded in each output reference, so only a
-	 * transaction the signed state actually names is ever handed to the check.
-	 */
-	private resolvePendingDecommitTransactions(
-		partition: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>['snapshot']['utxoToDecommit'],
-	): HydraTransaction[] {
-		if (!partition) return [];
-		const resolved: HydraTransaction[] = [];
-		const seen = new Set<string>();
-		for (const reference of Object.keys(partition)) {
-			const txId = reference.slice(0, reference.indexOf('#')).toLowerCase();
-			if (txId === '' || seen.has(txId)) continue;
-			seen.add(txId);
-			const transaction = this._decommitTransactions.get(txId);
-			if (transaction) resolved.push(transaction);
-		}
-		return resolved;
-	}
-
-	private recordHistorySnapshot(parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>): void {
-		if (this._lastHistorySequence != null && parsedMessage.seq <= this._lastHistorySequence) {
-			throw new HydraProtocolError('Hydra history sequence was duplicate or non-monotonic');
-		}
-		if (!this._orderedSnapshotVerificationKeys) {
-			throw new HydraProtocolError('SnapshotConfirmed arrived without an identity-bearing on-chain party order');
-		}
-		if (this._historySessionHeadId && parsedMessage.headId !== this._historySessionHeadId) {
-			throw new HydraProtocolError('SnapshotConfirmed did not belong to the verified Hydra history session');
-		}
-		const verifiedSnapshot = verifyHydraSnapshot(parsedMessage, this._orderedSnapshotVerificationKeys);
-		const previousSnapshot = this._verifiedHistorySnapshot;
-		if (previousSnapshot && verifiedSnapshot.number <= previousSnapshot.number) {
-			throw new HydraProtocolError('Hydra signed snapshot number replayed or regressed');
-		}
-		if (previousSnapshot == null) {
-			if (verifiedSnapshot.number > 1 || parsedMessage.snapshot.confirmed.length > 0) {
-				throw new HydraProtocolError(
-					'Hydra history began with transactions or a snapshot gap and no independently verified predecessor',
-				);
-			}
-			this._verifiedHistorySnapshot = verifiedSnapshot;
-			this._lastHistorySequence = parsedMessage.seq;
-			return;
-		}
-		// A decommit is a state-changing transaction that Hydra reports outside the
-		// `confirmed` list, so the conservation walk has to be given it explicitly.
-		// Without it a legitimate withdrawal looks like value appearing and
-		// vanishing for no reason — the head's whole history is rejected, the live
-		// session never forms, and every L2 escrow operation fails closed.
-		//
-		// Passed as a transaction rather than waved through as an allowance: it
-		// carries its own L1 fee, and running it through the same created/consumed
-		// accounting accounts for that fee exactly, with nothing relaxed.
-		const transitionTransactions = [
-			...parsedMessage.snapshot.confirmed,
-			...this.resolvePendingDecommitTransactions(parsedMessage.snapshot.utxoToDecommit),
-		];
-		if (!doesHydraTransactionTransitionReachSnapshot(previousSnapshot, verifiedSnapshot, transitionTransactions)) {
-			// Name the transition. This rejection stops the head forming a live
-			// session at all, so it is the last thing anyone hears before every L2
-			// operation starts failing closed; "somewhere in the history" is not
-			// enough to act on, and re-deriving it means replaying the node's log by
-			// hand (see scripts/hydra-e2e/replay-check.mts).
-			throw new HydraProtocolError(
-				`Hydra history contained a non-consecutive or inconsistent signed-state transition ` +
-					`(snapshot ${previousSnapshot.number} to ${verifiedSnapshot.number}, ` +
-					`${transitionTransactions.length} transaction(s), ` +
-					`${verifiedSnapshot.committedMultiset.size} pending commit output(s), ` +
-					`${verifiedSnapshot.decommitMultiset.size} pending decommit output(s))`,
-			);
-		}
-		this._verifiedHistorySnapshot = verifiedSnapshot;
-		this._lastHistorySequence = parsedMessage.seq;
-		const protectedProducerTxIds = this.resolveProtectedSnapshotProducerTxIds(verifiedSnapshot);
-		// Hydra 2.3 signatures authenticate only the TxOut multiset. Recording
-		// tx ids/CBOR therefore additionally relies on this explicitly configured
-		// local endpoint and the manager's per-action actor/body checks.
-		if (this._trustLocalNodeSnapshotMetadata) {
-			this.recordConfirmedTransactions(parsedMessage, this._historyReplayComplete, protectedProducerTxIds);
-		}
-		this.adoptSnapshotProducerTxIds(verifiedSnapshot, protectedProducerTxIds);
-	}
-
-	private resolveProtectedSnapshotProducerTxIds(snapshot: VerifiedHydraSnapshot): Set<string> {
-		const frameProducerTxIds = new Set(
-			[...snapshot.outputs.keys()].map((reference) => reference.slice(0, reference.indexOf('#')).toLowerCase()),
-		);
-		const retainedSnapshotNumber = this._currentSnapshotProducerSnapshotNumber;
-		if (retainedSnapshotNumber == null || snapshot.number > retainedSnapshotNumber) return frameProducerTxIds;
-		if (snapshot.number < retainedSnapshotNumber) return this._currentSnapshotProducerTxIds;
-		if (!setsEqual(frameProducerTxIds, this._currentSnapshotProducerTxIds)) {
-			throw new HydraProtocolError('Hydra history equivocated on output references for one signed snapshot');
-		}
-		return this._currentSnapshotProducerTxIds;
-	}
-
-	private adoptSnapshotProducerTxIds(snapshot: VerifiedHydraSnapshot, protectedProducerTxIds: Set<string>): void {
-		if (
-			this._currentSnapshotProducerSnapshotNumber != null &&
-			snapshot.number < this._currentSnapshotProducerSnapshotNumber
-		) {
-			return;
-		}
-		this._currentSnapshotProducerSnapshotNumber = snapshot.number;
-		this._currentSnapshotProducerTxIds = new Set(protectedProducerTxIds);
-		for (const txId of this._cursorPrefixProducerTxIds) {
-			if (this._currentSnapshotProducerTxIds.has(txId)) continue;
-			if (!this._unreconciledConfirmedTransactions.has(txId)) this._confirmedTransactions.delete(txId);
-			this._cursorPrefixProducerTxIds.delete(txId);
-		}
-		this.trimConfirmedTransactionCache();
-	}
-
-	/**
-	 * Decommit outcomes seen before the live session was authenticated.
-	 *
-	 * Bounded, because a head's whole history replays on every connection and
-	 * only the most recent outcomes can still be about an unsettled withdrawal.
-	 */
-	private _replayedDecommits: DecommitSettledData[] = [];
-
-	private rememberReplayedDecommit(data: DecommitSettledData): void {
-		this._replayedDecommits.push(data);
-		if (this._replayedDecommits.length > MAX_REPLAYED_DECOMMITS) this._replayedDecommits.shift();
-	}
-
-	/**
-	 * Emit what the replay held back, oldest first, exactly once.
-	 *
-	 * Order matters: an approval must not be applied after the finalization that
-	 * followed it, and the settlement code relies on seeing them in the order the
-	 * head produced them.
-	 */
-	private flushReplayedDecommits(): void {
-		if (this._replayedDecommits.length === 0) return;
-		const pending = this._replayedDecommits;
-		this._replayedDecommits = [];
-		for (const data of pending) this.emit(HydraNodeEvent.DecommitSettled, data);
-	}
-
-	/**
-	 * Deposits seen before the live session was authenticated.
-	 *
-	 * A deposit is recorded once and then sits for a deposit period or more, so
-	 * a service that reconnects in between only ever sees its CommitRecorded in
-	 * the replayed history. Dropping it left the top-up with no deadline at all
-	 * — the state this whole path exists to fix.
-	 *
-	 * Keyed by deposit id rather than appended, because the same deposit is
-	 * replayed on every connection and re-emitting it costs a write each time.
-	 */
-	private _replayedDeposits = new Map<string, DepositRecordedData>();
-
-	private rememberReplayedDeposit(data: DepositRecordedData): void {
-		this._replayedDeposits.set(data.depositTxId, data);
-		if (this._replayedDeposits.size > MAX_REPLAYED_DECOMMITS) {
-			const oldest = this._replayedDeposits.keys().next();
-			if (!oldest.done) this._replayedDeposits.delete(oldest.value);
-		}
-	}
-
-	private flushReplayedDeposits(): void {
-		if (this._replayedDeposits.size === 0) return;
-		const pending = [...this._replayedDeposits.values()];
-		this._replayedDeposits.clear();
-		for (const data of pending) this.emit(HydraNodeEvent.DepositRecorded, data);
-	}
-
-	/**
-	 * A deposit frame's deadline, or undefined if it is not a usable date.
-	 *
-	 * Parsed rather than trusted: the deadline is written straight to the
-	 * database and shown to an operator deciding whether to recover funds, so an
-	 * unparseable one is better absent than stored as Invalid Date.
-	 */
-	private readDepositRecorded(message: unknown): DepositRecordedData | undefined {
-		const recorded = commitRecordedMessageSchema.parse(message);
-		const deadline = new Date(recorded.deadline);
-		if (!Number.isFinite(deadline.getTime())) return undefined;
-		return { depositTxId: recorded.pendingDeposit, deadline };
-	}
-
-	private processStatus(rawMessage: string) {
-		let envelope: ReturnType<typeof messageSchema.parse>;
-		// Validated with every other frame below, but emitted only once the live
-		// session has been authenticated. Unlike the increment bookkeeping beside
-		// it, this one writes to the database, so it waits for the same proof of
-		// identity every other persisted transition does.
-		let decommitSettled: DecommitSettledData | undefined;
-		let depositRecorded: DepositRecordedData | undefined;
-		try {
-			const message = parseBoundedJsonFrame(rawMessage);
-			this.assertPersistenceReplayIsSupported(message);
-			envelope = messageSchema.parse(message);
-			const suppliedHeadId = assertExpectedFrameHeadId(envelope, this._expectedHeadId);
-			// Under the etcd network layer these mean "this node is in the majority
-			// cluster", so for a two-party head they say the counterparty's node is
-			// up and reachable. They say nothing about whether it has finished
-			// syncing the chain, which is why this is reported and not gated on.
-			if (envelope.tag === 'NetworkConnected' || envelope.tag === 'PeerConnected') {
-				this._networkConnected = true;
-			}
-			if (envelope.tag === 'NetworkDisconnected' || envelope.tag === 'PeerDisconnected') {
-				this._networkConnected = false;
-			}
-			if (envelope.tag === 'HeadIsInitializing' || envelope.tag === 'HeadIsOpen') {
-				this.bindSnapshotPartyOrder(message);
-				if (suppliedHeadId) this._liveSessionHeadId = suppliedHeadId;
-			}
-			if (envelope.tag === 'Greetings') {
-				const isHeadlessIdle =
-					this._expectedHeadId != null && suppliedHeadId == null && envelope.headStatus === HydraHeadStatus.Idle;
-				if (this._expectedHeadId && !suppliedHeadId && !isHeadlessIdle) {
-					throw new HydraProtocolError('Pinned Hydra session Greetings omitted its head identifier');
-				}
-				if (suppliedHeadId) {
-					this._liveSessionHeadId = suppliedHeadId;
-				}
-				this.verifyGreetingsPartyIdentity(message);
-				this._livePartyIdentityVerified = true;
-				if (isHeadlessIdle) {
-					// An L1 rollback before/through Init legitimately returns hydra-node
-					// to Idle, where no head id exists. Party identity still binds this
-					// configured endpoint; clear the old session proof before emitting
-					// the regression so the manager can durably invalidate routing.
-					this._liveSessionHeadId = undefined;
-					this._headClock = undefined;
-					this._finalizedFanoutOutputs = undefined;
-					if (this._status !== HydraHeadStatus.Idle) {
-						this._status = HydraHeadStatus.Idle;
-						this.emit(HydraNodeEvent.StatusChange, {
-							status: HydraHeadStatus.Idle,
-							headId: undefined,
-							snapshotNumber: undefined,
-							contestationDeadline: undefined,
-						} satisfies StatusChangeData);
-					}
-					return;
-				}
-				if (this.isLiveSessionReady()) this.emit(LIVE_SESSION_READY_EVENT);
-			}
-			if (envelope.tag === 'HeadIsFinalized' && hasFinalizedUtxoField(message)) {
-				this.recordFinalizedFanout(headIsFinalizedMessageSchema.parse(message));
-			}
-			// A deposit is folded in over two events, and in between the head has
-			// agreed to spend its current UTxO set without having produced the
-			// replacement yet. Anything built against that set in the gap is refused
-			// with "all inputs are spent", which reads like a bug in the transaction
-			// and is really a race with the fold-in. Every deposit opens this window,
-			// not just a head's first.
-			if (envelope.tag === 'CommitApproved') {
-				this._pendingIncrementCount += 1;
-				this.recordPendingIncrementUtxos(message);
-			}
-			// The deadline the head will hold this deposit to. Set from the chain
-			// time of whichever node drafted the deposit, so it cannot be derived
-			// from the transaction or from when the operator asked.
-			if (envelope.tag === 'CommitRecorded') {
-				depositRecorded = this.readDepositRecorded(message);
-			}
-			// A withdrawal's outcome, reported once per decommit. Approved is the
-			// point of no return — the head has signed the removal, so the value is
-			// gone from it whatever L1 does next — which is why it is surfaced
-			// rather than waiting for the finalization that follows it.
-			if (envelope.tag === 'DecommitApproved') {
-				const approved = decommitApprovedMessageSchema.parse(message);
-				decommitSettled = { decommitTxId: approved.decommitTxId, outcome: 'approved' };
-			}
-			if (envelope.tag === 'DecommitFinalized') {
-				const finalized = decommitFinalizedMessageSchema.parse(message);
-				const producedAt = finalized.timestamp === undefined ? undefined : new Date(finalized.timestamp);
-				decommitSettled = {
-					decommitTxId: finalized.decommitTxId,
-					outcome: 'finalized',
-					distributed: summarizeDistributedUtxo(finalized.distributedUTxO),
-					observedAt: producedAt !== undefined && Number.isFinite(producedAt.getTime()) ? producedAt : undefined,
-				};
-			}
-			if (envelope.tag === 'DecommitInvalid') {
-				const invalid = decommitInvalidMessageSchema.parse(message);
-				// The node returns the body it refused rather than an id, so the id has
-				// to be recovered from it — the same way TxInvalid is matched back to
-				// the request that produced it.
-				decommitSettled = {
-					decommitTxId: resolveTxHash(invalid.decommitTx.cborHex),
-					outcome: 'invalid',
-					reason: describeDecommitInvalidReason(invalid.decommitInvalidReason),
-				};
-			}
-			if (envelope.tag === 'CommitFinalized' || envelope.tag === 'CommitRecovered') {
-				this._pendingIncrementCount = Math.max(0, this._pendingIncrementCount - 1);
-				// Only once nothing is in flight. A finalization names its deposit but
-				// an approval does not, so with two deposits pending there is no way
-				// to tell which set just became spendable. Holding both until the
-				// last one lands over-blocks for a few minutes; releasing early
-				// re-creates the failure this exists to prevent.
-				if (this._pendingIncrementCount === 0) {
-					this._pendingIncrementUtxos.clear();
-				}
-				this.emit(HydraNodeEvent.IncrementFinalized);
-			}
-		} catch (error) {
-			if (error === this._unsupportedPersistenceRotationError) {
-				this.failHistoryReplay(error);
-			} else if (isConnectionBindingFrame(rawMessage)) {
-				const identityError =
-					error instanceof Error ? error : new HydraProtocolError('Hydra live session identity validation failed');
-				this._liveSessionHeadId = undefined;
-				this._livePartyIdentityVerified = false;
-				this._headClock = undefined;
-				// Whatever the replay held back came over a socket whose identity has
-				// just been rejected. Keeping it would mean applying, on the next
-				// authenticated session, outcomes this node never accepted.
-				this._replayedDecommits = [];
-				this._replayedDeposits.clear();
-				this.emit(LIVE_SESSION_REJECTED_EVENT, identityError);
-				this._connection.invalidate(identityError);
-			}
-			logger.error('[HydraNode] Rejected status frame', { error: protocolErrorToString(error) });
-			return;
-		}
-
-		if (!this.isLiveSessionReady()) {
-			// Held rather than dropped. A withdrawal settles on L1 minutes after it
-			// leaves the head, so a node restarted in between sees its finalization
-			// only in the replayed history — and dropping it left the withdrawal
-			// reading as still paying out forever, with nothing to correct it.
-			if (decommitSettled) this.rememberReplayedDecommit(decommitSettled);
-			if (depositRecorded) this.rememberReplayedDeposit(depositRecorded);
-			return;
-		}
-		this.flushReplayedDecommits();
-		this.flushReplayedDeposits();
-		if (decommitSettled) this.emit(HydraNodeEvent.DecommitSettled, decommitSettled);
-		if (depositRecorded) this.emit(HydraNodeEvent.DepositRecorded, depositRecorded);
-		const changeData = extractStatusChangeData(rawMessage, this._expectedHeadId);
-		if (changeData && changeData.status !== HydraHeadStatus.Final) {
-			// A history replay can contain a prior Final while the authenticated
-			// live Greetings reports a rolled-back/non-Final tip. Never carry the
-			// old fanout map into a later finalization attempt.
-			this._finalizedFanoutOutputs = undefined;
-		}
-		if (changeData && changeData.status !== this._status) {
-			this._status = changeData.status;
-			this.emit(HydraNodeEvent.StatusChange, changeData);
-		}
-	}
-
-	private recordConfirmedTransactions(
-		parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>,
-		emitEvent: boolean,
-		protectedProducerTxIds: ReadonlySet<string>,
-	): void {
-		if (this._historyReplayTruncated) return;
-		const parsedTimestampMs = parsedMessage.timestamp ? Date.parse(parsedMessage.timestamp) : Number.NaN;
-		const confirmedAtMs = Number.isNaN(parsedTimestampMs) ? null : parsedTimestampMs;
-		// Validate the entire signed transition, including the durable prefix. The
-		// cursor controls queuing only; it must never turn old malformed CBOR into an
-		// unchecked gap in a replay pass.
-		const validatedTransactions = parsedMessage.snapshot.confirmed.map((tx, snapshotTransactionIndex) => {
-			const parsedTxId = canonicalHydraTransactionIdSchema.safeParse(tx.txId);
-			if (!parsedTxId.success) {
-				throw new HydraProtocolError('SnapshotConfirmed contained a non-canonical transaction id');
-			}
-			let computedTxId: string;
-			try {
-				computedTxId = String(resolveTxHash(tx.cborHex)).toLowerCase();
-			} catch (error) {
-				throw new HydraProtocolError('SnapshotConfirmed contained invalid transaction CBOR', { cause: error });
-			}
-			if (computedTxId !== parsedTxId.data) {
-				throw new HydraProtocolError('SnapshotConfirmed transaction id does not match its CBOR body');
-			}
-			const existing =
-				this._confirmedTransactions.get(computedTxId) ?? this._unreconciledConfirmedTransactions.get(computedTxId);
-			if (existing && existing.cborHex.toLowerCase() !== tx.cborHex.toLowerCase()) {
-				throw new HydraProtocolError('SnapshotConfirmed equivocated on the CBOR for one transaction id');
-			}
-			if (
-				existing &&
-				(existing.snapshotSequence !== parsedMessage.seq ||
-					existing.snapshotTransactionIndex !== snapshotTransactionIndex)
-			) {
-				throw new HydraProtocolError('SnapshotConfirmed replayed one transaction at a different history position');
-			}
-			const isAfterCursor =
-				this._reconciledHistoryCursor == null ||
-				parsedMessage.seq > this._reconciledHistoryCursor.snapshotSequence ||
-				(parsedMessage.seq === this._reconciledHistoryCursor.snapshotSequence &&
-					snapshotTransactionIndex > this._reconciledHistoryCursor.snapshotTransactionIndex);
-			return { tx: { ...tx, txId: computedTxId }, snapshotTransactionIndex, existing, isAfterCursor };
-		});
-		if (new Set(validatedTransactions.map(({ tx }) => tx.txId)).size !== validatedTransactions.length) {
-			throw new HydraProtocolError('SnapshotConfirmed contained duplicate transaction identifiers');
-		}
-
-		for (const { tx, snapshotTransactionIndex, existing, isAfterCursor } of validatedTransactions) {
-			const isCurrentSnapshotProducer = protectedProducerTxIds.has(tx.txId);
-			const shouldRetain = isAfterCursor || isCurrentSnapshotProducer;
-			if (!shouldRetain) continue;
-			if (existing) {
-				if (!isAfterCursor && isCurrentSnapshotProducer) this._cursorPrefixProducerTxIds.add(tx.txId);
-				if (isAfterCursor && !this._unreconciledConfirmedTransactions.has(tx.txId)) {
-					this._unreconciledConfirmedTransactions.set(tx.txId, existing);
-					this._txCircularBuffer.add(tx.txId);
-					if (emitEvent) this.emit(HydraNodeEvent.TxConfirmed, tx.txId, existing);
-				}
-				continue;
-			}
-			const transactionCborBytes = tx.cborHex.length / 2;
-			if (transactionCborBytes > this._maxRetainedTransactionCborBytes) {
-				throw new HydraProtocolError('Hydra confirmation transaction exceeded the entire retained-CBOR byte budget');
-			}
-			if (isAfterCursor && this._unreconciledConfirmedTransactions.size >= this._maxUnreconciledTransactions) {
-				this.truncateHistoryReplayPage();
-				break;
-			}
-			this.evictReconciledTransactionsForCborBudget(transactionCborBytes, protectedProducerTxIds);
-			if (this.getRetainedTransactionCborBytes() + transactionCborBytes > this._maxRetainedTransactionCborBytes) {
-				if (isCurrentSnapshotProducer) {
-					throw new HydraProtocolError(
-						'Current Hydra snapshot producer evidence exceeded the retained-CBOR byte budget',
-					);
-				}
-				this.truncateHistoryReplayPage();
-				break;
-			}
-			const confirmedTransaction: HydraConfirmedTransaction = {
-				...tx,
-				metadataSource: 'ConfiguredLocalHydraNode',
-				// Only the official top-level timestamp proves confirmation time.
-				// Missing/invalid time stays null and makes initial-lock sync retryable.
-				confirmedAtMs,
-				snapshotSequence: parsedMessage.seq,
-				snapshotTransactionIndex,
-			};
-			this._confirmedTransactions.set(tx.txId, confirmedTransaction);
-			if (isAfterCursor) {
-				this._txCircularBuffer.add(tx.txId);
-				this._unreconciledConfirmedTransactions.set(tx.txId, confirmedTransaction);
-			} else this._cursorPrefixProducerTxIds.add(tx.txId);
-			if (this._historyReplayComplete) this.trimConfirmedTransactionCache();
-			if (isAfterCursor && emitEvent) this.emit(HydraNodeEvent.TxConfirmed, tx.txId, confirmedTransaction);
-		}
-	}
-
-	private truncateHistoryReplayPage(): void {
-		this._historyReplayTruncated = true;
-		this._historyReplayComplete = false;
-		this.maybeRestartTruncatedHistoryReplay();
-	}
-
-	private getRetainedTransactionCborBytes(): number {
-		const retainedIds = new Set([
-			...this._confirmedTransactions.keys(),
-			...this._unreconciledConfirmedTransactions.keys(),
-		]);
-		let retainedBytes = 0;
-		for (const txId of retainedIds) {
-			const retained = this._confirmedTransactions.get(txId) ?? this._unreconciledConfirmedTransactions.get(txId);
-			retainedBytes += (retained?.cborHex.length ?? 0) / 2;
-		}
-		return retainedBytes;
-	}
-
-	private evictReconciledTransactionsForCborBudget(
-		requiredBytes: number,
-		protectedProducerTxIds: ReadonlySet<string> = this._currentSnapshotProducerTxIds,
-	): void {
-		let retainedBytes = this.getRetainedTransactionCborBytes();
-		if (retainedBytes + requiredBytes <= this._maxRetainedTransactionCborBytes) return;
-		const evictable = [...this._confirmedTransactions.values()]
-			.filter(({ txId }) => !this._unreconciledConfirmedTransactions.has(txId) && !protectedProducerTxIds.has(txId))
-			.sort(compareConfirmedTransactions);
-		for (const transaction of evictable) {
-			this._confirmedTransactions.delete(transaction.txId);
-			this._cursorPrefixProducerTxIds.delete(transaction.txId);
-			retainedBytes -= transaction.cborHex.length / 2;
-			if (retainedBytes + requiredBytes <= this._maxRetainedTransactionCborBytes) return;
-		}
-	}
-
-	private processHeadClock(rawMessage: string) {
-		try {
-			const parsed = headClockMessageSchema.safeParse(parseBoundedJsonFrame(rawMessage));
-			if (!parsed.success) return;
-			this.assertExpectedHeadId(parsed.data);
-			if (!this.isLiveSessionReady()) return;
-			const chainTimeMs = Date.parse(parsed.data.chainTime);
-			if (
-				!Number.isFinite(chainTimeMs) ||
-				chainTimeMs < EARLIEST_PLAUSIBLE_HEAD_CLOCK_MS ||
-				chainTimeMs > Date.now() + MAX_HEAD_CLOCK_FUTURE_SKEW_MS
-			) {
-				return;
-			}
-			this._headClock = {
-				chainTimeMs,
-				chainSlot: parsed.data.chainSlot,
-				receivedAtMs: Date.now(),
-			};
-		} catch {
-			// non-JSON frames are other consumers' problem; the clock just skips them
-		}
-	}
-
-	/**
-	 * True while the head has agreed to absorb a deposit it has not yet absorbed.
-	 *
-	 * Callers building against the current snapshot should wait: the inputs they
-	 * can see are already promised to the fold-in, so the head refuses anything
-	 * spending them until it completes.
-	 */
 	get hasPendingIncrement(): boolean {
-		return this._pendingIncrementCount > 0;
+		return this._live.hasPendingIncrement;
 	}
 
-	/**
-	 * References of the funds arriving in a deposit that has not finished folding
-	 * in. The head shows them in its snapshot and refuses to spend them, so a
-	 * builder must leave them out of coin selection rather than avoid the head.
-	 */
 	get pendingIncrementUtxoRefs(): ReadonlySet<string> {
-		return this._pendingIncrementUtxos;
-	}
-
-	/**
-	 * Remember what a `CommitApproved` says is arriving.
-	 *
-	 * Best-effort by design: the frame comes from another process, so a shape we
-	 * do not recognise leaves the set as it was. Missing a reference costs one
-	 * rejected transaction, which is what happened before any of this existed;
-	 * throwing here would take down a live session over diagnostics.
-	 */
-	private recordPendingIncrementUtxos(message: unknown): void {
-		if (typeof message !== 'object' || message === null || !('utxoToCommit' in message)) return;
-		const utxoToCommit = (message as { utxoToCommit?: unknown }).utxoToCommit;
-		if (typeof utxoToCommit !== 'object' || utxoToCommit === null) return;
-		for (const reference of Object.keys(utxoToCommit)) {
-			if (HYDRA_UTXO_REFERENCE_PATTERN.test(reference)) {
-				this._pendingIncrementUtxos.add(reference.toLowerCase());
-			}
-		}
+		return this._live.pendingIncrementUtxoRefs;
 	}
 
 	get headClock(): HydraHeadClock | undefined {
-		return this._headClock;
+		return this._live.headClock;
 	}
 
-	/**
-	 * Apply a head clock observed out-of-band — used by the connection manager's
-	 * periodic Greetings `currentSlot` probe. Hydra 2.3 does NOT stream
-	 * Tick/SyncedStatusReport over the API on a quiet head, so without this the
-	 * cached clock would only ever be set at connect and go stale within
-	 * L2_LOCK_HEAD_CLOCK_MAX_AGE_MS, making initial funds-lock permanently
-	 * fail-closed. The caller converts an authenticated, head-reported slot to
-	 * chain time; the same plausibility bounds as the streamed path apply, and
-	 * `receivedAtMs` stays the real observation time so the freshness guard is not
-	 * weakened.
-	 */
+	/** See `LiveFrameProcessor.applyObservedHeadClock`: the manager's slot probe. */
 	applyObservedHeadClock(chainTimeMs: number, chainSlot: number): void {
-		if (
-			!Number.isSafeInteger(chainTimeMs) ||
-			chainTimeMs < EARLIEST_PLAUSIBLE_HEAD_CLOCK_MS ||
-			chainTimeMs > Date.now() + MAX_HEAD_CLOCK_FUTURE_SKEW_MS ||
-			!Number.isSafeInteger(chainSlot) ||
-			chainSlot < 0
-		) {
-			return;
-		}
-		this._headClock = { chainTimeMs, chainSlot, receivedAtMs: Date.now() };
+		this._live.applyObservedHeadClock(chainTimeMs, chainSlot);
 	}
 
 	get confirmedTransactionHistoryReady(): boolean {
-		return this._unsupportedPersistenceRotationError == null && this._historyReplayComplete;
+		return this._unsupportedPersistenceRotationError == null && this._replay.isComplete;
 	}
 
 	/** Both evidence sockets have authenticated the same explicitly pinned head. */
@@ -1459,15 +399,15 @@ export class HydraNode extends EventEmitter {
 		return (
 			this._unsupportedPersistenceRotationError == null &&
 			this._expectedHeadId != null &&
-			this._liveSessionHeadId === this._expectedHeadId &&
-			this._historySessionHeadId === this._expectedHeadId &&
-			this._configuredPartyKeys.size === 2 &&
-			this._expectedNodeVerificationKey != null &&
-			this._orderedSnapshotVerificationKeys?.length === 2 &&
-			this._livePartyIdentityVerified &&
-			this._historyPartyIdentityVerified &&
-			this._verifiedHistorySnapshot?.headId === this._expectedHeadId &&
-			this._historyReplayComplete
+			this._live.liveSessionHeadId === this._expectedHeadId &&
+			this._replay.sessionHeadId === this._expectedHeadId &&
+			this._partyIdentity.configuredKeyCount === 2 &&
+			this._partyIdentity.hasExpectedNodeKey &&
+			this._partyIdentity.orderedSnapshotVerificationKeys?.length === 2 &&
+			this._live.livePartyIdentityVerified &&
+			this._replay.partyIdentityVerified &&
+			this._replay.verifiedSnapshot?.headId === this._expectedHeadId &&
+			this._replay.isComplete
 		);
 	}
 
@@ -1481,165 +421,48 @@ export class HydraNode extends EventEmitter {
 		hydraReference: string,
 		expectedSnapshotNumber: number,
 	): VerifiedHydraFanoutReference | null {
-		if (
-			!this.hasVerifiedPinnedSessions ||
-			this._status !== HydraHeadStatus.Final ||
-			!Number.isSafeInteger(expectedSnapshotNumber) ||
-			expectedSnapshotNumber < 0 ||
-			this._verifiedHistorySnapshot?.number !== expectedSnapshotNumber ||
-			this._finalizedFanoutOutputs == null
-		) {
-			return null;
-		}
-		const separator = hydraReference.indexOf('#');
-		if (separator <= 0 || hydraReference.indexOf('#', separator + 1) !== -1) return null;
-		const producerTxHash = hydraReference.slice(0, separator).toLowerCase();
-		const outputIndexText = hydraReference.slice(separator + 1);
-		if (!/^[0-9a-f]{64}$/.test(producerTxHash) || !/^(?:0|[1-9][0-9]*)$/.test(outputIndexText)) return null;
-		const outputIndex = Number(outputIndexText);
-		if (!Number.isSafeInteger(outputIndex) || outputIndex < 0 || outputIndex > 0xffffffff) return null;
-		const confirmedProducer = this.getConfirmedTransaction(producerTxHash);
-		if (!confirmedProducer) return null;
-		let serializedOutput: string;
-		try {
-			const transaction = FixedTransaction.from_bytes(Buffer.from(confirmedProducer.cborHex, 'hex'));
-			if (!transaction.is_valid() || transaction.transaction_hash().to_hex().toLowerCase() !== producerTxHash) {
-				return null;
-			}
-			const outputs = transaction.body().outputs();
-			if (outputIndex >= outputs.len()) return null;
-			serializedOutput = serializeCardanoTransactionOutput(outputs.get(outputIndex));
-		} catch {
-			return null;
-		}
-		return resolveVerifiedHydraFanoutReference(
-			this._verifiedHistorySnapshot,
-			this._finalizedFanoutOutputs,
-			serializedOutput,
-		);
+		const context = this.fanoutResolutionContext(expectedSnapshotNumber);
+		if (!context) return null;
+		return resolveNodeFanoutReference(context, hydraReference);
 	}
 
 	getVerifiedFanoutReferences(expectedSnapshotNumber: number): VerifiedHydraFanoutReference[] | null {
+		const context = this.fanoutResolutionContext(expectedSnapshotNumber);
+		if (!context) return null;
+		return resolveNodeFanoutReferences(context);
+	}
+
+	private fanoutResolutionContext(expectedSnapshotNumber: number) {
+		const verifiedSnapshot = this._replay.verifiedSnapshot;
 		if (
 			!this.hasVerifiedPinnedSessions ||
-			this._status !== HydraHeadStatus.Final ||
+			this._live.status !== HydraHeadStatus.Final ||
 			!Number.isSafeInteger(expectedSnapshotNumber) ||
 			expectedSnapshotNumber < 0 ||
-			this._verifiedHistorySnapshot?.number !== expectedSnapshotNumber ||
+			verifiedSnapshot?.number !== expectedSnapshotNumber ||
 			this._finalizedFanoutOutputs == null
 		) {
 			return null;
 		}
-		return resolveVerifiedHydraFanoutReferences(this._verifiedHistorySnapshot, this._finalizedFanoutOutputs);
+		return {
+			verifiedSnapshot,
+			finalizedFanoutOutputs: this._finalizedFanoutOutputs,
+			getConfirmedTransaction: (txHash: string) => this.getConfirmedTransaction(txHash),
+		};
 	}
 
 	get confirmedTransactionHistoryError(): Error | undefined {
-		return this._unsupportedPersistenceRotationError ?? this._historyReplayError;
+		return this._unsupportedPersistenceRotationError ?? this._replay.error;
 	}
 
-	private sendCommandAndWait(options: {
-		command: string;
-		payload: unknown;
-		timeoutMs: number;
-		transactionHash?: string;
-		isComplete: (message: HydraResponseMessage) => boolean;
-		timeoutMessage: string;
-		retryIntervalMs?: number;
-	}): Promise<void> {
+	private sendCommandAndWait(options: HydraCommandOptions): Promise<void> {
 		if (this._unsupportedPersistenceRotationError) {
 			return Promise.reject(this._unsupportedPersistenceRotationError);
 		}
-		if (!this.isLiveSessionReady()) {
+		if (!this._live.isLiveSessionReady()) {
 			return Promise.reject(new HydraTransportError('Hydra live session identity has not been verified'));
 		}
-		const { command, payload, timeoutMs, transactionHash, isComplete, timeoutMessage, retryIntervalMs } = options;
-		return new Promise<void>((resolve, reject) => {
-			let isSettled = false;
-			let wasQueued = false;
-			let retryInterval: ReturnType<typeof setInterval> | undefined;
-
-			const cleanup = () => {
-				clearTimeout(timeout);
-				if (retryInterval) clearInterval(retryInterval);
-				this._connection.removeListener('message', handleMessage);
-				this._connection.removeListener('close', handleClose);
-			};
-			const settleResolve = () => {
-				if (isSettled) return;
-				isSettled = true;
-				cleanup();
-				resolve();
-			};
-			const settleReject = (error: unknown) => {
-				if (isSettled) return;
-				isSettled = true;
-				cleanup();
-				reject(error);
-			};
-			const ambiguousError = (message: string, cause?: unknown) =>
-				new HydraTransportAmbiguousError(message, cause === undefined ? undefined : { cause });
-			const handleMessage = (data: string) => {
-				const outcome = handleWsResponse(data, command, transactionHash, this._expectedHeadId);
-				if (outcome.kind === 'ignore') return;
-				if (outcome.kind === 'protocol-error') {
-					settleReject(
-						wasQueued
-							? ambiguousError(`Hydra ${command} outcome is ambiguous after a malformed response`, outcome.error)
-							: outcome.error,
-					);
-					return;
-				}
-				if (outcome.kind === 'reject') {
-					settleReject(
-						command === 'Close' && wasQueued
-							? ambiguousError(
-									'Hydra Close was rejected after dispatch; the head may already have closed',
-									outcome.error,
-								)
-							: outcome.error,
-					);
-					return;
-				}
-				if (isComplete(outcome.message)) settleResolve();
-			};
-			const handleClose = (reason: unknown) => {
-				// Let Connection.send's promise settle first when the close happened
-				// while it was still waiting for OPEN. Once bytes were queued, loss of
-				// the response is explicitly ambiguous.
-				queueMicrotask(() => {
-					if (isSettled) return;
-					settleReject(
-						wasQueued
-							? ambiguousError(`Hydra ${command} outcome is ambiguous after transport closure`, reason)
-							: new HydraTransportError(`Hydra ${command} was not sent before transport closure`, {
-									cause: reason,
-								}),
-					);
-				});
-			};
-			const send = () => {
-				void this._connection
-					.send(payload)
-					.then(() => {
-						wasQueued = true;
-					})
-					.catch((error: unknown) => {
-						if (!wasQueued) settleReject(error);
-					});
-			};
-
-			this._connection.on('message', handleMessage);
-			this._connection.on('close', handleClose);
-			const timeout = setTimeout(() => {
-				settleReject(
-					wasQueued
-						? ambiguousError(timeoutMessage)
-						: new HydraTransportError(`${command} was not sent before its ${timeoutMs}ms deadline`),
-				);
-			}, timeoutMs);
-			send();
-			if (retryIntervalMs) retryInterval = setInterval(send, retryIntervalMs);
-		});
+		return sendHydraCommandAndWait(this._connection, this._expectedHeadId, options);
 	}
 
 	async init(timeoutMs: number = HydraNode.INIT_OBSERVE_TIMEOUT_MS) {
@@ -1648,7 +471,7 @@ export class HydraNode extends EventEmitter {
 		// The node may compact old lifecycle messages even when transaction
 		// history replay is enabled, so guard against waiting for a transition
 		// that has already passed.
-		if (this._status === HydraHeadStatus.Initializing || this._status === HydraHeadStatus.Open) {
+		if (this._live.status === HydraHeadStatus.Initializing || this._live.status === HydraHeadStatus.Open) {
 			return;
 		}
 
@@ -1667,31 +490,11 @@ export class HydraNode extends EventEmitter {
 	}
 
 	async commit(utxos: UTxO[] = [], blueprintTx?: string | null) {
-		const hydraUTxOs = utxos.reduce(
-			(acc, utxo) => {
-				acc[`${utxo.input.txHash}#${utxo.input.outputIndex}`] = mapUTxOToHydraUTxO(utxo);
-				return acc;
-			},
-			{} as Record<string, HydraUTxO>,
-		);
-
-		let bodyRequest;
-		if (blueprintTx) {
-			bodyRequest = {
-				blueprintTx,
-				utxo: hydraUTxOs,
-			};
-		} else {
-			bodyRequest = hydraUTxOs;
-		}
-
-		const response = await this.post<HydraTransaction>('/commit', bodyRequest);
-		return response;
+		return await this.post<HydraTransaction>('/commit', buildHydraCommitRequest(utxos, blueprintTx));
 	}
 
 	async cardanoTransaction(transaction: HydraTransaction) {
-		const response = await this.post('/cardano-transaction', transaction);
-		return response;
+		return await this.post('/cardano-transaction', transaction);
 	}
 
 	/**
@@ -1703,136 +506,30 @@ export class HydraNode extends EventEmitter {
 	 * later as DecommitApproved, or does not, as DecommitInvalid.
 	 */
 	async decommit(transaction: HydraTransaction) {
-		const response = await this.post('/decommit', transaction);
-		return response;
+		return await this.post('/decommit', transaction);
 	}
 
 	async snapshotUTxO(): Promise<UTxO[]> {
-		const response = hydraSnapshotUtxoSchema.safeParse(await this.get('/snapshot/utxo'));
-		if (!response.success) {
-			throw new HydraProtocolError('Hydra snapshot UTxO response failed schema validation', {
-				cause: response.error,
-			});
-		}
-		const utxos = Object.keys(response.data).map((txId: string) =>
-			mapHydraUTxOToUTxO(txId, response.data[txId] as HydraUTxO),
-		);
-		return utxos;
+		return await fetchHydraSnapshotUTxO(this);
 	}
 
-	/**
-	 * The L1 transaction that produced the head's current state output.
-	 *
-	 * At the moment the head reaches `Closed`, before any fanout step, this is
-	 * the close transaction — the one thing `HeadIsClosed` does not carry. After
-	 * a partial fanout it becomes that step's transaction instead, so callers
-	 * must capture it on the transition and not re-derive it later.
-	 *
-	 * Returns undefined rather than throwing on any failure: this names a
-	 * transaction for operators, and a head whose close cannot be named must
-	 * still be allowed to close.
-	 */
+	/** See `fetchHydraHeadOutputTxId`: the close (or latest fanout-step) tx. */
 	async fetchHeadOutputTxId(): Promise<string | undefined> {
-		const headIdentifier = this._expectedHeadId ?? this._liveSessionHeadId;
+		const headIdentifier = this._expectedHeadId ?? this._live.liveSessionHeadId;
 		if (!headIdentifier) return undefined;
-		try {
-			return extractHeadOutputTxId(await this.get('/head'), headIdentifier);
-		} catch (error) {
-			logger.warn('[HydraNode] Could not read the head state output transaction', {
-				headIdentifier,
-				error: protocolErrorToString(error),
-			});
-			return undefined;
-		}
+		return await fetchHydraHeadOutputTxId(this, headIdentifier);
 	}
 
 	async fetchProtocolParameters() {
-		const raw = await this.get('/protocol-parameters');
-		// Checked on the raw payload rather than the parsed one: castProtocol drops
-		// the cost models, and the schema is deliberately loose, so this is the only
-		// point where what the head actually reports is still intact.
-		reportParamsDrift(raw, this._reportedParamsDrift);
-		const response = hydraProtocolParametersSchema.safeParse(raw);
-		if (!response.success) {
-			throw new HydraProtocolError('Hydra protocol parameters failed schema validation', { cause: response.error });
-		}
-		const rawParameters = response.data;
-
-		const parameters: Protocol = castProtocol({
-			coinsPerUtxoSize: rawParameters.utxoCostPerByte,
-			collateralPercent: rawParameters.collateralPercentage,
-			maxBlockExMem: String(rawParameters.maxBlockExecutionUnits.memory),
-			maxBlockExSteps: String(rawParameters.maxBlockExecutionUnits.steps),
-			maxBlockHeaderSize: rawParameters.maxBlockHeaderSize,
-			maxBlockSize: rawParameters.maxBlockBodySize,
-			maxCollateralInputs: rawParameters.maxCollateralInputs,
-			maxTxExMem: String(rawParameters.maxTxExecutionUnits.memory),
-			maxTxExSteps: String(rawParameters.maxTxExecutionUnits.steps),
-			maxTxSize: rawParameters.maxTxSize,
-			maxValSize: rawParameters.maxValueSize,
-			minFeeA: rawParameters.txFeePerByte,
-			minFeeB: rawParameters.txFeeFixed,
-			minPoolCost: String(rawParameters.minPoolCost),
-			poolDeposit: rawParameters.stakePoolDeposit,
-			priceMem: rawParameters.executionUnitPrices.priceMemory,
-			priceStep: rawParameters.executionUnitPrices.priceSteps,
-		});
-
-		return parameters;
+		return await fetchHydraProtocolParameters(this, this._reportedParamsDrift);
 	}
 
 	async fetchRawCostModels(): Promise<HydraRawCostModels> {
-		// `/protocol-parameters` returns the Cardano-API ProtocolParameters JSON
-		// the head was configured with; its `costModels` field carries the exact
-		// per-language arrays the head's ledger hashes into the script-data-hash.
-		// castProtocol() (used by fetchProtocolParameters above) drops these, so
-		// fetch the raw payload and extract them here.
-		const response = hydraCostModelsEnvelopeSchema.safeParse(await this.get('/protocol-parameters'));
-		if (!response.success) {
-			throw new HydraProtocolError('Hydra cost-model response failed schema validation', { cause: response.error });
-		}
-		const costModels = response.data.costModels;
-		const parseCostModel = (language: string, value: unknown): number[] | undefined => {
-			if (value === undefined) return undefined;
-			const parsedCostModel = hydraCostModelSchema.safeParse(value);
-			if (!parsedCostModel.success) {
-				throw new HydraProtocolError(`Hydra ${language} cost model failed schema validation`, {
-					cause: parsedCostModel.error,
-				});
-			}
-			return parsedCostModel.data;
-		};
-		return {
-			PlutusV1: parseCostModel('PlutusV1', costModels?.PlutusV1),
-			PlutusV2: parseCostModel('PlutusV2', costModels?.PlutusV2),
-			PlutusV3: parseCostModel('PlutusV3', costModels?.PlutusV3),
-		};
+		return await fetchHydraRawCostModels(this);
 	}
 
 	async newTx(transaction: HydraTransaction) {
-		const parsedTransaction = hydraCommandTransactionSchema.safeParse(transaction);
-		if (!parsedTransaction.success) {
-			throw new HydraProtocolError('Cannot submit a transaction that violates the bounded Hydra schema', {
-				cause: parsedTransaction.error,
-			});
-		}
-		let txHash: string;
-		try {
-			txHash = String(resolveTxHash(parsedTransaction.data.cborHex)).toLowerCase();
-		} catch (error) {
-			throw new HydraProtocolError('Cannot submit invalid transaction CBOR to Hydra', { cause: error });
-		}
-		const suppliedTxId =
-			parsedTransaction.data.txId == null
-				? undefined
-				: canonicalHydraTransactionIdSchema.safeParse(parsedTransaction.data.txId);
-		if (suppliedTxId && (!suppliedTxId.success || suppliedTxId.data !== txHash)) {
-			throw new HydraProtocolError('Cannot submit a transaction whose txId does not match its CBOR body');
-		}
-		const commandTransaction = {
-			...parsedTransaction.data,
-			...(suppliedTxId?.success ? { txId: suppliedTxId.data } : {}),
-		};
+		const { txHash, commandTransaction } = prepareNewTxCommand(transaction);
 		await this.sendCommandAndWait({
 			command: 'NewTx',
 			payload: { tag: 'NewTx', transaction: commandTransaction },
@@ -1845,16 +542,16 @@ export class HydraNode extends EventEmitter {
 	}
 
 	isTxConfirmed(txHash: string): boolean {
-		return this._txCircularBuffer.getBuffer().includes(txHash);
+		return this._ledger.hasConfirmed(txHash);
 	}
 
 	getConfirmedTransaction(txHash: string): HydraConfirmedTransaction | null {
-		return this._confirmedTransactions.get(txHash) ?? this._unreconciledConfirmedTransactions.get(txHash) ?? null;
+		return this._ledger.getConfirmedTransaction(txHash);
 	}
 
 	getConfirmedTransactions(): HydraConfirmedTransaction[] {
-		return this._unsupportedPersistenceRotationError == null && this._historyReplayComplete
-			? [...this._confirmedTransactions.values()].sort(compareConfirmedTransactions)
+		return this._unsupportedPersistenceRotationError == null && this._replay.isComplete
+			? this._ledger.getAllConfirmedSorted()
 			: [];
 	}
 
@@ -1864,73 +561,25 @@ export class HydraNode extends EventEmitter {
 		// safe to durably drain a bounded page before the terminal Greetings marker;
 		// destructive/live-tip inference remains separately gated on a complete pass.
 		if (this._expectedHeadId == null || this._unsupportedPersistenceRotationError) return [];
-		return [...this._unreconciledConfirmedTransactions.values()].sort(compareConfirmedTransactions);
+		return this._ledger.getUnreconciledSorted();
 	}
 
 	markConfirmedTransactionReconciled(txHash: string): void {
-		const ordered = [...this._unreconciledConfirmedTransactions.values()].sort(compareConfirmedTransactions);
-		const first = ordered[0];
-		if (!first) return;
-		if (first.txId !== txHash) {
-			throw new HydraProtocolError('Hydra confirmed transactions must be reconciled in history order');
-		}
-		if (first.snapshotSequence == null) {
-			throw new HydraProtocolError('Hydra history evidence cannot advance a cursor without a sequence');
-		}
-		const nextCursor = {
-			snapshotSequence: first.snapshotSequence,
-			snapshotTransactionIndex: first.snapshotTransactionIndex,
-		};
-		if (
-			this._reconciledHistoryCursor &&
-			(nextCursor.snapshotSequence < this._reconciledHistoryCursor.snapshotSequence ||
-				(nextCursor.snapshotSequence === this._reconciledHistoryCursor.snapshotSequence &&
-					nextCursor.snapshotTransactionIndex <= this._reconciledHistoryCursor.snapshotTransactionIndex))
-		) {
-			throw new HydraProtocolError('Hydra reconciliation cursor did not advance monotonically');
-		}
-		this._reconciledHistoryCursor = nextCursor;
-		this._unreconciledConfirmedTransactions.delete(txHash);
-		if (this._currentSnapshotProducerTxIds.has(txHash)) this._cursorPrefixProducerTxIds.add(txHash);
-		this.trimConfirmedTransactionCache();
-		this.maybeRestartTruncatedHistoryReplay();
-	}
-
-	private trimConfirmedTransactionCache(): void {
-		const excess = this._confirmedTransactions.size - 10_000;
-		if (excess <= 0) return;
-		const oldest = [...this._confirmedTransactions.values()]
-			.filter(
-				({ txId }) =>
-					!this._unreconciledConfirmedTransactions.has(txId) && !this._currentSnapshotProducerTxIds.has(txId),
-			)
-			.sort(compareConfirmedTransactions)
-			.slice(0, excess);
-		for (const transaction of oldest) {
-			this._confirmedTransactions.delete(transaction.txId);
-			this._cursorPrefixProducerTxIds.delete(transaction.txId);
-		}
+		this._ledger.markReconciled(txHash);
+		this._replay.maybeRestartTruncated();
 	}
 
 	async disconnect(): Promise<void> {
 		await Promise.all([this._connection.disconnect(), this._historyConnection.disconnect()]);
-		this._status = HydraHeadStatus.Disconnected;
 		// Forgotten with the rest of the session state. A closed transport tells us
 		// nothing about the cluster, and keeping the last frame would report the
 		// counterparty as reachable long after we stopped being able to see them.
 		this._networkConnected = null;
-		this._liveSessionHeadId = undefined;
-		this._livePartyIdentityVerified = false;
-		this._headClock = undefined;
-		this.resetHistoryReplayPass();
-		this._confirmedTransactions.clear();
-		this._unreconciledConfirmedTransactions.clear();
-		this._txCircularBuffer.clear();
-		this._currentSnapshotProducerTxIds.clear();
-		this._currentSnapshotProducerSnapshotNumber = undefined;
-		this._cursorPrefixProducerTxIds.clear();
+		this._live.resetOnDisconnect();
+		this._replay.resetPass();
+		this._ledger.clear();
 		this._finalizedFanoutOutputs = undefined;
-		this._historyReplayError = this._unsupportedPersistenceRotationError;
+		this._replay.setErrorToRotationLatch();
 		this._connectionsStarted = false;
 	}
 
@@ -1938,42 +587,13 @@ export class HydraNode extends EventEmitter {
 		if (!Number.isSafeInteger(checkInterval) || checkInterval <= 0) {
 			throw new HydraProtocolError('Hydra confirmation polling interval must be a positive safe integer');
 		}
-		if (this._txCircularBuffer.getBuffer().includes(txHash)) return true;
-		return new Promise<boolean>((resolve, reject) => {
-			const cleanup = () => {
-				clearInterval(interval);
-				clearTimeout(timeout);
-				this._connection.removeListener('close', handleClose);
-				this._historyConnection.removeListener('close', handleClose);
-			};
-			const handleClose = (reason: unknown) => {
-				cleanup();
-				if (this._txCircularBuffer.getBuffer().includes(txHash)) {
-					resolve(true);
-					return;
-				}
-				reject(
-					new HydraTransportAmbiguousError(`Hydra confirmation for ${txHash} is unknown after transport closure`, {
-						cause: reason,
-					}),
-				);
-			};
-			const interval = setInterval(() => {
-				if (this._txCircularBuffer.getBuffer().includes(txHash)) {
-					cleanup();
-					resolve(true);
-				}
-			}, checkInterval);
-			const timeout = setTimeout(() => {
-				cleanup();
-				reject(
-					new HydraTransportAmbiguousError(
-						`Hydra transaction ${txHash} was not confirmed within ${this._commandTimeoutMs}ms`,
-					),
-				);
-			}, this._commandTimeoutMs);
-			this._connection.on('close', handleClose);
-			this._historyConnection.on('close', handleClose);
+		if (this._ledger.hasConfirmed(txHash)) return true;
+		return await awaitHydraTxConfirmation({
+			connections: [this._connection, this._historyConnection],
+			hasConfirmed: (hash) => this._ledger.hasConfirmed(hash),
+			txHash,
+			checkIntervalMs: checkInterval,
+			timeoutMs: this._commandTimeoutMs,
 		});
 	}
 
@@ -1998,11 +618,13 @@ export class HydraNode extends EventEmitter {
 	}
 
 	async get<T = unknown>(url: string): Promise<T> {
-		return await this.requestHttp<T>('GET', url);
+		if (this._unsupportedPersistenceRotationError) throw this._unsupportedPersistenceRotationError;
+		return await this._http.get<T>(url);
 	}
 
 	async post<T = unknown>(url: string, payload: unknown): Promise<T> {
-		return await this.requestHttp<T>('POST', url, payload);
+		if (this._unsupportedPersistenceRotationError) throw this._unsupportedPersistenceRotationError;
+		return await this._http.post<T>(url, payload);
 	}
 
 	/**
@@ -2013,87 +635,12 @@ export class HydraNode extends EventEmitter {
 	 * post a recover transaction.
 	 */
 	async delete<T = unknown>(url: string): Promise<T> {
-		return await this.requestHttp<T>('DELETE', url);
-	}
-
-	private async requestHttp<T>(method: 'GET' | 'POST' | 'DELETE', url: string, payload?: unknown): Promise<T> {
 		if (this._unsupportedPersistenceRotationError) throw this._unsupportedPersistenceRotationError;
-		let serializedPayload: string | undefined;
-		if (method === 'POST') {
-			try {
-				serializedPayload = stringifyHydraJson(payload);
-			} catch (error) {
-				throw new HydraProtocolError('Hydra HTTP request payload could not be serialized', { cause: error });
-			}
-			if (Buffer.byteLength(serializedPayload, 'utf8') > MAX_HYDRA_WS_FRAME_BYTES) {
-				throw new HydraProtocolError('Hydra HTTP request payload exceeded its byte limit');
-			}
-		}
-
-		const abortController = new AbortController();
-		let didTimeout = false;
-		const timeout = setTimeout(() => {
-			didTimeout = true;
-			abortController.abort();
-		}, this._httpTimeoutMs);
-		timeout.unref?.();
-		try {
-			const response = await fetch(this._httpUrl + url, {
-				method,
-				headers: { 'Content-Type': 'application/json', ...this._authHeaders },
-				redirect: 'error',
-				signal: abortController.signal,
-				...(serializedPayload === undefined ? {} : { body: serializedPayload }),
-			});
-			try {
-				return (await handleHttpResponse(response)) as T;
-			} catch (error) {
-				if (error instanceof HydraHttpResponseError) {
-					if (method === 'GET' || error.status < 500) throw error;
-					throw new HydraTransportAmbiguousError(
-						`Hydra HTTP POST outcome is ambiguous after a ${error.status} response`,
-						{ cause: error },
-					);
-				}
-				if (method === 'GET') throw error;
-				throw new HydraTransportAmbiguousError(
-					'Hydra HTTP POST outcome is ambiguous because its response could not be authenticated',
-					{ cause: error },
-				);
-			}
-		} catch (error) {
-			if (
-				error instanceof HydraHttpResponseError ||
-				error instanceof HydraTransportAmbiguousError ||
-				error instanceof HydraProtocolError
-			) {
-				throw error;
-			}
-			// DELETE recovers a deposit by posting a transaction, so losing its
-			// response is as ambiguous as losing a POST's: the node may well have
-			// posted it. Reporting that as a plain failure told an operator their
-			// recovery had not happened while it was on its way to the chain.
-			if (method === 'POST' || method === 'DELETE') {
-				throw new HydraTransportAmbiguousError(
-					didTimeout
-						? `Hydra HTTP ${method} outcome is ambiguous after a ${this._httpTimeoutMs}ms timeout`
-						: `Hydra HTTP ${method} outcome is ambiguous after a transport failure`,
-					{ cause: error },
-				);
-			}
-			throw new HydraTransportError(
-				didTimeout
-					? `Hydra HTTP GET timed out after ${this._httpTimeoutMs}ms`
-					: 'Hydra HTTP GET failed before a response was received',
-				{ cause: error },
-			);
-		} finally {
-			clearTimeout(timeout);
-		}
+		return await this._http.delete<T>(url);
 	}
 
 	get status() {
-		return this._status;
+		return this._live.status;
 	}
 
 	/** See `_networkConnected`. Null means the node has not said yet. */

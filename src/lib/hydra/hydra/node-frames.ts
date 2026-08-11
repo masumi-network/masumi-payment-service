@@ -21,15 +21,19 @@ import {
 	canonicalHydraHeadIdSchema,
 	canonicalHydraTransactionIdSchema,
 	commandFailedMessageSchema,
+	commitRecordedMessageSchema,
+	decommitApprovedMessageSchema,
+	decommitFinalizedMessageSchema,
+	decommitInvalidMessageSchema,
 	hydraHeadStatusSchema,
 	messageSchema,
 	postTxOnChainFailedMessageSchema,
 	txInvalidMessageSchema,
 	txValidMessageSchema,
 } from './schemas';
-import { describePostTxError } from './post-tx-error';
+import { describeDecommitInvalidReason, describePostTxError } from './post-tx-error';
 import { HydraHeadStatus } from '@/generated/prisma/client';
-import type { DecommitDistributedValue, StatusChangeData } from './types';
+import type { DecommitDistributedValue, DecommitSettledData, DepositRecordedData, StatusChangeData } from './types';
 
 const MAX_HYDRA_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024;
 
@@ -446,4 +450,54 @@ export function summarizeDistributedUtxo(
 		}
 	}
 	return { lovelace, assets };
+}
+
+/**
+ * A deposit frame's deadline, or undefined if it is not a usable date.
+ *
+ * Parsed rather than trusted: the deadline is written straight to the
+ * database and shown to an operator deciding whether to recover funds, so an
+ * unparseable one is better absent than stored as Invalid Date.
+ */
+export function readDepositRecorded(message: unknown): DepositRecordedData | undefined {
+	const recorded = commitRecordedMessageSchema.parse(message);
+	const deadline = new Date(recorded.deadline);
+	if (!Number.isFinite(deadline.getTime())) return undefined;
+	return { depositTxId: recorded.pendingDeposit, deadline };
+}
+
+/**
+ * A withdrawal's settlement, when this frame reports one.
+ *
+ * Approved is the point of no return — the head has signed the removal, so
+ * the value is gone from it whatever L1 does next — which is why it is
+ * surfaced rather than waiting for the finalization that follows it. An
+ * invalid decommit returns the body the node refused rather than an id, so
+ * the id is recovered from it, the same way TxInvalid is matched back to the
+ * request that produced it.
+ */
+export function readDecommitSettled(tag: string, message: unknown): DecommitSettledData | undefined {
+	if (tag === 'DecommitApproved') {
+		const approved = decommitApprovedMessageSchema.parse(message);
+		return { decommitTxId: approved.decommitTxId, outcome: 'approved' };
+	}
+	if (tag === 'DecommitFinalized') {
+		const finalized = decommitFinalizedMessageSchema.parse(message);
+		const producedAt = finalized.timestamp === undefined ? undefined : new Date(finalized.timestamp);
+		return {
+			decommitTxId: finalized.decommitTxId,
+			outcome: 'finalized',
+			distributed: summarizeDistributedUtxo(finalized.distributedUTxO),
+			observedAt: producedAt !== undefined && Number.isFinite(producedAt.getTime()) ? producedAt : undefined,
+		};
+	}
+	if (tag === 'DecommitInvalid') {
+		const invalid = decommitInvalidMessageSchema.parse(message);
+		return {
+			decommitTxId: String(resolveTxHash(invalid.decommitTx.cborHex)),
+			outcome: 'invalid',
+			reason: describeDecommitInvalidReason(invalid.decommitInvalidReason),
+		};
+	}
+	return undefined;
 }

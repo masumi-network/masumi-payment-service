@@ -182,6 +182,19 @@ wallet, per network. A Relation is long-lived and outlives the individual
 Avoid: head, pair, counterparty (the counterparty is a participant, not the
 relation).
 
+### Head Session
+
+One process's relationship with one [[Hydra Head]]: the per-head slot in the
+connection manager that owns the serialization queues, reconnect policy, the
+transport generation and the fences, plus the current *attachment* — the live
+socket, provider, and the durable owner epoch it was acquired under. The slot
+spans transports; the attachment comes and goes with each connect. Nothing in
+a Session is a cache of the database: `initialize()` rebuilds every slot from
+the durable rows on restart, and the fences have durable twins.
+
+Avoid: connection (that is the attachment's socket), managed head (the old
+implementation term).
+
 ### Local Participant
 
 The party to a [[Hydra Head]] whose Hydra signing key this service holds.

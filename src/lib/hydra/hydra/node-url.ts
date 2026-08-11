@@ -133,3 +133,23 @@ function normalizeBaseUrl(url: URL): string {
 	normalized.pathname = normalized.pathname.replace(/\/+$/, '') || '/';
 	return normalized.toString().replace(/\/$/, '');
 }
+
+export function withQuerySetting(url: string, key: string, value: string): string {
+	const fragmentIndex = url.indexOf('#');
+	const base = fragmentIndex === -1 ? url : url.slice(0, fragmentIndex);
+	const fragment = fragmentIndex === -1 ? '' : url.slice(fragmentIndex);
+	const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const existing = new RegExp(`([?&])${escapedKey}=[^&#]*`);
+	const updated = existing.test(base)
+		? base.replace(existing, `$1${key}=${value}`)
+		: `${base}${base.includes('?') ? '&' : '?'}${key}=${value}`;
+	return updated + fragment;
+}
+
+/**
+ * The two websocket query settings a session always pins: whether this socket
+ * replays history, and that snapshots carry their UTxO map either way.
+ */
+export function withHistorySetting(url: string, history: boolean): string {
+	return withQuerySetting(withQuerySetting(url, 'history', history ? 'yes' : 'no'), 'snapshot-utxo', 'yes');
+}
