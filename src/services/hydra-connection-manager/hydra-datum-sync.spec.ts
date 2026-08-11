@@ -66,8 +66,10 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	},
 }));
 
-const { applyDatumStateToLocalRequests: applyDatumStateToLocalRequestsRaw, applyTerminalHydraSpends } =
-	await import('./hydra-datum-sync');
+const { applyDatumStateToLocalRequests: applyDatumStateToLocalRequestsRaw } = await import('./hydra-datum-sync');
+// The terminal spend moved to its own module when this one passed the line
+// limit; the datum flow it ends is still the same one exercised here.
+const { applyTerminalHydraSpends } = await import('./hydra-datum-terminal');
 const applyDatumStateToLocalRequests = (
 	params: Omit<Parameters<typeof applyDatumStateToLocalRequestsRaw>[0], 'network'>,
 ) => applyDatumStateToLocalRequestsRaw({ ...params, network: Network.Preprod });

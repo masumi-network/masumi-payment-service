@@ -48,8 +48,14 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 
 jest.unstable_mockModule('./hydra-datum-sync', () => ({
 	applyDatumStateToLocalRequests: mockApplyDatum,
-	applyTerminalHydraSpends: mockApplyTerminal,
 	findLocallyRelevantHydraRequestIdentifiers: mockFindLocallyRelevantIdentifiers,
+}));
+
+// Mocked separately since the terminal spend moved to its own module: leaving it
+// on the sync mock let the real terminal module load and ask that mock for
+// constants it does not carry.
+jest.unstable_mockModule('./hydra-datum-terminal', () => ({
+	applyTerminalHydraSpends: mockApplyTerminal,
 }));
 
 jest.unstable_mockModule('./hydra-transaction-evidence', () => ({

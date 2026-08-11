@@ -36,10 +36,10 @@ import { decodeV2ContractDatum } from '@/utils/converter/string-datum-convert';
 import { smartContractStateToOnChainState } from '@/utils/logic/l2-datum-validation';
 import {
 	applyDatumStateToLocalRequests,
-	applyTerminalHydraSpends,
 	findLocallyRelevantHydraRequestIdentifiers,
 	type HydraDatumApplyOutcome,
 } from './hydra-datum-sync';
+import { applyTerminalHydraSpends } from './hydra-datum-terminal';
 import { parseHydraTransactionEvidence } from './hydra-transaction-evidence';
 import { decrypt } from '@/utils/security/encryption';
 import WebSocket, { type RawData } from 'ws';
