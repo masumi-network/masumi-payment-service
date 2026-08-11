@@ -20,6 +20,17 @@ export type ParticipantNodeState = {
 	isReady: boolean;
 	/** Why it is not ready, when it is not. */
 	reason: string | null;
+	/**
+	 * Whether the node has caught up with the chain, and by how far it has not.
+	 *
+	 * Carried alongside `reason` rather than folded into it because one caller
+	 * needs to decide, not only to display: an Init that was never observed means
+	 * something quite different when the node is hours behind than when it is
+	 * current, and the prose cannot be branched on. Null when the Host could not
+	 * be asked at all.
+	 */
+	chainSynced: boolean | null;
+	driftSeconds: number | null;
 };
 
 /**
@@ -35,7 +46,7 @@ export async function readParticipantNodeState(localParticipantId: string): Prom
 		include: { HydraHost: true },
 	});
 	if (!participant) {
-		return { state: 'Unknown', isReady: true, reason: null };
+		return { state: 'Unknown', isReady: true, reason: null, chainSynced: null, driftSeconds: null };
 	}
 
 	try {
@@ -45,14 +56,16 @@ export async function readParticipantNodeState(localParticipantId: string): Prom
 			participant.hostNodeId,
 			{ allowInsecureHttp: participant.HydraHost.allowInsecureHttp },
 		);
+		const chain = { chainSynced: health.chainSynced, driftSeconds: health.driftSeconds };
 		if (health.usable) {
-			return { state: health.state, isReady: true, reason: null };
+			return { state: health.state, isReady: true, reason: null, ...chain };
 		}
 		if (health.state !== 'Running') {
 			return {
 				state: health.state,
 				isReady: false,
 				reason: 'The node is not running. It has to be up before it can post a transaction.',
+				...chain,
 			};
 		}
 		if (!health.chainSynced) {
@@ -60,11 +73,12 @@ export async function readParticipantNodeState(localParticipantId: string): Prom
 				state: health.state,
 				isReady: false,
 				reason: describeCatchingUp(health.driftSeconds),
+				...chain,
 			};
 		}
-		return { state: health.state, isReady: false, reason: 'The node is not answering its own API.' };
+		return { state: health.state, isReady: false, reason: 'The node is not answering its own API.', ...chain };
 	} catch {
-		return { state: 'Unknown', isReady: true, reason: null };
+		return { state: 'Unknown', isReady: true, reason: null, chainSynced: null, driftSeconds: null };
 	}
 }
 

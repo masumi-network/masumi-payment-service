@@ -25,6 +25,7 @@ import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 import { readHeadParamDrift } from '@/services/hydra-host/param-drift';
 import { describeL2FundingBlock } from '@/utils/hydra/l2-funding-block';
 import { describeCloseWithActiveWork } from '@/utils/hydra/close-with-active-work';
+import { classifyInitObservation } from '@/utils/hydra/init-observation';
 import { logger } from '@masumi/payment-core/logger';
 import {
 	buildValidatedHydraCommit,
@@ -1141,16 +1142,48 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 			try {
 				await hydraHead.init();
 			} catch (initError) {
-				// A bounded init that never observed HeadIsInitializing means the
-				// hydra-node posted the InitTx but the chain backend (Blockfrost)
-				// silently dropped it — the node does not resubmit, so it is wedged.
-				// Leave the head Idle (no state regression) and return an actionable
-				// 504 so the operator retries rather than seeing a generic hang/500.
-				await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
-				throw createHttpError(
-					504,
-					initError instanceof Error ? initError.message : 'Init did not confirm on-chain in time',
-				);
+				// A bounded init that never observed HeadIsInitializing has two very
+				// different causes, and the timeout alone cannot tell them apart: the
+				// chain backend silently dropped the InitTx and the node is wedged, or
+				// the node is behind and has not reached that block yet. Ask the node
+				// where it thinks it is before blaming it.
+				//
+				// Drained first, because a frame that arrived while init was giving up
+				// makes this no failure at all.
+				await cm.flushHeadStatus(head.id);
+				const [observed, nodeState] = await Promise.all([
+					prisma.hydraHead.findUnique({ where: { id: head.id }, select: { status: true } }),
+					readParticipantNodeState(head.LocalParticipant.id),
+				]);
+				const verdict = classifyInitObservation({
+					headStatus: observed?.status ?? head.status,
+					chainSynced: nodeState.chainSynced,
+					driftSeconds: nodeState.driftSeconds,
+				});
+
+				if (verdict.kind === 'observed') {
+					logger.info('[Hydra] Init was observed after the wait ran out; head is already moving', {
+						hydraHeadId: head.id,
+						status: observed?.status,
+					});
+				} else if (verdict.kind === 'awaiting-node') {
+					// No head error recorded: nothing failed, and a CommandFailed here
+					// is exactly the self-resolving error that teaches operators to
+					// disregard the ones that matter.
+					logger.warn(`[Hydra] ${verdict.message}`, {
+						hydraHeadId: head.id,
+						driftSeconds: nodeState.driftSeconds,
+					});
+					throw createHttpError(504, verdict.message);
+				} else {
+					// Leave the head Idle (no state regression) and return an actionable
+					// 504 so the operator retries rather than seeing a generic hang/500.
+					await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
+					throw createHttpError(
+						504,
+						initError instanceof Error ? initError.message : 'Init did not confirm on-chain in time',
+					);
+				}
 			}
 
 			// Hydra 2.3 can advance directly to Open before init() resolves. Drain
