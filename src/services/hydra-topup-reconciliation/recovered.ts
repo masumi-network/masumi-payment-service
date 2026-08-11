@@ -17,6 +17,7 @@ import { HydraTopupStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
+import { mapWithConcurrency } from '@/utils/map-with-concurrency';
 import type { Network } from '@/generated/prisma/client';
 
 /**
@@ -30,17 +31,27 @@ function isScriptAddress(address: string): boolean {
 }
 
 /**
- * Bounded so one tick cannot spend its whole budget on chain lookups: each
- * candidate costs one Blockfrost read for the deposit plus one per consumer.
+ * How many rows of each kind one tick examines.
  *
- * Raised from 20 when Pending joined Confirmed and Failed in the candidate set.
- * Pending is the larger and more frequently touched pool, and rows sort oldest
- * first, so at the old bound a backlog of still-Pending deposits could fill a
- * tick before a Confirmed row waiting to be marked Absorbed got a look. The
- * wider bound keeps the classes from starving each other without letting a tick
- * run away on chain calls.
+ * Split into two budgets rather than one shared take because the classes must
+ * not starve each other. Pending is the larger and oldest-first pool, and under
+ * a single `orderBy updatedAt asc` take it could fill the whole tick before a
+ * Confirmed row waiting to be marked Absorbed was reached. A budget apiece
+ * guarantees both are looked at every tick.
  */
-const MAX_RECOVERY_CHECKS_PER_TICK = 40;
+const MAX_PENDING_CHECKS_PER_TICK = 20;
+const MAX_SETTLED_CHECKS_PER_TICK = 20;
+
+/**
+ * How many chain lookups run at once, across both budgets.
+ *
+ * Each candidate costs one Blockfrost read for the deposit plus one per
+ * consumer, and the candidates used to be started all together — up to a full
+ * tick's worth of concurrent requests every CHECK_HYDRA_TX_INTERVAL, which on a
+ * metered plan trips rate limits. This bounds the burst without shrinking how
+ * much a tick gets through, since the work is I/O-bound.
+ */
+const RECOVERY_LOOKUP_CONCURRENCY = 6;
 
 /**
  * Whether every output of this deposit transaction has been spent.
@@ -105,33 +116,41 @@ async function depositOutcome(params: {
  * the head does not wait for our confirmation threshold before absorbing.
  */
 export async function reconcileRecoveredHydraTopups(): Promise<void> {
-	const candidates = await prisma.hydraTopup.findMany({
-		where: {
-			// Every confirmed deposit, not only ones a recovery was asked for: a
-			// deposit the head takes in needs saying so just as much, and that is
-			// the case that left Recover on offer for funds already on L2.
-			//
-			// Pending is included for the same reason one step earlier. Promotion to
-			// Confirmed waits on BLOCK_CONFIRMATIONS_THRESHOLD, but the head folds a
-			// deposit in on its own schedule — so a row could sit at Pending, and
-			// read as "not arrived", while the funds were already spendable on L2.
-			// Finding the deposit's own output already spent is stronger evidence
-			// than a confirmation count: it cannot have been spent without being on
-			// chain first.
-			status: { in: [HydraTopupStatus.Pending, HydraTopupStatus.Confirmed, HydraTopupStatus.Failed] },
-			depositTxHash: { not: null },
+	const candidateInclude = {
+		LocalParticipant: {
+			include: { Wallet: { include: { PaymentSource: { include: { PaymentSourceConfig: true } } } } },
 		},
-		include: {
-			LocalParticipant: {
-				include: { Wallet: { include: { PaymentSource: { include: { PaymentSourceConfig: true } } } } },
-			},
-		},
-		orderBy: { updatedAt: 'asc' },
-		take: MAX_RECOVERY_CHECKS_PER_TICK,
-	});
+	} as const;
 
-	await Promise.allSettled(
-		candidates.map(async (candidate) => {
+	// Two queries, one budget each, so a Pending backlog cannot crowd out the
+	// Confirmed and Failed rows. Pending is separated because it is the case that
+	// reads "not arrived" while the head has already folded the deposit in:
+	// promotion to Confirmed waits on BLOCK_CONFIRMATIONS_THRESHOLD, but the head
+	// absorbs on its own schedule, and the deposit's own output being spent is
+	// stronger evidence than a confirmation count — it cannot be spent without
+	// being on chain first. Confirmed and Failed are the rows that may still turn
+	// out recovered or absorbed after the fact.
+	const [pending, settled] = await Promise.all([
+		prisma.hydraTopup.findMany({
+			where: { status: HydraTopupStatus.Pending, depositTxHash: { not: null } },
+			include: candidateInclude,
+			orderBy: { updatedAt: 'asc' },
+			take: MAX_PENDING_CHECKS_PER_TICK,
+		}),
+		prisma.hydraTopup.findMany({
+			where: { status: { in: [HydraTopupStatus.Confirmed, HydraTopupStatus.Failed] }, depositTxHash: { not: null } },
+			include: candidateInclude,
+			orderBy: { updatedAt: 'asc' },
+			take: MAX_SETTLED_CHECKS_PER_TICK,
+		}),
+	]);
+
+	// Bounded across both budgets, so the concurrent Blockfrost burst is capped
+	// however many rows the two queries returned.
+	await mapWithConcurrency(
+		[...pending, ...settled],
+		RECOVERY_LOOKUP_CONCURRENCY,
+		async (candidate) => {
 			const rpcProviderApiKey = candidate.LocalParticipant.Wallet.PaymentSource.PaymentSourceConfig?.rpcProviderApiKey;
 			if (rpcProviderApiKey == null || candidate.depositTxHash == null) return;
 
@@ -154,6 +173,11 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 						: `hydra: deposit ${candidate.depositTxHash} was taken into the head`,
 				);
 			}
-		}),
+		},
+		(error, candidate) =>
+			logger.warn('hydra-topup-reconciliation: a recovered-deposit check failed', {
+				topupId: candidate.id,
+				error: error instanceof Error ? error.message : error,
+			}),
 	);
 }

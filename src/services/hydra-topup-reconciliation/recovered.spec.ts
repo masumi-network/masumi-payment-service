@@ -49,6 +49,21 @@ function chain(consumedBy: string | null, spenderPaysTo: string[]) {
 	});
 }
 
+/**
+ * The reconciler now runs two queries — Pending on its own, Confirmed and
+ * Failed together — so each row is handed only to the query whose status filter
+ * it matches, exactly as the database would.
+ */
+function stageRows(rows: ReturnType<typeof topupRow>[]) {
+	mockFindMany.mockImplementation(async (args: { where?: { status?: unknown } }) => {
+		const status = args?.where?.status;
+		if (status === HydraTopupStatus.Pending) {
+			return rows.filter((row) => row.status === HydraTopupStatus.Pending);
+		}
+		return rows.filter((row) => row.status === HydraTopupStatus.Confirmed || row.status === HydraTopupStatus.Failed);
+	});
+}
+
 beforeEach(() => {
 	jest.clearAllMocks();
 	mockUpdateMany.mockResolvedValue({ count: 1 });
@@ -62,7 +77,7 @@ describe('reconcileRecoveredHydraTopups', () => {
 	 * already spendable on L2.
 	 */
 	it('marks a still-Pending deposit Absorbed once the head has taken it in', async () => {
-		mockFindMany.mockResolvedValue([topupRow(HydraTopupStatus.Pending)]);
+		stageRows([topupRow(HydraTopupStatus.Pending)]);
 		chain(SPENDER_TX, [SCRIPT_ADDRESS, WALLET_ADDRESS]);
 
 		await reconcileRecoveredHydraTopups();
@@ -73,19 +88,39 @@ describe('reconcileRecoveredHydraTopups', () => {
 		});
 	});
 
-	it('considers Pending rows at all', async () => {
+	it('queries Pending and settled rows separately, so neither starves the other', async () => {
 		mockFindMany.mockResolvedValue([]);
 
 		await reconcileRecoveredHydraTopups();
 
-		const where = mockFindMany.mock.calls[0]?.[0]?.where;
-		expect(where.status.in).toEqual(
-			expect.arrayContaining([HydraTopupStatus.Pending, HydraTopupStatus.Confirmed, HydraTopupStatus.Failed]),
+		const filters = mockFindMany.mock.calls.map((call) => call[0]?.where?.status);
+		// One query for Pending on its own, one for Confirmed and Failed together,
+		// each with its own take rather than a shared budget the larger pool wins.
+		expect(filters).toContainEqual(HydraTopupStatus.Pending);
+		expect(filters).toContainEqual({ in: [HydraTopupStatus.Confirmed, HydraTopupStatus.Failed] });
+	});
+
+	it('checks a Confirmed row even when the Pending pool is full', async () => {
+		// The starvation this split prevents: a Confirmed deposit waiting to be
+		// marked Absorbed must still be reached when many Pending rows are queued.
+		const pending = Array.from({ length: 20 }, (_unused, index) => ({
+			...topupRow(HydraTopupStatus.Pending),
+			id: `pending-${index}`,
+			depositTxHash: DEPOSIT_TX,
+		}));
+		const confirmed = { ...topupRow(HydraTopupStatus.Confirmed), id: 'confirmed-1' };
+		stageRows([...pending, confirmed]);
+		chain(SPENDER_TX, [SCRIPT_ADDRESS]);
+
+		await reconcileRecoveredHydraTopups();
+
+		expect(mockUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ where: { id: 'confirmed-1', status: HydraTopupStatus.Confirmed } }),
 		);
 	});
 
 	it('marks a still-Pending deposit Recovered when it went back to a wallet', async () => {
-		mockFindMany.mockResolvedValue([topupRow(HydraTopupStatus.Pending)]);
+		stageRows([topupRow(HydraTopupStatus.Pending)]);
 		chain(SPENDER_TX, [WALLET_ADDRESS]);
 
 		await reconcileRecoveredHydraTopups();
@@ -97,7 +132,7 @@ describe('reconcileRecoveredHydraTopups', () => {
 	});
 
 	it('still absorbs from Confirmed, which was the only path before', async () => {
-		mockFindMany.mockResolvedValue([topupRow(HydraTopupStatus.Confirmed)]);
+		stageRows([topupRow(HydraTopupStatus.Confirmed)]);
 		chain(SPENDER_TX, [SCRIPT_ADDRESS]);
 
 		await reconcileRecoveredHydraTopups();
@@ -109,7 +144,7 @@ describe('reconcileRecoveredHydraTopups', () => {
 	});
 
 	it('leaves an unspent deposit alone', async () => {
-		mockFindMany.mockResolvedValue([topupRow(HydraTopupStatus.Pending)]);
+		stageRows([topupRow(HydraTopupStatus.Pending)]);
 		chain(null, []);
 
 		await reconcileRecoveredHydraTopups();
@@ -120,7 +155,7 @@ describe('reconcileRecoveredHydraTopups', () => {
 	it('leaves the row alone when the chain cannot be read', async () => {
 		// A lookup failure is not evidence of anything, and guessing here would
 		// declare funds home or absorbed on a network blip.
-		mockFindMany.mockResolvedValue([topupRow(HydraTopupStatus.Pending)]);
+		stageRows([topupRow(HydraTopupStatus.Pending)]);
 		mockTxsUtxos.mockRejectedValue(new Error('blockfrost unavailable'));
 
 		await reconcileRecoveredHydraTopups();
@@ -129,7 +164,7 @@ describe('reconcileRecoveredHydraTopups', () => {
 	});
 
 	it('guards the write on the status it read, so a concurrent promotion cannot be clobbered', async () => {
-		mockFindMany.mockResolvedValue([topupRow(HydraTopupStatus.Pending)]);
+		stageRows([topupRow(HydraTopupStatus.Pending)]);
 		chain(SPENDER_TX, [SCRIPT_ADDRESS]);
 		mockUpdateMany.mockResolvedValue({ count: 0 });
 
