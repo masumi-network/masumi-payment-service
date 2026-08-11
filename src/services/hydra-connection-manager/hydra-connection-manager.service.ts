@@ -761,9 +761,14 @@ export class HydraConnectionManager {
 				.catch(() => undefined)
 				.then(async () => await this.persistHeadStatus(hydraHeadId, head, data));
 			this._headStatusQueues.set(hydraHeadId, work);
-			void work.finally(() => {
-				if (this._headStatusQueues.get(hydraHeadId) === work) this._headStatusQueues.delete(hydraHeadId);
-			});
+			// `.finally` re-propagates a rejection, so without the catch this is a
+			// floating rejected promise and one unhandled rejection ends the
+			// process. The next enqueue above already assumes `work` can reject.
+			void work
+				.catch(() => undefined)
+				.finally(() => {
+					if (this._headStatusQueues.get(hydraHeadId) === work) this._headStatusQueues.delete(hydraHeadId);
+				});
 		});
 
 		// Funds that were promised to a deposit have just become spendable. Anything

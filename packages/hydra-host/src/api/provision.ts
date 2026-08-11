@@ -21,6 +21,7 @@ import path from 'node:path';
 import { generateCardanoKeyPair, generateHydraKeyPair, serializeEnvelope } from '../keys.js';
 import { parsePeerAdvertise } from '../peer-address.js';
 import type { PortAllocator } from '../registry/ports.js';
+import type { SupervisorLogger } from '../supervisor/supervisor.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord, PeerRecord } from '../registry/types.js';
 import { HostApiError, type HttpErrorStatus } from './http-error.js';
@@ -60,6 +61,12 @@ export type ProvisionDeps = {
 	advertiseFor: (peerPort: number) => string;
 	newNodeId: () => string;
 	now: () => Date;
+	/**
+	 * Optional, and used only to report a rollback that could not finish.
+	 * Optional so existing callers and tests are unaffected; a silent failure
+	 * here is the one below that leaves key material on disk.
+	 */
+	logger?: Pick<SupervisorLogger, 'error'>;
 };
 
 /** Key material is readable only before escrow-ack, and only then. */
@@ -169,7 +176,17 @@ export async function provisionNode(request: ProvisionRequest, deps: ProvisionDe
 		// Never leave key material behind for a node that does not exist, and
 		// never leak the port. Cleanup order matters: remove the directory (which
 		// holds hydra.sk / cardano.sk) before releasing the slot.
-		await deps.store.remove(nodeId).catch(() => undefined);
+		// A failed cleanup is exactly the case the comment above promises cannot
+		// happen, so it must not be silent: hydra.sk and cardano.sk would survive
+		// for a node that does not exist. Reported and then dropped, because the
+		// original failure is the one the caller needs to see.
+		await deps.store.remove(nodeId).catch((cleanupError: unknown) => {
+			deps.logger?.error(
+				`[provision] could not remove node ${nodeId} after a failed provision; key material may remain on disk: ${
+					cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+				}`,
+			);
+		});
 		deps.ports.release(triple.peerPort);
 		throw error;
 	}

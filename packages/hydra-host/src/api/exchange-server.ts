@@ -89,17 +89,23 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
 	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
 	let inFlight = 0;
+	// Per source rather than one shared counter: a single abusive caller must not
+	// be able to spend the whole minute's budget and 429 the one counterparty
+	// this plane exists to serve. Keyed on the socket address, which is what the
+	// peer allow-list already gates on.
 	let requestWindowStartedAt = Date.now();
-	let requestsInWindow = 0;
+	const requestsInWindow = new Map<string, number>();
 
 	const server = createServer((request, response) => {
 		const now = Date.now();
 		if (now - requestWindowStartedAt >= 60_000) {
 			requestWindowStartedAt = now;
-			requestsInWindow = 0;
+			requestsInWindow.clear();
 		}
-		requestsInWindow += 1;
-		if (requestsInWindow > requestsPerMinute) {
+		const source = request.socket.remoteAddress ?? 'unknown';
+		const seen = (requestsInWindow.get(source) ?? 0) + 1;
+		requestsInWindow.set(source, seen);
+		if (seen > requestsPerMinute) {
 			response.setHeader('Retry-After', '60');
 			send(response, 429, { error: 'too many requests' });
 			return;
