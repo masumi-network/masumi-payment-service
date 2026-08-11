@@ -29,8 +29,18 @@ function isScriptAddress(address: string): boolean {
 	return address.startsWith('addr_test1w') || address.startsWith('addr1w');
 }
 
-/** Bounded so one tick cannot spend its whole budget on chain lookups. */
-const MAX_RECOVERY_CHECKS_PER_TICK = 20;
+/**
+ * Bounded so one tick cannot spend its whole budget on chain lookups: each
+ * candidate costs one Blockfrost read for the deposit plus one per consumer.
+ *
+ * Raised from 20 when Pending joined Confirmed and Failed in the candidate set.
+ * Pending is the larger and more frequently touched pool, and rows sort oldest
+ * first, so at the old bound a backlog of still-Pending deposits could fill a
+ * tick before a Confirmed row waiting to be marked Absorbed got a look. The
+ * wider bound keeps the classes from starving each other without letting a tick
+ * run away on chain calls.
+ */
+const MAX_RECOVERY_CHECKS_PER_TICK = 40;
 
 /**
  * Whether every output of this deposit transaction has been spent.

@@ -25,7 +25,7 @@ import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 import { readHeadParamDrift } from '@/services/hydra-host/param-drift';
 import { describeL2FundingBlock } from '@/utils/hydra/l2-funding-block';
 import { describeCloseWithActiveWork } from '@/utils/hydra/close-with-active-work';
-import { classifyInitObservation } from '@/utils/hydra/init-observation';
+import { classifyInitObservation, type InitObservationVerdict } from '@/utils/hydra/init-observation';
 import { logger } from '@masumi/payment-core/logger';
 import {
 	buildValidatedHydraCommit,
@@ -1139,6 +1139,9 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				throw createHttpError(502, 'Failed to connect to Hydra node');
 			}
 
+			// True on the normal path and cleared when the timeout diagnosis has
+			// already drained frames, so the drain below runs exactly once per path.
+			let needsPostInitFlush = true;
 			try {
 				await hydraHead.init();
 			} catch (initError) {
@@ -1148,34 +1151,52 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 				// the node is behind and has not reached that block yet. Ask the node
 				// where it thinks it is before blaming it.
 				//
-				// Drained first, because a frame that arrived while init was giving up
-				// makes this no failure at all.
-				await cm.flushHeadStatus(head.id);
-				const [observed, nodeState] = await Promise.all([
-					prisma.hydraHead.findUnique({ where: { id: head.id }, select: { status: true } }),
-					readParticipantNodeState(head.LocalParticipant.id),
-				]);
-				const verdict = classifyInitObservation({
-					headStatus: observed?.status ?? head.status,
-					chainSynced: nodeState.chainSynced,
-					driftSeconds: nodeState.driftSeconds,
-				});
-
-				if (verdict.kind === 'observed') {
-					logger.info('[Hydra] Init was observed after the wait ran out; head is already moving', {
-						hydraHeadId: head.id,
-						status: observed?.status,
-					});
-				} else if (verdict.kind === 'awaiting-node') {
-					// No head error recorded: nothing failed, and a CommandFailed here
-					// is exactly the self-resolving error that teaches operators to
-					// disregard the ones that matter.
-					logger.warn(`[Hydra] ${verdict.message}`, {
-						hydraHeadId: head.id,
+				// The whole diagnosis is guarded. It drains frames, reads the row and
+				// asks the Host, and a failure in any of those must never swallow the
+				// original init error or surface as a 500: diagnosis cannot be allowed
+				// to fail louder than the thing it diagnoses. Anything that throws here
+				// falls back to the conclusion this branch drew before it existed.
+				let verdict: InitObservationVerdict;
+				try {
+					// Drained first, because a frame that arrived while init was giving
+					// up makes this no failure at all.
+					await cm.flushHeadStatus(head.id);
+					const [observed, nodeState] = await Promise.all([
+						prisma.hydraHead.findUnique({ where: { id: head.id }, select: { status: true } }),
+						readParticipantNodeState(head.LocalParticipant.id),
+					]);
+					verdict = classifyInitObservation({
+						headStatus: observed?.status ?? head.status,
+						chainSynced: nodeState.chainSynced,
 						driftSeconds: nodeState.driftSeconds,
 					});
+					if (verdict.kind === 'observed') {
+						logger.info('[Hydra] Init was observed after the wait ran out; head is already moving', {
+							hydraHeadId: head.id,
+							status: observed?.status,
+						});
+					} else if (verdict.kind === 'awaiting-node') {
+						logger.warn(`[Hydra] ${verdict.message}`, {
+							hydraHeadId: head.id,
+							driftSeconds: nodeState.driftSeconds,
+						});
+					}
+				} catch (diagnosisError) {
+					logger.warn('[Hydra] Could not diagnose an Init timeout; treating it as a failure', {
+						hydraHeadId: head.id,
+						diagnosisError: getErrorMessage(diagnosisError),
+					});
+					verdict = { kind: 'failed' };
+				}
+
+				if (verdict.kind === 'awaiting-node') {
+					// No head error recorded: nothing failed, and a CommandFailed here
+					// is exactly the self-resolving error that teaches operators to
+					// disregard the ones that matter. The message tells the operator not
+					// to re-post, since two Inits race for the same seed input.
 					throw createHttpError(504, verdict.message);
-				} else {
+				}
+				if (verdict.kind === 'failed') {
 					// Leave the head Idle (no state regression) and return an actionable
 					// 504 so the operator retries rather than seeing a generic hang/500.
 					await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, initError, 'Init');
@@ -1184,12 +1205,14 @@ export const initHeadPost = adminAuthenticatedEndpointFactory.build({
 						initError instanceof Error ? initError.message : 'Init did not confirm on-chain in time',
 					);
 				}
+				// observed: fall through to the normal post-init flow, already drained.
+				needsPostInitFlush = false;
 			}
 
 			// Hydra 2.3 can advance directly to Open before init() resolves. Drain
 			// observed status frames and return the durable state instead of blindly
 			// regressing it to Initializing.
-			await cm.flushHeadStatus(head.id);
+			if (needsPostInitFlush) await cm.flushHeadStatus(head.id);
 			try {
 				await verifyPersistedHydraHeadOnChain(head.id);
 			} catch (verificationError) {
