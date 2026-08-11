@@ -90,6 +90,7 @@ function connectableConfiguredHead(id = 'head-1') {
 			nodeHttpUrl: 'http://127.0.0.1:4001',
 			nodeUrl: 'ws://127.0.0.1:4001',
 			HydraSecretKey: { hydraSK: encrypt(localSigningKey) },
+			HydraHost: { encryptedUserToken: encrypt('host-user-token'), allowInsecureHttp: true },
 		},
 		RemoteParticipants: [
 			{
@@ -524,6 +525,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 				nodeHttpUrl: 'http://127.0.0.1:4001',
 				nodeUrl: 'ws://127.0.0.1:4001',
 				HydraSecretKey: { hydraSK: encrypt(localSigningKey) },
+				HydraHost: { encryptedUserToken: encrypt('host-user-token'), allowInsecureHttp: true },
 			},
 			RemoteParticipants: [
 				{

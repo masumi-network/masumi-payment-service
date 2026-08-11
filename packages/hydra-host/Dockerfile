@@ -1,3 +1,4 @@
+# check=skip=InvalidBaseImagePlatform
 # Hydra Host — supervises one hydra-node process per Hydra Head and fronts them
 # with a token-gated control plane.
 #
@@ -12,17 +13,21 @@
 #     snapshot round before stopping; Docker's would not.
 
 ARG HYDRA_VERSION=2.3.0
+ARG HYDRA_SHA256=89e84b5005154a6275ee171e432db38084777a5d3d02aa72d3562d827f76a456
 # Must match the etcd that hydra-node ships internally, confirmed by running the
 # binary's own extracted copy: `etcd Version: 3.5.25`. Using --use-system-etcd
 # with a mismatched build risks subtle raft incompatibilities.
 ARG ETCD_VERSION=3.5.25
+ARG ETCD_SHA256=168af82b59772e1811a9af7b358d42f5c6df44e0d9767afb006ecf12c4bbd607
 
 # ---------------------------------------------------------------------------
 # Fetch the pinned hydra-node and etcd binaries.
 # ---------------------------------------------------------------------------
-FROM debian:bookworm-slim AS binaries
+FROM debian:bookworm-slim@sha256:63a496b5d3b99214b39f5ed70eb71a61e590a77979c79cbee4faf991f8c0783e AS binaries
 ARG HYDRA_VERSION
+ARG HYDRA_SHA256
 ARG ETCD_VERSION
+ARG ETCD_SHA256
 ARG TARGETARCH
 
 RUN apt-get update \
@@ -46,11 +51,13 @@ RUN set -eux; \
 		amd64) HYDRA_ASSET="hydra-x86_64-linux-${HYDRA_VERSION}.zip"; ETCD_ARCH="amd64" ;; \
 		*) echo "hydra-node publishes no linux/${TARGETARCH} build; this image is linux/amd64 only" >&2; exit 1 ;; \
 	esac; \
-	curl -fsSL -o hydra.zip \
+	curl --proto '=https' --tlsv1.2 -fsSL -o hydra.zip \
 		"https://github.com/cardano-scaling/hydra/releases/download/${HYDRA_VERSION}/${HYDRA_ASSET}"; \
+	echo "${HYDRA_SHA256}  hydra.zip" | sha256sum -c -; \
 	unzip -j hydra.zip -d /out; \
-	curl -fsSL -o etcd.tar.gz \
+	curl --proto '=https' --tlsv1.2 -fsSL -o etcd.tar.gz \
 		"https://github.com/etcd-io/etcd/releases/download/v${ETCD_VERSION}/etcd-v${ETCD_VERSION}-linux-${ETCD_ARCH}.tar.gz"; \
+	echo "${ETCD_SHA256}  etcd.tar.gz" | sha256sum -c -; \
 	tar -xzf etcd.tar.gz --strip-components=1 \
 		-C /out "etcd-v${ETCD_VERSION}-linux-${ETCD_ARCH}/etcd"; \
 	chmod +x /out/hydra-node /out/etcd; \
@@ -60,7 +67,7 @@ RUN set -eux; \
 # ---------------------------------------------------------------------------
 # Build the control plane.
 # ---------------------------------------------------------------------------
-FROM node:20-slim AS control-plane
+FROM node:24-bookworm-slim@sha256:a09aabc645e86e81e23dab78e0c0f2eaa233cab4277c7188232181a1a8bd5d39 AS control-plane
 WORKDIR /build
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -77,7 +84,7 @@ RUN pnpm --filter @masumi/hydra-host run build
 # ---------------------------------------------------------------------------
 # Runtime.
 # ---------------------------------------------------------------------------
-FROM node:20-slim AS runtime
+FROM node:24-bookworm-slim@sha256:a09aabc645e86e81e23dab78e0c0f2eaa233cab4277c7188232181a1a8bd5d39 AS runtime
 ARG HYDRA_VERSION
 ARG ETCD_VERSION
 
@@ -113,7 +120,7 @@ RUN groupadd --system --gid 10001 hydra \
 # Durable state lives here and nowhere else, so the image stays
 # orchestrator-agnostic: a droplet bind mount today, a PVC under DOKS later.
 VOLUME ["/data"]
-EXPOSE 8443
+EXPOSE 8443 8444
 
 # SIGTERM reaches the supervisor directly, which drains every node before
 # exiting. Run with a generous --stop-timeout (Docker's 10s default would

@@ -43,6 +43,7 @@ export async function readParticipantNodeState(localParticipantId: string): Prom
 			participant.HydraHost.baseUrl,
 			decrypt(participant.HydraHost.encryptedUserToken),
 			participant.hostNodeId,
+			{ allowInsecureHttp: participant.HydraHost.allowInsecureHttp },
 		);
 		if (health.usable) {
 			return { state: health.state, isReady: true, reason: null };

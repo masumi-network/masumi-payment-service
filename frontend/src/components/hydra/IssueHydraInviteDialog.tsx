@@ -9,7 +9,7 @@
  *
  * And the result is the whole point. The code is what the operator carries to
  * the counterparty, so the dialog stays open on it, offers a copy, and says
- * plainly that it is not a secret but is single-use.
+ * plainly that it is a bearer capability and is single-use.
  */
 
 import { useMemo, useState } from 'react';
@@ -462,9 +462,11 @@ export function IssueHydraInviteDialog({
                 {issued.code}
               </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Send it however you normally reach them. Nothing in it is secret, but it works once:
-              whoever redeems it first becomes your counterparty.
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+              <AlertTriangle className="mr-1 inline h-3 w-3" />
+              Treat this as a single-use bearer capability. Its contents are public and signed, but
+              anyone who obtains it can redeem it first and become your counterparty. Send it
+              through a channel you trust.
             </p>
             <p className="text-xs text-muted-foreground">
               Expires {new Date(issued.expiresAt).toLocaleString()}.

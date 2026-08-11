@@ -3,16 +3,17 @@
  *
  * Deliberately less than the payment service knows. The Host never verifies a
  * signature: doing so would mean pulling Mesh and its CSL bindings into an
- * image whose whole point is to be small, and would drag this package into the
- * V1/V2 mesh pinning rules for no gain. The Host does the cheap checks — is
- * this a nonce I issued, is it unredeemed, is it unexpired, is this signer one
- * my operator has a relation with — and stores the signature verbatim for the
- * payment service to verify when it polls.
+ * image whose whole point is to be small. The Host instead accepts redemption
+ * only for an issued, unspent, unexpired nonce, validates every value it later
+ * passes to another parser, and stores the signature for the payment service to
+ * verify when it polls.
  *
  * That split is what keeps the Exchange Plane safe to expose: everything it can
  * do without cryptography is reversible, and everything irreversible waits for
  * a service that holds keys.
  */
+
+import { parsePeerAdvertise } from '../peer-address.js';
 
 /** Public material one side contributes to a head. */
 export type ExchangeMaterial = {
@@ -50,21 +51,6 @@ export type InviteRecord = {
 	startError: string | null;
 };
 
-/**
- * An invite that arrived from a counterparty for the operator to consider.
- *
- * Only accepted from a wallet on the allow-list, so this is not an open write
- * buffer: a stranger reaches the operator by pasting, where a human approves.
- */
-export type InboundInviteRecord = {
-	nonce: string;
-	receivedAt: number;
-	/** The signed payload, opaque here and verified by the payment service. */
-	payload: string;
-	signature: ExchangeSignature;
-	issuerWalletAddress: string;
-};
-
 export function isExchangeMaterial(value: unknown): value is ExchangeMaterial {
 	if (typeof value !== 'object' || value === null) {
 		return false;
@@ -75,6 +61,7 @@ export function isExchangeMaterial(value: unknown): value is ExchangeMaterial {
 		typeof candidate.hydraVerificationKey === 'string' &&
 		typeof candidate.cardanoVerificationKey === 'string' &&
 		typeof candidate.advertise === 'string' &&
+		parsePeerAdvertise(candidate.advertise) !== null &&
 		typeof candidate.exchangeUrl === 'string'
 	);
 }

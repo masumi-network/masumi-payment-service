@@ -27,6 +27,7 @@ export const hydraHostSchema = z
 		name: z.string(),
 		network: z.nativeEnum(Network),
 		baseUrl: z.string(),
+		allowInsecureHttp: z.boolean(),
 		publicPeerHost: z.string(),
 		/** Presence only — the token itself is never returned. */
 		hasAdminToken: z.boolean(),
@@ -66,10 +67,11 @@ export const listHydraHostsGet = adminAuthenticatedEndpointFactory.build({
 export const registerHydraHostSchemaInput = z.object({
 	name: z.string().min(1).max(120).describe('Operator-facing label'),
 	network: z.nativeEnum(Network),
-	baseUrl: z
-		.string()
-		.max(250)
-		.describe('Control-plane URL, e.g. https://hydra1.example.com. TLS terminates in front of the Host.'),
+	baseUrl: z.string().max(250).describe('Control-plane URL, e.g. https://hydra1.example.com. HTTPS is recommended.'),
+	allowInsecureHttp: z
+		.boolean()
+		.default(false)
+		.describe('Explicitly allow bearer tokens over HTTP. Use only on a separately secured network.'),
 	publicPeerHost: z
 		.string()
 		.min(1)
@@ -107,6 +109,7 @@ export const updateHydraHostSchemaInput = z.object({
 		.describe('Draining keeps serving existing heads (they cannot be moved) but takes no new placements'),
 	userToken: tokenSchema.optional(),
 	adminToken: tokenSchema.nullable().optional().describe('Null clears the admin token, disabling provisioning'),
+	allowInsecureHttp: z.boolean().optional().describe('Explicitly allow bearer tokens over this Host HTTP connection'),
 });
 
 export const updateHydraHostPatch = adminAuthenticatedEndpointFactory.build({

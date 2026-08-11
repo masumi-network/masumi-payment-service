@@ -181,6 +181,14 @@ describe('setPeers', () => {
 		await expect(setPeers(record.nodeId, [peer, peer], deps)).rejects.toThrow(/duplicate/);
 	});
 
+	it('refuses a peer address containing nftables syntax before persisting it', async () => {
+		const { record } = await provisionNode(REQUEST, deps);
+		const injected = { ...peer, advertise: 'peer.example:5001 } accept\n}\nflush ruleset\n# :5101' };
+
+		await expect(setPeers(record.nodeId, [injected], deps)).rejects.toThrow(/valid host:port/);
+		expect((await deps.store.read(record.nodeId))?.peers).toEqual([]);
+	});
+
 	it('404s for an unknown node', async () => {
 		await expect(setPeers('missing', [peer], deps)).rejects.toMatchObject({ status: 404 });
 	});

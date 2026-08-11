@@ -32,7 +32,8 @@ import {
 	type HeadPeriods,
 } from './provisioning';
 import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
-import { postRedemption } from './exchange-client';
+import { assertExchangeTransportAllowed, postRedemption, resolveExchangeTarget } from './exchange-client';
+import { expectedHostCapabilitiesForNetwork } from '@/services/hydra-host/compatibility';
 
 type WalletContext = {
 	id: string;
@@ -196,11 +197,16 @@ export async function mintHeadInvite(input: {
 	// It cannot check a signature and has no use for one, and keeping the
 	// material out of it means a Host compromise reveals nothing about who we
 	// are negotiating with.
-	await registerInviteOnHost(node.hostBaseUrl, node.adminToken, {
-		nonce,
-		hostNodeId: node.nodeId,
-		expiresAt: expiresAt.getTime(),
-	});
+	await registerInviteOnHost(
+		node.hostBaseUrl,
+		node.adminToken,
+		{
+			nonce,
+			hostNodeId: node.nodeId,
+			expiresAt: expiresAt.getTime(),
+		},
+		{ allowInsecureHttp: node.allowInsecureHttp },
+	);
 
 	// Deliberately NOT funded here. The issuer never posts the Init — the
 	// redeemer does — so this node needs nothing until it posts its own commit,
@@ -257,6 +263,8 @@ export async function redeemHeadInvite(input: {
 	invite: DecodedInvite;
 	localHotWalletId: string;
 	autoFund?: boolean;
+	allowInsecureExchangeHttp?: boolean;
+	allowPrivateExchangeNetwork?: boolean;
 }): Promise<RedeemedInvite> {
 	const { payload, signature } = input.invite;
 	const wallet = await loadWallet(input.localHotWalletId);
@@ -291,6 +299,22 @@ export async function redeemHeadInvite(input: {
 	if (existing !== null) {
 		throw createHttpError(409, 'this invite has already been redeemed here');
 	}
+	const exchangeTransport = {
+		allowInsecureHttp: input.allowInsecureExchangeHttp === true,
+		allowPrivateNetwork: input.allowPrivateExchangeNetwork === true,
+	};
+	// Reject before reserving a node. A missing HTTP opt-in is an operator
+	// decision, not a provisioning failure that should strand a port and keys.
+	assertExchangeTransportAllowed(payload.exchangeUrl, exchangeTransport);
+	await resolveExchangeTarget(payload.exchangeUrl, exchangeTransport);
+
+	// The issuer signed this fingerprint. Compare it to our own reviewed
+	// manifest before reserving keys and a peer port, then the reservation path
+	// independently checks the local Host against the same manifest.
+	const expectedLedgerParamsHash = expectedHostCapabilitiesForNetwork(wallet.network).ledgerParamsHash;
+	if (payload.ledgerParamsHash === null || payload.ledgerParamsHash !== expectedLedgerParamsHash) {
+		throw createHttpError(409, 'the invite ledger protocol parameters do not match this service');
+	}
 
 	const periods: HeadPeriods = {
 		contestationPeriodSeconds: payload.contestationPeriodSeconds,
@@ -298,6 +322,11 @@ export async function redeemHeadInvite(input: {
 		unsyncedPeriodSeconds: payload.unsyncedPeriodSeconds,
 	};
 	const node = await reserveNodeForExchange(wallet.network, wallet.id, payload.nonce, periods);
+	if (node.ledgerParamsHash !== payload.ledgerParamsHash) {
+		throw createHttpError(409, 'the selected local Hydra Host does not match the invite ledger protocol parameters');
+	}
+	// The port comes from the Host's own capabilities, never from the caller: a
+	// redeemer that guesses it points the exchange at whatever is listening.
 	const exchangeUrl = exchangeUrlForHost(node.hostBaseUrl, requireExchangePort(node));
 
 	const redemptionPayload = buildHydraRedemptionPayload({
@@ -336,30 +365,42 @@ export async function redeemHeadInvite(input: {
 		});
 	}
 
-	await postRedemption(payload.exchangeUrl, {
-		nonce: payload.nonce,
-		redeemer: {
-			walletAddress: redemptionPayload.redeemerWalletAddress,
-			hydraVerificationKey: redemptionPayload.hydraVerificationKey,
-			cardanoVerificationKey: redemptionPayload.cardanoVerificationKey,
-			advertise: redemptionPayload.advertise,
-			exchangeUrl: redemptionPayload.exchangeUrl,
+	await postRedemption(
+		payload.exchangeUrl,
+		{
+			nonce: payload.nonce,
+			redeemer: {
+				walletAddress: redemptionPayload.redeemerWalletAddress,
+				hydraVerificationKey: redemptionPayload.hydraVerificationKey,
+				cardanoVerificationKey: redemptionPayload.cardanoVerificationKey,
+				advertise: redemptionPayload.advertise,
+				exchangeUrl: redemptionPayload.exchangeUrl,
+			},
+			signature: redemptionSignature,
 		},
-		signature: redemptionSignature,
-	});
+		exchangeTransport,
+	);
 
 	// Our side of the cluster, which nothing else will do for us. The issuer's
 	// Host configures and starts *its* node when the redemption lands; the
 	// mirror of that is ours to perform, and without it the node sits peerless
 	// and stopped while both sides believe a head exists.
-	await setHostNodePeers(node.hostBaseUrl, node.adminToken, node.nodeId, [
-		{
-			advertise: payload.advertise,
-			hydraVerificationKey: payload.hydraVerificationKey,
-			cardanoVerificationKey: payload.cardanoVerificationKey,
-		},
-	]);
-	await startHostNode(node.hostBaseUrl, node.adminToken, node.nodeId);
+	await setHostNodePeers(
+		node.hostBaseUrl,
+		node.adminToken,
+		node.nodeId,
+		[
+			{
+				advertise: payload.advertise,
+				hydraVerificationKey: payload.hydraVerificationKey,
+				cardanoVerificationKey: payload.cardanoVerificationKey,
+			},
+		],
+		{ allowInsecureHttp: node.allowInsecureHttp },
+	);
+	await startHostNode(node.hostBaseUrl, node.adminToken, node.nodeId, {
+		allowInsecureHttp: node.allowInsecureHttp,
+	});
 
 	const head = await createHeadFromExchange({
 		network: wallet.network,

@@ -19,7 +19,7 @@ import { runX402LowBalanceMonitoringCycle } from '@/services/x402/low-balance-mo
 import type { JobDefinition } from '@/services/shared';
 import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
-import { pollHydraRedemptions, pushCounterpartyAllowlists, reapExpiredInvites } from '@/services/hydra-invite/adoption';
+import { pollHydraRedemptions, reapExpiredInvites } from '@/services/hydra-invite/adoption';
 import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service';
 import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
@@ -164,18 +164,6 @@ export const scheduledJobs: JobDefinition[] = [
 		// may not be reachable at all. So the service asks.
 		run: async () => {
 			await pollHydraRedemptions();
-		},
-	},
-	{
-		initialDelayMs: 20000,
-		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
-		startMessage: 'Starting Hydra counterparty allow-list push',
-		finishMessage: 'Finished Hydra counterparty allow-list push',
-		// A Host with a stale allow-list silently refuses a legitimate
-		// counterparty, and the staleness is invisible from this side — so it is
-		// re-pushed rather than reconciled.
-		run: async () => {
-			await pushCounterpartyAllowlists();
 		},
 	},
 	{

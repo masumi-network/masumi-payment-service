@@ -25,6 +25,7 @@ import {
 	provisionNodeOnHost,
 } from '@/services/hydra-host/client';
 import { assertHostCompatible, selectPlacementHost } from '@/services/hydra-host/placement';
+import { expectedHostCapabilitiesForNetwork } from '@/services/hydra-host/compatibility';
 import { deriveNodeCardanoVkey } from './node-keys';
 
 export type HeadPeriods = {
@@ -89,6 +90,7 @@ export type ReservedNode = {
 	hostBaseUrl: string;
 	/** Where this Host redeems invites. From the Host itself, never assumed. */
 	hostExchangePort: number | null;
+	allowInsecureHttp: boolean;
 	adminToken: string;
 	nodeId: string;
 	advertise: string;
@@ -103,6 +105,7 @@ export type ReservedNode = {
 export async function selectHostForNetwork(network: Network): Promise<{
 	id: string;
 	baseUrl: string;
+	allowInsecureHttp: boolean;
 	adminToken: string;
 	ledgerParamsHash: string | null;
 	exchangePort: number | null;
@@ -126,6 +129,7 @@ export async function selectHostForNetwork(network: Network): Promise<{
 	return {
 		id: row.id,
 		baseUrl: row.baseUrl,
+		allowInsecureHttp: row.allowInsecureHttp,
 		adminToken: decrypt(row.encryptedAdminToken),
 		ledgerParamsHash: row.ledgerParamsHash,
 		exchangePort: row.exchangePort,
@@ -153,9 +157,10 @@ export async function reserveNodeForExchange(
 	// A Host that refuses our credential is the Host's answer, not an internal
 	// fault — surfacing it as a 500 sent operators looking for a bug in this
 	// service when the stored token was simply wrong for that Host.
+	const transport = { allowInsecureHttp: host.allowInsecureHttp };
 	let capabilities;
 	try {
-		capabilities = await fetchHostCapabilities(host.baseUrl, host.adminToken);
+		capabilities = await fetchHostCapabilities(host.baseUrl, host.adminToken, transport);
 	} catch (error) {
 		if (error instanceof HydraHostRequestError && (error.status === 401 || error.status === 403)) {
 			throw createHttpError(
@@ -165,10 +170,19 @@ export async function reserveNodeForExchange(
 		}
 		throw error;
 	}
-	assertHostCompatible(capabilities, { network: capabilities.network, ledgerParamsHash: host.ledgerParamsHash });
+	// The reviewed expectation for this network pins the hydra release and the
+	// script catalogue. The ledger hash is taken per Host when we have one stored,
+	// because a Host may legitimately run its own reviewed ledger — falling back
+	// to this service's expectation, never to the probe's own answer, which would
+	// compare the Host against itself and check nothing.
+	const expected = expectedHostCapabilitiesForNetwork(network);
+	assertHostCompatible(capabilities, {
+		...expected,
+		ledgerParamsHash: host.ledgerParamsHash ?? expected.ledgerParamsHash,
+	});
 
-	const provisioned = await provisionNodeOnHost(host.baseUrl, host.adminToken, nonce, periods);
-	const urls = hostNodeUrls(host.baseUrl, provisioned.nodeId);
+	const provisioned = await provisionNodeOnHost(host.baseUrl, host.adminToken, nonce, periods, transport);
+	const urls = hostNodeUrls(host.baseUrl, provisioned.nodeId, transport);
 
 	// A replayed provision returns no secrets, because the Host discloses them
 	// exactly once. That is not an error — it means this nonce already reserved a
@@ -214,7 +228,7 @@ export async function reserveNodeForExchange(
 			},
 		});
 		localParticipantId = participant.id;
-		await acknowledgeEscrowOnHost(host.baseUrl, host.adminToken, provisioned.nodeId);
+		await acknowledgeEscrowOnHost(host.baseUrl, host.adminToken, provisioned.nodeId, transport);
 	}
 
 	return {
@@ -223,12 +237,13 @@ export async function reserveNodeForExchange(
 		// Read from the capabilities probe above when the row had none, so the
 		// very first invite on a freshly connected Host is already correct.
 		hostExchangePort: host.exchangePort ?? capabilities.exchangePort,
+		allowInsecureHttp: host.allowInsecureHttp,
 		adminToken: host.adminToken,
 		nodeId: provisioned.nodeId,
 		advertise: provisioned.advertise,
 		hydraVerificationKey: provisioned.hydraVerificationKey,
 		cardanoVerificationKey: provisioned.cardanoVerificationKey,
-		ledgerParamsHash: host.ledgerParamsHash,
+		ledgerParamsHash: capabilities.ledgerParamsHash,
 		localParticipantId,
 	};
 }

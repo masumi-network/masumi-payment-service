@@ -6022,6 +6022,9 @@ export const HydraHostSchema = {
         baseUrl: {
             type: 'string'
         },
+        allowInsecureHttp: {
+            type: 'boolean'
+        },
         publicPeerHost: {
             type: 'string'
         },
@@ -6068,6 +6071,7 @@ export const HydraHostSchema = {
         'name',
         'network',
         'baseUrl',
+        'allowInsecureHttp',
         'publicPeerHost',
         'hasAdminToken',
         'hydraVersion',
@@ -6398,14 +6402,36 @@ export const HydraHeadSchema = {
                 Wallet: {
                     type: 'object',
                     properties: {
+                        walletVkey: {
+                            type: 'string'
+                        },
                         walletAddress: {
                             type: 'string'
+                        },
+                        collectionAddress: {
+                            type: 'string',
+                            nullable: true
+                        },
+                        note: {
+                            type: 'string',
+                            nullable: true
+                        },
+                        type: {
+                            type: 'string',
+                            enum: [
+                                'Selling',
+                                'Purchasing',
+                                'Funding'
+                            ]
                         }
                     },
                     required: [
-                        'walletAddress'
-                    ],
-                    description: 'The settling wallet, by address'
+                        'walletVkey',
+                        'walletAddress',
+                        'collectionAddress',
+                        'note',
+                        'type'
+                    ]
                 },
                 nodeUrl: {
                     type: 'string'
@@ -6438,6 +6464,7 @@ export const HydraHeadSchema = {
                 'id',
                 'createdAt',
                 'walletId',
+                'Wallet',
                 'nodeUrl',
                 'nodeHttpUrl',
                 'hasCommitted',
@@ -6465,14 +6492,17 @@ export const HydraHeadSchema = {
                     Wallet: {
                         type: 'object',
                         properties: {
+                            walletVkey: {
+                                type: 'string'
+                            },
                             walletAddress: {
                                 type: 'string'
                             }
                         },
                         required: [
+                            'walletVkey',
                             'walletAddress'
-                        ],
-                        description: 'The settling wallet, by address'
+                        ]
                     },
                     advertise: {
                         type: 'string'
@@ -6495,6 +6525,7 @@ export const HydraHeadSchema = {
                     'id',
                     'createdAt',
                     'walletId',
+                    'Wallet',
                     'advertise',
                     'hasCommitted',
                     'commitTxHash',

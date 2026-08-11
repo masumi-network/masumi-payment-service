@@ -22,6 +22,13 @@ describe('normalizeHostBaseUrl', () => {
 		expect(normalizeHostBaseUrl('https://hydra1.example.com:8443')).toBe('https://hydra1.example.com:8443');
 	});
 
+	it('requires an explicit opt-in for every HTTP Host URL', () => {
+		expect(() => normalizeHostBaseUrl('http://10.0.0.8:8443')).toThrow(/allowInsecureHttp/);
+		expect(() => normalizeHostBaseUrl('http://127.0.0.1:8443')).toThrow(/allowInsecureHttp/);
+		expect(normalizeHostBaseUrl('http://127.0.0.1:8443', true)).toBe('http://127.0.0.1:8443');
+		expect(normalizeHostBaseUrl('http://hydra.internal:8443', true)).toBe('http://hydra.internal:8443');
+	});
+
 	// A credential in a URL ends up in logs, metrics and error messages; the
 	// token belongs in a header.
 	it('refuses embedded credentials', () => {

@@ -23,6 +23,7 @@ export type HydraHost = {
   name: string;
   network: 'Preprod' | 'Mainnet';
   baseUrl: string;
+  allowInsecureHttp: boolean;
   publicPeerHost: string;
   /** Presence only; the token itself is never returned by the API. */
   hasAdminToken: boolean;
@@ -44,6 +45,7 @@ export type ConnectHydraHostRequest = {
   name: string;
   network: 'Preprod' | 'Mainnet';
   baseUrl: string;
+  allowInsecureHttp: boolean;
   /** Defaults to the hostname in baseUrl, which is right unless peers dial a different name. */
   publicPeerHost?: string;
   /** A lower-privilege runtime key. Omitted means the admin key is used for runtime calls too. */
@@ -56,6 +58,7 @@ export type UpdateHydraHostRequest = {
   id: string;
   name?: string;
   status?: HydraHostStatus;
+  allowInsecureHttp?: boolean;
   userToken?: string;
   /** Null clears the admin token, which disables provisioning on this node. */
   adminToken?: string | null;

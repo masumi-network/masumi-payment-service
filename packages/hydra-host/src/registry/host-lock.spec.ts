@@ -33,16 +33,22 @@ afterEach(async () => {
 	await fs.rm(dataDir, { recursive: true, force: true });
 });
 
+async function currentHolder(): Promise<LockHolder | null> {
+	const lockDirectory = path.join(dataDir, 'host.lock');
+	const owner = parseLockHolder(await fs.readFile(path.join(lockDirectory, 'owner.json'), 'utf8'));
+	if (owner?.ownerToken === undefined) {
+		return owner;
+	}
+	const heartbeatAt = (await fs.readFile(path.join(lockDirectory, `heartbeat.${owner.ownerToken}`), 'utf8')).trim();
+	return { ...owner, heartbeatAt };
+}
+
 describe('parseLockHolder', () => {
 	it('reads a well-formed holder', () => {
-		const parsed = parseLockHolder(JSON.stringify(holder()));
-		expect(parsed?.hostId).toBe('container-a');
-		expect(parsed?.heartbeatAt).toBeDefined();
+		expect(parseLockHolder(JSON.stringify(holder()))?.hostId).toBe('container-a');
 	});
 
-	// Locks written before heartbeats existed must age out rather than read as
-	// permanently fresh.
-	it('falls back to acquiredAt when a lock predates heartbeats', () => {
+	it('falls back to acquiredAt when a legacy lock predates heartbeats', () => {
 		const legacy = { pid: 1, hostId: 'old', acquiredAt: '2026-07-29T11:00:00.000Z' };
 		expect(parseLockHolder(JSON.stringify(legacy))?.heartbeatAt).toBe('2026-07-29T11:00:00.000Z');
 	});
@@ -50,48 +56,31 @@ describe('parseLockHolder', () => {
 	it('returns null for junk or incomplete content', () => {
 		expect(parseLockHolder('not json')).toBeNull();
 		expect(parseLockHolder('{"pid":42}')).toBeNull();
-		expect(parseLockHolder('[]')).toBeNull();
 	});
 });
 
 describe('assessHolder', () => {
-	it('respects a lock whose heartbeat is fresh', () => {
-		expect(assessHolder(holder(), 'container-b', NOW)).toEqual({ live: true });
+	it('respects a fresh lock even when the hostname is the same', () => {
+		expect(assessHolder(holder({ hostId: 'container-b' }), 'container-b', NOW)).toEqual({ live: true });
 	});
 
-	/**
-	 * The regression this exists for: liveness used to be a pid check. In a
-	 * container the holder is pid 1 and pid 1 always exists in the reader's own
-	 * namespace, so a host killed ungracefully left a lock that every later
-	 * container read as live — and the Host could never boot again without
-	 * someone deleting the file by hand. Reproduced against a real container
-	 * before this changed.
-	 */
-	it('reclaims a lock left by a killed host, even though its pid looks alive', () => {
-		const killed = holder({ pid: 1, heartbeatAt: new Date(NOW - HEARTBEAT_STALE_AFTER_MS - 1).toISOString() });
+	it('reclaims a lock after its heartbeat lease expires', () => {
+		const killed = holder({ heartbeatAt: new Date(NOW - HEARTBEAT_STALE_AFTER_MS - 1).toISOString() });
 		expect(assessHolder(killed, 'container-b', NOW)).toMatchObject({ live: false });
 	});
 
-	// A restart of the same deployment is not a competing writer.
-	it('reclaims a lock belonging to our own host id', () => {
-		expect(assessHolder(holder({ hostId: 'container-b' }), 'container-b', NOW)).toMatchObject({ live: false });
-	});
-
-	it('reclaims a lock with an unusable heartbeat', () => {
-		expect(assessHolder(holder({ heartbeatAt: 'not-a-date' }), 'container-b', NOW)).toMatchObject({ live: false });
-	});
-
 	it('holds the boundary just under the staleness threshold', () => {
-		const justFresh = holder({ heartbeatAt: new Date(NOW - HEARTBEAT_STALE_AFTER_MS + 1_000).toISOString() });
-		expect(assessHolder(justFresh, 'container-b', NOW)).toEqual({ live: true });
+		const fresh = holder({ heartbeatAt: new Date(NOW - HEARTBEAT_STALE_AFTER_MS + 1_000).toISOString() });
+		expect(assessHolder(fresh, 'container-b', NOW)).toEqual({ live: true });
 	});
 });
 
 describe('HostLock', () => {
-	it('acquires on a fresh volume and writes a heartbeat', async () => {
+	it('acquires a fresh volume with an owner token and token-specific heartbeat', async () => {
 		await new HostLock(dataDir, 'host-a').acquire();
-		const parsed = parseLockHolder(await fs.readFile(path.join(dataDir, 'host.lock'), 'utf8'));
+		const parsed = await currentHolder();
 		expect(parsed?.hostId).toBe('host-a');
+		expect(parsed?.ownerToken).toBeDefined();
 		expect(parsed?.heartbeatAt).toBeDefined();
 	});
 
@@ -100,21 +89,36 @@ describe('HostLock', () => {
 		await expect(new HostLock(dataDir, 'host-b').acquire()).rejects.toThrow(HostLockError);
 	});
 
-	// The ungraceful-kill path: the previous holder never released.
-	it('lets a new host reclaim once the heartbeat goes stale', async () => {
+	it('refuses a second process even when it reports the same hostname', async () => {
+		await new HostLock(dataDir, 'host-a').acquire();
+		await expect(new HostLock(dataDir, 'host-a').acquire()).rejects.toThrow(HostLockError);
+	});
+
+	it('atomically lets one contender reclaim a stale lease', async () => {
 		await new HostLock(dataDir, 'host-a').acquire();
 		const muchLater = () => Date.now() + HEARTBEAT_STALE_AFTER_MS + 10_000;
-		await expect(new HostLock(dataDir, 'host-b', muchLater).acquire()).resolves.toBeUndefined();
+		const results = await Promise.allSettled([
+			new HostLock(dataDir, 'host-b', muchLater).acquire(),
+			new HostLock(dataDir, 'host-c', muchLater).acquire(),
+		]);
+		expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+		expect(['host-b', 'host-c']).toContain((await currentHolder())?.hostId);
 	});
 
-	it('lets the same host id reclaim immediately after an unclean exit', async () => {
-		await new HostLock(dataDir, 'host-a').acquire();
-		await expect(new HostLock(dataDir, 'host-a').acquire()).resolves.toBeUndefined();
-	});
-
-	it('reclaims a corrupted lock rather than deadlocking the host', async () => {
+	it('migrates a corrupted legacy file without overwriting a live directory lease', async () => {
 		await fs.writeFile(path.join(dataDir, 'host.lock'), 'garbage', 'utf8');
 		await expect(new HostLock(dataDir, 'host-b').acquire()).resolves.toBeUndefined();
+		expect((await currentHolder())?.hostId).toBe('host-b');
+	});
+
+	it('an old holder cannot release a replacement lease', async () => {
+		const old = new HostLock(dataDir, 'host-a');
+		await old.acquire();
+		const muchLater = () => Date.now() + HEARTBEAT_STALE_AFTER_MS + 10_000;
+		const replacement = new HostLock(dataDir, 'host-b', muchLater);
+		await replacement.acquire();
+		await old.release();
+		expect((await currentHolder())?.hostId).toBe('host-b');
 	});
 
 	it('releases so a later host can acquire', async () => {

@@ -63,7 +63,12 @@ describe('selectPlacementHost', () => {
 });
 
 describe('assertHostCompatible', () => {
-	const expected = { network: 'preprod', ledgerParamsHash: 'sha256:abc' };
+	const expected = {
+		network: 'preprod',
+		hydraVersion: '2.3.0',
+		scriptCatalogueHash: 'catalogue-hash',
+		ledgerParamsHash: 'sha256:abc',
+	};
 
 	it('accepts a matching host', () => {
 		expect(() => assertHostCompatible(capabilities(), expected)).not.toThrow();
@@ -74,6 +79,22 @@ describe('assertHostCompatible', () => {
 	it('refuses a host whose ledger params differ', () => {
 		expect(() => assertHostCompatible(capabilities({ ledgerParamsHash: 'sha256:other' }), expected)).toThrow(
 			/PPViewHashesDontMatch/,
+		);
+	});
+
+	it('refuses a different Hydra release', () => {
+		expect(() => assertHostCompatible(capabilities({ hydraVersion: '2.4.0' }), expected)).toThrow(/expects 2.3.0/);
+	});
+
+	it('refuses a different script catalogue', () => {
+		expect(() => assertHostCompatible(capabilities({ scriptCatalogueHash: 'other' }), expected)).toThrow(
+			/script catalogue/,
+		);
+	});
+
+	it('refuses a missing script catalogue', () => {
+		expect(() => assertHostCompatible(capabilities({ scriptCatalogueHash: null }), expected)).toThrow(
+			/reports no script catalogue/,
 		);
 	});
 
@@ -101,9 +122,5 @@ describe('assertHostCompatible', () => {
 		expect(() => assertHostCompatible(capabilities({ nodeSlots: { used: 32, capacity: 32 } }), expected)).toThrow(
 			/32\/32/,
 		);
-	});
-
-	it('skips the ledger comparison when the caller has no expectation yet', () => {
-		expect(() => assertHostCompatible(capabilities(), { network: 'preprod', ledgerParamsHash: null })).not.toThrow();
 	});
 });

@@ -9,6 +9,7 @@ import {
 	HydraErrorType,
 	HydraTopupStatus,
 	HydraInviteRole,
+	HotWalletType,
 	Network,
 	Prisma,
 	TransactionLayer,
@@ -61,7 +62,13 @@ export const localParticipantSchema = z.object({
 	id: z.string(),
 	createdAt: z.string(),
 	walletId: z.string(),
-	Wallet: z.object({ walletAddress: z.string() }).optional().describe('The settling wallet, by address'),
+	Wallet: z.object({
+		walletVkey: z.string(),
+		walletAddress: z.string(),
+		collectionAddress: z.string().nullable(),
+		note: z.string().nullable(),
+		type: z.nativeEnum(HotWalletType),
+	}),
 	nodeUrl: z.string(),
 	nodeHttpUrl: z.string(),
 	hasCommitted: z.boolean(),
@@ -90,7 +97,10 @@ export const remoteParticipantSchema = z.object({
 	id: z.string(),
 	createdAt: z.string(),
 	walletId: z.string(),
-	Wallet: z.object({ walletAddress: z.string() }).optional().describe('The settling wallet, by address'),
+	Wallet: z.object({
+		walletVkey: z.string(),
+		walletAddress: z.string(),
+	}),
 	/** Peer-plane `host:port`, as the counterparty advertised it. Not an API URL. */
 	advertise: z.string(),
 	hasCommitted: z.boolean(),
@@ -191,9 +201,15 @@ const headInclude = {
 			id: true,
 			createdAt: true,
 			walletId: true,
-			// The address, not just the id: the details view names the two wallets
-			// a head is between, and an operator cannot recognise a cuid.
-			Wallet: { select: { walletAddress: true } },
+			Wallet: {
+				select: {
+					walletVkey: true,
+					walletAddress: true,
+					collectionAddress: true,
+					note: true,
+					type: true,
+				},
+			},
 			nodeUrl: true,
 			nodeHttpUrl: true,
 			hasCommitted: true,
@@ -212,7 +228,7 @@ const headInclude = {
 			id: true,
 			createdAt: true,
 			walletId: true,
-			Wallet: { select: { walletAddress: true } },
+			Wallet: { select: { walletVkey: true, walletAddress: true } },
 			advertise: true,
 			hasCommitted: true,
 			commitTxHash: true,

@@ -65,7 +65,14 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { SearchInput } from '@/components/ui/search-input';
 import { Tabs } from '@/components/ui/tabs';
 import { CopyButton } from '@/components/ui/copy-button';
+import { WalletLink } from '@/components/ui/wallet-link';
+import {
+  WalletDetailsDialog,
+  type WalletWithBalance,
+} from '@/components/wallets/WalletDetailsDialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { useWalletsByVkeys } from '@/lib/queries/useWallets';
+import { toPaymentSourceWalletDetails } from '@/lib/wallet-lookup';
 import { cn, getExplorerUrl, shortenAddress } from '@/lib/utils';
 import { HeadStatusHint } from '@/components/hydra/hydra-hints';
 import { InfoHint } from '@/components/ui/info-hint';
@@ -429,10 +436,12 @@ function ParticipantCard({
   title,
   participant,
   network,
+  onWalletClick,
 }: {
   title: string;
   participant: HydraParticipant | HydraRemoteParticipant | null | undefined;
   network: string;
+  onWalletClick?: () => void;
 }) {
   if (!participant) {
     return (
@@ -441,6 +450,9 @@ function ParticipantCard({
       </div>
     );
   }
+
+  const verificationKeyId =
+    'hydraVerificationKeyId' in participant ? participant.hydraVerificationKeyId : null;
 
   return (
     <div className="space-y-4 rounded-md border bg-muted/10 p-4">
@@ -457,15 +469,24 @@ function ParticipantCard({
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        {/* The address, and the database id it used to print is gone: the id
-            names nothing an operator can look up, while the address is what
-            they settle with. */}
-        <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Wallet
-          </p>
-          <HydraWalletLink address={participant.Wallet?.walletAddress} network={network} />
+        <div>
+          <p className="text-xs text-muted-foreground">Wallet</p>
+          <WalletLink
+            address={participant.Wallet.walletAddress}
+            vkey={participant.Wallet.walletVkey}
+            network={network}
+            shorten={10}
+            onInternalClick={onWalletClick}
+          />
         </div>
+        {verificationKeyId && (
+          <DetailField
+            label="Hydra verification key"
+            value={verificationKeyId}
+            copyValue={verificationKeyId}
+            mono
+          />
+        )}
         {'advertise' in participant ? (
           <DetailField
             label="Peer address"
@@ -520,6 +541,33 @@ function HydraHeadDetailsDialog({
   onRequestLifecycle: (head: HydraHead, action: HydraLifecycleAction) => void;
   onBackUpKeys: (head: HydraHead) => void;
 }) {
+  const [selectedWalletForDetails, setSelectedWalletForDetails] =
+    useState<WalletWithBalance | null>(null);
+  const remoteWallet = head?.RemoteParticipants?.[0]?.Wallet;
+  const remoteWalletVkeys = useMemo(
+    () => head?.RemoteParticipants?.map((participant) => participant.Wallet.walletVkey) ?? [],
+    [head],
+  );
+  const internalWallets = useWalletsByVkeys(remoteWalletVkeys);
+  const localWalletForDetails = useMemo<WalletWithBalance | null>(() => {
+    const participant = head?.LocalParticipant;
+    if (!participant) return null;
+
+    return {
+      id: participant.walletId,
+      walletVkey: participant.Wallet.walletVkey,
+      walletAddress: participant.Wallet.walletAddress,
+      collectionAddress: participant.Wallet.collectionAddress,
+      note: participant.Wallet.note,
+      type: participant.Wallet.type,
+      balance: '0',
+      usdcxBalance: '0',
+    };
+  }, [head]);
+  const remoteWalletForDetails = remoteWallet
+    ? internalWallets.get(remoteWallet.walletVkey)
+    : undefined;
+
   if (!head) {
     return null;
   }
@@ -527,8 +575,17 @@ function HydraHeadDetailsDialog({
   const participantSummary = getParticipantSummary(head);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setSelectedWalletForDetails(null);
+        onOpenChange(nextOpen);
+      }}
+    >
+      <DialogContent
+        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        isPushedBack={!!selectedWalletForDetails}
+      >
         <DialogHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
@@ -557,11 +614,24 @@ function HydraHeadDetailsDialog({
             what decides whether a payment can use it at all. */}
         <div className="space-y-4">
           <HydraHeadWallets
-            localWalletAddress={head.LocalParticipant?.Wallet?.walletAddress}
-            remoteWalletAddress={head.RemoteParticipants?.[0]?.Wallet?.walletAddress}
+            localWallet={head.LocalParticipant?.Wallet}
             localCardanoVkey={head.LocalParticipant?.cardanoVkey}
+            remoteWallet={remoteWallet}
             remoteCardanoVkey={head.RemoteParticipants?.[0]?.cardanoVkey}
             network={network}
+            onLocalWalletClick={
+              localWalletForDetails
+                ? () => setSelectedWalletForDetails(localWalletForDetails)
+                : undefined
+            }
+            onRemoteWalletClick={
+              remoteWalletForDetails
+                ? () =>
+                    setSelectedWalletForDetails(
+                      toPaymentSourceWalletDetails(remoteWalletForDetails),
+                    )
+                : undefined
+            }
           />
 
           {head.LocalParticipant && !head.LocalParticipant.keysDisclosedAt && (
@@ -669,16 +739,32 @@ function HydraHeadDetailsDialog({
               title="Local participant"
               participant={head.LocalParticipant}
               network={network}
+              onWalletClick={
+                localWalletForDetails
+                  ? () => setSelectedWalletForDetails(localWalletForDetails)
+                  : undefined
+              }
             />
             {(head.RemoteParticipants ?? []).length > 0 ? (
-              (head.RemoteParticipants ?? []).map((participant, index) => (
-                <ParticipantCard
-                  key={participant.id}
-                  title={`Remote participant ${index + 1}`}
-                  participant={participant}
-                  network={network}
-                />
-              ))
+              (head.RemoteParticipants ?? []).map((participant, index) => {
+                const internalWallet = internalWallets.get(participant.Wallet.walletVkey);
+                return (
+                  <ParticipantCard
+                    key={participant.id}
+                    title={`Remote participant ${index + 1}`}
+                    participant={participant}
+                    network={network}
+                    onWalletClick={
+                      internalWallet
+                        ? () =>
+                            setSelectedWalletForDetails(
+                              toPaymentSourceWalletDetails(internalWallet),
+                            )
+                        : undefined
+                    }
+                  />
+                );
+              })
             ) : (
               <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
                 No remote participants saved.
@@ -710,6 +796,12 @@ function HydraHeadDetailsDialog({
           </HydraDetailSection>
         </div>
       </DialogContent>
+      <WalletDetailsDialog
+        isOpen={!!selectedWalletForDetails}
+        onClose={() => setSelectedWalletForDetails(null)}
+        wallet={selectedWalletForDetails}
+        isChild
+      />
     </Dialog>
   );
 }
@@ -1045,10 +1137,12 @@ export default function HydraHeadsPage() {
         head.headIdentifier ?? '',
         head.status,
         localParticipant?.walletId ?? '',
+        localParticipant?.Wallet.walletAddress ?? '',
         localParticipant?.nodeUrl ?? '',
         localParticipant?.nodeHttpUrl ?? '',
         ...remoteParticipants.flatMap((participant) => [
           participant.walletId,
+          participant.Wallet.walletAddress,
           participant.advertise,
         ]),
       ];

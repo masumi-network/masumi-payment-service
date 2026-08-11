@@ -4,9 +4,8 @@
 # production run the image under whatever you already operate, carrying over the
 # volume, the stop grace period and the healthcheck below.
 #
-# The port mapping is the security boundary, so it is spelled out rather than
-# left to whoever writes the run command. Four ranges exist inside the
-# container and only two may ever leave it:
+# The port mapping is the security boundary. The secure default binds only the
+# authenticated control plane and single-purpose exchange plane to loopback:
 #
 #   8443        control plane      published, bearer-token gated
 #   8444        exchange plane     published, invite redemption
@@ -18,13 +17,17 @@
 # stays shut even if someone adds `network_mode: host`. The monitoring range has
 # no such protection, which is why HYDRA_HOST_MONITORING_ENABLED defaults off.
 #
-# The peer plane cannot authenticate its callers. Apply the per-head allow-list
-# from `GET /v1/peer-allowlist` (it renders an nftables ruleset) and re-apply it
-# whenever a head is added or removed.
+# To expose the peer range, first apply the generated nftables ruleset, then add
+# `-f docker-compose.public-peer.yml`. That override requires an explicit
+# firewall acknowledgement. Re-apply the rules whenever membership or DNS
+# changes. Never publish this range from this base file.
 
 services:
   hydra-host:
-    image: masumi/hydra-host:latest
+    # Use an immutable digest in production, for example
+    # ghcr.io/example/hydra-host@sha256:.... A floating `latest` deployment can
+    # replace reviewed code at the next pull or restart.
+    image: ${HYDRA_HOST_IMAGE:?set an immutable Hydra Host image reference}
     build:
       context: ../..
       dockerfile: packages/hydra-host/Dockerfile

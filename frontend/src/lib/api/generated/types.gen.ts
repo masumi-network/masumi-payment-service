@@ -3133,6 +3133,7 @@ export type HydraHost = {
     name: string;
     network: 'Preprod' | 'Mainnet';
     baseUrl: string;
+    allowInsecureHttp: boolean;
     publicPeerHost: string;
     hasAdminToken: boolean;
     hydraVersion: string | null;
@@ -3227,11 +3228,12 @@ export type HydraHead = {
         id: string;
         createdAt: string;
         walletId: string;
-        /**
-         * The settling wallet, by address
-         */
-        Wallet?: {
+        Wallet: {
+            walletVkey: string;
             walletAddress: string;
+            collectionAddress: string | null;
+            note: string | null;
+            type: 'Selling' | 'Purchasing' | 'Funding';
         };
         nodeUrl: string;
         nodeHttpUrl: string;
@@ -3246,10 +3248,8 @@ export type HydraHead = {
         id: string;
         createdAt: string;
         walletId: string;
-        /**
-         * The settling wallet, by address
-         */
-        Wallet?: {
+        Wallet: {
+            walletVkey: string;
             walletAddress: string;
         };
         advertise: string;
@@ -13468,6 +13468,8 @@ export type PostHydraInvitePreviewResponses = {
             contestationPeriodSeconds: number;
             depositPeriodSeconds: number;
             unsyncedPeriodSeconds: number;
+            exchangeUsesPrivateNetwork: boolean | null;
+            exchangeNetworkWarning: string | null;
             signatureValid: boolean;
             alreadyKnown: boolean;
             /**
@@ -13499,6 +13501,14 @@ export type PostHydraInviteRedeemData = {
          * Send the node's L1 fuel from the chosen wallet straight away. On unless set false.
          */
         autoFund?: boolean;
+        /**
+         * Explicitly allow redemption over HTTP when a separately secured network protects the exchange
+         */
+        allowInsecureExchangeHttp?: boolean;
+        /**
+         * Explicitly allow redemption to private, loopback, link-local, or other special-use IP space
+         */
+        allowPrivateExchangeNetwork?: boolean;
     };
     path?: never;
     query?: never;
@@ -13623,6 +13633,10 @@ export type PatchHydraHostData = {
          * Null clears the admin token, disabling provisioning
          */
         adminToken?: string | null;
+        /**
+         * Explicitly allow bearer tokens over this Host HTTP connection
+         */
+        allowInsecureHttp?: boolean;
     };
     path?: never;
     query?: never;
@@ -13660,9 +13674,13 @@ export type PostHydraHostData = {
         name: string;
         network: 'Preprod' | 'Mainnet';
         /**
-         * Control-plane URL, e.g. https://hydra1.example.com. TLS terminates in front of the Host.
+         * Control-plane URL, e.g. https://hydra1.example.com. HTTPS is recommended.
          */
         baseUrl: string;
+        /**
+         * Explicitly allow bearer tokens over HTTP. Use only on a separately secured network.
+         */
+        allowInsecureHttp?: boolean;
         /**
          * Hostname the counterparty dials for this head’s peer port. Defaults to the host in baseUrl, which is right unless peers reach the Host by a different name than this service does.
          */

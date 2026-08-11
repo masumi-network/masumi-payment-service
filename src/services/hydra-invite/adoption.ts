@@ -16,7 +16,7 @@ import { HydraInviteRole, HydraInviteStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { decrypt } from '@/utils/security/encryption';
-import { fetchHostRedemptions, setHostAllowedIssuers, type HostInviteRecord } from '@/services/hydra-host/client';
+import { fetchHostRedemptions, forgetHostInvite, type HostInviteRecord } from '@/services/hydra-host/client';
 import { verifyHydraRedemption } from './invite-signing';
 import { createHeadFromExchange } from './orchestrator';
 import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
@@ -64,7 +64,9 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		const since = watermarks.get(host.id) ?? Date.now() - COLD_START_LOOKBACK_MS;
 		let redemptions: { invites: HostInviteRecord[]; now: number };
 		try {
-			redemptions = await fetchHostRedemptions(host.baseUrl, decrypt(host.encryptedAdminToken), since);
+			redemptions = await fetchHostRedemptions(host.baseUrl, decrypt(host.encryptedAdminToken), since, {
+				allowInsecureHttp: host.allowInsecureHttp,
+			});
 		} catch (error) {
 			// A Host that is down is not an error worth failing the tick over; the
 			// watermark is untouched, so nothing is lost by trying again.
@@ -77,6 +79,14 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 			const result = await adoptRedemption(record);
 			if (result === 'adopted') {
 				outcome.adopted += 1;
+				// The database nonce remains the permanent replay guard. Once the
+				// signed redemption is adopted, the Host no longer needs to retain
+				// its public-plane copy or its larger key/signature payload.
+				await forgetHostInvite(host.baseUrl, decrypt(host.encryptedAdminToken), record.nonce, {
+					allowInsecureHttp: host.allowInsecureHttp,
+				}).catch((error: unknown) =>
+					logger.warn(`hydra: could not prune adopted invite ${record.nonce}: ${(error as Error).message}`),
+				);
 			} else if (result === 'rejected') {
 				outcome.rejected += 1;
 			}
@@ -211,8 +221,12 @@ export async function reapExpiredInvites(): Promise<number> {
 				// The Host stops honouring the nonce before the node goes, so a
 				// redemption arriving mid-sweep cannot start something we are about
 				// to delete.
-				await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce);
-				await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, { force: false });
+				const transport = { allowInsecureHttp: invite.HydraHost.allowInsecureHttp };
+				await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
+				await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
+					force: false,
+					...transport,
+				});
 			}
 			await prisma.hydraLocalParticipant.deleteMany({
 				where: { hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId, hydraHeadId: null },
@@ -229,42 +243,4 @@ export async function reapExpiredInvites(): Promise<number> {
 		}
 	}
 	return reaped;
-}
-
-/**
- * Tell each Host which wallets may POST an invite to it.
- *
- * Sent whole rather than incrementally: a Host that missed one addition would
- * silently refuse a legitimate counterparty, and a stale allow-list is invisible
- * from this side. Public material only — an address is not a secret — which is
- * what makes pushing it safe.
- */
-export async function pushCounterpartyAllowlists(): Promise<number> {
-	const hosts = await prisma.hydraHost.findMany({ where: { encryptedAdminToken: { not: null } } });
-	if (hosts.length === 0) {
-		return 0;
-	}
-
-	const relations = await prisma.hydraRelation.findMany({ include: { RemoteWallet: true } });
-	const byNetwork = new Map<string, Set<string>>();
-	for (const relation of relations) {
-		const addresses = byNetwork.get(relation.network) ?? new Set<string>();
-		addresses.add(relation.RemoteWallet.walletAddress);
-		byNetwork.set(relation.network, addresses);
-	}
-
-	let pushed = 0;
-	for (const host of hosts) {
-		if (host.encryptedAdminToken === null) {
-			continue;
-		}
-		const allowed = [...(byNetwork.get(host.network) ?? new Set<string>())];
-		try {
-			await setHostAllowedIssuers(host.baseUrl, decrypt(host.encryptedAdminToken), allowed);
-			pushed += 1;
-		} catch (error) {
-			logger.warn(`hydra: could not push the allow-list to ${host.name}: ${(error as Error).message}`);
-		}
-	}
-	return pushed;
 }

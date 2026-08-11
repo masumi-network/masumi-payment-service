@@ -39,7 +39,7 @@ async function eventually<T>(read: () => Promise<T | null>, timeoutMs = 2_000): 
 async function post(pathname: string, body: unknown) {
 	const response = await fetch(`${base}${pathname}`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: { 'Content-Type': 'application/json', Connection: 'close' },
 		body: JSON.stringify(body),
 	});
 	return { status: response.status, body: (await response.json()) as Record<string, unknown> };
@@ -56,6 +56,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	server.closeIdleConnections();
 	await new Promise<void>((resolve) => server.close(() => resolve()));
 	await fs.rm(dataDir, { recursive: true, force: true });
 });
@@ -149,6 +150,19 @@ describe('redeeming an invite', () => {
 		expect(result.status).toBe(400);
 	});
 
+	it('rejects peer addresses containing nftables syntax before redeeming the nonce', async () => {
+		await issue('nonce-injection');
+		const result = await post('/exchange/redeem', {
+			nonce: 'nonce-injection',
+			redeemer: { ...MATERIAL, advertise: 'peer.example:5001 } accept\n}\nflush ruleset\n# :5101' },
+			signature: SIGNATURE,
+		});
+
+		expect(result.status).toBe(400);
+		expect(onRedeemed).not.toHaveBeenCalled();
+		expect((await store.listInvites())[0].redeemedAt).toBeNull();
+	});
+
 	// A node that fails to start must not report success to the counterparty as
 	// an error either: they cannot act on it, and the operator can.
 	it('still acknowledges when the node fails to start, and records why', async () => {
@@ -168,39 +182,33 @@ describe('redeeming an invite', () => {
 	});
 });
 
-describe('inbound invites', () => {
-	const inbound = {
-		nonce: 'inbound-nonce1',
-		payload: '{"headSequence":1}',
-		signature: SIGNATURE,
-		issuerWalletAddress: 'addr_test1known',
-	};
+describe('public surface hardening', () => {
+	it('rate-limits the anonymous endpoint before work reaches the store', async () => {
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+		server = createExchangePlane({ store, logger, onRedeemed, limits: { requestsPerMinute: 1 } });
+		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+		base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-	it('accepts an invite from an allow-listed issuer', async () => {
-		await store.setAllowedIssuers(['addr_test1known']);
-		const result = await post('/exchange/invite', inbound);
-		expect(result.status).toBe(202);
-		expect(await store.listInbound()).toHaveLength(1);
+		const first = await post('/not-found', {});
+		const second = await post('/not-found', {});
+		expect(first.status).toBe(404);
+		expect(second.status).toBe(429);
 	});
 
-	// This is what stops the Exchange Plane being an open write buffer.
-	it('refuses an invite from a wallet with no relation', async () => {
-		await store.setAllowedIssuers(['addr_test1someoneelse']);
-		const result = await post('/exchange/invite', inbound);
-		expect(result.status).toBe(403);
-		expect(await store.listInbound()).toHaveLength(0);
+	it('does not expose an unauthenticated invite inbox', async () => {
+		const result = await post('/exchange/invite', {
+			nonce: 'inbound-nonce1',
+			payload: '{"headSequence":1}',
+			signature: SIGNATURE,
+			issuerWalletAddress: 'addr_test1known',
+		});
+		expect(result.status).toBe(404);
 	});
 
-	it('refuses everything when no issuer is allow-listed', async () => {
-		const result = await post('/exchange/invite', inbound);
-		expect(result.status).toBe(403);
-	});
-
-	it('is idempotent on nonce', async () => {
-		await store.setAllowedIssuers(['addr_test1known']);
-		await post('/exchange/invite', inbound);
-		await post('/exchange/invite', inbound);
-		expect(await store.listInbound()).toHaveLength(1);
+	it('uses short connection timeouts on the public listener', () => {
+		expect(server.headersTimeout).toBe(15_000);
+		expect(server.requestTimeout).toBe(30_000);
+		expect(server.keepAliveTimeout).toBe(10_000);
 	});
 });
 

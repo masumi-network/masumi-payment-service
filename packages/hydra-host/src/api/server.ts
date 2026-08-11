@@ -24,8 +24,8 @@ import { isHostApiError, HostApiError } from './http-error.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
 import { isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
-import { buildPeerAllowlist, renderNftables } from './peer-allowlist.js';
-import { readAllowedIssuers, registerInvite } from './exchange-admin.js';
+import { buildPeerAllowlist, renderNftables, resolvePeerAllowlist } from './peer-allowlist.js';
+import { registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { matchRoute } from './routes.js';
 import { toPublicNode } from './serialize.js';
@@ -94,6 +94,11 @@ function readPeers(body: unknown): PeerRecord[] {
 export function createControlPlane(deps: ServerDeps): Server {
 	const { config, store, exchange, ports, supervisor, provision, logger } = deps;
 	const tokens = { adminToken: config.adminToken, userToken: config.userToken };
+	const tickSupervisor = (): void => {
+		void supervisor.tick().catch((error: unknown) => {
+			logger.error(`[api] supervisor tick failed: ${(error as Error).message}`);
+		});
+	};
 
 	const server = createServer((request, response) => {
 		void (async () => {
@@ -125,7 +130,14 @@ export function createControlPlane(deps: ServerDeps): Server {
 				logger.error(`[api] ${method} ${pathname} failed: ${(error as Error).message}`);
 				send(response, 500, { error: 'internal error' });
 			}
-		})();
+		})().catch((error: unknown) => {
+			logger.error(`[api] request failed before dispatch: ${(error as Error).message}`);
+			if (!response.headersSent && !response.writableEnded) {
+				send(response, 500, { error: 'internal error' });
+			} else if (!response.writableEnded) {
+				response.destroy();
+			}
+		});
 	});
 
 	// Bound how long a connection may occupy the control plane. It normally sits
@@ -172,7 +184,13 @@ export function createControlPlane(deps: ServerDeps): Server {
 			proxyWebSocket(request, socket, head, record.apiPort, target.subPath, (message) =>
 				logger.error(`[api] ${message}`),
 			);
-		})();
+		})().catch((error: unknown) => {
+			logger.error(`[api] websocket upgrade failed: ${(error as Error).message}`);
+			if (!socket.destroyed) {
+				socket.write('HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n');
+				socket.destroy();
+			}
+		});
 	});
 
 	async function handle(
@@ -219,28 +237,9 @@ export function createControlPlane(deps: ServerDeps): Server {
 				return;
 			}
 
-			case 'listInboundInvites': {
-				send(response, 200, { inbound: await exchange.listInbound() });
-				return;
-			}
-
-			case 'forgetInboundInvite': {
-				await exchange.forgetInbound(nonce ?? '');
-				send(response, 200, { forgotten: true });
-				return;
-			}
-
-			case 'setAllowedIssuers': {
-				const body = await readBody(request);
-				const addresses = readAllowedIssuers(body);
-				await exchange.setAllowedIssuers(addresses);
-				send(response, 200, { allowedIssuers: addresses.length });
-				return;
-			}
-
 			case 'peerAllowlist': {
 				const range = { start: config.ports.peerStart, count: config.ports.capacity };
-				const allowlist = buildPeerAllowlist(await store.list(), range);
+				const allowlist = await resolvePeerAllowlist(buildPeerAllowlist(await store.list(), range));
 				send(response, 200, { ...allowlist, peerRange: range, nftables: renderNftables(allowlist, range) });
 				return;
 			}
@@ -289,7 +288,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 
 			case 'escrowAck': {
 				const record = await acknowledgeEscrow(nodeId ?? '', provision);
-				void supervisor.tick();
+				tickSupervisor();
 				send(response, 200, toPublicNode(record));
 				return;
 			}
@@ -297,7 +296,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 			case 'setPeers': {
 				const peers = readPeers(await readBody(request));
 				const record = await setPeers(nodeId ?? '', peers, provision);
-				void supervisor.tick();
+				tickSupervisor();
 				send(response, 200, toPublicNode(record));
 				return;
 			}
@@ -307,21 +306,21 @@ export function createControlPlane(deps: ServerDeps): Server {
 			// drain. No handler writes `state` or `desired` directly.
 			case 'startNode': {
 				const record = await requestStart(store, nodeId ?? '');
-				void supervisor.tick();
+				tickSupervisor();
 				send(response, 202, toPublicNode(record));
 				return;
 			}
 
 			case 'stopNode': {
 				const record = await requestStop(store, nodeId ?? '');
-				void supervisor.tick();
+				tickSupervisor();
 				send(response, 202, toPublicNode(record));
 				return;
 			}
 
 			case 'restartNode': {
 				const record = await requestRestart(store, nodeId ?? '');
-				void supervisor.tick();
+				tickSupervisor();
 				send(response, 202, toPublicNode(record));
 				return;
 			}
@@ -329,7 +328,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 			case 'removeNode': {
 				const force = new URL(request.url ?? '/', 'http://placeholder').searchParams.get('force') === 'true';
 				const record = await requestRemoval(store, nodeId ?? '', { force });
-				void supervisor.tick();
+				tickSupervisor();
 				send(response, 202, toPublicNode(record));
 				return;
 			}

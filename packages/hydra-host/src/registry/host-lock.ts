@@ -1,37 +1,29 @@
 /**
- * Single-writer guard on the data volume.
+ * Single-writer lease on the data volume.
  *
- * Two Host containers sharing one volume would each load the same records and
- * each spawn a process per node: duplicate hydra-nodes, peer-port conflicts,
- * and two etcd members claiming a single participant identity. That is
- * unrecoverable without operator work, so a second Host refuses to boot.
+ * The lock is a directory containing an immutable owner token and a heartbeat
+ * named for that token. A candidate directory is fully prepared and atomically
+ * renamed into place. Stale takeover first atomically renames the old lease out
+ * of the way, then contenders race on the same rename; only one can win.
  *
- * Liveness is a **heartbeat**, not a pid check. An earlier version compared the
- * recorded pid against the local process table, which is wrong in a container:
- * the holder is almost always pid 1, and pid 1 always exists in the reader's
- * own namespace. A host killed ungracefully therefore left a lock that every
- * later container read as live, and the Host could never boot again without
- * someone deleting the file by hand — turning the guard into a worse outage
- * than the one it prevents, in exactly the ungraceful-kill case the rest of the
- * recovery design is built around.
- *
- * The holder refreshes its heartbeat while it runs; a lock whose heartbeat has
- * gone stale is reclaimed.
+ * The random token is the fence. An old process checks it before every
+ * heartbeat and release, so it cannot refresh or delete a replacement lease.
+ * Hostname equality grants no shortcut: two containers on one machine are
+ * still two writers.
  */
 
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { writeFileAtomic } from './atomic-write.js';
 import { getOwnInteger, getOwnString, isPlainObject } from './json.js';
 
-const LOCK_FILE = 'host.lock';
+const LOCK_DIRECTORY = 'host.lock';
+const OWNER_FILE = 'owner.json';
 
 /** How often the holder refreshes its heartbeat. */
 export const HEARTBEAT_INTERVAL_MS = 10_000;
-/**
- * How long a heartbeat may go unrefreshed before the lock is considered stale.
- * Generous relative to the interval so a slow or paused host is not evicted
- * while it is still running.
- */
+/** Generous relative to the interval so a short process pause is tolerated. */
 export const HEARTBEAT_STALE_AFTER_MS = 60_000;
 
 export class HostLockError extends Error {
@@ -41,7 +33,15 @@ export class HostLockError extends Error {
 	}
 }
 
-export type LockHolder = { pid: number; hostId: string; acquiredAt: string; heartbeatAt: string };
+export type LockHolder = {
+	pid: number;
+	hostId: string;
+	acquiredAt: string;
+	heartbeatAt: string;
+	ownerToken?: string;
+};
+
+type LeaseOwner = LockHolder & { ownerToken: string };
 
 export function parseLockHolder(raw: string): LockHolder | null {
 	let parsed: unknown;
@@ -59,24 +59,14 @@ export function parseLockHolder(raw: string): LockHolder | null {
 	if (pid === undefined || hostId === undefined || acquiredAt === undefined) {
 		return null;
 	}
-	// Locks written before heartbeats existed fall back to their acquisition
-	// time, so they age out rather than being treated as fresh forever.
 	const heartbeatAt = getOwnString(parsed, 'heartbeatAt') ?? acquiredAt;
-	return { pid, hostId, acquiredAt, heartbeatAt };
+	const ownerToken = getOwnString(parsed, 'ownerToken');
+	return { pid, hostId, acquiredAt, heartbeatAt, ...(ownerToken === undefined ? {} : { ownerToken }) };
 }
 
 export type LockLiveness = { live: true } | { live: false; reason: string };
 
-/**
- * Whether a recorded holder should still be respected.
- *
- * A lock held by *our own* host identity is always reclaimable: that is a
- * restart of the same deployment, not a competing writer.
- */
-export function assessHolder(holder: LockHolder, ourHostId: string, nowMs: number): LockLiveness {
-	if (holder.hostId === ourHostId) {
-		return { live: false, reason: 'the lock belongs to this host id, so this is a restart' };
-	}
+export function assessHolder(holder: LockHolder, _ourHostId: string, nowMs: number): LockLiveness {
 	const heartbeat = Date.parse(holder.heartbeatAt);
 	if (!Number.isFinite(heartbeat)) {
 		return { live: false, reason: 'the lock has no usable heartbeat' };
@@ -88,65 +78,180 @@ export function assessHolder(holder: LockHolder, ourHostId: string, nowMs: numbe
 	return { live: true };
 }
 
+function isAlreadyExists(error: unknown): boolean {
+	return ['EEXIST', 'ENOTEMPTY', 'EISDIR', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '');
+}
+
 export class HostLock {
 	private readonly lockPath: string;
+	private readonly ownerToken = randomUUID();
 	private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+	private acquiredAt: string | undefined;
+	private held = false;
+	private leaseLost = false;
 
 	constructor(
 		dataDir: string,
 		private readonly hostId: string,
 		private readonly now: () => number = Date.now,
+		private readonly onLeaseLost: (reason: string) => void = () => undefined,
 	) {
-		this.lockPath = path.join(dataDir, LOCK_FILE);
+		this.lockPath = path.join(dataDir, LOCK_DIRECTORY);
 	}
 
-	private payload(acquiredAt: string): string {
-		const holder: LockHolder = {
+	private owner(acquiredAt: string): LeaseOwner {
+		return {
 			pid: process.pid,
 			hostId: this.hostId,
+			ownerToken: this.ownerToken,
 			acquiredAt,
-			heartbeatAt: new Date(this.now()).toISOString(),
+			heartbeatAt: acquiredAt,
 		};
-		return `${JSON.stringify(holder)}\n`;
+	}
+
+	private heartbeatPath(directory = this.lockPath): string {
+		return path.join(directory, `heartbeat.${this.ownerToken}`);
+	}
+
+	private async prepareCandidate(acquiredAt: string): Promise<string> {
+		const candidate = `${this.lockPath}.candidate.${this.ownerToken}`;
+		await fs.mkdir(candidate);
+		await fs.writeFile(path.join(candidate, OWNER_FILE), `${JSON.stringify(this.owner(acquiredAt))}\n`, { flag: 'wx' });
+		await fs.writeFile(this.heartbeatPath(candidate), `${acquiredAt}\n`, { flag: 'wx' });
+		return candidate;
+	}
+
+	private async readHolder(directory = this.lockPath): Promise<LockHolder | null> {
+		const stat = await fs.lstat(directory).catch(() => null);
+		if (stat === null) {
+			return null;
+		}
+		if (!stat.isDirectory()) {
+			// Compatibility with the earlier single-file lock format.
+			return parseLockHolder(await fs.readFile(directory, 'utf8').catch(() => ''));
+		}
+
+		const owner = parseLockHolder(await fs.readFile(path.join(directory, OWNER_FILE), 'utf8').catch(() => ''));
+		if (owner?.ownerToken === undefined) {
+			return null;
+		}
+		if (
+			await fs.access(path.join(directory, `released.${owner.ownerToken}`)).then(
+				() => true,
+				() => false,
+			)
+		) {
+			return { ...owner, heartbeatAt: 'released' };
+		}
+		const heartbeat = (
+			await fs.readFile(path.join(directory, `heartbeat.${owner.ownerToken}`), 'utf8').catch(() => '')
+		).trim();
+		return { ...owner, heartbeatAt: heartbeat || owner.acquiredAt };
+	}
+
+	private async ownsCurrentLease(): Promise<boolean> {
+		return (await this.readHolder())?.ownerToken === this.ownerToken;
 	}
 
 	async acquire(): Promise<void> {
 		await fs.mkdir(path.dirname(this.lockPath), { recursive: true });
 		const acquiredAt = new Date(this.now()).toISOString();
+		let candidate = await this.prepareCandidate(acquiredAt);
 
 		try {
-			// wx fails when the file exists, which is the whole point.
-			await fs.writeFile(this.lockPath, this.payload(acquiredAt), { flag: 'wx' });
-			this.startHeartbeat(acquiredAt);
-			return;
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-				throw error;
+			for (let attempt = 0; attempt < 8; attempt += 1) {
+				try {
+					await fs.rename(candidate, this.lockPath);
+					candidate = '';
+					this.finishAcquisition(acquiredAt);
+					return;
+				} catch (error) {
+					if (!isAlreadyExists(error)) {
+						throw error;
+					}
+				}
+
+				const existing = await this.readHolder();
+				if (existing !== null) {
+					const liveness = assessHolder(existing, this.hostId, this.now());
+					if (liveness.live) {
+						throw new HostLockError(
+							`another Hydra Host (host ${existing.hostId}, heartbeat ${existing.heartbeatAt}) already holds ` +
+								`${this.lockPath}; two hosts on one volume would spawn duplicate nodes`,
+						);
+					}
+				}
+
+				const quarantine = `${this.lockPath}.stale.${randomUUID()}`;
+				try {
+					// Renaming the exact object inspected is the stale-owner CAS. A
+					// concurrent contender can move it first, but cannot overwrite it.
+					await fs.rename(this.lockPath, quarantine);
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+						continue;
+					}
+					throw error;
+				}
+
+				try {
+					await fs.rename(candidate, this.lockPath);
+					candidate = '';
+					await fs.rm(quarantine, { recursive: true, force: true });
+					this.finishAcquisition(acquiredAt);
+					return;
+				} catch (error) {
+					await fs.rm(quarantine, { recursive: true, force: true });
+					if (!isAlreadyExists(error)) {
+						throw error;
+					}
+				}
+			}
+			throw new HostLockError(`could not acquire ${this.lockPath}; another contender repeatedly won the lease`);
+		} finally {
+			if (candidate.length > 0) {
+				await fs.rm(candidate, { recursive: true, force: true });
 			}
 		}
-
-		const existing = parseLockHolder(await fs.readFile(this.lockPath, 'utf8').catch(() => ''));
-		if (existing !== null) {
-			const liveness = assessHolder(existing, this.hostId, this.now());
-			if (liveness.live) {
-				throw new HostLockError(
-					`another Hydra Host (host ${existing.hostId}, heartbeat ${existing.heartbeatAt}) already holds ` +
-						`${this.lockPath}; two hosts on one volume would spawn duplicate nodes`,
-				);
-			}
-		}
-
-		await fs.writeFile(this.lockPath, this.payload(acquiredAt));
-		this.startHeartbeat(acquiredAt);
 	}
 
-	private startHeartbeat(acquiredAt: string): void {
+	private finishAcquisition(acquiredAt: string): void {
+		this.acquiredAt = acquiredAt;
+		this.held = true;
+		this.leaseLost = false;
+		this.startHeartbeat();
+	}
+
+	private startHeartbeat(): void {
 		this.stopHeartbeat();
 		const timer = setInterval(() => {
-			void fs.writeFile(this.lockPath, this.payload(acquiredAt)).catch(() => undefined);
+			void this.refreshHeartbeat().catch((error: unknown) => {
+				this.loseLease(`heartbeat failed: ${(error as Error).message}`);
+			});
 		}, HEARTBEAT_INTERVAL_MS);
 		timer.unref?.();
 		this.heartbeatTimer = timer;
+	}
+
+	private async refreshHeartbeat(): Promise<void> {
+		if (!this.held || this.acquiredAt === undefined) {
+			return;
+		}
+		if (!(await this.ownsCurrentLease())) {
+			this.loseLease('the data-volume lease was replaced by another Host');
+			return;
+		}
+		await writeFileAtomic(this.heartbeatPath(), `${new Date(this.now()).toISOString()}\n`);
+	}
+
+	private loseLease(reason: string): void {
+		if (this.leaseLost) {
+			return;
+		}
+		this.leaseLost = true;
+		this.held = false;
+		this.stopHeartbeat();
+		this.onLeaseLost(reason);
 	}
 
 	private stopHeartbeat(): void {
@@ -158,6 +263,24 @@ export class HostLock {
 
 	async release(): Promise<void> {
 		this.stopHeartbeat();
-		await fs.rm(this.lockPath, { force: true });
+		if (!this.held || !(await this.ownsCurrentLease())) {
+			this.held = false;
+			return;
+		}
+
+		// Mark only this fencing token as released. If takeover happens between
+		// the ownership check and this write, the marker lands in the new
+		// directory under the old token and is ignored by the new owner. Deleting
+		// or renaming the shared path here would have a release-time TOCTOU.
+		await fs
+			.writeFile(path.join(this.lockPath, `released.${this.ownerToken}`), `${new Date(this.now()).toISOString()}\n`, {
+				flag: 'wx',
+			})
+			.catch((error: unknown) => {
+				if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+					throw error;
+				}
+			});
+		this.held = false;
 	}
 }
