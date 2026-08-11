@@ -60,13 +60,16 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 	}),
 }));
 
-let beginHydraHeadClose: typeof import('./index').beginHydraHeadClose;
+// Close and fanout live in the settlement module; enable/list stay in the route
+// module, so this pulls from both rather than one barrel.
+let beginHydraHeadClose: typeof import('./settlement').beginHydraHeadClose;
 let updateHydraHeadEnabledState: typeof import('./index').updateHydraHeadEnabledState;
-let closeHeadPost: typeof import('./index').closeHeadPost;
+let closeHeadPost: typeof import('./settlement').closeHeadPost;
 let getOrListHeadsGet: typeof import('./index').getOrListHeadsGet;
 
 beforeAll(async () => {
-	({ beginHydraHeadClose, updateHydraHeadEnabledState, closeHeadPost, getOrListHeadsGet } = await import('./index'));
+	({ updateHydraHeadEnabledState, getOrListHeadsGet } = await import('./index'));
+	({ beginHydraHeadClose, closeHeadPost } = await import('./settlement'));
 });
 
 const openHead = {

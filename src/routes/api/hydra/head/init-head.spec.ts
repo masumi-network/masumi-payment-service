@@ -52,7 +52,7 @@ jest.unstable_mockModule('@/services/hydra-connection-manager/hydra-connection-m
 let initHeadPost: { handler: (args: { input: { headId: string } }) => Promise<unknown> };
 
 beforeAll(async () => {
-	const routes = await import('./index');
+	const routes = await import('./lifecycle');
 	initHeadPost = routes.initHeadPost as unknown as typeof initHeadPost;
 });
 

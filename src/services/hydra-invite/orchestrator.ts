@@ -14,7 +14,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { HotWalletType, HydraInviteRole, HydraInviteStatus, Network, WalletType } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { createBoundHydraHead } from '@/routes/api/hydra/head';
+import { createBoundHydraHead } from '@/routes/api/hydra/head/create-head';
 import { registerInviteOnHost, setHostNodePeers, startHostNode } from '@/services/hydra-host/client';
 import { deriveNodeCardanoVkey } from './node-keys';
 import {

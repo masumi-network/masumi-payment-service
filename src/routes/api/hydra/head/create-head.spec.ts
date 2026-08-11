@@ -65,10 +65,10 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-let createBoundHydraHead: typeof import('./index').createBoundHydraHead;
+let createBoundHydraHead: typeof import('./create-head').createBoundHydraHead;
 
 beforeAll(async () => {
-	({ createBoundHydraHead } = await import('./index'));
+	({ createBoundHydraHead } = await import('./create-head'));
 });
 
 const relation = {

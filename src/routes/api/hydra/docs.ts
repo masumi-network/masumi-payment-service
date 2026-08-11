@@ -7,15 +7,12 @@ import {
 	getHeadSchemaOutput,
 	updateHeadSchemaInput,
 	updateHeadSchemaOutput,
-	lifecycleInput,
-	lifecycleOutput,
-	commitInput,
-	commitOutput,
 	headBalanceSchemaInput,
 	headBalanceSchemaOutput,
 	listHeadErrorsSchemaInput,
 	listHeadErrorsSchemaOutput,
 } from '@/routes/api/hydra/head';
+import { lifecycleInput, lifecycleOutput, commitInput, commitOutput } from '@/routes/api/hydra/head/lifecycle';
 import { topupInput, topupOutput } from '@/routes/api/hydra/head/topup';
 import {
 	withdrawInput,

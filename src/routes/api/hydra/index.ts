@@ -17,11 +17,12 @@ export {
 	listHeadErrorsGet,
 	getHeadConnectionGet,
 	clearHeadErrorsDelete,
-	initHeadPost,
-	commitHeadPost,
-	closeHeadPost,
-	fanoutHeadPost,
 } from './head';
+
+// The lifecycle endpoints live beside the route module rather than inside it;
+// importing them here keeps that module free of a cycle back to them.
+export { initHeadPost, commitHeadPost } from './head/lifecycle';
+export { closeHeadPost, fanoutHeadPost } from './head/settlement';
 
 export { topupHeadPost, listTopupsGet, recoverTopupPost } from './head/topup';
 export { withdrawHeadPost, listWithdrawalsGet } from './head/withdraw';
