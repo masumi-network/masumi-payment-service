@@ -283,7 +283,13 @@ export class HydraConnectionManager {
 		const timer = setTimeout(() => {
 			this._reconnectTimers.delete(hydraHeadId);
 			void this.reconcileEnabledState(hydraHeadId).catch((error: unknown) => {
-				logger.error('[HydraConnectionManager] Failed to reconcile enabled head state', {
+				// A warning, not an error, because the next line schedules another
+				// attempt: this is the same "not reachable yet" that the first
+				// attempt above logs as a warning and the sweep logs as debug, and a
+				// head opening while its node is still starting hits it routinely.
+				// Logging one self-healing condition at three severities taught
+				// operators that a hydra error in the log means nothing.
+				logger.warn('[HydraConnectionManager] Could not reconcile enabled head state; retry scheduled', {
 					hydraHeadId,
 					error,
 				});
