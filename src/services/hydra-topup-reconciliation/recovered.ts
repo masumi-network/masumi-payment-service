@@ -84,11 +84,15 @@ async function depositOutcome(params: {
 }
 
 /**
- * Promote deposits whose recovery has landed.
+ * Say what L1 did with every deposit that is still waiting on an answer.
  *
- * Only rows that asked for a recovery are considered: an unspent deposit that
- * nobody recovered is simply waiting, and one the head absorbed is not at the
- * script to begin with.
+ * Not only rows that asked for a recovery. A deposit has two ways to stop
+ * waiting — the head folds it in, or it comes home — and both leave the same
+ * trace: the deposit's own output is spent. What the spending transaction pays
+ * to tells them apart.
+ *
+ * Rows are considered from Pending onward rather than from Confirmed, because
+ * the head does not wait for our confirmation threshold before absorbing.
  */
 export async function reconcileRecoveredHydraTopups(): Promise<void> {
 	const candidates = await prisma.hydraTopup.findMany({
@@ -96,7 +100,15 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 			// Every confirmed deposit, not only ones a recovery was asked for: a
 			// deposit the head takes in needs saying so just as much, and that is
 			// the case that left Recover on offer for funds already on L2.
-			status: { in: [HydraTopupStatus.Confirmed, HydraTopupStatus.Failed] },
+			//
+			// Pending is included for the same reason one step earlier. Promotion to
+			// Confirmed waits on BLOCK_CONFIRMATIONS_THRESHOLD, but the head folds a
+			// deposit in on its own schedule — so a row could sit at Pending, and
+			// read as "not arrived", while the funds were already spendable on L2.
+			// Finding the deposit's own output already spent is stronger evidence
+			// than a confirmation count: it cannot have been spent without being on
+			// chain first.
+			status: { in: [HydraTopupStatus.Pending, HydraTopupStatus.Confirmed, HydraTopupStatus.Failed] },
 			depositTxHash: { not: null },
 		},
 		include: {
