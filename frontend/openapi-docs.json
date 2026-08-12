@@ -26816,7 +26816,7 @@
         "/x402/wallets": {
             "get": {
                 "description": "Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Non-admin results are limited by both wallet owner and permitted network.",
-                "summary": "List managed x402 EVM wallets. (pay access required)",
+                "summary": "List managed x402 EVM wallets. (read access required; no key material)",
                 "tags": [
                     "x402"
                 ],
@@ -27043,7 +27043,7 @@
         "/x402/wallets/detail": {
             "get": {
                 "description": "Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their owner or network scope.",
-                "summary": "Get a managed x402 EVM wallet by id. (pay access required)",
+                "summary": "Get a managed x402 EVM wallet by id. (read access required; no key material)",
                 "tags": [
                     "x402"
                 ],
@@ -28691,7 +28691,7 @@
         "/x402/wallets/balance": {
             "get": {
                 "description": "Reads on-chain balances (native gas plus the default token) of a managed EVM wallet on the wallet's bound network.",
-                "summary": "Read managed x402 wallet balances. (pay access required; owner and network scoped)",
+                "summary": "Read managed x402 wallet balances. (read access required; owner and network scoped)",
                 "tags": [
                     "x402"
                 ],
@@ -28869,7 +28869,7 @@
         "/x402/wallets/count": {
             "get": {
                 "description": "Counts active managed EVM wallets, optionally filtered by direction. Non-admin counts are limited by owner and permitted network.",
-                "summary": "Count managed x402 wallets. (pay access required)",
+                "summary": "Count managed x402 wallets. (read access required)",
                 "tags": [
                     "x402"
                 ],

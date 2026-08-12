@@ -1331,7 +1331,7 @@ export const postX402Networks = <ThrowOnError extends boolean = false>(options?:
 });
 
 /**
- * List managed x402 EVM wallets. (pay access required)
+ * List managed x402 EVM wallets. (read access required; no key material)
  *
  * Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Non-admin results are limited by both wallet owner and permitted network.
  */
@@ -1361,7 +1361,7 @@ export const postX402Wallets = <ThrowOnError extends boolean = false>(options?: 
 });
 
 /**
- * Get a managed x402 EVM wallet by id. (pay access required)
+ * Get a managed x402 EVM wallet by id. (read access required; no key material)
  *
  * Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their owner or network scope.
  */
@@ -1527,7 +1527,7 @@ export const postX402WalletsUpdate = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
- * Read managed x402 wallet balances. (pay access required; owner and network scoped)
+ * Read managed x402 wallet balances. (read access required; owner and network scoped)
  *
  * Reads on-chain balances (native gas plus the default token) of a managed EVM wallet on the wallet's bound network.
  */
@@ -1539,7 +1539,7 @@ export const getX402WalletsBalance = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
- * Count managed x402 wallets. (pay access required)
+ * Count managed x402 wallets. (read access required)
  *
  * Counts active managed EVM wallets, optionally filtered by direction. Non-admin counts are limited by owner and permitted network.
  */

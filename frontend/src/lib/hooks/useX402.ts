@@ -205,9 +205,9 @@ export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networ
       }
       return items;
     },
-    // GET /x402/wallets is pay-authenticated; usePaymentOptions pulls this in
-    // on the agent surfaces, which read-only sessions can open.
-    enabled: !!apiClient && authorized && enabled && capabilities.canPay,
+    // GET /x402/wallets is read-level (public wallet metadata, no key material),
+    // so every signed-in session may list them.
+    enabled: !!apiClient && authorized && enabled,
     staleTime: 30000,
   });
 

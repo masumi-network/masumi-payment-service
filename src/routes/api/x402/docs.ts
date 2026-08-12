@@ -116,7 +116,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/wallets',
 		description:
 			'Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Non-admin results are limited by both wallet owner and permitted network.',
-		summary: 'List managed x402 EVM wallets. (pay access required)',
+		summary: 'List managed x402 EVM wallets. (read access required; no key material)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -155,7 +155,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/wallets/detail',
 		description:
 			'Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their owner or network scope.',
-		summary: 'Get a managed x402 EVM wallet by id. (pay access required)',
+		summary: 'Get a managed x402 EVM wallet by id. (read access required; no key material)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

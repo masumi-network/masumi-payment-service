@@ -210,7 +210,10 @@ export const createX402PaymentPost = payAuthenticatedEndpointFactory.build({
 		}),
 });
 
-export const listX402WalletsGet = payAuthenticatedEndpointFactory.build({
+// Read access, mirroring GET /wallet/list on the Cardano side: the projection is
+// public wallet metadata (address, type, note, binding) with no key material. The
+// private key is only ever returned by the admin-only create endpoint.
+export const listX402WalletsGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listWalletsSchemaInput,
 	output: listWalletsSchemaOutput,
@@ -245,7 +248,8 @@ export const createX402WalletPost = adminAuthenticatedEndpointFactory.build({
 		}),
 });
 
-export const getX402WalletGet = payAuthenticatedEndpointFactory.build({
+// Read access — same projection as the list, still owner/network scoped.
+export const getX402WalletGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: walletDetailSchemaInput,
 	output: walletSchemaOutput,
@@ -267,7 +271,9 @@ export const updateX402WalletPost = adminAuthenticatedEndpointFactory.build({
 		}),
 });
 
-export const x402WalletBalanceGet = payAuthenticatedEndpointFactory.build({
+// Read access, matching GET /balance on the Cardano side — on-chain balances are
+// public data for an address the caller can already see.
+export const x402WalletBalanceGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: walletBalanceSchemaInput,
 	output: walletBalanceSchemaOutput,
@@ -280,7 +286,7 @@ export const x402WalletBalanceGet = payAuthenticatedEndpointFactory.build({
 		}),
 });
 
-export const x402WalletsCountGet = payAuthenticatedEndpointFactory.build({
+export const x402WalletsCountGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: walletsCountSchemaInput,
 	output: countSchemaOutput,

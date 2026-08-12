@@ -17,9 +17,10 @@ import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 
 const ADMIN_TAB_NAMES = ['Chains', 'Wallets', 'Budgets', 'Alerts', 'Payments'] as const;
 const PAY_TAB_NAMES = ['Wallets', 'Payments'] as const;
-// Read keys get the payment history only: managed wallets are pay-authenticated,
-// while the attempt/settlement lists and the chain projection are read-level.
-const READ_TAB_NAMES = ['Payments'] as const;
+// Read keys get the wallet list and payment history. Both are read-level, as is the
+// chain projection; the wallet lifecycle (the only path returning key material) is
+// admin and gated inside the tab.
+const READ_TAB_NAMES = ['Wallets', 'Payments'] as const;
 type TabName = (typeof ADMIN_TAB_NAMES)[number];
 
 function isTabName(value: unknown, allowed: readonly string[]): value is TabName {
@@ -86,7 +87,7 @@ export default function X402Page() {
                 ? 'Manage the EVM payment rail: chains, managed wallets, spend budgets, balance alerts and payment activity.'
                 : capabilities.canPay
                   ? 'View and manage EVM wallets and payment activity for chains your key can access.'
-                  : 'View x402 payment activity for chains your key can access. Managing wallets needs pay access.'}{' '}
+                  : 'View EVM wallets and x402 payment activity for chains your key can access. Managing wallets needs admin access.'}{' '}
               <a
                 href="https://www.masumi.network/dev/masumi"
                 target="_blank"
@@ -116,7 +117,7 @@ export default function X402Page() {
 
           <div className="pt-2">
             {activeTab === 'Chains' && capabilities.canAdmin && <ChainsTab />}
-            {activeTab === 'Wallets' && capabilities.canPay && <WalletsTab />}
+            {activeTab === 'Wallets' && <WalletsTab />}
             {activeTab === 'Budgets' && capabilities.canAdmin && <BudgetsTab />}
             {activeTab === 'Alerts' && capabilities.canAdmin && <AlertsTab />}
             {activeTab === 'Payments' && <PaymentsTab />}
