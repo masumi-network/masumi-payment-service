@@ -42,6 +42,7 @@ async function reserveBudgetForAttempt({
 	budgetId,
 	budgetGeneration,
 	requirements,
+	usageLimited,
 }: {
 	apiKeyId: string;
 	evmWalletId: string;
@@ -49,6 +50,7 @@ async function reserveBudgetForAttempt({
 	budgetId: string | null;
 	budgetGeneration: number | null;
 	requirements: PaymentRequirements;
+	usageLimited: boolean;
 }) {
 	const amount = BigInt(requirements.amount);
 	const asset = normalizeAddress(requirements.asset);
@@ -73,6 +75,28 @@ async function reserveBudgetForAttempt({
 			});
 			if (updateResult.count !== 1) {
 				throw createHttpError(402, 'Insufficient x402 wallet budget');
+			}
+		}
+
+		// The API key's own spending cap, the direct analogue of the Cardano purchase
+		// path debiting RemainingUsageCredits. Independent of the wallet budget above:
+		// the budget caps what one key may spend from one delegated wallet, this caps
+		// what the key may spend in total. Opt-in — an unlimited key has usageLimited
+		// false and never reaches here.
+		//
+		// Debited in the same transaction and guarded on the row still covering the
+		// amount, so two concurrent payments cannot both pass the check and overspend.
+		if (usageLimited) {
+			const unit = x402CreditUnit(requirements.network, requirements.asset);
+			const creditResult = await tx.unitValue.updateMany({
+				where: { apiKeyId, unit, amount: { gte: amount } },
+				data: { amount: { decrement: amount } },
+			});
+			if (creditResult.count !== 1) {
+				throw createHttpError(
+					402,
+					`Insufficient usage credits for ${unit}. This API key is usage limited; top up its credits for this chain and asset, or remove the limit.`,
+				);
 			}
 		}
 
@@ -132,6 +156,17 @@ async function refundBudgetReservation(
 	}
 }
 
+/**
+ * Credit-ledger unit for an EVM asset. Chain-qualified because the same token
+ * contract address exists on multiple chains, and a credit balance must not be
+ * spendable across them. Mirrors the Cardano unit (policyId+assetName, '' for
+ * lovelace); here the native gas token uses the literal 'native', matching the
+ * low-balance rules.
+ */
+export function x402CreditUnit(caip2Network: string, asset: string): string {
+	return `${caip2Network}:${normalizeAddress(asset)}`;
+}
+
 export async function createX402Payment({
 	apiKeyId,
 	caip2NetworkLimit,
@@ -141,6 +176,7 @@ export async function createX402Payment({
 	preferredAsset,
 	paymentIdentifier,
 	ownerScope = X402_UNRESTRICTED,
+	usageLimited = false,
 }: {
 	apiKeyId: string;
 	caip2NetworkLimit: string[] | null;
@@ -150,6 +186,8 @@ export async function createX402Payment({
 	preferredAsset?: string;
 	paymentIdentifier?: string;
 	ownerScope?: X402OwnerScopeInput;
+	/** Whether the calling key's spending is capped by its RemainingUsageCredits. */
+	usageLimited?: boolean;
 }) {
 	const accepts = paymentRequired.accepts;
 	if (!Array.isArray(accepts) || accepts.length === 0) {
@@ -307,6 +345,7 @@ export async function createX402Payment({
 	}
 
 	const reservation = await reserveBudgetForAttempt({
+		usageLimited,
 		apiKeyId,
 		evmWalletId,
 		networkId: network.id,

@@ -84,7 +84,9 @@ export const addAPIKeySchemaInput = z.object({
 					.string()
 					.max(150)
 					.describe(
-						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA). ' +
+							'For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), ' +
+							'e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", or "<caip2Network>:native" for the gas token.',
 					),
 				amount: z
 					.string()
@@ -161,7 +163,9 @@ export const updateAPIKeySchemaInput = z.object({
 					.string()
 					.max(150)
 					.describe(
-						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)',
+						'Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA). ' +
+							'For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), ' +
+							'e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", or "<caip2Network>:native" for the gas token.',
 					),
 				amount: z
 					.string()

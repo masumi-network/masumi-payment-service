@@ -37,6 +37,7 @@ class MockPrismaClientKnownRequestError extends Error {
 	}
 }
 const mockBudgetUpdateMany = jest.fn() as jest.Mock<any>;
+const mockUnitValueUpdateMany = jest.fn() as jest.Mock<any>;
 const mockBudgetRefundUpdateMany = jest.fn() as jest.Mock<any>;
 const mockBudgetUpdate = jest.fn() as jest.Mock<any>;
 const mockBudgetUpsert = jest.fn() as jest.Mock<any>;
@@ -436,6 +437,7 @@ describe('x402 service helpers', () => {
 		mockReadContract.mockResolvedValue(1_000_000_000n);
 		mockGetBalance.mockResolvedValue(1_000_000_000n);
 		mockBudgetUpdateMany.mockResolvedValue({ count: 1 });
+		mockUnitValueUpdateMany.mockResolvedValue({ count: 1 });
 		mockBudgetRefundUpdateMany.mockResolvedValue({ count: 1 });
 		mockX402PaymentAttemptFindFirst.mockResolvedValue(null);
 		mockBudgetUpdate.mockResolvedValue({ id: 'budget-1' });
@@ -478,6 +480,9 @@ describe('x402 service helpers', () => {
 				x402WalletBudget: {
 					findFirst: mockBudgetFindFirst,
 					updateMany: mockBudgetUpdateMany,
+				},
+				unitValue: {
+					updateMany: mockUnitValueUpdateMany,
 				},
 				x402PaymentAttempt: {
 					create: async (args: any) =>
@@ -1447,6 +1452,57 @@ describe('x402 service helpers', () => {
 
 			expect(mockBudgetUpdateMany).not.toHaveBeenCalled();
 			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
+		});
+
+		it('debits the API key usage credits when it is usage limited', async () => {
+			mockUnitValueUpdateMany.mockResolvedValue({ count: 1 });
+
+			await service.createX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				evmWalletId: 'wallet-1',
+				paymentRequired,
+				usageLimited: true,
+			});
+
+			// Chain-qualified unit, guarded on the row still covering the amount so two
+			// concurrent payments cannot both pass the check.
+			expect(mockUnitValueUpdateMany).toHaveBeenCalledWith({
+				where: {
+					apiKeyId: 'api-key-1',
+					unit: `${source.network}:${paymentRequired.accepts[0].asset.toLowerCase()}`,
+					amount: { gte: BigInt(paymentRequired.accepts[0].amount) },
+				},
+				data: { amount: { decrement: BigInt(paymentRequired.accepts[0].amount) } },
+			});
+		});
+
+		it('rejects with 402 when usage credits cannot cover the payment', async () => {
+			// updateMany matches nothing when the guarded balance is short.
+			mockUnitValueUpdateMany.mockResolvedValue({ count: 0 });
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 402 });
+
+			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
+		});
+
+		it('leaves the credit ledger alone for an unlimited key', async () => {
+			await service.createX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				evmWalletId: 'wallet-1',
+				paymentRequired,
+			});
+
+			expect(mockUnitValueUpdateMany).not.toHaveBeenCalled();
 		});
 
 		it('rejects when a delegated managed-wallet budget cannot cover the requirement', async () => {

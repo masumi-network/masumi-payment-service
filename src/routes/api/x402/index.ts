@@ -205,6 +205,8 @@ export const createX402PaymentPost = payAuthenticatedEndpointFactory.build({
 			preferredAsset: input.preferredAsset,
 			paymentIdentifier: input.paymentIdentifier,
 			ownerScope: x402OwnerScope(ctx),
+			// Admins are never usage limited (the auth layer forces the flag false).
+			usageLimited: ctx.usageLimited,
 		}),
 });
 
