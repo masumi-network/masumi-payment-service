@@ -71,6 +71,19 @@ export type ApiKey = {
          */
         hotWalletId: string;
     }>;
+    /**
+     * Whether managed EVM wallet scope filtering is enabled for this API key
+     */
+    x402WalletScopeEnabled: boolean;
+    /**
+     * Managed EVM wallets this API key is scoped to. The key additionally always reaches wallets it created itself.
+     */
+    X402WalletScopes: Array<{
+        /**
+         * ID of the managed EVM wallet in scope
+         */
+        evmWalletId: string;
+    }>;
 };
 
 export type Wallet = {
@@ -3980,6 +3993,14 @@ export type PatchApiKeyData = {
          */
         walletScopeEnabled?: boolean;
         /**
+         * Whether to enable managed EVM wallet scope filtering for this API key
+         */
+        x402WalletScopeEnabled?: boolean;
+        /**
+         * Replaces the managed EVM wallets this API key is scoped to
+         */
+        X402WalletScopeEvmWalletIds?: Array<string>;
+        /**
          * List of hot wallet IDs to scope this API key to. Replaces existing scopes when provided
          */
         WalletScopeHotWalletIds?: Array<string>;
@@ -4079,6 +4100,14 @@ export type PostApiKeyData = {
          * List of hot wallet IDs to scope this API key to
          */
         WalletScopeHotWalletIds?: Array<string>;
+        /**
+         * Whether to enable managed EVM wallet scope filtering. False leaves the key unrestricted, matching walletScopeEnabled.
+         */
+        x402WalletScopeEnabled?: string;
+        /**
+         * Managed EVM wallet IDs to scope this API key to. Only applied when x402WalletScopeEnabled is true; the key also always reaches wallets it created itself.
+         */
+        X402WalletScopeEvmWalletIds?: Array<string>;
     };
     path?: never;
     query?: never;

@@ -124,6 +124,26 @@
                             ]
                         },
                         "description": "List of hot wallets this API key is scoped to"
+                    },
+                    "x402WalletScopeEnabled": {
+                        "type": "boolean",
+                        "description": "Whether managed EVM wallet scope filtering is enabled for this API key"
+                    },
+                    "X402WalletScopes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "evmWalletId": {
+                                    "type": "string",
+                                    "description": "ID of the managed EVM wallet in scope"
+                                }
+                            },
+                            "required": [
+                                "evmWalletId"
+                            ]
+                        },
+                        "description": "Managed EVM wallets this API key is scoped to. The key additionally always reaches wallets it created itself."
                     }
                 },
                 "required": [
@@ -139,7 +159,9 @@
                     "RemainingUsageCredits",
                     "status",
                     "walletScopeEnabled",
-                    "WalletScopes"
+                    "WalletScopes",
+                    "x402WalletScopeEnabled",
+                    "X402WalletScopes"
                 ]
             },
             "Wallet": {
@@ -7817,6 +7839,21 @@
                                         "maxItems": 100,
                                         "default": [],
                                         "description": "List of hot wallet IDs to scope this API key to"
+                                    },
+                                    "x402WalletScopeEnabled": {
+                                        "type": "string",
+                                        "default": "false",
+                                        "description": "Whether to enable managed EVM wallet scope filtering. False leaves the key unrestricted, matching walletScopeEnabled."
+                                    },
+                                    "X402WalletScopeEvmWalletIds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 150
+                                        },
+                                        "maxItems": 100,
+                                        "default": [],
+                                        "description": "Managed EVM wallet IDs to scope this API key to. Only applied when x402WalletScopeEnabled is true; the key also always reaches wallets it created itself."
                                     }
                                 },
                                 "required": [
@@ -7989,6 +8026,19 @@
                                     "walletScopeEnabled": {
                                         "type": "boolean",
                                         "description": "Whether to enable wallet scope filtering for this API key"
+                                    },
+                                    "x402WalletScopeEnabled": {
+                                        "type": "boolean",
+                                        "description": "Whether to enable managed EVM wallet scope filtering for this API key"
+                                    },
+                                    "X402WalletScopeEvmWalletIds": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "maxLength": 150
+                                        },
+                                        "maxItems": 100,
+                                        "description": "Replaces the managed EVM wallets this API key is scoped to"
                                     },
                                     "WalletScopeHotWalletIds": {
                                         "type": "array",

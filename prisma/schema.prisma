@@ -27,6 +27,10 @@ model ApiKey {
   networkLimit                  String[]
   usageLimited                  Boolean                         @default(false)
   walletScopeEnabled            Boolean                         @default(false)
+  /// EVM counterpart of walletScopeEnabled. False (the default) leaves the key
+  /// unrestricted, exactly like the Cardano flag; true restricts it to the
+  /// wallets listed in X402WalletScopes, plus any it created itself.
+  x402WalletScopeEnabled        Boolean                         @default(false)
   deletedAt                     DateTime?
   PaymentRequest                PaymentRequest[]
   PurchaseRequest               PurchaseRequest[]
@@ -34,6 +38,7 @@ model ApiKey {
   RemainingUsageCredits         UnitValue[]
   CreatedWebhooks               WebhookEndpoint[]
   WalletScopes                  ApiKeyWalletScope[]
+  X402WalletScopes              ApiKeyX402WalletScope[]
   InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
   CreatedX402Wallets            X402EvmWallet[]
   X402WalletBudgets             X402WalletBudget[]              @relation("X402WalletBudgetGrantee")
@@ -53,6 +58,21 @@ model ApiKeyWalletScope {
   @@unique([apiKeyId, hotWalletId])
   @@index([apiKeyId])
   @@index([hotWalletId])
+}
+
+/// EVM twin of ApiKeyWalletScope: lets an admin grant a key access to a managed
+/// EVM wallet it did not create, which `createdById` ownership alone cannot express.
+model ApiKeyX402WalletScope {
+  id          String        @id @default(cuid())
+  createdAt   DateTime      @default(now())
+  apiKeyId    String
+  evmWalletId String
+  ApiKey      ApiKey        @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  EvmWallet   X402EvmWallet @relation(fields: [evmWalletId], references: [id], onDelete: Cascade)
+
+  @@unique([apiKeyId, evmWalletId])
+  @@index([apiKeyId])
+  @@index([evmWalletId])
 }
 
 model UnitValue {
@@ -510,6 +530,7 @@ model X402EvmWallet {
   FacilitatesNetworks X402Network[]                 @relation("X402NetworkFacilitatorWallet")
   Budgets             X402WalletBudget[]
   PaymentAttempts     X402PaymentAttempt[]
+  ApiKeyScopes        ApiKeyX402WalletScope[]
   LowBalanceRules     X402EvmWalletLowBalanceRule[]
 
   @@unique([networkId, address])

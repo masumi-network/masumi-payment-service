@@ -104,6 +104,26 @@ export const APIKeySchema = {
                 ]
             },
             description: 'List of hot wallets this API key is scoped to'
+        },
+        x402WalletScopeEnabled: {
+            type: 'boolean',
+            description: 'Whether managed EVM wallet scope filtering is enabled for this API key'
+        },
+        X402WalletScopes: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    evmWalletId: {
+                        type: 'string',
+                        description: 'ID of the managed EVM wallet in scope'
+                    }
+                },
+                required: [
+                    'evmWalletId'
+                ]
+            },
+            description: 'Managed EVM wallets this API key is scoped to. The key additionally always reaches wallets it created itself.'
         }
     },
     required: [
@@ -119,7 +139,9 @@ export const APIKeySchema = {
         'RemainingUsageCredits',
         'status',
         'walletScopeEnabled',
-        'WalletScopes'
+        'WalletScopes',
+        'x402WalletScopeEnabled',
+        'X402WalletScopes'
     ]
 } as const;
 

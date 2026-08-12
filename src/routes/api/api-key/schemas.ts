@@ -50,6 +50,18 @@ export const apiKeyOutputSchema = z
 				}),
 			)
 			.describe('List of hot wallets this API key is scoped to'),
+		x402WalletScopeEnabled: z
+			.boolean()
+			.describe('Whether managed EVM wallet scope filtering is enabled for this API key'),
+		X402WalletScopes: z
+			.array(
+				z.object({
+					evmWalletId: z.string().describe('ID of the managed EVM wallet in scope'),
+				}),
+			)
+			.describe(
+				'Managed EVM wallets this API key is scoped to. The key additionally always reaches wallets it created itself.',
+			),
 	})
 	.openapi('APIKey');
 
@@ -121,6 +133,20 @@ export const addAPIKeySchemaInput = z.object({
 		.max(100)
 		.default([])
 		.describe('List of hot wallet IDs to scope this API key to'),
+	x402WalletScopeEnabled: z
+		.string()
+		.default('false')
+		.transform((s) => s.toLowerCase() == 'true')
+		.describe(
+			'Whether to enable managed EVM wallet scope filtering. False leaves the key unrestricted, matching walletScopeEnabled.',
+		),
+	X402WalletScopeEvmWalletIds: z
+		.array(z.string().max(150))
+		.max(100)
+		.default([])
+		.describe(
+			'Managed EVM wallet IDs to scope this API key to. Only applied when x402WalletScopeEnabled is true; the key also always reaches wallets it created itself.',
+		),
 });
 
 export const addAPIKeySchemaOutput = apiKeyOutputSchema;
@@ -168,6 +194,15 @@ export const updateAPIKeySchemaInput = z.object({
 		.optional()
 		.describe('Replaces the EVM (CAIP-2) half of the access list. Omit to leave EVM access unchanged.'),
 	walletScopeEnabled: z.boolean().optional().describe('Whether to enable wallet scope filtering for this API key'),
+	x402WalletScopeEnabled: z
+		.boolean()
+		.optional()
+		.describe('Whether to enable managed EVM wallet scope filtering for this API key'),
+	X402WalletScopeEvmWalletIds: z
+		.array(z.string().max(150))
+		.max(100)
+		.optional()
+		.describe('Replaces the managed EVM wallets this API key is scoped to'),
 	WalletScopeHotWalletIds: z
 		.array(z.string().max(150))
 		.max(100)

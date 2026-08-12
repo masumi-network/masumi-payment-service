@@ -80,6 +80,7 @@ export const mapApiKeyOutput = <
 		networkLimit: string[];
 		RemainingUsageCredits: Array<{ amount: bigint; unit: string }>;
 		WalletScopes: Array<{ hotWalletId: string }>;
+		X402WalletScopes: Array<{ evmWalletId: string }>;
 		encryptedToken: string | null;
 		token: string | null;
 		tokenHash: string | null;
@@ -126,6 +127,7 @@ export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
 				WalletScopes: { select: { hotWalletId: true } },
+				X402WalletScopes: { select: { evmWalletId: true } },
 			},
 		});
 		return {
@@ -166,6 +168,9 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		if (isAdmin && input.walletScopeEnabled) {
 			throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
 		}
+		if (isAdmin && input.x402WalletScopeEnabled) {
+			throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
+		}
 		if (isAdmin && input.usageLimited) {
 			throw createHttpError(400, 'Admin API keys cannot have usage limits');
 		}
@@ -190,6 +195,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 							input.ChainIdLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) == null),
 						),
 				walletScopeEnabled: isAdmin ? false : input.walletScopeEnabled,
+				x402WalletScopeEnabled: isAdmin ? false : input.x402WalletScopeEnabled,
 				RemainingUsageCredits: {
 					createMany: {
 						data: input.UsageCredits.map((usageCredit) => {
@@ -212,10 +218,22 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 							},
 						}
 					: {}),
+				...(input.x402WalletScopeEnabled && input.X402WalletScopeEvmWalletIds.length > 0
+					? {
+							X402WalletScopes: {
+								createMany: {
+									data: input.X402WalletScopeEvmWalletIds.map((evmWalletId) => ({
+										evmWalletId,
+									})),
+								},
+							},
+						}
+					: {}),
 			},
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
 				WalletScopes: { select: { hotWalletId: true } },
+				X402WalletScopes: { select: { evmWalletId: true } },
 			},
 		});
 		// Reveal-on-create: the admin must see the freshly-minted token once
@@ -294,7 +312,8 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 					const newCanAdmin = input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
 
 					const resultingWalletScopeEnabled = input.walletScopeEnabled ?? apiKey.walletScopeEnabled;
-					if (newCanAdmin && resultingWalletScopeEnabled) {
+					const resultingX402WalletScopeEnabled = input.x402WalletScopeEnabled ?? apiKey.x402WalletScopeEnabled;
+					if (newCanAdmin && (resultingWalletScopeEnabled || resultingX402WalletScopeEnabled)) {
 						throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
 					}
 					if (newCanAdmin && input.usageLimited) {
@@ -332,6 +351,22 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						}
 					}
 
+					// Same replace-the-whole-list semantic as the Cardano scopes above: an
+					// omitted field leaves the existing assignments untouched.
+					if (input.X402WalletScopeEvmWalletIds !== undefined) {
+						await prisma.apiKeyX402WalletScope.deleteMany({
+							where: { apiKeyId: input.id },
+						});
+						if (input.X402WalletScopeEvmWalletIds.length > 0) {
+							await prisma.apiKeyX402WalletScope.createMany({
+								data: input.X402WalletScopeEvmWalletIds.map((evmWalletId) => ({
+									apiKeyId: input.id,
+									evmWalletId,
+								})),
+							});
+						}
+					}
+
 					const result = await prisma.apiKey.update({
 						where: { id: input.id },
 						data: {
@@ -346,6 +381,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 							status: input.status,
 							networkLimit: nextNetworkLimit,
 							walletScopeEnabled: newCanAdmin ? false : input.walletScopeEnabled,
+							x402WalletScopeEnabled: newCanAdmin ? false : input.x402WalletScopeEnabled,
 							canRead: newCanRead,
 							canPay: newCanPay,
 							canAdmin: newCanAdmin,
@@ -353,6 +389,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						include: {
 							RemainingUsageCredits: { select: { amount: true, unit: true } },
 							WalletScopes: { select: { hotWalletId: true } },
+							X402WalletScopes: { select: { evmWalletId: true } },
 						},
 					});
 					return result;
@@ -379,6 +416,7 @@ export const deleteAPIKeyEndpointDelete = adminAuthenticatedEndpointFactory.buil
 			include: {
 				RemainingUsageCredits: { select: { amount: true, unit: true } },
 				WalletScopes: { select: { hotWalletId: true } },
+				X402WalletScopes: { select: { evmWalletId: true } },
 			},
 		});
 		return mapApiKeyOutput(apiKey);

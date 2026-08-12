@@ -198,13 +198,48 @@ export async function getX402NetworkOrThrow(caip2Network: string) {
 // without it any key could address another tenant's node-custodied wallet and drain it.
 export type X402OwnerScope = string | null;
 
-export function buildOwnerScopeWhere(scope: X402OwnerScope): { createdById?: string } {
-	return scope == null ? {} : { createdById: scope };
+/**
+ * Which managed wallets a key may reach. `scope` is the key's own id (null for an
+ * admin); `walletScopeIds` is its assigned scope list from ApiKeyX402WalletScope,
+ * or null when the key is unrestricted — the Cardano `walletScopeEnabled` semantic.
+ *
+ * Access is the union of the two: assigned wallets PLUS anything the key created.
+ * The union matters — without it a scoped key that creates a wallet would lose
+ * sight of it the moment it was created, since the new row is in nobody's scope
+ * list yet.
+ */
+export type X402WalletAccess = {
+	scope: X402OwnerScope;
+	walletScopeIds?: string[] | null;
+};
+
+/** What callers pass as `ownerScope`: the bare key id, or the id plus its scope list. */
+export type X402OwnerScopeInput = X402OwnerScope | X402WalletAccess;
+
+function normalizeAccess(access: X402OwnerScopeInput): X402WalletAccess {
+	return typeof access === 'string' || access === null ? { scope: access, walletScopeIds: null } : access;
 }
 
-export function assertWalletOwner(scope: X402OwnerScope, wallet: { createdById: string | null }) {
+/** The three shapes the wallet-access filter can take, as a Prisma where fragment. */
+export type X402WalletScopeWhere =
+	| Record<string, never>
+	| { createdById: string }
+	| { OR: [{ createdById: string }, { id: { in: string[] } }] };
+
+export function buildOwnerScopeWhere(access: X402OwnerScopeInput): X402WalletScopeWhere {
+	const { scope, walletScopeIds } = normalizeAccess(access);
+	if (scope == null) return {};
+	if (walletScopeIds == null) return { createdById: scope };
+	return { OR: [{ createdById: scope }, { id: { in: walletScopeIds } }] };
+}
+
+export function assertWalletOwner(access: X402OwnerScopeInput, wallet: { id: string; createdById: string | null }) {
+	const { scope, walletScopeIds } = normalizeAccess(access);
+	if (scope == null) return;
 	// 404 (not 403) so a scoped key cannot distinguish "exists but not yours" from "absent".
-	if (scope != null && wallet.createdById !== scope) {
+	const owns = wallet.createdById === scope;
+	const assigned = walletScopeIds != null && walletScopeIds.includes(wallet.id);
+	if (!owns && !assigned) {
 		throw createHttpError(404, 'Managed EVM wallet not found');
 	}
 }
@@ -226,7 +261,7 @@ function assertWalletType(wallet: { type: X402EvmWalletType }, expectedType?: X4
 export async function getManagedWalletOrThrow(
 	evmWalletId: string,
 	expectedType?: X402EvmWalletType,
-	ownerScope: X402OwnerScope = null,
+	ownerScope: X402OwnerScopeInput = null,
 ) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },
@@ -245,7 +280,7 @@ export async function getManagedWalletOrThrow(
 export async function getManagedWalletWithSecretOrThrow(
 	evmWalletId: string,
 	expectedType?: X402EvmWalletType,
-	ownerScope: X402OwnerScope = null,
+	ownerScope: X402OwnerScopeInput = null,
 ) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
 		where: { id: evmWalletId, deletedAt: null },

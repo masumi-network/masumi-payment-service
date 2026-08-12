@@ -4,7 +4,7 @@ import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
 import { encrypt } from '@masumi/payment-core/encryption';
 import { isAllowedCaip2Network } from '@masumi/payment-core/network';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { assertValidPrivateKey, assertWalletOwner, buildOwnerScopeWhere, type X402OwnerScope } from './internal';
+import { assertValidPrivateKey, assertWalletOwner, buildOwnerScopeWhere, type X402OwnerScopeInput } from './internal';
 
 // The non-secret projection returned to the dashboard for every managed wallet. The
 // encrypted private key is never part of this set; the plaintext key is only ever
@@ -116,7 +116,7 @@ export async function listX402ManagedWallets(input?: {
 	cursorId?: string;
 	type?: X402EvmWalletType;
 	networkId?: string;
-	ownerScope?: X402OwnerScope;
+	ownerScope?: X402OwnerScopeInput;
 	caip2NetworkLimit?: string[] | null;
 }) {
 	const wallets = await prisma.x402EvmWallet.findMany({
@@ -137,7 +137,7 @@ export async function listX402ManagedWallets(input?: {
 
 export async function getX402ManagedWallet(
 	evmWalletId: string,
-	ownerScope: X402OwnerScope = null,
+	ownerScope: X402OwnerScopeInput = null,
 	caip2NetworkLimit: string[] | null = null,
 ) {
 	const wallet = await prisma.x402EvmWallet.findUnique({
@@ -155,7 +155,7 @@ export async function getX402ManagedWallet(
 export async function updateX402ManagedWallet(input: {
 	id: string;
 	note?: string | null;
-	ownerScope?: X402OwnerScope;
+	ownerScope?: X402OwnerScopeInput;
 	caip2NetworkLimit?: string[] | null;
 }) {
 	// Only the human-facing note is mutable; address/type/key are immutable for an
@@ -179,7 +179,7 @@ export async function updateX402ManagedWallet(input: {
 
 export async function deleteX402ManagedWallet(
 	evmWalletId: string,
-	ownerScope: X402OwnerScope = null,
+	ownerScope: X402OwnerScopeInput = null,
 	caip2NetworkLimit: string[] | null = null,
 ) {
 	const wallet = await prisma.x402EvmWallet.findUnique({

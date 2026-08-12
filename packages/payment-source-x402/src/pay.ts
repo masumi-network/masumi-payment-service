@@ -20,7 +20,7 @@ import {
 	getManagedWalletOrThrow,
 	normalizeAddress,
 	upsertCounterpartyWalletId,
-	type X402OwnerScope,
+	type X402OwnerScopeInput,
 } from './internal';
 import { encryptPaymentPayloadForStorage, getPaymentIdentifier, hashX402PaymentPayload } from './payload';
 import { EXACT_SCHEME, requirementsMatch } from './requirements';
@@ -148,7 +148,7 @@ export async function createX402Payment({
 	preferredNetwork?: string;
 	preferredAsset?: string;
 	paymentIdentifier?: string;
-	ownerScope?: X402OwnerScope;
+	ownerScope?: X402OwnerScopeInput;
 }) {
 	const accepts = paymentRequired.accepts;
 	if (!Array.isArray(accepts) || accepts.length === 0) {

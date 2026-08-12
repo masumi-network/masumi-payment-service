@@ -85,8 +85,13 @@ import {
 // `x402OwnerScope` is the wallet-ownership scope (null = admin) enforced on wallet CRUD and the buy
 // path; `x402TenantApiKeyId` is the same tenant scope for attempt/settlement history (undefined =
 // admin), where isolation is by the initiating apiKeyId rather than wallet ownership.
-function x402OwnerScope(ctx: AuthContext): string | null {
-	return ctx.canAdmin ? null : ctx.id;
+function x402OwnerScope(ctx: AuthContext): { scope: string | null; walletScopeIds: string[] | null } {
+	// Admins are unrestricted. A non-admin reaches the wallets it created plus any an
+	// admin assigned to it via ApiKeyX402WalletScope; walletScopeIds is null when the
+	// key is unscoped, which is the Cardano `walletScopeEnabled=false` semantic.
+	return ctx.canAdmin
+		? { scope: null, walletScopeIds: null }
+		: { scope: ctx.id, walletScopeIds: ctx.x402WalletScopeIds };
 }
 
 function x402NetworkLimit(ctx: AuthContext): string[] | null {
