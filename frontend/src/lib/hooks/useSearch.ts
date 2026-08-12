@@ -24,7 +24,7 @@ const searchableItems: SearchableItem[] = [
   { id: 'dashboard', title: 'Dashboard', type: 'page', href: '/' },
   { id: 'ai-agents', title: 'AI Agents', type: 'page', href: '/ai-agents' },
   { id: 'inbox-agents', title: 'Inbox Agents', type: 'page', href: '/inbox-agents' },
-  { id: 'wallets', title: 'Wallets', type: 'page', href: '/wallets', requires: 'pay' },
+  { id: 'wallets', title: 'Wallets', type: 'page', href: '/wallets' },
   {
     id: 'transactions',
     title: 'Transactions',
@@ -160,7 +160,6 @@ export function useSearch(enabled = true) {
         type: 'wallet',
         href: `/wallets?searched=${wallet.walletAddress}`,
         elementId: `wallet-${wallet.walletAddress}`,
-        requires: 'pay',
       });
     });
 

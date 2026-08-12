@@ -1,6 +1,6 @@
 import {
 	adminAuthenticatedEndpointFactory,
-	payAuthenticatedEndpointFactory,
+	readAuthenticatedEndpointFactory,
 	AuthContext,
 	checkIsAllowedNetworkOrThrowUnauthorized,
 } from '@masumi/payment-core/auth';
@@ -46,9 +46,16 @@ export {
 	getWalletFundSchemaOutput,
 };
 
-// Public wallet metadata (no secrets). Pay keys need this to pick a selling
-// wallet when registering agents; create/update/fund stay admin-only below.
-export const queryWalletListEndpointGet = payAuthenticatedEndpointFactory.build({
+// Public wallet metadata, no secrets: chain identifiers (vkey / address), the
+// operator's note, and the low-balance summary. Pay keys need it to pick a
+// selling wallet when registering agents, and read keys to render the wallets
+// view; the same addresses already reach read keys through payments/purchases,
+// and GET /balance and /utxos are read-level for any address.
+//
+// The mnemonic lives behind GET /wallet?includeSecret=true, which stays admin,
+// as do create / update / fund / low-balance below. networkLimit and the
+// wallet-scope filter still apply here, so a scoped key sees only its wallets.
+export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: getWalletListSchemaInput,
 	output: getWalletListSchemaOutput,

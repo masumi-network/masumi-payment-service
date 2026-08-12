@@ -34,14 +34,14 @@ type WalletsResponse = {
 };
 
 export function useWallets(options?: { enabled?: boolean }) {
-  const { apiClient, selectedPaymentSourceId, selectedPaymentSource, capabilities } =
-    useAppContext();
+  const { apiClient, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
 
   const network = selectedPaymentSource?.network;
-  // Default true for callers that omit enabled, but always require pay/admin —
-  // explicit `enabled: open` must not bypass the permission gate for read-only keys.
+  // Callers can defer this (e.g. the dashboard, until after first paint) so the
+  // eager all-wallet balance fan-out doesn't fire during the initial render.
+  // No capability gate: GET /wallet/list is read-level, so every signed-in
+  // session may list wallets. Mutations stay gated at their own call sites.
   const callerEnabled = options?.enabled ?? true;
-  const canListWallets = capabilities.canAdmin || capabilities.canPay;
 
   const query = useQuery<WalletsResponse>({
     queryKey: ['wallets', selectedPaymentSourceId, network],
@@ -126,7 +126,7 @@ export function useWallets(options?: { enabled?: boolean }) {
         nextCursor: undefined,
       };
     },
-    enabled: callerEnabled && canListWallets && !!selectedPaymentSourceId && !!network,
+    enabled: callerEnabled && !!selectedPaymentSourceId && !!network,
     staleTime: 25000,
   });
 
@@ -152,8 +152,7 @@ const WALLET_PAGE_SIZE = 5;
  * wallet up front. Returns a `vkey -> WalletListItem` map of the resolved ones.
  */
 export function useWalletsByVkeys(walletVkeys: (string | null | undefined)[]) {
-  const { apiClient, capabilities } = useAppContext();
-  const canListWallets = capabilities.canAdmin || capabilities.canPay;
+  const { apiClient } = useAppContext();
 
   const distinctVkeys = useMemo(
     () => Array.from(new Set(walletVkeys.filter((vkey): vkey is string => !!vkey))),
@@ -174,7 +173,7 @@ export function useWalletsByVkeys(walletVkeys: (string | null | undefined)[]) {
         );
         return response?.data?.data?.Wallets?.[0] ?? null;
       },
-      enabled: !!apiClient && !!vkey && canListWallets,
+      enabled: !!apiClient && !!vkey,
       staleTime: 25000,
     })),
   });
@@ -198,8 +197,7 @@ export function useWalletsByVkeys(walletVkeys: (string | null | undefined)[]) {
  * not on every page load.
  */
 export function useAllWallets(enabled = true) {
-  const { apiClient, apiKey, capabilities } = useAppContext();
-  const canListWallets = capabilities.canAdmin || capabilities.canPay;
+  const { apiClient, apiKey } = useAppContext();
 
   const query = useQuery<WalletListItem[]>({
     queryKey: ['all-wallets', apiKey],
@@ -222,7 +220,7 @@ export function useAllWallets(enabled = true) {
       }
       return items;
     },
-    enabled: !!apiClient && !!apiKey && enabled && canListWallets,
+    enabled: !!apiClient && !!apiKey && enabled,
     staleTime: 25000,
   });
 

@@ -36,12 +36,12 @@ export function isAdminOnlyPath(pathname: string): boolean {
  * `/webhooks` belongs here for the same reason `/x402` does — GET /webhooks is
  * payAuthenticated, not read.
  *
- * `/wallets` is pay rather than admin because its table is built purely from
- * GET /wallet/list (pay) and GET /balance (read). The mutating controls and the
- * per-wallet detail dialog hit admin-only endpoints, so those stay gated on
- * canAdmin inside the page.
+ * `/wallets` is deliberately absent: its table is built from GET /wallet/list
+ * and GET /balance, both read-level, so every signed-in session may view it.
+ * The mutating controls and the per-wallet detail dialog hit admin-only
+ * endpoints and stay gated on canAdmin inside the page.
  */
-export const PAY_ONLY_PATHS = ['/x402', '/webhooks', '/wallets'] as const;
+export const PAY_ONLY_PATHS = ['/x402', '/webhooks'] as const;
 
 export function isPayOnlyPath(pathname: string): boolean {
   return (PAY_ONLY_PATHS as readonly string[]).includes(pathname);

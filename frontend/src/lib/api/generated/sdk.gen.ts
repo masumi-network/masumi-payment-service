@@ -87,7 +87,7 @@ export const postWallet = <ThrowOnError extends boolean = false>(options?: Optio
 });
 
 /**
- * List hot wallets, optionally filtered by payment source and type. (pay access required)
+ * List hot wallets, optionally filtered by payment source and type. (read access required)
  *
  * Lists hot wallets across payment sources with cursor-based pagination
  */

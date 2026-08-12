@@ -306,21 +306,17 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
         group: 0,
       },
-      // Pay keys can list wallets (GET /wallet/list is pay-authenticated), so they
-      // get the page too — read-only, with the mutating controls gated inside it.
-      ...(canPay
-        ? [
-            {
-              href: '/wallets',
-              name: 'Wallets',
-              icon: <Wallet className="h-4 w-4" />,
-              badge: null,
-              group: 0,
-              notificationDot: activeWalletAlertCount > 0,
-              notificationLabel: walletAlertLabel,
-            } satisfies NavItem,
-          ]
-        : []),
+      // Listing wallets is read-level, so every session gets the page; the
+      // mutating controls inside it stay gated on canAdmin.
+      {
+        href: '/wallets',
+        name: 'Wallets',
+        icon: <Wallet className="h-4 w-4" />,
+        badge: null,
+        group: 0,
+        notificationDot: activeWalletAlertCount > 0,
+        notificationLabel: walletAlertLabel,
+      },
       {
         href: '/transactions',
         name: 'Transactions',

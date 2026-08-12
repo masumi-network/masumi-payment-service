@@ -30,7 +30,7 @@ export function useX402Networks(options?: {
   allEnvironments?: boolean;
   enabled?: boolean;
 }) {
-  const { apiClient, authorized, network: activeNetwork } = useAppContext();
+  const { apiClient, authorized, network: activeNetwork, capabilities } = useAppContext();
   const silentErrors = options?.silentErrors ?? false;
   // Always scope chains to an environment, enforced at the query level: testnet chains
   // belong to Preprod, mainnet chains to Mainnet. Defaults to the active top-selector env;
@@ -61,7 +61,10 @@ export function useX402Networks(options?: {
       );
       return response?.data?.data?.Networks ?? [];
     },
-    enabled: !!apiClient && authorized && enabled,
+    // GET /x402/networks is admin-authenticated. Gate here rather than at each
+    // call site: this hook is pulled in by shared surfaces (agent lists, pickers)
+    // a non-admin session can reach, where an ungated fetch just 401s.
+    enabled: !!apiClient && authorized && enabled && capabilities.canAdmin,
     staleTime: 30000,
   });
 
@@ -81,7 +84,7 @@ export function useAvailableX402Networks(options?: {
   allEnvironments?: boolean;
   enabled?: boolean;
 }) {
-  const { apiClient, authorized, network: activeNetwork } = useAppContext();
+  const { apiClient, authorized, network: activeNetwork, capabilities } = useAppContext();
   const silentErrors = options?.silentErrors ?? false;
   const network = options?.network ?? activeNetwork;
   const isTestnet = isTestnetEnv(network);
@@ -103,7 +106,8 @@ export function useAvailableX402Networks(options?: {
       );
       return response?.data?.data?.Networks ?? [];
     },
-    enabled: !!apiClient && authorized && enabled,
+    // GET /x402/networks/available is pay-authenticated — same reasoning.
+    enabled: !!apiClient && authorized && enabled && capabilities.canPay,
     staleTime: 30000,
   });
 
@@ -174,7 +178,7 @@ export function useX402NetworksForSession(options?: {
  * labels should use the denormalized address on the network/budget instead.
  */
 export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networkId?: string) {
-  const { apiClient, authorized } = useAppContext();
+  const { apiClient, authorized, capabilities } = useAppContext();
 
   const query = useQuery({
     queryKey: ['x402-wallets', 'all', type ?? 'any', networkId ?? 'any'],
@@ -200,7 +204,9 @@ export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networ
       }
       return items;
     },
-    enabled: !!apiClient && authorized && enabled,
+    // GET /x402/wallets is pay-authenticated; usePaymentOptions pulls this in
+    // on the agent surfaces, which read-only sessions can open.
+    enabled: !!apiClient && authorized && enabled && capabilities.canPay,
     staleTime: 30000,
   });
 
