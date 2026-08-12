@@ -79,7 +79,13 @@ export function WalletDetailsDialog({
   elevatedChildStack,
 }: WalletDetailsDialogProps) {
   const queryClient = useQueryClient();
-  const { apiClient, network } = useAppContext();
+  const { apiClient, network, capabilities } = useAppContext();
+  // Everything beyond the list payload and the read-level balance lookups is
+  // admin-only: GET /wallet (rules + pending tx + mnemonic), the swap history,
+  // the fund transfers, and every mutation. Non-admins still get the dialog —
+  // address, note, vkey, balances — with those parts omitted rather than a
+  // spinner that resolves into "Failed to load wallet monitoring rules".
+  const canManageWallet = capabilities.canAdmin;
   const [selectedWalletForSwap, setSelectedWalletForSwap] = useState<WalletWithBalance | null>(
     null,
   );
@@ -344,11 +350,13 @@ export function WalletDetailsDialog({
       setSwapTransactions([]);
       setSwapTxCursor(undefined);
       setHasMoreSwapTx(true);
-      rules.resetForNewWallet();
       fetchTokenBalancesRef.current?.();
-      fetchWalletDetailsRef.current?.();
-      if (network === 'Mainnet') {
-        fetchSwapTransactions();
+      if (canManageWallet) {
+        rules.resetForNewWallet();
+        fetchWalletDetailsRef.current?.();
+        if (network === 'Mainnet') {
+          fetchSwapTransactions();
+        }
       }
     }
   }, [isOpen, wallet?.walletAddress]);
@@ -545,16 +553,17 @@ export function WalletDetailsDialog({
                 className="h-8 w-8"
                 onClick={() => {
                   balances.fetchTokenBalances();
+                  if (!canManageWallet) return;
                   void rules.refreshWalletDetails();
                   if (network === 'Mainnet') {
                     setSwapTxCursor(undefined);
                     fetchSwapTransactions();
                   }
                 }}
-                disabled={balances.isLoading || rules.isWalletDetailsLoading}
+                disabled={balances.isLoading || (canManageWallet && rules.isWalletDetailsLoading)}
               >
                 <RefreshCw
-                  className={`h-4 w-4 ${balances.isLoading || rules.isWalletDetailsLoading ? 'animate-spin' : ''}`}
+                  className={`h-4 w-4 ${balances.isLoading || (canManageWallet && rules.isWalletDetailsLoading) ? 'animate-spin' : ''}`}
                 />
               </Button>
             </div>
@@ -586,7 +595,7 @@ export function WalletDetailsDialog({
               </div>
             </div>
 
-            {wallet.type !== 'Collection' && (
+            {wallet.type !== 'Collection' && canManageWallet && (
               <LowBalanceRulesSection
                 monitoringSummary={monitoringSummary}
                 configuredRules={configuredRules}
@@ -633,7 +642,7 @@ export function WalletDetailsDialog({
               isUSDM={balances.isUSDM}
             />
 
-            {network === 'Mainnet' && swapTransactions.length > 0 && (
+            {canManageWallet && network === 'Mainnet' && swapTransactions.length > 0 && (
               <SwapTransactionsSection
                 swapTransactions={swapTransactions}
                 swapTxLoading={swapTxLoading}
@@ -653,9 +662,11 @@ export function WalletDetailsDialog({
               />
             )}
 
-            <FundTransfersSection walletAddress={wallet.walletAddress} network={network} />
+            {canManageWallet && (
+              <FundTransfersSection walletAddress={wallet.walletAddress} network={network} />
+            )}
 
-            {wallet.type !== 'Collection' && (
+            {wallet.type !== 'Collection' && canManageWallet && (
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
@@ -696,7 +707,7 @@ export function WalletDetailsDialog({
             )}
 
             {/* Linked Collection Wallet Section */}
-            {(wallet.type === 'Selling' || wallet.type === 'Purchasing') && (
+            {(wallet.type === 'Selling' || wallet.type === 'Purchasing') && canManageWallet && (
               <CollectionAddressSection
                 walletType={wallet.type}
                 network={network}

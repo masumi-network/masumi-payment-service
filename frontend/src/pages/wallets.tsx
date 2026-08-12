@@ -175,11 +175,9 @@ export default function WalletsPage() {
     return filtered;
   }, [allWallets, searchQuery]);
 
-  // The detail dialog reads GET /wallet and the low-balance rules, both
-  // admin-only. Pay keys get the table (GET /wallet/list) but no drill-down,
-  // so a row click for them would only produce a 401 behind a spinner.
+  // Open for every session: the dialog renders the read-visible fields and
+  // omits the admin-only sections rather than erroring.
   const handleWalletClick = (wallet: WalletWithBalance) => {
-    if (!capabilities.canAdmin) return;
     setSelectedWalletForDetails(wallet);
   };
 
@@ -289,9 +287,7 @@ export default function WalletsPage() {
                     {filteredWallets.map((wallet, index) => (
                       <tr
                         key={wallet.id}
-                        className={`border-b last:border-b-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ${
-                          capabilities.canAdmin ? 'cursor-pointer' : ''
-                        } ${
+                        className={`border-b last:border-b-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150 ${
                           wallet.LowBalanceSummary?.isLow
                             ? 'bg-amber-500/5 hover:bg-amber-500/10'
                             : 'hover:bg-muted/50'
