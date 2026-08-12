@@ -381,7 +381,11 @@ export default function Overview() {
                   ) : (
                     <EmptyState
                       title="No AI agents found"
-                      description="Register your first AI agent to get started."
+                      description={
+                        capabilities.canPay
+                          ? 'Register your first AI agent to get started.'
+                          : 'Registering an agent needs an API key with pay access.'
+                      }
                     />
                   )}
                 </div>
