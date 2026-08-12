@@ -6287,7 +6287,9 @@
                                             ],
                                             "status": "Active",
                                             "walletScopeEnabled": false,
-                                            "WalletScopes": []
+                                            "WalletScopes": [],
+                                            "x402WalletScopeEnabled": false,
+                                            "X402WalletScopes": []
                                         }
                                     }
                                 }
@@ -7711,7 +7713,9 @@
                                                     ],
                                                     "status": "Active",
                                                     "walletScopeEnabled": false,
-                                                    "WalletScopes": []
+                                                    "WalletScopes": [],
+                                                    "x402WalletScopeEnabled": false,
+                                                    "X402WalletScopes": []
                                                 }
                                             ]
                                         },
@@ -7918,7 +7922,9 @@
                                             ],
                                             "status": "Active",
                                             "walletScopeEnabled": false,
-                                            "WalletScopes": []
+                                            "WalletScopes": [],
+                                            "x402WalletScopeEnabled": false,
+                                            "X402WalletScopes": []
                                         }
                                     }
                                 }
@@ -8133,7 +8139,9 @@
                                             ],
                                             "status": "Active",
                                             "walletScopeEnabled": false,
-                                            "WalletScopes": []
+                                            "WalletScopes": [],
+                                            "x402WalletScopeEnabled": false,
+                                            "X402WalletScopes": []
                                         }
                                     }
                                 }
@@ -8228,7 +8236,9 @@
                                             ],
                                             "status": "Revoked",
                                             "walletScopeEnabled": false,
-                                            "WalletScopes": []
+                                            "WalletScopes": [],
+                                            "x402WalletScopeEnabled": false,
+                                            "X402WalletScopes": []
                                         }
                                     }
                                 }
