@@ -168,13 +168,17 @@ export default function InboxAgentsPage() {
 
   // Open the register dialog when the ?action=register_inbox_agent deep link
   // arrives, then strip the param so the same quick action can fire again
-  // while already on this page.
+  // while already on this page. Registration is pay-authenticated, so the deep
+  // link carries the same canPay gate as the button — otherwise a read-only key
+  // gets the full form and only finds out on submit.
   useEffect(() => {
     if (router.query.action === 'register_inbox_agent') {
-      queueMicrotask(() => setIsRegisterDialogOpen(true));
+      if (capabilities.canPay) {
+        queueMicrotask(() => setIsRegisterDialogOpen(true));
+      }
       void router.replace('/inbox-agents', undefined, { shallow: true });
     }
-  }, [router.query.action, router]);
+  }, [router.query.action, router, capabilities.canPay]);
 
   const handleWalletClick = useCallback(
     async (walletVkey: string) => {
@@ -532,7 +536,7 @@ export default function InboxAgentsPage() {
           </div>
 
           <RegisterInboxAgentDialog
-            open={isRegisterDialogOpen}
+            open={capabilities.canPay && isRegisterDialogOpen}
             onClose={() => {
               setIsRegisterDialogOpen(false);
             }}

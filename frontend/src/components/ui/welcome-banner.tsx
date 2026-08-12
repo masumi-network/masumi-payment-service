@@ -36,10 +36,6 @@ export function WelcomeBanner({
   const [dismissed, setDismissed] = useState(false);
   const { capabilities } = useAppContext();
 
-  const allDone = hasPaymentSource && agentCount > 0 && walletCount > 0 && transactionCount > 0;
-
-  if (isDismissedFromStorage || dismissed || allDone) return null;
-
   // Each step links to a surface the session must actually be able to use.
   // Payment sources and wallets are admin-only routes (a non-admin deep-link is
   // bounced in _app), and registration is pay-authenticated — showing those to a
@@ -74,6 +70,13 @@ export function WelcomeBanner({
       visible: true,
     },
   ].filter((step) => step.visible);
+
+  // Completion is judged against the steps this session can actually see. Using the
+  // raw counts would leave a read-only key staring at a banner it can never finish:
+  // the wallet/source steps it is not shown would hold `allDone` false forever.
+  const allDone = steps.every((step) => step.done);
+
+  if (isDismissedFromStorage || dismissed || allDone) return null;
 
   const handleDismiss = () => {
     localStorage.setItem(DISMISSED_KEY, 'true');

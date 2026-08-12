@@ -47,7 +47,10 @@ export default function X402Page() {
       router.replace('/');
       return;
     }
-    if (!isTabName(router.query.tab, tabNames) && router.query.tab) {
+    // Canonicalize any tab param the session cannot use (a pay key landing on an
+    // admin tab link, a stale bookmark). Compare against undefined rather than
+    // truthiness so `?tab=` is rewritten too instead of sticking in the URL.
+    if (!isTabName(router.query.tab, tabNames) && router.query.tab !== undefined) {
       router.replace({ pathname: '/x402', query: { tab: defaultTab } }, undefined, {
         shallow: true,
       });
