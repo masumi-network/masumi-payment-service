@@ -183,12 +183,12 @@ export function WalletsTab() {
                   <EmptyState
                     title="No managed wallets"
                     description={
-                      capabilities.canAdmin
+                      // An unscoped key sees every wallet, so an empty list really is
+                      // empty. A scoped one only sees what it was assigned or created,
+                      // where the same empty list means something quite different.
+                      capabilities.canAdmin || !capabilities.x402WalletScopeEnabled
                         ? 'Create a wallet to fund and settle x402 payments.'
-                        : // Custodial EVM wallets are owned by the API key that created
-                          // them, so a non-admin key never lists another key's wallets.
-                          // Say so — otherwise this reads as "the operator has none".
-                          'This API key owns no managed wallets. Non-admin keys only see wallets they created themselves; wallets created by other keys stay hidden. Create one here, or ask an admin.'
+                        : 'No managed wallets are assigned to this API key. A scoped key only sees wallets an admin assigned to it, plus any it created itself. Create one here, or ask an admin to assign one.'
                     }
                   />
                 </td>

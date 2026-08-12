@@ -1,6 +1,6 @@
 import { Prisma, X402EvmWalletType, prisma } from '@masumi/payment-core/db';
 import { buildX402AttemptWhere, X402AttemptFilterInput } from './attempt-filters';
-import { buildOwnerScopeWhere, type X402OwnerScopeInput } from './internal';
+import { buildOwnerScopeWhere, X402_UNRESTRICTED, type X402OwnerScopeInput } from './internal';
 import { getX402DatabaseNow } from './settle-lock';
 
 export async function countX402ManagedWallets(input?: {
@@ -13,7 +13,7 @@ export async function countX402ManagedWallets(input?: {
 			deletedAt: null,
 			type: input?.type,
 			Network: input?.caip2NetworkLimit == null ? undefined : { caip2Id: { in: input.caip2NetworkLimit } },
-			...buildOwnerScopeWhere(input?.ownerScope ?? null),
+			...buildOwnerScopeWhere(input?.ownerScope ?? X402_UNRESTRICTED),
 		},
 	});
 }

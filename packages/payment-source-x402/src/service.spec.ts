@@ -1458,7 +1458,7 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
-					ownerScope: 'api-key-2',
+					ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
 				}),
 			).rejects.toMatchObject({ status: 402 });
 
@@ -1492,7 +1492,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
-				ownerScope: 'api-key-1',
+				ownerScope: { scope: 'api-key-1', walletScopeIds: [] },
 			});
 
 			expect(result).toMatchObject({ attemptId: 'attempt-outbound-1' });
@@ -1520,7 +1520,7 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
-					ownerScope: 'api-key-2',
+					ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
 				}),
 			).rejects.toMatchObject({ status: 404 });
 
@@ -1544,7 +1544,7 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-selling',
 					paymentRequired,
-					ownerScope: 'api-key-2',
+					ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
 				}),
 			).rejects.toMatchObject({ status: 404 });
 
@@ -1576,7 +1576,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
-				ownerScope: 'api-key-2',
+				ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
 			});
 
 			expect(result).toMatchObject({ attemptId: 'attempt-outbound-1' });

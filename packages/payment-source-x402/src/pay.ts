@@ -20,6 +20,7 @@ import {
 	getManagedWalletOrThrow,
 	normalizeAddress,
 	upsertCounterpartyWalletId,
+	X402_UNRESTRICTED,
 	type X402OwnerScopeInput,
 } from './internal';
 import { encryptPaymentPayloadForStorage, getPaymentIdentifier, hashX402PaymentPayload } from './payload';
@@ -139,7 +140,7 @@ export async function createX402Payment({
 	preferredNetwork,
 	preferredAsset,
 	paymentIdentifier,
-	ownerScope = null,
+	ownerScope = X402_UNRESTRICTED,
 }: {
 	apiKeyId: string;
 	caip2NetworkLimit: string[] | null;
@@ -181,7 +182,13 @@ export async function createX402Payment({
 	// A matching enabled budget is an explicit delegation from the wallet operator to another API
 	// key; without ownership/admin access or such a grant, every foreign wallet remains a 404.
 	const walletMetadata = await getManagedWalletOrThrow(evmWalletId);
-	const hasOwnerAccess = ownerScope == null || walletMetadata.createdById === ownerScope;
+	// Unrestricted (admin or unscoped key), the creator, or a key the wallet was
+	// assigned to — otherwise access has to come from a budget grant below.
+	const hasOwnerAccess =
+		ownerScope.scope == null ||
+		ownerScope.walletScopeIds == null ||
+		walletMetadata.createdById === ownerScope.scope ||
+		ownerScope.walletScopeIds.includes(evmWalletId);
 	const budgetsByCandidate = new Map<
 		PaymentRequirements,
 		{ id: string; remainingAmount: bigint; generation: number }
@@ -206,7 +213,7 @@ export async function createX402Payment({
 	const wallet = await getManagedWalletOrThrow(
 		evmWalletId,
 		X402EvmWalletType.Purchasing,
-		hasOwnerAccess ? ownerScope : null,
+		hasOwnerAccess ? ownerScope : X402_UNRESTRICTED,
 	);
 	const walletNetwork = await prisma.x402Network.findUnique({
 		where: { id: wallet.networkId },
@@ -249,7 +256,7 @@ export async function createX402Payment({
 
 	// A funded budget authorizes this caller to use the delegated wallet. The reservation below
 	// rechecks the exact (apiKey, wallet, asset) grant and decrements it atomically before signing.
-	const signingOwnerScope = selectedBudgetId != null ? null : ownerScope;
+	const signingOwnerScope = selectedBudgetId != null ? X402_UNRESTRICTED : ownerScope;
 	const { client, network, payer, publicClient } = await getClientForWallet(
 		evmWalletId,
 		selected.network,

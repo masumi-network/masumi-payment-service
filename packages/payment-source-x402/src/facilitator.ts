@@ -18,6 +18,7 @@ import {
 	getX402NetworkOrThrow,
 	safeHttpTransport,
 	type PrivateKey,
+	X402_UNRESTRICTED,
 	type X402OwnerScopeInput,
 } from './internal';
 import { RemoteHTTPFacilitatorClient } from './remote-facilitator';
@@ -31,7 +32,7 @@ import { RemoteHTTPFacilitatorClient } from './remote-facilitator';
 export async function getClientForWallet(
 	walletId: string,
 	caip2Network: string,
-	ownerScope: X402OwnerScopeInput = null,
+	ownerScope: X402OwnerScopeInput = X402_UNRESTRICTED,
 ) {
 	const [wallet, network] = await Promise.all([
 		getManagedWalletWithSecretOrThrow(walletId, X402EvmWalletType.Purchasing, ownerScope),

@@ -6,15 +6,14 @@ const OTHER_KEY = 'key_other';
 
 describe('buildOwnerScopeWhere', () => {
 	it('does not restrict an admin', () => {
-		expect(buildOwnerScopeWhere(null)).toEqual({});
+		expect(buildOwnerScopeWhere({ scope: null, walletScopeIds: null })).toEqual({});
 		expect(buildOwnerScopeWhere({ scope: null, walletScopeIds: ['w1'] })).toEqual({});
 	});
 
-	it('restricts an unscoped key to what it created', () => {
-		// walletScopeIds null is the `x402WalletScopeEnabled=false` case, which mirrors
-		// the Cardano flag: the key is unscoped, so only creator ownership applies.
-		expect(buildOwnerScopeWhere({ scope: KEY, walletScopeIds: null })).toEqual({ createdById: KEY });
-		expect(buildOwnerScopeWhere(KEY)).toEqual({ createdById: KEY });
+	it('leaves an unscoped key unrestricted, matching the Cardano default', () => {
+		// walletScopeIds null is `x402WalletScopeEnabled=false`, the mirror of
+		// walletScopeEnabled=false on the Cardano side: no restriction at all.
+		expect(buildOwnerScopeWhere({ scope: KEY, walletScopeIds: null })).toEqual({});
 	});
 
 	it('unions assigned wallets with the ones the key created', () => {
@@ -35,7 +34,7 @@ describe('assertWalletOwner', () => {
 	const foreign = { id: 'w_foreign', createdById: OTHER_KEY };
 
 	it('lets an admin through', () => {
-		expect(() => assertWalletOwner(null, foreign)).not.toThrow();
+		expect(() => assertWalletOwner({ scope: null, walletScopeIds: null }, foreign)).not.toThrow();
 	});
 
 	it('lets a key reach a wallet it created', () => {
@@ -52,9 +51,13 @@ describe('assertWalletOwner', () => {
 		);
 	});
 
+	it('lets an unscoped key reach any wallet, matching the Cardano default', () => {
+		expect(() => assertWalletOwner({ scope: KEY, walletScopeIds: null }, foreign)).not.toThrow();
+	});
+
 	it('rejects with 404 rather than 403 so absence and no-access look identical', () => {
 		try {
-			assertWalletOwner({ scope: KEY, walletScopeIds: null }, foreign);
+			assertWalletOwner({ scope: KEY, walletScopeIds: ['w_something_else'] }, foreign);
 			throw new Error('expected a throw');
 		} catch (error) {
 			expect((error as { status?: number }).status).toBe(404);

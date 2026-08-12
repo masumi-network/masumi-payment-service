@@ -14,6 +14,12 @@ export type ApiKeyCapabilities = {
    * second case without revealing whether any chain exists.
    */
   chainIdLimit: string[];
+  /**
+   * Whether this key is restricted to assigned managed EVM wallets. False (the
+   * default) means unrestricted, matching the Cardano walletScopeEnabled flag —
+   * so an empty wallet list means different things in the two cases.
+   */
+  x402WalletScopeEnabled: boolean;
 };
 
 export const DEFAULT_CAPABILITIES: ApiKeyCapabilities = {
@@ -21,6 +27,7 @@ export const DEFAULT_CAPABILITIES: ApiKeyCapabilities = {
   canPay: false,
   canAdmin: false,
   chainIdLimit: [],
+  x402WalletScopeEnabled: false,
 };
 
 /** Whether the key's chain limit includes at least one EVM (eip155) chain. */
@@ -70,6 +77,7 @@ export function capabilitiesFromApiKeyStatus(
         canAdmin?: boolean;
         status?: string;
         ChainIdLimit?: string[];
+        x402WalletScopeEnabled?: boolean;
       }
     | null
     | undefined,
@@ -86,5 +94,6 @@ export function capabilitiesFromApiKeyStatus(
     canPay: data.canPay === true || data.canAdmin === true,
     canAdmin: data.canAdmin === true,
     chainIdLimit: data.ChainIdLimit ?? [],
+    x402WalletScopeEnabled: data.x402WalletScopeEnabled === true,
   };
 }

@@ -9,7 +9,7 @@ import {
 	normalizeAddress,
 	safeHttpTransport,
 } from './internal';
-import type { X402OwnerScopeInput } from './internal';
+import { X402_UNRESTRICTED, type X402OwnerScopeInput } from './internal';
 import { getX402ManagedWallet } from './wallets';
 
 // Minimal ERC-20 read surface — balance plus display metadata.
@@ -102,7 +102,7 @@ export async function getX402WalletBalances(input: {
 }): Promise<{ evmWalletId: string; address: string; Balances: X402NetworkBalance[] }> {
 	const wallet = await getX402ManagedWallet(
 		input.evmWalletId,
-		input.ownerScope ?? null,
+		input.ownerScope ?? X402_UNRESTRICTED,
 		input.caip2NetworkLimit ?? null,
 	);
 	const owner = wallet.address as HexAddress;
