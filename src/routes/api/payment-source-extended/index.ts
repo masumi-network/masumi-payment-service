@@ -106,7 +106,8 @@ async function resolveLatestIdentifierCheckpoint(
 }
 
 // Read access: the admin UI (and scoped non-admin keys) need the source list to
-// bootstrap network selection. Mutations below stay admin-only.
+// bootstrap network selection. Mutations below stay admin-only, and the
+// rpcProviderApiKey secret is stripped for non-admin keys (see serializer).
 export const paymentSourceExtendedEndpointGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: paymentSourceExtendedSchemaInput,
@@ -117,7 +118,7 @@ export const paymentSourceExtendedEndpointGet = readAuthenticatedEndpointFactory
 			paymentSources.map((source) => source.id),
 			ctx.walletScopeIds,
 		);
-		return serializePaymentSourceExtendedResponse(paymentSources, walletCounts);
+		return serializePaymentSourceExtendedResponse(paymentSources, walletCounts, ctx.canAdmin);
 	},
 });
 

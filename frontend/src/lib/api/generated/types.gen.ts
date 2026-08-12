@@ -2222,9 +2222,9 @@ export type PaymentSourceExtended = {
      */
     PaymentSourceConfig: {
         /**
-         * The RPC provider API key (e.g., Blockfrost project ID)
+         * The RPC provider API key (e.g., Blockfrost project ID). Operator secret: only returned to keys with admin access, omitted for Read/ReadAndPay keys.
          */
-        rpcProviderApiKey: string;
+        rpcProviderApiKey?: string;
         /**
          * The RPC provider type (e.g., Blockfrost)
          */

@@ -24,13 +24,32 @@ export function serializePaymentSourceExtendedEntry(
 	};
 }
 
+/**
+ * The list endpoint is read-authenticated so non-admin sessions can bootstrap
+ * network/source selection, but `PaymentSourceConfig.rpcProviderApiKey` is an
+ * operator secret (a billable Blockfrost project id). Strip it for anything
+ * below admin — a Read key must never be able to walk away with it.
+ */
 export function serializePaymentSourceExtendedResponse(
 	paymentSources: PaymentSourceExtendedListRecord[],
 	walletCountsByPaymentSource: Map<string, WalletCounts>,
+	includeRpcProviderApiKey: boolean,
 ) {
 	return {
-		ExtendedPaymentSources: paymentSources.map((paymentSource) =>
-			serializePaymentSourceExtendedEntry(paymentSource, walletCountsByPaymentSource.get(paymentSource.id)),
-		),
+		ExtendedPaymentSources: paymentSources.map((paymentSource) => {
+			const entry = serializePaymentSourceExtendedEntry(
+				paymentSource,
+				walletCountsByPaymentSource.get(paymentSource.id),
+			);
+			if (includeRpcProviderApiKey) {
+				return entry;
+			}
+			return {
+				...entry,
+				PaymentSourceConfig: {
+					rpcProvider: entry.PaymentSourceConfig.rpcProvider,
+				},
+			};
+		}),
 	};
 }

@@ -4303,7 +4303,7 @@ export const PaymentSourceExtendedSchema = {
             properties: {
                 rpcProviderApiKey: {
                     type: 'string',
-                    description: 'The RPC provider API key (e.g., Blockfrost project ID)'
+                    description: 'The RPC provider API key (e.g., Blockfrost project ID). Operator secret: only returned to keys with admin access, omitted for Read/ReadAndPay keys.'
                 },
                 rpcProvider: {
                     type: 'string',
@@ -4314,7 +4314,6 @@ export const PaymentSourceExtendedSchema = {
                 }
             },
             required: [
-                'rpcProviderApiKey',
                 'rpcProvider'
             ],
             description: 'RPC provider configuration for blockchain interactions'
