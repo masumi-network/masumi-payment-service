@@ -80,10 +80,19 @@ export default function Overview() {
   // Defer the eager all-wallet balance load until after the dashboard shell has
   // painted, so its N+1 per-wallet UTxO fan-out doesn't compete with first
   // render. A single frame is enough to let the layout + skeletons show first.
+  //
+  // The timer is not redundant: requestAnimationFrame never fires while the tab
+  // is hidden, so opening the dashboard in a background tab (or restoring one)
+  // would otherwise leave this false forever and pin the wallet section and the
+  // balance cards on their skeletons until the tab was focused.
   const [walletsReady, setWalletsReady] = useState(false);
   useEffect(() => {
-    const id = requestAnimationFrame(() => setWalletsReady(true));
-    return () => cancelAnimationFrame(id);
+    const frame = requestAnimationFrame(() => setWalletsReady(true));
+    const timer = setTimeout(() => setWalletsReady(true), 200);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
   }, []);
   const {
     wallets: walletsList,
