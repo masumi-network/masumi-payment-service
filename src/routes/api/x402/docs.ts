@@ -132,7 +132,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/wallets',
 		description:
 			'Creates a managed EVM wallet on a network permitted for the API key. When no key is supplied, the generated private key is returned once for backup and stored only in encrypted form.',
-		summary: 'Create a managed x402 EVM wallet. (pay access required; owned by the creating key)',
+		summary: 'Create a managed x402 EVM wallet. (admin access required; returns the generated private key once)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -171,7 +171,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/wallets/delete',
 		description:
 			'Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.',
-		summary: 'Retire a managed x402 EVM wallet. (pay access required; owner and network scoped)',
+		summary: 'Retire a managed x402 EVM wallet. (admin access required; network scoped)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

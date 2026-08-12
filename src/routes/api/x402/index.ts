@@ -226,7 +226,11 @@ export const listX402WalletsGet = payAuthenticatedEndpointFactory.build({
 	}),
 });
 
-export const createX402WalletPost = payAuthenticatedEndpointFactory.build({
+// Admin-only, matching the Cardano wallet lifecycle (POST/PATCH /wallet and wallet
+// removal are all admin). This is also the only endpoint that ever returns EVM key
+// material — a generated wallet's private key, once, for backup — so keeping it here
+// means no read or pay key can obtain a private key at all.
+export const createX402WalletPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: createWalletSchemaInput,
 	output: createWalletSchemaOutput,
@@ -249,7 +253,8 @@ export const getX402WalletGet = payAuthenticatedEndpointFactory.build({
 		getX402ManagedWallet(input.id, x402OwnerScope(ctx), x402NetworkLimit(ctx)),
 });
 
-export const updateX402WalletPost = payAuthenticatedEndpointFactory.build({
+// Admin-only: wallet lifecycle, as on the Cardano side (PATCH /wallet).
+export const updateX402WalletPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: updateWalletSchemaInput,
 	output: walletSchemaOutput,
@@ -288,7 +293,9 @@ export const x402WalletsCountGet = payAuthenticatedEndpointFactory.build({
 	}),
 });
 
-export const deleteX402WalletPost = payAuthenticatedEndpointFactory.build({
+// Admin-only: retiring a custodial wallet is destructive and mirrors Cardano, where
+// wallet removal runs through the admin payment-source endpoints.
+export const deleteX402WalletPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: deleteWalletSchemaInput,
 	output: deleteWalletSchemaOutput,

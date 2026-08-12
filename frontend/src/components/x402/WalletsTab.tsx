@@ -101,7 +101,8 @@ export function WalletsTab() {
   const [balanceWallet, setBalanceWallet] = useState<X402Wallet | null>(null);
   const [editWallet, setEditWallet] = useState<X402Wallet | null>(null);
   const [walletToRetire, setWalletToRetire] = useState<X402Wallet | null>(null);
-  const canMutateWallets = capabilities.canPay;
+  // Wallet lifecycle is admin-only (it is the one path that returns EVM key material).
+  const canMutateWallets = capabilities.canAdmin;
 
   const retireWallet = useApiMutation({
     mutationFn: (body: { id: string }) => postX402WalletsDelete({ client: apiClient, body }),
@@ -188,7 +189,7 @@ export function WalletsTab() {
                       // where the same empty list means something quite different.
                       capabilities.canAdmin || !capabilities.x402WalletScopeEnabled
                         ? 'Create a wallet to fund and settle x402 payments.'
-                        : 'No managed wallets are assigned to this API key. A scoped key only sees wallets an admin assigned to it, plus any it created itself. Create one here, or ask an admin to assign one.'
+                        : 'No managed wallets are assigned to this API key. A scoped key only sees wallets an admin assigned to it. Ask an admin to assign one.'
                     }
                   />
                 </td>

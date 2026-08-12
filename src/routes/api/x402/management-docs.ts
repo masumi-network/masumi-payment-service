@@ -46,7 +46,7 @@ export function registerX402ManagementPaths({ registry, apiKeyAuth }: SwaggerReg
 		method: 'post',
 		path: '/x402/wallets/update',
 		description: 'Updates the human-readable note of a managed EVM wallet.',
-		summary: 'Update a managed x402 EVM wallet. (pay access required; owner and network scoped)',
+		summary: 'Update a managed x402 EVM wallet. (admin access required; network scoped)',
 		tags: ['x402'],
 		security: secured,
 		request: {

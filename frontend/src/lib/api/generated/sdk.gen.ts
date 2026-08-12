@@ -1344,7 +1344,7 @@ export const getX402Wallets = <ThrowOnError extends boolean = false>(options?: O
 });
 
 /**
- * Create a managed x402 EVM wallet. (pay access required; owned by the creating key)
+ * Create a managed x402 EVM wallet. (admin access required; returns the generated private key once)
  *
  * Creates a managed EVM wallet on a network permitted for the API key. When no key is supplied, the generated private key is returned once for backup and stored only in encrypted form.
  */
@@ -1374,7 +1374,7 @@ export const getX402WalletsDetail = <ThrowOnError extends boolean = false>(optio
 });
 
 /**
- * Retire a managed x402 EVM wallet. (pay access required; owner and network scoped)
+ * Retire a managed x402 EVM wallet. (admin access required; network scoped)
  *
  * Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.
  */
@@ -1510,7 +1510,7 @@ export const getX402Settlements = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * Update a managed x402 EVM wallet. (pay access required; owner and network scoped)
+ * Update a managed x402 EVM wallet. (admin access required; network scoped)
  *
  * Updates the human-readable note of a managed EVM wallet.
  */

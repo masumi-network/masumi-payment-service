@@ -114,6 +114,37 @@ export const mapApiKeyOutput = <
 	};
 };
 
+/**
+ * Resolve wallet-scope ids before they reach createMany. Without this the FK
+ * violation surfaces as a raw Prisma error in the 500 body, which both leaks the
+ * server's filesystem path and ORM internals and tells the caller nothing
+ * actionable. Applies to both rails.
+ */
+async function assertWalletScopeIdsExist(input: { hotWalletIds?: string[]; evmWalletIds?: string[] }): Promise<void> {
+	if (input.hotWalletIds != null && input.hotWalletIds.length > 0) {
+		const ids = Array.from(new Set(input.hotWalletIds));
+		const found = await prisma.hotWallet.findMany({
+			where: { id: { in: ids }, deletedAt: null },
+			select: { id: true },
+		});
+		const missing = ids.filter((id) => !found.some((wallet) => wallet.id === id));
+		if (missing.length > 0) {
+			throw createHttpError(400, `Unknown hot wallet id(s): ${missing.join(', ')}`);
+		}
+	}
+	if (input.evmWalletIds != null && input.evmWalletIds.length > 0) {
+		const ids = Array.from(new Set(input.evmWalletIds));
+		const found = await prisma.x402EvmWallet.findMany({
+			where: { id: { in: ids }, deletedAt: null },
+			select: { id: true },
+		});
+		const missing = ids.filter((id) => !found.some((wallet) => wallet.id === id));
+		if (missing.length > 0) {
+			throw createHttpError(400, `Unknown managed EVM wallet id(s): ${missing.join(', ')}`);
+		}
+	}
+}
+
 export const queryAPIKeyEndpointGet = adminAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: getAPIKeySchemaInput,
@@ -171,6 +202,10 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		if (isAdmin && input.x402WalletScopeEnabled) {
 			throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
 		}
+		await assertWalletScopeIdsExist({
+			hotWalletIds: input.walletScopeEnabled ? input.WalletScopeHotWalletIds : undefined,
+			evmWalletIds: input.x402WalletScopeEnabled ? input.X402WalletScopeEvmWalletIds : undefined,
+		});
 		if (isAdmin && input.usageLimited) {
 			throw createHttpError(400, 'Admin API keys cannot have usage limits');
 		}
@@ -336,6 +371,11 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 											: apiKey.networkLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) == null)),
 									]),
 								);
+
+					await assertWalletScopeIdsExist({
+						hotWalletIds: input.WalletScopeHotWalletIds,
+						evmWalletIds: input.X402WalletScopeEvmWalletIds,
+					});
 
 					if (input.WalletScopeHotWalletIds !== undefined) {
 						await prisma.apiKeyWalletScope.deleteMany({
