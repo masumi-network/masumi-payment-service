@@ -12,6 +12,8 @@ import { PaymentsTab } from '@/components/x402/PaymentsTab';
 import { AlertsTab } from '@/components/x402/AlertsTab';
 import { X402SetupGuide } from '@/components/x402/X402SetupGuide';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { hasEvmChainLimit } from '@/lib/permissions';
+import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 
 const ADMIN_TAB_NAMES = ['Chains', 'Wallets', 'Budgets', 'Alerts', 'Payments'] as const;
 const PAY_TAB_NAMES = ['Wallets', 'Payments'] as const;
@@ -33,6 +35,17 @@ export default function X402Page() {
       ? PAY_TAB_NAMES
       : READ_TAB_NAMES;
   const defaultTab = tabNames[0];
+  // A non-admin key only sees chains listed in its own CAIP-2 limit, so an empty
+  // rail here usually means the key was provisioned without any EVM chain rather
+  // than the rail being unconfigured. Say which, instead of rendering nothing.
+  const { networks: sessionChains, isLoading: chainsLoading } = useX402NetworksForSession({
+    silentErrors: true,
+  });
+  const showChainLimitHint =
+    !capabilities.canAdmin &&
+    !chainsLoading &&
+    sessionChains.length === 0 &&
+    !hasEvmChainLimit(capabilities.chainIdLimit);
 
   // Drive the active tab from the URL so tabs are deep-linkable and shareable, and so an
   // empty state can route the operator to the prerequisite tab (e.g. "Create a wallet first").
@@ -87,6 +100,13 @@ export default function X402Page() {
           </div>
 
           {capabilities.canAdmin && <X402SetupGuide />}
+
+          {showChainLimitHint && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100">
+              This API key has no EVM chains in its chain limit, so no x402 chains or payment
+              activity can be shown. An admin can add the chain ids to the key.
+            </div>
+          )}
 
           <Tabs
             tabs={tabNames.map((name) => ({ name }))}

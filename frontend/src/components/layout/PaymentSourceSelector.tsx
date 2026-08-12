@@ -24,6 +24,7 @@ import {
   type PaymentSourceType,
 } from '@/lib/payment-source-type';
 import { chainsForEnv, isX402ChainUsable, isX402SetUpForEnv, X402_ACCENT } from '@/lib/x402-rail';
+import { hasEvmChainLimit } from '@/lib/permissions';
 
 interface NetworkSourceCardProps {
   collapsed: boolean;
@@ -392,7 +393,25 @@ function SourceDropdown({
         );
       })}
 
-      {(capabilities.canAdmin || capabilities.canPay) && evmChains.length > 0 && (
+      {/* The chain projection is read-level, so every session that has EVM chains
+          in its key limit sees the rail here. */}
+      {evmChains.length === 0 &&
+        !capabilities.canAdmin &&
+        !hasEvmChainLimit(capabilities.chainIdLimit) && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="flex items-center gap-2">
+              x402
+              <RailBadge rail="x402" />
+            </DropdownMenuLabel>
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              This API key has no EVM chains in its chain limit, so none can be shown. An admin can
+              add them to the key.
+            </div>
+          </>
+        )}
+
+      {evmChains.length > 0 && (
         <>
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="flex items-center gap-2">

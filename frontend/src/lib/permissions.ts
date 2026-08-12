@@ -6,13 +6,27 @@ export type ApiKeyCapabilities = {
   canRead: boolean;
   canPay: boolean;
   canAdmin: boolean;
+  /**
+   * The key's own CAIP-2 chain limit, straight from /api-key-status. Non-admin
+   * keys only ever see x402 chains whose caip2Id is in this list, so an empty
+   * EVM section is ambiguous without it — "the rail isn't set up" and "your key
+   * has no EVM chain" look identical. Reporting the key's own limit explains the
+   * second case without revealing whether any chain exists.
+   */
+  chainIdLimit: string[];
 };
 
 export const DEFAULT_CAPABILITIES: ApiKeyCapabilities = {
   canRead: false,
   canPay: false,
   canAdmin: false,
+  chainIdLimit: [],
 };
+
+/** Whether the key's chain limit includes at least one EVM (eip155) chain. */
+export function hasEvmChainLimit(chainIdLimit: string[]): boolean {
+  return chainIdLimit.some((chainId) => chainId.toLowerCase().startsWith('eip155:'));
+}
 
 /** Routes that require canAdmin. Deep-links for non-admins are redirected away. */
 export const ADMIN_ONLY_PATHS = [
@@ -55,6 +69,7 @@ export function capabilitiesFromApiKeyStatus(
         canPay?: boolean;
         canAdmin?: boolean;
         status?: string;
+        ChainIdLimit?: string[];
       }
     | null
     | undefined,
@@ -70,5 +85,6 @@ export function capabilitiesFromApiKeyStatus(
     canRead: data.canRead === true || data.canPay === true || data.canAdmin === true,
     canPay: data.canPay === true || data.canAdmin === true,
     canAdmin: data.canAdmin === true,
+    chainIdLimit: data.ChainIdLimit ?? [],
   };
 }
