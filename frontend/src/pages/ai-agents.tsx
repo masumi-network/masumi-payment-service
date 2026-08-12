@@ -306,13 +306,17 @@ export default function AIAgentsPage() {
     // agentIdentifier deep link).
     const { action: _action, ...rest } = router.query;
     void router.replace({ pathname: '/ai-agents', query: rest }, undefined, { shallow: true });
-    // Registration is Cardano-only, so only actually open the dialog there.
-    if (activeRail === 'cardano') {
+    // Registration is Cardano-only, so only actually open the dialog there. It is
+    // also pay-authenticated: without the canPay gate a read-only key reaching this
+    // deep link (e.g. from the dashboard welcome banner) gets the full form and only
+    // finds out on submit, when POST /registry 401s.
+    if (activeRail === 'cardano' && capabilities.canPay) {
       queueMicrotask(() => setIsRegisterDialogOpen(true));
     }
-  }, [router.query.action, activeRail, router]);
+  }, [router.query.action, activeRail, router, capabilities.canPay]);
 
-  const shouldOpenRegisterDialog = activeRail === 'cardano' && isRegisterDialogOpen;
+  const shouldOpenRegisterDialog =
+    activeRail === 'cardano' && capabilities.canPay && isRegisterDialogOpen;
 
   const handleDeleteClick = (agent: AIAgent) => {
     setSelectedAgentToDelete(agent);

@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
-import { capabilitiesFromApiKeyStatus } from '@/lib/permissions';
+import { capabilitiesFromApiKeyStatus, DEFAULT_CAPABILITIES } from '@/lib/permissions';
 
 interface ApiError {
   message: string;
@@ -28,6 +28,10 @@ export function ApiKeyDialog() {
   const handleApiKeySubmit = async (key: string) => {
     setError('');
     setIsLoading(true);
+    // Drop the previous session's flags before the new key is in play. Without
+    // this, signing in with a weaker key while stale capabilities say canPay
+    // leaves pay-gated queries enabled for a beat and they 401.
+    setCapabilities(DEFAULT_CAPABILITIES);
 
     try {
       apiClient.setConfig({ headers: { token: key } });

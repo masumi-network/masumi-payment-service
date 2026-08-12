@@ -23,7 +23,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
-import { capabilitiesFromApiKeyStatus, isAdminOnlyPath } from '@/lib/permissions';
+import { capabilitiesFromApiKeyStatus, isAdminOnlyPath, isPayOnlyPath } from '@/lib/permissions';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
@@ -117,13 +117,15 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       return;
     }
 
-    // Read-only keys cannot use pay-authenticated x402 surfaces.
+    // Read-only keys cannot use pay-authenticated surfaces (x402, webhooks).
+    // Gate the whole route: the underlying 401s are swallowed by the query layer,
+    // so leaving the page mounted shows an empty state rather than a permission error.
     if (
       apiKey &&
       isHealthy &&
       !capabilities.canAdmin &&
       !capabilities.canPay &&
-      router.pathname === '/x402'
+      isPayOnlyPath(router.pathname)
     ) {
       router.replace('/');
       return;
@@ -132,10 +134,9 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     if (isLoading) return;
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
-    // Pages accessible even without payment sources (shown in setup sidebar)
-    const setupAccessiblePages = capabilities.canAdmin
-      ? ['/api-keys', '/developers', '/settings', '/x402-setup']
-      : ['/developers', '/settings', '/webhooks'];
+    // Pages accessible even without payment sources (shown in setup sidebar).
+    // Only consulted on the admin branch below — non-admins never enter setup mode.
+    const setupAccessiblePages = ['/api-keys', '/developers', '/settings', '/x402-setup'];
     // The x402 rail stands alone, so don't force Cardano setup for it. Two strengths:
     // - `x402MaybeStandalone` stays true WHILE the chain list is loading, so an EVM
     //   operator on a shared page (e.g. /ai-agents) isn't bounced to Cardano /setup during
@@ -338,15 +339,15 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   // still lets the page run one paint of admin queries first.
   const blockAdminDeepLink =
     !!apiKey && authorized && !capabilities.canAdmin && isAdminOnlyPath(router.pathname);
-  // x402 payment APIs are pay-authenticated; read-only keys have nothing useful there.
-  const blockX402DeepLink =
+  // x402 and webhook APIs are pay-authenticated; read-only keys have nothing useful there.
+  const blockPayOnlyDeepLink =
     !!apiKey &&
     authorized &&
     !capabilities.canAdmin &&
     !capabilities.canPay &&
-    router.pathname === '/x402';
+    isPayOnlyPath(router.pathname);
 
-  if (blockAdminDeepLink || blockX402DeepLink) {
+  if (blockAdminDeepLink || blockPayOnlyDeepLink) {
     return (
       <>
         <RouteProgressBar />

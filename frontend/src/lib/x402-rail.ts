@@ -53,8 +53,19 @@ export function hasBudgetOnEnabledNetworks(
  * unconfigured chain (no facilitator / blank RPC) is not selectable as an active rail —
  * picking it should route to setup instead of pretending the rail works.
  *
- * The pay-authenticated available projection exposes `canSettle` instead of facilitator/RPC
- * details — treat that flag as the usability signal for non-admin session bootstrap.
+ * Two projections reach this predicate. The admin one carries the raw config; the
+ * pay-authenticated `/x402/networks/available` one withholds it and sends `canSettle`,
+ * the server's own settlement verdict, instead.
+ *
+ * Dispatch on `canSettle` being present, NOT on config fields being absent: sniffing
+ * `rpcUrl === undefined` means the day the admin projection starts sending `canSettle`
+ * (or the available one starts sending `rpcUrl`) this predicate silently flips branch.
+ * Preferring the server's verdict whenever it is present degrades safely instead.
+ *
+ * Caveat: `canSettle` only reports "facilitator wallet or URL present" — it does not
+ * carry the RPC-reachability half of the admin check, so a facilitator-but-no-RPC chain
+ * reads usable to a pay key and unusable to an admin. Widen `canSettle` server-side if
+ * that divergence ever matters.
  */
 export function isX402ChainUsable(chain: {
   isEnabled: boolean;
@@ -63,7 +74,7 @@ export function isX402ChainUsable(chain: {
   facilitatorUrl?: string | null;
   rpcUrl?: string | null;
 }): boolean {
-  if (typeof chain.canSettle === 'boolean' && chain.rpcUrl === undefined) {
+  if (typeof chain.canSettle === 'boolean') {
     return chain.isEnabled && chain.canSettle;
   }
   return (

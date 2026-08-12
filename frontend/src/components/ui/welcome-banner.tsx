@@ -2,6 +2,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { cn } from '@/lib/utils';
 import { X, CreditCard, Bot, Wallet, ArrowUpDown, Check } from 'lucide-react';
 import Link from 'next/link';
+import { useAppContext } from '@/lib/contexts/AppContext';
 
 interface WelcomeBannerProps {
   agentCount: number;
@@ -33,37 +34,46 @@ export function WelcomeBanner({
 }: WelcomeBannerProps) {
   const isDismissedFromStorage = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [dismissed, setDismissed] = useState(false);
+  const { capabilities } = useAppContext();
 
   const allDone = hasPaymentSource && agentCount > 0 && walletCount > 0 && transactionCount > 0;
 
   if (isDismissedFromStorage || dismissed || allDone) return null;
 
+  // Each step links to a surface the session must actually be able to use.
+  // Payment sources and wallets are admin-only routes (a non-admin deep-link is
+  // bounced in _app), and registration is pay-authenticated — showing those to a
+  // read-only key produces CTAs that dead-end or 401 on submit.
   const steps = [
     {
       label: 'Set up payment source',
       href: '/payment-sources',
       done: hasPaymentSource,
       icon: CreditCard,
+      visible: capabilities.canAdmin,
     },
     {
       label: 'Register an AI agent',
       href: '/ai-agents?action=register_agent',
       done: agentCount > 0,
       icon: Bot,
+      visible: capabilities.canPay,
     },
     {
       label: 'Fund a wallet',
       href: '/wallets',
       done: walletCount > 0,
       icon: Wallet,
+      visible: capabilities.canAdmin,
     },
     {
       label: 'Make a transaction',
       href: '/transactions',
       done: transactionCount > 0,
       icon: ArrowUpDown,
+      visible: true,
     },
-  ];
+  ].filter((step) => step.visible);
 
   const handleDismiss = () => {
     localStorage.setItem(DISMISSED_KEY, 'true');

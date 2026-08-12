@@ -28,6 +28,21 @@ export function isAdminOnlyPath(pathname: string): boolean {
   return (ADMIN_ONLY_PATHS as readonly string[]).includes(pathname);
 }
 
+/**
+ * Routes whose every backing endpoint is pay-authenticated. Read-only keys are
+ * redirected away rather than left on the page: the 401s are swallowed by the
+ * query layer, so an ungated route renders as a plausible-looking empty state
+ * instead of telling the operator they lack permission.
+ *
+ * `/webhooks` belongs here for the same reason `/x402` does — GET /webhooks is
+ * payAuthenticated, not read.
+ */
+export const PAY_ONLY_PATHS = ['/x402', '/webhooks'] as const;
+
+export function isPayOnlyPath(pathname: string): boolean {
+  return (PAY_ONLY_PATHS as readonly string[]).includes(pathname);
+}
+
 export function capabilitiesFromApiKeyStatus(
   data:
     | {
