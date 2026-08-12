@@ -602,7 +602,9 @@ export default function AIAgentsPage() {
                               ? 'Try adjusting your search terms'
                               : activeRail === 'x402'
                                 ? "Agents that accept x402 on this environment's chains will appear here."
-                                : 'Register your first AI agent to get started'
+                                : capabilities.canPay
+                                  ? 'Register your first AI agent to get started'
+                                  : 'Registering an agent needs an API key with pay access'
                           }
                         />
                       </td>

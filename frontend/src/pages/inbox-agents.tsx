@@ -354,7 +354,9 @@ export default function InboxAgentsPage() {
                           description={
                             searchQuery
                               ? 'Try adjusting your search terms'
-                              : 'Register your first inbox agent to get started'
+                              : capabilities.canPay
+                                ? 'Register your first inbox agent to get started'
+                                : 'Registering an inbox agent needs an API key with pay access'
                           }
                         />
                       </td>
