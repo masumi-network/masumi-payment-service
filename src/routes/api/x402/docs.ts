@@ -65,7 +65,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/networks/available',
 		description:
 			'Lists the safe network projection needed to create managed wallets. Non-admin results are restricted to the API key CAIP-2 network limit; RPC and facilitator configuration are never returned.',
-		summary: 'List accessible x402 EVM chains. (pay access required)',
+		summary: 'List accessible x402 EVM chains. (read access required)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: { query: listNetworksSchemaInput },
@@ -295,7 +295,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		path: '/x402/payments',
 		description:
 			'Lists x402 payment attempts (inbound verify/settle and outbound payments), newest first, with their settlement result.',
-		summary: 'List x402 payment attempts. (pay access required; non-admin keys see only their own)',
+		summary: 'List x402 payment attempts. (read access required; non-admin keys see only their own)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {
@@ -346,7 +346,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'get',
 		path: '/x402/settlements',
 		description: 'Lists x402 on-chain settlements, newest first.',
-		summary: 'List x402 settlements. (pay access required; non-admin keys see only their own)',
+		summary: 'List x402 settlements. (read access required; non-admin keys see only their own)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

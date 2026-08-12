@@ -33,15 +33,16 @@ export function isAdminOnlyPath(pathname: string): boolean {
  * query layer, so an ungated route renders as a plausible-looking empty state
  * instead of telling the operator they lack permission.
  *
- * `/webhooks` belongs here for the same reason `/x402` does — GET /webhooks is
- * payAuthenticated, not read.
+ * `/webhooks` qualifies: every webhooks endpoint, GET included, is
+ * payAuthenticated.
  *
- * `/wallets` is deliberately absent: its table is built from GET /wallet/list
- * and GET /balance, both read-level, so every signed-in session may view it.
- * The mutating controls and the per-wallet detail dialog hit admin-only
- * endpoints and stay gated on canAdmin inside the page.
+ * `/wallets` and `/x402` are deliberately absent. The wallets table is built
+ * from GET /wallet/list and GET /balance, and the x402 page's chain projection
+ * plus attempt/settlement history are read-level too, so every signed-in
+ * session may view them. Their mutating controls, the per-wallet detail dialog
+ * and the x402 wallet/chain/budget/alert tabs stay gated inside those pages.
  */
-export const PAY_ONLY_PATHS = ['/x402', '/webhooks'] as const;
+export const PAY_ONLY_PATHS = ['/webhooks'] as const;
 
 export function isPayOnlyPath(pathname: string): boolean {
   return (PAY_ONLY_PATHS as readonly string[]).includes(pathname);

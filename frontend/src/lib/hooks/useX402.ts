@@ -106,8 +106,9 @@ export function useAvailableX402Networks(options?: {
       );
       return response?.data?.data?.Networks ?? [];
     },
-    // GET /x402/networks/available is pay-authenticated — same reasoning.
-    enabled: !!apiClient && authorized && enabled && capabilities.canPay,
+    // GET /x402/networks/available is read-level (sanitized projection), so any
+    // signed-in session may load the chain list.
+    enabled: !!apiClient && authorized && enabled,
     staleTime: 30000,
   });
 
@@ -149,8 +150,8 @@ export function useX402NetworksForSession(options?: {
   });
   const available = useAvailableX402Networks({
     ...options,
-    // Available networks is pay-authenticated — skip for read-only keys.
-    enabled: !capabilities.canAdmin && capabilities.canPay,
+    // Read-level, so every non-admin session resolves the rail through it.
+    enabled: !capabilities.canAdmin,
   });
 
   if (capabilities.canAdmin) {

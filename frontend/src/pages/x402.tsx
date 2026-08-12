@@ -15,6 +15,9 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 
 const ADMIN_TAB_NAMES = ['Chains', 'Wallets', 'Budgets', 'Alerts', 'Payments'] as const;
 const PAY_TAB_NAMES = ['Wallets', 'Payments'] as const;
+// Read keys get the payment history only: managed wallets are pay-authenticated,
+// while the attempt/settlement lists and the chain projection are read-level.
+const READ_TAB_NAMES = ['Payments'] as const;
 type TabName = (typeof ADMIN_TAB_NAMES)[number];
 
 function isTabName(value: unknown, allowed: readonly string[]): value is TabName {
@@ -24,8 +27,11 @@ function isTabName(value: unknown, allowed: readonly string[]): value is TabName
 export default function X402Page() {
   const router = useRouter();
   const { capabilities } = useAppContext();
-  // Payment/wallet x402 APIs are pay-authenticated — read-only keys are bounced in _app.
-  const tabNames = capabilities.canAdmin ? ADMIN_TAB_NAMES : PAY_TAB_NAMES;
+  const tabNames = capabilities.canAdmin
+    ? ADMIN_TAB_NAMES
+    : capabilities.canPay
+      ? PAY_TAB_NAMES
+      : READ_TAB_NAMES;
   const defaultTab = tabNames[0];
 
   // Drive the active tab from the URL so tabs are deep-linkable and shareable, and so an
@@ -43,10 +49,6 @@ export default function X402Page() {
   );
 
   useEffect(() => {
-    if (!capabilities.canAdmin && !capabilities.canPay) {
-      router.replace('/');
-      return;
-    }
     // Canonicalize any tab param the session cannot use (a pay key landing on an
     // admin tab link, a stale bookmark). Compare against undefined rather than
     // truthiness so `?tab=` is rewritten too instead of sticking in the URL.
@@ -55,11 +57,7 @@ export default function X402Page() {
         shallow: true,
       });
     }
-  }, [router, tabNames, defaultTab, capabilities.canAdmin, capabilities.canPay]);
-
-  if (!capabilities.canAdmin && !capabilities.canPay) {
-    return null;
-  }
+  }, [router, tabNames, defaultTab]);
 
   return (
     <MainLayout>
@@ -73,7 +71,9 @@ export default function X402Page() {
             <p className="max-w-2xl text-sm text-muted-foreground">
               {capabilities.canAdmin
                 ? 'Manage the EVM payment rail: chains, managed wallets, spend budgets, balance alerts and payment activity.'
-                : 'View and manage EVM wallets and payment activity for chains your key can access.'}{' '}
+                : capabilities.canPay
+                  ? 'View and manage EVM wallets and payment activity for chains your key can access.'
+                  : 'View x402 payment activity for chains your key can access. Managing wallets needs pay access.'}{' '}
               <a
                 href="https://www.masumi.network/dev/masumi"
                 target="_blank"
@@ -96,7 +96,7 @@ export default function X402Page() {
 
           <div className="pt-2">
             {activeTab === 'Chains' && capabilities.canAdmin && <ChainsTab />}
-            {activeTab === 'Wallets' && <WalletsTab />}
+            {activeTab === 'Wallets' && capabilities.canPay && <WalletsTab />}
             {activeTab === 'Budgets' && capabilities.canAdmin && <BudgetsTab />}
             {activeTab === 'Alerts' && capabilities.canAdmin && <AlertsTab />}
             {activeTab === 'Payments' && <PaymentsTab />}

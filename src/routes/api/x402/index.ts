@@ -1,6 +1,7 @@
 import {
 	adminAuthenticatedEndpointFactory,
 	payAuthenticatedEndpointFactory,
+	readAuthenticatedEndpointFactory,
 	type AuthContext,
 } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
@@ -288,7 +289,11 @@ export const deleteX402WalletPost = payAuthenticatedEndpointFactory.build({
 		deleteX402ManagedWallet(input.id, x402OwnerScope(ctx), x402NetworkLimit(ctx)),
 });
 
-export const listAvailableX402NetworksGet = payAuthenticatedEndpointFactory.build({
+// Read access: the sanitized chain projection (no rpcUrl, no facilitator wallet
+// or URL — settlement readiness is summarised as canSettle), so a read-only
+// session can see which EVM chains the rail offers. The full config stays on
+// the admin GET /x402/networks below.
+export const listAvailableX402NetworksGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listNetworksSchemaInput,
 	output: listAvailableNetworksSchemaOutput,
@@ -334,7 +339,10 @@ export const setX402BudgetPost = adminAuthenticatedEndpointFactory.build({
 		serializeBudget(await setX402WalletBudget({ ...input, createdById: ctx.id })),
 });
 
-export const listX402PaymentAttemptsGet = payAuthenticatedEndpointFactory.build({
+// Read access, mirroring the Cardano rail where GET /payment and /purchase are
+// read-level. Non-admins are scoped to their own attempts by x402TenantApiKeyId,
+// so a read key sees the history it initiated and nothing of other tenants'.
+export const listX402PaymentAttemptsGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listPaymentAttemptsSchemaInput,
 	output: listPaymentAttemptsSchemaOutput,
@@ -363,7 +371,9 @@ export const reconcileX402PaymentPost = adminAuthenticatedEndpointFactory.build(
 	},
 });
 
-export const listX402SettlementsGet = payAuthenticatedEndpointFactory.build({
+// Read access — settlement history for the caller's own attempts; same tenant
+// scoping as the attempt list above.
+export const listX402SettlementsGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listSettlementsSchemaInput,
 	output: listSettlementsSchemaOutput,
@@ -405,7 +415,7 @@ export const deleteX402LowBalanceRuleDelete = adminAuthenticatedEndpointFactory.
 		deleteX402LowBalanceRule(input.ruleId),
 });
 
-export const x402PaymentAttemptsCountGet = payAuthenticatedEndpointFactory.build({
+export const x402PaymentAttemptsCountGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: paymentAttemptsCountSchemaInput,
 	output: countSchemaOutput,
@@ -414,7 +424,7 @@ export const x402PaymentAttemptsCountGet = payAuthenticatedEndpointFactory.build
 	}),
 });
 
-export const x402SettlementsCountGet = payAuthenticatedEndpointFactory.build({
+export const x402SettlementsCountGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: settlementsCountSchemaInput,
 	output: countSchemaOutput,

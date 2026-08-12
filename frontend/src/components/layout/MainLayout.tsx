@@ -273,17 +273,16 @@ export function MainLayout({ children }: MainLayoutProps) {
 
     if (activeRail === 'x402') {
       return [
-        ...(canAdmin || canPay
-          ? [
-              {
-                href: '/x402',
-                name: 'x402',
-                icon: <Coins className="h-4 w-4" />,
-                badge: null,
-                group: 0,
-              } satisfies NavItem,
-            ]
-          : []),
+        // The chain projection and payment history are read-level, so the rail
+        // is navigable by every session; its wallet/chain/budget/alert tabs stay
+        // gated inside the page.
+        {
+          href: '/x402',
+          name: 'x402',
+          icon: <Coins className="h-4 w-4" />,
+          badge: null,
+          group: 0,
+        },
         sharedAgents,
         ...(sharedWebhooks ? [sharedWebhooks] : []),
         ...sharedGroup1,

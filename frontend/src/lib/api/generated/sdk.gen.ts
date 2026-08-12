@@ -1289,7 +1289,7 @@ export const postMonitoringStop = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * List accessible x402 EVM chains. (pay access required)
+ * List accessible x402 EVM chains. (read access required)
  *
  * Lists the safe network projection needed to create managed wallets. Non-admin results are restricted to the API key CAIP-2 network limit; RPC and facilitator configuration are never returned.
  */
@@ -1468,7 +1468,7 @@ export const postX402Pay = <ThrowOnError extends boolean = false>(options?: Opti
 });
 
 /**
- * List x402 payment attempts. (pay access required; non-admin keys see only their own)
+ * List x402 payment attempts. (read access required; non-admin keys see only their own)
  *
  * Lists x402 payment attempts (inbound verify/settle and outbound payments), newest first, with their settlement result.
  */
@@ -1497,7 +1497,7 @@ export const postX402PaymentsReconcile = <ThrowOnError extends boolean = false>(
 });
 
 /**
- * List x402 settlements. (pay access required; non-admin keys see only their own)
+ * List x402 settlements. (read access required; non-admin keys see only their own)
  *
  * Lists x402 on-chain settlements, newest first.
  */
@@ -1615,7 +1615,7 @@ export const postX402LowBalance = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * Count x402 payment attempts. (pay access required; non-admin keys count only their own)
+ * Count x402 payment attempts. (read access required; non-admin keys count only their own)
  *
  * Counts x402 payment attempts, optionally filtered by status, direction and chain.
  */
@@ -1627,7 +1627,7 @@ export const getX402PaymentsCount = <ThrowOnError extends boolean = false>(optio
 });
 
 /**
- * Count x402 settlements. (pay access required; non-admin keys count only their own)
+ * Count x402 settlements. (read access required; non-admin keys count only their own)
  *
  * Counts x402 settlements, optionally filtered by chain and success.
  */
