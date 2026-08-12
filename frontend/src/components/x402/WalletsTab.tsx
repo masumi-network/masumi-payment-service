@@ -182,7 +182,14 @@ export function WalletsTab() {
                 <td colSpan={6}>
                   <EmptyState
                     title="No managed wallets"
-                    description="Create a wallet to fund and settle x402 payments."
+                    description={
+                      capabilities.canAdmin
+                        ? 'Create a wallet to fund and settle x402 payments.'
+                        : // Custodial EVM wallets are owned by the API key that created
+                          // them, so a non-admin key never lists another key's wallets.
+                          // Say so — otherwise this reads as "the operator has none".
+                          'This API key owns no managed wallets. Non-admin keys only see wallets they created themselves; wallets created by other keys stay hidden. Create one here, or ask an admin.'
+                    }
                   />
                 </td>
               </tr>
