@@ -44,13 +44,19 @@ const formatStatus = (status: string | null) => {
 };
 
 export default function Transactions() {
-  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource, capabilities } =
+    useAppContext();
 
   const [activeTab, setActiveTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<TransactionFilterState>(EMPTY_FILTERS);
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
   const isNeedsActionTab = activeTab === 'Needs Action';
+  // Error recovery posts to /payment|purchase/error-state-recovery, both
+  // pay-authenticated. Read-only sessions keep the Needs Action tab as a
+  // read-only view but get no selection column and no bulk action bar.
+  const canRecoverErrors = capabilities.canPay;
+  const showSelection = isNeedsActionTab && canRecoverErrors;
 
   const filterParams = useMemo(() => {
     const params: {
@@ -429,12 +435,17 @@ export default function Transactions() {
                 <Download className="h-4 w-4" />
                 Download CSV
               </Button>
-              <Link href="/developers">
-                <Button className="flex items-center gap-2 btn-hover-lift">
-                  <FlaskConical className="h-4 w-4" />
-                  Test transaction
-                </Button>
-              </Link>
+              {/* Developers > Testing creates real payments/purchases via
+                  pay-authenticated endpoints, and the tab is hidden for
+                  read-only keys, so this shortcut would dead-end. */}
+              {capabilities.canPay && (
+                <Link href="/developers">
+                  <Button className="flex items-center gap-2 btn-hover-lift">
+                    <FlaskConical className="h-4 w-4" />
+                    Test transaction
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
 
@@ -469,7 +480,7 @@ export default function Transactions() {
             />
           </div>
 
-          {isNeedsActionTab && selectedIds.size > 0 && (
+          {showSelection && selectedIds.size > 0 && (
             <div className="flex items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 animate-fade-in">
               <span className="text-sm font-medium">{selectedIds.size} selected</span>
               <div className="flex items-center gap-2">
@@ -513,7 +524,7 @@ export default function Transactions() {
             >
               <thead className="bg-muted/30 dark:bg-muted/15">
                 <tr className="border-b">
-                  {isNeedsActionTab && (
+                  {showSelection && (
                     <th className="p-4 pl-6 w-10">
                       <Checkbox
                         checked={allSelected ? true : someSelected ? 'indeterminate' : false}
@@ -526,7 +537,7 @@ export default function Transactions() {
                   <th
                     className={cn(
                       'p-4 text-left text-sm font-medium text-muted-foreground',
-                      !isNeedsActionTab && 'pl-6',
+                      !showSelection && 'pl-6',
                     )}
                   >
                     Type
@@ -556,7 +567,7 @@ export default function Transactions() {
                   <TransactionTableSkeleton rows={5} />
                 ) : visibleTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={isNeedsActionTab ? 10 : 9}>
+                    <td colSpan={showSelection ? 10 : 9}>
                       <EmptyState
                         icon={searchQuery ? 'search' : 'inbox'}
                         title={
@@ -570,7 +581,7 @@ export default function Transactions() {
                             : 'Transactions will appear here once payments are made.'
                         }
                         action={
-                          !searchQuery ? (
+                          !searchQuery && capabilities.canPay ? (
                             <Link
                               href="/developers"
                               className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
@@ -598,7 +609,7 @@ export default function Transactions() {
                       style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                       onClick={() => setSelectedTransaction(transaction)}
                     >
-                      {isNeedsActionTab && (
+                      {showSelection && (
                         <td className="p-4 pl-6 w-10" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             checked={transaction.id ? selectedIds.has(transaction.id) : false}
@@ -608,7 +619,7 @@ export default function Transactions() {
                           />
                         </td>
                       )}
-                      <td className={cn('p-4', !isNeedsActionTab && 'pl-6')}>
+                      <td className={cn('p-4', !showSelection && 'pl-6')}>
                         <span className="capitalize">{transaction.type}</span>
                       </td>
                       <td className="p-4">

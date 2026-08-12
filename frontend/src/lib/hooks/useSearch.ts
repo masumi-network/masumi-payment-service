@@ -12,13 +12,19 @@ export interface SearchableItem {
   href: string;
   keywords?: string[];
   elementId?: string;
+  /**
+   * Capability this entry needs. The palette is a second route into every page
+   * and quick action, so without this a read-only key could search its way to a
+   * surface the nav hides and the router bounces.
+   */
+  requires?: 'pay' | 'admin';
 }
 
 const searchableItems: SearchableItem[] = [
   { id: 'dashboard', title: 'Dashboard', type: 'page', href: '/' },
   { id: 'ai-agents', title: 'AI Agents', type: 'page', href: '/ai-agents' },
   { id: 'inbox-agents', title: 'Inbox Agents', type: 'page', href: '/inbox-agents' },
-  { id: 'wallets', title: 'Wallets', type: 'page', href: '/wallets' },
+  { id: 'wallets', title: 'Wallets', type: 'page', href: '/wallets', requires: 'pay' },
   {
     id: 'transactions',
     title: 'Transactions',
@@ -30,9 +36,10 @@ const searchableItems: SearchableItem[] = [
     title: 'Payment Sources',
     type: 'page',
     href: '/payment-sources',
+    requires: 'admin',
   },
-  { id: 'api-keys', title: 'API Keys', type: 'page', href: '/api-keys' },
-  { id: 'webhooks', title: 'Webhooks', type: 'page', href: '/webhooks' },
+  { id: 'api-keys', title: 'API Keys', type: 'page', href: '/api-keys', requires: 'admin' },
+  { id: 'webhooks', title: 'Webhooks', type: 'page', href: '/webhooks', requires: 'pay' },
   { id: 'settings', title: 'Settings', type: 'page', href: '/settings' },
 
   {
@@ -41,6 +48,7 @@ const searchableItems: SearchableItem[] = [
     type: 'action',
     href: '/ai-agents?action=register_agent',
     elementId: 'add-ai-agent-button',
+    requires: 'pay',
     keywords: ['create agent', 'new agent'],
   },
   {
@@ -49,6 +57,7 @@ const searchableItems: SearchableItem[] = [
     type: 'action',
     href: '/inbox-agents?action=register_inbox_agent',
     elementId: 'add-inbox-agent-button',
+    requires: 'pay',
     keywords: ['create inbox agent', 'new inbox agent', 'register inbox'],
   },
   {
@@ -57,6 +66,7 @@ const searchableItems: SearchableItem[] = [
     type: 'action',
     href: '/wallets?action=add_wallet',
     elementId: 'add-wallet-button',
+    requires: 'admin',
     keywords: ['create wallet', 'new wallet'],
   },
   {
@@ -65,6 +75,7 @@ const searchableItems: SearchableItem[] = [
     type: 'action',
     href: '/payment-sources?action=add_payment_source',
     elementId: 'add-payment-source-button',
+    requires: 'admin',
     keywords: ['create payment source', 'new payment source'],
   },
   {
@@ -73,6 +84,7 @@ const searchableItems: SearchableItem[] = [
     type: 'action',
     href: '/api-keys?action=add_api_key',
     elementId: 'add-api-key-button',
+    requires: 'admin',
     keywords: ['create api key', 'new api key'],
   },
   {
@@ -81,6 +93,7 @@ const searchableItems: SearchableItem[] = [
     type: 'action',
     href: '/webhooks?action=add_webhook',
     elementId: 'add-webhook-button',
+    requires: 'pay',
     keywords: ['create webhook', 'new webhook', 'slack alert', 'discord alert'],
   },
   {
@@ -117,7 +130,7 @@ const searchableItems: SearchableItem[] = [
 ];
 
 export function useSearch(enabled = true) {
-  const { network } = useAppContext();
+  const { network, capabilities } = useAppContext();
 
   const { paymentSources } = usePaymentSourceExtendedAll();
   // Only load the full wallet set while the search UI is actually open — this
@@ -147,6 +160,7 @@ export function useSearch(enabled = true) {
         type: 'wallet',
         href: `/wallets?searched=${wallet.walletAddress}`,
         elementId: `wallet-${wallet.walletAddress}`,
+        requires: 'pay',
       });
     });
 
@@ -158,11 +172,19 @@ export function useSearch(enabled = true) {
         type: 'payment-source',
         href: `/payment-sources?searched=${source.id}`,
         elementId: `payment-source-${source.id}`,
+        requires: 'admin',
       });
     });
 
-    return [...searchableItems, ...dynamicResults];
-  }, [currentNetworkPaymentSources, wallets]);
+    const permitted = (item: SearchableItem) =>
+      item.requires === 'admin'
+        ? capabilities.canAdmin
+        : item.requires === 'pay'
+          ? capabilities.canPay
+          : true;
+
+    return [...searchableItems, ...dynamicResults].filter(permitted);
+  }, [currentNetworkPaymentSources, wallets, capabilities.canAdmin, capabilities.canPay]);
 
   const handleSearch = useCallback(
     async (query: string) => {
