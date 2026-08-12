@@ -23,6 +23,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useX402Networks } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
+import { hasLegacyOnlyPaymentSources, isV2PaymentSource } from '@/lib/payment-source-type';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
@@ -75,6 +76,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     authorized,
     isSetupMode,
     activeRail,
+    setIsSetupMode,
   } = useAppContext();
 
   // Add dynamic favicon functionality
@@ -104,6 +106,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     if (isLoading) return;
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
+    const legacyOnlyPaymentSources = hasLegacyOnlyPaymentSources(currentNetworkPaymentSources);
     // Pages accessible even without payment sources (shown in setup sidebar)
     const setupAccessiblePages = ['/api-keys', '/developers', '/settings', '/x402-setup'];
     // The x402 rail stands alone, so don't force Cardano setup for it. Two strengths:
@@ -121,12 +124,25 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
     }
+    // Legacy-only operators should keep using the full admin UI with their V1
+    // source visible. Setup mode is only for the /setup wizard, not a persisted
+    // trap that hides the dashboard behind the V2 setup rail.
+    if (
+      apiKey &&
+      isHealthy &&
+      isSetupMode &&
+      legacyOnlyPaymentSources &&
+      router.pathname !== '/setup'
+    ) {
+      setIsSetupMode(false);
+    }
     // If setup mode is active (persisted from before reload), redirect back to setup
     // but allow access to pages shown in the setup sidebar
     if (
       apiKey &&
       isHealthy &&
       isSetupMode &&
+      !legacyOnlyPaymentSources &&
       router.pathname !== '/setup' &&
       !setupAccessiblePages.includes(router.pathname)
     ) {
@@ -153,6 +169,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     preprodPaymentSources,
     isSetupMode,
     activeRail,
+    setIsSetupMode,
     x402Loading,
     x402Networks,
   ]);
