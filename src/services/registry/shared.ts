@@ -75,7 +75,12 @@ export {
 export function resolveRegistryRecipientWalletAddress(request: {
 	SmartContractWallet: { walletAddress: string };
 	RecipientWallet: { walletAddress: string } | null;
+	recipientWalletAddress?: string | null;
 }) {
+	const externalAddress = request.recipientWalletAddress?.trim();
+	if (externalAddress) {
+		return externalAddress;
+	}
 	return request.RecipientWallet?.walletAddress ?? request.SmartContractWallet.walletAddress;
 }
 

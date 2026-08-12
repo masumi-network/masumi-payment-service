@@ -24,6 +24,7 @@ import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtende
 import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 import { capabilitiesFromApiKeyStatus, isAdminOnlyPath, isPayOnlyPath } from '@/lib/permissions';
+import { hasLegacyOnlyPaymentSources, isV2PaymentSource } from '@/lib/payment-source-type';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
@@ -134,6 +135,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     if (isLoading) return;
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
+    const legacyOnlyPaymentSources = hasLegacyOnlyPaymentSources(currentNetworkPaymentSources);
     // Pages accessible even without payment sources (shown in setup sidebar).
     // Only consulted on the admin branch below — non-admins never enter setup mode.
     const setupAccessiblePages = ['/api-keys', '/developers', '/settings', '/x402-setup'];
@@ -159,6 +161,18 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
       }
     }
+    // Legacy-only operators should keep using the full admin UI with their V1
+    // source visible. Setup mode is only for the /setup wizard, not a persisted
+    // trap that hides the dashboard behind the V2 setup rail.
+    if (
+      apiKey &&
+      isHealthy &&
+      isSetupMode &&
+      legacyOnlyPaymentSources &&
+      router.pathname !== '/setup'
+    ) {
+      setIsSetupMode(false);
+    }
     // If setup mode is active (persisted from before reload), redirect back to setup
     // but allow access to pages shown in the setup sidebar. Non-admins never enter setup.
     if (apiKey && isHealthy && isSetupMode && !capabilities.canAdmin) {
@@ -168,6 +182,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       isHealthy &&
       isSetupMode &&
       capabilities.canAdmin &&
+      !legacyOnlyPaymentSources &&
       router.pathname !== '/setup' &&
       !setupAccessiblePages.includes(router.pathname)
     ) {

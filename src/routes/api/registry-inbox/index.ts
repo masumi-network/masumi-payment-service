@@ -121,7 +121,7 @@ export const registerInboxAgentPost = payAuthenticatedEndpointFactory.build({
 			});
 			const sendFundingLovelace = normalizeRequestedRegistryFundingLovelace(input.sendFundingLovelace);
 			const normalizedAgentSlug = validateCanonicalInboxSlug(input.agentSlug);
-			const recipientWallet = await resolveScopedRecipientWalletOrThrow({
+			const recipient = await resolveScopedRecipientWalletOrThrow({
 				network: input.network,
 				recipientWalletAddress: input.recipientWalletAddress,
 				sellingWallet,
@@ -145,13 +145,14 @@ export const registerInboxAgentPost = payAuthenticatedEndpointFactory.build({
 						},
 					},
 					RecipientWallet:
-						recipientWallet != null
+						recipient.hotWallet != null
 							? {
 									connect: {
-										id: recipientWallet.id,
+										id: recipient.hotWallet.id,
 									},
 								}
 							: undefined,
+					...(recipient.externalAddress ? { recipientWalletAddress: recipient.externalAddress } : {}),
 					PaymentSource: {
 						connect: {
 							id: sellingWallet.paymentSourceId,

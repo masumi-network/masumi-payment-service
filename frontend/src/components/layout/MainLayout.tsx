@@ -43,7 +43,10 @@ import MasumiIconFlat from '@/components/MasumiIconFlat';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
-import { DEFAULT_PAYMENT_SOURCE_TYPE, isV2PaymentSource } from '@/lib/payment-source-type';
+import {
+  DEFAULT_PAYMENT_SOURCE_TYPE,
+  hasLegacyOnlyPaymentSources as networkHasLegacyOnlyPaymentSources,
+} from '@/lib/payment-source-type';
 import { X402SetupBanner } from '@/components/x402/X402SetupBanner';
 import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
@@ -156,8 +159,9 @@ export function MainLayout({ children }: MainLayoutProps) {
     [network, paymentSources],
   );
   const hasPaymentSources = currentNetworkPaymentSources.length > 0;
-  const hasV2PaymentSource = currentNetworkPaymentSources.some(isV2PaymentSource);
-  const hasLegacyOnlyPaymentSources = hasPaymentSources && !hasV2PaymentSource;
+  const hasLegacyOnlyPaymentSources = networkHasLegacyOnlyPaymentSources(
+    currentNetworkPaymentSources,
+  );
   const { networks: x402Networks, isLoading: x402Loading } = useX402NetworksForSession({
     silentErrors: true,
   });
@@ -725,7 +729,8 @@ export function MainLayout({ children }: MainLayoutProps) {
                         />
                       </div>
                       <p className="opacity-85">
-                        Run the one-time V2 setup, then migrate your agents on the dashboard.
+                        Your V1 payment source stays active. Run the one-time V2 setup when you are
+                        ready to migrate agents.
                       </p>
                     </div>
                   </div>
