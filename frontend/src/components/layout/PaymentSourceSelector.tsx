@@ -99,17 +99,6 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
   // never wrongly downgrades the rail.
   useEffect(() => {
     if (x402Loading) return;
-    // Read-only keys have no pay-authenticated x402 APIs — force Cardano rail.
-    if (!capabilities.canAdmin && !capabilities.canPay) {
-      if (activeRail === 'x402') {
-        setActiveRail('cardano');
-        setSelectedX402ChainId(null);
-        if (X402_ONLY_PAGES.includes(router.pathname)) {
-          router.replace('/');
-        }
-      }
-      return;
-    }
     if (activeRail !== 'x402') return;
     // Keep the selection only if it points at a *usable* chain. A persisted/stale id that
     // is enabled but half-configured (missing facilitator or RPC) must not pin the rail —
@@ -141,9 +130,6 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     evmChains,
     setSelectedX402ChainId,
     setActiveRail,
-    capabilities.canAdmin,
-    capabilities.canPay,
-    router,
   ]);
 
   const selectCardanoSource = (id: string) => {
