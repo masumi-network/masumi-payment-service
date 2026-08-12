@@ -306,7 +306,9 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
         group: 0,
       },
-      ...(canAdmin
+      // Pay keys can list wallets (GET /wallet/list is pay-authenticated), so they
+      // get the page too — read-only, with the mutating controls gated inside it.
+      ...(canPay
         ? [
             {
               href: '/wallets',

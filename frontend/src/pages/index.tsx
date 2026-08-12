@@ -90,7 +90,7 @@ export default function Overview() {
     totalBalance: totalBalanceValue,
     totalUsdcxBalance: totalUsdcxBalanceValue,
     isLoading: isLoadingWalletsQuery,
-  } = useWallets({ enabled: walletsReady && capabilities.canAdmin });
+  } = useWallets({ enabled: walletsReady && capabilities.canPay });
   // Keep the balance cards in their loading state during the pre-paint defer
   // window so they never flash an empty "0" before the fetch starts.
   const isLoadingWallets = !walletsReady || isLoadingWalletsQuery;
@@ -110,7 +110,7 @@ export default function Overview() {
   const isContextResolving =
     isLoadingPaymentSources || (currentNetworkPaymentSources.length > 0 && !selectedPaymentSource);
   const agentsSectionLoading = isContextResolving || isLoadingAgents;
-  const walletsSectionLoading = capabilities.canAdmin && (isContextResolving || isLoadingWallets);
+  const walletsSectionLoading = capabilities.canPay && (isContextResolving || isLoadingWallets);
   const selectedSourceIsV1 = selectedPaymentSource
     ? !isV2PaymentSource(selectedPaymentSource)
     : false;
@@ -240,7 +240,7 @@ export default function Overview() {
                     </div>
                   </StatCard>
                 )}
-                {capabilities.canAdmin &&
+                {capabilities.canPay &&
                   (walletsSectionLoading ? (
                     <StatCardSkeleton />
                   ) : (
@@ -256,7 +256,7 @@ export default function Overview() {
                       </div>
                     </StatCard>
                   ))}
-                {capabilities.canAdmin &&
+                {capabilities.canPay &&
                   (walletsSectionLoading ? (
                     <StatCardSkeleton />
                   ) : (
@@ -403,7 +403,7 @@ export default function Overview() {
                 </div>
               </div>
 
-              {capabilities.canAdmin && (
+              {capabilities.canPay && (
                 <div className="border rounded-lg p-6 flex flex-col">
                   <div className="flex-1">
                     <div className="flex justify-between items-center mb-2">
@@ -447,13 +447,18 @@ export default function Overview() {
                                 <tr
                                   key={wallet.id}
                                   className={cn(
-                                    'border-b last:border-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                                    'border-b last:border-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                                    // The detail dialog reads admin-only endpoints, so pay
+                                    // keys see the row but cannot drill into it.
+                                    capabilities.canAdmin && 'cursor-pointer',
                                     wallet.LowBalanceSummary?.isLow
                                       ? 'bg-amber-500/5 hover:bg-amber-500/10'
                                       : 'hover:bg-muted/10',
                                   )}
                                   style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
-                                  onClick={() => setSelectedWalletForDetails(wallet)}
+                                  onClick={() =>
+                                    capabilities.canAdmin && setSelectedWalletForDetails(wallet)
+                                  }
                                 >
                                   <td className="py-3 px-2">
                                     <div className="flex items-center gap-2">
@@ -524,7 +529,7 @@ export default function Overview() {
                                   </td>
                                   <td className="py-3 px-2 w-32">
                                     <div className="flex items-center gap-2">
-                                      {wallet.network === 'Mainnet' && (
+                                      {capabilities.canAdmin && wallet.network === 'Mainnet' && (
                                         <Button
                                           variant="ghost"
                                           size="icon"
@@ -538,17 +543,19 @@ export default function Overview() {
                                           <ArrowLeftRight className="h-4 w-4" />
                                         </Button>
                                       )}
-                                      <Button
-                                        variant="muted"
-                                        className="h-8 btn-hover-lift"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSelectedWalletForTopup(wallet);
-                                        }}
-                                      >
-                                        <PlusCircle className="h-3.5 w-3.5" />
-                                        Top Up
-                                      </Button>
+                                      {capabilities.canAdmin && (
+                                        <Button
+                                          variant="muted"
+                                          className="h-8 btn-hover-lift"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedWalletForTopup(wallet);
+                                          }}
+                                        >
+                                          <PlusCircle className="h-3.5 w-3.5" />
+                                          Top Up
+                                        </Button>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
@@ -560,15 +567,17 @@ export default function Overview() {
                     )}
                   </div>
 
-                  <div className="pt-4">
-                    <Button
-                      className="flex items-center gap-2 btn-hover-lift"
-                      onClick={() => setAddWalletDialogOpen(true)}
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add wallet
-                    </Button>
-                  </div>
+                  {capabilities.canAdmin && (
+                    <div className="pt-4">
+                      <Button
+                        className="flex items-center gap-2 btn-hover-lift"
+                        onClick={() => setAddWalletDialogOpen(true)}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add wallet
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

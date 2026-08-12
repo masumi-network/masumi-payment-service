@@ -67,7 +67,7 @@ export function WelcomeBanner({
       href: '/transactions',
       done: transactionCount > 0,
       icon: ArrowUpDown,
-      visible: true,
+      visible: capabilities.canPay,
     },
   ].filter((step) => step.visible);
 
@@ -76,7 +76,9 @@ export function WelcomeBanner({
   // the wallet/source steps it is not shown would hold `allDone` false forever.
   const allDone = steps.every((step) => step.done);
 
-  if (isDismissedFromStorage || dismissed || allDone) return null;
+  // A read-only key can perform none of these steps, so it gets no onboarding
+  // banner at all rather than a "get started" panel with nothing to start.
+  if (isDismissedFromStorage || dismissed || allDone || steps.length === 0) return null;
 
   const handleDismiss = () => {
     localStorage.setItem(DISMISSED_KEY, 'true');
