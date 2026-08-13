@@ -112,8 +112,12 @@ export const addAPIKeySchemaInput = z.object({
 				),
 		)
 		.max(50)
-		.default([])
-		.describe('Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use'),
+		.optional()
+		.describe(
+			'Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use. Omit to grant every ' +
+				'configured EVM chain, mirroring NetworkLimit defaulting to all Cardano networks; pass an empty ' +
+				'array to grant none.',
+		),
 	/** @deprecated Use canRead, canPay, canAdmin flags instead. Will be removed in a future version. */
 	permission: z
 		.enum(['Read', 'ReadAndPay', 'Admin'])

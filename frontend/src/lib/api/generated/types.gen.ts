@@ -4073,7 +4073,7 @@ export type PostApiKeyData = {
          */
         NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
         /**
-         * Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use
+         * Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use. Omit to grant every configured EVM chain, mirroring NetworkLimit defaulting to all Cardano networks; pass an empty array to grant none.
          */
         ChainIdLimit?: Array<string>;
         /**

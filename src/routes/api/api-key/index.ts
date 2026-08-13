@@ -120,6 +120,23 @@ export const mapApiKeyOutput = <
  * server's filesystem path and ORM internals and tells the caller nothing
  * actionable. Applies to both rails.
  */
+/**
+ * Every EVM chain the node has configured, as CAIP-2 ids.
+ *
+ * The default grant for a new key's ChainIdLimit. NetworkLimit defaults to all
+ * Cardano networks, so a key created without an explicit limit reaches the whole
+ * Cardano rail; defaulting the EVM half to the empty list made the same key reach
+ * no EVM chain at all, which is the opposite default for the same intent. Passing
+ * an explicit empty array still grants none.
+ */
+async function allConfiguredEvmChainIds(): Promise<string[]> {
+	const networks = await prisma.x402Network.findMany({
+		where: { isEnabled: true },
+		select: { caip2Id: true },
+	});
+	return networks.map((network) => network.caip2Id);
+}
+
 async function assertWalletScopeIdsExist(input: { hotWalletIds?: string[]; evmWalletIds?: string[] }): Promise<void> {
 	if (input.hotWalletIds != null && input.hotWalletIds.length > 0) {
 		const ids = Array.from(new Set(input.hotWalletIds));
@@ -209,6 +226,10 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		if (isAdmin && input.usageLimited) {
 			throw createHttpError(400, 'Admin API keys cannot have usage limits');
 		}
+		// Omitted means "every configured EVM chain", the twin of NetworkLimit defaulting
+		// to every Cardano network. An explicit [] still means none. Skipped for admins,
+		// whose networkLimit is [] and who are unrestricted by canAdmin anyway.
+		const chainIdLimit = isAdmin ? [] : (input.ChainIdLimit ?? (await allConfiguredEvmChainIds()));
 		const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
 		const result = await prisma.apiKey.create({
 			data: {
@@ -227,7 +248,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 							// Mirror the update path: ChainIdLimit contributes only EVM (non-Cardano)
 							// chains. Cardano access is controlled solely by NetworkLimit, so a
 							// Cardano CAIP-2 id passed here is dropped rather than silently granting access.
-							input.ChainIdLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) == null),
+							chainIdLimit.filter((chainId) => caip2ToCardanoNetwork(chainId) == null),
 						),
 				walletScopeEnabled: isAdmin ? false : input.walletScopeEnabled,
 				x402WalletScopeEnabled: isAdmin ? false : input.x402WalletScopeEnabled,

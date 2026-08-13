@@ -7804,8 +7804,7 @@
                                             "pattern": "^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$"
                                         },
                                         "maxItems": 50,
-                                        "default": [],
-                                        "description": "Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use"
+                                        "description": "Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use. Omit to grant every configured EVM chain, mirroring NetworkLimit defaulting to all Cardano networks; pass an empty array to grant none."
                                     },
                                     "permission": {
                                         "type": "string",

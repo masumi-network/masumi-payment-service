@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { X402WalletScopeField } from '@/components/api-keys/X402WalletScopeField';
 import { useAllWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
 import {
@@ -51,6 +52,8 @@ interface UpdateApiKeyDialogProps {
     status: 'Active' | 'Revoked';
     walletScopeEnabled: boolean;
     WalletScopes: Array<{ hotWalletId: string }>;
+    x402WalletScopeEnabled: boolean;
+    X402WalletScopes: Array<{ evmWalletId: string }>;
   };
 }
 
@@ -68,6 +71,8 @@ const updateApiKeySchema = z
     }),
     walletScopeEnabled: z.boolean(),
     walletScopeIds: z.array(z.string()),
+    x402WalletScopeEnabled: z.boolean(),
+    x402WalletScopeIds: z.array(z.string()),
     evmChains: z.array(z.string()),
   })
   .superRefine((val, ctx) => {
@@ -149,6 +154,8 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
       credits: { lovelace: '', usdcx: '' },
       walletScopeEnabled: apiKey.walletScopeEnabled,
       walletScopeIds: apiKey.WalletScopes.map((ws) => ws.hotWalletId),
+      x402WalletScopeEnabled: apiKey.x402WalletScopeEnabled,
+      x402WalletScopeIds: apiKey.X402WalletScopes.map((ws) => ws.evmWalletId),
       evmChains: apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:')),
     },
   });
@@ -162,6 +169,16 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     control,
     name: 'walletScopeIds',
     defaultValue: apiKey.WalletScopes.map((ws) => ws.hotWalletId),
+  });
+  const x402WalletScopeEnabled = useWatch({
+    control,
+    name: 'x402WalletScopeEnabled',
+    defaultValue: apiKey.x402WalletScopeEnabled,
+  });
+  const x402WalletScopeIds = useWatch({
+    control,
+    name: 'x402WalletScopeIds',
+    defaultValue: apiKey.X402WalletScopes.map((ws) => ws.evmWalletId),
   });
 
   const onSubmit = async (data: UpdateApiKeyFormValues) => {
@@ -184,6 +201,11 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
       JSON.stringify([...data.walletScopeIds].sort()) !==
         JSON.stringify([...apiKey.WalletScopes.map((ws) => ws.hotWalletId)].sort());
 
+    const x402WalletScopeChanged =
+      data.x402WalletScopeEnabled !== apiKey.x402WalletScopeEnabled ||
+      JSON.stringify([...data.x402WalletScopeIds].sort()) !==
+        JSON.stringify([...apiKey.X402WalletScopes.map((ws) => ws.evmWalletId)].sort());
+
     const initialEvmChains = apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:'));
     const evmChainsChanged =
       JSON.stringify([...data.evmChains].sort()) !== JSON.stringify([...initialEvmChains].sort());
@@ -199,6 +221,10 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
         ...(walletScopeChanged && {
           walletScopeEnabled: data.walletScopeEnabled,
           WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
+        }),
+        ...(x402WalletScopeChanged && {
+          x402WalletScopeEnabled: data.x402WalletScopeEnabled,
+          X402WalletScopeEvmWalletIds: data.x402WalletScopeEnabled ? data.x402WalletScopeIds : [],
         }),
         ...(apiKey.canPay &&
           !apiKey.canAdmin &&
@@ -477,6 +503,14 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                   )}
                 </div>
               )}
+
+              <X402WalletScopeField
+                active={open}
+                enabled={x402WalletScopeEnabled}
+                onEnabledChange={(next) => setValue('x402WalletScopeEnabled', next)}
+                selectedIds={x402WalletScopeIds}
+                onSelectedIdsChange={(ids) => setValue('x402WalletScopeIds', ids)}
+              />
             </>
           )}
         </div>

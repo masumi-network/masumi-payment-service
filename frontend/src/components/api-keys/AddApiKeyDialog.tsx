@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postApiKey } from '@/lib/api/generated';
 import { useX402Networks } from '@/lib/hooks/useX402';
@@ -28,6 +28,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Badge } from '@/components/ui/badge';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useAllWallets } from '@/lib/queries/useWallets';
+import { X402WalletScopeField } from '@/components/api-keys/X402WalletScopeField';
 import { shortenAddress } from '@/lib/utils';
 import { CopyButton } from '@/components/ui/copy-button';
 import { extractApiPayload } from '@/lib/api-response';
@@ -64,6 +65,8 @@ const apiKeySchema = z
     }),
     walletScopeEnabled: z.boolean(),
     walletScopeIds: z.array(z.string()),
+    x402WalletScopeEnabled: z.boolean(),
+    x402WalletScopeIds: z.array(z.string()),
   })
   .superRefine((val, ctx) => {
     if (
@@ -172,6 +175,8 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
       credits: { lovelace: '', usdcx: '' },
       walletScopeEnabled: false,
       walletScopeIds: [],
+      x402WalletScopeEnabled: false,
+      x402WalletScopeIds: [],
     },
   });
 
@@ -181,6 +186,12 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
   const usageLimited = useWatch({ control, name: 'usageLimited', defaultValue: true });
   const walletScopeEnabled = useWatch({ control, name: 'walletScopeEnabled', defaultValue: false });
   const walletScopeIds = useWatch({ control, name: 'walletScopeIds', defaultValue: [] });
+  const x402WalletScopeEnabled = useWatch({
+    control,
+    name: 'x402WalletScopeEnabled',
+    defaultValue: false,
+  });
+  const x402WalletScopeIds = useWatch({ control, name: 'x402WalletScopeIds', defaultValue: [] });
 
   // Update flags when preset changes
   useEffect(() => {
@@ -196,12 +207,32 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
       setValue('evmChains', []);
       setValue('walletScopeEnabled', false);
       setValue('walletScopeIds', []);
+      setValue('x402WalletScopeEnabled', false);
+      setValue('x402WalletScopeIds', []);
     } else if (!flags.canPay) {
       // Read-only: always usage limited
       setValue('usageLimited', true);
       setValue('evmChains', []);
     }
   }, [permissionPreset, setValue]);
+
+  // Start a pay key with every configured EVM chain ticked, the twin of `networks`
+  // defaulting to both Cardano networks. The grant is then visible and can be
+  // narrowed, instead of the key silently getting no EVM access at all. Seeded once
+  // per pay-capable session so unticking a chain is not undone on the next render.
+  const seededEvmChains = useRef(false);
+  useEffect(() => {
+    if (!open || !canPay || canAdmin) {
+      seededEvmChains.current = false;
+      return;
+    }
+    if (seededEvmChains.current || evmChainOptions.length === 0) return;
+    seededEvmChains.current = true;
+    setValue(
+      'evmChains',
+      evmChainOptions.map((chain) => chain.caip2Id),
+    );
+  }, [open, canPay, canAdmin, evmChainOptions, setValue]);
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     const isReadOnly = !data.canPay && !data.canAdmin;
@@ -245,6 +276,8 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
             : [],
         walletScopeEnabled: data.walletScopeEnabled.toString(),
         WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
+        x402WalletScopeEnabled: data.x402WalletScopeEnabled.toString(),
+        X402WalletScopeEvmWalletIds: data.x402WalletScopeEnabled ? data.x402WalletScopeIds : [],
       })
       .catch(() => null);
     if (!response) return;
@@ -585,6 +618,14 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                       )}
                     </div>
                   )}
+
+                  <X402WalletScopeField
+                    active={open}
+                    enabled={x402WalletScopeEnabled}
+                    onEnabledChange={(next) => setValue('x402WalletScopeEnabled', next)}
+                    selectedIds={x402WalletScopeIds}
+                    onSelectedIdsChange={(ids) => setValue('x402WalletScopeIds', ids)}
+                  />
                 </>
               )}
             </div>
