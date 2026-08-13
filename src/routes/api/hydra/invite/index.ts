@@ -203,7 +203,7 @@ export const createInviteSchemaInput = z.object({
 		.max(604_800)
 		.optional()
 		.describe(
-			'How long a node may see no new block before it declares itself out of sync and refuses commands, rather than acting on a stale view of the chain. Defaults to half the dispute window and may not exceed it, which is checked against the resolved pair when the invite is minted rather than here, since either field may be defaulted.',
+			'How long a node may see no new block before it declares itself out of sync and refuses commands, rather than acting on a stale view of the chain. Defaults to 30 minutes on both networks, or half the dispute window where that is tighter. Half the window is the ceiling and may not be exceeded, which is checked against the resolved pair when the invite is minted rather than here, since either field may be defaulted. Raising it buys availability with the time a node needs to contest a close.',
 		),
 });
 

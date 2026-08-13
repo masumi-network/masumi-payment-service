@@ -56,10 +56,12 @@ export type HeadPeriods = {
  * a testnet. The cost of a long window is only that funds settle later; the cost
  * of a short one is a close nobody was awake to contest.
  *
- * **Out-of-sync limit** follows hydra's own rule of half the dispute window: a
- * node that has seen no block for that long stops acting on its view of the
- * chain. Deriving it keeps the two consistent, which is what hydra assumes when
- * the flag is not given.
+ * **Out-of-sync limit** is how long a node keeps signing after it stops seeing
+ * blocks. Hydra derives it as half the dispute window, which is the largest
+ * value that is still safe rather than the one to pick — see
+ * DEFAULT_UNSYNCED_PERIOD_CAP_SECONDS. Half an hour on both networks, since
+ * what trips it is a stalled chain backend rather than the dispute window, and
+ * that has nothing to do with which network is underneath.
  */
 /**
  * The shortest out-of-sync limit a head may run with.
@@ -72,14 +74,53 @@ export type HeadPeriods = {
  */
 export const MIN_UNSYNCED_PERIOD_SECONDS = 120;
 
+/**
+ * How long a head will keep signing while blind to L1, by default.
+ *
+ * Hydra derives this as half the dispute window when the flag is omitted, and
+ * that is a **ceiling, not a recommendation**: it is the largest value that
+ * still leaves an in-sync node time to contest, which its own documentation
+ * warns against sitting on ("setting it too large may cause the node to
+ * continue processing L2 transactions when it can no longer safely enforce
+ * them on L1"). Taking the ceiling as the default meant a mainnet head signed
+ * payments for two and a half days without seeing a block, and a preprod one
+ * for six hours.
+ *
+ * Thirty minutes instead, because the two things that can trip it both sit far
+ * below it:
+ *
+ * - **Block production cannot.** Cardano's slot coefficient puts the mean gap
+ *   at 20s and the distribution is exponential, so a half-hour gap runs about
+ *   e^-90. The widest gap measured over 60 consecutive preprod blocks was 71s.
+ * - **A backend stall is what actually trips it**, and thirty minutes outlasts
+ *   any Blockfrost blip worth waiting through. Beyond that the head stops
+ *   signing and resumes when the backend returns — the fail-closed direction,
+ *   costing availability rather than the ability to contest.
+ *
+ * The same number on both networks on purpose: preprod exists to exercise what
+ * mainnet will run, and a testnet tuned looser would hide exactly the stalls it
+ * is there to surface. It is a cap rather than a fixed value, so a head
+ * configured with a short dispute window still derives a legal pair.
+ */
+export const DEFAULT_UNSYNCED_PERIOD_CAP_SECONDS = 1800;
+
 export function defaultPeriodsFor(network: Network): HeadPeriods {
 	const isMainnet = network === Network.Mainnet;
 	const contestationPeriodSeconds = isMainnet ? 5 * 24 * 3600 : 12 * 3600;
 	return {
 		contestationPeriodSeconds,
 		depositPeriodSeconds: isMainnet ? 1200 : 600,
-		unsyncedPeriodSeconds: Math.round(contestationPeriodSeconds / 2),
+		unsyncedPeriodSeconds: defaultUnsyncedPeriodFor(contestationPeriodSeconds),
 	};
+}
+
+/**
+ * The cap, or half the dispute window when that is tighter, never below the
+ * floor that ordinary block jitter would cross.
+ */
+export function defaultUnsyncedPeriodFor(contestationPeriodSeconds: number): number {
+	const ceiling = Math.floor(contestationPeriodSeconds / 2);
+	return Math.max(MIN_UNSYNCED_PERIOD_SECONDS, Math.min(DEFAULT_UNSYNCED_PERIOD_CAP_SECONDS, ceiling));
 }
 
 /** For the callers that have no network in hand yet. */

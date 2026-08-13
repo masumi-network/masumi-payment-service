@@ -1,6 +1,11 @@
 import { describe, expect, it } from '@jest/globals';
 import { Network } from '@/generated/prisma/client';
-import { MIN_UNSYNCED_PERIOD_SECONDS, defaultPeriodsFor } from './provisioning';
+import {
+	DEFAULT_UNSYNCED_PERIOD_CAP_SECONDS,
+	MIN_UNSYNCED_PERIOD_SECONDS,
+	defaultPeriodsFor,
+	defaultUnsyncedPeriodFor,
+} from './provisioning';
 
 /**
  * The three periods pull in opposite directions, which is the whole reason one
@@ -30,9 +35,37 @@ describe('default head periods', () => {
 	// window to observe an on-chain event and react to it. A larger limit lets a
 	// node believe it is in sync after it has already lost the time it needs to
 	// contest, which is the one way this setting can cause a loss.
-	it.each([Network.Mainnet, Network.Preprod])('keeps the sync limit at half the window on %s', (network) => {
+	it.each([Network.Mainnet, Network.Preprod])('stays under half the window on %s', (network) => {
 		const periods = defaultPeriodsFor(network);
-		expect(periods.unsyncedPeriodSeconds).toBe(Math.round(periods.contestationPeriodSeconds / 2));
+		expect(periods.unsyncedPeriodSeconds).toBeLessThanOrEqual(
+			Math.floor(periods.contestationPeriodSeconds / 2),
+		);
+	});
+
+	// That ceiling is the largest safe value, not the one to ship. Sitting on it
+	// meant a mainnet head signed payments for two and a half days without
+	// seeing a block, which is precisely what hydra's own documentation warns
+	// against.
+	it.each([Network.Mainnet, Network.Preprod])('does not default to the ceiling on %s', (network) => {
+		const periods = defaultPeriodsFor(network);
+		expect(periods.unsyncedPeriodSeconds).toBe(DEFAULT_UNSYNCED_PERIOD_CAP_SECONDS);
+		expect(periods.unsyncedPeriodSeconds).toBeLessThan(
+			Math.floor(periods.contestationPeriodSeconds / 2),
+		);
+	});
+
+	// Blind signing is the exposure, and it is the same exposure on a testnet:
+	// preprod is where a backend that stalls for an hour has to be discovered.
+	it('caps blind signing the same on both networks', () => {
+		expect(defaultPeriodsFor(Network.Mainnet).unsyncedPeriodSeconds).toBe(
+			defaultPeriodsFor(Network.Preprod).unsyncedPeriodSeconds,
+		);
+	});
+
+	// A half-hour gap in block production runs about e^-90 with Cardano's 20s
+	// mean, so what this actually tolerates is a stalled chain backend.
+	it('outlasts any real block gap by a wide margin', () => {
+		expect(DEFAULT_UNSYNCED_PERIOD_CAP_SECONDS).toBeGreaterThan(71 * 20);
 	});
 
 	// Below a couple of minutes the pick-up window is the same size as the
@@ -67,5 +100,25 @@ describe('period floors', () => {
 		const shortestUsableWindow = MIN_UNSYNCED_PERIOD_SECONDS * 2;
 
 		expect(Math.floor(shortestUsableWindow / 2)).toBeGreaterThanOrEqual(MIN_UNSYNCED_PERIOD_SECONDS);
+	});
+
+	/**
+	 * The cap only applies where there is room for it. A head configured with a
+	 * short dispute window still has to derive a pair the orchestrator will
+	 * accept — under the ceiling it enforces, above the floor block jitter
+	 * crosses — or the default itself becomes a 400.
+	 */
+	it.each([
+		[300, 150],
+		[600, 300],
+		[3600, 1800],
+		[12 * 3600, DEFAULT_UNSYNCED_PERIOD_CAP_SECONDS],
+		[5 * 24 * 3600, DEFAULT_UNSYNCED_PERIOD_CAP_SECONDS],
+	])('derives a legal limit for a %ss dispute window', (contestation, expected) => {
+		const derived = defaultUnsyncedPeriodFor(contestation);
+
+		expect(derived).toBe(expected);
+		expect(derived).toBeLessThanOrEqual(Math.floor(contestation / 2));
+		expect(derived).toBeGreaterThanOrEqual(MIN_UNSYNCED_PERIOD_SECONDS);
 	});
 });

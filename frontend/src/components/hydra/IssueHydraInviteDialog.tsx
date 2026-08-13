@@ -57,13 +57,17 @@ const MAX_TTL_HOURS = 720;
 /**
  * How long money added to the head waits before it can be used.
  *
- * Ten minutes on a testnet, where a rollback costs nothing. The floor is two:
- * a node measures a deposit's age in its own chain time, which trails real time
- * by around half a minute here, and the window in which any node will take the
- * deposit is only one period wide. Below a couple of minutes that window is the
- * same size as the jitter it has to survive.
+ * Ten minutes on a testnet, where a rollback costs nothing. The floor is five,
+ * matching the API: a node measures a deposit's age in its own chain time, and
+ * a Blockfrost-backed node on preprod was measured 140 to 360 seconds behind
+ * real time. The window in which any node will take the deposit is only one
+ * period wide, so a shorter period is closed by that lag before the node's own
+ * clock reaches it, and every deposit expires unseen.
  */
-const MIN_SETTLE_MINUTES = 2;
+const MIN_SETTLE_MINUTES = 5;
+
+/** The API's own floor for the dispute window. */
+const MIN_CONTESTATION_SECONDS = 300;
 
 /**
  * Defaults per network, matching what the service would pick on its own.
@@ -77,15 +81,31 @@ const MIN_SETTLE_MINUTES = 2;
  * outage rather than a slow block: five days on mainnet, twelve hours on a
  * testnet where the worst case is a re-run.
  */
+/**
+ * Half an hour of signing while blind to L1, or half the dispute window where
+ * that is tighter.
+ *
+ * Hydra's half-the-window rule is the ceiling — the most a node can be blind
+ * for and still have time to contest — not the value to ship: at the ceiling a
+ * mainnet head would keep taking payments for two and a half days without
+ * seeing a block. Nothing in block production reaches half an hour (20s mean,
+ * exponential), so what this really tolerates is a stalled chain backend, which
+ * is why it does not vary by network. Must match defaultUnsyncedPeriodFor on
+ * the server, which is what the invite is actually minted with.
+ */
+const UNSYNCED_CAP_SECONDS = 1800;
+const MIN_UNSYNCED_SECONDS = 120;
+
 function defaultsFor(network: string) {
   const isMainnet = network === 'Mainnet';
   const contestation = isMainnet ? 5 * 24 * 3600 : 12 * 3600;
   return {
     settleMinutes: isMainnet ? 20 : 10,
     contestation,
-    // Hydra's own rule, and a ceiling rather than a preference: an in-sync node
-    // is guaranteed half the dispute window to see an on-chain event and react.
-    unsynced: Math.floor(contestation / 2),
+    unsynced: Math.max(
+      MIN_UNSYNCED_SECONDS,
+      Math.min(UNSYNCED_CAP_SECONDS, Math.floor(contestation / 2)),
+    ),
   };
 }
 
@@ -168,11 +188,13 @@ export function IssueHydraInviteDialog({
     if (settleSeconds < MIN_SETTLE_MINUTES * 60) {
       problems.settle = `Funds need at least ${MIN_SETTLE_MINUTES} minutes to settle.`;
     }
-    if (contestationSeconds < 60) {
-      problems.contestation = 'The dispute window must be at least a minute.';
+    // These floors are the API's, not this form's. They were a minute here and
+    // five on the server, so a value the form accepted came back a 400.
+    if (contestationSeconds < MIN_CONTESTATION_SECONDS) {
+      problems.contestation = `The dispute window must be at least ${formatDuration(MIN_CONTESTATION_SECONDS)}.`;
     }
-    if (unsyncedSeconds < 60) {
-      problems.unsynced = 'The out-of-sync limit must be at least a minute.';
+    if (unsyncedSeconds < MIN_UNSYNCED_SECONDS) {
+      problems.unsynced = `The out-of-sync limit must be at least ${formatDuration(MIN_UNSYNCED_SECONDS)}, or ordinary block gaps trip it.`;
     } else if (unsyncedSeconds > Math.floor(contestationSeconds / 2)) {
       problems.unsynced = `Cannot exceed half the dispute window (${formatDuration(Math.floor(contestationSeconds / 2))}).`;
     }
