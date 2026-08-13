@@ -55,6 +55,9 @@ async function reserveBudgetForAttempt({
 	const amount = BigInt(requirements.amount);
 	const asset = normalizeAddress(requirements.asset);
 	const payTo = normalizeAddress(requirements.payTo);
+	// Set only when the key's credit ledger is actually debited below, so the refund
+	// path knows whether — and against which unit — to put the credits back.
+	const creditUnit = usageLimited ? x402CreditUnit(requirements.network, requirements.asset) : null;
 	const budgetAndAttempt = await prisma.$transaction(async (tx) => {
 		if (budgetId != null) {
 			if (budgetGeneration == null) throw createHttpError(500, 'x402 budget generation is missing');
@@ -86,16 +89,15 @@ async function reserveBudgetForAttempt({
 		//
 		// Debited in the same transaction and guarded on the row still covering the
 		// amount, so two concurrent payments cannot both pass the check and overspend.
-		if (usageLimited) {
-			const unit = x402CreditUnit(requirements.network, requirements.asset);
+		if (creditUnit != null) {
 			const creditResult = await tx.unitValue.updateMany({
-				where: { apiKeyId, unit, amount: { gte: amount } },
+				where: { apiKeyId, unit: creditUnit, amount: { gte: amount } },
 				data: { amount: { decrement: amount } },
 			});
 			if (creditResult.count !== 1) {
 				throw createHttpError(
 					402,
-					`Insufficient usage credits for ${unit}. This API key is usage limited; top up its credits for this chain and asset, or remove the limit.`,
+					`Insufficient usage credits for ${creditUnit}. This API key is usage limited; top up its credits for this chain and asset, or remove the limit.`,
 				);
 			}
 		}
@@ -122,10 +124,46 @@ async function reserveBudgetForAttempt({
 			select: { id: true },
 		});
 
-		return { budgetId, budgetGeneration, attemptId: attempt.id, amount };
+		return { apiKeyId, budgetId, budgetGeneration, creditUnit, attemptId: attempt.id, amount };
 	});
 
 	return budgetAndAttempt;
+}
+
+/**
+ * Undo everything the reservation debited. Signing happens after the reservation
+ * has committed, so a failure there leaves an attempt that is marked Failed with no
+ * payment made — neither the wallet budget nor the key's usage credits may stay
+ * debited for it.
+ */
+async function refundReservation(
+	reservation: {
+		apiKeyId: string;
+		budgetId: string | null;
+		budgetGeneration: number | null;
+		creditUnit: string | null;
+		amount: bigint;
+	} | null,
+) {
+	if (reservation == null) return;
+	await refundBudgetReservation(reservation);
+	// The twin of the budget refund below: an unlimited key debited no credits, so
+	// there is nothing to restore. Without this a signing failure would permanently
+	// burn the key's credits for a payment that never happened, while the wallet
+	// budget it was paying from was handed back.
+	if (reservation.creditUnit != null) {
+		const result = await prisma.unitValue.updateMany({
+			where: { apiKeyId: reservation.apiKeyId, unit: reservation.creditUnit },
+			data: { amount: { increment: reservation.amount } },
+		});
+		if (result.count !== 1) {
+			logger.warn('x402 usage-credit refund skipped: no matching credit row (credits reset?)', {
+				apiKeyId: reservation.apiKeyId,
+				unit: reservation.creditUnit,
+				amount: reservation.amount.toString(),
+			});
+		}
+	}
 }
 
 async function refundBudgetReservation(
@@ -395,8 +433,9 @@ export async function createX402Payment({
 		};
 	} catch (error) {
 		// Refund first so that a failure to record the Failed status can never leak the
-		// reserved budget; the status update is best-effort and must not mask the error.
-		await refundBudgetReservation(reservation);
+		// reserved budget or credits; the status update is best-effort and must not mask
+		// the error.
+		await refundReservation(reservation);
 		await prisma.x402PaymentAttempt
 			.update({
 				where: { id: reservation.attemptId },

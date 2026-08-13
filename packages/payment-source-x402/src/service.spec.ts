@@ -38,6 +38,7 @@ class MockPrismaClientKnownRequestError extends Error {
 }
 const mockBudgetUpdateMany = jest.fn() as jest.Mock<any>;
 const mockUnitValueUpdateMany = jest.fn() as jest.Mock<any>;
+const mockUnitValueRefundUpdateMany = jest.fn() as jest.Mock<any>;
 const mockBudgetRefundUpdateMany = jest.fn() as jest.Mock<any>;
 const mockBudgetUpdate = jest.fn() as jest.Mock<any>;
 const mockBudgetUpsert = jest.fn() as jest.Mock<any>;
@@ -163,6 +164,11 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			updateMany: mockBudgetRefundUpdateMany,
 			upsert: mockBudgetUpsert,
 			findMany: jest.fn(),
+		},
+		// Top level, so it is the credit REFUND. The debit runs against the
+		// in-transaction mock (mockUnitValueUpdateMany) further down.
+		unitValue: {
+			updateMany: mockUnitValueRefundUpdateMany,
 		},
 		$transaction: mockPrismaTransaction,
 	},
@@ -438,6 +444,7 @@ describe('x402 service helpers', () => {
 		mockGetBalance.mockResolvedValue(1_000_000_000n);
 		mockBudgetUpdateMany.mockResolvedValue({ count: 1 });
 		mockUnitValueUpdateMany.mockResolvedValue({ count: 1 });
+		mockUnitValueRefundUpdateMany.mockResolvedValue({ count: 1 });
 		mockBudgetRefundUpdateMany.mockResolvedValue({ count: 1 });
 		mockX402PaymentAttemptFindFirst.mockResolvedValue(null);
 		mockBudgetUpdate.mockResolvedValue({ id: 'budget-1' });
@@ -1778,6 +1785,46 @@ describe('x402 service helpers', () => {
 					spentAmount: { decrement: source.amount },
 				},
 			});
+		});
+
+		it('refunds the debited usage credits when signing throws', async () => {
+			// Signing happens after the reservation has committed. The wallet budget is
+			// handed back on failure, so the key's credits must be too — otherwise a
+			// payment that never happened permanently burns them.
+			mockCreatePaymentPayload.mockRejectedValue(new Error('sign boom'));
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 500 });
+
+			expect(mockUnitValueRefundUpdateMany).toHaveBeenCalledWith({
+				where: {
+					apiKeyId: 'api-key-1',
+					unit: `${source.network}:${paymentRequired.accepts[0].asset.toLowerCase()}`,
+				},
+				data: { amount: { increment: BigInt(paymentRequired.accepts[0].amount) } },
+			});
+		});
+
+		it('does not touch the credit ledger on a signing failure for an unlimited key', async () => {
+			mockCreatePaymentPayload.mockRejectedValue(new Error('sign boom'));
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+				}),
+			).rejects.toMatchObject({ status: 500 });
+
+			expect(mockUnitValueRefundUpdateMany).not.toHaveBeenCalled();
 		});
 
 		it('rejects (and refunds) when a paymentIdentifier is requested but the 402 does not support it', async () => {
