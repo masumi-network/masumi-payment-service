@@ -1262,14 +1262,14 @@ export default function HydraHeadsPage() {
   return (
     <MainLayout>
       <Head>
-        <title>Hydra Heads | Admin Interface</title>
+        <title>Hydra | Admin Interface</title>
       </Head>
       <AnimatedPage>
         <div className="space-y-6">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-semibold tracking-tight">Hydra Heads</h1>
+                <h1 className="text-2xl font-semibold tracking-tight">Hydra</h1>
                 <Badge variant="outline">Cardano L2</Badge>
               </div>
               {/* Two objects, said once. Operators kept asking what the

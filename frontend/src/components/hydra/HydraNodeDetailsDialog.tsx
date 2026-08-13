@@ -10,10 +10,16 @@
  * heads and the two things you do to them (back up the keys, move the fuel),
  * then the version and hash material that only matters when a head refuses to
  * open. That last part collapses, because it is read once a month at most.
+ *
+ * The node's own actions live here too. They used to sit on a card behind a
+ * dialog that nothing opened once the node strip replaced it, which left an
+ * operator with a node they could read but not re-probe or disconnect. Check is
+ * a button because a stale reading is the usual reason to open this at all;
+ * disconnecting sits behind the menu.
  */
 
 import { useState } from 'react';
-import { KeyRound, Loader2, MoreHorizontal, Server } from 'lucide-react';
+import { KeyRound, Loader2, MoreHorizontal, RefreshCw, Server, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
 import { Badge } from '@/components/ui/badge';
@@ -40,7 +46,13 @@ import { BackUpNodeKeysDialog } from '@/components/hydra/BackUpNodeKeysDialog';
 import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { HydraWalletLink } from '@/components/hydra/HydraWalletLink';
-import type { HydraHost } from '@/lib/hooks/useHydraHosts';
+import {
+  checkHydraHost,
+  disconnectHydraHost,
+  updateHydraHost,
+  type HydraHost,
+} from '@/lib/hooks/useHydraHosts';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { NodeFundsHint } from '@/components/hydra/hydra-hints';
 
 type HydraNodeDetailsDialogProps = {
@@ -104,6 +116,64 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
   );
   const [backUpId, setBackUpId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [isNodeBusy, setIsNodeBusy] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+
+  /**
+   * Re-probe the node and record what it reports.
+   *
+   * This is the fix for a stale reading: the compatibility pins are read from
+   * the service's environment at probe time, so a node that failed on a pin
+   * keeps showing that error until it is checked again.
+   */
+  async function handleCheck() {
+    if (!host) return;
+    setIsNodeBusy(true);
+    try {
+      const checked = await checkHydraHost(apiClient, host.id);
+      if (checked.status === 'Unreachable') {
+        toast.error(checked.lastHealthError ?? `${host.name} could not be reached`);
+      } else {
+        toast.success(`${host.name} is ${checked.status.toLowerCase()}`);
+      }
+      await resync('hydra');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The check failed');
+    } finally {
+      setIsNodeBusy(false);
+    }
+  }
+
+  async function handleToggleDraining() {
+    if (!host) return;
+    const next = host.status === 'Draining' ? 'Active' : 'Draining';
+    setIsNodeBusy(true);
+    try {
+      await updateHydraHost(apiClient, { id: host.id, status: next });
+      toast.success(next === 'Draining' ? `${host.name} is draining` : `${host.name} is active`);
+      await resync('hydra');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The change failed');
+    } finally {
+      setIsNodeBusy(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    if (!host) return;
+    setIsDisconnecting(false);
+    setIsNodeBusy(true);
+    try {
+      await disconnectHydraHost(apiClient, host.id);
+      toast.success(`Disconnected ${host.name}`);
+      await resync('hydra');
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The node could not be disconnected');
+    } finally {
+      setIsNodeBusy(false);
+    }
+  }
 
   async function handleWithdraw(participantId: string) {
     setBusyId(participantId);
@@ -169,9 +239,58 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
             />
           </div>
 
+          {/* Check sits directly under the reading it refreshes, and next to
+              the error it most often clears. */}
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isNodeBusy}
+              onClick={() => void handleCheck()}
+            >
+              {isNodeBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Check now
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={isNodeBusy}
+                  aria-label={`More actions for ${host.name}`}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem onClick={() => void handleToggleDraining()}>
+                  {host.status === 'Draining' ? 'Take new heads again' : 'Stop taking new heads'}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-red-600 focus:text-red-600 dark:text-red-400 dark:focus:text-red-400"
+                  onClick={() => setIsDisconnecting(true)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Disconnect
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
           {host.lastHealthError && (
             <HydraNotice tone="error">
               <p>{host.lastHealthError}</p>
+              <p className="mt-1">
+                Fixed the cause? Press <span className="text-foreground">Check now</span> — this
+                reading is from the last probe, not live.
+              </p>
             </HydraNotice>
           )}
 
@@ -313,6 +432,20 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
         }}
         participantId={backUpId}
         onDone={() => void refetchParticipants()}
+      />
+
+      {/* Named consequences: a head cannot be moved to another node, so the
+          count is the whole decision. */}
+      <ConfirmDialog
+        open={isDisconnecting}
+        onClose={() => setIsDisconnecting(false)}
+        title={`Disconnect ${host.name}?`}
+        description={
+          host.participantCount > 0
+            ? `${host.participantCount} head(s) still run here. A head cannot be moved to another node, so disconnecting puts them out of reach. Drain this node and settle them first.`
+            : 'This service forgets the node and its stored keys. The node itself keeps running.'
+        }
+        onConfirm={() => void handleDisconnect()}
       />
     </Dialog>
   );

@@ -313,7 +313,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         ? [
             {
               href: '/hydra-heads',
-              name: 'Hydra Heads',
+              name: 'Hydra',
               icon: <GitBranch className="h-4 w-4" />,
               badge: null,
               beta: true,
