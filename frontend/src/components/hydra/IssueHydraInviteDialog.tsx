@@ -418,10 +418,15 @@ export function IssueHydraInviteDialog({
                   onChange={(next) => {
                     setErrors({});
                     setContestationSeconds(next);
-                    // The sync limit is capped at half, so it follows the window
-                    // rather than silently becoming invalid behind a closed
-                    // section.
-                    setUnsyncedSeconds(Math.floor(next / 2));
+                    // Half the window is the ceiling this field must stay under,
+                    // so a shrinking window pulls it down rather than leaving an
+                    // invalid pair behind a closed section. Only ever down:
+                    // following the ceiling upwards would hand a longer window a
+                    // six-hour blind-signing limit that nobody asked for, which
+                    // is the default this stopped shipping.
+                    setUnsyncedSeconds((current) =>
+                      Math.max(MIN_UNSYNCED_SECONDS, Math.min(current, Math.floor(next / 2))),
+                    );
                   }}
                   error={errors.contestation}
                   hint={

@@ -744,21 +744,25 @@ function HydraHeadDetailsDialog({
             </HydraDetailSection>
           )}
 
+          {/* Payments, not the head's own transactions. The two used to sit in
+              one section under one word, so "Transactions" meant L2 payments at
+              the top and the L1 open/close/settle steps one disclosure deeper,
+              and the summary described the head's chain state while the content
+              listed payments. Two questions, two sections, each named for what
+              it answers. */}
           <HydraDetailSection
-            title="Transactions"
-            summary={head.initTxHash ? 'Opened' : 'Not opened yet'}
+            title="Payments"
+            summary={`${head._count?.Transactions ?? 0} in the head`}
             defaultOpen={head.status === 'Open'}
           >
             <HydraHeadTransactions headId={head.id} network={network} />
+          </HydraDetailSection>
 
-            {/* The three on-chain steps, behind one more click. Two of them are
-                empty for the whole life of a healthy open head, and printing
-                "nothing to close" as a full-height card on every visit gave the
-                most-read section of the dialog to its least-read content. */}
-            <HydraDetailSection
-              title="Opening and closing"
-              summary={head.fanoutTxHash ? 'Settled' : head.closeTxHash ? 'Closing' : 'Open'}
-            >
+          <HydraDetailSection
+            title="On-chain transactions"
+            summary={head.fanoutTxHash ? 'Settled' : head.closeTxHash ? 'Closing' : 'Open'}
+          >
+            <div className="space-y-2">
               <TransactionHashRow
                 label="Initial tx"
                 hash={head.initTxHash}
@@ -785,7 +789,7 @@ function HydraHeadDetailsDialog({
                     : 'Available once the head is closed and its dispute window has passed'
                 }
               />
-            </HydraDetailSection>
+            </div>
           </HydraDetailSection>
 
           <HydraDetailSection
@@ -841,7 +845,6 @@ function HydraHeadDetailsDialog({
                   mono
                 />
                 <DetailField label="Snapshot" value={head.latestSnapshotNumber} />
-                <DetailField label="Transactions" value={String(head._count?.Transactions ?? 0)} />
                 <DetailField label="Created" value={formatDate(head.createdAt)} />
                 <DetailField label="Updated" value={formatDate(head.updatedAt)} />
                 <DetailField label="Latest activity" value={formatDate(head.latestActivityAt)} />
@@ -886,32 +889,6 @@ function HydraHeadDetailsDialog({
                     Only the dispute window is recorded for heads not opened from an invite.
                   </p>
                 )}
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  On-chain transactions
-                </p>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <DetailField
-                    label="Open"
-                    value={head.initTxHash}
-                    copyValue={head.initTxHash}
-                    mono
-                  />
-                  <DetailField
-                    label="Close"
-                    value={head.closeTxHash}
-                    copyValue={head.closeTxHash}
-                    mono
-                  />
-                  <DetailField
-                    label="Settle"
-                    value={head.fanoutTxHash}
-                    copyValue={head.fanoutTxHash}
-                    mono
-                  />
-                </div>
               </div>
             </div>
           </HydraDetailSection>
