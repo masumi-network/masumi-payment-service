@@ -113,6 +113,30 @@ describe('control plane auth', () => {
 	});
 });
 
+describe('the landing page and browser 404', () => {
+	it('serves an unauthenticated landing page on the root', async () => {
+		const response = await fetch(`${baseUrl}/`);
+		expect(response.status).toBe(200);
+		expect(response.headers.get('content-type')).toContain('text/html');
+		expect(await response.text()).toContain('Masumi Hydra Host');
+	});
+
+	it('keeps everything but the root token-gated', async () => {
+		// The landing page must not have widened the unauthenticated surface.
+		expect((await fetch(`${baseUrl}/v1/nodes`)).status).toBe(401);
+	});
+
+	it('gives browsers an HTML 404 and API clients the JSON one', async () => {
+		const browser = await fetch(`${baseUrl}/nope`, { headers: { Accept: 'text/html,*/*;q=0.8' } });
+		expect(browser.status).toBe(404);
+		expect(browser.headers.get('content-type')).toContain('text/html');
+
+		const client = await fetch(`${baseUrl}/nope`);
+		expect(client.status).toBe(404);
+		expect(await client.json()).toEqual({ error: 'not found' });
+	});
+});
+
 describe('provisioning over HTTP', () => {
 	it('returns key material exactly once, then seals it', async () => {
 		const created = await call('POST', '/v1/nodes', { token: ADMIN, idempotencyKey: 'idem-1' });

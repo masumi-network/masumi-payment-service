@@ -1293,15 +1293,11 @@ export default function HydraHeadsPage() {
               </p>
             </div>
 
-            {/* Connecting a node stays reachable however many exist, a second
-                node is how an operator adds capacity. Opening a head is one
-                action with two ways in, so it is one button with a menu rather
-                than two competing buttons. */}
+            {/* Connecting a node lives on the node strip below (its empty state
+                and its trailing "+" chip), so the header offers only the head
+                action. Opening a head is one action with two ways in, so it is
+                one button with a menu rather than two competing buttons. */}
             <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" onClick={() => setIsConnectNodeOpen(true)}>
-                <Plus className="h-4 w-4" />
-                Connect node
-              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button

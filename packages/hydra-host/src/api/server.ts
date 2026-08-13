@@ -21,6 +21,7 @@ import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate } from './auth.js';
 import { isHostApiError, HostApiError } from './http-error.js';
+import { renderHostLandingPage, renderNotFoundPage, wantsHtmlDocument } from './landing.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
 import { isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
@@ -46,6 +47,27 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 	const payload = JSON.stringify(body ?? null);
 	response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
 	response.end(payload);
+}
+
+function sendHtml(response: ServerResponse, status: number, body: string, headOnly = false): void {
+	response.writeHead(status, {
+		'Content-Type': 'text/html; charset=utf-8',
+		'Content-Length': Buffer.byteLength(body),
+		'Cache-Control': 'no-store',
+	});
+	response.end(headOnly ? undefined : body);
+}
+
+/**
+ * The fall-through 404: HTML with a pointer home for genuine browser
+ * navigations, the unchanged JSON shape for everything else.
+ */
+function sendNotFound(request: IncomingMessage, response: ServerResponse): void {
+	if (wantsHtmlDocument(request.headers.accept)) {
+		sendHtml(response, 404, renderNotFoundPage());
+		return;
+	}
+	send(response, 404, { error: 'not found' });
 }
 
 async function readBody(request: IncomingMessage): Promise<unknown> {
@@ -104,6 +126,14 @@ export function createControlPlane(deps: ServerDeps): Server {
 		void (async () => {
 			const method = request.method ?? 'GET';
 			const pathname = new URL(request.url ?? '/', 'http://placeholder').pathname;
+
+			// The one unauthenticated page: a browser landing on the control plane
+			// learns what it reached instead of a bare JSON 404. Static content
+			// only — everything stateful stays behind the bearer token.
+			if (pathname === '/' && (method === 'GET' || method === 'HEAD')) {
+				sendHtml(response, 200, renderHostLandingPage({ network: config.network }), method === 'HEAD');
+				return;
+			}
 
 			const route = matchRoute(method, pathname);
 			if (route === null) {
@@ -361,7 +391,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 			}
 
 			default:
-				send(response, 404, { error: 'not found' });
+				sendNotFound(request, response);
 		}
 	}
 
@@ -379,7 +409,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 	): Promise<void> {
 		const target = matchNodeApiProxy(pathname);
 		if (target === null || !isProxyableHttpPath(method, target.subPath)) {
-			send(response, 404, { error: 'not found' });
+			sendNotFound(request, response);
 			return;
 		}
 
