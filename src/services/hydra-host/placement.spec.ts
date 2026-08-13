@@ -92,6 +92,21 @@ describe('assertHostCompatible', () => {
 		);
 	});
 
+	// A mismatch is only actionable if it reports what was seen: the fingerprint
+	// cannot be derived from the hydra-node CLI, so this is the operator's only
+	// route to the value they have to pin.
+	it('reports the observed fingerprint on a catalogue mismatch', () => {
+		expect(() => assertHostCompatible(capabilities({ scriptCatalogueHash: 'observed-value' }), expected)).toThrow(
+			/observed-value/,
+		);
+	});
+
+	it('reports the observed version, and that official builds carry a git sha', () => {
+		expect(() => assertHostCompatible(capabilities({ hydraVersion: '2.3.0-abc123' }), expected)).toThrow(
+			/2\.3\.0-abc123.*git sha/s,
+		);
+	});
+
 	it('refuses a missing script catalogue', () => {
 		expect(() => assertHostCompatible(capabilities({ scriptCatalogueHash: null }), expected)).toThrow(
 			/reports no script catalogue/,

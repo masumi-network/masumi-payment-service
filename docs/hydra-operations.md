@@ -129,6 +129,42 @@ The node's hostname lives under **Advanced** and is usually inferred correctly.
 Override it when the Host sits behind a NAT or a load balancer and cannot see
 the address the outside world reaches it on.
 
+### 2b. Pin what the Host runs
+
+A newly connected Host does not go Active. It sits with a health error until
+three values in your service's environment match what it reports, because a
+Host running different Hydra scripts or different ledger parameters produces
+heads this service cannot transact on — and that failure would otherwise
+surface much later, as a failed commit.
+
+Press **Check** on the node first: the service records what it saw even when
+the check fails, and the readings appear under **Details → Version and hashes**.
+
+| Variable                                      | Where the value comes from                                                                                                       |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `HYDRA_EXPECTED_VERSION`                      | **Details → Version**, copied exactly. Official `hydra-node` builds report `2.3.0-<git sha>`; a bare `2.3.0` does not match one. |
+| `HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH`        | **Details → Scripts**, via the copy button.                                                                                      |
+| `HYDRA_EXPECTED_LEDGER_PARAMS_HASH_<NETWORK>` | Already set for preprod. Do not copy this one from the Host: point the Host at the reviewed file instead (below).                |
+
+Restart the service and press **Check** again. The node goes Active.
+
+Two things that look like the same problem and are not:
+
+- **The Scripts fingerprint cannot be computed from the CLI.** It is taken over
+  the parsed catalogue document as this service re-serialises it, so
+  `hydra-node --hydra-script-catalogue | sha256sum` yields a different digest.
+  Copy it from the node details.
+- **A ledger parameters mismatch is a Host misconfiguration, not a pin to
+  update.** The Host must serve the reviewed file that ships in the repository:
+  set `HYDRA_HOST_LEDGER_PARAMS_FILE` to
+  `packages/hydra-host/params/<network>.json` on the Host. Pinning your service
+  to whatever a Host happens to serve is how you get `PPViewHashesDontMatch` on
+  the first spend inside a head.
+
+Copy a fingerprint only from a Host you operate or otherwise trust. The pin
+does not tell you the scripts are correct; it tells you they have not changed
+since you accepted them.
+
 ### 3. Open a head with your counterparty
 
 A head is opened through an **invite**, which is a signed offer naming both

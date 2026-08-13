@@ -43,4 +43,20 @@ describe('expectedHostCapabilitiesForNetwork', () => {
 			}),
 		).toThrow(/sha256/);
 	});
+
+	// The fingerprint cannot be derived from the hydra-node CLI, so an error
+	// that only names the variable strands the operator. It has to say where the
+	// value comes from, and warn off the recipe that looks obvious.
+	it('says where the catalogue fingerprint comes from', () => {
+		expect(() => expectedHostCapabilitiesForNetwork(Network.Preprod, {})).toThrow(/node details/);
+		expect(() => expectedHostCapabilitiesForNetwork(Network.Preprod, {})).toThrow(/cannot be reproduced by hashing/);
+	});
+
+	it('says where the ledger params fingerprint comes from', () => {
+		expect(() =>
+			expectedHostCapabilitiesForNetwork(Network.Mainnet, {
+				HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH: CATALOGUE_HASH,
+			}),
+		).toThrow(/packages\/hydra-host\/params\/mainnet\.json/);
+	});
 });

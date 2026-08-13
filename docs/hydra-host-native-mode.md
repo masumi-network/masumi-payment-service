@@ -17,7 +17,7 @@ There is no `aarch64-linux` build, and the official image
 `ghcr.io/cardano-scaling/hydra-node:<version>` is a single `linux/amd64`
 manifest rather than a multi-arch one.
 
-A container on an arm64 Mac runs Linux, so it needs a *Linux* `hydra-node`, and
+A container on an arm64 Mac runs Linux, so it needs a _Linux_ `hydra-node`, and
 the only one that exists is amd64. Under Docker Desktop's emulation that binary
 dies with `SIGILL` (exit 132) the moment it touches its crypto path —
 `--version` succeeds, `--hydra-script-catalogue` does not. Changing the base
@@ -33,16 +33,16 @@ would have to be verified against `HYDRA_DEPOSIT_SCRIPT_HASH` and
 ## What native mode is
 
 The Host is a plain Node process. Running it directly, pointed at the platform's
-own `hydra-node`, executes the *same application code* as the image — config,
+own `hydra-node`, executes the _same application code_ as the image — config,
 registry, port allocation, supervisor, plan/drain/drift/unwedge, node client,
 auth, routes, provisioning, and the proxy. Three environment variables differ,
 and all three are configuration rather than code paths:
 
-| Variable | Container | Native (macOS) |
-| --- | --- | --- |
-| `HYDRA_NODE_BIN` | `/usr/local/bin/hydra-node` (baked, amd64 Linux) | path to the Darwin arm64 build |
-| `HYDRA_HOST_DATA_DIR` | `/data` volume | a local directory |
-| `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes a matching etcd 3.5.25 | `false` — let `hydra-node` extract its own |
+| Variable                     | Container                                        | Native (macOS)                             |
+| ---------------------------- | ------------------------------------------------ | ------------------------------------------ |
+| `HYDRA_NODE_BIN`             | `/usr/local/bin/hydra-node` (baked, amd64 Linux) | path to the Darwin arm64 build             |
+| `HYDRA_HOST_DATA_DIR`        | `/data` volume                                   | a local directory                          |
+| `HYDRA_HOST_USE_SYSTEM_ETCD` | `true` — the image bakes a matching etcd 3.5.25  | `false` — let `hydra-node` extract its own |
 
 Native mode is a supported way to run the Host, not a workaround.
 
@@ -52,7 +52,7 @@ Two arm64 cases, and they are not the same problem:
 
 - **macOS on Apple silicon** — upstream publishes `aarch64-darwin`, so this
   works today. Everything below applies.
-- **arm64 Linux** — upstream publishes *no* build, so there is nothing to point
+- **arm64 Linux** — upstream publishes _no_ build, so there is nothing to point
   `HYDRA_NODE_BIN` at. Native mode does not rescue this: you would have to
   build `hydra-node` from its Nix flake and verify the resulting script hashes
   against `HYDRA_DEPOSIT_SCRIPT_HASH` and `HYDRA_HEAD_SCRIPT_HASH` before any
@@ -90,12 +90,12 @@ pnpm exec tsx packages/hydra-host/src/index.ts
 
 Four of those differ from the container and are worth understanding:
 
-| | Why |
-| --- | --- |
-| `HYDRA_NODE_BIN` | Nothing is baked in, so the path is yours to supply. |
-| `HYDRA_HOST_DATA_DIR` | Defaults to `/data`, which is the container's volume. Point it somewhere real and back it up: it holds the event store and the raft WAL. |
-| `HYDRA_HOST_LEDGER_PARAMS_FILE` | Defaults to `/opt/hydra/params/<network>.json`, which only exists in the image. The same files ship in `packages/hydra-host/params/`. |
-| `HYDRA_HOST_USE_SYSTEM_ETCD=false` | There is no matching system etcd; let `hydra-node` extract the copy it embeds. Setting `true` against a different version risks subtle raft incompatibilities. |
+|                                    | Why                                                                                                                                                                                                                                        |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `HYDRA_NODE_BIN`                   | Nothing is baked in, so the path is yours to supply.                                                                                                                                                                                       |
+| `HYDRA_HOST_DATA_DIR`              | Defaults to `/data`, which is the container's volume. Point it somewhere real and back it up: it holds the event store and the raft WAL.                                                                                                   |
+| `HYDRA_HOST_LEDGER_PARAMS_FILE`    | Defaults to `/opt/hydra/params/<network>.json`, which only exists in the image. Use the reviewed file that ships in `packages/hydra-host/params/` — any other params file, however plausible, makes every payment service refuse the Host. |
+| `HYDRA_HOST_USE_SYSTEM_ETCD=false` | There is no matching system etcd; let `hydra-node` extract the copy it embeds. Setting `true` against a different version risks subtle raft incompatibilities.                                                                             |
 
 `BLOCKFROST_PROJECT_FILE` is a path to a file containing the project id, not
 the id itself, in native mode as in the container.
@@ -117,7 +117,7 @@ Running natively verifies the logic; it does not verify the image. The
 container additionally covers the build itself, the baked binaries being on
 `PATH`, the non-root user, volume permissions, and `--network host`. The one
 path that only an amd64 machine can exercise is a node reaching `Running`
-*inside* the container using the baked etcd — the baked version matches the one
+_inside_ the container using the baked etcd — the baked version matches the one
 `hydra-node` embeds, but a version match is not proof it runs.
 
 ## Running the end-to-end suite

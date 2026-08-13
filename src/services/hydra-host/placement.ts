@@ -104,9 +104,13 @@ export function assertHostCompatible(capabilities: HostCapabilities, expected: E
 		capabilities.hydraVersion.startsWith(`${expected.hydraVersion} `) ||
 		capabilities.hydraVersion.startsWith(`${expected.hydraVersion}+`);
 	if (!versionMatches) {
+		// Official hydra-node builds report `X.Y.Z-<git sha>`, which is a distinct
+		// version from a bare `X.Y.Z` and does not match it. Say so here: it is the
+		// difference between a one-line fix and a hunt through the release notes.
 		throw new HostIncompatibleError(
 			`the hydra host runs ${capabilities.hydraVersion || 'an unknown version'} but this service expects ` +
-				expected.hydraVersion,
+				`${expected.hydraVersion}. Official hydra-node builds report a -<git sha> suffix; set ` +
+				'HYDRA_EXPECTED_VERSION to the exact reported version',
 		);
 	}
 
@@ -116,8 +120,13 @@ export function assertHostCompatible(capabilities: HostCapabilities, expected: E
 		);
 	}
 	if (capabilities.scriptCatalogueHash !== expected.scriptCatalogueHash) {
+		// The fingerprint is over a re-serialised document, so it cannot be
+		// reproduced by hashing the hydra-node CLI output. Reporting the observed
+		// value is the only way an operator can pin a Host they have reviewed.
 		throw new HostIncompatibleError(
-			'the hydra host script catalogue does not match the catalogue reviewed by this service',
+			`the hydra host script catalogue (${capabilities.scriptCatalogueHash}) does not match the catalogue ` +
+				`reviewed by this service (${expected.scriptCatalogueHash}). If this host runs the reviewed Hydra ` +
+				'release, set HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH to the observed fingerprint',
 		);
 	}
 
@@ -136,8 +145,10 @@ export function assertHostCompatible(capabilities: HostCapabilities, expected: E
 
 	if (expected.ledgerParamsHash !== capabilities.ledgerParamsHash) {
 		throw new HostIncompatibleError(
-			'the hydra host ledger protocol parameters do not match the ones this service builds against; ' +
-				'in-head script spends would fail PPViewHashesDontMatch. Regenerate the host params from the pinned mesh line',
+			`the hydra host ledger protocol parameters (${capabilities.ledgerParamsHash}) do not match the ones this ` +
+				`service builds against (${expected.ledgerParamsHash}); in-head script spends would fail ` +
+				'PPViewHashesDontMatch. Point HYDRA_HOST_LEDGER_PARAMS_FILE at the reviewed ' +
+				'packages/hydra-host/params/<network>.json, or regenerate that file from the pinned mesh line',
 		);
 	}
 }

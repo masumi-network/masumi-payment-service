@@ -21,13 +21,27 @@ export class HostCompatibilityConfigError extends Error {
 	}
 }
 
-function requiredSha256(value: string | undefined, name: string): string {
+function requiredSha256(value: string | undefined, name: string, hint: string): string {
 	const normalized = value?.trim().toLowerCase() ?? '';
 	if (!SHA256_PATTERN.test(normalized)) {
-		throw new HostCompatibilityConfigError(`${name} must be set to a sha256:<64 lowercase hex characters> fingerprint`);
+		throw new HostCompatibilityConfigError(
+			`${name} must be set to a sha256:<64 lowercase hex characters> fingerprint. ${hint}`,
+		);
 	}
 	return normalized;
 }
+
+/**
+ * How to obtain the catalogue fingerprint.
+ *
+ * Deliberately not "hash the CLI output": the value is taken over the parsed
+ * catalogue document re-serialised by this service, so hashing
+ * `hydra-node --hydra-script-catalogue` directly yields a different digest and
+ * the mismatch only surfaces later, at placement.
+ */
+const CATALOGUE_HASH_HINT =
+	'Connect the host, press Check on it, and copy the Scripts fingerprint from the node details ' +
+	'(see docs/hydra-operations.md). It cannot be reproduced by hashing the hydra-node CLI output directly.';
 
 /**
  * Independent compatibility manifest for Hydra Host placement.
@@ -47,6 +61,7 @@ export function expectedHostCapabilitiesForNetwork(
 	const scriptCatalogueHash = requiredSha256(
 		env.HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH,
 		'HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH',
+		CATALOGUE_HASH_HINT,
 	);
 	const ledgerParamsHash = requiredSha256(
 		network === Network.Preprod
@@ -55,6 +70,7 @@ export function expectedHostCapabilitiesForNetwork(
 		network === Network.Preprod
 			? 'HYDRA_EXPECTED_LEDGER_PARAMS_HASH_PREPROD'
 			: 'HYDRA_EXPECTED_LEDGER_PARAMS_HASH_MAINNET',
+		`Hash the reviewed packages/hydra-host/params/${network.toLowerCase()}.json with sha256 and prefix it with "sha256:".`,
 	);
 
 	return {

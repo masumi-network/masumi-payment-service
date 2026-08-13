@@ -59,17 +59,21 @@ function Field({
   value,
   hint,
   copyable,
+  copyValue,
 }: {
   label: string;
   value: string;
   hint?: string;
   copyable?: boolean;
+  /** What to copy when the shown value is abbreviated. Defaults to `value`. */
+  copyValue?: string | null;
 }) {
+  const copied = copyValue ?? value;
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-        {copyable && value !== '—' && <CopyButton value={value} />}
+        {copyable && copied !== '—' && copied.length > 0 && <CopyButton value={copied} />}
       </div>
       <p className="break-all font-mono text-xs">{value}</p>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
@@ -273,14 +277,21 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
               </p>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
+                {/* Copyable in full: pinning a reviewed node means pasting these
+                    into HYDRA_EXPECTED_SCRIPT_CATALOGUE_HASH and the params
+                    hash, and there is no other way to read the value. */}
                 <Field
                   label="Scripts"
                   value={shortHash(host.scriptCatalogueHash)}
+                  copyValue={host.scriptCatalogueHash}
+                  copyable
                   hint="Both sides must match, or the head cannot be opened at all."
                 />
                 <Field
                   label="Ledger parameters"
                   value={shortHash(host.ledgerParamsHash)}
+                  copyValue={host.ledgerParamsHash}
+                  copyable
                   hint="A mismatch shows up at the first spend inside the head, not here."
                 />
                 <Field label="Control URL" value={host.baseUrl} copyable />
