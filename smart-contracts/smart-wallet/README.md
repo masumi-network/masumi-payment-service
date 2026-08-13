@@ -2,94 +2,142 @@
 
 ## Overview
 
-An Aiken Plutus V3 treasury wallet. Each wallet is one UTxO carrying a state
-token, the funds, and the configuration in its datum. A **cold owner key** can
-always move everything. A **hot agent key** — in production, the payment
-service's purchasing key — can move value only within a per-period ceiling, and
-only with an **external quorum's co-signature**.
+This is an Aiken Plutus V3 treasury wallet. Each wallet is one UTxO. The UTxO
+holds the funds, a state token, and the configuration in its datum.
 
-One deployment serves many wallets: the token's name is derived from the seed
-UTxO consumed at mint (`blake2b_256(seed_tx ++ index_be4)`), so wallets sit
-side by side at the same address, each with its own agent, ceiling and
-counters. **Each token is one wallet.**
+The wallet gives three parties three different powers:
 
-The point is to let automation spend operator funds without holding them: the
-mandate lives on-chain, is enforced by the ledger, and can be revoked by the
-owner in one transaction that does not even change the address.
+- The **owner key** is cold. It can always move everything.
+- The **agent key** is hot. In production it is the purchasing key of the
+  payment service. It can move value only inside a per-period ceiling.
+- The **co-signers** are external services. Every agent spend needs their
+  approval. They hold keys but never funds.
 
-The design was worked out ticket by ticket in
-[`docs/wayfinder/smart-wallet-capabilities/`](../../docs/wayfinder/smart-wallet-capabilities/map.md),
-which records why each rule exists and what was deliberately left out.
+The goal: automation can spend operator funds without holding them. The ledger
+enforces the mandate. The owner can revoke the agent key in one transaction,
+and the address does not change.
 
-## Shape
+The design record is in
+[`docs/wayfinder/smart-wallet-capabilities/`](../../docs/wayfinder/smart-wallet-capabilities/map.md).
+It contains 16 tickets. Each ticket records why a rule exists or why a feature
+was dropped.
 
-The validator **is its own minting policy**. One script hash serves as the state
-token's policy id, the wallet address's payment credential, and the identity the
-spend path checks — available at runtime on both sides, so neither handler needs
-the other's identity as a parameter.
+## How the contract works
 
-|                       | Contents                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------- |
-| **Script parameters** | `owner`, `quorum_vks`, `quorum_threshold`, `stake` — immutable, part of the address          |
-| **Datum**             | `agent`, `limit`, `period_length`, `period_start`, `spent_in_period`, `min_balance_lovelace` |
-| **Value**             | the treasury, plus exactly one state token                                                   |
+### One script, three roles
 
-The seed is **not** a parameter — it is consumed at mint and determines only
-the token name. Changing any parameter means a different address; a new wallet
-at the *same* address is just a new mint. Only the datum is rewritable in
-place, by the owner. The mint is owner-gated, pins the token's destination to
-the full wallet address, requires the receiving UTxO to hold exactly one token
-of the policy — so no UTxO can ever hold zero or two — forbids a reference
-script on it (the spend path forwards `reference_script` by equality, so bytes
-attached at birth would cost per-byte fees on every spend, forever), and
-requires the initial datum to **parse**. Datum values stay unvalidated by
-design; deploy tooling owns them.
+The validator is also its own minting policy. One script hash is, at the same
+time:
 
-## Actions
+1. The policy id of the state token.
+2. The payment credential of the wallet address.
+3. The identity that the spend rules check.
 
-| Action         | Who signs                | What it does                                  |
-| -------------- | ------------------------ | --------------------------------------------- |
-| `AgentSpend`   | agent **and** quorum     | Moves value out, within the ceiling           |
-| `Deposit`      | agent **or** owner       | Moves value **in**; nothing may leave         |
-| `UpdatePolicy` | owner                    | Rewrites the datum, wallet stays alive        |
-| `OwnerSpend`   | owner                    | Unrestricted: sweep, retire, or rescue        |
+The hash is available on both sides at run time. The mint handler receives it
+as `policy_id`. The spend handler reads it from the address of its own input.
+Because of this, no handler needs the identity of the other as a parameter.
 
-## Rules
+### The state token is the wallet
 
-Every agent spend must satisfy all of these:
+The mint consumes a seed UTxO and derives the token name from it:
+`blake2b_256(seed_tx_hash ++ seed_index_as_4_bytes)`. The ledger permits each
+UTxO to be spent once. Therefore each token name can exist once, forever.
 
-1. **Exactly one input of OUR script, one continuing output at the same full
-   address.** Foreign script inputs are permitted — the wallet funds
-   transactions that interact with other contracts, locking into the payment
-   escrow being the primary case. What can never happen is two wallet shards
-   settling in one transaction, which is what keeps each ceiling independent.
-   Matching the full address, stake part included, also stops a spend
-   re-delegating the treasury.
-2. **The input carries exactly one state token, and the continuing output
-   carries the same one** — identity is the token name, so a sibling wallet's
-   token cannot be swapped in.
-3. **Agent signature, plus weighted quorum.** A key listed twice carries two
-   votes; the agent's and the **owner's** keys never count, even if listed —
-   the quorum is external to both parties the parameters name, so the cold key
-   cannot quietly become a warm co-signer.
-4. **Both validity bounds finite.**
-5. **Per asset**: `spent += max(0, outflow)`, every moved asset must have a
-   limit entry, and `spent + outflow <= limit`.
-6. **Unlisted assets are frozen in both directions** — they can neither leave
-   nor be added. This is what pins the state token in place, with no rule
-   written for it.
-7. **The lovelace floor holds** on the continuing output.
-8. **Rolling window**: the counter resets when `lower >= period_start +
-   period_length`, and on roll-over the validity range must fit inside the new
-   window, so an agent cannot back-date to accrue budget.
-9. **The output datum equals the input datum** with only `period_start` and
-   `spent_in_period` advanced.
+One deployment serves many wallets. All wallets under one configuration share
+one address. Each wallet is one token, one UTxO, one datum, one agent, one
+ceiling. No transaction can spend two wallets together. To add capacity, the
+owner mints one more token.
 
-Deliberately absent: recipient allow-list, expiry, on-chain freeze, successor
-pointer, `Retire` action, mint awareness, aggregate accounting, second script.
-Each was considered and dropped for a reason recorded on the map.
+The mint applies five checks:
 
-## Building
+1. The owner signed the transaction.
+2. The token name matches a consumed seed UTxO.
+3. The token goes to the full wallet address, and to no other place.
+4. The receiving UTxO holds exactly one token of the policy and a datum that
+   parses. It holds no reference script.
+5. The transaction moves exactly one token name of the policy.
+
+The burn branch needs the owner signature and a quantity of exactly minus one.
+A burn retires one wallet. Other wallets at the address keep their tokens.
+
+### Script parameters and datum
+
+| Location | Fields | Who can change them |
+| --- | --- | --- |
+| Script parameters | `owner`, `quorum_vks`, `quorum_threshold`, `stake` | Nobody. A change makes a new address. |
+| Datum | `agent`, `limit`, `period_length`, `period_start`, `spent_in_period`, `min_balance_lovelace` | The owner, in place. |
+
+The seed is not a parameter. It only selects the token name.
+
+`limit` and `spent_in_period` are per-asset lists (`Pairs`, not `Value`). A
+datum comes from an unvalidated transaction, so the validator does not trust
+its order. Lookups fail when a policy or an asset name appears twice.
+
+### Actions
+
+| Action | Signers | Effect |
+| --- | --- | --- |
+| `AgentSpend` | agent **and** co-signer quorum | Value moves out, inside the ceiling |
+| `Deposit` | agent **or** owner | Value moves in, nothing moves out |
+| `UpdatePolicy` | owner | The datum changes, the wallet stays alive |
+| `OwnerSpend` | owner | No restrictions: sweep, retire, rescue |
+
+### Rules of an agent spend
+
+1. The transaction spends exactly one input of this script. Foreign script
+   inputs are permitted. The wallet can fund an escrow lock in the same
+   transaction. Two wallets can never settle together.
+2. Exactly one output returns to the same full address, stake part included.
+   This stops a change of the stake delegation.
+3. The input holds exactly one state token. The output holds the same token.
+4. The agent signed, and the co-signer quorum is met. A key that appears twice
+   in `quorum_vks` counts twice. The agent key and the owner key never count.
+5. Both ends of the validity range are finite.
+6. For each asset: the spent counter increases by the outflow when the outflow
+   is positive. Each moved asset must have a limit entry. The counter must stay
+   at or below the limit.
+7. Assets without a limit entry are frozen in both directions. This rule also
+   keeps the state token in place.
+8. The lovelace on the continuing output stays at or above
+   `min_balance_lovelace`.
+9. The datum lists at most 16 assets.
+10. The budget window rolls: when the lower bound of the validity range passes
+    `period_start + period_length`, the counters reset and the window moves to
+    the lower bound. On a roll-over, the validity range must fit inside one
+    window. This stops back-dated windows.
+11. The output datum equals the input datum, with only `period_start` and
+    `spent_in_period` changed.
+
+### Deposits
+
+A deposit adds value and removes nothing. The datum must stay byte-identical.
+Each added asset must have a limit entry. At least one asset must move. The
+agent or the owner must sign. No quorum is needed, because nothing leaves.
+
+The signature requirement has a purpose. Without it, anyone could spend and
+re-create the wallet UTxO for the cost of a fee. Each such churn invalidates
+every transaction that was built against the previous UTxO.
+
+### Retire
+
+The owner spends the wallet with `OwnerSpend` and burns the token in the same
+transaction. The address stays valid for other wallets. A swept but unburned
+token is a risk: its holder can re-create a spendable wallet UTxO at the old
+address. The demo sweep script burns in the same transaction for this reason.
+
+### What the contract does not do
+
+These items were dropped on purpose. The design record holds the reasons.
+
+- No recipient allow-list. The co-signers control destinations.
+- No expiry on the delegation. The co-signers can stop at any time.
+- No on-chain freeze. Co-signer refusal stops spending in seconds.
+- No datum-value checks at mint or update. Deploy tooling owns the values.
+  The mint checks only that the datum parses.
+
+## Build and test the contract
+
+Install the pinned compiler, then build and test:
 
 ```sh
 aikup install v1.1.23
@@ -99,130 +147,203 @@ aikup install v1.1.23
 aiken build
 ```
 
-The compiled hash — and therefore every wallet address — depends on the exact
-compiler version.
-
 ```sh
 aiken check
 ```
 
-65 tests — unit and property (fuzzed, 100 runs each): the happy paths, and one per rule above from the attacker's side.
+The compiled hash depends on the exact compiler version. A different version
+produces a different address.
 
-### Toolchain warning
+`aiken check` runs 65 tests. The suite contains one test per rule above, from
+the attacker's side, plus four property tests with 100 random runs each. The
+property tests cover the counter arithmetic, the shape functions, and the
+collision resistance of the token-name derivation.
 
-Aiken v1.1.23 fails **silently** on at least six mistakes — `aiken check`
-exits non-zero printing only `Compiling`, with no diagnostic:
+### Toolchain warnings
 
-- a module under `validators/` whose filename starts with an underscore is
-  skipped entirely
-- two validators declared in one module
-- an arity mismatch at a call site
-- an arithmetic expression as a `via` fuzzer bound (literals only)
-- a test with more than one `via` argument (pack pairs with `fuzz.both`)
-- duplicate top-level definitions in a module
+Aiken v1.1.23 fails without a diagnostic in at least six cases. `aiken check`
+exits non-zero and prints only `Compiling`:
 
-Each costs a bisect. If `aiken check` exits 1 with no error, suspect one of
-these before doubting the code. Mesh has a sibling trap: `MeshTxBuilder`
-without an `evaluator` stamps default execution budgets instead of running the
-script — transactions overpay ~0.6 ADA and invalid ones "build" fine, only
-dying at submission.
+- A module under `validators/` with a filename that starts with an underscore.
+  Aiken skips the module.
+- Two validators in one module.
+- An arity mismatch at a call site.
+- An arithmetic expression as a `via` fuzzer bound. Use literals.
+- A test with more than one `via` argument. Pack pairs with `fuzz.both`.
+- Duplicate top-level definitions in a module.
 
-## Security notes
+When `aiken check` exits 1 with no error text, look for these first.
 
-- **`limit` must list lovelace** (policy `#""`, name `#""`), or the wallet can
-  neither spend nor receive ADA — a spend moves lovelace even when it only pays
-  the fee. Nothing on-chain checks this.
-- **`quorum_threshold <= 0` disables the quorum permanently** at that address,
-  leaving the hot key bounded only by the ceiling, unrecoverable short of a new
-  wallet. A threshold above the achievable weight is the milder mistake: the
-  agent path is dead but `OwnerSpend` still sweeps. Deploy tooling owns both.
-- **At most 16 budgeted assets.** A spend costs roughly (assets moved x assets
-  listed); the bound is checked on the spend path, so a malformed funding datum
-  cannot dodge it.
-- **`limit` and `spent_in_period` must list the same assets in the same order.**
-  A mismatch written by `UpdatePolicy` silently brings down every later agent
-  spend. `OwnerSpend` always recovers the funds.
-- **Datum-supplied asset values are untrusted.** Lookups fail closed on a
-  duplicate policy or asset name rather than picking a resolution an attacker
-  chose.
-- **The mint checks datum shape, not values.** A wallet cannot be born with a
-  missing or unparseable datum, but a threshold of zero, an unlisted lovelace
-  entry, or a limit above the balance still pass — deploy tooling owns values,
-  the same stance as the quorum threshold.
-- **Owner key compromise is total loss.** No recovery, no guardians, no
-  timelock.
-- **Freezing is off-chain**: co-signers refusing to sign halts spending in
-  seconds, with no transaction. Revoking the agent is a cold-key `UpdatePolicy`
-  that keeps the address. Replacing a *co-signer* means a new wallet.
+Mesh has a related trap. A `MeshTxBuilder` without an `evaluator` does not run
+the script. It stamps default execution budgets. Transactions then overpay
+about 0.6 ADA, and invalid transactions build without error and die at
+submission. Every script in this directory passes `evaluator`.
 
-## Demo
+## Run the demo scripts
+
+The demo scripts run the full wallet lifecycle on the preprod test network.
+
+### 1. Install
 
 ```sh
 pnpm install --ignore-workspace
 ```
 
-`--ignore-workspace` is required: the repo root is a pnpm workspace that does
-not include `smart-contracts/*`, and this package pins its own Mesh release. The
-`@harmoniclabs/crypto` peer warning is expected — see
+`--ignore-workspace` is required. The repository root is a pnpm workspace that
+does not include `smart-contracts/*`, and this package pins its own Mesh
+version. The `@harmoniclabs/crypto` peer warning is expected. See
 `docs/adr/0005-meshsdk-version-pinning-v1-v2.md`.
+
+### 2. Check the toolchain offline
 
 ```sh
 pnpm run verify
 ```
 
-An offline self-test — datum encoding, blueprint agreement, address derivation,
-and the budget arithmetic that must mirror the validator. No network, no
-wallets.
+This runs 15 checks without a network and without keys: datum encoding, field
+order against `plutus.json`, address derivation, token-name derivation, and
+the budget arithmetic that mirrors the validator.
+
+### 3. Create the keys
 
 ```sh
 pnpm run generate-wallet
 ```
 
-Six wallets: owner, agent, recipient, and three co-signers. `*.sk` files are
-git-ignored.
+This writes six key files. Git ignores the `.sk` files.
 
-**Fund only two of them.** Co-signers need keys but never funds — they only
-sign.
+| File | Role |
+| --- | --- |
+| `wallet_1` | owner key |
+| `wallet_2` | agent key |
+| `wallet_3` | recipient |
+| `wallet_4`–`wallet_6` | co-signers |
 
-| Wallet                 | Fund       | Why                                              |
-| ---------------------- | ---------- | ------------------------------------------------ |
-| `wallet_1` owner       | ~100 tADA  | Seeds and funds the wallet; pays for update/sweep |
-| `wallet_2` agent       | ~30 tADA   | Fees and collateral for spends and deposits       |
-| `wallet_3` recipient   | —          | Only receives                                     |
-| `wallet_4/5/6`         | —          | Sign only                                         |
+### 4. Fund two wallets
 
-Then, in order:
+Fund only the owner and the agent from the
+[preprod faucet](https://docs.cardano.org/cardano-testnets/tools/faucet).
+Co-signers sign but never pay.
 
-| Command                 | Who            | What happens                                        |
-| ----------------------- | -------------- | --------------------------------------------------- |
-| `pnpm run init`         | owner          | Mints the state token and funds the wallet          |
-| `pnpm run inspect`      | –              | Balance, budget used, window, frozen assets         |
-| `pnpm run agent-spend`  | agent + quorum | Pays `wallet_3` within the ceiling                  |
-| `pnpm run deposit`      | agent or owner | Tops the wallet up; no quorum needed                |
-| `pnpm run update-policy`| owner          | Rotates the agent or re-budgets, address unchanged  |
-| `pnpm run sweep`        | owner          | Sweeps the funds and burns the token                |
-| `pnpm run e2e-negative` | –              | 12 attack txs vs the live wallet; all must fail evaluation |
-| `pnpm run fuzz-e2e`     | –              | Differential fuzz: off-chain mirror vs live validator |
+| Wallet | Amount | Purpose |
+| --- | --- | --- |
+| `wallet_1` owner | about 100 tADA | Seed, initial funds, policy updates, sweep |
+| `wallet_2` agent | about 30 tADA | Fees and collateral for spends and deposits |
 
-`init` writes `wallet-seed.json`. The seed determines the **token name** — the
-wallet's identity among its siblings at the shared address. **Keep that file**:
-without it you can no longer tell which shard is yours except by elimination.
-It is git-ignored as local deployment state.
+### 5. Run the lifecycle
 
-Useful environment variables: `NETWORK` (`preprod`), `FUND_LOVELACE`,
-`DAILY_LIMIT_LOVELACE`, `PERIOD_MS`, `MIN_BALANCE_LOVELACE`, `PAYOUT_LOVELACE`,
-`DEPOSIT_LOVELACE`, `AS_OWNER=1` (deposit as owner), `ROTATE_AGENT_TO=<index>`,
-`QUORUM_THRESHOLD`, `SWEEP_ADDRESS`.
+Run the steps in order. Wait for confirmation between steps, because each
+transaction spends the output of the previous one. Confirmation takes about
+one to two minutes on preprod. `pnpm run inspect` shows the current state.
+
+1. `pnpm run init` — the owner mints the state token and funds the wallet.
+   The script writes `wallet-seed.json`. Keep this file. It names your wallet
+   among its siblings at the shared address. Git ignores it.
+2. `pnpm run inspect` — shows balance, budget, window, and frozen assets.
+3. `pnpm run agent-spend` — the agent and two co-signers pay the recipient.
+4. `pnpm run deposit` — the agent adds funds. No quorum is needed.
+   Set `AS_OWNER=1` to deposit with the owner key instead.
+5. `pnpm run update-policy` — the owner changes the datum in place.
+   Set `ROTATE_AGENT_TO=<index>` to replace the agent key.
+   Set `DAILY_LIMIT_LOVELACE=<n>` to change the ceiling and reset the counter.
+6. `pnpm run sweep` — the owner sweeps the funds and burns the token.
+
+## Test against the live network
+
+Two suites exercise the deployed script against a live wallet. Both build
+transactions and let the provider evaluate them. Neither submits. No funds
+move and no collateral is at risk. Run them after `pnpm run init` confirmed.
+
+### Negative suite
+
+```sh
+pnpm run e2e-negative
+```
+
+The suite builds 12 forbidden transactions and expects the validator to reject
+each one: over-budget payout, understated counter, missing quorum, missing
+agent signature, token theft, agent self-rotation, limit increase, wallet
+split, value-removing deposit, unlisted-asset deposit, non-owner update, and
+non-owner sweep.
+
+Each PASS line states the rejection stage. `rejected on evaluation` means the
+script itself refused. `REJECTED PRE-EVALUATION` means the transaction did not
+build, and the case did not reach the script. Inspect such a case, because it
+no longer tests the validator. Set `VERBOSE=1` to print the error text.
+
+### Differential fuzz
+
+```sh
+pnpm run fuzz-e2e
+```
+
+Each round draws a random payout and sometimes a forged counter. The off-chain
+mirror predicts the verdict. The provider evaluates the real script. The two
+verdicts must agree on every round. A disagreement means the mirror and the
+validator drifted apart.
+
+The run is reproducible. `FUZZ_SEED=<n>` fixes the random sequence, and
+`FUZZ_ROUNDS=<n>` sets the round count (default 12).
+
+## Configuration reference
+
+All variables are optional.
+
+| Variable | Default | Used by |
+| --- | --- | --- |
+| `NETWORK` | `preprod` | all scripts |
+| `FUND_LOVELACE` | `60000000` | init |
+| `DAILY_LIMIT_LOVELACE` | `20000000` | init, update-policy |
+| `PERIOD_MS` | `86400000` | init |
+| `MIN_BALANCE_LOVELACE` | `5000000` | init, update-policy |
+| `QUORUM_THRESHOLD` | `2` | all scripts |
+| `QUORUM_KEY_HASHES` | co-signer wallets | all scripts |
+| `PAYOUT_LOVELACE` | `3000000` | agent-spend |
+| `RECIPIENT_ADDRESS` | `wallet_3` | agent-spend |
+| `DEPOSIT_LOVELACE` | `10000000` | deposit |
+| `AS_OWNER` | unset | deposit |
+| `ROTATE_AGENT_TO` / `NEW_AGENT_KEY_HASH` | unset | update-policy |
+| `SWEEP_ADDRESS` | owner address | sweep |
+| `FORCE_NEW` | unset | init (overwrite an old seed) |
+| `INVALID_BEFORE_MS` / `INVALID_AFTER_MS` | now−5min / now+5min | spend paths |
+| `FUZZ_SEED` / `FUZZ_ROUNDS` | time / `12` | fuzz-e2e |
+| `VERBOSE` | unset | e2e-negative |
+
+## Security notes
+
+- `limit` must list lovelace (policy `#""`, name `#""`). Without it the wallet
+  can neither spend nor receive ADA, because every spend moves lovelace. No
+  on-chain check exists for this.
+- `quorum_threshold <= 0` disables the quorum forever at that address. The
+  agent key is then bounded only by the ceiling. Recovery needs a new wallet.
+  A threshold above the reachable weight is the milder mistake: the agent path
+  is dead, but `OwnerSpend` still sweeps. Deploy tooling must check both.
+- The datum can list at most 16 assets. The spend path enforces the bound, so
+  a malformed funding datum cannot avoid it.
+- `limit` and `spent_in_period` must list the same assets in the same order.
+  A mismatch written by `UpdatePolicy` stops all later agent spends.
+  `OwnerSpend` always recovers the funds.
+- The mint checks the datum shape, not the values. A zero threshold or a
+  missing lovelace entry still passes. Deploy tooling owns the values.
+- Loss of the owner key is total loss. There is no recovery path, no guardian
+  set, and no timelock.
+- The freeze mechanism is off-chain. Co-signers stop signatures, and spending
+  stops in seconds without a transaction. The owner replaces the agent key
+  with `UpdatePolicy`, and the address stays. To replace a co-signer, create a
+  new wallet.
 
 ## Files
 
-| Path                                | Contents                                          |
-| ----------------------------------- | ------------------------------------------------- |
-| `validators/smart_wallet.ak`        | Both handlers and redeemer dispatch               |
-| `lib/smart_wallet/types.ak`         | Datum, actions, `AssetValue`                      |
-| `lib/smart_wallet/spend.ak`         | Spending rules                                    |
-| `lib/smart_wallet/mint.ak`          | One-shot mint, destination pin, burn              |
-| `lib/smart_wallet/asset_value.ak`   | Datum-safe asset arithmetic                       |
-| `lib/smart_wallet/*_test.ak`        | Test suite                                        |
-| `wallet_lifecycle_diagram.md`       | Lifecycle, budget window, transaction shapes      |
-| `example-helpers.mjs`               | Encoding, address derivation, budget mirror       |
+| Path | Content |
+| --- | --- |
+| `validators/smart_wallet.ak` | Both handlers and the redeemer dispatch |
+| `lib/smart_wallet/types.ak` | Datum, actions, `AssetValue` |
+| `lib/smart_wallet/spend.ak` | Spend rules |
+| `lib/smart_wallet/mint.ak` | Mint, destination pin, burn |
+| `lib/smart_wallet/asset_value.ak` | Datum-safe asset arithmetic |
+| `lib/smart_wallet/*_test.ak` | Unit tests |
+| `lib/smart_wallet/property_test.ak` | Property tests |
+| `wallet_lifecycle_diagram.md` | Lifecycle and transaction shapes |
+| `example-helpers.mjs` | Encoding, derivation, budget mirror |
+| `e2e-negative-tests.mjs` | 12 attack transactions against the live wallet |
+| `fuzz-e2e.mjs` | Differential fuzz against the live wallet |
