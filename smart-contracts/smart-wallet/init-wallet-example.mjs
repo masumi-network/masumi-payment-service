@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import fs from 'node:fs';
 import { MeshTxBuilder, resolvePaymentKeyHash } from '@meshsdk/core';
 import {
 	AGENT_WALLET_INDEX,
@@ -111,9 +112,20 @@ const unsignedTx = await txBuilder
 	.setNetwork(network)
 	.complete();
 
-const signedTx = await owner.signTx(unsignedTx);
-const txHash = await owner.submitTx(signedTx);
+// Persist the seed BEFORE submitting: if the process dies between a
+// successful submit and the write, the token exists on-chain but nothing
+// records which seed named it — the wallet would be identifiable only by
+// trawling the owner's transaction history. A stale file from a FAILED submit
+// is removed below so the hasSeed() guard cannot wedge a retry.
 writeSeed(seed);
+const signedTx = await owner.signTx(unsignedTx);
+let txHash;
+try {
+	txHash = await owner.submitTx(signedTx);
+} catch (error) {
+	fs.rmSync('wallet-seed.json', { force: true });
+	throw error;
+}
 
 console.log(`Smart wallet created:
     Tx ID: ${txHash}

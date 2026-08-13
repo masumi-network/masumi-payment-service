@@ -236,7 +236,7 @@ fn agent_tx(
 }
 
 fn valid(datum: Datum, self: Transaction) -> Bool {
-  spend.agent_spend_is_valid(datum, quorum(), 2, own_ref(), self)
+  spend.agent_spend_is_valid(datum, quorum(), 2, owner_key, own_ref(), self)
 }
 
 // ## Agent spend — happy paths
@@ -314,6 +314,7 @@ test agent_spend_counts_a_repeated_cosigner_twice() {
     datum,
     [cosigner_a, cosigner_a, cosigner_b],
     2,
+    owner_key,
     own_ref(),
     self,
   )
@@ -450,6 +451,7 @@ test agent_spend_cannot_count_its_own_key_as_quorum() fail {
     datum,
     [agent_key, cosigner_a, cosigner_b],
     2,
+    owner_key,
     own_ref(),
     self,
   )
@@ -1107,4 +1109,29 @@ test update_policy_without_a_continuing_output_fails() fail {
       now + 600_000,
     )
   spend.update_is_valid(owner_key, own_ref(), self)
+}
+
+test agent_spend_cannot_count_the_owner_as_quorum() fail {
+  // The cold key never doubles as a co-signer: a deployment listing the owner
+  // in the quorum must not weaken the threshold.
+  let datum = base_datum()
+  let self =
+    agent_tx(
+      wallet_value(100 * ada),
+      datum,
+      wallet_value(95 * ada),
+      spent(5 * ada),
+      from_lovelace(5 * ada),
+      [agent_key, owner_key, cosigner_a],
+      now,
+      now + 600_000,
+    )
+  spend.agent_spend_is_valid(
+    datum,
+    [owner_key, cosigner_a, cosigner_b],
+    2,
+    owner_key,
+    own_ref(),
+    self,
+  )
 }

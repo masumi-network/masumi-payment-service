@@ -45,8 +45,10 @@ listed twice carries two votes. The count is over the parameter list, not the
 witness set — for each entry in the quorum list that appears in
 `extra_signatories`, add one.
 
-**The agent's key never counts.** The hot key signs as the spender and is
-skipped when tallying, even if it also appears in the quorum list. Otherwise a
+**The agent's key never counts — and, amended during implementation, neither
+does the owner's.** The hot key signs as the spender and is skipped when
+tallying; the cold key is skipped too, so a deployment that lists the owner in
+`quorum_vks` cannot quietly turn it into a warm co-signer. Otherwise a
 compromised hot key contributes a vote toward approving its own spend, and the
 quorum is weaker than it reads in exactly the scenario it exists for.
 

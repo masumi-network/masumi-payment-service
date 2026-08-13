@@ -4,7 +4,8 @@ use aiken/crypto.{VerificationKeyHash, blake2b_256}
 use aiken/primitive/bytearray
 use cardano/address.{Address, Credential, Inline, Script}
 use cardano/assets.{PolicyId, tokens}
-use cardano/transaction.{OutputReference, Transaction}
+use cardano/transaction.{InlineDatum, OutputReference, Transaction}
+use smart_wallet/types.{Datum}
 
 /// The one address wallets under this configuration live at, derived entirely
 /// from the script's own parameters.
@@ -83,6 +84,17 @@ pub fn mint_is_valid(
         self.outputs,
         fn(output) { output.address == wallet_address(policy_id, stake) },
       )
+    // No reference script on the fresh wallet: the spend path carries
+    // `reference_script` forward by equality, so bytes attached here would be
+    // paid for — per byte, since Conway — on every spend for the wallet's
+    // whole life, with no path that ever sheds them.
+    expect wallet.reference_script == None
+    // The datum must at least PARSE. Values stay deliberately unvalidated
+    // (deploy tooling owns thresholds and limits), but a wallet born with a
+    // missing or malformed datum is dead on arrival for the agent path and
+    // needs a cold-key repair — cheap to prevent here, where it is written.
+    expect InlineDatum(raw_datum) = wallet.datum
+    expect _initial: Datum = raw_datum
     ( wallet.value |> tokens(policy_id) |> dict.to_pairs() ) == [
       Pair(asset_name, 1),
     ]
