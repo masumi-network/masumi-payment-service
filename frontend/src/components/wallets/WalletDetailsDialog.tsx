@@ -359,7 +359,12 @@ export function WalletDetailsDialog({
         }
       }
     }
-  }, [isOpen, wallet?.walletAddress]);
+    // canManageWallet belongs in the deps: capabilities resolve asynchronously
+    // from /api-key-status, so an admin who opens this dialog before that query
+    // settles runs the effect with canManageWallet still false. Without a re-run,
+    // rules, wallet details and swap history never load and the dialog stays
+    // permanently degraded for a key that is in fact allowed to manage the wallet.
+  }, [isOpen, wallet?.walletAddress, canManageWallet]);
 
   const handleExport = async () => {
     if (!wallet || !isHotWalletType(wallet.type)) return;

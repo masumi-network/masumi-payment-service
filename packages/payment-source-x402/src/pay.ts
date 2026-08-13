@@ -89,17 +89,30 @@ async function reserveBudgetForAttempt({
 		//
 		// Debited in the same transaction and guarded on the row still covering the
 		// amount, so two concurrent payments cannot both pass the check and overspend.
+		let creditRowId: string | null = null;
 		if (creditUnit != null) {
-			const creditResult = await tx.unitValue.updateMany({
-				where: { apiKeyId, unit: creditUnit, amount: { gte: amount } },
-				data: { amount: { decrement: amount } },
+			// Resolve the row first so the refund can be pinned to the exact row this
+			// debited. Refunding by (apiKeyId, unit) alone would credit whatever row
+			// carries that unit at refund time — including a replacement row created by
+			// an admin credit reset — silently inflating the new balance.
+			const creditRow = await tx.unitValue.findFirst({
+				where: { apiKeyId, unit: creditUnit },
+				select: { id: true },
 			});
+			const creditResult =
+				creditRow == null
+					? { count: 0 }
+					: await tx.unitValue.updateMany({
+							where: { id: creditRow.id, amount: { gte: amount } },
+							data: { amount: { decrement: amount } },
+						});
 			if (creditResult.count !== 1) {
 				throw createHttpError(
 					402,
 					`Insufficient usage credits for ${creditUnit}. This API key is usage limited; top up its credits for this chain and asset, or remove the limit.`,
 				);
 			}
+			creditRowId = creditRow!.id;
 		}
 
 		const counterpartyWalletId = await upsertCounterpartyWalletId(tx, {
@@ -124,7 +137,7 @@ async function reserveBudgetForAttempt({
 			select: { id: true },
 		});
 
-		return { apiKeyId, budgetId, budgetGeneration, creditUnit, attemptId: attempt.id, amount };
+		return { apiKeyId, budgetId, budgetGeneration, creditUnit, creditRowId, attemptId: attempt.id, amount };
 	});
 
 	return budgetAndAttempt;
@@ -142,6 +155,7 @@ async function refundReservation(
 		budgetId: string | null;
 		budgetGeneration: number | null;
 		creditUnit: string | null;
+		creditRowId: string | null;
 		amount: bigint;
 	} | null,
 ) {
@@ -151,15 +165,22 @@ async function refundReservation(
 	// there is nothing to restore. Without this a signing failure would permanently
 	// burn the key's credits for a payment that never happened, while the wallet
 	// budget it was paying from was handed back.
-	if (reservation.creditUnit != null) {
+	//
+	// Pinned to the row the reservation actually debited, the credit-ledger analogue
+	// of the budget refund's generation guard. Matching on (apiKeyId, unit) instead
+	// would credit whichever row holds that unit now — so an admin credit reset
+	// between debit and refund would inflate the replacement balance by an amount
+	// that was never spent from it.
+	if (reservation.creditRowId != null) {
 		const result = await prisma.unitValue.updateMany({
-			where: { apiKeyId: reservation.apiKeyId, unit: reservation.creditUnit },
+			where: { id: reservation.creditRowId },
 			data: { amount: { increment: reservation.amount } },
 		});
 		if (result.count !== 1) {
-			logger.warn('x402 usage-credit refund skipped: no matching credit row (credits reset?)', {
+			logger.warn('x402 usage-credit refund skipped: debited credit row is gone (credits reset?)', {
 				apiKeyId: reservation.apiKeyId,
 				unit: reservation.creditUnit,
+				creditRowId: reservation.creditRowId,
 				amount: reservation.amount.toString(),
 			});
 		}

@@ -38,7 +38,9 @@ class MockPrismaClientKnownRequestError extends Error {
 }
 const mockBudgetUpdateMany = jest.fn() as jest.Mock<any>;
 const mockUnitValueUpdateMany = jest.fn() as jest.Mock<any>;
+const mockUnitValueFindFirst = jest.fn() as jest.Mock<any>;
 const mockUnitValueRefundUpdateMany = jest.fn() as jest.Mock<any>;
+const CREDIT_ROW_ID = 'credit-row-1';
 const mockBudgetRefundUpdateMany = jest.fn() as jest.Mock<any>;
 const mockBudgetUpdate = jest.fn() as jest.Mock<any>;
 const mockBudgetUpsert = jest.fn() as jest.Mock<any>;
@@ -444,6 +446,7 @@ describe('x402 service helpers', () => {
 		mockGetBalance.mockResolvedValue(1_000_000_000n);
 		mockBudgetUpdateMany.mockResolvedValue({ count: 1 });
 		mockUnitValueUpdateMany.mockResolvedValue({ count: 1 });
+		mockUnitValueFindFirst.mockResolvedValue({ id: CREDIT_ROW_ID });
 		mockUnitValueRefundUpdateMany.mockResolvedValue({ count: 1 });
 		mockBudgetRefundUpdateMany.mockResolvedValue({ count: 1 });
 		mockX402PaymentAttemptFindFirst.mockResolvedValue(null);
@@ -489,6 +492,7 @@ describe('x402 service helpers', () => {
 					updateMany: mockBudgetUpdateMany,
 				},
 				unitValue: {
+					findFirst: mockUnitValueFindFirst,
 					updateMany: mockUnitValueUpdateMany,
 				},
 				x402PaymentAttempt: {
@@ -1472,16 +1476,40 @@ describe('x402 service helpers', () => {
 				usageLimited: true,
 			});
 
-			// Chain-qualified unit, guarded on the row still covering the amount so two
-			// concurrent payments cannot both pass the check.
-			expect(mockUnitValueUpdateMany).toHaveBeenCalledWith({
+			// The row is resolved by chain-qualified unit...
+			expect(mockUnitValueFindFirst).toHaveBeenCalledWith({
 				where: {
 					apiKeyId: 'api-key-1',
 					unit: `${source.network}:${paymentRequired.accepts[0].asset.toLowerCase()}`,
+				},
+				select: { id: true },
+			});
+			// ...then debited by id, guarded on it still covering the amount so two
+			// concurrent payments cannot both pass the check.
+			expect(mockUnitValueUpdateMany).toHaveBeenCalledWith({
+				where: {
+					id: CREDIT_ROW_ID,
 					amount: { gte: BigInt(paymentRequired.accepts[0].amount) },
 				},
 				data: { amount: { decrement: BigInt(paymentRequired.accepts[0].amount) } },
 			});
+		});
+
+		it('rejects with 402 when the key has no credit row for that chain and asset', async () => {
+			mockUnitValueFindFirst.mockResolvedValue(null);
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 402 });
+
+			expect(mockUnitValueUpdateMany).not.toHaveBeenCalled();
+			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
 		});
 
 		it('rejects with 402 when usage credits cannot cover the payment', async () => {
@@ -1803,11 +1831,10 @@ describe('x402 service helpers', () => {
 				}),
 			).rejects.toMatchObject({ status: 500 });
 
+			// Pinned to the row the reservation debited, so an admin credit reset between
+			// debit and refund cannot have the refund inflate a replacement row.
 			expect(mockUnitValueRefundUpdateMany).toHaveBeenCalledWith({
-				where: {
-					apiKeyId: 'api-key-1',
-					unit: `${source.network}:${paymentRequired.accepts[0].asset.toLowerCase()}`,
-				},
+				where: { id: CREDIT_ROW_ID },
 				data: { amount: { increment: BigInt(paymentRequired.accepts[0].amount) } },
 			});
 		});

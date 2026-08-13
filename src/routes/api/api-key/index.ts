@@ -137,10 +137,23 @@ async function allConfiguredEvmChainIds(): Promise<string[]> {
 	return networks.map((network) => network.caip2Id);
 }
 
-async function assertWalletScopeIdsExist(input: { hotWalletIds?: string[]; evmWalletIds?: string[] }): Promise<void> {
+/**
+ * Reject wallet-scope ids that do not resolve to a live wallet, so a typo fails as
+ * a 400 rather than silently creating a scope that grants nothing.
+ *
+ * Takes the client explicitly: the update path runs inside a Serializable
+ * `$transaction`, and using the module-level client there would check on a second
+ * connection outside that transaction — so the check could not see the
+ * transaction's own writes, could race a concurrent soft-delete, and would hold a
+ * second pool connection open for the length of the transaction.
+ */
+async function assertWalletScopeIdsExist(
+	client: Pick<typeof prisma, 'hotWallet' | 'x402EvmWallet'>,
+	input: { hotWalletIds?: string[]; evmWalletIds?: string[] },
+): Promise<void> {
 	if (input.hotWalletIds != null && input.hotWalletIds.length > 0) {
 		const ids = Array.from(new Set(input.hotWalletIds));
-		const found = await prisma.hotWallet.findMany({
+		const found = await client.hotWallet.findMany({
 			where: { id: { in: ids }, deletedAt: null },
 			select: { id: true },
 		});
@@ -151,7 +164,7 @@ async function assertWalletScopeIdsExist(input: { hotWalletIds?: string[]; evmWa
 	}
 	if (input.evmWalletIds != null && input.evmWalletIds.length > 0) {
 		const ids = Array.from(new Set(input.evmWalletIds));
-		const found = await prisma.x402EvmWallet.findMany({
+		const found = await client.x402EvmWallet.findMany({
 			where: { id: { in: ids }, deletedAt: null },
 			select: { id: true },
 		});
@@ -219,7 +232,8 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		if (isAdmin && input.x402WalletScopeEnabled) {
 			throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
 		}
-		await assertWalletScopeIdsExist({
+		// Create runs outside a transaction, so the module-level client is correct here.
+		await assertWalletScopeIdsExist(prisma, {
 			hotWalletIds: input.walletScopeEnabled ? input.WalletScopeHotWalletIds : undefined,
 			evmWalletIds: input.x402WalletScopeEnabled ? input.X402WalletScopeEvmWalletIds : undefined,
 		});
@@ -393,7 +407,10 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 									]),
 								);
 
-					await assertWalletScopeIdsExist({
+					// `prisma` here is the transaction client (the callback parameter shadows the
+					// module-level import), so the existence check shares this Serializable
+					// transaction instead of racing it on a second connection.
+					await assertWalletScopeIdsExist(prisma, {
 						hotWalletIds: input.WalletScopeHotWalletIds,
 						evmWalletIds: input.X402WalletScopeEvmWalletIds,
 					});
