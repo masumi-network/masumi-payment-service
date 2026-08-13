@@ -126,6 +126,26 @@ describe('the landing page and browser 404', () => {
 		expect((await fetch(`${baseUrl}/v1/nodes`)).status).toBe(401);
 	});
 
+	it('serves the OpenAPI document and its Swagger UI unauthenticated', async () => {
+		const spec = await fetch(`${baseUrl}/openapi.json`);
+		expect(spec.status).toBe(200);
+		const body = (await spec.json()) as { openapi: string; paths: Record<string, unknown> };
+		expect(body.openapi).toBe('3.0.3');
+		expect(Object.keys(body.paths).length).toBeGreaterThan(10);
+
+		const docs = await fetch(`${baseUrl}/docs`);
+		expect(docs.status).toBe(200);
+		expect(docs.headers.get('content-type')).toContain('text/html');
+		expect(await docs.text()).toContain('/docs/assets/swagger-ui-bundle.js');
+
+		const bundle = await fetch(`${baseUrl}/docs/assets/swagger-ui-bundle.js`);
+		expect(bundle.status).toBe(200);
+		const theme = await fetch(`${baseUrl}/docs/assets/swagger-custom.css`);
+		expect(theme.status).toBe(200);
+		// The allow-list is exact names only: no traversal out of the asset dirs.
+		expect((await fetch(`${baseUrl}/docs/assets/..%2Fpackage.json`)).status).toBe(404);
+	});
+
 	it('gives browsers an HTML 404 and API clients the JSON one', async () => {
 		const browser = await fetch(`${baseUrl}/nope`, { headers: { Accept: 'text/html,*/*;q=0.8' } });
 		expect(browser.status).toBe(404);

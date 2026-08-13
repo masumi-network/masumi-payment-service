@@ -11,6 +11,7 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { readFile } from 'node:fs/promises';
 import type { HostConfig } from '../config.js';
 import { readCapabilities } from '../capabilities.js';
 import type { PortAllocator } from '../registry/ports.js';
@@ -22,6 +23,8 @@ import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate } from './auth.js';
 import { isHostApiError, HostApiError } from './http-error.js';
 import { renderHostLandingPage, renderNotFoundPage, wantsHtmlDocument } from './landing.js';
+import { renderSwaggerDocsPage, resolveDocsAsset } from './docs-page.js';
+import { buildOpenApiDocument } from './openapi.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
 import { isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
@@ -127,12 +130,45 @@ export function createControlPlane(deps: ServerDeps): Server {
 			const method = request.method ?? 'GET';
 			const pathname = new URL(request.url ?? '/', 'http://placeholder').pathname;
 
-			// The one unauthenticated page: a browser landing on the control plane
-			// learns what it reached instead of a bare JSON 404. Static content
-			// only — everything stateful stays behind the bearer token.
-			if (pathname === '/' && (method === 'GET' || method === 'HEAD')) {
-				sendHtml(response, 200, renderHostLandingPage({ network: config.network }), method === 'HEAD');
-				return;
+			// The unauthenticated surface: the landing page, the OpenAPI document
+			// and its Swagger UI. All static — endpoint shapes are public in the
+			// repository anyway; everything stateful stays behind the bearer token.
+			if (method === 'GET' || method === 'HEAD') {
+				if (pathname === '/') {
+					sendHtml(response, 200, renderHostLandingPage({ network: config.network }), method === 'HEAD');
+					return;
+				}
+				if (pathname === '/openapi.json') {
+					// Pretty-printed, like the payment service's document: this file is
+					// read by humans as often as by generators.
+					const body = JSON.stringify(buildOpenApiDocument({ network: config.network }), null, 4);
+					response.writeHead(200, {
+						'Content-Type': 'application/json; charset=utf-8',
+						'Content-Length': Buffer.byteLength(body),
+						'Cache-Control': 'no-store',
+					});
+					response.end(method === 'HEAD' ? undefined : body);
+					return;
+				}
+				if (pathname === '/docs' || pathname === '/docs/') {
+					sendHtml(response, 200, renderSwaggerDocsPage(), method === 'HEAD');
+					return;
+				}
+				if (pathname.startsWith('/docs/assets/')) {
+					const asset = resolveDocsAsset(pathname.slice('/docs/assets/'.length));
+					if (asset === null) {
+						sendNotFound(request, response);
+						return;
+					}
+					const body = await readFile(asset.filePath);
+					response.writeHead(200, {
+						'Content-Type': asset.contentType,
+						'Content-Length': body.byteLength,
+						'Cache-Control': 'public, max-age=300',
+					});
+					response.end(method === 'HEAD' ? undefined : body);
+					return;
+				}
 			}
 
 			const route = matchRoute(method, pathname);

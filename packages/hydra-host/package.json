@@ -20,6 +20,7 @@
 		"./supervisor/unwedge": "./src/supervisor/unwedge.ts"
 	},
 	"dependencies": {
+		"swagger-ui-dist": "5.32.13",
 		"ws": "8.21.1"
 	},
 	"devDependencies": {
