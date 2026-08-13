@@ -6,6 +6,7 @@ import {
 } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { webhookEventsService } from '@/services/webhooks/events.service';
+import { budgetScopeFor } from './budget-scope';
 import {
 	countX402ManagedWallets,
 	countX402PaymentAttempts,
@@ -342,12 +343,22 @@ export const upsertX402NetworkPost = adminAuthenticatedEndpointFactory.build({
 		upsertX402Network({ ...input, createdById: ctx.id }),
 });
 
-export const listX402BudgetsGet = adminAuthenticatedEndpointFactory.build({
+// Pay access: a key that can spend from a delegated wallet may read the allowance
+// governing that spend, without being made admin — which would also hand it wallet
+// creation, update and deletion. Writing a budget stays admin (setX402BudgetPost
+// below), so a key can see its allowance but never raise it.
+//
+// The filter is pinned to the caller for non-admins. `input.apiKeyId` is
+// caller-supplied and optional, and an unscoped list returns every tenant's
+// budgets, so honouring it here would let any pay key read another tenant's
+// allowances — and the response carries apiKeyId/createdById, leaking key ids
+// alongside the amounts. Only an admin may pass a filter, or omit it to see all.
+export const listX402BudgetsGet = payAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listBudgetSchemaInput,
 	output: listBudgetSchemaOutput,
-	handler: async ({ input }: { input: z.infer<typeof listBudgetSchemaInput> }) => ({
-		Budgets: (await listX402WalletBudgets(input.apiKeyId)).map(serializeBudget),
+	handler: async ({ input, ctx }: { input: z.infer<typeof listBudgetSchemaInput>; ctx: AuthContext }) => ({
+		Budgets: (await listX402WalletBudgets(budgetScopeFor(ctx, input.apiKeyId))).map(serializeBudget),
 	}),
 });
 

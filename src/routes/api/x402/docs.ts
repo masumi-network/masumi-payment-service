@@ -192,8 +192,10 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 	registry.registerPath({
 		method: 'get',
 		path: '/x402/budgets',
-		description: 'Lists per-API-key spend budgets for managed x402 wallets, optionally filtered by API key.',
-		summary: 'List x402 wallet budgets. (admin access required)',
+		description:
+			'Lists per-API-key spend budgets for managed x402 wallets. A non-admin key always sees only its own ' +
+			'budgets, and the apiKeyId filter is ignored for it; an admin may filter by API key, or omit it for all.',
+		summary: 'List x402 wallet budgets. (pay access required)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

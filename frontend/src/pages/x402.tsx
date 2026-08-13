@@ -16,7 +16,10 @@ import { hasEvmChainLimit } from '@/lib/permissions';
 import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 
 const ADMIN_TAB_NAMES = ['Chains', 'Wallets', 'Budgets', 'Alerts', 'Payments'] as const;
-const PAY_TAB_NAMES = ['Wallets', 'Payments'] as const;
+// Budgets is read-at-pay, write-at-admin: a pay key sees the allowances governing
+// its own spend (the API pins the filter to the calling key) but gets no
+// create/edit controls. Read keys cannot spend, so the tab stays out of their list.
+const PAY_TAB_NAMES = ['Wallets', 'Budgets', 'Payments'] as const;
 // Read keys get the wallet list and payment history. Both are read-level, as is the
 // chain projection; the wallet lifecycle (the only path returning key material) is
 // admin and gated inside the tab.
@@ -118,7 +121,7 @@ export default function X402Page() {
           <div className="pt-2">
             {activeTab === 'Chains' && capabilities.canAdmin && <ChainsTab />}
             {activeTab === 'Wallets' && <WalletsTab />}
-            {activeTab === 'Budgets' && capabilities.canAdmin && <BudgetsTab />}
+            {activeTab === 'Budgets' && capabilities.canPay && <BudgetsTab />}
             {activeTab === 'Alerts' && capabilities.canAdmin && <AlertsTab />}
             {activeTab === 'Payments' && <PaymentsTab />}
           </div>

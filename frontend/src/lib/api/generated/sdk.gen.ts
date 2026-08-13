@@ -1390,9 +1390,9 @@ export const postX402WalletsDelete = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
- * List x402 wallet budgets. (admin access required)
+ * List x402 wallet budgets. (pay access required)
  *
- * Lists per-API-key spend budgets for managed x402 wallets, optionally filtered by API key.
+ * Lists per-API-key spend budgets for managed x402 wallets. A non-admin key always sees only its own budgets, and the apiKeyId filter is ignored for it; an admin may filter by API key, or omit it for all.
  */
 export const getX402Budgets = <ThrowOnError extends boolean = false>(options?: Options<GetX402BudgetsData, ThrowOnError>): RequestResult<GetX402BudgetsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetX402BudgetsResponses, unknown, ThrowOnError>({
     responseTransformer: getX402BudgetsResponseTransformer,
