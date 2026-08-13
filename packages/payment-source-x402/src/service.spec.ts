@@ -38,7 +38,9 @@ class MockPrismaClientKnownRequestError extends Error {
 }
 const mockBudgetUpdateMany = jest.fn() as jest.Mock<any>;
 const mockUnitValueUpdateMany = jest.fn() as jest.Mock<any>;
-const mockUnitValueFindFirst = jest.fn() as jest.Mock<any>;
+const mockUnitValueFindMany = jest.fn() as jest.Mock<any>;
+const mockUnitValueCount = jest.fn() as jest.Mock<any>;
+const mockUnitValueDeleteMany = jest.fn() as jest.Mock<any>;
 const mockUnitValueRefundUpdateMany = jest.fn() as jest.Mock<any>;
 const CREDIT_ROW_ID = 'credit-row-1';
 const mockBudgetRefundUpdateMany = jest.fn() as jest.Mock<any>;
@@ -446,7 +448,9 @@ describe('x402 service helpers', () => {
 		mockGetBalance.mockResolvedValue(1_000_000_000n);
 		mockBudgetUpdateMany.mockResolvedValue({ count: 1 });
 		mockUnitValueUpdateMany.mockResolvedValue({ count: 1 });
-		mockUnitValueFindFirst.mockResolvedValue({ id: CREDIT_ROW_ID });
+		mockUnitValueFindMany.mockResolvedValue([{ id: CREDIT_ROW_ID, amount: 1_000_000_000n }]);
+		mockUnitValueCount.mockResolvedValue(0);
+		mockUnitValueDeleteMany.mockResolvedValue({ count: 1 });
 		mockUnitValueRefundUpdateMany.mockResolvedValue({ count: 1 });
 		mockBudgetRefundUpdateMany.mockResolvedValue({ count: 1 });
 		mockX402PaymentAttemptFindFirst.mockResolvedValue(null);
@@ -492,7 +496,9 @@ describe('x402 service helpers', () => {
 					updateMany: mockBudgetUpdateMany,
 				},
 				unitValue: {
-					findFirst: mockUnitValueFindFirst,
+					findMany: mockUnitValueFindMany,
+					count: mockUnitValueCount,
+					deleteMany: mockUnitValueDeleteMany,
 					updateMany: mockUnitValueUpdateMany,
 				},
 				x402PaymentAttempt: {
@@ -1476,13 +1482,15 @@ describe('x402 service helpers', () => {
 				usageLimited: true,
 			});
 
-			// The row is resolved by chain-qualified unit...
-			expect(mockUnitValueFindFirst).toHaveBeenCalledWith({
+			// Every row for the chain-qualified unit is resolved (their SUM is the
+			// balance — nothing enforces one row per unit)...
+			expect(mockUnitValueFindMany).toHaveBeenCalledWith({
 				where: {
 					apiKeyId: 'api-key-1',
 					unit: `${source.network}:${paymentRequired.accepts[0].asset.toLowerCase()}`,
 				},
-				select: { id: true },
+				orderBy: { id: 'asc' },
+				select: { id: true, amount: true },
 			});
 			// ...then debited by id, guarded on it still covering the amount so two
 			// concurrent payments cannot both pass the check.
@@ -1495,8 +1503,65 @@ describe('x402 service helpers', () => {
 			});
 		});
 
-		it('rejects with 402 when the key has no credit row for that chain and asset', async () => {
-			mockUnitValueFindFirst.mockResolvedValue(null);
+		it('consolidates split credit rows and debits the merged row', async () => {
+			// Two rows for one unit, together covering the payment: judged by their sum
+			// (the Cardano semantic), merged into the first row, then debited — instead
+			// of 402ing because one arbitrary row is short.
+			mockUnitValueFindMany.mockResolvedValue([
+				{ id: 'credit-row-a', amount: 4_000n },
+				{ id: 'credit-row-b', amount: 8_000n },
+			]);
+			mockUnitValueUpdateMany.mockResolvedValue({ count: 1 });
+
+			await service.createX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				evmWalletId: 'wallet-1',
+				paymentRequired,
+				usageLimited: true,
+			});
+
+			// The duplicate is removed with an amount guard so a concurrent debit of it
+			// cannot be silently absorbed into the merge.
+			expect(mockUnitValueDeleteMany).toHaveBeenCalledWith({
+				where: { id: 'credit-row-b', amount: 8_000n },
+			});
+			expect(mockUnitValueUpdateMany).toHaveBeenCalledWith({
+				where: { id: 'credit-row-a', amount: 4_000n },
+				data: { amount: 12_000n },
+			});
+			expect(mockUnitValueUpdateMany).toHaveBeenCalledWith({
+				where: { id: 'credit-row-a', amount: { gte: BigInt(paymentRequired.accepts[0].amount) } },
+				data: { amount: { decrement: BigInt(paymentRequired.accepts[0].amount) } },
+			});
+		});
+
+		it('rejects with 409 when a split row changes during consolidation', async () => {
+			mockUnitValueFindMany.mockResolvedValue([
+				{ id: 'credit-row-a', amount: 4_000n },
+				{ id: 'credit-row-b', amount: 8_000n },
+			]);
+			// The guarded delete misses: a concurrent payment already debited row b.
+			mockUnitValueDeleteMany.mockResolvedValue({ count: 0 });
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 409 });
+
+			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
+		});
+
+		it('rejects with 402 when the key has EVM credit rows but none for that chain and asset', async () => {
+			mockUnitValueFindMany.mockResolvedValue([]);
+			// The key holds credits for SOME other EVM chain/asset, so the cap is
+			// binding and cannot be dodged chain-by-chain.
+			mockUnitValueCount.mockResolvedValue(1);
 
 			await expect(
 				service.createX402Payment({
@@ -1510,6 +1575,25 @@ describe('x402 service helpers', () => {
 
 			expect(mockUnitValueUpdateMany).not.toHaveBeenCalled();
 			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
+		});
+
+		it('does not enforce the cap for a usage-limited key with no EVM credit rows at all', async () => {
+			// Grandfathering: usageLimited predates EVM credits. A pre-existing key with
+			// only Cardano-format credits must keep paying on x402 after the deploy
+			// instead of being hard-stopped by a unit format it has never heard of.
+			mockUnitValueFindMany.mockResolvedValue([]);
+			mockUnitValueCount.mockResolvedValue(0);
+
+			await service.createX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				evmWalletId: 'wallet-1',
+				paymentRequired,
+				usageLimited: true,
+			});
+
+			expect(mockUnitValueUpdateMany).not.toHaveBeenCalled();
+			expect(mockCreatePaymentPayload).toHaveBeenCalled();
 		});
 
 		it('rejects with 402 when usage credits cannot cover the payment', async () => {

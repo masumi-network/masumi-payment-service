@@ -115,7 +115,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'get',
 		path: '/x402/wallets',
 		description:
-			'Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Non-admin results are limited by both wallet owner and permitted network.',
+			"Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Results are limited by the key's permitted networks; a key with wallet scoping enabled additionally sees only its assigned and self-created wallets (an unscoped key sees all, the Cardano-parity default). createdById is only returned to admins and for the caller's own wallets.",
 		summary: 'List managed x402 EVM wallets. (read access required; no key material)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],
@@ -154,7 +154,7 @@ export function registerX402Paths({ registry, apiKeyAuth }: SwaggerRegistrarCont
 		method: 'get',
 		path: '/x402/wallets/detail',
 		description:
-			'Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their owner or network scope.',
+			"Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their permitted networks, and outside their wallet scope when scoping is enabled (an unscoped key can fetch any wallet, the Cardano-parity default). createdById is only returned to admins and for the caller's own wallets.",
 		summary: 'Get a managed x402 EVM wallet by id. (read access required; no key material)',
 		tags: ['x402'],
 		security: [{ [apiKeyAuth.name]: [] }],

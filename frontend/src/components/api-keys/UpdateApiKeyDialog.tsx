@@ -226,9 +226,11 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
           x402WalletScopeEnabled: data.x402WalletScopeEnabled,
           X402WalletScopeEvmWalletIds: data.x402WalletScopeEnabled ? data.x402WalletScopeIds : [],
         }),
-        ...(apiKey.canPay &&
-          !apiKey.canAdmin &&
+        ...(!apiKey.canAdmin &&
           evmChainsChanged && {
+            // Any non-admin key may have its EVM grant edited — read keys need it
+            // for the x402 read surfaces too; gating this on canPay left read keys
+            // created with an empty grant permanently unrepairable from the UI.
             // ChainIdLimit replaces the whole networkLimit on update; preserve
             // the existing Cardano grants and only rewrite the EVM ones.
             ChainIdLimit: [
@@ -322,7 +324,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
             </p>
           </div>
 
-          {apiKey.canPay && !apiKey.canAdmin && evmChainOptions.length > 0 && (
+          {!apiKey.canAdmin && evmChainOptions.length > 0 && (
             <div className="space-y-2">
               <label className="text-sm font-medium">EVM chains (x402)</label>
               <p className="text-xs text-muted-foreground">

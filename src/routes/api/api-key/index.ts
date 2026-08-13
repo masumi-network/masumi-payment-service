@@ -28,6 +28,7 @@ import {
 	updateAPIKeySchemaInput,
 	updateAPIKeySchemaOutput,
 } from './schemas';
+import { consolidateUsageCredits, normalizeCreditUnit } from './credit-units';
 import {
 	computePermissionFromFlags,
 	flagsFromLegacyPermission,
@@ -121,17 +122,32 @@ export const mapApiKeyOutput = <
  * actionable. Applies to both rails.
  */
 /**
- * Every EVM chain the node has configured, as CAIP-2 ids.
+ * The configured EVM chains a new key's omitted ChainIdLimit defaults to, as
+ * CAIP-2 ids, constrained to the ENVIRONMENT the key's Cardano NetworkLimit
+ * declares: Preprod grants testnet chains, Mainnet grants mainnet chains, both
+ * grant both. Without that coupling a Preprod-only provisioning flow would mint
+ * keys that reach mainnet EVM wallets — the Cardano default ([Mainnet, Preprod])
+ * is a safe snapshot only because Network is a closed enum; the EVM chain set is
+ * open and mixes environments.
  *
- * The default grant for a new key's ChainIdLimit. NetworkLimit defaults to all
- * Cardano networks, so a key created without an explicit limit reaches the whole
- * Cardano rail; defaulting the EVM half to the empty list made the same key reach
- * no EVM chain at all, which is the opposite default for the same intent. Passing
- * an explicit empty array still grants none.
+ * NetworkLimit defaults to all Cardano networks, so a key created without an
+ * explicit limit reaches the whole Cardano rail; defaulting the EVM half to the
+ * empty list made the same key reach no EVM chain at all — the opposite default
+ * for the same intent. Passing an explicit empty array still grants none, and a
+ * key with NO Cardano networks gets no implicit EVM grant either (there is no
+ * environment signal to scope it by).
  */
-async function allConfiguredEvmChainIds(): Promise<string[]> {
+async function allConfiguredEvmChainIds(cardanoNetworks: Network[]): Promise<string[]> {
+	const includeMainnet = cardanoNetworks.includes(Network.Mainnet);
+	const includeTestnet = cardanoNetworks.includes(Network.Preprod);
+	if (!includeMainnet && !includeTestnet) {
+		return [];
+	}
 	const networks = await prisma.x402Network.findMany({
-		where: { isEnabled: true },
+		where: {
+			isEnabled: true,
+			...(includeMainnet && includeTestnet ? {} : { isTestnet: includeTestnet }),
+		},
 		select: { caip2Id: true },
 	});
 	return networks.map((network) => network.caip2Id);
@@ -140,6 +156,12 @@ async function allConfiguredEvmChainIds(): Promise<string[]> {
 /**
  * Reject wallet-scope ids that do not resolve to a live wallet, so a typo fails as
  * a 400 rather than silently creating a scope that grants nothing.
+ *
+ * Ids ALREADY attached to the key are exempt from the liveness check: scope rows
+ * legitimately survive wallet retirement (retire only sets deletedAt), so an update
+ * replaying the key's current list — which is exactly what the dashboard submits,
+ * and where a retired wallet's id is invisible and cannot be unticked — must not
+ * 400 on an id the key already holds. Only NEW additions have to be live.
  *
  * Takes the client explicitly: the update path runs inside a Serializable
  * `$transaction`, and using the module-level client there would check on a second
@@ -150,24 +172,31 @@ async function allConfiguredEvmChainIds(): Promise<string[]> {
 async function assertWalletScopeIdsExist(
 	client: Pick<typeof prisma, 'hotWallet' | 'x402EvmWallet'>,
 	input: { hotWalletIds?: string[]; evmWalletIds?: string[] },
+	alreadyAttached?: { hotWalletIds?: ReadonlySet<string>; evmWalletIds?: ReadonlySet<string> },
 ): Promise<void> {
 	if (input.hotWalletIds != null && input.hotWalletIds.length > 0) {
-		const ids = Array.from(new Set(input.hotWalletIds));
-		const found = await client.hotWallet.findMany({
-			where: { id: { in: ids }, deletedAt: null },
-			select: { id: true },
-		});
+		const ids = Array.from(new Set(input.hotWalletIds)).filter((id) => !alreadyAttached?.hotWalletIds?.has(id));
+		const found =
+			ids.length > 0
+				? await client.hotWallet.findMany({
+						where: { id: { in: ids }, deletedAt: null },
+						select: { id: true },
+					})
+				: [];
 		const missing = ids.filter((id) => !found.some((wallet) => wallet.id === id));
 		if (missing.length > 0) {
 			throw createHttpError(400, `Unknown hot wallet id(s): ${missing.join(', ')}`);
 		}
 	}
 	if (input.evmWalletIds != null && input.evmWalletIds.length > 0) {
-		const ids = Array.from(new Set(input.evmWalletIds));
-		const found = await client.x402EvmWallet.findMany({
-			where: { id: { in: ids }, deletedAt: null },
-			select: { id: true },
-		});
+		const ids = Array.from(new Set(input.evmWalletIds)).filter((id) => !alreadyAttached?.evmWalletIds?.has(id));
+		const found =
+			ids.length > 0
+				? await client.x402EvmWallet.findMany({
+						where: { id: { in: ids }, deletedAt: null },
+						select: { id: true },
+					})
+				: [];
 		const missing = ids.filter((id) => !found.some((wallet) => wallet.id === id));
 		if (missing.length > 0) {
 			throw createHttpError(400, `Unknown managed EVM wallet id(s): ${missing.join(', ')}`);
@@ -240,10 +269,25 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		if (isAdmin && input.usageLimited) {
 			throw createHttpError(400, 'Admin API keys cannot have usage limits');
 		}
-		// Omitted means "every configured EVM chain", the twin of NetworkLimit defaulting
-		// to every Cardano network. An explicit [] still means none. Skipped for admins,
-		// whose networkLimit is [] and who are unrestricted by canAdmin anyway.
-		const chainIdLimit = isAdmin ? [] : (input.ChainIdLimit ?? (await allConfiguredEvmChainIds()));
+		// Omitted means "every configured EVM chain in the key's environment", the twin
+		// of NetworkLimit defaulting to every Cardano network. An explicit [] still
+		// means none. Skipped for admins, whose networkLimit is [] and who are
+		// unrestricted by canAdmin anyway.
+		const chainIdLimit = isAdmin ? [] : (input.ChainIdLimit ?? (await allConfiguredEvmChainIds(input.NetworkLimit)));
+		// One row per unit, units normalized to the form the x402 debit looks up —
+		// duplicate or checksummed entries would otherwise create rows the payment
+		// path miscounts or can never match.
+		const usageCredits = consolidateUsageCredits(
+			input.UsageCredits.map((usageCredit) => {
+				const parsedAmount = BigInt(usageCredit.amount);
+				if (parsedAmount < 0) {
+					throw createHttpError(400, 'Invalid amount');
+				}
+				return { unit: usageCredit.unit, amount: parsedAmount };
+			}),
+		);
+		const scopeHotWalletIds = Array.from(new Set(input.WalletScopeHotWalletIds));
+		const scopeEvmWalletIds = Array.from(new Set(input.X402WalletScopeEvmWalletIds));
 		const apiKey = 'masumi-payment-' + (isAdmin ? 'admin-' : '') + createId();
 		const result = await prisma.apiKey.create({
 			data: {
@@ -268,31 +312,27 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				x402WalletScopeEnabled: isAdmin ? false : input.x402WalletScopeEnabled,
 				RemainingUsageCredits: {
 					createMany: {
-						data: input.UsageCredits.map((usageCredit) => {
-							const parsedAmount = BigInt(usageCredit.amount);
-							if (parsedAmount < 0) {
-								throw createHttpError(400, 'Invalid amount');
-							}
-							return { unit: usageCredit.unit, amount: parsedAmount };
-						}),
+						data: usageCredits,
 					},
 				},
-				...(input.walletScopeEnabled && input.WalletScopeHotWalletIds.length > 0
+				// Deduped above: a repeated id would hit the @@unique(apiKeyId, walletId)
+				// index and surface as a raw 500 instead of being harmlessly collapsed.
+				...(input.walletScopeEnabled && scopeHotWalletIds.length > 0
 					? {
 							WalletScopes: {
 								createMany: {
-									data: input.WalletScopeHotWalletIds.map((hotWalletId) => ({
+									data: scopeHotWalletIds.map((hotWalletId) => ({
 										hotWalletId,
 									})),
 								},
 							},
 						}
 					: {}),
-				...(input.x402WalletScopeEnabled && input.X402WalletScopeEvmWalletIds.length > 0
+				...(input.x402WalletScopeEnabled && scopeEvmWalletIds.length > 0
 					? {
 							X402WalletScopes: {
 								createMany: {
-									data: input.X402WalletScopeEvmWalletIds.map((evmWalletId) => ({
+									data: scopeEvmWalletIds.map((evmWalletId) => ({
 										evmWalletId,
 									})),
 								},
@@ -335,6 +375,8 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 							RemainingUsageCredits: {
 								select: { id: true, amount: true, unit: true },
 							},
+							WalletScopes: { select: { hotWalletId: true } },
+							X402WalletScopes: { select: { evmWalletId: true } },
 						},
 					});
 					if (!apiKey) {
@@ -343,7 +385,15 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 					if (input.UsageCreditsToAddOrRemove) {
 						for (const usageCredit of input.UsageCreditsToAddOrRemove) {
 							const parsedAmount = BigInt(usageCredit.amount);
-							const existingCredit = apiKey.RemainingUsageCredits.find((credit) => credit.unit == usageCredit.unit);
+							// Match and store the normalized unit: the x402 debit looks credits up
+							// by the lowercased form, so a checksummed top-up would otherwise
+							// create (or leave) a row the payment path can never match. Comparing
+							// both sides normalized also merges a legacy checksummed row instead
+							// of stranding it next to a new lowercase one.
+							const unit = normalizeCreditUnit(usageCredit.unit);
+							const existingCredit = apiKey.RemainingUsageCredits.find(
+								(credit) => normalizeCreditUnit(credit.unit) == unit,
+							);
 							if (existingCredit) {
 								existingCredit.amount += parsedAmount;
 								if (existingCredit.amount == 0n) {
@@ -355,7 +405,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 								} else {
 									await prisma.unitValue.update({
 										where: { id: existingCredit.id },
-										data: { amount: existingCredit.amount },
+										data: { amount: existingCredit.amount, unit },
 									});
 								}
 							} else {
@@ -364,7 +414,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 								}
 								await prisma.unitValue.create({
 									data: {
-										unit: usageCredit.unit,
+										unit,
 										amount: parsedAmount,
 										apiKeyId: apiKey.id,
 										agentFixedPricingId: null,
@@ -381,9 +431,15 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 					const newCanPay = input.canPay !== undefined ? input.canPay : apiKey.canPay;
 					const newCanAdmin = input.canAdmin !== undefined ? input.canAdmin : apiKey.canAdmin;
 
-					const resultingWalletScopeEnabled = input.walletScopeEnabled ?? apiKey.walletScopeEnabled;
-					const resultingX402WalletScopeEnabled = input.x402WalletScopeEnabled ?? apiKey.x402WalletScopeEnabled;
-					if (newCanAdmin && (resultingWalletScopeEnabled || resultingX402WalletScopeEnabled)) {
+					// Reject only an EXPLICIT enable together with admin. Inherited DB flags
+					// must not block: the migration turned x402WalletScopeEnabled on for every
+					// pre-existing non-admin key, so guarding on the resulting value made the
+					// plain promotion call — PATCH {id, canAdmin: true} — 400 for all of them,
+					// demanding a flag the caller never set. Stored-true flags on an admin are
+					// inert (auth short-circuits scoping for canAdmin) and are deliberately
+					// PRESERVED across promotion, so a later demotion restores the previous
+					// scoping instead of silently returning the key unscoped (= every wallet).
+					if (newCanAdmin && (input.walletScopeEnabled === true || input.x402WalletScopeEnabled === true)) {
 						throw createHttpError(400, 'Admin API keys cannot have wallet scope enabled');
 					}
 					if (newCanAdmin && input.usageLimited) {
@@ -409,19 +465,39 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 
 					// `prisma` here is the transaction client (the callback parameter shadows the
 					// module-level import), so the existence check shares this Serializable
-					// transaction instead of racing it on a second connection.
-					await assertWalletScopeIdsExist(prisma, {
-						hotWalletIds: input.WalletScopeHotWalletIds,
-						evmWalletIds: input.X402WalletScopeEvmWalletIds,
-					});
+					// transaction instead of racing it on a second connection. Ids the key
+					// already holds are exempt from the liveness check — scope rows survive
+					// wallet retirement, and the dashboard replays the full current list, so
+					// a retired wallet in it must not brick every later scope edit.
+					const dedupedHotWalletIds =
+						input.WalletScopeHotWalletIds !== undefined
+							? Array.from(new Set(input.WalletScopeHotWalletIds))
+							: undefined;
+					const dedupedEvmWalletIds =
+						input.X402WalletScopeEvmWalletIds !== undefined
+							? Array.from(new Set(input.X402WalletScopeEvmWalletIds))
+							: undefined;
+					await assertWalletScopeIdsExist(
+						prisma,
+						{
+							hotWalletIds: dedupedHotWalletIds,
+							evmWalletIds: dedupedEvmWalletIds,
+						},
+						{
+							hotWalletIds: new Set(apiKey.WalletScopes.map((scope) => scope.hotWalletId)),
+							evmWalletIds: new Set(apiKey.X402WalletScopes.map((scope) => scope.evmWalletId)),
+						},
+					);
 
-					if (input.WalletScopeHotWalletIds !== undefined) {
+					if (dedupedHotWalletIds !== undefined) {
 						await prisma.apiKeyWalletScope.deleteMany({
 							where: { apiKeyId: input.id },
 						});
-						if (input.WalletScopeHotWalletIds.length > 0) {
+						if (dedupedHotWalletIds.length > 0) {
 							await prisma.apiKeyWalletScope.createMany({
-								data: input.WalletScopeHotWalletIds.map((hotWalletId) => ({
+								// Deduped above: a repeated id would hit @@unique(apiKeyId, hotWalletId)
+								// and surface as a raw 500 instead of being harmlessly collapsed.
+								data: dedupedHotWalletIds.map((hotWalletId) => ({
 									apiKeyId: input.id,
 									hotWalletId,
 								})),
@@ -431,13 +507,13 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 
 					// Same replace-the-whole-list semantic as the Cardano scopes above: an
 					// omitted field leaves the existing assignments untouched.
-					if (input.X402WalletScopeEvmWalletIds !== undefined) {
+					if (dedupedEvmWalletIds !== undefined) {
 						await prisma.apiKeyX402WalletScope.deleteMany({
 							where: { apiKeyId: input.id },
 						});
-						if (input.X402WalletScopeEvmWalletIds.length > 0) {
+						if (dedupedEvmWalletIds.length > 0) {
 							await prisma.apiKeyX402WalletScope.createMany({
-								data: input.X402WalletScopeEvmWalletIds.map((evmWalletId) => ({
+								data: dedupedEvmWalletIds.map((evmWalletId) => ({
 									apiKeyId: input.id,
 									evmWalletId,
 								})),
@@ -458,8 +534,12 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 							usageLimited: newCanAdmin ? false : input.usageLimited,
 							status: input.status,
 							networkLimit: nextNetworkLimit,
-							walletScopeEnabled: newCanAdmin ? false : input.walletScopeEnabled,
-							x402WalletScopeEnabled: newCanAdmin ? false : input.x402WalletScopeEnabled,
+							// Pass-through, NOT forced false for admins: the flags are inert while
+							// canAdmin is true (auth short-circuits scoping), and preserving them
+							// makes promote-then-demote restore the key's previous scoping instead
+							// of silently leaving it unscoped with its scope rows still attached.
+							walletScopeEnabled: input.walletScopeEnabled,
+							x402WalletScopeEnabled: input.x402WalletScopeEnabled,
 							canRead: newCanRead,
 							canPay: newCanPay,
 							canAdmin: newCanAdmin,

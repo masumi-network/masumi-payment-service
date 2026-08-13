@@ -138,18 +138,27 @@ export async function runPurchaseCreditInitTransaction({
 						}
 					}
 
-					// Create new usage amount records with unique IDs
+					// One consolidated row per unit. This must NOT use a relation `set`:
+					// `set` only re-links EXISTING rows by id — it never creates or updates
+					// them — and the `${id}-${unit}` ids it was given here never existed, so
+					// it silently disconnected every credit row (apiKeyId -> NULL) and wrote
+					// no amounts back, wiping the key's ledger on every usage-limited purchase
+					// and orphaning rows the x402 credit debit/refund still holds by id.
+					// Delete-and-recreate inside this Serializable transaction is atomic, and
+					// a concurrent x402 guarded decrement on one of these rows becomes a
+					// write-write conflict that the serialization retry resolves instead of a
+					// lost update.
 					const updatedUsageAmounts = Array.from(newRemainingUsageCredits.entries()).map(([unit, amount]) => ({
-						id: `${id}-${unit}`, // Create a unique ID
 						amount: amount,
 						unit: unit,
 					}));
 					if (result.usageLimited) {
+						await prisma.unitValue.deleteMany({ where: { apiKeyId: id } });
 						await prisma.apiKey.update({
 							where: { id: id },
 							data: {
 								RemainingUsageCredits: {
-									set: updatedUsageAmounts,
+									createMany: { data: updatedUsageAmounts },
 								},
 							},
 						});

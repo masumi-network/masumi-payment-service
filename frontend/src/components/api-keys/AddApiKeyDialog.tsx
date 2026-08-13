@@ -183,6 +183,11 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
   const permissionPreset = useWatch({ control, name: 'permissionPreset', defaultValue: 'Read' });
   const canAdmin = useWatch({ control, name: 'canAdmin', defaultValue: false });
   const canPay = useWatch({ control, name: 'canPay', defaultValue: false });
+  const selectedNetworks = useWatch({
+    control,
+    name: 'networks',
+    defaultValue: ['Preprod', 'Mainnet'],
+  });
   const usageLimited = useWatch({ control, name: 'usageLimited', defaultValue: true });
   const walletScopeEnabled = useWatch({ control, name: 'walletScopeEnabled', defaultValue: false });
   const walletScopeIds = useWatch({ control, name: 'walletScopeIds', defaultValue: [] });
@@ -210,19 +215,24 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
       setValue('x402WalletScopeEnabled', false);
       setValue('x402WalletScopeIds', []);
     } else if (!flags.canPay) {
-      // Read-only: always usage limited
+      // Read-only: always usage limited. EVM chains are deliberately KEPT — the
+      // x402 read surfaces (chains, wallets, payment history) are chain-limited
+      // too, so clearing them here shipped read keys whose x402 pages were
+      // permanently empty, with no way to repair it from the update dialog.
       setValue('usageLimited', true);
-      setValue('evmChains', []);
     }
   }, [permissionPreset, setValue]);
 
-  // Start a pay key with every configured EVM chain ticked, the twin of `networks`
-  // defaulting to both Cardano networks. The grant is then visible and can be
-  // narrowed, instead of the key silently getting no EVM access at all. Seeded once
-  // per pay-capable session so unticking a chain is not undone on the next render.
+  // Start every non-admin key with the configured EVM chains of its selected
+  // Cardano environments ticked (Preprod selects testnet chains, Mainnet selects
+  // mainnet chains) — the twin of `networks` defaulting to both Cardano networks,
+  // and the same environment coupling the backend applies when ChainIdLimit is
+  // omitted. The grant is visible and can be narrowed, instead of the key silently
+  // getting no EVM access at all. Seeded once per session so unticking a chain is
+  // not undone on the next render.
   const seededEvmChains = useRef(false);
   useEffect(() => {
-    if (!open || !canPay || canAdmin) {
+    if (!open || canAdmin) {
       seededEvmChains.current = false;
       return;
     }
@@ -230,9 +240,15 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
     seededEvmChains.current = true;
     setValue(
       'evmChains',
-      evmChainOptions.map((chain) => chain.caip2Id),
+      evmChainOptions
+        .filter((chain) =>
+          chain.isTestnet
+            ? selectedNetworks.includes('Preprod')
+            : selectedNetworks.includes('Mainnet'),
+        )
+        .map((chain) => chain.caip2Id),
     );
-  }, [open, canPay, canAdmin, evmChainOptions, setValue]);
+  }, [open, canAdmin, evmChainOptions, selectedNetworks, setValue]);
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     const isReadOnly = !data.canPay && !data.canAdmin;
@@ -251,7 +267,10 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
         canAdmin: data.canAdmin,
         usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
         NetworkLimit: data.networks,
-        ChainIdLimit: data.canPay && !data.canAdmin ? data.evmChains : [],
+        // Every non-admin key carries its EVM chain grant — read keys need it for
+        // the x402 read surfaces, not just pay keys for settling. Admins are
+        // unrestricted by canAdmin, so their explicit list is irrelevant.
+        ChainIdLimit: !data.canAdmin ? data.evmChains : [],
         UsageCredits: isReadOnly
           ? defaultCredits
           : data.usageLimited
@@ -274,9 +293,9 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   : []),
               ]
             : [],
-        walletScopeEnabled: data.walletScopeEnabled.toString(),
+        walletScopeEnabled: data.walletScopeEnabled,
         WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
-        x402WalletScopeEnabled: data.x402WalletScopeEnabled.toString(),
+        x402WalletScopeEnabled: data.x402WalletScopeEnabled,
         X402WalletScopeEvmWalletIds: data.x402WalletScopeEnabled ? data.x402WalletScopeIds : [],
       })
       .catch(() => null);
@@ -431,11 +450,12 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                 )}
               </div>
 
-              {canPay && !canAdmin && evmChainOptions.length > 0 && (
+              {!canAdmin && evmChainOptions.length > 0 && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium">EVM chains (x402)</label>
                   <p className="text-xs text-muted-foreground">
-                    Grant this key access to settle and fetch x402 payments on these chains.
+                    Grant this key access to x402 chains: read keys can view wallets and payment
+                    activity there; pay keys can also settle and pay.
                   </p>
                   <Controller
                     control={control}

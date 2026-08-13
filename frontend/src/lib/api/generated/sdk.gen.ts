@@ -1333,7 +1333,7 @@ export const postX402Networks = <ThrowOnError extends boolean = false>(options?:
 /**
  * List managed x402 EVM wallets. (read access required; no key material)
  *
- * Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Non-admin results are limited by both wallet owner and permitted network.
+ * Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Results are limited by the key's permitted networks; a key with wallet scoping enabled additionally sees only its assigned and self-created wallets (an unscoped key sees all, the Cardano-parity default). createdById is only returned to admins and for the caller's own wallets.
  */
 export const getX402Wallets = <ThrowOnError extends boolean = false>(options?: Options<GetX402WalletsData, ThrowOnError>): RequestResult<GetX402WalletsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetX402WalletsResponses, unknown, ThrowOnError>({
     responseTransformer: getX402WalletsResponseTransformer,
@@ -1363,7 +1363,7 @@ export const postX402Wallets = <ThrowOnError extends boolean = false>(options?: 
 /**
  * Get a managed x402 EVM wallet by id. (read access required; no key material)
  *
- * Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their owner or network scope.
+ * Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their permitted networks, and outside their wallet scope when scoping is enabled (an unscoped key can fetch any wallet, the Cardano-parity default). createdById is only returned to admins and for the caller's own wallets.
  */
 export const getX402WalletsDetail = <ThrowOnError extends boolean = false>(options: Options<GetX402WalletsDetailData, ThrowOnError>): RequestResult<GetX402WalletsDetailResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetX402WalletsDetailResponses, unknown, ThrowOnError>({
     responseTransformer: getX402WalletsDetailResponseTransformer,

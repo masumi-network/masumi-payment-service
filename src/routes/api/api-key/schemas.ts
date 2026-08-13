@@ -129,10 +129,16 @@ export const addAPIKeySchemaInput = z.object({
 	canRead: z.boolean().optional().describe('Whether this API key can access read endpoints'),
 	canPay: z.boolean().optional().describe('Whether this API key can access payment/purchase endpoints'),
 	canAdmin: z.boolean().optional().describe('Whether this API key has admin access'),
+	// Boolean, or the exact strings 'true'/'false' for backward compatibility with
+	// clients that sent the old string form. Anything else — 'yes', '1', 'True ' —
+	// is a 400. The old bare-string truthiness transform silently parsed all of
+	// those to FALSE, creating the key UNSCOPED (unrestricted) while the caller
+	// believed it was scoped; and it rejected the JSON boolean that the update
+	// endpoint accepts for the same field.
 	walletScopeEnabled: z
-		.string()
-		.default('false')
-		.transform((s) => s.toLowerCase() == 'true')
+		.union([z.boolean(), z.enum(['true', 'false'])])
+		.default(false)
+		.transform((value) => value === true || value === 'true')
 		.describe('Whether to enable wallet scope filtering for this API key'),
 	WalletScopeHotWalletIds: z
 		.array(z.string().max(150))
@@ -140,9 +146,9 @@ export const addAPIKeySchemaInput = z.object({
 		.default([])
 		.describe('List of hot wallet IDs to scope this API key to'),
 	x402WalletScopeEnabled: z
-		.string()
-		.default('false')
-		.transform((s) => s.toLowerCase() == 'true')
+		.union([z.boolean(), z.enum(['true', 'false'])])
+		.default(false)
+		.transform((value) => value === true || value === 'true')
 		.describe(
 			'Whether to enable managed EVM wallet scope filtering. False leaves the key unrestricted, matching walletScopeEnabled.',
 		),

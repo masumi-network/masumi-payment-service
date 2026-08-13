@@ -2758,7 +2758,7 @@ export type X402Wallet = {
      */
     note: string | null;
     /**
-     * Id of the API key that created this wallet
+     * Id of the API key that created this wallet. Only returned to admins and for the caller’s own wallets; null otherwise, so a read key cannot enumerate other tenants’ key ids.
      */
     createdById: string | null;
     createdAt: Date;
@@ -4095,7 +4095,7 @@ export type PostApiKeyData = {
         /**
          * Whether to enable wallet scope filtering for this API key
          */
-        walletScopeEnabled?: string;
+        walletScopeEnabled?: boolean | 'true' | 'false';
         /**
          * List of hot wallet IDs to scope this API key to
          */
@@ -4103,7 +4103,7 @@ export type PostApiKeyData = {
         /**
          * Whether to enable managed EVM wallet scope filtering. False leaves the key unrestricted, matching walletScopeEnabled.
          */
-        x402WalletScopeEnabled?: string;
+        x402WalletScopeEnabled?: boolean | 'true' | 'false';
         /**
          * Managed EVM wallet IDs to scope this API key to. Only applied when x402WalletScopeEnabled is true; the key also always reaches wallets it created itself.
          */

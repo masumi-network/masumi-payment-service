@@ -5202,7 +5202,7 @@ export const X402WalletSchema = {
         createdById: {
             type: 'string',
             nullable: true,
-            description: 'Id of the API key that created this wallet'
+            description: 'Id of the API key that created this wallet. Only returned to admins and for the caller’s own wallets; null otherwise, so a read key cannot enumerate other tenants’ key ids.'
         },
         createdAt: {
             type: 'string',

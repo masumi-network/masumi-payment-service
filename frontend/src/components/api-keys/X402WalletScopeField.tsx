@@ -53,7 +53,8 @@ export function X402WalletScopeField({
         </div>
         <p className="text-xs text-muted-foreground">
           When enabled, this API key can only use the selected managed EVM wallets, plus any it
-          creates itself. When disabled, it can use all of them.
+          creates itself. When disabled, it can use all of them. Using a wallet includes spending
+          from it &mdash; add a budget on the x402 page to cap what this key may spend per wallet.
         </p>
       </div>
 

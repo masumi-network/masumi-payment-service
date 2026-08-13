@@ -208,6 +208,12 @@ export type X402OwnerScope = string | null;
  * created. The union matters — without it a scoped key that creates a wallet would
  * lose sight of it the moment it was created, since the new row is in nobody's
  * scope list yet.
+ *
+ * Access means SPEND, not just visibility: an assigned wallet inherits own-wallet
+ * semantics (Cardano parity), so a pay key can sign payments from it without a
+ * budget grant — capped only by its usage credits (when usageLimited) and the
+ * on-chain balance. Set an X402WalletBudget row alongside the assignment when a
+ * per-wallet ceiling is wanted.
  */
 export type X402WalletAccess = {
 	scope: X402OwnerScope;

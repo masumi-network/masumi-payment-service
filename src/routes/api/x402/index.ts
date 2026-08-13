@@ -211,6 +211,17 @@ export const createX402PaymentPost = payAuthenticatedEndpointFactory.build({
 		}),
 });
 
+// createdById names another tenant's internal ApiKey id. An unscoped read key can
+// list every wallet (Cardano-parity default), so for non-admins the field is kept
+// only on the caller's own wallets and nulled on everyone else's — otherwise the
+// read-level list doubles as a directory of the node's other key ids, which the
+// pre-parity owner-scoping made impossible. The Cardano twin exposes no creator
+// field at all.
+function maskWalletCreator<T extends { createdById: string | null }>(ctx: AuthContext, wallet: T): T {
+	if (ctx.canAdmin || wallet.createdById === ctx.id) return wallet;
+	return { ...wallet, createdById: null };
+}
+
 // Read access, mirroring GET /wallet/list on the Cardano side: the projection is
 // public wallet metadata (address, type, note, binding) with no key material. The
 // private key is only ever returned by the admin-only create endpoint.
@@ -219,14 +230,16 @@ export const listX402WalletsGet = readAuthenticatedEndpointFactory.build({
 	input: listWalletsSchemaInput,
 	output: listWalletsSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof listWalletsSchemaInput>; ctx: AuthContext }) => ({
-		Wallets: await listX402ManagedWallets({
-			take: input.take,
-			cursorId: input.cursorId,
-			type: input.type,
-			networkId: input.networkId,
-			ownerScope: x402OwnerScope(ctx),
-			caip2NetworkLimit: x402NetworkLimit(ctx),
-		}),
+		Wallets: (
+			await listX402ManagedWallets({
+				take: input.take,
+				cursorId: input.cursorId,
+				type: input.type,
+				networkId: input.networkId,
+				ownerScope: x402OwnerScope(ctx),
+				caip2NetworkLimit: x402NetworkLimit(ctx),
+			})
+		).map((wallet) => maskWalletCreator(ctx, wallet)),
 	}),
 });
 
@@ -249,13 +262,14 @@ export const createX402WalletPost = adminAuthenticatedEndpointFactory.build({
 		}),
 });
 
-// Read access — same projection as the list, still owner/network scoped.
+// Read access — same projection as the list, still owner/network scoped, with the
+// same creator-id masking for non-admins.
 export const getX402WalletGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: walletDetailSchemaInput,
 	output: walletSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof walletDetailSchemaInput>; ctx: AuthContext }) =>
-		getX402ManagedWallet(input.id, x402OwnerScope(ctx), x402NetworkLimit(ctx)),
+		maskWalletCreator(ctx, await getX402ManagedWallet(input.id, x402OwnerScope(ctx), x402NetworkLimit(ctx))),
 });
 
 // Admin-only: wallet lifecycle, as on the Cardano side (PATCH /wallet).
