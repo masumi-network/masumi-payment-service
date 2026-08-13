@@ -199,149 +199,150 @@ function HydraTopupList({
           // deposit is either still waiting to be absorbed or already in the
           // head, so offering the button read as "your funds are stuck" for a
           // deposit that was behaving exactly as designed.
-          const recoverableFrom = topup.deadline == null ? null : new Date(topup.deadline).getTime();
+          const recoverableFrom =
+            topup.deadline == null ? null : new Date(topup.deadline).getTime();
           const isRecoverable = recoverableFrom === null || Date.now() >= recoverableFrom;
 
           return (
-          <li key={topup.id} className="space-y-1 px-3 py-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                {/* Confirmed is about the transaction, not about the head. Between
+            <li key={topup.id} className="space-y-1 px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  {/* Confirmed is about the transaction, not about the head. Between
                   the two the money is on chain, committed to this head, and
                   unusable, which read as success when both said "Confirmed". */}
-                <Badge
-                  variant="outline"
-                  // Never green. Nothing here can prove the head absorbed this
-                  // particular deposit: the times say when it became eligible, and
-                  // the in-head balance is the only thing that says it arrived.
-                  className={
-                    topup.status === 'Failed'
-                      ? 'text-red-600 dark:text-red-400'
-                      : topup.status === 'Recovered'
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-amber-600 dark:text-amber-400'
-                  }
-                >
-                  {(topup.status === 'Pending' || topup.status === 'Preparing') && (
-                    <Spinner className="mr-1 h-3 w-3" />
-                  )}
-                  {topup.status === 'Recovered'
-                    ? 'Returned'
-                    : topup.status === 'Failed'
-                      ? 'Expired'
-                      : topup.status === 'Preparing'
-                        ? 'Preparing'
-                        : topup.status === 'Pending'
-                          ? 'Sending'
-                          : isUsable(topup)
-                            ? 'Submitted'
-                            : 'Settling'}
-                </Badge>
-                <span className="font-mono text-sm">
-                  {/* A whole-UTxO top-up commits whatever the selection turns out
+                  <Badge
+                    variant="outline"
+                    // Never green. Nothing here can prove the head absorbed this
+                    // particular deposit: the times say when it became eligible, and
+                    // the in-head balance is the only thing that says it arrived.
+                    className={
+                      topup.status === 'Failed'
+                        ? 'text-red-600 dark:text-red-400'
+                        : topup.status === 'Recovered'
+                          ? 'text-green-600 dark:text-green-400'
+                          : 'text-amber-600 dark:text-amber-400'
+                    }
+                  >
+                    {(topup.status === 'Pending' || topup.status === 'Preparing') && (
+                      <Spinner className="mr-1 h-3 w-3" />
+                    )}
+                    {topup.status === 'Recovered'
+                      ? 'Returned'
+                      : topup.status === 'Failed'
+                        ? 'Expired'
+                        : topup.status === 'Preparing'
+                          ? 'Preparing'
+                          : topup.status === 'Pending'
+                            ? 'Sending'
+                            : isUsable(topup)
+                              ? 'Submitted'
+                              : 'Settling'}
+                  </Badge>
+                  <span className="font-mono text-sm">
+                    {/* A whole-UTxO top-up commits whatever the selection turns out
                     to hold, so the amount is unknown until the deposit is built.
                     Zero would read as "nothing moved". */}
-                  {topup.status === 'Preparing' && topup.committedLovelace === '0'
-                    ? 'amount pending'
-                    : formatLovelace(topup.committedLovelace, network)}
-                </span>
-              </div>
-              {/* One transaction per row, named for what it is. The hash used to
+                    {topup.status === 'Preparing' && topup.committedLovelace === '0'
+                      ? 'amount pending'
+                      : formatLovelace(topup.committedLovelace, network)}
+                  </span>
+                </div>
+                {/* One transaction per row, named for what it is. The hash used to
                 sit between two different notes depending on state, "splitting"
                 before it, "back in the wallet" after, so the same column read
                 in a different order on every line. */}
-              <TxLink
-                label={topup.depositTxHash === null ? 'split' : 'deposit'}
-                hash={topup.depositTxHash ?? topup.splitTxHash ?? null}
-                network={network}
-                fallback={topup.depositTxHash === null ? 'building the split' : null}
-              />
-            </div>
+                <TxLink
+                  label={topup.depositTxHash === null ? 'split' : 'deposit'}
+                  hash={topup.depositTxHash ?? topup.splitTxHash ?? null}
+                  network={network}
+                  fallback={topup.depositTxHash === null ? 'building the split' : null}
+                />
+              </div>
 
-            {/* Everything that is a note about the row, on its own line and in one
+              {/* Everything that is a note about the row, on its own line and in one
               place, rather than trailing the hash. */}
-            <div className="flex w-full flex-wrap items-center gap-2">
-              {topup.status === 'Recovered' && (
-                <span className="text-xs text-muted-foreground">Back in the wallet.</span>
-              )}
-              {topup.status === 'Confirmed' && !isUsable(topup) && topup.usableFrom != null && (
-                <span className="text-xs text-muted-foreground">
-                  Usable {new Date(topup.usableFrom).toLocaleTimeString()}.
-                </span>
-              )}
-              {/* Expired rows can hold funds too. A deposit reaches Failed on our
+              <div className="flex w-full flex-wrap items-center gap-2">
+                {topup.status === 'Recovered' && (
+                  <span className="text-xs text-muted-foreground">Back in the wallet.</span>
+                )}
+                {topup.status === 'Confirmed' && !isUsable(topup) && topup.usableFrom != null && (
+                  <span className="text-xs text-muted-foreground">
+                    Usable {new Date(topup.usableFrom).toLocaleTimeString()}.
+                  </span>
+                )}
+                {/* Expired rows can hold funds too. A deposit reaches Failed on our
                 own evidence that its transaction was absent past its deadline,
                 and that evidence can be wrong — a lagging or rolled-back chain
                 view reads the same as an absence. The reconciler already treats
                 a Failed row as one that may still turn out absorbed or
                 recovered; hiding the button meant the one case where funds sit
                 at the deposit script had no way to ask for them back. */}
-              {(topup.status === 'Confirmed' || topup.status === 'Failed') &&
-                topup.depositTxHash !== null &&
-                !isRecoverable &&
-                recoverableFrom !== null && (
-                  <span className="text-xs text-muted-foreground">
-                    The node can only send it back after{' '}
-                    {new Date(recoverableFrom).toLocaleTimeString()}, once the head can no longer
-                    take it in.
-                  </span>
-                )}
-              {(topup.status === 'Confirmed' || topup.status === 'Failed') &&
-                topup.depositTxHash !== null &&
-                isRecoverable &&
-                (topup.recoveryRequestedAt != null ? (
-                  <span className="text-xs text-muted-foreground">
-                    Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}.
-                    Waiting for it on chain.
-                  </span>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={recoveringId === topup.id}
-                    onClick={() => void handleRecover(topup.id)}
-                    title="Ask the node to return this deposit, if the head never took it"
-                  >
-                    {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
-                    Recover
-                  </Button>
-                ))}
-              {topup.status === 'Failed' &&
-                Object.keys(topup.committedAssets ?? {}).length === 0 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onRetry(topup)}
-                    title="Fills this amount back into the form. Nothing is sent until you press Add funds"
-                  >
-                    Try again
-                  </Button>
-                )}
-            </div>
+                {(topup.status === 'Confirmed' || topup.status === 'Failed') &&
+                  topup.depositTxHash !== null &&
+                  !isRecoverable &&
+                  recoverableFrom !== null && (
+                    <span className="text-xs text-muted-foreground">
+                      The node can only send it back after{' '}
+                      {new Date(recoverableFrom).toLocaleTimeString()}, once the head can no longer
+                      take it in.
+                    </span>
+                  )}
+                {(topup.status === 'Confirmed' || topup.status === 'Failed') &&
+                  topup.depositTxHash !== null &&
+                  isRecoverable &&
+                  (topup.recoveryRequestedAt != null ? (
+                    <span className="text-xs text-muted-foreground">
+                      Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}.
+                      Waiting for it on chain.
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={recoveringId === topup.id}
+                      onClick={() => void handleRecover(topup.id)}
+                      title="Ask the node to return this deposit, if the head never took it"
+                    >
+                      {recoveringId === topup.id && <Spinner className="mr-1 h-3 w-3" />}
+                      Recover
+                    </Button>
+                  ))}
+                {topup.status === 'Failed' &&
+                  Object.keys(topup.committedAssets ?? {}).length === 0 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onRetry(topup)}
+                      title="Fills this amount back into the form. Nothing is sent until you press Add funds"
+                    >
+                      Try again
+                    </Button>
+                  )}
+              </div>
 
-            {topup.status === 'Failed' &&
-              (topup.depositTxHash === null ? (
-                // Failed while preparing, so no deposit was ever signed. There
-                // is nothing on chain under any reading of the evidence.
-                <p className="w-full text-xs text-muted-foreground">
-                  The deposit was never built, so nothing left the wallet. Adding the funds again is
-                  safe.
-                </p>
-              ) : (
-                // Expiry itself is a ledger rule: past its invalid-hereafter
-                // slot the transaction can never be included. What is inferred
-                // rather than proven is that it was absent before then, and that
-                // came from our own chain lookup, so the row no longer promises
-                // the funds are home. Recover is the answer if it did land.
-                <p className="w-full text-xs text-muted-foreground">
-                  The deposit transaction was not on chain by its deadline, so it can never be
-                  included now and the funds should still be in the wallet. If it did land and the
-                  head never took it in, Recover asks the node to return it.
-                </p>
-              ))}
-          </li>
+              {topup.status === 'Failed' &&
+                (topup.depositTxHash === null ? (
+                  // Failed while preparing, so no deposit was ever signed. There
+                  // is nothing on chain under any reading of the evidence.
+                  <p className="w-full text-xs text-muted-foreground">
+                    The deposit was never built, so nothing left the wallet. Adding the funds again
+                    is safe.
+                  </p>
+                ) : (
+                  // Expiry itself is a ledger rule: past its invalid-hereafter
+                  // slot the transaction can never be included. What is inferred
+                  // rather than proven is that it was absent before then, and that
+                  // came from our own chain lookup, so the row no longer promises
+                  // the funds are home. Recover is the answer if it did land.
+                  <p className="w-full text-xs text-muted-foreground">
+                    The deposit transaction was not on chain by its deadline, so it can never be
+                    included now and the funds should still be in the wallet. If it did land and the
+                    head never took it in, Recover asks the node to return it.
+                  </p>
+                ))}
+            </li>
           );
         })}
       </ul>
