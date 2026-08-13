@@ -37,9 +37,7 @@ describe('default head periods', () => {
 	// contest, which is the one way this setting can cause a loss.
 	it.each([Network.Mainnet, Network.Preprod])('stays under half the window on %s', (network) => {
 		const periods = defaultPeriodsFor(network);
-		expect(periods.unsyncedPeriodSeconds).toBeLessThanOrEqual(
-			Math.floor(periods.contestationPeriodSeconds / 2),
-		);
+		expect(periods.unsyncedPeriodSeconds).toBeLessThanOrEqual(Math.floor(periods.contestationPeriodSeconds / 2));
 	});
 
 	// That ceiling is the largest safe value, not the one to ship. Sitting on it
@@ -49,9 +47,7 @@ describe('default head periods', () => {
 	it.each([Network.Mainnet, Network.Preprod])('does not default to the ceiling on %s', (network) => {
 		const periods = defaultPeriodsFor(network);
 		expect(periods.unsyncedPeriodSeconds).toBe(DEFAULT_UNSYNCED_PERIOD_CAP_SECONDS);
-		expect(periods.unsyncedPeriodSeconds).toBeLessThan(
-			Math.floor(periods.contestationPeriodSeconds / 2),
-		);
+		expect(periods.unsyncedPeriodSeconds).toBeLessThan(Math.floor(periods.contestationPeriodSeconds / 2));
 	});
 
 	// Blind signing is the exposure, and it is the same exposure on a testnet:
