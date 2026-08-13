@@ -1293,44 +1293,7 @@ export default function HydraHeadsPage() {
               </p>
             </div>
 
-            {/* Connecting a node lives on the node strip below (its empty state
-                and its trailing "+" chip), so the header offers only the head
-                action. Opening a head is one action with two ways in, so it is
-                one button with a menu rather than two competing buttons. */}
-            <div className="flex items-center gap-2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    disabled={!hasConnectedNode}
-                    title={
-                      hasConnectedNode
-                        ? undefined
-                        : 'Connect a node first. A head has to run somewhere.'
-                    }
-                  >
-                    <Plus className="h-4 w-4" />
-                    New head
-                    <ChevronDown className="h-4 w-4 opacity-70" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-56">
-                  <DropdownMenuItem onClick={() => setIsIssueInviteOpen(true)}>
-                    <Ticket className="h-4 w-4" />
-                    Invite someone
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setIsRedeemInviteOpen(true)}>
-                    <Ticket className="h-4 w-4" />
-                    Redeem an invite
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => setIsInvitesOpen(true)}>
-                    Manage invites{inviteCount > 0 ? ` (${inviteCount})` : ''}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <RefreshButton onRefresh={() => void refetch()} isRefreshing={isFetching} />
-            </div>
+            <RefreshButton onRefresh={() => void refetch()} isRefreshing={isFetching} />
           </div>
 
           <HydraNodeStrip
@@ -1356,6 +1319,40 @@ export default function HydraHeadsPage() {
               className="max-w-md"
               isLoading={isFetching && !isLoading}
             />
+            {/* The head action sits with the list it adds to, beside the
+                search. Opening a head is one action with two ways in, so it is
+                one button with a menu rather than two competing buttons. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  disabled={!hasConnectedNode}
+                  title={
+                    hasConnectedNode
+                      ? undefined
+                      : 'Connect a node first. A head has to run somewhere.'
+                  }
+                >
+                  <Plus className="h-4 w-4" />
+                  New head
+                  <ChevronDown className="h-4 w-4 opacity-70" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-56">
+                <DropdownMenuItem onClick={() => setIsIssueInviteOpen(true)}>
+                  <Ticket className="h-4 w-4" />
+                  Invite someone
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsRedeemInviteOpen(true)}>
+                  <Ticket className="h-4 w-4" />
+                  Redeem an invite
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setIsInvitesOpen(true)}>
+                  Manage invites{inviteCount > 0 ? ` (${inviteCount})` : ''}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           <HydraHeadTable

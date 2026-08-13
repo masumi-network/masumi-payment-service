@@ -9,7 +9,8 @@
  * So the nodes come back as a strip, one chip each, carrying the two facts an
  * operator reads at a glance: is it healthy, and how many heads is it running.
  * Selecting one filters the table to its heads, which is the "head inside the
- * node" view without a second layout.
+ * node" view without a second layout. Connecting a node lives only in the
+ * strip's empty state — one affordance, shown exactly when it is needed.
  *
  * Deliberately not the old card: that repeated every node's URL, version,
  * script hash and check time in the primary flow. Those belong in the node's
@@ -104,17 +105,6 @@ export function HydraNodeStrip({
           </div>
         );
       })}
-
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={onAddNode}
-        className="border-dashed"
-      >
-        <Plus className="h-4 w-4" />
-        Add node
-      </Button>
 
       {selectedHostId !== null && (
         <Button
