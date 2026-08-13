@@ -447,7 +447,13 @@ export function applyValidity(tx, validity) {
 // Every rule reproduced here is enforced on-chain too. Failing early just turns
 // a phase-2 script error into a message that says which rule broke.
 
+/// Mirrors `max_assets` in lib/smart_wallet/asset_value.ak.
+export const MAX_ASSETS = 16;
+
 export function applyAgentSpend(datum, outflow, validity) {
+	if (assetValueEntries(datum.limit).length > MAX_ASSETS) {
+		throw new Error(`limit lists more than ${MAX_ASSETS} assets; the validator rejects the spend`);
+	}
 	const moved = assetValueEntries(outflow);
 	for (const { policyId, assetName, quantity } of moved) {
 		if (assetValueGet(datum.limit, policyId, assetName) === undefined) {

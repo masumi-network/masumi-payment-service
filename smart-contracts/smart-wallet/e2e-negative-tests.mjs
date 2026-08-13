@@ -284,7 +284,13 @@ for (const { name, build } of cases) {
 		failures += 1;
 	} catch (error) {
 		const message = String(error?.message ?? error);
-		console.log(`PASS ${name} (rejected on evaluation)`);
+		// Distinguish the validator rejecting from mesh failing to even build the
+		// transaction: a case that dies pre-evaluation never exercised the script,
+		// and silently counting it as a win would let the suite stop testing.
+		const evaluated = /script|eval|machine terminated|budget|redeemer|cek/i.test(message);
+		console.log(
+			`PASS ${name} (${evaluated ? 'rejected on evaluation' : 'REJECTED PRE-EVALUATION — inspect: may not reach the script'})`,
+		);
 		if (process.env.VERBOSE === '1') console.log(`     ${message.slice(0, 200)}`);
 	}
 }

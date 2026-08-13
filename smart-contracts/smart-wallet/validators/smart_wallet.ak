@@ -62,6 +62,7 @@ validator smart_wallet(
           wallet_datum,
           quorum_vks,
           quorum_threshold,
+          owner,
           own_ref,
           self,
         )

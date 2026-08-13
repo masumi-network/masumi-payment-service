@@ -80,7 +80,13 @@ for (let round = 1; round <= ROUNDS; round += 1) {
 	// and over the min-balance floor.
 	const payout = BigInt(randomInt(0, Number(limit) + 8_000_000));
 	// Sometimes lie about the counter to probe the datum-equality check.
-	const lie = random() < 0.3 ? BigInt(randomInt(-3_000_000, 3_000_000)) : 0n;
+	// Draw from nonzero: lie = 0 forges nothing, so mirror and chain would
+	// legitimately disagree about whether a rejection was expected.
+	let lie = 0n;
+	if (random() < 0.3) {
+		const drawn = randomInt(-3_000_000, 3_000_000);
+		lie = BigInt(drawn === 0 ? 1_000_000 : drawn);
+	}
 
 	let mirrorVerdict = true;
 	let mirrorReason = '';

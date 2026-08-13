@@ -38,8 +38,12 @@ The seed is **not** a parameter — it is consumed at mint and determines only
 the token name. Changing any parameter means a different address; a new wallet
 at the *same* address is just a new mint. Only the datum is rewritable in
 place, by the owner. The mint is owner-gated, pins the token's destination to
-the full wallet address, and requires the receiving UTxO to hold exactly one
-token of the policy — so no UTxO can ever hold zero or two.
+the full wallet address, requires the receiving UTxO to hold exactly one token
+of the policy — so no UTxO can ever hold zero or two — forbids a reference
+script on it (the spend path forwards `reference_script` by equality, so bytes
+attached at birth would cost per-byte fees on every spend, forever), and
+requires the initial datum to **parse**. Datum values stay unvalidated by
+design; deploy tooling owns them.
 
 ## Actions
 
@@ -65,7 +69,9 @@ Every agent spend must satisfy all of these:
    carries the same one** — identity is the token name, so a sibling wallet's
    token cannot be swapped in.
 3. **Agent signature, plus weighted quorum.** A key listed twice carries two
-   votes; the agent's own key never counts, even if listed.
+   votes; the agent's and the **owner's** keys never count, even if listed —
+   the quorum is external to both parties the parameters name, so the cold key
+   cannot quietly become a warm co-signer.
 4. **Both validity bounds finite.**
 5. **Per asset**: `spent += max(0, outflow)`, every moved asset must have a
    limit entry, and `spent + outflow <= limit`.
@@ -100,7 +106,7 @@ compiler version.
 aiken check
 ```
 
-62 tests — unit and property (fuzzed, 100 runs each): the happy paths, and one per rule above from the attacker's side.
+65 tests — unit and property (fuzzed, 100 runs each): the happy paths, and one per rule above from the attacker's side.
 
 ### Toolchain warning
 
@@ -139,10 +145,10 @@ dying at submission.
 - **Datum-supplied asset values are untrusted.** Lookups fail closed on a
   duplicate policy or asset name rather than picking a resolution an attacker
   chose.
-- **The mint does not validate the initial datum.** A wallet can be born with
-  a malformed or missing datum; the agent path is then dead on arrival. Only
-  the owner can mint, and a cold-key `UpdatePolicy` repairs it in place — the
-  same no-on-chain-config-guard stance as the quorum threshold.
+- **The mint checks datum shape, not values.** A wallet cannot be born with a
+  missing or unparseable datum, but a threshold of zero, an unlisted lovelace
+  entry, or a limit above the balance still pass — deploy tooling owns values,
+  the same stance as the quorum threshold.
 - **Owner key compromise is total loss.** No recovery, no guardians, no
   timelock.
 - **Freezing is off-chain**: co-signers refusing to sign halts spending in

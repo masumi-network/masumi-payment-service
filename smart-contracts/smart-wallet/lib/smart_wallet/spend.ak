@@ -66,20 +66,27 @@ pub fn owner_signed(owner: VerificationKeyHash, self: Transaction) -> Bool {
 /// Weighted quorum tally.
 ///
 /// A key listed twice carries two votes, matching `admin_vks` in
-/// `vested_pay.ak`. The agent's own key never counts, even if it appears in the
-/// list: otherwise a compromised hot key contributes a vote toward approving
-/// its own spend, and the quorum is weaker than it reads in exactly the
-/// scenario it exists for.
+/// `vested_pay.ak`. Two keys never count, even if listed:
+///
+/// - the **agent's**, else a compromised hot key contributes a vote toward
+///   approving its own spend, and the quorum is weaker than it reads in
+///   exactly the scenario it exists for;
+/// - the **owner's**, else a deployment that lists the cold key quietly turns
+///   it into a warm co-signer. The quorum exists to be external to both
+///   parties the parameters already name.
 pub fn quorum_met(
   quorum: List<VerificationKeyHash>,
   threshold: Int,
   agent: VerificationKeyHash,
+  owner: VerificationKeyHash,
   self: Transaction,
 ) -> Bool {
   let weight =
     list.count(
       quorum,
-      fn(key) { key != agent && list.has(self.extra_signatories, key) },
+      fn(key) {
+        key != agent && key != owner && list.has(self.extra_signatories, key)
+      },
     )
   weight >= threshold
 }
@@ -103,13 +110,14 @@ pub fn agent_spend_is_valid(
   datum: Datum,
   quorum: List<VerificationKeyHash>,
   threshold: Int,
+  owner: VerificationKeyHash,
   own_ref: OutputReference,
   self: Transaction,
 ) -> Bool {
   let (wallet, continuing, _own_hash, _token_name) = continuation(own_ref, self)
 
   expect list.has(self.extra_signatories, datum.agent)
-  expect quorum_met(quorum, threshold, datum.agent, self)
+  expect quorum_met(quorum, threshold, datum.agent, owner, self)
 
   // Keeps the per-spend cost affordable. Enforced here, where the datum is
   // used, rather than on `UpdatePolicy` where it is written — the funding

@@ -1,9 +1,10 @@
 use cardano/address.{Address, Inline, Script, VerificationKey}
 use cardano/assets.{Value, from_asset, from_lovelace, merge}
 use cardano/transaction.{
-  Input, NoDatum, Output, OutputReference, Transaction, placeholder,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
 use smart_wallet/mint.{mint_is_valid, state_token_name}
+use smart_wallet/types.{Datum}
 
 const owner_key: ByteArray =
   #"00000000000000000000000000000000000000000000000000000001"
@@ -58,11 +59,22 @@ fn input_of(ref: OutputReference) -> Input {
   }
 }
 
+fn initial_datum() -> Datum {
+  Datum {
+    agent: stranger_key,
+    limit: [Pair(#"", [Pair(#"", 10_000_000)])],
+    period_length: 86_400_000,
+    period_start: 1_000_000_000_000,
+    spent_in_period: [Pair(#"", [Pair(#"", 0)])],
+    min_balance_lovelace: 5_000_000,
+  }
+}
+
 fn output_at(address: Address, value: Value) -> Output {
   Output {
     address: address,
     value: value,
-    datum: NoDatum,
+    datum: InlineDatum(initial_datum()),
     reference_script: None,
   }
 }
@@ -259,4 +271,47 @@ test derived_name_matches_offchain_vector() {
     state_token_name(OutputReference { transaction_id: zero_tx, output_index: 0 }) == #"9f0e444c69f77a49bd0be89db92c38fe713e0963165cca12faf5712d7657120f",
     state_token_name(OutputReference { transaction_id: zero_tx, output_index: 7 }) == #"88de608df497d407fc453b33cfed169095e6de10cc6a37a8ce8d4be9313574c2",
   }
+}
+
+test mint_without_a_parseable_datum_fails() fail {
+  // A wallet born with no datum is dead on arrival for the agent path; the
+  // mint is where the datum is written, so the shape check lives here. Values
+  // stay unvalidated by design.
+  let name = state_token_name(seed())
+  let self =
+    tx(
+      [input_of(seed())],
+      [
+        Output {
+          address: wallet_address(),
+          value: funded_wallet(50_000_000, name),
+          datum: NoDatum,
+          reference_script: None,
+        },
+      ],
+      from_asset(wallet_hash, name, 1),
+      [owner_key],
+    )
+  valid(self)
+}
+
+test mint_with_a_reference_script_fails() fail {
+  // The spend path forwards `reference_script` by equality, so bytes attached
+  // at birth would be paid for on every spend, forever, with no shedding path.
+  let name = state_token_name(seed())
+  let self =
+    tx(
+      [input_of(seed())],
+      [
+        Output {
+          address: wallet_address(),
+          value: funded_wallet(50_000_000, name),
+          datum: InlineDatum(initial_datum()),
+          reference_script: Some(wallet_hash),
+        },
+      ],
+      from_asset(wallet_hash, name, 1),
+      [owner_key],
+    )
+  valid(self)
 }

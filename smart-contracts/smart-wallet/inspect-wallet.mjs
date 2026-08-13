@@ -26,6 +26,8 @@ console.log(`Smart wallet
     UTxOs at address: ${utxos.length}
 `);
 
+// Shows THE wallet named by wallet-seed.json, not the fleet: sibling wallets
+// at the shared address carry different token names and are skipped here.
 const held = utxos.filter((utxo) =>
 	utxo.output.amount.some((asset) => asset.unit === wallet.stateTokenUnit),
 );
