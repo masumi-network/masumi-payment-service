@@ -18,6 +18,8 @@ import { getHydraConnectionManager } from '@/services/hydra-connection-manager/h
 import { getOwnInHeadBalance } from '@/services/hydra-connection-manager/hydra-head-balance';
 import { readParticipantNodeState } from '@/services/hydra-host/node-state';
 import { readHeadParamDrift } from '@/services/hydra-host/param-drift';
+import { countHydraHeadActiveWork, hasActiveWork } from '@/utils/hydra/active-work';
+import { describeCloseWithActiveWork } from '@/utils/hydra/close-with-active-work';
 import { describeL2FundingBlock } from '@/utils/hydra/l2-funding-block';
 
 // --- GET errors ---
@@ -142,8 +144,35 @@ export const headConnectionSchemaOutput = z.object({
 	 * accepted and pending with no stated reason.
 	 */
 	l2Blocked: z.string().nullable(),
+	/**
+	 * What closing this head right now would cost, or null when it holds nothing.
+	 *
+	 * The close endpoint refuses an unacknowledged close while a head still holds
+	 * escrows, and the refusal message is the explanation. Reported here so the
+	 * confirmation can carry it before the operator commits, instead of the
+	 * operator meeting it as a failure afterwards. Same wording, same counts.
+	 */
+	closeWithActiveWork: z.string().nullable().describe('Null when closing costs nothing beyond the close itself.'),
 	checkedAt: z.string(),
 });
+
+/**
+ * The close prompt for this head, or null when there is nothing to prompt about.
+ *
+ * Only Open heads can be closed, so anything else is not a question the operator
+ * is being asked. Reading it costs two counts, which is why it is not attached
+ * to the head list.
+ */
+async function readCloseWithActiveWork(
+	headId: string,
+	status: HydraHeadStatus,
+	contestationPeriod: bigint,
+): Promise<string | null> {
+	if (status !== HydraHeadStatus.Open) return null;
+	const activeWork = await countHydraHeadActiveWork(prisma, headId);
+	if (!hasActiveWork(activeWork)) return null;
+	return describeCloseWithActiveWork(contestationPeriod, activeWork.pendingL2Transactions, activeWork.activeEscrows);
+}
 
 /**
  * Whether this node holds enough inside the head to build a transaction there.
@@ -209,6 +238,7 @@ export const getHeadConnectionGet = adminAuthenticatedEndpointFactory.build({
 			peerConnected: peerLink,
 			paramDrift: await readHeadParamDrift(head.id),
 			l2Blocked: await readL2FundingBlock(head.id, head.status),
+			closeWithActiveWork: await readCloseWithActiveWork(head.id, head.status, head.contestationPeriod),
 			checkedAt: new Date().toISOString(),
 		};
 	},

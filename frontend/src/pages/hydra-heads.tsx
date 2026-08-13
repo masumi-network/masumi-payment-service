@@ -1169,18 +1169,6 @@ export default function HydraHeadsPage() {
   const [backUpKeysParticipantId, setBackUpKeysParticipantId] = useState<string | null>(null);
   const [selectedHeadId, setSelectedHeadId] = useState<string | null>(null);
   const [runningLifecycleHeadId, setRunningLifecycleHeadId] = useState<string | null>(null);
-  /**
-   * The head whose close was refused for still holding escrows, and the reason.
-   *
-   * Held as state rather than answered inline: the API's refusal names the
-   * counts and what closing does to them, and that wording is what the operator
-   * has to agree to. Re-writing it as a generic warning would drop the only part
-   * that makes the decision informed.
-   */
-  const [pendingEscrowClose, setPendingEscrowClose] = useState<{
-    head: HydraHead;
-    reason: string;
-  } | null>(null);
   const [pendingLifecycleAction, setPendingLifecycleAction] =
     useState<PendingLifecycleAction | null>(null);
 
@@ -1288,27 +1276,33 @@ export default function HydraHeadsPage() {
   const pendingLifecycleCopy = pendingLifecycleAction
     ? getLifecycleActionConfirmCopy(pendingLifecycleAction.head, pendingLifecycleAction.action)
     : null;
-
-  /** Close the head having accepted that its escrows move to L1. */
-  const handleConfirmEscrowClose = async () => {
-    const pending = pendingEscrowClose;
-    if (!pending) return;
-    setRunningLifecycleHeadId(pending.head.id);
-    try {
-      await closeHydraHead(apiClient, { headId: pending.head.id, acknowledgeActiveEscrows: true });
-      toast.success('Hydra head close started');
-      await resync('hydra');
-      await refetch();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    } finally {
-      setRunningLifecycleHeadId(null);
-      setPendingEscrowClose(null);
-    }
-  };
+  /**
+   * What the head being closed still holds, read before the dialog offers to
+   * close it.
+   *
+   * The API refuses an unacknowledged close while a head holds escrows, and the
+   * refusal is the explanation. Asking first means the confirmation can carry
+   * that explanation and take the answer in the same step, instead of the
+   * operator meeting it as a failed action and confirming in a second dialog.
+   * Same query key as the action menu's, so it is usually already cached.
+   */
+  const { connection: closingHeadConnection, refetch: refetchClosingHeadConnection } =
+    useHydraHeadReadiness(
+      pendingLifecycleAction?.action === 'close' ? pendingLifecycleAction.head.id : null,
+      pendingLifecycleAction?.action === 'close',
+    );
+  const closeWithActiveWork =
+    pendingLifecycleAction?.action === 'close'
+      ? (closingHeadConnection?.closeWithActiveWork ?? null)
+      : null;
 
   const handleRunLifecycleAction = async (head: HydraHead, action: HydraLifecycleAction) => {
     setRunningLifecycleHeadId(head.id);
+    // A refused close leaves the dialog up: the reason is usually work that
+    // appeared since it opened, and the answer to it is the acknowledgement in
+    // this same dialog. Closing the window would make the operator find the
+    // head and the action again to answer a question they were just asked.
+    let keepDialogOpen = false;
     try {
       if (action === 'init') {
         await initHydraHead(apiClient, { headId: head.id });
@@ -1318,18 +1312,20 @@ export default function HydraHeadsPage() {
         toast.success('Local Hydra commit submitted');
       } else if (action === 'close') {
         try {
-          await closeHydraHead(apiClient, { headId: head.id });
+          // Acknowledged only when the operator was told what they were
+          // acknowledging: the checkbox is only shown when this is non-null.
+          await closeHydraHead(apiClient, {
+            headId: head.id,
+            acknowledgeActiveEscrows: closeWithActiveWork !== null,
+          });
         } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          // Anything else is a real failure: this call no longer toasts for
-          // itself, so saying so here is what keeps it from failing silently.
-          if (!reason.includes('fanned out to L1')) {
-            toast.error(reason);
-            return;
-          }
-          // Ask, with the API's own wording. Answered in its own dialog rather
-          // than here, so the operator reads the counts before agreeing.
-          setPendingEscrowClose({ head, reason });
+          // This call throws instead of toasting, so reporting it here is what
+          // keeps a failed close from failing silently. An escrow that appeared
+          // between the read and the press lands here too — refreshing the
+          // readiness puts the acknowledgement in the dialog on the retry.
+          toast.error(error instanceof Error ? error.message : String(error));
+          keepDialogOpen = true;
+          void refetchClosingHeadConnection();
           return;
         }
         toast.success('Hydra head close started');
@@ -1345,7 +1341,7 @@ export default function HydraHeadsPage() {
       await refetch();
     } finally {
       setRunningLifecycleHeadId(null);
-      setPendingLifecycleAction(null);
+      if (!keepDialogOpen) setPendingLifecycleAction(null);
     }
   };
 
@@ -1492,31 +1488,33 @@ export default function HydraHeadsPage() {
           pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false
         }
       />
-      {/* Not a refusal — closing with live escrows is offered and always was.
-          The dialog exists to price the choice: settling in the head takes
-          about a second per escrow and costs nothing, and closing swaps that
-          for the contestation period plus an L1 settlement each. */}
-      <ConfirmDialog
-        open={Boolean(pendingEscrowClose)}
-        onClose={() => setPendingEscrowClose(null)}
-        title="Closing now will take a while"
-        description={pendingEscrowClose?.reason ?? ''}
-        confirmLabel="Close anyway"
-        loadingNote="Posted to the node. This carries on without the window, and the head's status updates on its own — you can close this."
-        onConfirm={handleConfirmEscrowClose}
-        isLoading={
-          pendingEscrowClose ? runningLifecycleHeadId === pendingEscrowClose.head.id : false
-        }
-      />
-
+      {/* One dialog for every lifecycle action but init, including the close of
+          a head that still holds escrows. That close is offered, not refused —
+          the dialog exists to price it: settling inside the head takes about a
+          second per escrow and costs nothing, closing swaps that for the
+          contestation period plus an L1 settlement each. So it is the same
+          question with one more thing to agree to, not a second dialog. */}
       <ConfirmDialog
         open={Boolean(pendingLifecycleAction) && pendingLifecycleAction?.action !== 'init'}
         onClose={() => setPendingLifecycleAction(null)}
-        title={pendingLifecycleCopy?.title ?? 'Confirm Hydra action'}
-        description={
-          pendingLifecycleCopy?.description ??
-          'Confirm that you want to run this Hydra head lifecycle action.'
+        title={
+          closeWithActiveWork !== null
+            ? 'Closing now will take a while'
+            : (pendingLifecycleCopy?.title ?? 'Confirm Hydra action')
         }
+        description={
+          // Appended, not substituted: the base copy is what names the head, and
+          // an operator running several heads reads that first.
+          [pendingLifecycleCopy?.description, closeWithActiveWork]
+            .filter((part) => part != null && part !== '')
+            .join('\n\n') || 'Confirm that you want to run this Hydra head lifecycle action.'
+        }
+        acknowledgementLabel={
+          closeWithActiveWork !== null
+            ? 'I understand what is still in the head will settle on L1 instead'
+            : undefined
+        }
+        confirmLabel={closeWithActiveWork !== null ? 'Close anyway' : 'Confirm'}
         onConfirm={handleConfirmLifecycleAction}
         isLoading={
           pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false

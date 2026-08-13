@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { CopyButton } from '@/components/ui/copy-button';
 
 interface ConfirmDialogProps {
@@ -24,6 +25,17 @@ interface ConfirmDialogProps {
    * in their head.
    */
   confirmLabel?: string;
+  /**
+   * A consequence the operator has to tick before the action is offered.
+   *
+   * For the case where the action is allowed but costly, and the cost falls on
+   * something other than the thing being acted on — a head that still holds
+   * escrows can be closed, but its escrows then settle on L1. A typed
+   * confirmation is the wrong instrument there: it proves the operator can copy
+   * a word, not that they read what it costs. Absent, the dialog is a plain
+   * confirmation.
+   */
+  acknowledgementLabel?: string;
   /**
    * What is happening while `isLoading`, shown in place of nothing.
    *
@@ -50,24 +62,32 @@ export function ConfirmDialog({
   confirmationText = 'DELETE',
   confirmationLabel,
   confirmLabel = 'Confirm',
+  acknowledgementLabel,
   loadingNote,
   elevatedChildStack,
   elevatedGrandchildStack,
 }: ConfirmDialogProps) {
   const [confirmationInput, setConfirmationInput] = useState('');
+  const [isAcknowledged, setIsAcknowledged] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
   const isConfirmationValid = !requireConfirmation || confirmationInput.trim() === confirmationText;
+  const isAcknowledgementValid = acknowledgementLabel === undefined || isAcknowledged;
+  const canConfirm = isConfirmationValid && isAcknowledgementValid;
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       setConfirmationInput('');
+      // Reset with the dialog. The next thing asked about is a different head
+      // with different consequences, and a tick carried over would answer for it.
+      setIsAcknowledged(false);
       onClose();
     }
   };
 
   const handleConfirm = () => {
-    if (!requireConfirmation || isConfirmationValid) {
+    if (canConfirm) {
       setConfirmationInput('');
+      setIsAcknowledged(false);
       onConfirm();
     }
   };
@@ -89,6 +109,18 @@ export function ConfirmDialog({
 
           {isLoading && loadingNote !== undefined && (
             <p className="mt-3 text-sm text-muted-foreground">{loadingNote}</p>
+          )}
+
+          {acknowledgementLabel !== undefined && (
+            <label className="mt-4 flex items-start gap-3 text-sm cursor-pointer">
+              <Checkbox
+                checked={isAcknowledged}
+                onCheckedChange={(checked) => setIsAcknowledged(checked === true)}
+                disabled={isLoading}
+                className="mt-0.5"
+              />
+              <span>{acknowledgementLabel}</span>
+            </label>
           )}
 
           {requireConfirmation && (
@@ -140,11 +172,7 @@ export function ConfirmDialog({
           <Button variant="outline" onClick={() => handleOpenChange(false)}>
             {isLoading ? 'Close' : 'Cancel'}
           </Button>
-          <Button
-            variant="destructive"
-            onClick={handleConfirm}
-            disabled={isLoading || (requireConfirmation && !isConfirmationValid)}
-          >
+          <Button variant="destructive" onClick={handleConfirm} disabled={isLoading || !canConfirm}>
             <span className="transition-opacity duration-150">
               {isLoading ? <Spinner size={16} /> : confirmLabel}
             </span>

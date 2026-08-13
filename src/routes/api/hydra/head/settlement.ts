@@ -10,13 +10,7 @@
  * here sends back, so the dependency runs one way.
  */
 
-import {
-	HydraErrorType,
-	HydraHeadStatus,
-	Prisma,
-	TransactionLayer,
-	TransactionStatus,
-} from '@/generated/prisma/client';
+import { HydraErrorType, HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
@@ -27,6 +21,7 @@ import createHttpError from 'http-errors';
 import { HydraTransportError } from '@/lib/hydra';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { recordHeadError } from '@/services/hydra-head-error/record';
+import { countHydraHeadActiveWork, hasActiveWork } from '@/utils/hydra/active-work';
 import { describeCloseWithActiveWork } from '@/utils/hydra/close-with-active-work';
 
 import { lifecycleInput, lifecycleOutput } from './lifecycle';
@@ -67,50 +62,23 @@ export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscr
 					}
 					if (head.isClosing) throw createHttpError(409, 'Hydra head close is already in progress');
 
-					const pendingL2Transactions = await tx.transaction.count({
-						where: {
-							hydraHeadId: headId,
-							layer: TransactionLayer.L2,
-							status: TransactionStatus.Pending,
-						},
-					});
-					const activePaymentEscrows = await tx.paymentRequest.count({
-						where: {
-							layer: TransactionLayer.L2,
-							CurrentTransaction: { is: { hydraHeadId: headId, layer: TransactionLayer.L2 } },
-							OR: [
-								{
-									currentHydraUtxoTxHash: { not: null },
-									currentHydraUtxoOutputIndex: { not: null },
-								},
-								{ unresolvedHydraTerminalTxHash: { not: null } },
-							],
-						},
-					});
-					const activePurchaseEscrows = await tx.purchaseRequest.count({
-						where: {
-							layer: TransactionLayer.L2,
-							CurrentTransaction: { is: { hydraHeadId: headId, layer: TransactionLayer.L2 } },
-							OR: [
-								{
-									currentHydraUtxoTxHash: { not: null },
-									currentHydraUtxoOutputIndex: { not: null },
-								},
-								{ unresolvedHydraTerminalTxHash: { not: null } },
-							],
-						},
-					});
-					const activeEscrows = activePaymentEscrows + activePurchaseEscrows;
+					// Counted by the same function the readiness endpoint uses, so what
+					// the dialog offered and what this admits agree.
+					const activeWork = await countHydraHeadActiveWork(tx, headId);
 					// Refused by default, but never forbidden. Closing with live escrows
 					// fans them out to L1, where they stay collectible against the same
 					// datums and deadlines — a change of settlement layer, not a loss.
 					// Making it impossible turned a busy head into one that could never
 					// be closed at all, which is the worse failure: the escrows keep
 					// their deadlines whether or not the head can be shut down.
-					if (!acknowledgedActiveEscrows && (pendingL2Transactions > 0 || activeEscrows > 0)) {
+					if (!acknowledgedActiveEscrows && hasActiveWork(activeWork)) {
 						throw createHttpError(
 							409,
-							describeCloseWithActiveWork(head.contestationPeriod, pendingL2Transactions, activeEscrows),
+							describeCloseWithActiveWork(
+								head.contestationPeriod,
+								activeWork.pendingL2Transactions,
+								activeWork.activeEscrows,
+							),
 						);
 					}
 

@@ -822,6 +822,15 @@ export type HydraHeadConnection = {
    * script output and needs one of its own in-head outputs for collateral.
    */
   l2Blocked?: string | null;
+  /**
+   * What closing this head right now would cost, or null when it holds nothing.
+   *
+   * Non-null means the API will refuse a close that does not acknowledge it, and
+   * this is the wording of that refusal. Read before offering the action so the
+   * confirmation can state the cost rather than the operator meeting it as a
+   * failure.
+   */
+  closeWithActiveWork?: string | null;
   checkedAt: string;
 };
 
