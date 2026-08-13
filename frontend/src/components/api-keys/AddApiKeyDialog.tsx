@@ -188,6 +188,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
     name: 'networks',
     defaultValue: ['Preprod', 'Mainnet'],
   });
+  const currentEvmChains = useWatch({ control, name: 'evmChains', defaultValue: [] });
   const usageLimited = useWatch({ control, name: 'usageLimited', defaultValue: true });
   const walletScopeEnabled = useWatch({ control, name: 'walletScopeEnabled', defaultValue: false });
   const walletScopeIds = useWatch({ control, name: 'walletScopeIds', defaultValue: [] });
@@ -236,7 +237,29 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
       seededEvmChains.current = false;
       return;
     }
-    if (seededEvmChains.current || evmChainOptions.length === 0) return;
+    if (evmChainOptions.length === 0) return;
+    const allowedChainIds = new Set(
+      evmChainOptions
+        .filter((chain) =>
+          chain.isTestnet
+            ? selectedNetworks.includes('Preprod')
+            : selectedNetworks.includes('Mainnet'),
+        )
+        .map((chain) => chain.caip2Id),
+    );
+    if (seededEvmChains.current) {
+      // Already seeded: never re-add (that would undo the admin's unticks), but DO
+      // prune chains whose environment has since been deselected. The seed runs
+      // while `networks` still holds its default of both environments, so without
+      // this pruning the coupling was dead on arrival — narrowing to Preprod after
+      // the list loaded still submitted the mainnet chains, which is exactly the
+      // case the backend's environment-coupled default exists to prevent.
+      const pruned = currentEvmChains.filter((chainId) => allowedChainIds.has(chainId));
+      if (pruned.length !== currentEvmChains.length) {
+        setValue('evmChains', pruned);
+      }
+      return;
+    }
     seededEvmChains.current = true;
     setValue(
       'evmChains',
@@ -248,7 +271,7 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
         )
         .map((chain) => chain.caip2Id),
     );
-  }, [open, canAdmin, evmChainOptions, selectedNetworks, setValue]);
+  }, [open, canAdmin, evmChainOptions, selectedNetworks, currentEvmChains, setValue]);
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     const isReadOnly = !data.canPay && !data.canAdmin;
@@ -270,7 +293,18 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
         // Every non-admin key carries its EVM chain grant — read keys need it for
         // the x402 read surfaces, not just pay keys for settling. Admins are
         // unrestricted by canAdmin, so their explicit list is irrelevant.
-        ChainIdLimit: !data.canAdmin ? data.evmChains : [],
+        //
+        // When the chain list could not be loaded (the query errors silently, or
+        // has not settled) the EVM section is hidden and evmChains is empty. Send
+        // UNDEFINED rather than [] in that case: [] means "grant none" and would
+        // mint a key permanently barred from every x402 surface without the admin
+        // ever seeing the choice, whereas omitting it lets the server apply its
+        // environment-coupled default.
+        ChainIdLimit: data.canAdmin
+          ? []
+          : evmChainOptions.length === 0
+            ? undefined
+            : data.evmChains,
         UsageCredits: isReadOnly
           ? defaultCredits
           : data.usageLimited

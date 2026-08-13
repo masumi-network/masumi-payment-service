@@ -28,7 +28,7 @@ import {
 	updateAPIKeySchemaInput,
 	updateAPIKeySchemaOutput,
 } from './schemas';
-import { consolidateUsageCredits, normalizeCreditUnit } from './credit-units';
+import { consolidateUsageCredits, findNonCanonicalEvmCreditUnit, normalizeCreditUnit } from './credit-units';
 import {
 	computePermissionFromFlags,
 	flagsFromLegacyPermission,
@@ -115,12 +115,6 @@ export const mapApiKeyOutput = <
 	};
 };
 
-/**
- * Resolve wallet-scope ids before they reach createMany. Without this the FK
- * violation surfaces as a raw Prisma error in the 500 body, which both leaks the
- * server's filesystem path and ORM internals and tells the caller nothing
- * actionable. Applies to both rails.
- */
 /**
  * The configured EVM chains a new key's omitted ChainIdLimit defaults to, as
  * CAIP-2 ids, constrained to the ENVIRONMENT the key's Cardano NetworkLimit
@@ -274,6 +268,16 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		// means none. Skipped for admins, whose networkLimit is [] and who are
 		// unrestricted by canAdmin anyway.
 		const chainIdLimit = isAdmin ? [] : (input.ChainIdLimit ?? (await allConfiguredEvmChainIds(input.NetworkLimit)));
+		// Fail closed on a unit that was meant to be an EVM credit but is not exactly
+		// eip155:<chainId>:0x<40 hex>: stored verbatim it would never match the debit
+		// lookup and would leave the key's x402 spending uncapped while looking funded.
+		const badUnit = findNonCanonicalEvmCreditUnit(input.UsageCredits.map((credit) => credit.unit));
+		if (badUnit != null) {
+			throw createHttpError(
+				400,
+				`Invalid EVM usage-credit unit '${badUnit}'. Expected eip155:<chainId>:0x<40 hex token address>.`,
+			);
+		}
 		// One row per unit, units normalized to the form the x402 debit looks up —
 		// duplicate or checksummed entries would otherwise create rows the payment
 		// path miscounts or can never match.
@@ -383,39 +387,57 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						throw createHttpError(404, 'API key not found');
 					}
 					if (input.UsageCreditsToAddOrRemove) {
+						// Same fail-closed check as the create path: an EVM-ish unit that is
+						// not exactly eip155:<chainId>:0x<40 hex> would never match the debit
+						// lookup and would leave the key's x402 spending uncapped.
+						const badUnit = findNonCanonicalEvmCreditUnit(input.UsageCreditsToAddOrRemove.map((credit) => credit.unit));
+						if (badUnit != null) {
+							throw createHttpError(
+								400,
+								`Invalid EVM usage-credit unit '${badUnit}'. Expected eip155:<chainId>:0x<40 hex token address>.`,
+							);
+						}
+						// Fold the deltas per normalized unit BEFORE touching the DB. Applying
+						// them one at a time against a snapshot array meant a repeated unit
+						// re-found the same stale in-memory row: a [-100, +100] pair deleted the
+						// row and then updated the deleted id (raw P2025 500, whole PATCH lost),
+						// and two positive deltas for a new unit created two rows for it.
+						const deltasByUnit = new Map<string, bigint>();
 						for (const usageCredit of input.UsageCreditsToAddOrRemove) {
-							const parsedAmount = BigInt(usageCredit.amount);
 							// Match and store the normalized unit: the x402 debit looks credits up
 							// by the lowercased form, so a checksummed top-up would otherwise
 							// create (or leave) a row the payment path can never match. Comparing
 							// both sides normalized also merges a legacy checksummed row instead
 							// of stranding it next to a new lowercase one.
 							const unit = normalizeCreditUnit(usageCredit.unit);
+							deltasByUnit.set(unit, (deltasByUnit.get(unit) ?? 0n) + BigInt(usageCredit.amount));
+						}
+						for (const [unit, delta] of deltasByUnit) {
 							const existingCredit = apiKey.RemainingUsageCredits.find(
 								(credit) => normalizeCreditUnit(credit.unit) == unit,
 							);
 							if (existingCredit) {
-								existingCredit.amount += parsedAmount;
-								if (existingCredit.amount == 0n) {
-									await prisma.unitValue.delete({
-										where: { id: existingCredit.id },
-									});
-								} else if (existingCredit.amount < 0) {
+								const nextAmount = existingCredit.amount + delta;
+								if (nextAmount < 0n) {
 									throw createHttpError(400, 'Invalid amount');
-								} else {
-									await prisma.unitValue.update({
-										where: { id: existingCredit.id },
-										data: { amount: existingCredit.amount, unit },
-									});
 								}
+								// A zeroed row is KEPT, not deleted. Deleting it removed the only
+								// evidence that this key is capped on that chain+asset, and the
+								// x402 enforcement probe reads "no EVM credit rows" as "pre-cap
+								// key, do not enforce" — so revoking a key's last EVM allowance
+								// used to hand it UNLIMITED spend instead of none.
+								await prisma.unitValue.update({
+									where: { id: existingCredit.id },
+									data: { amount: nextAmount, unit },
+								});
 							} else {
-								if (parsedAmount <= 0) {
+								if (delta <= 0n) {
 									throw createHttpError(400, 'Invalid amount');
 								}
 								await prisma.unitValue.create({
 									data: {
 										unit,
-										amount: parsedAmount,
+										amount: delta,
 										apiKeyId: apiKey.id,
 										agentFixedPricingId: null,
 										paymentRequestId: null,

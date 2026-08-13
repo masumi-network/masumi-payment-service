@@ -39,6 +39,7 @@ class MockPrismaClientKnownRequestError extends Error {
 const mockBudgetUpdateMany = jest.fn() as jest.Mock<any>;
 const mockUnitValueUpdateMany = jest.fn() as jest.Mock<any>;
 const mockUnitValueFindMany = jest.fn() as jest.Mock<any>;
+const mockUnitValueFindFirstAfterMiss = jest.fn() as jest.Mock<any>;
 const mockUnitValueCount = jest.fn() as jest.Mock<any>;
 const mockUnitValueDeleteMany = jest.fn() as jest.Mock<any>;
 const mockUnitValueRefundUpdateMany = jest.fn() as jest.Mock<any>;
@@ -450,6 +451,7 @@ describe('x402 service helpers', () => {
 		mockUnitValueUpdateMany.mockResolvedValue({ count: 1 });
 		mockUnitValueFindMany.mockResolvedValue([{ id: CREDIT_ROW_ID, amount: 1_000_000_000n }]);
 		mockUnitValueCount.mockResolvedValue(0);
+		mockUnitValueFindFirstAfterMiss.mockResolvedValue({ id: CREDIT_ROW_ID });
 		mockUnitValueDeleteMany.mockResolvedValue({ count: 1 });
 		mockUnitValueRefundUpdateMany.mockResolvedValue({ count: 1 });
 		mockBudgetRefundUpdateMany.mockResolvedValue({ count: 1 });
@@ -497,6 +499,9 @@ describe('x402 service helpers', () => {
 				},
 				unitValue: {
 					findMany: mockUnitValueFindMany,
+					// Only reached after a guarded decrement misses, to tell "row gone"
+					// (409, retryable) from "balance short" (402, terminal).
+					findFirst: mockUnitValueFindFirstAfterMiss,
 					count: mockUnitValueCount,
 					deleteMany: mockUnitValueDeleteMany,
 					updateMany: mockUnitValueUpdateMany,
@@ -1403,6 +1408,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 
 			expect(result).toMatchObject({
@@ -1450,6 +1456,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 
 			const foreignRequirement = { ...requirements, payTo: '0x9999999999999999999999999999999999999999' };
@@ -1464,6 +1471,7 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: ['eip155:1'],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 400 });
 
@@ -1619,6 +1627,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 
 			expect(mockUnitValueUpdateMany).not.toHaveBeenCalled();
@@ -1634,6 +1643,7 @@ describe('x402 service helpers', () => {
 					evmWalletId: 'wallet-1',
 					paymentRequired,
 					ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 402 });
 
@@ -1668,6 +1678,7 @@ describe('x402 service helpers', () => {
 				evmWalletId: 'wallet-1',
 				paymentRequired,
 				ownerScope: { scope: 'api-key-1', walletScopeIds: [] },
+				usageLimited: false,
 			});
 
 			expect(result).toMatchObject({ attemptId: 'attempt-outbound-1' });
@@ -1696,6 +1707,7 @@ describe('x402 service helpers', () => {
 					evmWalletId: 'wallet-1',
 					paymentRequired,
 					ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 404 });
 
@@ -1720,6 +1732,7 @@ describe('x402 service helpers', () => {
 					evmWalletId: 'wallet-selling',
 					paymentRequired,
 					ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 404 });
 
@@ -1752,6 +1765,7 @@ describe('x402 service helpers', () => {
 				evmWalletId: 'wallet-1',
 				paymentRequired,
 				ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
+				usageLimited: false,
 			});
 
 			expect(result).toMatchObject({ attemptId: 'attempt-outbound-1' });
@@ -1791,6 +1805,7 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 402 });
 
@@ -1814,6 +1829,7 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 400 });
 
@@ -1832,6 +1848,7 @@ describe('x402 service helpers', () => {
 							...paymentRequired,
 							accepts: [{ ...requirements, amount }],
 						} as Parameters<typeof service.createX402Payment>[0]['paymentRequired'],
+						usageLimited: false,
 					}),
 				).rejects.toMatchObject({ status: 400 });
 
@@ -1864,6 +1881,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: null,
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 
 			expect(result.xPaymentHeader).toBe('x-payment-header-base64');
@@ -1881,6 +1899,7 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 500, message: 'x402 payment signing failed' });
 
@@ -1923,6 +1942,76 @@ describe('x402 service helpers', () => {
 			});
 		});
 
+		it('falls back to the unit row when the debited credit row was retired', async () => {
+			// A Cardano purchase consolidating duplicates (or an admin rewriting the
+			// unit) can retire the pinned id. The credits are still owed to this key for
+			// this unit, so the refund must land rather than be silently dropped.
+			mockCreatePaymentPayload.mockRejectedValue(new Error('sign boom'));
+			mockUnitValueRefundUpdateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 500 });
+
+			// Scoped to (apiKeyId, unit) so it can never credit another key or asset.
+			expect(mockUnitValueRefundUpdateMany).toHaveBeenLastCalledWith({
+				where: {
+					apiKeyId: 'api-key-1',
+					unit: `${source.network}:${paymentRequired.accepts[0].asset.toLowerCase()}`,
+				},
+				data: { amount: { increment: BigInt(paymentRequired.accepts[0].amount) } },
+			});
+		});
+
+		it('still refunds credits when the budget refund throws', async () => {
+			// The two refunds touch unrelated rows, so a transient failure of one must
+			// not skip the other, mask the signing error, or stop the attempt being
+			// marked Failed.
+			mockCreatePaymentPayload.mockRejectedValue(new Error('sign boom'));
+			mockBudgetRefundUpdateMany.mockRejectedValue(new Error('connection reset'));
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 500, message: 'x402 payment signing failed' });
+
+			expect(mockUnitValueRefundUpdateMany).toHaveBeenCalled();
+			expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({ status: 'Failed', errorReason: 'x402_sign_failed' }),
+				}),
+			);
+		});
+
+		it('reports a vanished credit row as a retryable 409, not a terminal 402', async () => {
+			// A concurrent write can retire the row between the read and the guarded
+			// decrement. Reporting that as 402 tells a fully funded caller its payment
+			// was declined for lack of funds, and agents treat 402 as terminal.
+			mockUnitValueUpdateMany.mockResolvedValue({ count: 0 });
+			mockUnitValueFindFirstAfterMiss.mockResolvedValue(null);
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 409 });
+		});
+
 		it('does not touch the credit ledger on a signing failure for an unlimited key', async () => {
 			mockCreatePaymentPayload.mockRejectedValue(new Error('sign boom'));
 
@@ -1932,6 +2021,7 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 500 });
 
@@ -1948,6 +2038,7 @@ describe('x402 service helpers', () => {
 					evmWalletId: 'wallet-1',
 					paymentRequired,
 					paymentIdentifier: 'caller-supplied-id-123456',
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 400 });
 
@@ -2037,6 +2128,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 			const firstFailure = expect(firstPayment).rejects.toMatchObject({ status: 500 });
 			await firstSigningStarted;
@@ -2061,6 +2153,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 			expect(budgetState).toEqual({
 				remainingAmount: freshGrant - amount,
@@ -2240,6 +2333,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 
 			expect(mockCounterpartyFindUniqueOrThrow).toHaveBeenCalledWith(

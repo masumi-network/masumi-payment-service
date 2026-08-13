@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { consolidateUsageCredits, normalizeCreditUnit } from './credit-units';
+import { consolidateUsageCredits, findNonCanonicalEvmCreditUnit, normalizeCreditUnit } from './credit-units';
 
 describe('normalizeCreditUnit', () => {
 	it('lowercases a checksummed EVM chain-qualified unit', () => {
@@ -26,8 +26,40 @@ describe('normalizeCreditUnit', () => {
 	});
 
 	it('leaves non-matching strings verbatim', () => {
+		// Normalization does not guess: near misses are REJECTED at the API boundary
+		// by findNonCanonicalEvmCreditUnit rather than silently rewritten here.
 		expect(normalizeCreditUnit('eip155:8453')).toBe('eip155:8453');
 		expect(normalizeCreditUnit('EIP155:8453:0x' + 'a'.repeat(40))).toBe('EIP155:8453:0x' + 'a'.repeat(40));
+	});
+});
+
+describe('findNonCanonicalEvmCreditUnit', () => {
+	const canonical = 'eip155:8453:0x' + 'a'.repeat(40);
+
+	it('accepts a canonical EVM unit', () => {
+		expect(findNonCanonicalEvmCreditUnit([canonical])).toBeNull();
+	});
+
+	it('accepts Cardano units, which are not EVM-shaped at all', () => {
+		expect(findNonCanonicalEvmCreditUnit(['lovelace', '16a55b2a349361ff88c0AbCd'])).toBeNull();
+	});
+
+	it.each([
+		['uppercase namespace', 'EIP155:8453:0x' + 'a'.repeat(40)],
+		['no asset', 'eip155:8453'],
+		['non-hex asset', 'eip155:8453:native'],
+		['short address', 'eip155:8453:0x' + 'a'.repeat(39)],
+		['missing 0x', 'eip155:8453:' + 'a'.repeat(40)],
+	])('rejects a near-miss EVM unit (%s)', (_label, unit) => {
+		// These must FAIL CLOSED. Stored verbatim, none of them would ever match the
+		// x402 debit lookup, and the key would then hold no rows the enforcement
+		// probe recognizes — spending with no ceiling while the dashboard shows it
+		// as funded and usage limited.
+		expect(findNonCanonicalEvmCreditUnit([unit])).toBe(unit);
+	});
+
+	it('reports the first offender in a mixed list', () => {
+		expect(findNonCanonicalEvmCreditUnit(['lovelace', 'eip155:8453:native', canonical])).toBe('eip155:8453:native');
 	});
 });
 

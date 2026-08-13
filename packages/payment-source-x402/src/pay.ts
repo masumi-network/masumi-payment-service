@@ -153,6 +153,15 @@ async function reserveBudgetForAttempt({
 					data: { amount: { decrement: amount } },
 				});
 				if (creditResult.count !== 1) {
+					// A miss means either "the balance is short" (402, terminal — the caller
+					// must top up) or "the row changed under us" (409, retryable). Reporting
+					// the second as 402 tells a fully funded caller its payment was declined
+					// for lack of funds, and agents treat 402 as terminal, so distinguish
+					// them by re-reading the row inside this still-open transaction.
+					const stillThere = await tx.unitValue.findFirst({ where: { id: target.id }, select: { id: true } });
+					if (stillThere == null) {
+						throw createHttpError(409, 'Usage credits changed concurrently; retry the payment');
+					}
 					throw createHttpError(
 						402,
 						`Insufficient usage credits for ${creditUnit}. This API key is usage limited; top up its credits for this chain and asset, or remove the limit.`,
@@ -232,19 +241,39 @@ async function refundReservation(
 	// would credit whichever row holds that unit now — so an admin credit reset
 	// between debit and refund would inflate the replacement balance by an amount
 	// that was never spent from it.
-	if (reservation.creditRowId != null) {
+	if (reservation.creditRowId != null && reservation.creditUnit != null) {
 		try {
 			const result = await prisma.unitValue.updateMany({
 				where: { id: reservation.creditRowId },
 				data: { amount: { increment: reservation.amount } },
 			});
 			if (result.count !== 1) {
-				logger.warn('x402 usage-credit refund skipped: debited credit row is gone (credits reset?)', {
-					apiKeyId: reservation.apiKeyId,
-					unit: reservation.creditUnit,
-					creditRowId: reservation.creditRowId,
-					amount: reservation.amount.toString(),
+				// The pinned row is gone. Credit the key's current row for the same unit
+				// instead of dropping the refund: the debit really did reduce this key's
+				// balance for this unit, so the amount is owed to it wherever that balance
+				// now lives (a Cardano purchase consolidating duplicates, or an admin
+				// rewriting the unit, can retire the id). Scoped to (apiKeyId, unit) so it
+				// can never credit another key or another asset.
+				const fallback = await prisma.unitValue.updateMany({
+					where: { apiKeyId: reservation.apiKeyId, unit: reservation.creditUnit },
+					data: { amount: { increment: reservation.amount } },
 				});
+				if (fallback.count === 1) {
+					logger.warn('x402 usage-credit refund fell back to the current row for the unit (debited row retired)', {
+						apiKeyId: reservation.apiKeyId,
+						unit: reservation.creditUnit,
+						creditRowId: reservation.creditRowId,
+						amount: reservation.amount.toString(),
+					});
+				} else {
+					logger.error('x402 usage-credit refund failed: no row for the debited unit — needs reconciliation', {
+						apiKeyId: reservation.apiKeyId,
+						unit: reservation.creditUnit,
+						creditRowId: reservation.creditRowId,
+						matchedRows: fallback.count,
+						amount: reservation.amount.toString(),
+					});
+				}
 			}
 		} catch (error) {
 			logger.error('x402 usage-credit refund threw; credits remain debited — needs manual reconciliation', {
@@ -306,7 +335,7 @@ export async function createX402Payment({
 	preferredAsset,
 	paymentIdentifier,
 	ownerScope = X402_UNRESTRICTED,
-	usageLimited = false,
+	usageLimited,
 }: {
 	apiKeyId: string;
 	caip2NetworkLimit: string[] | null;
@@ -316,8 +345,13 @@ export async function createX402Payment({
 	preferredAsset?: string;
 	paymentIdentifier?: string;
 	ownerScope?: X402OwnerScopeInput;
-	/** Whether the calling key's spending is capped by its RemainingUsageCredits. */
-	usageLimited?: boolean;
+	/**
+	 * Whether the calling key's spending is capped by its RemainingUsageCredits.
+	 * REQUIRED, not defaulted: this gates a spending control, and an optional
+	 * `false` default meant any future caller that forgot it would silently pay
+	 * uncapped with nothing in the type system or the logs to flag it.
+	 */
+	usageLimited: boolean;
 }) {
 	const accepts = paymentRequired.accepts;
 	if (!Array.isArray(accepts) || accepts.length === 0) {

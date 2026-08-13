@@ -9,7 +9,7 @@ import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
 import { decrypt } from '@/utils/security/encryption';
-import { Prisma, WalletFundTransfer } from '@/generated/prisma/client';
+import { HotWalletType, Prisma, WalletFundTransfer } from '@/generated/prisma/client';
 import { isCardanoAddressForNetwork } from '@masumi/payment-core/payment-source';
 import { MeshWallet, resolvePaymentKeyHash } from '@meshsdk/core';
 import { generateOfflineWallet } from '@/utils/generator/wallet-generator';
@@ -60,12 +60,29 @@ export const queryWalletListEndpointGet = readAuthenticatedEndpointFactory.build
 	input: getWalletListSchemaInput,
 	output: getWalletListSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof getWalletListSchemaInput>; ctx: AuthContext }) => {
+		// Funding (treasury) wallets stay admin-only. The read/pay rationale above —
+		// "the same addresses already reach read keys through payments/purchases" —
+		// holds for Selling and Purchasing wallets, but a Funding wallet appears in
+		// no payment or purchase projection and is deliberately excluded from the
+		// payment-source counts too. Without this a read key could ask for
+		// ?walletType=Funding and enumerate the operator's treasury, then track it
+		// through the read-level /balance and /utxos endpoints.
+		const typeFilter: { type?: HotWalletType | { in: HotWalletType[] } } = ctx.canAdmin
+			? input.walletType != null
+				? { type: input.walletType }
+				: {}
+			: {
+					type:
+						input.walletType != null && input.walletType !== HotWalletType.Funding
+							? input.walletType
+							: { in: [HotWalletType.Selling, HotWalletType.Purchasing] },
+				};
 		const wallets = await prisma.hotWallet.findMany({
 			orderBy: { createdAt: 'desc' },
 			...cursorPaginationArgs(input.cursorId, input.take),
 			where: {
 				deletedAt: null,
-				...(input.walletType != null ? { type: input.walletType } : {}),
+				...typeFilter,
 				...(input.paymentSourceId != null ? { paymentSourceId: input.paymentSourceId } : {}),
 				...(input.walletVkey != null ? { walletVkey: input.walletVkey } : {}),
 				...(input.walletAddress != null ? { walletAddress: input.walletAddress } : {}),

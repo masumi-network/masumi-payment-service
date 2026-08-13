@@ -371,9 +371,20 @@ export const listX402BudgetsGet = payAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listBudgetSchemaInput,
 	output: listBudgetSchemaOutput,
-	handler: async ({ input, ctx }: { input: z.infer<typeof listBudgetSchemaInput>; ctx: AuthContext }) => ({
-		Budgets: (await listX402WalletBudgets(budgetScopeFor(ctx, input.apiKeyId))).map(serializeBudget),
-	}),
+	handler: async ({ input, ctx }: { input: z.infer<typeof listBudgetSchemaInput>; ctx: AuthContext }) => {
+		const budgets = (await listX402WalletBudgets(budgetScopeFor(ctx, input.apiKeyId))).map(serializeBudget);
+		if (ctx.canAdmin) return { Budgets: budgets };
+		// Apply the caller's chain limit here too. Every sibling wallet endpoint
+		// 404s a wallet outside the limit precisely so a scoped key cannot discover
+		// that it exists; a stale grant on a now-forbidden chain would otherwise
+		// disclose that wallet's id, address and network through this projection.
+		const allowedChains = x402NetworkLimit(ctx);
+		const visible =
+			allowedChains == null ? budgets : budgets.filter((budget) => allowedChains.includes(budget.caip2Network));
+		// createdById names the ADMIN key that granted the budget. Same reasoning as
+		// maskWalletCreator: a non-admin must not learn other keys' internal ids.
+		return { Budgets: visible.map((budget) => ({ ...budget, createdById: null })) };
+	},
 });
 
 export const setX402BudgetPost = adminAuthenticatedEndpointFactory.build({

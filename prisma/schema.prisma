@@ -97,6 +97,16 @@ model UnitValue {
   PurchaseRequest                  PurchaseRequest?   @relation(fields: [purchaseRequestId], references: [id])
   SellerWithdrawnPaymentRequest    PaymentRequest?    @relation("SellerWithdrawnPaymentRequest", fields: [sellerWithdrawnPaymentRequestId], references: [id])
   SellerWithdrawnPurchaseRequest   PurchaseRequest?   @relation("SellerWithdrawnPurchaseRequest", fields: [sellerWithdrawnPurchaseRequestId], references: [id])
+
+  // The credit ledger is read and rewritten on every usage-limited purchase and
+  // x402 payment. Postgres does not index foreign keys automatically, so without
+  // these the per-unit lookup, the eip155 enforcement probe and the per-key
+  // rewrite each sequentially scanned a table holding one row per PaidFunds and
+  // withdrawal entry of every payment ever made — inside Serializable
+  // transactions, where a seq scan escalates predicate locking to the whole
+  // relation and makes otherwise unrelated purchases serialize against each other.
+  @@index([apiKeyId])
+  @@index([apiKeyId, unit])
 }
 
 model HotWallet {

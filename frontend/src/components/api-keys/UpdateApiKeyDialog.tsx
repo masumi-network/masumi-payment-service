@@ -231,12 +231,14 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
             // Any non-admin key may have its EVM grant edited — read keys need it
             // for the x402 read surfaces too; gating this on canPay left read keys
             // created with an empty grant permanently unrepairable from the UI.
-            // ChainIdLimit replaces the whole networkLimit on update; preserve
-            // the existing Cardano grants and only rewrite the EVM ones.
-            ChainIdLimit: [
-              ...apiKey.ChainIdLimit.filter((chainId) => !chainId.startsWith('eip155:')),
-              ...data.evmChains,
-            ],
+            //
+            // Send ONLY the EVM half. apiKey.ChainIdLimit is the whole networkLimit
+            // column, Cardano entries included, but the endpoint rejects any
+            // `cardano:` id here ("Use NetworkLimit for Cardano networks") — so
+            // echoing them back 400'd every attempt and no chain grant could ever
+            // be changed from this dialog. The server merges this half with the
+            // untouched Cardano half itself.
+            ChainIdLimit: data.evmChains,
           }),
       })
       .catch(() => null);
