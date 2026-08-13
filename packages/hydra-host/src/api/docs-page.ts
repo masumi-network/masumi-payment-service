@@ -39,8 +39,9 @@ const ASSETS: Readonly<Record<string, { source: 'dist' | 'host'; contentType: st
 export function resolveDocsAsset(name: string): { filePath: string; contentType: string } | null {
 	// Own-property check: a bare index would also match inherited
 	// Object.prototype names ('constructor', '__proto__', …) and hand a
-	// function to the readFile path below.
-	if (!Object.hasOwn(ASSETS, name)) return null;
+	// function to the readFile path below. Spelled out via prototype rather than
+	// Object.hasOwn, which this package's build target does not carry.
+	if (!Object.prototype.hasOwnProperty.call(ASSETS, name)) return null;
 	const asset = ASSETS[name];
 	const baseDir = asset.source === 'dist' ? swaggerDistDir() : hostPublicDir();
 	return { filePath: path.join(baseDir, name), contentType: asset.contentType };

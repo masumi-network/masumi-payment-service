@@ -15,6 +15,7 @@ import { createExchangePlane } from './api/exchange-server.js';
 import { setPeers } from './api/provision.js';
 import { requestStart } from './api/transitions.js';
 import { advertiseAddress, loadHostConfig } from './config.js';
+import { assertExecutablesAvailable } from './preflight.js';
 import { HostLock } from './registry/host-lock.js';
 import { PortAllocator } from './registry/ports.js';
 import { ExchangeStore } from './registry/exchange-store.js';
@@ -45,6 +46,14 @@ async function main(): Promise<void> {
 				'(a network needs a reviewed base file in packages/hydra-host/params/base first)',
 		);
 	}
+
+	// Same reasoning for the two executables every node needs. Neither is used
+	// until a node is provisioned, and a node that cannot find them dies seconds
+	// after start with the reason buried in its own log — the supervisor retries
+	// five times, gives up with "a restart is unlikely to fix it", and the
+	// operator is left with a Failed node and no cause. Checked once, at boot,
+	// where the fix is a single environment variable.
+	assertExecutablesAvailable(config);
 
 	// Refuse to boot if another Host already owns this volume: both would spawn a
 	// process per node, giving duplicate hydra-nodes and two etcd members
