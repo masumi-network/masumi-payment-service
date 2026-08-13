@@ -161,7 +161,7 @@ function pathParameters(path: string): ParameterObject[] | undefined {
 	}));
 }
 
-export function buildOpenApiDocument(options: { network: string }): OpenApiDocument {
+export function buildOpenApiDocument(): OpenApiDocument {
 	const paths: Record<string, Record<string, OperationObject>> = {};
 	for (const operation of DOCUMENTED_OPERATIONS) {
 		const entry = (paths[operation.path] ??= {});
@@ -193,7 +193,7 @@ export function buildOpenApiDocument(options: { network: string }): OpenApiDocum
 			title: 'Masumi Hydra Host — control plane',
 			version: 'v1',
 			description:
-				`Token-gated API that provisions and supervises hydra-node processes (network: ${options.network}). ` +
+				'Token-gated API that provisions and supervises hydra-node processes. ' +
 				'Two bearer tiers: the admin token operates nodes and invites; the user token reads health and uses the node-API proxy. ' +
 				'The Exchange Plane (invite redemption between Hosts) is a separate listener and is not described here.',
 		},

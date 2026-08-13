@@ -37,8 +37,11 @@ const ASSETS: Readonly<Record<string, { source: 'dist' | 'host'; contentType: st
 
 /** Absolute file path and content type for an allow-listed asset, else null. */
 export function resolveDocsAsset(name: string): { filePath: string; contentType: string } | null {
+	// Own-property check: a bare index would also match inherited
+	// Object.prototype names ('constructor', '__proto__', …) and hand a
+	// function to the readFile path below.
+	if (!Object.hasOwn(ASSETS, name)) return null;
 	const asset = ASSETS[name];
-	if (asset === undefined) return null;
 	const baseDir = asset.source === 'dist' ? swaggerDistDir() : hostPublicDir();
 	return { filePath: path.join(baseDir, name), contentType: asset.contentType };
 }

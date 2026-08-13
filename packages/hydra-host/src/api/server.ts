@@ -57,6 +57,12 @@ function sendHtml(response: ServerResponse, status: number, body: string, headOn
 		'Content-Type': 'text/html; charset=utf-8',
 		'Content-Length': Buffer.byteLength(body),
 		'Cache-Control': 'no-store',
+		// The docs page has a Try-it-out panel an operator pastes a bearer
+		// token into — never let it be framed, sniffed, or leak its origin
+		// through outbound links.
+		'X-Content-Type-Options': 'nosniff',
+		'X-Frame-Options': 'DENY',
+		'Referrer-Policy': 'no-referrer',
 	});
 	response.end(headOnly ? undefined : body);
 }
@@ -135,17 +141,18 @@ export function createControlPlane(deps: ServerDeps): Server {
 			// repository anyway; everything stateful stays behind the bearer token.
 			if (method === 'GET' || method === 'HEAD') {
 				if (pathname === '/') {
-					sendHtml(response, 200, renderHostLandingPage({ network: config.network }), method === 'HEAD');
+					sendHtml(response, 200, renderHostLandingPage(), method === 'HEAD');
 					return;
 				}
 				if (pathname === '/openapi.json') {
 					// Pretty-printed, like the payment service's document: this file is
 					// read by humans as often as by generators.
-					const body = JSON.stringify(buildOpenApiDocument({ network: config.network }), null, 4);
+					const body = JSON.stringify(buildOpenApiDocument(), null, 4);
 					response.writeHead(200, {
 						'Content-Type': 'application/json; charset=utf-8',
 						'Content-Length': Buffer.byteLength(body),
 						'Cache-Control': 'no-store',
+						'X-Content-Type-Options': 'nosniff',
 					});
 					response.end(method === 'HEAD' ? undefined : body);
 					return;
@@ -165,6 +172,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 						'Content-Type': asset.contentType,
 						'Content-Length': body.byteLength,
 						'Cache-Control': 'public, max-age=300',
+						'X-Content-Type-Options': 'nosniff',
 					});
 					response.end(method === 'HEAD' ? undefined : body);
 					return;

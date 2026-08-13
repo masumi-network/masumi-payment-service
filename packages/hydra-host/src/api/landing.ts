@@ -4,8 +4,8 @@
  * instead of a bare `{"error":"not found"}`.
  *
  * Deliberately static. The page is unauthenticated, so it must reveal nothing
- * a stranger could use: no slot usage, no nodes, no versions — those live
- * behind the token-gated `capabilities` endpoint. API clients are unaffected:
+ * a stranger could use: no network name, no slot usage, no nodes, no versions
+ * — those live behind the token-gated `capabilities` endpoint. API clients are unaffected:
  * anything that does not explicitly ask for HTML keeps getting JSON.
  *
  * Styling follows the Masumi brand used by the payment service's docs theme:
@@ -47,8 +47,6 @@ const PAGE_STYLE = `
 	header { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
 	header svg { flex: none; }
 	h1 { font-size: 1.35rem; margin: 0; letter-spacing: -0.01em; }
-	.badge { display: inline-block; margin-top: 0.3rem; border: 1px solid var(--border); border-radius: 999px;
-	         padding: 0.1rem 0.6rem; font-size: 0.75rem; color: var(--muted); }
 	p { line-height: 1.6; color: var(--muted); margin: 1rem 0 0; font-size: 0.95rem; }
 	code { background: #1a1e24; border: 1px solid var(--border); border-radius: 5px;
 	       padding: 0.1rem 0.35rem; font-size: 0.85em; color: var(--text); }
@@ -85,14 +83,13 @@ ${body}
 `;
 }
 
-export function renderHostLandingPage(options: { network: string }): string {
+export function renderHostLandingPage(): string {
 	return pageShell(
 		'Masumi Hydra Host',
 		`	<header>
 		${MASUMI_MARK}
 		<div>
 			<h1>Masumi Hydra Host</h1>
-			<span class="badge">network: ${options.network}</span>
 		</div>
 	</header>
 	<p>

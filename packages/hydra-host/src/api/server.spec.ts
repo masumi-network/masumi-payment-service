@@ -144,6 +144,26 @@ describe('the landing page and browser 404', () => {
 		expect(theme.status).toBe(200);
 		// The allow-list is exact names only: no traversal out of the asset dirs.
 		expect((await fetch(`${baseUrl}/docs/assets/..%2Fpackage.json`)).status).toBe(404);
+		// Inherited Object.prototype names must not slip past the allow-list
+		// (a bare index lookup would return e.g. Function for 'constructor').
+		for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+			expect((await fetch(`${baseUrl}/docs/assets/${name}`)).status).toBe(404);
+		}
+	});
+
+	it('sends hardening headers on the unauthenticated pages', async () => {
+		const landing = await fetch(`${baseUrl}/`);
+		expect(landing.headers.get('x-content-type-options')).toBe('nosniff');
+		expect(landing.headers.get('x-frame-options')).toBe('DENY');
+		expect(landing.headers.get('referrer-policy')).toBe('no-referrer');
+		const spec = await fetch(`${baseUrl}/openapi.json`);
+		expect(spec.headers.get('x-content-type-options')).toBe('nosniff');
+	});
+
+	it('does not disclose the network on the unauthenticated surface', async () => {
+		// The network lives behind the token-gated capabilities endpoint.
+		expect(await (await fetch(`${baseUrl}/`)).text()).not.toMatch(/preprod|mainnet|preview/i);
+		expect(await (await fetch(`${baseUrl}/openapi.json`)).text()).not.toMatch(/preprod|mainnet|preview/i);
 	});
 
 	it('gives browsers an HTML 404 and API clients the JSON one', async () => {

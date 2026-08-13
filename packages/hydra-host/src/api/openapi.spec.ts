@@ -48,7 +48,7 @@ describe('the OpenAPI document stays in sync with the route table', () => {
 	);
 
 	it('builds a document with every path, the proxy, and bearer security', () => {
-		const document = buildOpenApiDocument({ network: 'preprod' }) as {
+		const document = buildOpenApiDocument() as {
 			paths: Record<string, unknown>;
 			components: { securitySchemes: Record<string, unknown> };
 		};

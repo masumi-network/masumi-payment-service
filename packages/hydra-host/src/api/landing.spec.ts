@@ -14,18 +14,17 @@ describe('wantsHtmlDocument', () => {
 });
 
 describe('landing pages', () => {
-	it('says what the server is and which network it serves', () => {
-		const page = renderHostLandingPage({ network: 'preprod' });
+	it('says what the server is and how it is used', () => {
+		const page = renderHostLandingPage();
 		expect(page).toContain('Masumi Hydra Host');
-		expect(page).toContain('network: preprod');
 		expect(page).toContain('Authorization: Bearer');
 	});
 
 	it('reveals no operational state', () => {
-		// The page is unauthenticated; slots, nodes and versions stay behind the
-		// token-gated capabilities endpoint.
-		const page = renderHostLandingPage({ network: 'preprod' });
-		expect(page).not.toMatch(/slot|node-|version [0-9]/i);
+		// The page is unauthenticated; the network name, slots, nodes and
+		// versions stay behind the token-gated capabilities endpoint.
+		const page = renderHostLandingPage();
+		expect(page).not.toMatch(/slot|node-|version [0-9]|preprod|mainnet|preview/i);
 	});
 
 	it('404 page points back to the landing page', () => {
