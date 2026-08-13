@@ -193,7 +193,16 @@ function HydraTopupList({
         <DepositPeriodHint />
       </p>
       <ul className="divide-y rounded-md border">
-        {topups.map((topup) => (
+        {topups.map((topup) => {
+          // The node refuses a recovery until the deposit's own deadline has
+          // passed, and turns that refusal into a red toast. Before then the
+          // deposit is either still waiting to be absorbed or already in the
+          // head, so offering the button read as "your funds are stuck" for a
+          // deposit that was behaving exactly as designed.
+          const recoverableFrom = topup.deadline == null ? null : new Date(topup.deadline).getTime();
+          const isRecoverable = recoverableFrom === null || Date.now() >= recoverableFrom;
+
+          return (
           <li key={topup.id} className="space-y-1 px-3 py-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -269,6 +278,17 @@ function HydraTopupList({
                 at the deposit script had no way to ask for them back. */}
               {(topup.status === 'Confirmed' || topup.status === 'Failed') &&
                 topup.depositTxHash !== null &&
+                !isRecoverable &&
+                recoverableFrom !== null && (
+                  <span className="text-xs text-muted-foreground">
+                    The node can only send it back after{' '}
+                    {new Date(recoverableFrom).toLocaleTimeString()}, once the head can no longer
+                    take it in.
+                  </span>
+                )}
+              {(topup.status === 'Confirmed' || topup.status === 'Failed') &&
+                topup.depositTxHash !== null &&
+                isRecoverable &&
                 (topup.recoveryRequestedAt != null ? (
                   <span className="text-xs text-muted-foreground">
                     Recovery posted {new Date(topup.recoveryRequestedAt).toLocaleTimeString()}.
@@ -322,7 +342,8 @@ function HydraTopupList({
                 </p>
               ))}
           </li>
-        ))}
+          );
+        })}
       </ul>
     </div>
   );
@@ -398,6 +419,11 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
         if ((rows?.length ?? 0) > 0) break;
         await new Promise((resolve) => setTimeout(resolve, 750));
       }
+    } catch (error) {
+      // The API layer has already toasted the cause; what is left is to stop
+      // the rejection escaping an event handler, where it becomes an unhandled
+      // rejection and a dev-overlay error rather than a failed top-up.
+      console.error('Hydra top-up failed', error);
     } finally {
       setIsSubmitting(false);
     }

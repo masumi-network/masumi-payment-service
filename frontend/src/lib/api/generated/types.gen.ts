@@ -13330,6 +13330,10 @@ export type GetHydraInviteData = {
     query?: {
         limit?: number;
         status?: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+        /**
+         * Filter by Cardano network
+         */
+        network?: 'Preprod' | 'Mainnet';
     };
     url: '/hydra/invite';
 };
@@ -13983,6 +13987,10 @@ export type GetHydraHeadData = {
          * Filter by HydraRelation ID
          */
         relationId?: string;
+        /**
+         * Filter by Cardano network
+         */
+        network?: 'Preprod' | 'Mainnet';
         /**
          * Filter by head status
          */

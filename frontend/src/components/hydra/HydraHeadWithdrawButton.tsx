@@ -206,6 +206,14 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
   const [assetUnit, setAssetUnit] = useState(ADA_CHOICE);
   const { data: balance } = useHydraHeadBalance(headId, isOpen);
   const heldAssets = (balance?.balance ?? []).filter((asset) => asset.unit !== '');
+  // Withdrawing the last of a token unmounts the Select that chose it, so a
+  // remembered choice would leave the form submitting an asset the head no
+  // longer holds, with no control left to change it back. Derived rather than
+  // stored, so the selection can never outlive the option.
+  const selectedUnit =
+    assetUnit === ADA_CHOICE || heldAssets.some((asset) => asset.unit === assetUnit)
+      ? assetUnit
+      : ADA_CHOICE;
 
   if (!isOpen) return null;
 
@@ -226,13 +234,18 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
       setIsDraining(false);
       setStartedAt(Date.now());
       await queryClient.invalidateQueries({ queryKey: ['hydra-withdrawals', headId] });
+    } catch (error) {
+      // The API layer toasts the cause. Catching keeps a failed withdrawal from
+      // leaving the handler as an unhandled rejection, and keeps the form's
+      // amount intact so it can be tried again.
+      console.error('Hydra withdrawal failed', error);
     } finally {
       setIsSubmitting(false);
     }
   }
 
   const handleWithdraw = async () => {
-    if (assetUnit !== ADA_CHOICE) {
+    if (selectedUnit !== ADA_CHOICE) {
       // A native asset is counted in its own smallest unit, so there is no
       // decimal conversion to do and a fraction would be meaningless.
       const assetAmount = amount.trim();
@@ -240,7 +253,7 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
         toast.error('Enter how much to take out, as a whole number');
         return;
       }
-      await submit({ assetUnit, assetAmount });
+      await submit({ assetUnit: selectedUnit, assetAmount });
       return;
     }
     const lovelace = adaToLovelace(amount);
@@ -276,7 +289,7 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
         {heldAssets.length > 0 && (
           <div className="space-y-1.5">
             <Label htmlFor={`hydra-withdraw-asset-${headId}`}>Asset</Label>
-            <Select value={assetUnit} onValueChange={setAssetUnit}>
+            <Select value={selectedUnit} onValueChange={setAssetUnit}>
               <SelectTrigger id={`hydra-withdraw-asset-${headId}`} className="w-[170px]">
                 <SelectValue />
               </SelectTrigger>
@@ -304,10 +317,10 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
               className="w-44 pr-16 font-mono"
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-w-14 truncate text-xs text-muted-foreground">
-              {assetUnit === ADA_CHOICE ? adaLabel : formatFundUnit(assetUnit, network)}
+              {selectedUnit === ADA_CHOICE ? adaLabel : formatFundUnit(selectedUnit, network)}
             </span>
           </div>
-          {assetUnit !== ADA_CHOICE && (
+          {selectedUnit !== ADA_CHOICE && (
             /* Worth saying before the click, not after: a token cannot travel
                alone, so the payout arrives with roughly 2 ADA carrying it and
                the rest of the ADA it was sitting on stays in the head. */

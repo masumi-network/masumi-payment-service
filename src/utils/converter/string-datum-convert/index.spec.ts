@@ -93,13 +93,24 @@ describe('newCooldownTime', () => {
 		expect(result).toBeLessThanOrEqual(after + 60_000n + 600_000n);
 	});
 
-	it('honors the COOLDOWN_BLOCKTIME_BUFFER_MS override', () => {
-		process.env.COOLDOWN_BLOCKTIME_BUFFER_MS = '60000';
+	it('honors a COOLDOWN_BLOCKTIME_BUFFER_MS override at or above the floor', () => {
+		process.env.COOLDOWN_BLOCKTIME_BUFFER_MS = '480000';
 		const before = BigInt(Date.now());
 		const result = newCooldownTime(60_000n);
 		const after = BigInt(Date.now());
-		expect(result).toBeGreaterThanOrEqual(before + 60_000n + 60_000n);
-		expect(result).toBeLessThanOrEqual(after + 60_000n + 60_000n);
+		expect(result).toBeGreaterThanOrEqual(before + 60_000n + 480_000n);
+		expect(result).toBeLessThanOrEqual(after + 60_000n + 480_000n);
+	});
+
+	// A minute was accepted before, and it is one the validator rejects: the
+	// default tx window's upper bound already reaches 5min30s past now, and the
+	// on-chain check compares against that bound. The transaction was built,
+	// submitted and refused on chain.
+	it('clamps an override below the on-chain minimum', () => {
+		process.env.COOLDOWN_BLOCKTIME_BUFFER_MS = '60000';
+		const before = BigInt(Date.now());
+		const result = newCooldownTime(60_000n);
+		expect(result).toBeGreaterThanOrEqual(before + 60_000n + 360_000n);
 	});
 
 	it('ignores a non-numeric override and keeps the default', () => {

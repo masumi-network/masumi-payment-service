@@ -215,9 +215,22 @@ export const getHeadConnectionGet = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(404, 'Hydra head not found');
 		}
 
-		const node = head.LocalParticipant
-			? await readParticipantNodeState(head.LocalParticipant.id)
-			: { state: 'Unknown', isReady: false, reason: 'This head has no local participant.' };
+		// Four independent reads: an HTTP round trip to the Host, a chain-params
+		// comparison, a live snapshot read over the websocket, and two counts.
+		// None depends on another, and the table asks this once per row, so a
+		// serial chain made one page load N round trips deep instead of N wide.
+		const [node, paramDrift, l2Blocked, closeWithActiveWork] = await Promise.all([
+			head.LocalParticipant
+				? readParticipantNodeState(head.LocalParticipant.id)
+				: Promise.resolve({
+						state: 'Unknown',
+						isReady: false,
+						reason: 'This head has no local participant.',
+					}),
+			readHeadParamDrift(head.id),
+			readL2FundingBlock(head.id, head.status),
+			readCloseWithActiveWork(head.id, head.status, head.contestationPeriod),
+		]);
 
 		// What the counterparty's node is doing is not directly observable: there
 		// is no token for it and the Exchange Plane is one-shot. This is the one
@@ -236,9 +249,9 @@ export const getHeadConnectionGet = adminAuthenticatedEndpointFactory.build({
 			isReady: node.isReady,
 			reason: node.reason,
 			peerConnected: peerLink,
-			paramDrift: await readHeadParamDrift(head.id),
-			l2Blocked: await readL2FundingBlock(head.id, head.status),
-			closeWithActiveWork: await readCloseWithActiveWork(head.id, head.status, head.contestationPeriod),
+			paramDrift,
+			l2Blocked,
+			closeWithActiveWork,
 			checkedAt: new Date().toISOString(),
 		};
 	},

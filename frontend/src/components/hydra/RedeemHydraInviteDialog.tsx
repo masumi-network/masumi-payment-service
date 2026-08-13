@@ -126,6 +126,12 @@ export function RedeemHydraInviteDialog({
       setPreview(null);
       setAllowInsecureExchangeHttp(false);
       setAllowPrivateExchangeNetwork(false);
+      // Consent is to one invite's numbers, and those numbers are fixed for the
+      // head's whole life. Left ticked, it would answer for the next invite
+      // read in this dialog — a different settle time and dispute window that
+      // nobody agreed to.
+      setAcceptedTerms(false);
+      setErrors({});
     }
     onOpenChange(nextOpen);
   }
@@ -139,6 +145,10 @@ export function RedeemHydraInviteDialog({
     try {
       setAllowInsecureExchangeHttp(false);
       setAllowPrivateExchangeNetwork(false);
+      // Reading a second invite without closing the dialog replaces the timings
+      // the tick referred to, so the tick goes with them.
+      setAcceptedTerms(false);
+      setErrors({});
       setPreview(await previewHydraInvite(apiClient, { code: code.trim() }));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to read the invite');

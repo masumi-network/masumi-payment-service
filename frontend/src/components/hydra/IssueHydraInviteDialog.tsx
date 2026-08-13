@@ -12,7 +12,7 @@
  * plainly that it is a bearer capability and is single-use.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
@@ -145,6 +145,24 @@ export function IssueHydraInviteDialog({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [issued, setIssued] = useState<{ code: string; expiresAt: string } | null>(null);
+
+  /**
+   * Follow the network the invite would be minted on.
+   *
+   * These three are seeded from `defaultsFor(network)`, but the dialog is
+   * mounted with the page rather than with the button, so the seed is whichever
+   * network was selected at first render. Switching to Mainnet and issuing left
+   * a mainnet head with a twelve-hour dispute window and a ten-minute settle
+   * time — and because the form always sends the fields, the server's own
+   * mainnet defaults never got the chance to apply. Neither can be changed once
+   * the head exists.
+   */
+  useEffect(() => {
+    const networkDefaults = defaultsFor(network);
+    setSettleSeconds(networkDefaults.settleMinutes * 60);
+    setContestationSeconds(networkDefaults.contestation);
+    setUnsyncedSeconds(networkDefaults.unsynced);
+  }, [network]);
 
   function reset() {
     setRole(null);

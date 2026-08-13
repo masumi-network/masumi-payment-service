@@ -31,6 +31,7 @@ import {
 import { runHydraLowBalanceMonitoringCycle } from '@/services/hydra-low-balance/monitor';
 import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { isHydraInUse } from '@/services/hydra-usage';
 import { logger } from '@masumi/payment-core/logger';
 
 export const scheduledJobs: JobDefinition[] = [
@@ -71,6 +72,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 12000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting pending Hydra L1 commit reconciliation',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished pending Hydra L1 commit reconciliation',
 		run: reconcilePendingHydraCommits,
 	},
@@ -78,6 +80,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 13000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting pending Hydra L1 top-up reconciliation',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished pending Hydra L1 top-up reconciliation',
 		run: reconcilePendingHydraTopups,
 	},
@@ -85,6 +88,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 14000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting recovered Hydra deposit reconciliation',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished recovered Hydra deposit reconciliation',
 		run: reconcileRecoveredHydraTopups,
 	},
@@ -94,6 +98,7 @@ export const scheduledJobs: JobDefinition[] = [
 		// address history, and nothing is waiting on the answer.
 		intervalMs: PAYOUT_LOOKUP_INTERVAL_MS,
 		startMessage: 'Starting Hydra withdrawal payout identification',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra withdrawal payout identification',
 		// The head never reports which L1 transaction paid a withdrawal out, so it
 		// is observed on chain — and that observation is allowed to fail, because a
@@ -105,6 +110,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 16000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting Hydra invite reaping',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra invite reaping',
 		// An unredeemed invite holds a provisioned node and a peer port, and
 		// because --peer is startup configuration neither can be reused for a
@@ -117,6 +123,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 13000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting Hydra init-tx backfill',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra init-tx backfill',
 		// Only the side that ran Init recorded the opening transaction, so the
 		// acceptor's head kept a null hash — which also left its L2 routing
@@ -130,6 +137,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 11000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting Hydra node funding',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra node funding',
 		// A node's Cardano key is generated empty, and Init consumes a seed UTxO
 		// at that address — so without this every first head fails with
@@ -143,6 +151,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 12500,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting Hydra session reconciliation',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra session reconciliation',
 		// Heads are created while the service runs — every invite makes one — and
 		// the connection manager only connected what existed at boot. Without
@@ -158,6 +167,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 9000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting Hydra redemption poll',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra redemption poll',
 		// The issuing side never hears from its counterparty: the redemption
 		// lands on its Host, which cannot reach back into a payment service that
@@ -170,6 +180,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 14000,
 		intervalMs: CONFIG.LOW_BALANCE_CHECK_INTERVAL * 1000,
 		startMessage: 'Starting Hydra in-head low-balance monitoring',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra in-head low-balance monitoring',
 		run: runHydraLowBalanceMonitoringCycle,
 	},
@@ -177,6 +188,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 16500,
 		intervalMs: CONSTANTS.FUND_DISTRIBUTION_CHECK_INTERVAL_S * 1000,
 		startMessage: 'Starting Hydra automatic low-balance top-up',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished Hydra automatic low-balance top-up',
 		run: runHydraAutoTopupCycle,
 	},
@@ -472,6 +484,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 15000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting L2 hydra transaction polling',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished L2 hydra transaction polling',
 		run: checkHydraTransactions,
 	},
@@ -483,6 +496,7 @@ export const scheduledJobs: JobDefinition[] = [
 		initialDelayMs: 20000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting L2 hydra escrow-state reconcile',
+		shouldRun: isHydraInUse,
 		finishMessage: 'Finished L2 hydra escrow-state reconcile',
 		run: web3CardanoV2.reconcileHydraHeadEscrowStates,
 	},

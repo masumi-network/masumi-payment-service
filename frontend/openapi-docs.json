@@ -31665,6 +31665,20 @@
                         "required": false,
                         "name": "status",
                         "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Filter by Cardano network"
+                        },
+                        "required": false,
+                        "description": "Filter by Cardano network",
+                        "name": "network",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -33297,6 +33311,20 @@
                         "required": false,
                         "description": "Filter by HydraRelation ID",
                         "name": "relationId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "Preprod",
+                                "Mainnet"
+                            ],
+                            "description": "Filter by Cardano network"
+                        },
+                        "required": false,
+                        "description": "Filter by Cardano network",
+                        "name": "network",
                         "in": "query"
                     },
                     {

@@ -67,7 +67,10 @@ export function HydraInvitesCard({
   variant?: 'card' | 'embedded';
 }) {
   const { apiClient, network } = useAppContext();
-  const { invites, refetch, isLoading } = useHydraInvites();
+  // One network's invites, matching the heads and nodes on the page behind it.
+  const { invites, refetch, isLoading } = useHydraInvites(
+    network === 'Preprod' || network === 'Mainnet' ? network : undefined,
+  );
   const [isIssueOpen, setIsIssueOpen] = useState(false);
   const [isRedeemOpen, setIsRedeemOpen] = useState(false);
   const [pendingRevoke, setPendingRevoke] = useState<HydraInvite | null>(null);

@@ -15,7 +15,7 @@ import { ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
-import { getExplorerUrl, shortenAddress } from '@/lib/utils';
+import { formatFundUnit, getExplorerUrl, shortenAddress } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format-date';
 import { useHydraHeadTransactions, type HydraHeadTransaction } from '@/lib/hooks/useHydraHeads';
 import { InfoHint } from '@/components/ui/info-hint';
@@ -52,6 +52,9 @@ function TransactionRow({
   // out to be ambiguous.
   const hash = transaction.txHash ?? transaction.intendedTxHash;
   const isOnChain = transaction.layer === 'L1' && transaction.txHash !== null;
+  // The same lovelace shows as tADA in the balance panel one section up, so a
+  // hardcoded "ADA" here read as a second, different asset.
+  const ticker = formatFundUnit('lovelace', network);
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
@@ -98,12 +101,12 @@ function TransactionRow({
         <p>{formatDateTime(transaction.createdAt)}</p>
         {transaction.lovelace != null && (
           <p className="tabular-nums">
-            {(Number(transaction.lovelace) / 1_000_000).toFixed(2)} ADA
+            {formatLovelace(transaction.lovelace)} {ticker}
           </p>
         )}
         {transaction.fees !== null && (
           <p className="tabular-nums">
-            {(Number(transaction.fees) / 1_000_000).toFixed(2)} ADA fee
+            {formatLovelace(transaction.fees)} {ticker} fee
           </p>
         )}
       </div>

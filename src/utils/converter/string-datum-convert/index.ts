@@ -362,6 +362,52 @@ export function decodeV2ContractDatum(
 
 const DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS = BigInt(1000 * 60 * 10);
 
+/**
+ * The smallest buffer that still satisfies the on-chain check.
+ *
+ * The default transaction window reaches `Date.now() + 5min + 30s` at its upper
+ * bound, and the validator compares the new cooldown against that bound rather
+ * than against wall-clock. A buffer under that reach makes the comparison fail
+ * whenever drift is small, and it fails on chain — the transaction is built,
+ * submitted and rejected. Six minutes is the first round number above it.
+ *
+ * Clamped rather than refused: the buffer is only a fallback for callers that
+ * build the datum before their window, and taking the service down for a
+ * misconfigured optional variable is the worse outcome.
+ */
+const MIN_COOLDOWN_BLOCKTIME_BUFFER_MS = BigInt(1000 * 60 * 6);
+
+/** So a clamped or ignored value is reported once, not once per transaction. */
+let hasWarnedAboutCooldownBuffer = false;
+
+function warnAboutCooldownBufferOnce(message: string, meta: Record<string, string>): void {
+	if (hasWarnedAboutCooldownBuffer) return;
+	hasWarnedAboutCooldownBuffer = true;
+	logger.warn(message, meta);
+}
+
+function resolveCooldownBlocktimeBufferMs(): bigint {
+	const rawBuffer = process.env.COOLDOWN_BLOCKTIME_BUFFER_MS;
+	if (rawBuffer == null || rawBuffer === '') return DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS;
+	if (!/^\d+$/.test(rawBuffer)) {
+		warnAboutCooldownBufferOnce('Ignoring non-numeric COOLDOWN_BLOCKTIME_BUFFER_MS', {
+			value: rawBuffer,
+			using: DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS.toString(),
+		});
+		return DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS;
+	}
+
+	const bufferMs = BigInt(rawBuffer);
+	if (bufferMs < MIN_COOLDOWN_BLOCKTIME_BUFFER_MS) {
+		warnAboutCooldownBufferOnce(
+			'COOLDOWN_BLOCKTIME_BUFFER_MS is below the minimum the on-chain cooldown check allows; using the minimum',
+			{ value: rawBuffer, using: MIN_COOLDOWN_BLOCKTIME_BUFFER_MS.toString() },
+		);
+		return MIN_COOLDOWN_BLOCKTIME_BUFFER_MS;
+	}
+	return bufferMs;
+}
+
 export function newCooldownTime(cooldownTime: bigint, windowUpperMs?: number | bigint) {
 	// The vested_pay validator checks the continuation datum's cooldown against
 	// the tx validity UPPER bound (`cooldown_time = tx_latest_time +
@@ -374,14 +420,9 @@ export function newCooldownTime(cooldownTime: bigint, windowUpperMs?: number | b
 	// Legacy wall-clock path (V1/L1 callers that build the datum before the
 	// window): the buffer must cover the window upper bound's max reach past
 	// `Date.now()` (default window: +5min afterBuffer +30s slot buffer). The
-	// 10-min default does; shrinking via env below ~6min risks the validator
-	// check failing whenever drift is small.
-	const rawBuffer = process.env.COOLDOWN_BLOCKTIME_BUFFER_MS;
-	let bufferMs = DEFAULT_COOLDOWN_BLOCKTIME_BUFFER_MS;
-	if (rawBuffer != null && /^\d+$/.test(rawBuffer)) {
-		bufferMs = BigInt(rawBuffer);
-	}
-	return BigInt(Date.now()) + cooldownTime + bufferMs;
+	// 10-min default does; anything under MIN_COOLDOWN_BLOCKTIME_BUFFER_MS does
+	// not, which is why the override is clamped rather than taken as given.
+	return BigInt(Date.now()) + cooldownTime + resolveCooldownBlocktimeBufferMs();
 }
 
 function valueToStatus(value: unknown) {

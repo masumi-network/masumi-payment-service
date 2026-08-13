@@ -116,6 +116,8 @@ function toPublicInvite(row: InviteRow) {
 export const getInviteSchemaInput = z.object({
 	limit: z.coerce.number().int().min(1).max(100).default(25),
 	status: z.nativeEnum(HydraInviteStatus).optional(),
+	/** Same scoping as the head list: an invite becomes a head on one network. */
+	network: z.nativeEnum(Network).optional().describe('Filter by Cardano network'),
 });
 
 export const getInviteSchemaOutput = z.object({ invites: z.array(inviteSchema) });
@@ -126,7 +128,10 @@ export const queryInviteGet = adminAuthenticatedEndpointFactory.build({
 	output: getInviteSchemaOutput,
 	handler: async ({ input }) => {
 		const rows = await prisma.hydraHeadInvite.findMany({
-			where: input.status === undefined ? {} : { status: input.status },
+			where: {
+				...(input.status === undefined ? {} : { status: input.status }),
+				...(input.network === undefined ? {} : { network: input.network }),
+			},
 			orderBy: { createdAt: 'desc' },
 			take: input.limit,
 		});

@@ -151,6 +151,13 @@ export const hydraHeadSchema = z
 export const getHeadSchemaInput = z.object({
 	id: z.string().optional().describe('Get a single head by ID'),
 	relationId: z.string().optional().describe('Filter by HydraRelation ID'),
+	/**
+	 * A head belongs to exactly one network for its whole life, through its
+	 * relation. Filterable because the callers that show heads are themselves
+	 * scoped to one — an unscoped list mixes chains, and every hash in it then
+	 * links to whichever explorer the caller assumed.
+	 */
+	network: z.nativeEnum(Network).optional().describe('Filter by Cardano network'),
 	status: z.nativeEnum(HydraHeadStatus).optional().describe('Filter by head status'),
 	isEnabled: z
 		.string()
@@ -400,6 +407,7 @@ export const getOrListHeadsGet = adminAuthenticatedEndpointFactory.build({
 
 		const heads = await prisma.hydraHead.findMany({
 			where: {
+				...(input.network ? { HydraRelation: { network: input.network } } : {}),
 				...(input.relationId ? { hydraRelationId: input.relationId } : {}),
 				...(input.status ? { status: input.status } : {}),
 				...(input.isEnabled !== undefined ? { isEnabled: input.isEnabled } : {}),
