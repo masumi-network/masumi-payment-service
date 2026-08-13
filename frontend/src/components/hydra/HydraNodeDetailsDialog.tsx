@@ -161,7 +161,9 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
 
   async function handleDisconnect() {
     if (!host) return;
-    setIsDisconnecting(false);
+    // The confirmation stays up until the removal answers, so its spinner is
+    // the one thing on screen while the service is still deciding — the server
+    // refuses this outright when heads remain, and that refusal is the answer.
     setIsNodeBusy(true);
     try {
       await disconnectHydraHost(apiClient, host.id);
@@ -172,6 +174,7 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
       toast.error(error instanceof Error ? error.message : 'The node could not be disconnected');
     } finally {
       setIsNodeBusy(false);
+      setIsDisconnecting(false);
     }
   }
 
@@ -434,16 +437,21 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
         onDone={() => void refetchParticipants()}
       />
 
-      {/* Named consequences: a head cannot be moved to another node, so the
-          count is the whole decision. */}
+      {/* Says what is removed, what is not, and what the operator is left
+          holding. Disconnecting is a local forget, not a teardown: the Host
+          keeps running every node it has, and once this service has forgotten
+          it there is nothing here that can clean them up. */}
       <ConfirmDialog
+        elevatedChildStack
         open={isDisconnecting}
         onClose={() => setIsDisconnecting(false)}
         title={`Disconnect ${host.name}?`}
+        confirmLabel="Disconnect"
+        isLoading={isNodeBusy}
         description={
           host.participantCount > 0
-            ? `${host.participantCount} head(s) still run here. A head cannot be moved to another node, so disconnecting puts them out of reach. Drain this node and settle them first.`
-            : 'This service forgets the node and its stored keys. The node itself keeps running.'
+            ? `${host.participantCount} head(s) still run here. A head cannot be moved to another node, so disconnecting would put them out of reach — settle them first, and the removal will be refused until you have.\n\nStop taking new heads while you work through them.`
+            : `This removes the node from this payment service only: its address, its stored tokens and its keys. Nothing is sent to the node.\n\nThe Hydra Host at ${host.baseUrl} keeps running, along with any hydra-node processes still provisioned on it. This service will no longer see or manage them, so if you are decommissioning the machine, check the Host's own node list and remove what is left there — afterwards there is nothing here that can reach it.\n\nYou can connect it again later with the same address and tokens.`
         }
         onConfirm={() => void handleDisconnect()}
       />
