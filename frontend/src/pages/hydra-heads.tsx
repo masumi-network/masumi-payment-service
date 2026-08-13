@@ -469,15 +469,66 @@ function TransactionHashRow({
   );
 }
 
+type WalletRole = 'Purchasing' | 'Selling' | 'Funding';
+
+/**
+ * The counterparty's side, which a head fixes rather than stores.
+ *
+ * A head carries payments one way between a purchasing wallet and a selling
+ * one — that is settled when the invite is issued and cannot change — so the
+ * remote side is the opposite of the local one. Remote participants save only
+ * the wallet's keys, so this is the only way to say it, and it is derived
+ * rather than guessed.
+ */
+function counterpartRole(role: WalletRole | null): WalletRole | null {
+  if (role === 'Purchasing') return 'Selling';
+  if (role === 'Selling') return 'Purchasing';
+  return null;
+}
+
+/**
+ * Which end of the payment this wallet is.
+ *
+ * "Purchasing" and "Selling" are the wallet's own vocabulary and stay that way
+ * everywhere else; inside a head the useful reading is who pays and who is
+ * paid, which is also what fixes the counterparty's side.
+ */
+function WalletRoleBadge({ role }: { role: WalletRole }) {
+  if (role === 'Funding') {
+    return (
+      <Badge variant="outline" title="Funds nodes. Not a side of this payment.">
+        Funding
+      </Badge>
+    );
+  }
+
+  const isBuyer = role === 'Purchasing';
+  return (
+    <Badge
+      variant="secondary"
+      title={
+        isBuyer
+          ? 'Buyer: this wallet pays into the head. Its counterparty sells.'
+          : 'Seller: this wallet is paid from the head. Its counterparty buys.'
+      }
+    >
+      {isBuyer ? 'Buyer' : 'Seller'}
+    </Badge>
+  );
+}
+
 function ParticipantCard({
   title,
   participant,
   network,
+  role,
   onWalletClick,
 }: {
   title: string;
   participant: HydraParticipant | HydraRemoteParticipant | null | undefined;
   network: string;
+  /** Which side of the payment this participant is, when it is known. */
+  role?: WalletRole | null;
   onWalletClick?: () => void;
 }) {
   if (!participant) {
@@ -507,7 +558,13 @@ function ParticipantCard({
 
       <div className="grid gap-3 md:grid-cols-2">
         <div>
-          <p className="text-xs text-muted-foreground">Wallet</p>
+          {/* A head carries payments one way, so which end a wallet is on is
+              the fact that decides what this participant can do. It was
+              readable only by knowing which wallet address was whose. */}
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-muted-foreground">Wallet</p>
+            {role && <WalletRoleBadge role={role} />}
+          </div>
           <WalletLink
             address={participant.Wallet.walletAddress}
             vkey={participant.Wallet.walletVkey}
@@ -776,6 +833,7 @@ function HydraHeadDetailsDialog({
               title="Local participant"
               participant={head.LocalParticipant}
               network={network}
+              role={head.LocalParticipant?.Wallet.type ?? null}
               onWalletClick={
                 localWalletForDetails
                   ? () => setSelectedWalletForDetails(localWalletForDetails)
@@ -791,6 +849,7 @@ function HydraHeadDetailsDialog({
                     title={`Remote participant ${index + 1}`}
                     participant={participant}
                     network={network}
+                    role={counterpartRole(head.LocalParticipant?.Wallet.type ?? null)}
                     onWalletClick={
                       internalWallet
                         ? () =>
