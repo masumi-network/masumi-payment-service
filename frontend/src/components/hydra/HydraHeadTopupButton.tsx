@@ -260,7 +260,14 @@ function HydraTopupList({
                   Usable {new Date(topup.usableFrom).toLocaleTimeString()}.
                 </span>
               )}
-              {topup.status === 'Confirmed' &&
+              {/* Expired rows can hold funds too. A deposit reaches Failed on our
+                own evidence that its transaction was absent past its deadline,
+                and that evidence can be wrong — a lagging or rolled-back chain
+                view reads the same as an absence. The reconciler already treats
+                a Failed row as one that may still turn out absorbed or
+                recovered; hiding the button meant the one case where funds sit
+                at the deposit script had no way to ask for them back. */}
+              {(topup.status === 'Confirmed' || topup.status === 'Failed') &&
                 topup.depositTxHash !== null &&
                 (topup.recoveryRequestedAt != null ? (
                   <span className="text-xs text-muted-foreground">
@@ -282,21 +289,38 @@ function HydraTopupList({
                 ))}
               {topup.status === 'Failed' &&
                 Object.keys(topup.committedAssets ?? {}).length === 0 && (
-                  <Button type="button" variant="outline" size="sm" onClick={() => onRetry(topup)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onRetry(topup)}
+                    title="Fills this amount back into the form. Nothing is sent until you press Add funds"
+                  >
                     Try again
                   </Button>
                 )}
             </div>
 
-            {topup.status === 'Failed' && (
-              // The only way a deposit reaches Failed is its transaction not
-              // being on chain by the deadline it was signed with. Nothing was
-              // spent, which is the part an operator needs to hear first.
-              <p className="w-full text-xs text-muted-foreground">
-                The deposit transaction never made it on chain before its deadline. Nothing left the
-                wallet, so it is safe to add the funds again.
-              </p>
-            )}
+            {topup.status === 'Failed' &&
+              (topup.depositTxHash === null ? (
+                // Failed while preparing, so no deposit was ever signed. There
+                // is nothing on chain under any reading of the evidence.
+                <p className="w-full text-xs text-muted-foreground">
+                  The deposit was never built, so nothing left the wallet. Adding the funds again is
+                  safe.
+                </p>
+              ) : (
+                // Expiry itself is a ledger rule: past its invalid-hereafter
+                // slot the transaction can never be included. What is inferred
+                // rather than proven is that it was absent before then, and that
+                // came from our own chain lookup, so the row no longer promises
+                // the funds are home. Recover is the answer if it did land.
+                <p className="w-full text-xs text-muted-foreground">
+                  The deposit transaction was not on chain by its deadline, so it can never be
+                  included now and the funds should still be in the wallet. If it did land and the
+                  head never took it in, Recover asks the node to return it.
+                </p>
+              ))}
           </li>
         ))}
       </ul>
