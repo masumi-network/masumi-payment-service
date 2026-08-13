@@ -228,10 +228,57 @@ export class HydraHistoryReplay {
 		const bufferedFrames = this._unpinnedFrames;
 		this._unpinnedFrames = [];
 		this._unpinnedBytes = 0;
+		// A page captured before the head existed is stale, not forged. Judging it
+		// under the pin that arrived afterwards is what turned every freshly opened
+		// head into a CommandFailed: the socket connects while the node is still
+		// Idle, so the whole page — its closing Greetings included — is buffered
+		// unpinned; HeadIsOpen then pins the id and flushes the buffer here, and
+		// that Greetings is asked to name a head that did not exist when it was
+		// written. Read it again instead, now that there is a head to read it
+		// against.
+		if (this.pageClosedBeforeHeadExisted(bufferedFrames)) {
+			this._restartRequested = true;
+			this.connection.invalidate(
+				new HydraTransportError('Hydra history page closed before the head existed; restarting replay'),
+			);
+			return;
+		}
 		for (const frame of bufferedFrames) {
 			if (this._failed) break;
 			this.processPinnedMessage(frame);
 		}
+	}
+
+	/**
+	 * Was this buffered page written by a node that had no head yet?
+	 *
+	 * Greetings closes a history page and states the node's status as it stood
+	 * then, so an Idle one carrying no head id is proof rather than a violation —
+	 * the same reading the live session already gives it, where returning to Idle
+	 * is a legitimate rollback through Init rather than a protocol breach.
+	 *
+	 * Scoped to the flush deliberately. Frames are only buffered while no head is
+	 * pinned, and nothing unpins one, so this cannot fire twice and the restart it
+	 * asks for cannot loop. A pinned pass that reaches Idle is a different
+	 * question — a head this service believes in that its node no longer sees —
+	 * and still fails closed.
+	 */
+	private pageClosedBeforeHeadExisted(frames: readonly string[]): boolean {
+		for (const frame of frames) {
+			let message: unknown;
+			try {
+				message = parseBoundedJsonFrame(frame);
+			} catch {
+				// Malformed: let the normal pass report it with its own message.
+				return false;
+			}
+			const envelope = messageSchema.safeParse(message);
+			if (!envelope.success || envelope.data.tag !== 'Greetings') continue;
+			if (envelope.data.headId != null || envelope.data.hydraHeadId != null) continue;
+			const status = hydraHeadStatusSchema.safeParse(envelope.data.headStatus);
+			if (status.success && status.data === HydraHeadStatus.Idle) return true;
+		}
+		return false;
 	}
 
 	private processPinnedMessage(rawMessage: string): void {

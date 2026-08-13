@@ -17,7 +17,12 @@ import {
 } from '@emurgo/cardano-serialization-lib-nodejs';
 import { HydraHeadStatus } from '@/generated/prisma/client';
 import { HydraNodeEvent, HydraTransactionType } from './types';
-import { HydraProtocolError, HydraTransactionRejectedError, HydraTransportAmbiguousError } from './errors';
+import {
+	HydraProtocolError,
+	HydraTransactionRejectedError,
+	HydraTransportAmbiguousError,
+	HydraTransportError,
+} from './errors';
 import {
 	computeHydraAccumulatorHash,
 	hydraSnapshotSignableBytes,
@@ -1020,6 +1025,49 @@ describe('HydraNode', () => {
 
 			expect(node.confirmedTransactionHistoryError).toBeInstanceOf(HydraProtocolError);
 			expect(node.getConfirmedTransactionsForReconciliation()).toEqual([]);
+			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
+		});
+
+		/**
+		 * The shape every freshly opened head hit: the history socket connects
+		 * while the node is still Idle, so its whole page — closing Greetings
+		 * included — is buffered with no head to judge it against. HeadIsOpen then
+		 * pins the id and flushes that buffer, and the Greetings written before any
+		 * head existed was asked to name one. That surfaced as a CommandFailed on
+		 * every head, two milliseconds after it opened.
+		 */
+		it('restarts the replay when the buffered page closed before the head existed', async () => {
+			const node = new HydraNode({
+				httpUrl: 'http://localhost:4001',
+				snapshotVerificationKeys: TEST_PARTIES.map(({ cborVerificationKey }) => cborVerificationKey),
+				expectedNodeVerificationKey: TEST_PARTIES[0].cborVerificationKey,
+				trustLocalNodeSnapshotMetadata: true,
+			});
+			const connectPromise = node.connect();
+			const historyConnection = mockConnectionInstances[0];
+			const liveConnection = mockConnectionInstances[1];
+			liveConnection.emit('message', JSON.stringify(headIsOpen()));
+			liveConnection.emit('message', JSON.stringify(liveGreetings()));
+			await connectPromise;
+
+			// A node with no head names none, and says so in its status.
+			historyConnection.emit(
+				'message',
+				JSON.stringify({ ...liveGreetings(), headStatus: 'Idle', hydraHeadId: undefined }),
+			);
+
+			node.pinExpectedHeadId(HEAD_ID_A);
+
+			expect(node.confirmedTransactionHistoryError).toBeUndefined();
+			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraTransportError));
+		});
+
+		it('still refuses a pinned page whose Greetings omits the head id at Open', async () => {
+			const { node, historyConnection } = await startSignedNode();
+
+			historyConnection.emit('message', JSON.stringify({ ...liveGreetings(), hydraHeadId: undefined }));
+
+			expect(node.confirmedTransactionHistoryError).toBeInstanceOf(HydraProtocolError);
 			expect(historyConnection.invalidate).toHaveBeenCalledWith(expect.any(HydraProtocolError));
 		});
 
