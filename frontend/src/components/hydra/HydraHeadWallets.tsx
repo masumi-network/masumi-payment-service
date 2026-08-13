@@ -19,6 +19,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { WalletLink } from '@/components/ui/wallet-link';
 import { shortenAddress } from '@/lib/utils';
 import { HydraWalletLink } from '@/components/hydra/HydraWalletLink';
+import { WalletRoleBadge, type WalletRole } from '@/components/hydra/WalletRoleBadge';
 
 type Party = {
   label: string;
@@ -32,12 +33,17 @@ type Party = {
   onWalletClick?: () => void;
   /** The node's own Cardano key hash — its on-chain identity, not its funds. */
   cardanoVkey: string | undefined;
+  /** Which side of the payment this wallet is, when it is known. */
+  role?: WalletRole | null;
 };
 
-function PartyCard({ label, wallet, network, onWalletClick, cardanoVkey }: Party) {
+function PartyCard({ label, wallet, network, onWalletClick, cardanoVkey, role }: Party) {
   return (
     <div className="min-w-0 flex-1 space-y-2 rounded-md border bg-muted/10 p-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className="flex items-center gap-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        {role && <WalletRoleBadge role={role} />}
+      </div>
 
       <div className="space-y-1">
         <p className="text-xs text-muted-foreground">Settles with</p>
@@ -74,16 +80,20 @@ function PartyCard({ label, wallet, network, onWalletClick, cardanoVkey }: Party
 export function HydraHeadWallets({
   localWallet,
   localCardanoVkey,
+  localRole,
   remoteWallet,
   remoteCardanoVkey,
+  remoteRole,
   network,
   onLocalWalletClick,
   onRemoteWalletClick,
 }: {
   localWallet: Party['wallet'];
   localCardanoVkey: string | undefined;
+  localRole?: WalletRole | null;
   remoteWallet: Party['wallet'];
   remoteCardanoVkey: string | undefined;
+  remoteRole?: WalletRole | null;
   network: string;
   onLocalWalletClick?: () => void;
   onRemoteWalletClick?: () => void;
@@ -97,6 +107,7 @@ export function HydraHeadWallets({
           wallet={localWallet}
           cardanoVkey={localCardanoVkey}
           network={network}
+          role={localRole}
           onWalletClick={onLocalWalletClick}
         />
         <ArrowRight className="mx-auto h-4 w-4 shrink-0 rotate-90 text-muted-foreground sm:rotate-0" />
@@ -105,6 +116,7 @@ export function HydraHeadWallets({
           wallet={remoteWallet}
           cardanoVkey={remoteCardanoVkey}
           network={network}
+          role={remoteRole}
           onWalletClick={onRemoteWalletClick}
         />
       </div>

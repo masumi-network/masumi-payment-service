@@ -6379,10 +6379,22 @@ export const HydraHeadSchema = {
                         'Issuer',
                         'Redeemer'
                     ]
+                },
+                contestationPeriodSeconds: {
+                    type: 'number'
+                },
+                depositPeriodSeconds: {
+                    type: 'number'
+                },
+                unsyncedPeriodSeconds: {
+                    type: 'number'
                 }
             },
             required: [
-                'role'
+                'role',
+                'contestationPeriodSeconds',
+                'depositPeriodSeconds',
+                'unsyncedPeriodSeconds'
             ],
             description: 'Which side of the invite exchange this head came from; absent for heads not created from one'
         },
@@ -6514,8 +6526,16 @@ export const HydraHeadSchema = {
                         type: 'string',
                         nullable: true
                     },
-                    hydraVerificationKeyId: {
-                        type: 'string'
+                    HydraVerificationKey: {
+                        type: 'object',
+                        properties: {
+                            hydraVK: {
+                                type: 'string'
+                            }
+                        },
+                        required: [
+                            'hydraVK'
+                        ]
                     },
                     cardanoVkey: {
                         type: 'string'
@@ -6529,7 +6549,7 @@ export const HydraHeadSchema = {
                     'advertise',
                     'hasCommitted',
                     'commitTxHash',
-                    'hydraVerificationKeyId',
+                    'HydraVerificationKey',
                     'cardanoVkey'
                 ]
             }

@@ -86,7 +86,8 @@ export const remoteParticipantSchema = z.object({
 	advertise: z.string(),
 	hasCommitted: z.boolean(),
 	commitTxHash: z.string().nullable(),
-	hydraVerificationKeyId: z.string(),
+	/** The counterparty node's Hydra verification key (cborHex), not its row id. */
+	HydraVerificationKey: z.object({ hydraVK: z.string() }),
 	/**
 	 * The node's own Cardano key hash — the head's on-chain participant identity,
 	 * deliberately separate from the settling wallet (ADR 0010 §3). Public
@@ -124,7 +125,13 @@ export const hydraHeadSchema = z
 		closeTxHash: z.string().nullable(),
 		fanoutTxHash: z.string().nullable(),
 		Invite: z
-			.object({ role: z.nativeEnum(HydraInviteRole) })
+			.object({
+				role: z.nativeEnum(HydraInviteRole),
+				/** The head's agreed parameters, fixed when the invite was issued. */
+				contestationPeriodSeconds: z.number(),
+				depositPeriodSeconds: z.number(),
+				unsyncedPeriodSeconds: z.number(),
+			})
 			.nullable()
 			.optional()
 			.describe('Which side of the invite exchange this head came from; absent for heads not created from one'),
@@ -213,13 +220,27 @@ export const headInclude = {
 			advertise: true,
 			hasCommitted: true,
 			commitTxHash: true,
-			hydraVerificationKeyId: true,
+			// The key itself, not the row that holds it. The id is meaningless to
+			// an operator, and this is the value they compare against what the
+			// counterparty says their node runs. Public material either way: it is
+			// exchanged in the handshake and lives in the head's on-chain identity.
+			HydraVerificationKey: { select: { hydraVK: true } },
 			cardanoVkey: true,
 		},
 	},
-	// Only the role: it decides which side may post the Init, and the rest of the
-	// invite is exchange bookkeeping the head view has no use for.
-	Invite: { select: { role: true } },
+	// The role decides which side may post the Init. The three durations come
+	// with it because they are the head's agreed parameters — fixed at issue,
+	// covered by the issuer signature, unchangeable afterwards — and an operator
+	// reading a stuck deposit or a long close has no other place to find them.
+	// The rest of the invite is exchange bookkeeping the head view has no use for.
+	Invite: {
+		select: {
+			role: true,
+			contestationPeriodSeconds: true,
+			depositPeriodSeconds: true,
+			unsyncedPeriodSeconds: true,
+		},
+	},
 	_count: { select: { Errors: true, Transactions: true } },
 } as const;
 

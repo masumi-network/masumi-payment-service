@@ -69,7 +69,8 @@ export type HydraRemoteParticipant = Omit<
     walletAddress: string;
   };
   advertise: string;
-  hydraVerificationKeyId: string;
+  /** The counterparty node's Hydra verification key (cborHex). */
+  HydraVerificationKey: { hydraVK: string };
 };
 
 export type HydraHead = {
@@ -91,7 +92,13 @@ export type HydraHead = {
   closeTxHash: string | null;
   fanoutTxHash: string | null;
   /** Absent for heads that predate invites; decides which side may Init. */
-  Invite?: { role: 'Issuer' | 'Redeemer' } | null;
+  Invite?: {
+    role: 'Issuer' | 'Redeemer';
+    /** Agreed when the invite was issued; unchangeable for the head's life. */
+    contestationPeriodSeconds: number;
+    depositPeriodSeconds: number;
+    unsyncedPeriodSeconds: number;
+  } | null;
   LocalParticipant?: HydraParticipant | null;
   RemoteParticipants?: HydraRemoteParticipant[];
   _count?: {

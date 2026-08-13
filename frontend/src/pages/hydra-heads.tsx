@@ -34,6 +34,11 @@ import { HydraDetailSection } from '@/components/hydra/HydraDetailSection';
 import { HydraInitDialog } from '@/components/hydra/HydraInitDialog';
 import { HydraInvitesDialog } from '@/components/hydra/HydraManageDialog';
 import { HydraNodeStrip } from '@/components/hydra/HydraNodeStrip';
+import {
+  WalletRoleBadge,
+  counterpartRole,
+  type WalletRole,
+} from '@/components/hydra/WalletRoleBadge';
 import { HydraNodeDetailsDialog } from '@/components/hydra/HydraNodeDetailsDialog';
 import { IssueHydraInviteDialog } from '@/components/hydra/IssueHydraInviteDialog';
 import { RedeemHydraInviteDialog } from '@/components/hydra/RedeemHydraInviteDialog';
@@ -394,11 +399,14 @@ function DetailField({
   value,
   copyValue,
   mono = false,
+  hint,
 }: {
   label: string;
   value: string | null | undefined;
   copyValue?: string | null;
   mono?: boolean;
+  /** One line on what the reading means, for the ones nobody guesses. */
+  hint?: string;
 }) {
   return (
     <div className="min-w-0 space-y-1">
@@ -407,6 +415,7 @@ function DetailField({
         <p className={cn('truncate text-sm', mono && 'font-mono')}>{value || '-'}</p>
         {copyValue && <CopyButton value={copyValue} className="h-7 w-7 shrink-0" />}
       </div>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -469,54 +478,6 @@ function TransactionHashRow({
   );
 }
 
-type WalletRole = 'Purchasing' | 'Selling' | 'Funding';
-
-/**
- * The counterparty's side, which a head fixes rather than stores.
- *
- * A head carries payments one way between a purchasing wallet and a selling
- * one — that is settled when the invite is issued and cannot change — so the
- * remote side is the opposite of the local one. Remote participants save only
- * the wallet's keys, so this is the only way to say it, and it is derived
- * rather than guessed.
- */
-function counterpartRole(role: WalletRole | null): WalletRole | null {
-  if (role === 'Purchasing') return 'Selling';
-  if (role === 'Selling') return 'Purchasing';
-  return null;
-}
-
-/**
- * Which end of the payment this wallet is.
- *
- * "Purchasing" and "Selling" are the wallet's own vocabulary and stay that way
- * everywhere else; inside a head the useful reading is who pays and who is
- * paid, which is also what fixes the counterparty's side.
- */
-function WalletRoleBadge({ role }: { role: WalletRole }) {
-  if (role === 'Funding') {
-    return (
-      <Badge variant="outline" title="Funds nodes. Not a side of this payment.">
-        Funding
-      </Badge>
-    );
-  }
-
-  const isBuyer = role === 'Purchasing';
-  return (
-    <Badge
-      variant="secondary"
-      title={
-        isBuyer
-          ? 'Buyer: this wallet pays into the head. Its counterparty sells.'
-          : 'Seller: this wallet is paid from the head. Its counterparty buys.'
-      }
-    >
-      {isBuyer ? 'Buyer' : 'Seller'}
-    </Badge>
-  );
-}
-
 function ParticipantCard({
   title,
   participant,
@@ -539,8 +500,8 @@ function ParticipantCard({
     );
   }
 
-  const verificationKeyId =
-    'hydraVerificationKeyId' in participant ? participant.hydraVerificationKeyId : null;
+  const verificationKey =
+    'HydraVerificationKey' in participant ? participant.HydraVerificationKey.hydraVK : null;
 
   return (
     <div className="space-y-4 rounded-md border bg-muted/10 p-4">
@@ -573,11 +534,11 @@ function ParticipantCard({
             onInternalClick={onWalletClick}
           />
         </div>
-        {verificationKeyId && (
+        {verificationKey && (
           <DetailField
             label="Hydra verification key"
-            value={verificationKeyId}
-            copyValue={verificationKeyId}
+            value={verificationKey}
+            copyValue={verificationKey}
             mono
           />
         )}
@@ -710,8 +671,10 @@ function HydraHeadDetailsDialog({
           <HydraHeadWallets
             localWallet={head.LocalParticipant?.Wallet}
             localCardanoVkey={head.LocalParticipant?.cardanoVkey}
+            localRole={head.LocalParticipant?.Wallet.type ?? null}
             remoteWallet={remoteWallet}
             remoteCardanoVkey={head.RemoteParticipants?.[0]?.cardanoVkey}
+            remoteRole={counterpartRole(head.LocalParticipant?.Wallet.type)}
             network={network}
             onLocalWalletClick={
               localWalletForDetails
@@ -869,25 +832,87 @@ function HydraHeadDetailsDialog({
           </HydraDetailSection>
 
           <HydraDetailSection title="Identifiers and timeline" summary={formatDate(head.createdAt)}>
-            <div className="grid gap-4 md:grid-cols-3">
-              <DetailField
-                label="Head identifier"
-                value={head.headIdentifier ?? head.id}
-                copyValue={head.headIdentifier ?? head.id}
-                mono
-              />
-              <DetailField label="Snapshot" value={head.latestSnapshotNumber} />
-              <DetailField
-                label="Dispute window"
-                value={formatDuration(Number(head.contestationPeriod))}
-              />
-              <DetailField label="Transactions" value={String(head._count?.Transactions ?? 0)} />
-              <DetailField label="Created" value={formatDate(head.createdAt)} />
-              <DetailField label="Updated" value={formatDate(head.updatedAt)} />
-              <DetailField label="Latest activity" value={formatDate(head.latestActivityAt)} />
-              <DetailField label="Opened" value={formatDate(head.openedAt)} />
-              <DetailField label="Closed" value={formatDate(head.closedAt)} />
-              <DetailField label="Finalized" value={formatDate(head.finalizedAt)} />
+            <div className="space-y-5">
+              <div className="grid gap-4 md:grid-cols-3">
+                <DetailField
+                  label="Head identifier"
+                  value={head.headIdentifier ?? head.id}
+                  copyValue={head.headIdentifier ?? head.id}
+                  mono
+                />
+                <DetailField label="Snapshot" value={head.latestSnapshotNumber} />
+                <DetailField label="Transactions" value={String(head._count?.Transactions ?? 0)} />
+                <DetailField label="Created" value={formatDate(head.createdAt)} />
+                <DetailField label="Updated" value={formatDate(head.updatedAt)} />
+                <DetailField label="Latest activity" value={formatDate(head.latestActivityAt)} />
+                <DetailField label="Opened" value={formatDate(head.openedAt)} />
+                <DetailField label="Closed" value={formatDate(head.closedAt)} />
+                <DetailField label="Finalized" value={formatDate(head.finalizedAt)} />
+              </div>
+
+              {/* The head's agreed parameters. Every one of them explains a wait
+                  an operator will otherwise read as a stall: why a deposit is
+                  not spendable yet, why a close is not settling yet, why a node
+                  that is behind refuses to sign. They are fixed when the invite
+                  is issued and cannot be changed afterwards, which is exactly
+                  why they belong on the head rather than in a settings screen. */}
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Configuration
+                </p>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <DetailField
+                    label="Dispute window"
+                    value={formatDuration(Number(head.contestationPeriod))}
+                    hint="After closing, how long the other side has to contest before the head can settle on chain."
+                  />
+                  <DetailField
+                    label="Deposit confirmation"
+                    value={
+                      head.Invite ? formatDuration(head.Invite.depositPeriodSeconds) : undefined
+                    }
+                    hint="How long added funds must sit on chain before they can be spent inside the head."
+                  />
+                  <DetailField
+                    label="Unsynced tolerance"
+                    value={
+                      head.Invite ? formatDuration(head.Invite.unsyncedPeriodSeconds) : undefined
+                    }
+                    hint="How far behind the chain a node may fall before it stops signing."
+                  />
+                </div>
+                {!head.Invite && (
+                  <p className="text-xs text-muted-foreground">
+                    Only the dispute window is recorded for heads not opened from an invite.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  On-chain transactions
+                </p>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <DetailField
+                    label="Open"
+                    value={head.initTxHash}
+                    copyValue={head.initTxHash}
+                    mono
+                  />
+                  <DetailField
+                    label="Close"
+                    value={head.closeTxHash}
+                    copyValue={head.closeTxHash}
+                    mono
+                  />
+                  <DetailField
+                    label="Settle"
+                    value={head.fanoutTxHash}
+                    copyValue={head.fanoutTxHash}
+                    mono
+                  />
+                </div>
+              </div>
             </div>
           </HydraDetailSection>
         </div>

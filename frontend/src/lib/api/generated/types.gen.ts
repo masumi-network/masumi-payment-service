@@ -3223,6 +3223,9 @@ export type HydraHead = {
      */
     Invite?: {
         role: 'Issuer' | 'Redeemer';
+        contestationPeriodSeconds: number;
+        depositPeriodSeconds: number;
+        unsyncedPeriodSeconds: number;
     } | null;
     LocalParticipant?: {
         id: string;
@@ -3255,7 +3258,9 @@ export type HydraHead = {
         advertise: string;
         hasCommitted: boolean;
         commitTxHash: string | null;
-        hydraVerificationKeyId: string;
+        HydraVerificationKey: {
+            hydraVK: string;
+        };
         cardanoVkey: string;
     }>;
     _count?: {
