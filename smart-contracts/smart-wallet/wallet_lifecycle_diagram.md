@@ -1,44 +1,46 @@
 # Smart Wallet Lifecycle
 
-The wallet is not a state machine in the sense the payment contract is: each
-wallet is one long-lived UTxO — identified by its state token — whose datum
-carries mutable budget accounting. What changes across transactions is *who*
-may spend and *how much is left in the window*, not a discrete state tag.
-Several wallets can share the address; each token is one wallet, and no two
-ever settle in the same transaction.
+The wallet is not a state machine like the payment contract. Each wallet is
+one long-lived UTxO, identified by its state token. The datum carries the
+budget counters. A transaction changes who may spend and how much budget
+remains. It does not change a state tag.
+
+Several wallets can share one address. Each token is one wallet. No two
+wallets can settle in the same transaction.
 
 ## Lifecycle
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Live: owner mints the state token<br/>(one-shot seed, destination pinned, datum unvalidated)
+    [*] --> Live: owner mints the state token<br/>(one-shot seed, destination pinned, datum must parse)
 
-    Live --> Live: AgentSpend<br/>agent + quorum, within the ceiling
+    Live --> Live: AgentSpend<br/>agent + co-signers, inside the ceiling
     Live --> Live: Deposit<br/>agent or owner, value in only
-    Live --> Live: UpdatePolicy<br/>owner rotates agent / re-budgets
-    Live --> [*]: OwnerSpend + burn<br/>sweeps and retires the wallet
+    Live --> Live: UpdatePolicy<br/>owner replaces the agent key / changes the budget
+    Live --> [*]: OwnerSpend + burn<br/>sweeps the funds and retires the wallet
 
     note right of Live
-        Invariants on every AgentSpend:
-        - exactly one input of OUR script, foreign scripts allowed
+        Rules on every AgentSpend:
+        - exactly one input of this script, foreign scripts allowed
         - one continuing output, same full address, same token
-        - unlisted assets frozen both directions
+        - assets without a limit entry are frozen in both directions
         - remaining lovelace >= min_balance_lovelace
-        - only period_start / spent_in_period change
+        - only period_start and spent_in_period change
     end note
 ```
 
 ## Budget window
 
-`period_start` and `spent_in_period` are per wallet. A spend either accumulates
-inside the open window or opens a fresh one — never both, and never a backlog.
+Each wallet has one window and one set of counters. A spend adds to the open
+window, or it opens a fresh window. It never does both, and no backlog of
+windows accrues.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant A as Agent
     participant W as Wallet UTxO
-    participant R as Allow-listed recipient
+    participant R as Recipient
 
     Note over W: period_start = T0, limit = 10 ADA, spent = 0
     A->>W: AgentSpend, outflow 4 ADA (lower < T0 + period)
@@ -54,21 +56,22 @@ sequenceDiagram
     Note over W: rolled over, period_start = lower, spent = 7 ADA
 ```
 
-Roll-over sets `period_start` to the transaction's lower bound and requires
-`upper <= lower + period_length`. The ledger guarantees `lower <= now <= upper`,
-so the new window must contain the present. An agent that has been idle for a
-week therefore gets one window's budget, not seven.
+On a roll-over, the validator sets `period_start` to the lower bound of the
+validity range. It also requires `upper <= lower + period_length`. The ledger
+keeps the current time inside the validity range. Therefore the new window
+must contain the present. An agent that was idle for a week gets one window of
+budget, not seven.
 
-## Agent spend transaction shape
+## Shape of an agent spend
 
 ```mermaid
 flowchart LR
     subgraph Inputs
-        W["Wallet UTxO<br/>100 ADA + NFT<br/>spent_in_period = 0"]
+        W["Wallet UTxO<br/>100 ADA + state token<br/>spent_in_period = 0"]
         F["Agent key UTxO<br/>fees + collateral"]
     end
     subgraph Outputs
-        C["Continuing output<br/>same address<br/>95 ADA + NFT<br/>spent_in_period = 5 ADA"]
+        C["Continuing output<br/>same address<br/>95 ADA + state token<br/>spent_in_period = 5 ADA"]
         P["Recipient<br/>5 ADA"]
         X["Agent change"]
     end
@@ -80,19 +83,20 @@ flowchart LR
     style C fill:#1f2937,stroke:#4b5563,color:#e5e7eb
 ```
 
-`outflow = 100 − 95 = 5 ADA`, which is what the budget is charged. The state
-token rides through untouched: it is unlisted in `limit`, and unlisted assets
-are frozen in both directions — the same rule that stops an NFT walking out.
+The outflow is 100 − 95 = 5 ADA. The validator charges this amount to the
+budget. The state token stays in place: it has no limit entry, and assets
+without a limit entry cannot move in either direction. The same rule stops an
+NFT from leaving the wallet.
 
-Foreign script inputs may appear — locking into the payment escrow is the
-primary case — but never a second input of the wallet's own script: two shards
-cannot settle together, which keeps each wallet's ceiling independent.
+Foreign script inputs may appear in the transaction. The primary case is a
+lock into the payment escrow. A second input of the wallet script may not
+appear. Two wallets cannot settle together, so each ceiling stays independent.
 
 ## Owner paths
 
 ```mermaid
 flowchart TD
     O{Owner action}
-    O -->|OwnerSpend| S["No datum read, no continuing output.<br/>Also recovers UTxOs with a missing<br/>or malformed datum."]
-    O -->|UpdatePolicy| U["Exactly one continuing output<br/>with a well-formed datum.<br/>New policy otherwise unconstrained."]
+    O -->|OwnerSpend| S["Reads no datum, needs no continuing output.<br/>Also recovers UTxOs that hold a missing<br/>or malformed datum."]
+    O -->|UpdatePolicy| U["Exactly one continuing output<br/>with a datum that parses.<br/>The new values are not constrained."]
 ```
