@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react';
 import Head from 'next/head';
 import {
   Activity,
+  AlertTriangle,
   ChevronDown,
   ExternalLink,
   Flag,
   GitBranch,
+  Info,
   KeyRound,
   Layers3,
   Loader2,
@@ -236,6 +238,23 @@ function getLifecycleButtonConfigs(
   }));
 }
 
+/**
+ * The one cause behind every greyed action, when there is one.
+ *
+ * A node that is down or behind blocks all four, and repeating the same
+ * sentence under each reads as four separate problems — the operator counts
+ * four failures and goes looking for four fixes. Stated once, above the menu,
+ * it reads as what it is: one condition, and nothing here works until it is
+ * cleared. Stage gating ("only an open head can be closed") is per action and
+ * stays with its action, because those genuinely differ.
+ */
+function findSharedBlocker(configs: HydraLifecycleButtonConfig[]): string | null {
+  const reasons = configs.map((config) => config.disabledReason);
+  if (reasons.some((reason) => reason === undefined)) return null;
+  const distinct = new Set(reasons);
+  return distinct.size === 1 ? (reasons[0] ?? null) : null;
+}
+
 function LifecycleActionIcon({
   action,
   isRunning,
@@ -298,6 +317,7 @@ function HydraLifecycleActionMenu({
   // node is not ready, a healthy head costs one request.
   const { connection } = useHydraHeadReadiness(head.id, head.LocalParticipant != null);
   const configs = getLifecycleButtonConfigs(head, connection);
+  const sharedBlocker = findSharedBlocker(configs);
 
   return (
     <DropdownMenu>
@@ -306,9 +326,11 @@ function HydraLifecycleActionMenu({
           type="button"
           variant="ghost"
           size="icon"
-          className="h-8 w-8"
+          className={cn('h-8 w-8', sharedBlocker && 'text-amber-700 dark:text-amber-400')}
           aria-label="Open Hydra head actions"
-          title="Hydra head actions"
+          // Carried on the trigger too, so a head whose node is down reads as
+          // blocked from the table, without opening the menu to find out.
+          title={sharedBlocker ?? 'Hydra head actions'}
         >
           {isRunning ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -317,9 +339,23 @@ function HydraLifecycleActionMenu({
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-48">
+      <DropdownMenuContent align="end" className="min-w-48 max-w-80">
+        {/* One cause, stated once, in the colour of something to go and fix.
+            The actions below stay greyed and say nothing further: repeating it
+            four times turned one blocked node into four mysteries. */}
+        {sharedBlocker && (
+          <>
+            <div className="flex items-start gap-2 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{sharedBlocker}</span>
+            </div>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {configs.map((config) => {
           const isDisabled = isRunning || Boolean(config.disabledReason);
+          // Already said above, in one place.
+          const ownReason = sharedBlocker ? undefined : config.disabledReason;
 
           return (
             <DropdownMenuItem
@@ -329,7 +365,7 @@ function HydraLifecycleActionMenu({
               // Each one opens its own confirmation, so holding the menu open
               // just leaves it hanging behind that dialog.
               onSelect={() => onRequestLifecycle(head, config.action)}
-              className={cn(config.disabledReason && 'flex-col items-start gap-0.5')}
+              className={cn(ownReason && 'flex-col items-start gap-0.5')}
             >
               <span className="flex items-center gap-2">
                 <LifecycleActionIcon action={config.action} isRunning={isRunning} />
@@ -339,9 +375,10 @@ function HydraLifecycleActionMenu({
                   action to one stage, so most of this menu is greyed most of
                   the time, and hover text on a disabled item is easy to miss,
                   which makes a correctly-gated menu look broken. */}
-              {config.disabledReason && (
-                <span className="pl-6 text-xs font-normal text-muted-foreground">
-                  {config.disabledReason}
+              {ownReason && (
+                <span className="flex items-start gap-1.5 pl-6 text-xs font-normal text-muted-foreground">
+                  <Info className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>{ownReason}</span>
                 </span>
               )}
             </DropdownMenuItem>
