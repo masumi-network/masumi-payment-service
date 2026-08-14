@@ -36,6 +36,8 @@ function makeApiKey(overrides: Record<string, unknown> = {}) {
 		networkLimit: ['cardano:mainnet', 'cardano:preprod'],
 		walletScopeEnabled: false,
 		WalletScopes: [],
+		x402WalletScopeEnabled: false,
+		X402WalletScopes: [],
 		tokenHash: null,
 		token: null,
 		tokenHashSecure: 'pbkdf2-placeholder',
@@ -235,6 +237,7 @@ describe('authMiddleware', () => {
 			networkLimit: [],
 			caip2NetworkLimit: [],
 			walletScopeIds: null,
+			x402WalletScopeIds: null,
 		});
 	});
 
@@ -256,6 +259,7 @@ describe('authMiddleware', () => {
 			networkLimit: [],
 			caip2NetworkLimit: [],
 			walletScopeIds: null,
+			x402WalletScopeIds: null,
 		});
 	});
 
@@ -278,6 +282,7 @@ describe('authMiddleware', () => {
 			networkLimit: [Network.Mainnet, Network.Preprod],
 			caip2NetworkLimit: null,
 			walletScopeIds: null,
+			x402WalletScopeIds: null,
 		});
 	});
 
@@ -343,6 +348,57 @@ describe('authMiddleware', () => {
 		});
 
 		expect((output as { walletScopeIds: string[] }).walletScopeIds).toEqual(['wallet-a', 'wallet-b']);
+	});
+
+	it('returns null x402WalletScopeIds when x402WalletScopeEnabled is false', async () => {
+		mockFindUnique.mockResolvedValue(
+			makeApiKey({
+				canAdmin: false,
+				x402WalletScopeEnabled: false,
+				X402WalletScopes: [{ evmWalletId: 'evm-a' }],
+			}),
+		);
+
+		const { output } = await testMiddleware({
+			middleware: authMiddleware({ canRead: true }),
+			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
+		});
+
+		expect((output as { x402WalletScopeIds: null }).x402WalletScopeIds).toBeNull();
+	});
+
+	it('returns x402WalletScopeIds when x402WalletScopeEnabled is true and key is not admin', async () => {
+		mockFindUnique.mockResolvedValue(
+			makeApiKey({
+				canAdmin: false,
+				x402WalletScopeEnabled: true,
+				X402WalletScopes: [{ evmWalletId: 'evm-a' }, { evmWalletId: 'evm-b' }],
+			}),
+		);
+
+		const { output } = await testMiddleware({
+			middleware: authMiddleware({ canRead: true }),
+			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
+		});
+
+		expect((output as { x402WalletScopeIds: string[] }).x402WalletScopeIds).toEqual(['evm-a', 'evm-b']);
+	});
+
+	it('admin always gets null x402WalletScopeIds even if x402WalletScopeEnabled is true', async () => {
+		mockFindUnique.mockResolvedValue(
+			makeApiKey({
+				canAdmin: true,
+				x402WalletScopeEnabled: true,
+				X402WalletScopes: [{ evmWalletId: 'evm-a' }],
+			}),
+		);
+
+		const { output } = await testMiddleware({
+			middleware: authMiddleware({ canRead: true }),
+			requestProps: { method: 'POST', body: {}, headers: { token: 'valid' } },
+		});
+
+		expect((output as { x402WalletScopeIds: null }).x402WalletScopeIds).toBeNull();
 	});
 
 	it('admin always gets null walletScopeIds even if walletScopeEnabled is true', async () => {

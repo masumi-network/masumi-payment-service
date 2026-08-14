@@ -42,6 +42,7 @@ import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { AGENT_TYPE_LABELS, getAgentTypeLabel } from '@/lib/agent-type';
 import { formatDate } from '@/lib/format-date';
 import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
 type AIAgent = RegistryEntry & { relation?: AgentRelation };
@@ -205,8 +206,14 @@ export default function AIAgentsPage() {
   const [updateAgentSmartContractAddress, setUpdateAgentSmartContractAddress] = useState<
     string | null
   >(null);
-  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource, activeRail } =
-    useAppContext();
+  const {
+    apiClient,
+    network,
+    selectedPaymentSourceId,
+    selectedPaymentSource,
+    activeRail,
+    capabilities,
+  } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
 
   const currentNetworkPaymentSources = useMemo(
@@ -300,13 +307,17 @@ export default function AIAgentsPage() {
     // agentIdentifier deep link).
     const { action: _action, ...rest } = router.query;
     void router.replace({ pathname: '/ai-agents', query: rest }, undefined, { shallow: true });
-    // Registration is Cardano-only, so only actually open the dialog there.
-    if (activeRail === 'cardano') {
+    // Registration is Cardano-only, so only actually open the dialog there. It is
+    // also pay-authenticated: without the canPay gate a read-only key reaching this
+    // deep link (e.g. from the dashboard welcome banner) gets the full form and only
+    // finds out on submit, when POST /registry 401s.
+    if (activeRail === 'cardano' && capabilities.canPay) {
       queueMicrotask(() => setIsRegisterDialogOpen(true));
     }
-  }, [router.query.action, activeRail, router]);
+  }, [router.query.action, activeRail, router, capabilities.canPay]);
 
-  const shouldOpenRegisterDialog = activeRail === 'cardano' && isRegisterDialogOpen;
+  const shouldOpenRegisterDialog =
+    activeRail === 'cardano' && capabilities.canPay && isRegisterDialogOpen;
 
   const handleDeleteClick = (agent: AIAgent) => {
     setSelectedAgentToDelete(agent);
@@ -444,7 +455,7 @@ export default function AIAgentsPage() {
               />
               {/* Registration and migration are Cardano-registry operations. On the x402
                   rail this page is a read-only "accepts x402" view, so these don't apply. */}
-              {activeRail === 'cardano' && canMigrate && (
+              {activeRail === 'cardano' && capabilities.canPay && canMigrate && (
                 <Button
                   variant="outline"
                   className="flex items-center gap-2 btn-hover-lift"
@@ -454,7 +465,7 @@ export default function AIAgentsPage() {
                   Migrate to V2
                 </Button>
               )}
-              {activeRail === 'cardano' && (
+              {activeRail === 'cardano' && capabilities.canPay && (
                 <Button
                   className="flex items-center gap-2 btn-hover-lift"
                   onClick={() => setIsRegisterDialogOpen(true)}
@@ -493,9 +504,13 @@ export default function AIAgentsPage() {
                 aria-label="Filter agents by type"
               >
                 <option value="All">All types</option>
-                <option value="Standard">Standard</option>
-                <option value="OpenApi">OpenAPI</option>
-                <option value="X402">x402</option>
+                {/* Options come from the same label map as the Type column, so
+                    the filter can never disagree with the badges it filters. */}
+                {Object.entries(AGENT_TYPE_LABELS).map(([type, label]) => (
+                  <option key={type} value={type}>
+                    {label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -520,6 +535,12 @@ export default function AIAgentsPage() {
                       className="p-4 text-left text-sm font-medium text-muted-foreground pl-6"
                     >
                       Name
+                    </th>
+                    <th
+                      scope="col"
+                      className="p-4 text-left text-sm font-medium text-muted-foreground"
+                    >
+                      Type
                     </th>
                     <th
                       scope="col"
@@ -563,10 +584,10 @@ export default function AIAgentsPage() {
                 <tbody>
                   {(isLoading && !agents.length) ||
                   (displayAgents.length === 0 && isSearchPending) ? (
-                    <AIAgentTableSkeleton rows={5} />
+                    <AIAgentTableSkeleton rows={5} columns={9} />
                   ) : displayAgents.length === 0 ? (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <EmptyState
                           icon={searchQuery ? 'search' : 'inbox'}
                           title={
@@ -581,7 +602,9 @@ export default function AIAgentsPage() {
                               ? 'Try adjusting your search terms'
                               : activeRail === 'x402'
                                 ? "Agents that accept x402 on this environment's chains will appear here."
-                                : 'Register your first AI agent to get started'
+                                : capabilities.canPay
+                                  ? 'Register your first AI agent to get started'
+                                  : 'Registering an agent needs an API key with pay access'
                           }
                         />
                       </td>
@@ -617,6 +640,14 @@ export default function AIAgentsPage() {
                             >
                               {agent.description}
                             </div>
+                          </td>
+                          <td className="p-4">
+                            {/* Neutral outline: Status is the only colour-bearing
+                                badge in the row, and the Wallets cell already
+                                carries a RelationBadge. */}
+                            <Badge variant="outline" className="whitespace-nowrap">
+                              {getAgentTypeLabel(agent.type)}
+                            </Badge>
                           </td>
                           <td className="p-4 text-sm">{formatDate(agent.createdAt)}</td>
                           <td className="p-4">
@@ -769,6 +800,7 @@ export default function AIAgentsPage() {
                                   <ExternalLink className="h-4 w-4" />
                                 </Button>
                                 {agent.relation !== 'payment' &&
+                                  capabilities.canPay &&
                                   selectedPaymentSource &&
                                   isV2PaymentSource(selectedPaymentSource) && (
                                     <Button
@@ -784,19 +816,23 @@ export default function AIAgentsPage() {
                                       <Pencil className="h-4 w-4" />
                                     </Button>
                                   )}
-                                {agent.relation !== 'payment' && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteClick(agent);
-                                    }}
-                                    className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
-                                  >
-                                    <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
-                                  </Button>
-                                )}
+                                {agent.relation !== 'payment' &&
+                                  (agent.state === 'RegistrationFailed' ||
+                                  agent.state === 'DeregistrationConfirmed'
+                                    ? capabilities.canAdmin
+                                    : capabilities.canPay) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteClick(agent);
+                                      }}
+                                      className="text-destructive hover:text-destructive hover:bg-destructive/10 group"
+                                    >
+                                      <Trash2 className="h-4 w-4 transition-transform duration-200 group-hover:scale-110" />
+                                    </Button>
+                                  )}
                               </div>
                             ) : agent.state === 'RegistrationInitiated' ||
                               agent.state === 'DeregistrationInitiated' ? (

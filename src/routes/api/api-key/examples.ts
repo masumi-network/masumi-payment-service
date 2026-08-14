@@ -21,6 +21,8 @@ export const apiKeyExample = {
 	status: ApiKeyStatus.Active,
 	walletScopeEnabled: false,
 	WalletScopes: [],
+	x402WalletScopeEnabled: false,
+	X402WalletScopes: [],
 } satisfies z.infer<typeof apiKeyOutputSchema>;
 
 export const listAPIKeysQueryExample = {

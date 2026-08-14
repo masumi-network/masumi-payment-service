@@ -74,7 +74,7 @@ export default function TransactionDetailsDialog({
   onClose,
   onRefresh,
 }: TransactionDetailsDialogProps) {
-  const { network, apiClient } = useAppContext();
+  const { network, apiClient, capabilities } = useAppContext();
   const { openAgentDetails } = useAgentDetailsDialog();
   // Pin actions and explorer links to the network the transaction row lives
   // on, not the ambient app network (they can diverge mid-navigation).
@@ -631,51 +631,60 @@ export default function TransactionDetailsDialog({
               isLoading={isLoading}
               errorRecoveryMode={errorRecoveryMode}
               onRecover={recoverTransactionError}
+              canRecover={capabilities.canPay}
             />
 
             <TransactionHistorySection transaction={transaction} network={transactionNetwork} />
 
             <div className="flex gap-2 justify-end">
-              <Button
-                variant="outline"
-                onClick={() => setShowRepairDialog(true)}
-                disabled={isLoading}
-                title="Point this request at a specific transaction when the database has fallen behind the chain"
-              >
-                Repair Request
-              </Button>
-              {canRequestRefund(transaction) && transaction.type === 'purchase' && (
+              {capabilities.canAdmin && (
                 <Button
-                  variant="secondary"
-                  onClick={() => handleRefundRequest(transaction)}
+                  variant="outline"
+                  onClick={() => setShowRepairDialog(true)}
                   disabled={isLoading}
+                  title="Point this request at a specific transaction when the database has fallen behind the chain"
                 >
-                  {isLoading ? 'Requesting refund...' : 'Request Refund'}
+                  Repair Request
                 </Button>
               )}
-              {canAllowRefund(transaction) && transaction.type === 'payment' && (
-                <Button
-                  variant="default"
-                  onClick={() => {
-                    setConfirmAction('refund');
-                    setShowConfirmDialog(true);
-                  }}
-                  className="bg-orange-600 hover:bg-orange-700"
-                >
-                  Authorize Refund
-                </Button>
-              )}
-              {canCancelRefund(transaction) && transaction.type === 'purchase' && (
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    setConfirmAction('cancel');
-                    setShowConfirmDialog(true);
-                  }}
-                >
-                  Cancel Refund Request
-                </Button>
-              )}
+              {capabilities.canPay &&
+                canRequestRefund(transaction) &&
+                transaction.type === 'purchase' && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => handleRefundRequest(transaction)}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? 'Requesting refund...' : 'Request Refund'}
+                  </Button>
+                )}
+              {capabilities.canPay &&
+                canAllowRefund(transaction) &&
+                transaction.type === 'payment' && (
+                  <Button
+                    variant="default"
+                    onClick={() => {
+                      setConfirmAction('refund');
+                      setShowConfirmDialog(true);
+                    }}
+                    className="bg-orange-600 hover:bg-orange-700"
+                  >
+                    Authorize Refund
+                  </Button>
+                )}
+              {capabilities.canPay &&
+                canCancelRefund(transaction) &&
+                transaction.type === 'purchase' && (
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      setConfirmAction('cancel');
+                      setShowConfirmDialog(true);
+                    }}
+                  >
+                    Cancel Refund Request
+                  </Button>
+                )}
             </div>
           </div>
         </DialogContent>

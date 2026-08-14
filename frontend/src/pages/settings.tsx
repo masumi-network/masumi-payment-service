@@ -32,15 +32,15 @@ export default function Settings() {
           </div>
 
           <div className="space-y-4">
-            {/* Admin API Key */}
+            {/* API Key */}
             <div
               className="border rounded-lg p-6 space-y-4 animate-fade-in-up opacity-0"
               style={{ animationDelay: '0ms' }}
             >
               <div>
-                <h2 className="text-sm font-medium">Admin API Key</h2>
+                <h2 className="text-sm font-medium">API Key</h2>
                 <p className="text-sm text-muted-foreground">
-                  Your admin API key for accessing the Masumi Node
+                  Your API key for accessing the Masumi Node
                 </p>
               </div>
               <div className="flex gap-2">
@@ -130,7 +130,7 @@ export default function Settings() {
             >
               <h2 className="text-sm font-medium">Danger Zone</h2>
               <p className="text-sm text-muted-foreground mb-4">
-                Sign out of the admin interface. You will need your API key to sign back in.
+                Sign out of the interface. You will need your API key to sign back in.
               </p>
               <Button
                 variant="destructive"

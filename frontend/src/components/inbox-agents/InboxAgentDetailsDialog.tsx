@@ -59,7 +59,7 @@ export function InboxAgentDetailsDialog({
   onClose,
   onSuccess,
 }: InboxAgentDetailsDialogProps) {
-  const { apiClient, network, selectedPaymentSourceId } = useAppContext();
+  const { apiClient, network, selectedPaymentSourceId, capabilities } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
   const [selectedWalletForDetails, setSelectedWalletForDetails] =
     useState<WalletWithBalance | null>(null);
@@ -99,17 +99,20 @@ export function InboxAgentDetailsDialog({
     [agent, holdingWallet],
   );
 
+  // Deregister posts to /inbox-agents/deregister (pay); Delete calls
+  // DELETE /inbox-agents (admin). Hide the control when the session lacks the
+  // permission its branch needs, instead of failing on confirm.
   const actionLabel = useMemo(() => {
     if (agent?.state === 'RegistrationConfirmed') {
-      return 'Deregister';
+      return capabilities.canPay ? 'Deregister' : null;
     }
 
     if (agent?.state === 'RegistrationFailed' || agent?.state === 'DeregistrationConfirmed') {
-      return 'Delete';
+      return capabilities.canAdmin ? 'Delete' : null;
     }
 
     return null;
-  }, [agent?.state]);
+  }, [agent?.state, capabilities.canPay, capabilities.canAdmin]);
 
   const handleWalletClick = useCallback(
     async (walletVkey: string) => {
