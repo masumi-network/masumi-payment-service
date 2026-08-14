@@ -10,6 +10,7 @@ import { useTheme } from '@/lib/contexts/ThemeContext';
 import { GetStaticProps } from 'next';
 import { MockPaymentDialog, MockPurchaseDialog, FullCycleDialog } from '@/components/testing';
 import { InputSchemaValidator } from '@/components/developers/InputSchemaValidator';
+import { useAppContext } from '@/lib/contexts/AppContext';
 
 export const getStaticProps: GetStaticProps = async () => {
   return {
@@ -17,10 +18,17 @@ export const getStaticProps: GetStaticProps = async () => {
   };
 };
 
+// Testing drives real payments and purchases (POST /payment, POST /purchase are
+// pay-authenticated), so read-only sessions don't get the tab at all — the cards
+// would open a dialog that can only 401 on submit. Schema Validator and OpenAPI
+// are static tools and stay available to everyone.
+const PAY_ONLY_TABS = ['Testing'];
 const TABS = [{ name: 'Testing' }, { name: 'Schema Validator' }, { name: 'OpenAPI' }];
 
 export default function Developers() {
-  const [activeTab, setActiveTab] = useState('Testing');
+  const { capabilities } = useAppContext();
+  const tabs = capabilities.canPay ? TABS : TABS.filter((tab) => !PAY_ONLY_TABS.includes(tab.name));
+  const [activeTab, setActiveTab] = useState(tabs[0].name);
   const [isIframeLoaded, setIsIframeLoaded] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const { theme } = useTheme();
@@ -74,9 +82,9 @@ export default function Developers() {
               </div>
             </div>
 
-            <Tabs tabs={TABS} activeTab={activeTab} onTabChange={handleTabChange} />
+            <Tabs tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
 
-            {activeTab === 'Testing' && (
+            {activeTab === 'Testing' && capabilities.canPay && (
               <div className="space-y-6 animate-fade-in-up opacity-0">
                 <div className="grid gap-4 md:grid-cols-3">
                   <button
@@ -170,14 +178,20 @@ export default function Developers() {
         </AnimatedPage>
       </MainLayout>
 
-      <MockPaymentDialog open={isPaymentDialogOpen} onClose={() => setPaymentDialogOpen(false)} />
+      <MockPaymentDialog
+        open={capabilities.canPay && isPaymentDialogOpen}
+        onClose={() => setPaymentDialogOpen(false)}
+      />
 
       <MockPurchaseDialog
-        open={isPurchaseDialogOpen}
+        open={capabilities.canPay && isPurchaseDialogOpen}
         onClose={() => setPurchaseDialogOpen(false)}
       />
 
-      <FullCycleDialog open={isFullCycleDialogOpen} onClose={() => setFullCycleDialogOpen(false)} />
+      <FullCycleDialog
+        open={capabilities.canPay && isFullCycleDialogOpen}
+        onClose={() => setFullCycleDialogOpen(false)}
+      />
     </>
   );
 }

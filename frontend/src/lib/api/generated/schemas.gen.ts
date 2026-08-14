@@ -104,6 +104,26 @@ export const APIKeySchema = {
                 ]
             },
             description: 'List of hot wallets this API key is scoped to'
+        },
+        x402WalletScopeEnabled: {
+            type: 'boolean',
+            description: 'Whether managed EVM wallet scope filtering is enabled for this API key'
+        },
+        X402WalletScopes: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    evmWalletId: {
+                        type: 'string',
+                        description: 'ID of the managed EVM wallet in scope'
+                    }
+                },
+                required: [
+                    'evmWalletId'
+                ]
+            },
+            description: 'Managed EVM wallets this API key is scoped to. The key additionally always reaches wallets it created itself.'
         }
     },
     required: [
@@ -119,7 +139,9 @@ export const APIKeySchema = {
         'RemainingUsageCredits',
         'status',
         'walletScopeEnabled',
-        'WalletScopes'
+        'WalletScopes',
+        'x402WalletScopeEnabled',
+        'X402WalletScopes'
     ]
 } as const;
 
@@ -4303,7 +4325,7 @@ export const PaymentSourceExtendedSchema = {
             properties: {
                 rpcProviderApiKey: {
                     type: 'string',
-                    description: 'The RPC provider API key (e.g., Blockfrost project ID)'
+                    description: 'The RPC provider API key (e.g., Blockfrost project ID). Operator secret: only returned to keys with admin access, omitted for Read/ReadAndPay keys.'
                 },
                 rpcProvider: {
                     type: 'string',
@@ -4314,7 +4336,6 @@ export const PaymentSourceExtendedSchema = {
                 }
             },
             required: [
-                'rpcProviderApiKey',
                 'rpcProvider'
             ],
             description: 'RPC provider configuration for blockchain interactions'
@@ -5181,7 +5202,7 @@ export const X402WalletSchema = {
         createdById: {
             type: 'string',
             nullable: true,
-            description: 'Id of the API key that created this wallet'
+            description: 'Id of the API key that created this wallet. Only returned to admins and for the caller’s own wallets; null otherwise, so a read key cannot enumerate other tenants’ key ids.'
         },
         createdAt: {
             type: 'string',

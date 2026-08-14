@@ -28,8 +28,9 @@ export function useX402Networks(options?: {
   silentErrors?: boolean;
   network?: NetworkType;
   allEnvironments?: boolean;
+  enabled?: boolean;
 }) {
-  const { apiClient, authorized, network: activeNetwork } = useAppContext();
+  const { apiClient, authorized, network: activeNetwork, capabilities } = useAppContext();
   const silentErrors = options?.silentErrors ?? false;
   // Always scope chains to an environment, enforced at the query level: testnet chains
   // belong to Preprod, mainnet chains to Mainnet. Defaults to the active top-selector env;
@@ -40,6 +41,7 @@ export function useX402Networks(options?: {
   // include both Cardano networks, so their ChainIdLimit must be choosable from every
   // EVM chain regardless of the active top-selector env. Omitting isTestnet returns all.
   const allEnvironments = options?.allEnvironments ?? false;
+  const enabled = options?.enabled ?? true;
 
   const query = useQuery({
     // Keyed by silentErrors so the silent (selector) and toasting (tab) consumers do
@@ -59,7 +61,10 @@ export function useX402Networks(options?: {
       );
       return response?.data?.data?.Networks ?? [];
     },
-    enabled: !!apiClient && authorized,
+    // GET /x402/networks is admin-authenticated. Gate here rather than at each
+    // call site: this hook is pulled in by shared surfaces (agent lists, pickers)
+    // a non-admin session can reach, where an ungated fetch just 401s.
+    enabled: !!apiClient && authorized && enabled && capabilities.canAdmin,
     staleTime: 30000,
   });
 
@@ -77,12 +82,14 @@ export function useAvailableX402Networks(options?: {
   silentErrors?: boolean;
   network?: NetworkType;
   allEnvironments?: boolean;
+  enabled?: boolean;
 }) {
-  const { apiClient, authorized, network: activeNetwork } = useAppContext();
+  const { apiClient, authorized, network: activeNetwork, capabilities } = useAppContext();
   const silentErrors = options?.silentErrors ?? false;
   const network = options?.network ?? activeNetwork;
   const isTestnet = isTestnetEnv(network);
   const allEnvironments = options?.allEnvironments ?? false;
+  const enabled = options?.enabled ?? true;
 
   const query = useQuery({
     // Keep this under the shared x402-networks prefix so chain mutations invalidate
@@ -99,7 +106,9 @@ export function useAvailableX402Networks(options?: {
       );
       return response?.data?.data?.Networks ?? [];
     },
-    enabled: !!apiClient && authorized,
+    // GET /x402/networks/available is read-level (sanitized projection), so any
+    // signed-in session may load the chain list.
+    enabled: !!apiClient && authorized && enabled,
     staleTime: 30000,
   });
 
@@ -114,6 +123,55 @@ export function useAvailableX402Networks(options?: {
 }
 
 /**
+ * Session bootstrap for rail detection: admins use the full configured-chain list;
+ * non-admins use the pay-authenticated available projection (admin list 401s for them).
+ */
+export type X402SessionNetwork = {
+  id: string;
+  caip2Id?: string;
+  displayName: string;
+  isEnabled: boolean;
+  isTestnet: boolean;
+  canSettle?: boolean;
+  facilitatorWalletId?: string | null;
+  facilitatorUrl?: string | null;
+  rpcUrl?: string | null;
+};
+
+export function useX402NetworksForSession(options?: {
+  silentErrors?: boolean;
+  network?: NetworkType;
+  allEnvironments?: boolean;
+}) {
+  const { capabilities } = useAppContext();
+  const admin = useX402Networks({
+    ...options,
+    enabled: capabilities.canAdmin,
+  });
+  const available = useAvailableX402Networks({
+    ...options,
+    // Read-level, so every non-admin session resolves the rail through it.
+    enabled: !capabilities.canAdmin,
+  });
+
+  if (capabilities.canAdmin) {
+    return {
+      networks: admin.networks as X402SessionNetwork[],
+      isLoading: admin.isLoading,
+      isRefetching: admin.isRefetching,
+      refetch: admin.refetch,
+    };
+  }
+
+  return {
+    networks: available.networks as X402SessionNetwork[],
+    isLoading: available.isLoading,
+    isRefetching: available.isRefetching,
+    refetch: available.refetch,
+  };
+}
+
+/**
  * Eagerly loads every managed EVM wallet (paging through /x402/wallets). Used by
  * the chain/budget pickers and setup flows that need the full set to choose
  * from. `enabled` lets form dialogs defer the load until opened. Pass `type` to
@@ -121,7 +179,7 @@ export function useAvailableX402Networks(options?: {
  * labels should use the denormalized address on the network/budget instead.
  */
 export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networkId?: string) {
-  const { apiClient, authorized } = useAppContext();
+  const { apiClient, authorized, capabilities } = useAppContext();
 
   const query = useQuery({
     queryKey: ['x402-wallets', 'all', type ?? 'any', networkId ?? 'any'],
@@ -147,6 +205,8 @@ export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networ
       }
       return items;
     },
+    // GET /x402/wallets is read-level (public wallet metadata, no key material),
+    // so every signed-in session may list them.
     enabled: !!apiClient && authorized && enabled,
     staleTime: 30000,
   });

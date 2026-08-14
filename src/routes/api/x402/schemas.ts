@@ -175,7 +175,12 @@ export const walletSchemaOutput = z
 			.nativeEnum(X402EvmWalletType)
 			.describe('Purchasing wallets fund outbound payments; Selling wallets settle inbound ones as facilitators'),
 		note: z.string().nullable().describe('Optional human-readable label for the wallet'),
-		createdById: z.string().nullable().describe('Id of the API key that created this wallet'),
+		createdById: z
+			.string()
+			.nullable()
+			.describe(
+				'Id of the API key that created this wallet. Only returned to admins and for the caller’s own wallets; null otherwise, so a read key cannot enumerate other tenants’ key ids.',
+			),
 		createdAt: z.date(),
 		updatedAt: z.date(),
 	})

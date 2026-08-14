@@ -37,6 +37,13 @@ class MockPrismaClientKnownRequestError extends Error {
 	}
 }
 const mockBudgetUpdateMany = jest.fn() as jest.Mock<any>;
+const mockUnitValueUpdateMany = jest.fn() as jest.Mock<any>;
+const mockUnitValueFindMany = jest.fn() as jest.Mock<any>;
+const mockUnitValueFindFirstAfterMiss = jest.fn() as jest.Mock<any>;
+const mockUnitValueCount = jest.fn() as jest.Mock<any>;
+const mockUnitValueDeleteMany = jest.fn() as jest.Mock<any>;
+const mockUnitValueRefundUpdateMany = jest.fn() as jest.Mock<any>;
+const CREDIT_ROW_ID = 'credit-row-1';
 const mockBudgetRefundUpdateMany = jest.fn() as jest.Mock<any>;
 const mockBudgetUpdate = jest.fn() as jest.Mock<any>;
 const mockBudgetUpsert = jest.fn() as jest.Mock<any>;
@@ -162,6 +169,11 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 			updateMany: mockBudgetRefundUpdateMany,
 			upsert: mockBudgetUpsert,
 			findMany: jest.fn(),
+		},
+		// Top level, so it is the credit REFUND. The debit runs against the
+		// in-transaction mock (mockUnitValueUpdateMany) further down.
+		unitValue: {
+			updateMany: mockUnitValueRefundUpdateMany,
 		},
 		$transaction: mockPrismaTransaction,
 	},
@@ -436,6 +448,12 @@ describe('x402 service helpers', () => {
 		mockReadContract.mockResolvedValue(1_000_000_000n);
 		mockGetBalance.mockResolvedValue(1_000_000_000n);
 		mockBudgetUpdateMany.mockResolvedValue({ count: 1 });
+		mockUnitValueUpdateMany.mockResolvedValue({ count: 1 });
+		mockUnitValueFindMany.mockResolvedValue([{ id: CREDIT_ROW_ID, amount: 1_000_000_000n }]);
+		mockUnitValueCount.mockResolvedValue(0);
+		mockUnitValueFindFirstAfterMiss.mockResolvedValue({ id: CREDIT_ROW_ID });
+		mockUnitValueDeleteMany.mockResolvedValue({ count: 1 });
+		mockUnitValueRefundUpdateMany.mockResolvedValue({ count: 1 });
 		mockBudgetRefundUpdateMany.mockResolvedValue({ count: 1 });
 		mockX402PaymentAttemptFindFirst.mockResolvedValue(null);
 		mockBudgetUpdate.mockResolvedValue({ id: 'budget-1' });
@@ -478,6 +496,15 @@ describe('x402 service helpers', () => {
 				x402WalletBudget: {
 					findFirst: mockBudgetFindFirst,
 					updateMany: mockBudgetUpdateMany,
+				},
+				unitValue: {
+					findMany: mockUnitValueFindMany,
+					// Only reached after a guarded decrement misses, to tell "row gone"
+					// (409, retryable) from "balance short" (402, terminal).
+					findFirst: mockUnitValueFindFirstAfterMiss,
+					count: mockUnitValueCount,
+					deleteMany: mockUnitValueDeleteMany,
+					updateMany: mockUnitValueUpdateMany,
 				},
 				x402PaymentAttempt: {
 					create: async (args: any) =>
@@ -1381,6 +1408,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 
 			expect(result).toMatchObject({
@@ -1428,6 +1456,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 
 			const foreignRequirement = { ...requirements, payTo: '0x9999999999999999999999999999999999999999' };
@@ -1442,11 +1471,166 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: ['eip155:1'],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 400 });
 
 			expect(mockBudgetUpdateMany).not.toHaveBeenCalled();
 			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
+		});
+
+		it('debits the API key usage credits when it is usage limited', async () => {
+			mockUnitValueUpdateMany.mockResolvedValue({ count: 1 });
+
+			await service.createX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				evmWalletId: 'wallet-1',
+				paymentRequired,
+				usageLimited: true,
+			});
+
+			// Every row for the chain-qualified unit is resolved (their SUM is the
+			// balance — nothing enforces one row per unit)...
+			expect(mockUnitValueFindMany).toHaveBeenCalledWith({
+				where: {
+					apiKeyId: 'api-key-1',
+					unit: `${source.network}:${paymentRequired.accepts[0].asset.toLowerCase()}`,
+				},
+				orderBy: { id: 'asc' },
+				select: { id: true, amount: true },
+			});
+			// ...then debited by id, guarded on it still covering the amount so two
+			// concurrent payments cannot both pass the check.
+			expect(mockUnitValueUpdateMany).toHaveBeenCalledWith({
+				where: {
+					id: CREDIT_ROW_ID,
+					amount: { gte: BigInt(paymentRequired.accepts[0].amount) },
+				},
+				data: { amount: { decrement: BigInt(paymentRequired.accepts[0].amount) } },
+			});
+		});
+
+		it('consolidates split credit rows and debits the merged row', async () => {
+			// Two rows for one unit, together covering the payment: judged by their sum
+			// (the Cardano semantic), merged into the first row, then debited — instead
+			// of 402ing because one arbitrary row is short.
+			mockUnitValueFindMany.mockResolvedValue([
+				{ id: 'credit-row-a', amount: 4_000n },
+				{ id: 'credit-row-b', amount: 8_000n },
+			]);
+			mockUnitValueUpdateMany.mockResolvedValue({ count: 1 });
+
+			await service.createX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				evmWalletId: 'wallet-1',
+				paymentRequired,
+				usageLimited: true,
+			});
+
+			// The duplicate is removed with an amount guard so a concurrent debit of it
+			// cannot be silently absorbed into the merge.
+			expect(mockUnitValueDeleteMany).toHaveBeenCalledWith({
+				where: { id: 'credit-row-b', amount: 8_000n },
+			});
+			expect(mockUnitValueUpdateMany).toHaveBeenCalledWith({
+				where: { id: 'credit-row-a', amount: 4_000n },
+				data: { amount: 12_000n },
+			});
+			expect(mockUnitValueUpdateMany).toHaveBeenCalledWith({
+				where: { id: 'credit-row-a', amount: { gte: BigInt(paymentRequired.accepts[0].amount) } },
+				data: { amount: { decrement: BigInt(paymentRequired.accepts[0].amount) } },
+			});
+		});
+
+		it('rejects with 409 when a split row changes during consolidation', async () => {
+			mockUnitValueFindMany.mockResolvedValue([
+				{ id: 'credit-row-a', amount: 4_000n },
+				{ id: 'credit-row-b', amount: 8_000n },
+			]);
+			// The guarded delete misses: a concurrent payment already debited row b.
+			mockUnitValueDeleteMany.mockResolvedValue({ count: 0 });
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 409 });
+
+			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
+		});
+
+		it('rejects with 402 when the key has EVM credit rows but none for that chain and asset', async () => {
+			mockUnitValueFindMany.mockResolvedValue([]);
+			// The key holds credits for SOME other EVM chain/asset, so the cap is
+			// binding and cannot be dodged chain-by-chain.
+			mockUnitValueCount.mockResolvedValue(1);
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 402 });
+
+			expect(mockUnitValueUpdateMany).not.toHaveBeenCalled();
+			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
+		});
+
+		it('does not enforce the cap for a usage-limited key with no EVM credit rows at all', async () => {
+			// Grandfathering: usageLimited predates EVM credits. A pre-existing key with
+			// only Cardano-format credits must keep paying on x402 after the deploy
+			// instead of being hard-stopped by a unit format it has never heard of.
+			mockUnitValueFindMany.mockResolvedValue([]);
+			mockUnitValueCount.mockResolvedValue(0);
+
+			await service.createX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				evmWalletId: 'wallet-1',
+				paymentRequired,
+				usageLimited: true,
+			});
+
+			expect(mockUnitValueUpdateMany).not.toHaveBeenCalled();
+			expect(mockCreatePaymentPayload).toHaveBeenCalled();
+		});
+
+		it('rejects with 402 when usage credits cannot cover the payment', async () => {
+			// updateMany matches nothing when the guarded balance is short.
+			mockUnitValueUpdateMany.mockResolvedValue({ count: 0 });
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 402 });
+
+			expect(mockCreatePaymentPayload).not.toHaveBeenCalled();
+		});
+
+		it('leaves the credit ledger alone for an unlimited key', async () => {
+			await service.createX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				evmWalletId: 'wallet-1',
+				paymentRequired,
+				usageLimited: false,
+			});
+
+			expect(mockUnitValueUpdateMany).not.toHaveBeenCalled();
 		});
 
 		it('rejects when a delegated managed-wallet budget cannot cover the requirement', async () => {
@@ -1458,7 +1642,8 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
-					ownerScope: 'api-key-2',
+					ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 402 });
 
@@ -1492,7 +1677,8 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
-				ownerScope: 'api-key-1',
+				ownerScope: { scope: 'api-key-1', walletScopeIds: [] },
+				usageLimited: false,
 			});
 
 			expect(result).toMatchObject({ attemptId: 'attempt-outbound-1' });
@@ -1520,7 +1706,8 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
-					ownerScope: 'api-key-2',
+					ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 404 });
 
@@ -1544,7 +1731,8 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-selling',
 					paymentRequired,
-					ownerScope: 'api-key-2',
+					ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 404 });
 
@@ -1576,7 +1764,8 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
-				ownerScope: 'api-key-2',
+				ownerScope: { scope: 'api-key-2', walletScopeIds: [] },
+				usageLimited: false,
 			});
 
 			expect(result).toMatchObject({ attemptId: 'attempt-outbound-1' });
@@ -1616,6 +1805,7 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 402 });
 
@@ -1639,6 +1829,7 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 400 });
 
@@ -1657,6 +1848,7 @@ describe('x402 service helpers', () => {
 							...paymentRequired,
 							accepts: [{ ...requirements, amount }],
 						} as Parameters<typeof service.createX402Payment>[0]['paymentRequired'],
+						usageLimited: false,
 					}),
 				).rejects.toMatchObject({ status: 400 });
 
@@ -1689,6 +1881,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: null,
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 
 			expect(result.xPaymentHeader).toBe('x-payment-header-base64');
@@ -1706,6 +1899,7 @@ describe('x402 service helpers', () => {
 					caip2NetworkLimit: [source.network],
 					evmWalletId: 'wallet-1',
 					paymentRequired,
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 500, message: 'x402 payment signing failed' });
 
@@ -1724,6 +1918,116 @@ describe('x402 service helpers', () => {
 			});
 		});
 
+		it('refunds the debited usage credits when signing throws', async () => {
+			// Signing happens after the reservation has committed. The wallet budget is
+			// handed back on failure, so the key's credits must be too — otherwise a
+			// payment that never happened permanently burns them.
+			mockCreatePaymentPayload.mockRejectedValue(new Error('sign boom'));
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 500 });
+
+			// Pinned to the row the reservation debited, so an admin credit reset between
+			// debit and refund cannot have the refund inflate a replacement row.
+			expect(mockUnitValueRefundUpdateMany).toHaveBeenCalledWith({
+				where: { id: CREDIT_ROW_ID },
+				data: { amount: { increment: BigInt(paymentRequired.accepts[0].amount) } },
+			});
+		});
+
+		it('falls back to the unit row when the debited credit row was retired', async () => {
+			// A Cardano purchase consolidating duplicates (or an admin rewriting the
+			// unit) can retire the pinned id. The credits are still owed to this key for
+			// this unit, so the refund must land rather than be silently dropped.
+			mockCreatePaymentPayload.mockRejectedValue(new Error('sign boom'));
+			mockUnitValueRefundUpdateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 500 });
+
+			// Scoped to (apiKeyId, unit) so it can never credit another key or asset.
+			expect(mockUnitValueRefundUpdateMany).toHaveBeenLastCalledWith({
+				where: {
+					apiKeyId: 'api-key-1',
+					unit: `${source.network}:${paymentRequired.accepts[0].asset.toLowerCase()}`,
+				},
+				data: { amount: { increment: BigInt(paymentRequired.accepts[0].amount) } },
+			});
+		});
+
+		it('still refunds credits when the budget refund throws', async () => {
+			// The two refunds touch unrelated rows, so a transient failure of one must
+			// not skip the other, mask the signing error, or stop the attempt being
+			// marked Failed.
+			mockCreatePaymentPayload.mockRejectedValue(new Error('sign boom'));
+			mockBudgetRefundUpdateMany.mockRejectedValue(new Error('connection reset'));
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 500, message: 'x402 payment signing failed' });
+
+			expect(mockUnitValueRefundUpdateMany).toHaveBeenCalled();
+			expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({ status: 'Failed', errorReason: 'x402_sign_failed' }),
+				}),
+			);
+		});
+
+		it('reports a vanished credit row as a retryable 409, not a terminal 402', async () => {
+			// A concurrent write can retire the row between the read and the guarded
+			// decrement. Reporting that as 402 tells a fully funded caller its payment
+			// was declined for lack of funds, and agents treat 402 as terminal.
+			mockUnitValueUpdateMany.mockResolvedValue({ count: 0 });
+			mockUnitValueFindFirstAfterMiss.mockResolvedValue(null);
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: true,
+				}),
+			).rejects.toMatchObject({ status: 409 });
+		});
+
+		it('does not touch the credit ledger on a signing failure for an unlimited key', async () => {
+			mockCreatePaymentPayload.mockRejectedValue(new Error('sign boom'));
+
+			await expect(
+				service.createX402Payment({
+					apiKeyId: 'api-key-1',
+					caip2NetworkLimit: [source.network],
+					evmWalletId: 'wallet-1',
+					paymentRequired,
+					usageLimited: false,
+				}),
+			).rejects.toMatchObject({ status: 500 });
+
+			expect(mockUnitValueRefundUpdateMany).not.toHaveBeenCalled();
+		});
+
 		it('rejects (and refunds) when a paymentIdentifier is requested but the 402 does not support it', async () => {
 			// The forwarded 402 declares no payment-identifier extension, and the mock
 			// extractor returns id:null, so the requested identifier cannot be attached.
@@ -1734,6 +2038,7 @@ describe('x402 service helpers', () => {
 					evmWalletId: 'wallet-1',
 					paymentRequired,
 					paymentIdentifier: 'caller-supplied-id-123456',
+					usageLimited: false,
 				}),
 			).rejects.toMatchObject({ status: 400 });
 
@@ -1823,6 +2128,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 			const firstFailure = expect(firstPayment).rejects.toMatchObject({ status: 500 });
 			await firstSigningStarted;
@@ -1847,6 +2153,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 			expect(budgetState).toEqual({
 				remainingAmount: freshGrant - amount,
@@ -2026,6 +2333,7 @@ describe('x402 service helpers', () => {
 				caip2NetworkLimit: [source.network],
 				evmWalletId: 'wallet-1',
 				paymentRequired,
+				usageLimited: false,
 			});
 
 			expect(mockCounterpartyFindUniqueOrThrow).toHaveBeenCalledWith(

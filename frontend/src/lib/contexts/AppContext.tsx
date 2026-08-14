@@ -16,6 +16,7 @@ import type { PaymentSourceExtended } from '../api/generated';
 import { getOperationalPaymentSource, isV2PaymentSource } from '@/lib/payment-source-type';
 import { railOf } from '@/lib/rail-readiness';
 import { handleApiCall } from '@/lib/utils';
+import { type ApiKeyCapabilities, DEFAULT_CAPABILITIES } from '@/lib/permissions';
 
 export type NetworkType = 'Preprod' | 'Mainnet';
 
@@ -34,6 +35,8 @@ export const AppContext = createContext<
       updateApiKey: (apiKey: string | null) => void;
       authorized: boolean;
       setAuthorized: (authorized: boolean) => void;
+      capabilities: ApiKeyCapabilities;
+      setCapabilities: (capabilities: ApiKeyCapabilities) => void;
       network: NetworkType;
       setNetwork: (network: NetworkType) => void;
       showError: (error: { code?: number; message: string; details?: unknown }) => void;
@@ -64,6 +67,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const [authorized, setAuthorized] = useState(false);
+  const [capabilities, setCapabilities] = useState<ApiKeyCapabilities>(DEFAULT_CAPABILITIES);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [network, setNetworkState] = useState<NetworkType>(() => {
     if (typeof window !== 'undefined') {
@@ -325,6 +329,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setAuthorized(true);
       } else {
         setAuthorized(false);
+        setCapabilities(DEFAULT_CAPABILITIES);
         setApiClient(
           createClient({
             headers: { token: 'invalid-api' },
@@ -341,6 +346,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(() => {
     setApiKey(null);
     setAuthorized(false);
+    setCapabilities(DEFAULT_CAPABILITIES);
     setNetwork('Preprod');
     setSelectedPaymentSourceId(null);
     setIsChangingNetwork(false);
@@ -377,6 +383,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateApiKey,
       setAuthorized,
       authorized,
+      capabilities,
+      setCapabilities,
       network,
       setNetwork: setNetworkWithReset,
       showError,
@@ -400,6 +408,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       apiKey,
       updateApiKey,
       authorized,
+      capabilities,
       network,
       setNetworkWithReset,
       showError,

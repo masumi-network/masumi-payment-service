@@ -27,6 +27,12 @@ export type AuthContext = {
 	/** Whether this API key has usage credit limits (already false if canAdmin=true) */
 	usageLimited: boolean;
 	walletScopeIds: string[] | null;
+	/**
+	 * Managed EVM wallets this key may use, or null for unrestricted. Mirrors
+	 * walletScopeIds. A scoped key additionally always reaches the wallets it
+	 * created itself, so creating a wallet never hides it from its creator.
+	 */
+	x402WalletScopeIds: string[] | null;
 };
 
 const authMiddlewareInputSchema = z.object({});
@@ -59,6 +65,7 @@ export const authMiddleware = (required: RequiredPermissionFlags) =>
 					},
 					include: {
 						WalletScopes: { select: { hotWalletId: true } },
+						X402WalletScopes: { select: { evmWalletId: true } },
 					},
 				});
 
@@ -88,6 +95,11 @@ export const authMiddleware = (required: RequiredPermissionFlags) =>
 
 				const walletScopeIds =
 					apiKey.canAdmin || !apiKey.walletScopeEnabled ? null : apiKey.WalletScopes.map((ws) => ws.hotWalletId);
+				// EVM twin of the above. Null means unrestricted, exactly as on the Cardano side.
+				const x402WalletScopeIds =
+					apiKey.canAdmin || !apiKey.x402WalletScopeEnabled
+						? null
+						: apiKey.X402WalletScopes.map((ws) => ws.evmWalletId);
 
 				return {
 					id: apiKey.id,
@@ -98,6 +110,7 @@ export const authMiddleware = (required: RequiredPermissionFlags) =>
 					caip2NetworkLimit,
 					usageLimited: usageLimited,
 					walletScopeIds: walletScopeIds,
+					x402WalletScopeIds: x402WalletScopeIds,
 				}; // provides endpoints with options.user
 			} catch (error) {
 				//await a random amount to throttle invalid requests

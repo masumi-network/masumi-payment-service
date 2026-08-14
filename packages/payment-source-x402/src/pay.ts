@@ -20,7 +20,8 @@ import {
 	getManagedWalletOrThrow,
 	normalizeAddress,
 	upsertCounterpartyWalletId,
-	type X402OwnerScope,
+	X402_UNRESTRICTED,
+	type X402OwnerScopeInput,
 } from './internal';
 import { encryptPaymentPayloadForStorage, getPaymentIdentifier, hashX402PaymentPayload } from './payload';
 import { EXACT_SCHEME, requirementsMatch } from './requirements';
@@ -41,6 +42,7 @@ async function reserveBudgetForAttempt({
 	budgetId,
 	budgetGeneration,
 	requirements,
+	usageLimited,
 }: {
 	apiKeyId: string;
 	evmWalletId: string;
@@ -48,10 +50,14 @@ async function reserveBudgetForAttempt({
 	budgetId: string | null;
 	budgetGeneration: number | null;
 	requirements: PaymentRequirements;
+	usageLimited: boolean;
 }) {
 	const amount = BigInt(requirements.amount);
 	const asset = normalizeAddress(requirements.asset);
 	const payTo = normalizeAddress(requirements.payTo);
+	// Set only when the key's credit ledger is actually debited below, so the refund
+	// path knows whether — and against which unit — to put the credits back.
+	const creditUnit = usageLimited ? x402CreditUnit(requirements.network, requirements.asset) : null;
 	const budgetAndAttempt = await prisma.$transaction(async (tx) => {
 		if (budgetId != null) {
 			if (budgetGeneration == null) throw createHttpError(500, 'x402 budget generation is missing');
@@ -72,6 +78,96 @@ async function reserveBudgetForAttempt({
 			});
 			if (updateResult.count !== 1) {
 				throw createHttpError(402, 'Insufficient x402 wallet budget');
+			}
+		}
+
+		// The API key's own spending cap, the direct analogue of the Cardano purchase
+		// path debiting RemainingUsageCredits. Independent of the wallet budget above:
+		// the budget caps what one key may spend from one delegated wallet, this caps
+		// what the key may spend in total. Opt-in — an unlimited key has usageLimited
+		// false and never reaches here.
+		//
+		// Debited in the same transaction and guarded on the row still covering the
+		// amount, so two concurrent payments cannot both pass the check and overspend.
+		let creditRowId: string | null = null;
+		if (creditUnit != null) {
+			// All rows for the unit, not findFirst: nothing enforces one row per
+			// (apiKeyId, unit), so credits split across rows must be judged by their SUM
+			// (as the Cardano path does) — checking one arbitrary row 402s payments the
+			// key can actually afford, nondeterministically.
+			const creditRows = await tx.unitValue.findMany({
+				where: { apiKeyId, unit: creditUnit },
+				orderBy: { id: 'asc' },
+				select: { id: true, amount: true },
+			});
+			if (creditRows.length === 0) {
+				// Grandfathering: usageLimited predates EVM credits, so an existing key
+				// whose flag meant "Cardano-limited" would be hard-stopped on deploy by a
+				// unit format it has never heard of. A key with NO chain-qualified rows at
+				// all keeps its pre-cap behaviour (uncapped x402) and says so in the log;
+				// the moment the operator provisions any eip155 credit row the cap becomes
+				// binding for every EVM chain, so it cannot be dodged chain-by-chain.
+				const evmCreditRowCount = await tx.unitValue.count({
+					where: { apiKeyId, unit: { startsWith: 'eip155:' } },
+				});
+				if (evmCreditRowCount > 0) {
+					throw createHttpError(
+						402,
+						`Insufficient usage credits for ${creditUnit}. This API key is usage limited; top up its credits for this chain and asset, or remove the limit.`,
+					);
+				}
+				logger.warn(
+					'x402 credit cap not enforced: usage-limited key has no EVM credit rows (pre-cap key); add eip155-format usage credits to activate the cap',
+					{ apiKeyId, unit: creditUnit },
+				);
+			} else {
+				// Consolidate split rows into the first one before debiting. Every write is
+				// guarded on the amount read above, so a concurrent debit/refund/reset makes
+				// the guard miss and the whole reservation rolls back as a retryable 409
+				// instead of double-counting or losing an update.
+				const target = creditRows[0];
+				let targetAmount = target.amount;
+				if (creditRows.length > 1) {
+					for (const row of creditRows.slice(1)) {
+						const merged = await tx.unitValue.deleteMany({ where: { id: row.id, amount: row.amount } });
+						if (merged.count !== 1) {
+							throw createHttpError(409, 'Usage credits changed concurrently; retry the payment');
+						}
+						targetAmount += row.amount;
+					}
+					const consolidated = await tx.unitValue.updateMany({
+						where: { id: target.id, amount: target.amount },
+						data: { amount: targetAmount },
+					});
+					if (consolidated.count !== 1) {
+						throw createHttpError(409, 'Usage credits changed concurrently; retry the payment');
+					}
+				}
+				// Guarded on the consolidated row still covering the amount, so two
+				// concurrent payments cannot both pass the check and overspend. The row id
+				// is kept so the refund is pinned to the exact row this debited — refunding
+				// by (apiKeyId, unit) would credit whatever row carries the unit at refund
+				// time, including a replacement created by an admin credit reset.
+				const creditResult = await tx.unitValue.updateMany({
+					where: { id: target.id, amount: { gte: amount } },
+					data: { amount: { decrement: amount } },
+				});
+				if (creditResult.count !== 1) {
+					// A miss means either "the balance is short" (402, terminal — the caller
+					// must top up) or "the row changed under us" (409, retryable). Reporting
+					// the second as 402 tells a fully funded caller its payment was declined
+					// for lack of funds, and agents treat 402 as terminal, so distinguish
+					// them by re-reading the row inside this still-open transaction.
+					const stillThere = await tx.unitValue.findFirst({ where: { id: target.id }, select: { id: true } });
+					if (stillThere == null) {
+						throw createHttpError(409, 'Usage credits changed concurrently; retry the payment');
+					}
+					throw createHttpError(
+						402,
+						`Insufficient usage credits for ${creditUnit}. This API key is usage limited; top up its credits for this chain and asset, or remove the limit.`,
+					);
+				}
+				creditRowId = target.id;
 			}
 		}
 
@@ -97,10 +193,98 @@ async function reserveBudgetForAttempt({
 			select: { id: true },
 		});
 
-		return { budgetId, budgetGeneration, attemptId: attempt.id, amount };
+		return { apiKeyId, budgetId, budgetGeneration, creditUnit, creditRowId, attemptId: attempt.id, amount };
 	});
 
 	return budgetAndAttempt;
+}
+
+/**
+ * Undo everything the reservation debited. Signing happens after the reservation
+ * has committed, so a failure there leaves an attempt that is marked Failed with no
+ * payment made — neither the wallet budget nor the key's usage credits may stay
+ * debited for it.
+ */
+async function refundReservation(
+	reservation: {
+		apiKeyId: string;
+		budgetId: string | null;
+		budgetGeneration: number | null;
+		creditUnit: string | null;
+		creditRowId: string | null;
+		amount: bigint;
+	} | null,
+) {
+	if (reservation == null) return;
+	// The two refunds target unrelated rows, so neither may abort the other, and
+	// neither may throw out of here: a propagated error would skip the caller's
+	// Failed-status update and replace the original signing error with a transient
+	// DB one — leaving the attempt open AND the ledgers debited with no trace.
+	// Failures are logged with full context for manual reconciliation instead.
+	try {
+		await refundBudgetReservation(reservation);
+	} catch (error) {
+		logger.error('x402 budget refund threw; budget remains debited — needs manual reconciliation', {
+			budgetId: reservation.budgetId,
+			budgetGeneration: reservation.budgetGeneration,
+			amount: reservation.amount.toString(),
+			error,
+		});
+	}
+	// The twin of the budget refund above: an unlimited key debited no credits, so
+	// there is nothing to restore. Without this a signing failure would permanently
+	// burn the key's credits for a payment that never happened, while the wallet
+	// budget it was paying from was handed back.
+	//
+	// Pinned to the row the reservation actually debited, the credit-ledger analogue
+	// of the budget refund's generation guard. Matching on (apiKeyId, unit) instead
+	// would credit whichever row holds that unit now — so an admin credit reset
+	// between debit and refund would inflate the replacement balance by an amount
+	// that was never spent from it.
+	if (reservation.creditRowId != null && reservation.creditUnit != null) {
+		try {
+			const result = await prisma.unitValue.updateMany({
+				where: { id: reservation.creditRowId },
+				data: { amount: { increment: reservation.amount } },
+			});
+			if (result.count !== 1) {
+				// The pinned row is gone. Credit the key's current row for the same unit
+				// instead of dropping the refund: the debit really did reduce this key's
+				// balance for this unit, so the amount is owed to it wherever that balance
+				// now lives (a Cardano purchase consolidating duplicates, or an admin
+				// rewriting the unit, can retire the id). Scoped to (apiKeyId, unit) so it
+				// can never credit another key or another asset.
+				const fallback = await prisma.unitValue.updateMany({
+					where: { apiKeyId: reservation.apiKeyId, unit: reservation.creditUnit },
+					data: { amount: { increment: reservation.amount } },
+				});
+				if (fallback.count === 1) {
+					logger.warn('x402 usage-credit refund fell back to the current row for the unit (debited row retired)', {
+						apiKeyId: reservation.apiKeyId,
+						unit: reservation.creditUnit,
+						creditRowId: reservation.creditRowId,
+						amount: reservation.amount.toString(),
+					});
+				} else {
+					logger.error('x402 usage-credit refund failed: no row for the debited unit — needs reconciliation', {
+						apiKeyId: reservation.apiKeyId,
+						unit: reservation.creditUnit,
+						creditRowId: reservation.creditRowId,
+						matchedRows: fallback.count,
+						amount: reservation.amount.toString(),
+					});
+				}
+			}
+		} catch (error) {
+			logger.error('x402 usage-credit refund threw; credits remain debited — needs manual reconciliation', {
+				apiKeyId: reservation.apiKeyId,
+				unit: reservation.creditUnit,
+				creditRowId: reservation.creditRowId,
+				amount: reservation.amount.toString(),
+				error,
+			});
+		}
+	}
 }
 
 async function refundBudgetReservation(
@@ -131,6 +315,17 @@ async function refundBudgetReservation(
 	}
 }
 
+/**
+ * Credit-ledger unit for an EVM asset. Chain-qualified because the same token
+ * contract address exists on multiple chains, and a credit balance must not be
+ * spendable across them. Mirrors the Cardano unit (policyId+assetName, '' for
+ * lovelace); here the native gas token uses the literal 'native', matching the
+ * low-balance rules.
+ */
+export function x402CreditUnit(caip2Network: string, asset: string): string {
+	return `${caip2Network}:${normalizeAddress(asset)}`;
+}
+
 export async function createX402Payment({
 	apiKeyId,
 	caip2NetworkLimit,
@@ -139,7 +334,8 @@ export async function createX402Payment({
 	preferredNetwork,
 	preferredAsset,
 	paymentIdentifier,
-	ownerScope = null,
+	ownerScope = X402_UNRESTRICTED,
+	usageLimited,
 }: {
 	apiKeyId: string;
 	caip2NetworkLimit: string[] | null;
@@ -148,7 +344,14 @@ export async function createX402Payment({
 	preferredNetwork?: string;
 	preferredAsset?: string;
 	paymentIdentifier?: string;
-	ownerScope?: X402OwnerScope;
+	ownerScope?: X402OwnerScopeInput;
+	/**
+	 * Whether the calling key's spending is capped by its RemainingUsageCredits.
+	 * REQUIRED, not defaulted: this gates a spending control, and an optional
+	 * `false` default meant any future caller that forgot it would silently pay
+	 * uncapped with nothing in the type system or the logs to flag it.
+	 */
+	usageLimited: boolean;
 }) {
 	const accepts = paymentRequired.accepts;
 	if (!Array.isArray(accepts) || accepts.length === 0) {
@@ -181,7 +384,13 @@ export async function createX402Payment({
 	// A matching enabled budget is an explicit delegation from the wallet operator to another API
 	// key; without ownership/admin access or such a grant, every foreign wallet remains a 404.
 	const walletMetadata = await getManagedWalletOrThrow(evmWalletId);
-	const hasOwnerAccess = ownerScope == null || walletMetadata.createdById === ownerScope;
+	// Unrestricted (admin or unscoped key), the creator, or a key the wallet was
+	// assigned to — otherwise access has to come from a budget grant below.
+	const hasOwnerAccess =
+		ownerScope.scope == null ||
+		ownerScope.walletScopeIds == null ||
+		walletMetadata.createdById === ownerScope.scope ||
+		ownerScope.walletScopeIds.includes(evmWalletId);
 	const budgetsByCandidate = new Map<
 		PaymentRequirements,
 		{ id: string; remainingAmount: bigint; generation: number }
@@ -206,7 +415,7 @@ export async function createX402Payment({
 	const wallet = await getManagedWalletOrThrow(
 		evmWalletId,
 		X402EvmWalletType.Purchasing,
-		hasOwnerAccess ? ownerScope : null,
+		hasOwnerAccess ? ownerScope : X402_UNRESTRICTED,
 	);
 	const walletNetwork = await prisma.x402Network.findUnique({
 		where: { id: wallet.networkId },
@@ -217,10 +426,14 @@ export async function createX402Payment({
 	}
 
 	// Select the first candidate on the wallet's network. If a budget exists for (apiKey, wallet,
-	// asset) it must cover the amount (capped path). If no budget exists and the caller owns the
-	// wallet or is an admin, payment is uncapped at the node — the client (e.g. the SaaS) meters
-	// spend itself and the on-chain balance is the real ceiling (checked below). An existing but
-	// underfunded budget is a hard reject; it never falls through to uncapped spending.
+	// asset) it must cover the amount (capped path). If no budget exists and the caller has owner
+	// access — admin, an UNSCOPED key, the wallet's creator, or a key the wallet was ASSIGNED to
+	// via its scope list — payment is uncapped at the node: assignment deliberately inherits
+	// own-wallet semantics (Cardano parity), so scoping a key to a wallet grants spend from it,
+	// not just visibility. The remaining ceilings are the key's usage credits (when usageLimited)
+	// and the on-chain balance (checked below); operators who want a per-wallet cap on an
+	// assigned wallet must also set a budget row. An existing but underfunded budget is a hard
+	// reject; it never falls through to uncapped spending.
 	let selectedRequirement: PaymentRequirements | null = null;
 	let selectedBudgetId: string | null = null;
 	let selectedBudgetGeneration: number | null = null;
@@ -249,7 +462,7 @@ export async function createX402Payment({
 
 	// A funded budget authorizes this caller to use the delegated wallet. The reservation below
 	// rechecks the exact (apiKey, wallet, asset) grant and decrements it atomically before signing.
-	const signingOwnerScope = selectedBudgetId != null ? null : ownerScope;
+	const signingOwnerScope = selectedBudgetId != null ? X402_UNRESTRICTED : ownerScope;
 	const { client, network, payer, publicClient } = await getClientForWallet(
 		evmWalletId,
 		selected.network,
@@ -300,6 +513,7 @@ export async function createX402Payment({
 	}
 
 	const reservation = await reserveBudgetForAttempt({
+		usageLimited,
 		apiKeyId,
 		evmWalletId,
 		networkId: network.id,
@@ -349,8 +563,9 @@ export async function createX402Payment({
 		};
 	} catch (error) {
 		// Refund first so that a failure to record the Failed status can never leak the
-		// reserved budget; the status update is best-effort and must not mask the error.
-		await refundBudgetReservation(reservation);
+		// reserved budget or credits; the status update is best-effort and must not mask
+		// the error.
+		await refundReservation(reservation);
 		await prisma.x402PaymentAttempt
 			.update({
 				where: { id: reservation.attemptId },

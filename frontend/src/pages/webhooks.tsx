@@ -49,7 +49,8 @@ const allEventsFilterValue = 'ALL_EVENTS';
 
 export default function WebhooksPage() {
   const router = useRouter();
-  const { apiClient, selectedPaymentSource, selectedPaymentSourceId, activeRail } = useAppContext();
+  const { apiClient, selectedPaymentSource, selectedPaymentSourceId, activeRail, capabilities } =
+    useAppContext();
   // Scope webhook events to the active rail: x402 events on the EVM rail, Cardano escrow
   // events on the Cardano rail. The event filter, the visible list, and the create/edit
   // dialog all use this so each rail shows only its own events.
@@ -245,7 +246,7 @@ export default function WebhooksPage() {
                 : 'Create your first webhook for this payment source to send alerts into your preferred chat tool.'
             }
             action={
-              !hasActiveFilters ? (
+              !hasActiveFilters && capabilities.canPay ? (
                 <Button onClick={() => setIsAddDialogOpen(true)}>
                   <Plus className="h-4 w-4" />
                   Add webhook
@@ -421,14 +422,16 @@ export default function WebhooksPage() {
 
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={() => void refetch()} isRefreshing={isFetching} />
-              <Button
-                id="add-webhook-button"
-                onClick={() => setIsAddDialogOpen(true)}
-                disabled={!selectedPaymentSourceId}
-              >
-                <Plus className="h-4 w-4" />
-                Add webhook
-              </Button>
+              {capabilities.canPay && (
+                <Button
+                  id="add-webhook-button"
+                  onClick={() => setIsAddDialogOpen(true)}
+                  disabled={!selectedPaymentSourceId}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add webhook
+                </Button>
+              )}
             </div>
           </div>
 

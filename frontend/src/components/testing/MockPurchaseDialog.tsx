@@ -102,7 +102,7 @@ function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
 
 export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
-  const { wallets } = useWallets();
+  const { wallets } = useWallets({ enabled: open });
   const [isLoading, setIsLoading] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [pasteValue, setPasteValue] = useState('');

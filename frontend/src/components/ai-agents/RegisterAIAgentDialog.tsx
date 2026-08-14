@@ -99,7 +99,13 @@ export function RegisterAIAgentDialog({
     { wallet: WalletListItem; balance: number }[]
   >([]);
 
-  const { wallets, isLoading: isLoadingWallets, isError: isWalletsError } = useWallets();
+  const {
+    wallets,
+    isLoading: isLoadingWallets,
+    isError: isWalletsError,
+  } = useWallets({
+    enabled: open,
+  });
   const { apiClient, network, selectedPaymentSource } = useAppContext();
   // x402 and source-owned pricing are V2-only; update always targets V2.
   const isV2Target = isUpdateMode

@@ -87,7 +87,7 @@ export const postWallet = <ThrowOnError extends boolean = false>(options?: Optio
 });
 
 /**
- * List hot wallets, optionally filtered by payment source and type. (admin access required)
+ * List hot wallets, optionally filtered by payment source and type. (read access required)
  *
  * Lists hot wallets across payment sources with cursor-based pagination
  */
@@ -926,7 +926,7 @@ export const deletePaymentSourceExtended = <ThrowOnError extends boolean = false
 });
 
 /**
- * List payment sources with their public details augmented with internal configuration and sync status information. (admin access required)
+ * List payment sources with their public details augmented with internal configuration and sync status information. (read access required)
  *
  * Gets the payment contracts including the status.
  */
@@ -1289,7 +1289,7 @@ export const postMonitoringStop = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * List accessible x402 EVM chains. (pay access required)
+ * List accessible x402 EVM chains. (read access required)
  *
  * Lists the safe network projection needed to create managed wallets. Non-admin results are restricted to the API key CAIP-2 network limit; RPC and facilitator configuration are never returned.
  */
@@ -1331,9 +1331,9 @@ export const postX402Networks = <ThrowOnError extends boolean = false>(options?:
 });
 
 /**
- * List managed x402 EVM wallets. (pay access required)
+ * List managed x402 EVM wallets. (read access required; no key material)
  *
- * Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Non-admin results are limited by both wallet owner and permitted network.
+ * Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Results are limited by the key's permitted networks; a key with wallet scoping enabled additionally sees only its assigned and self-created wallets (an unscoped key sees all, the Cardano-parity default). createdById is only returned to admins and for the caller's own wallets.
  */
 export const getX402Wallets = <ThrowOnError extends boolean = false>(options?: Options<GetX402WalletsData, ThrowOnError>): RequestResult<GetX402WalletsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetX402WalletsResponses, unknown, ThrowOnError>({
     responseTransformer: getX402WalletsResponseTransformer,
@@ -1344,7 +1344,7 @@ export const getX402Wallets = <ThrowOnError extends boolean = false>(options?: O
 });
 
 /**
- * Create a managed x402 EVM wallet. (pay access required; owned by the creating key)
+ * Create a managed x402 EVM wallet. (admin access required; returns the generated private key once)
  *
  * Creates a managed EVM wallet on a network permitted for the API key. When no key is supplied, the generated private key is returned once for backup and stored only in encrypted form.
  */
@@ -1361,9 +1361,9 @@ export const postX402Wallets = <ThrowOnError extends boolean = false>(options?: 
 });
 
 /**
- * Get a managed x402 EVM wallet by id. (pay access required)
+ * Get a managed x402 EVM wallet by id. (read access required; no key material)
  *
- * Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their owner or network scope.
+ * Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their permitted networks, and outside their wallet scope when scoping is enabled (an unscoped key can fetch any wallet, the Cardano-parity default). createdById is only returned to admins and for the caller's own wallets.
  */
 export const getX402WalletsDetail = <ThrowOnError extends boolean = false>(options: Options<GetX402WalletsDetailData, ThrowOnError>): RequestResult<GetX402WalletsDetailResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetX402WalletsDetailResponses, unknown, ThrowOnError>({
     responseTransformer: getX402WalletsDetailResponseTransformer,
@@ -1374,7 +1374,7 @@ export const getX402WalletsDetail = <ThrowOnError extends boolean = false>(optio
 });
 
 /**
- * Retire a managed x402 EVM wallet. (pay access required; owner and network scoped)
+ * Retire a managed x402 EVM wallet. (admin access required; network scoped)
  *
  * Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.
  */
@@ -1390,9 +1390,9 @@ export const postX402WalletsDelete = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
- * List x402 wallet budgets. (admin access required)
+ * List x402 wallet budgets. (pay access required)
  *
- * Lists per-API-key spend budgets for managed x402 wallets, optionally filtered by API key.
+ * Lists per-API-key spend budgets for managed x402 wallets. A non-admin key always sees only its own budgets, and the apiKeyId filter is ignored for it; an admin may filter by API key, or omit it for all.
  */
 export const getX402Budgets = <ThrowOnError extends boolean = false>(options?: Options<GetX402BudgetsData, ThrowOnError>): RequestResult<GetX402BudgetsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetX402BudgetsResponses, unknown, ThrowOnError>({
     responseTransformer: getX402BudgetsResponseTransformer,
@@ -1468,7 +1468,7 @@ export const postX402Pay = <ThrowOnError extends boolean = false>(options?: Opti
 });
 
 /**
- * List x402 payment attempts. (pay access required; non-admin keys see only their own)
+ * List x402 payment attempts. (read access required; non-admin keys see only their own)
  *
  * Lists x402 payment attempts (inbound verify/settle and outbound payments), newest first, with their settlement result.
  */
@@ -1497,7 +1497,7 @@ export const postX402PaymentsReconcile = <ThrowOnError extends boolean = false>(
 });
 
 /**
- * List x402 settlements. (pay access required; non-admin keys see only their own)
+ * List x402 settlements. (read access required; non-admin keys see only their own)
  *
  * Lists x402 on-chain settlements, newest first.
  */
@@ -1510,7 +1510,7 @@ export const getX402Settlements = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * Update a managed x402 EVM wallet. (pay access required; owner and network scoped)
+ * Update a managed x402 EVM wallet. (admin access required; network scoped)
  *
  * Updates the human-readable note of a managed EVM wallet.
  */
@@ -1527,7 +1527,7 @@ export const postX402WalletsUpdate = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
- * Read managed x402 wallet balances. (pay access required; owner and network scoped)
+ * Read managed x402 wallet balances. (read access required; owner and network scoped)
  *
  * Reads on-chain balances (native gas plus the default token) of a managed EVM wallet on the wallet's bound network.
  */
@@ -1539,7 +1539,7 @@ export const getX402WalletsBalance = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
- * Count managed x402 wallets. (pay access required)
+ * Count managed x402 wallets. (read access required)
  *
  * Counts active managed EVM wallets, optionally filtered by direction. Non-admin counts are limited by owner and permitted network.
  */
@@ -1615,7 +1615,7 @@ export const postX402LowBalance = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * Count x402 payment attempts. (pay access required; non-admin keys count only their own)
+ * Count x402 payment attempts. (read access required; non-admin keys count only their own)
  *
  * Counts x402 payment attempts, optionally filtered by status, direction and chain.
  */
@@ -1627,7 +1627,7 @@ export const getX402PaymentsCount = <ThrowOnError extends boolean = false>(optio
 });
 
 /**
- * Count x402 settlements. (pay access required; non-admin keys count only their own)
+ * Count x402 settlements. (read access required; non-admin keys count only their own)
  *
  * Counts x402 settlements, optionally filtered by chain and success.
  */

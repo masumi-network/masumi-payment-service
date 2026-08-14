@@ -21,8 +21,9 @@ import { handleApiCall } from '@/lib/utils';
 import { useDynamicFavicon } from '@/hooks/useDynamicFavicon';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import { useX402Networks } from '@/lib/hooks/useX402';
+import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
+import { capabilitiesFromApiKeyStatus, isAdminOnlyPath, isPayOnlyPath } from '@/lib/permissions';
 import { hasLegacyOnlyPaymentSources, isV2PaymentSource } from '@/lib/payment-source-type';
 
 function App({ Component, pageProps, router }: AppProps) {
@@ -70,13 +71,15 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     signOut,
     apiKey,
     setAuthorized,
+    setCapabilities,
     updateApiKey,
     network,
     setNetwork,
     authorized,
+    capabilities,
     isSetupMode,
-    activeRail,
     setIsSetupMode,
+    activeRail,
   } = useAppContext();
 
   // Add dynamic favicon functionality
@@ -98,16 +101,43 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
   }, []);
 
   const { mainnetPaymentSources, preprodPaymentSources, isLoading } = usePaymentSourceExtendedAll();
-  const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
+  const { networks: x402Networks, isLoading: x402Loading } = useX402NetworksForSession({
     silentErrors: true,
   });
 
   useEffect(() => {
+    // Non-admins cannot open admin-only routes — do this before waiting on
+    // payment sources to load, or deep-links would mount those pages and fire admin APIs first.
+    if (apiKey && isHealthy && !capabilities.canAdmin && isAdminOnlyPath(router.pathname)) {
+      if (isLoading) {
+        router.replace('/');
+        return;
+      }
+      const sources = network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
+      router.replace(sources.length > 0 ? '/' : '/developers');
+      return;
+    }
+
+    // Read-only keys cannot use pay-authenticated surfaces (x402, webhooks).
+    // Gate the whole route: the underlying 401s are swallowed by the query layer,
+    // so leaving the page mounted shows an empty state rather than a permission error.
+    if (
+      apiKey &&
+      isHealthy &&
+      !capabilities.canAdmin &&
+      !capabilities.canPay &&
+      isPayOnlyPath(router.pathname)
+    ) {
+      router.replace('/');
+      return;
+    }
+
     if (isLoading) return;
     const currentNetworkPaymentSources =
       network === 'Mainnet' ? mainnetPaymentSources : preprodPaymentSources;
     const legacyOnlyPaymentSources = hasLegacyOnlyPaymentSources(currentNetworkPaymentSources);
-    // Pages accessible even without payment sources (shown in setup sidebar)
+    // Pages accessible even without payment sources (shown in setup sidebar).
+    // Only consulted on the admin branch below — non-admins never enter setup mode.
     const setupAccessiblePages = ['/api-keys', '/developers', '/settings', '/x402-setup'];
     // The x402 rail stands alone, so don't force Cardano setup for it. Two strengths:
     // - `x402MaybeStandalone` stays true WHILE the chain list is loading, so an EVM
@@ -118,7 +148,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     const x402ChainCount = chainsForEnv(x402Networks, network).length;
     const x402MaybeStandalone = activeRail === 'x402' && (x402Loading || x402ChainCount > 0);
     const x402Confirmed = activeRail === 'x402' && !x402Loading && x402ChainCount > 0;
-    if (apiKey && isHealthy && currentNetworkPaymentSources.length === 0 && !x402MaybeStandalone) {
+
+    if (
+      apiKey &&
+      isHealthy &&
+      capabilities.canAdmin &&
+      currentNetworkPaymentSources.length === 0 &&
+      !x402MaybeStandalone
+    ) {
       const protectedPages = ['/', '/ai-agents', '/inbox-agents', '/wallets', '/transactions'];
       if (protectedPages.includes(router.pathname)) {
         router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
@@ -137,11 +174,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       setIsSetupMode(false);
     }
     // If setup mode is active (persisted from before reload), redirect back to setup
-    // but allow access to pages shown in the setup sidebar
-    if (
+    // but allow access to pages shown in the setup sidebar. Non-admins never enter setup.
+    if (apiKey && isHealthy && isSetupMode && !capabilities.canAdmin) {
+      setIsSetupMode(false);
+    } else if (
       apiKey &&
       isHealthy &&
       isSetupMode &&
+      capabilities.canAdmin &&
       !legacyOnlyPaymentSources &&
       router.pathname !== '/setup' &&
       !setupAccessiblePages.includes(router.pathname)
@@ -168,10 +208,12 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     mainnetPaymentSources,
     preprodPaymentSources,
     isSetupMode,
-    activeRail,
     setIsSetupMode,
+    activeRail,
     x402Loading,
     x402Networks,
+    capabilities.canAdmin,
+    capabilities.canPay,
   ]);
 
   useEffect(() => {
@@ -229,14 +271,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         return;
       }
 
-      // Check if the API key has admin permission
-      const permission = apiKeyStatus.data?.data?.permission;
-      if (!permission || permission !== 'Admin') {
+      const nextCapabilities = capabilitiesFromApiKeyStatus(apiKeyStatus.data?.data);
+      if (!nextCapabilities) {
         setIsHealthy(true);
         toast.error('Unauthorized access');
         signOut();
         return;
       }
+      setCapabilities(nextCapabilities);
       setAuthorized(true);
       updateApiKey(storedApiKey);
       setIsHealthy(true);
@@ -247,7 +289,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     return () => {
       cancelled = true;
     };
-  }, [apiClient, signOut, setAuthorized, updateApiKey]);
+  }, [apiClient, signOut, setAuthorized, setCapabilities, updateApiKey]);
 
   // Sync network from URL when query.network changes (e.g. after shallow replace on setup page).
   // Intentionally omit `network` from deps so that when we set network in the sidebar dialog,
@@ -278,8 +320,8 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
         <div className="text-center space-y-4">
           <div className="text-lg text-destructive">Unauthorized</div>
           <div className="text-sm text-muted-foreground">
-            Your API key is invalid or does not have admin permissions. Please sign out and sign in
-            with an admin API key.
+            Your API key is invalid or lacks read access. Please sign out and sign in with a valid
+            API key.
           </div>
           <Button
             variant="destructive"
@@ -305,6 +347,30 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
           </div>
         </div>
       </div>
+    );
+  }
+
+  // Do not mount admin-only pages for non-admins — a useEffect redirect alone
+  // still lets the page run one paint of admin queries first.
+  const blockAdminDeepLink =
+    !!apiKey && authorized && !capabilities.canAdmin && isAdminOnlyPath(router.pathname);
+  // x402 and webhook APIs are pay-authenticated; read-only keys have nothing useful there.
+  const blockPayOnlyDeepLink =
+    !!apiKey &&
+    authorized &&
+    !capabilities.canAdmin &&
+    !capabilities.canPay &&
+    isPayOnlyPath(router.pathname);
+
+  if (blockAdminDeepLink || blockPayOnlyDeepLink) {
+    return (
+      <>
+        <RouteProgressBar />
+        <div className="flex items-center justify-center bg-background text-foreground fixed top-0 left-0 w-full h-full z-50">
+          <Spinner size={20} addContainer />
+        </div>
+        {mounted && <ToastWrapper />}
+      </>
     );
   }
 

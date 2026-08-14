@@ -59,7 +59,7 @@ export const getStaticProps: GetStaticProps = async () => {
 };
 
 export default function Overview() {
-  const { network, selectedPaymentSource } = useAppContext();
+  const { network, selectedPaymentSource, capabilities } = useAppContext();
   const { paymentSources, isLoading: isLoadingPaymentSources } = usePaymentSourceExtendedAll();
   const [isMigrationHintDismissed, setIsMigrationHintDismissed] = useState(false);
 
@@ -80,10 +80,19 @@ export default function Overview() {
   // Defer the eager all-wallet balance load until after the dashboard shell has
   // painted, so its N+1 per-wallet UTxO fan-out doesn't compete with first
   // render. A single frame is enough to let the layout + skeletons show first.
+  //
+  // The timer is not redundant: requestAnimationFrame never fires while the tab
+  // is hidden, so opening the dashboard in a background tab (or restoring one)
+  // would otherwise leave this false forever and pin the wallet section and the
+  // balance cards on their skeletons until the tab was focused.
   const [walletsReady, setWalletsReady] = useState(false);
   useEffect(() => {
-    const id = requestAnimationFrame(() => setWalletsReady(true));
-    return () => cancelAnimationFrame(id);
+    const frame = requestAnimationFrame(() => setWalletsReady(true));
+    const timer = setTimeout(() => setWalletsReady(true), 200);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
   }, []);
   const {
     wallets: walletsList,
@@ -173,17 +182,24 @@ export default function Overview() {
                 Showing{' '}
                 {selectedPaymentSource?.smartContractAddress
                   ? shortenAddress(selectedPaymentSource?.smartContractAddress)
-                  : 'all payment sources'}{' '}
-                ·{' '}
-                <Link href="/payment-sources" className="text-primary hover:underline">
-                  Change source
-                </Link>
+                  : 'all payment sources'}
+                {capabilities.canAdmin && (
+                  <>
+                    {' '}
+                    ·{' '}
+                    <Link href="/payment-sources" className="text-primary hover:underline">
+                      Change source
+                    </Link>
+                  </>
+                )}
               </p>
             </div>
 
-            <SetupV2Banner onMigrateClick={() => setMigrateDialogOpen(true)} />
+            {capabilities.canAdmin && (
+              <SetupV2Banner onMigrateClick={() => setMigrateDialogOpen(true)} />
+            )}
 
-            {showMigrationHint && (
+            {capabilities.canAdmin && showMigrationHint && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900/50 dark:bg-amber-950/20">
                 <div className="flex items-center gap-2 text-amber-950 dark:text-amber-100">
                   <ArrowUpRight className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
@@ -372,19 +388,25 @@ export default function Overview() {
                   ) : (
                     <EmptyState
                       title="No AI agents found"
-                      description="Register your first AI agent to get started."
+                      description={
+                        capabilities.canPay
+                          ? 'Register your first AI agent to get started.'
+                          : 'Registering an agent needs an API key with pay access.'
+                      }
                     />
                   )}
                 </div>
 
                 <div className="pt-4">
-                  <Button
-                    className="flex items-center gap-2 btn-hover-lift"
-                    onClick={() => setRegisterAgentDialogOpen(true)}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Register agent
-                  </Button>
+                  {capabilities.canPay && (
+                    <Button
+                      className="flex items-center gap-2 btn-hover-lift"
+                      onClick={() => setRegisterAgentDialogOpen(true)}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Register agent
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -431,13 +453,18 @@ export default function Overview() {
                               <tr
                                 key={wallet.id}
                                 className={cn(
-                                  'border-b last:border-0 cursor-pointer animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                                  'border-b last:border-0 animate-fade-in opacity-0 transition-[background-color,opacity] duration-150',
+                                  // The detail dialog reads admin-only endpoints, so pay
+                                  // keys see the row but cannot drill into it.
+                                  capabilities.canAdmin && 'cursor-pointer',
                                   wallet.LowBalanceSummary?.isLow
                                     ? 'bg-amber-500/5 hover:bg-amber-500/10'
                                     : 'hover:bg-muted/10',
                                 )}
                                 style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
-                                onClick={() => setSelectedWalletForDetails(wallet)}
+                                onClick={() =>
+                                  capabilities.canAdmin && setSelectedWalletForDetails(wallet)
+                                }
                               >
                                 <td className="py-3 px-2">
                                   <div className="flex items-center gap-2">
@@ -506,7 +533,7 @@ export default function Overview() {
                                 </td>
                                 <td className="py-3 px-2 w-32">
                                   <div className="flex items-center gap-2">
-                                    {wallet.network === 'Mainnet' && (
+                                    {capabilities.canAdmin && wallet.network === 'Mainnet' && (
                                       <Button
                                         variant="ghost"
                                         size="icon"
@@ -520,17 +547,19 @@ export default function Overview() {
                                         <ArrowLeftRight className="h-4 w-4" />
                                       </Button>
                                     )}
-                                    <Button
-                                      variant="muted"
-                                      className="h-8 btn-hover-lift"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedWalletForTopup(wallet);
-                                      }}
-                                    >
-                                      <PlusCircle className="h-3.5 w-3.5" />
-                                      Top Up
-                                    </Button>
+                                    {capabilities.canAdmin && (
+                                      <Button
+                                        variant="muted"
+                                        className="h-8 btn-hover-lift"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedWalletForTopup(wallet);
+                                        }}
+                                      >
+                                        <PlusCircle className="h-3.5 w-3.5" />
+                                        Top Up
+                                      </Button>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -542,15 +571,17 @@ export default function Overview() {
                   )}
                 </div>
 
-                <div className="pt-4">
-                  <Button
-                    className="flex items-center gap-2 btn-hover-lift"
-                    onClick={() => setAddWalletDialogOpen(true)}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add wallet
-                  </Button>
-                </div>
+                {capabilities.canAdmin && (
+                  <div className="pt-4">
+                    <Button
+                      className="flex items-center gap-2 btn-hover-lift"
+                      onClick={() => setAddWalletDialogOpen(true)}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add wallet
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
