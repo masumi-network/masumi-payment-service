@@ -118,7 +118,7 @@ async function reserveBudgetForAttempt({
 				}
 				logger.warn(
 					'x402 credit cap not enforced: usage-limited key has no EVM credit rows (pre-cap key); add eip155-format usage credits to activate the cap',
-					{ apiKeyId, unit: creditUnit },
+					{ apiKeyId: '[REDACTED]', unit: creditUnit },
 				);
 			} else {
 				// Consolidate split rows into the first one before debiting. Every write is
@@ -260,14 +260,14 @@ async function refundReservation(
 				});
 				if (fallback.count === 1) {
 					logger.warn('x402 usage-credit refund fell back to the current row for the unit (debited row retired)', {
-						apiKeyId: reservation.apiKeyId,
+						apiKeyId: '[REDACTED]',
 						unit: reservation.creditUnit,
 						creditRowId: reservation.creditRowId,
 						amount: reservation.amount.toString(),
 					});
 				} else {
 					logger.error('x402 usage-credit refund failed: no row for the debited unit — needs reconciliation', {
-						apiKeyId: reservation.apiKeyId,
+						apiKeyId: '[REDACTED]',
 						unit: reservation.creditUnit,
 						creditRowId: reservation.creditRowId,
 						matchedRows: fallback.count,
@@ -277,7 +277,7 @@ async function refundReservation(
 			}
 		} catch (error) {
 			logger.error('x402 usage-credit refund threw; credits remain debited — needs manual reconciliation', {
-				apiKeyId: reservation.apiKeyId,
+				apiKeyId: '[REDACTED]',
 				unit: reservation.creditUnit,
 				creditRowId: reservation.creditRowId,
 				amount: reservation.amount.toString(),
