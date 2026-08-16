@@ -5,6 +5,7 @@ status: open
 parent: ../map.md
 blocked_by:
   - choose-generic-attestation-envelope.md
+  - choose-enforcement-boundary.md
   - choose-evidence-location-and-privacy.md
   - define-claim-and-issuer-policy.md
   - bind-subject-and-authorize-mint.md
