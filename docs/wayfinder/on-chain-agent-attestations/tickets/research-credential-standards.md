@@ -3,6 +3,8 @@ title: Compare portable credential and signature standards
 label: wayfinder:research
 status: closed
 parent: ../map.md
+research_branch: research/credential-standards
+research_commit: 10d355341b365d693b6cb2839edbc770812f1a5e
 blocked_by: []
 blocks:
   - choose-generic-attestation-envelope.md
