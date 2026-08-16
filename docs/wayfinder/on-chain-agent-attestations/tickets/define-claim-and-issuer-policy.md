@@ -3,6 +3,7 @@ title: Define claim scope and issuer trust policy
 label: wayfinder:grilling
 status: open
 parent: ../map.md
+assignee: codex
 blocked_by: []
 blocks:
   - bind-subject-and-authorize-mint.md
