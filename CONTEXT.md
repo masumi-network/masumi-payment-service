@@ -2,6 +2,24 @@
 
 ## Glossary
 
+### Agent Capability
+
+A self-declared name and version describing a function or model an agent offers. An Agent Capability is not a third-party certification or evidence of conformance.
+
+Avoid: certification, verification.
+
+### Assurance Claim
+
+An optional assertion by an issuer about a person, organization, agent, Agent Capability, or relationship. A registry entry can carry zero or more Assurance Claims; having none does not make the entry invalid.
+
+Avoid: mandatory verification.
+
+### Issuer Trust Policy
+
+A payment node operator's editable rules for deciding which issuers are trusted for which Assurance Claims. Masumi may supply defaults, but anyone can issue a claim and the on-chain protocol does not confer trust.
+
+Avoid: global issuer allowlist.
+
 ### Payment Source Type
 
 The kind of configured payment source. A stable identifier of the chain plus contract family used by one [[Payment Source Module]]. Current values are `Web3CardanoV1` and `Web3CardanoV2`; future Types may target other chains or contract families.
