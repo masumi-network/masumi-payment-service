@@ -4,6 +4,8 @@ label: wayfinder:research
 status: closed
 parent: ../map.md
 assignee: research-agent
+research_branch: research/veridian-evidence-status
+research_commit: 3416e89b4579960a9fba598832a67e5631b7a9a2
 blocked_by: []
 blocks:
   - choose-generic-attestation-envelope.md

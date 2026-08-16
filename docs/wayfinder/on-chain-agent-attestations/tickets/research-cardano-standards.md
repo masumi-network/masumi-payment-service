@@ -4,6 +4,8 @@ label: wayfinder:research
 status: closed
 parent: ../map.md
 assignee: research-agent
+research_branch: research/cardano-attestation
+research_commit: 2015a6d1
 blocked_by: []
 blocks:
   - choose-generic-attestation-envelope.md
