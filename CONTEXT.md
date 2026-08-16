@@ -14,6 +14,12 @@ An optional assertion by an issuer about a person, organization, agent, Agent Ca
 
 Avoid: mandatory verification.
 
+### Assurance Credential
+
+A signed issuer artifact containing one or more related Assurance Claims that share a subject, assessment event, validity period, and revocation lifecycle. Claims with independent lifecycles belong in separate Assurance Credentials.
+
+Avoid: one credential for every claim, agent profile.
+
 ### Issuer Trust Policy
 
 A payment node operator's editable rules for deciding which issuers are trusted for which Assurance Claims. Masumi may supply defaults, but anyone can issue a claim and the on-chain protocol does not confer trust.
