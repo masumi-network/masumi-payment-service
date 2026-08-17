@@ -272,11 +272,16 @@ export async function reapExpiredInvites(): Promise<number> {
 					...transport,
 				});
 			}
-			await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
+			// Expired first, released second. Releasing sweeps the node's fuel back,
+			// and the sweep refuses while an invite is still live — an unredeemed
+			// invite needs its node able to post an Init the moment someone redeems.
+			// Called the other way round, every release kept its participant and the
+			// 30 ADA the funding cycle had already sent it.
 			await prisma.hydraHeadInvite.update({
 				where: { id: invite.id },
 				data: { status: HydraInviteStatus.Expired },
 			});
+			await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
 			reaped += 1;
 		} catch (error) {
 			// Left Issued so the next sweep retries. A node we failed to remove is

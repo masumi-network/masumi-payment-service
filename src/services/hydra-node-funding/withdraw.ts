@@ -35,12 +35,36 @@ import { nodeCardanoAddress } from './node-address';
  */
 export const MINIMUM_WITHDRAWABLE_LOVELACE = 2_000_000n;
 
+/**
+ * What happened, in a form a caller can branch on.
+ *
+ * `reason` is prose for an operator; this is the same answer for code. The
+ * distinction that matters is whether the node's key still has anything to
+ * protect: releasing a reservation deletes that key, so it may only follow a
+ * `swept`, a `dust` or a `no-key` — never an outcome where the balance is
+ * simply unknown.
+ */
+export type NodeWithdrawalCode =
+	/** Funds were sent back to the funding wallet. */
+	| 'swept'
+	/** Less than a fee's worth is left, so there is nothing worth moving. */
+	| 'dust'
+	/** The head still owes on-chain transactions; its node keeps its fuel. */
+	| 'head-not-final'
+	/** An unredeemed invite still needs this node able to post its Init. */
+	| 'invite-holds'
+	/** The chain could not be read, so the balance is unknown. */
+	| 'chain-unreadable'
+	/** No Cardano signing key is stored here, so nothing can move these funds. */
+	| 'no-key';
+
 export type NodeWithdrawal = {
 	address: string;
 	balanceLovelace: string;
 	txHash: string | null;
 	/** Why nothing was swept, when nothing was. */
 	reason: string | null;
+	code: NodeWithdrawalCode;
 };
 
 /**
@@ -82,7 +106,7 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 
 	const notDone = reasonHeadIsNotDone(participant.HydraHead?.status);
 	if (notDone !== null) {
-		return { address, balanceLovelace: '0', txHash: null, reason: notDone };
+		return { address, balanceLovelace: '0', txHash: null, reason: notDone, code: 'head-not-final' };
 	}
 
 	// A node with no head is not necessarily finished: it may be reserved by an
@@ -104,6 +128,7 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 				balanceLovelace: '0',
 				txHash: null,
 				reason: 'an invite is still holding this node, so it needs its funds to open the head. Revoke the invite first',
+				code: 'invite-holds',
 			};
 		}
 	}
@@ -116,7 +141,13 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 	} catch (error) {
 		// An address that has never been used is empty, not broken.
 		logger.warn(`hydra: could not read node address ${address}: ${(error as Error).message}`);
-		return { address, balanceLovelace: '0', txHash: null, reason: 'the chain could not be consulted for this node' };
+		return {
+			address,
+			balanceLovelace: '0',
+			txHash: null,
+			reason: 'the chain could not be consulted for this node',
+			code: 'chain-unreadable',
+		};
 	}
 
 	const balance = utxos.reduce(
@@ -131,6 +162,7 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 			balanceLovelace: balance.toString(),
 			txHash: null,
 			reason: `only ${balance} lovelace is left, which would cost more in fees than it returns`,
+			code: 'dust',
 		};
 	}
 
@@ -144,6 +176,7 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 			balanceLovelace: balance.toString(),
 			txHash: null,
 			reason: 'this node has no stored Cardano signing key here, so its funds cannot be moved from this service',
+			code: 'no-key',
 		};
 	}
 
@@ -177,7 +210,7 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 	try {
 		const txHash = await signer.submitTx(signedTx);
 		logger.info(`hydra: withdrew ${balance} lovelace from node ${participant.hostNodeId} in ${txHash}`);
-		return { address, balanceLovelace: balance.toString(), txHash, reason: null };
+		return { address, balanceLovelace: balance.toString(), txHash, reason: null, code: 'swept' };
 	} catch (error) {
 		// The hash is reported even on an ambiguous submit: the transaction may
 		// well be on chain, and re-sweeping the same inputs would fail anyway.

@@ -422,11 +422,24 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 			...transport,
 		});
 
-		await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
+		// Revoked first, released second. Releasing sweeps the node's fuel back to
+		// the wallet that supplied it, and that sweep refuses while the invite is
+		// still live — the node would need those funds to post an Init. Called the
+		// other way round it kept both the participant and its ADA.
 		const updated = await prisma.hydraHeadInvite.update({
 			where: { id: invite.id },
 			data: { status: HydraInviteStatus.Revoked },
 		});
+		const release = await releaseReservedParticipants({
+			hydraHostId: invite.hydraHostId,
+			hostNodeId: invite.hostNodeId,
+		});
+		if (release.retained > 0) {
+			logger.warn(
+				`hydra: invite ${invite.nonce} was revoked but ${release.retained} node reservation(s) still hold funds; ` +
+					'they are kept until a later sweep settles them',
+			);
+		}
 		logger.info(`hydra: revoked invite ${invite.nonce}`);
 		return { id: updated.id, status: updated.status };
 	},

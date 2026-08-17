@@ -69,15 +69,27 @@ const MAX_TOPUPS_PER_CYCLE = 5;
 const RECENT_TRANSFER_WINDOW_MS = 15 * 60 * 1000;
 
 /**
- * Anything sent to this address recently enough that the chain may not show it.
+ * Anything sent to this address that may still land.
  *
  * Terminal failures are excluded: a transfer that definitively did not happen
  * must not block the retry that replaces it.
+ *
+ * The two live statuses are bounded differently, and deliberately. A `Pending`
+ * transfer has not been submitted yet, so age tells us nothing about it — the
+ * submitter only picks up rows whose hot wallet is free, and that wallet is the
+ * same one doing this head's L2 locks and batch payments, so it is routinely
+ * busy for far longer than the window. Bounding `Pending` by age meant a
+ * transfer that had been waiting sixteen minutes stopped counting, a second
+ * 30 ADA transfer was created, then a third, and every one of them submitted at
+ * once when the wallet finally came free. Only `Confirmed` needs the window,
+ * for the gap between our own confirmation and the chain indexer reflecting it.
  */
 function recentlySentTo() {
 	return {
-		createdAt: { gte: new Date(Date.now() - RECENT_TRANSFER_WINDOW_MS) },
-		status: { in: [TransactionStatus.Pending, TransactionStatus.Confirmed] },
+		OR: [
+			{ status: TransactionStatus.Pending },
+			{ status: TransactionStatus.Confirmed, createdAt: { gte: new Date(Date.now() - RECENT_TRANSFER_WINDOW_MS) } },
+		],
 	};
 }
 

@@ -400,6 +400,19 @@ export function extractStatusChangeData(rawMessage: string, expectedHeadId?: str
 			case 'HeadIsFinalized':
 				newStatus = HydraHeadStatus.Final;
 				break;
+			case 'HeadIsAborted':
+				// An abort ends the head before it ever opens, and the frame carries no
+				// `headStatus` — so without this case the default branch found nothing
+				// and no status change was emitted at all. The head then sat at
+				// `Initializing` for the life of the socket: `init()` short-circuits on
+				// that status, so a retry never reached the node, and the row stayed
+				// `Initializing` with no reason for the socket to drop and correct it.
+				//
+				// Idle is where hydra-node itself goes, and it ranks below `Open`, so
+				// the manager treats it as the rollback it is and quarantines the head
+				// for an operator rather than leaving it to look usable.
+				newStatus = HydraHeadStatus.Idle;
+				break;
 			default:
 				newStatus = hydraHeadStatusSchema.safeParse(parsedMessage.headStatus).data ?? null;
 				break;

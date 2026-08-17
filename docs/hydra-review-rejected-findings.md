@@ -15,6 +15,36 @@ Confirmed findings are not recorded here. Those became commits.
 
 <!-- Entries: newest first. Keep the shape: claim, where, why it is not a defect. -->
 
+## Round 3
+
+Every finding this round survived checking and became a commit. The one entry
+below is not a rejected finding but a correction that will read like a defect to
+the next reviewer.
+
+### A decommit that stays in `utxoToDecommit` is dropped from the later transition
+
+**Claim.** `resolveNewlyDeclaredDecommitTransactions`
+([decommit-resolution.ts](../src/lib/hydra/hydra/decommit-resolution.ts)) only returns a
+decommit's transaction on the transition where its reference first appears, so a
+head that reports the same pending decommit in three consecutive snapshots
+supplies the transaction once and omits it twice. The two omissions look like
+lost transactions.
+
+**Why it is not a defect.** The conservation walk in
+[node-history-replay.ts](../src/lib/hydra/hydra/node-history-replay.ts) checks that a
+transition's transactions account for the difference between two snapshots.
+`previous.outputs` is the *canonical* output set and spans all three partitions —
+`utxo`, `utxoToCommit` and `utxoToDecommit` (see `canonicalSnapshotOutputs`) — so
+once a decommit has been declared, the outputs it removes are already on the
+previous side of every later comparison. Supplying its transaction again would
+subtract them a second time and fail the walk. Declaring it exactly once, on the
+transition that first announces it, is what balances.
+
+This also settles the argument that used to be flagged in
+`transition-shapes.spec.ts`: passing `[]` for an already-declared decommit is the
+correct expectation, not a stub, because that is what the production caller
+passes on the second and third sightings.
+
 ## Round 2
 
 ### The initial L2 lock should release its reservation on a transport error

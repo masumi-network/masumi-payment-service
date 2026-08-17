@@ -27,22 +27,18 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { formatAssetAmount } from '@/lib/utils';
 import {
   fundHydraNode,
   readHydraNodeFunding,
   type HydraNodeFunding,
 } from '@/lib/hooks/useHydraHeads';
 
-const ADA = 1_000_000;
-
-function ada(lovelace: string): string {
-  return `${(Number(lovelace) / ADA).toFixed(2)} ADA`;
-}
-
 export function HydraInitDialog({
   open,
   onOpenChange,
   localParticipantId,
+  network,
   onConfirm,
   isRunning,
 }: {
@@ -50,9 +46,18 @@ export function HydraInitDialog({
   onOpenChange: (open: boolean) => void;
   /** Null when the head has no local participant, in which case Init cannot work anyway. */
   localParticipantId: string | null;
+  /**
+   * Which network these amounts are on.
+   *
+   * Carried so the node's fuel is labelled the way every other amount in the
+   * session is: this dialog said "ADA" on preprod while the balance and deposit
+   * panels beside it said tADA, which reads as two different assets.
+   */
+  network: string | undefined;
   onConfirm: () => void;
   isRunning: boolean;
 }) {
+  const ada = (lovelace: string) => formatAssetAmount(lovelace, 'lovelace', network);
   const { apiClient } = useAppContext();
   const [funding, setFunding] = useState<HydraNodeFunding | null>(null);
   const [isChecking, setIsChecking] = useState(false);

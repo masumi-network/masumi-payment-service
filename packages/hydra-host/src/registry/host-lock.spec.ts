@@ -105,6 +105,24 @@ describe('HostLock', () => {
 		expect(['host-b', 'host-c']).toContain((await currentHolder())?.hostId);
 	});
 
+	// The two-contender case above only *sometimes* interleaved so that the
+	// loser renamed the winner's fresh lease out of the way and installed its
+	// own — which is two hosts writing one volume, i.e. a duplicate hydra-node
+	// for every node on it. A crowd makes that interleaving reliable.
+	it('lets exactly one of a crowd of contenders reclaim a stale lease', async () => {
+		await new HostLock(dataDir, 'host-a').acquire();
+		const muchLater = () => Date.now() + HEARTBEAT_STALE_AFTER_MS + 10_000;
+		const contenders = ['b', 'c', 'd', 'e', 'f', 'g'].map(
+			(suffix) => new HostLock(dataDir, `host-${suffix}`, muchLater),
+		);
+
+		const results = await Promise.allSettled(contenders.map((lock) => lock.acquire()));
+
+		expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+		const holder = await currentHolder();
+		expect(holder?.hostId).not.toBe('host-a');
+	});
+
 	it('migrates a corrupted legacy file without overwriting a live directory lease', async () => {
 		await fs.writeFile(path.join(dataDir, 'host.lock'), 'garbage', 'utf8');
 		await expect(new HostLock(dataDir, 'host-b').acquire()).resolves.toBeUndefined();

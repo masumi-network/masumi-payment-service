@@ -63,6 +63,7 @@ import {
 } from '@/lib/hooks/useHydraHosts';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { NodeFundsHint } from '@/components/hydra/hydra-hints';
+import { formatAssetAmount } from '@/lib/utils';
 
 type HydraNodeDetailsDialogProps = {
   host: HydraHost | null;
@@ -70,8 +71,14 @@ type HydraNodeDetailsDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-function ada(lovelace: string): string {
-  return `${(Number(lovelace) / 1_000_000).toFixed(2)} ADA`;
+/**
+ * Node amounts, labelled for the network the node is on.
+ *
+ * Hard-coding "ADA" put two tickers on one asset in a single session: this
+ * dialog said ADA on preprod while the head's balance and deposits said tADA.
+ */
+function ada(lovelace: string, network: string | undefined): string {
+  return formatAssetAmount(lovelace, 'lovelace', network);
 }
 
 /** One reading, with its label above it. Values are copyable when they are worth copying. */
@@ -234,7 +241,7 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
       toast[result.txHash === null ? 'info' : 'success'](
         result.txHash === null
           ? (result.reason ?? 'Nothing to send back')
-          : `Sending ${ada(result.balanceLovelace)} back to the wallet`,
+          : `Sending ${ada(result.balanceLovelace, host?.network)} back to the wallet`,
       );
       // On the way out, not in the catch: the successful withdrawal is the one
       // that changes the node's balance and the wallet's, and it was the only
@@ -254,8 +261,8 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
       const result = await fundHydraNode(apiClient, { id: participantId });
       toast.success(
         result.transferredLovelace === null
-          ? `Already funded, holding ${ada(result.balanceLovelace)}`
-          : `Sending ${ada(result.transferredLovelace)} to the node`,
+          ? `Already funded, holding ${ada(result.balanceLovelace, host?.network)}`
+          : `Sending ${ada(result.transferredLovelace, host?.network)} to the node`,
       );
       await resync('hydra', 'wallets');
     } catch (error) {
@@ -447,7 +454,7 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => void handleFund(participant.id)}>
-                            Top up its ADA now
+                            Top up its funds now
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => void handleWithdraw(participant.id)}>
                             Send leftovers back

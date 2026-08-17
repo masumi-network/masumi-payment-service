@@ -34,6 +34,7 @@ import { encodeInviteCode, type DecodedInvite } from './invite-code';
 import { signHydraHeadInvite, signHydraRedemption, verifyHydraHeadInvite } from './invite-signing';
 import {
 	MIN_UNSYNCED_PERIOD_SECONDS,
+	assertContestationPeriodAllowed,
 	defaultPeriodsFor,
 	reserveNodeForExchange,
 	type HeadPeriods,
@@ -161,6 +162,12 @@ export async function mintHeadInvite(input: {
 		...(input.contestationPeriodSeconds != null ? { contestationPeriodSeconds: input.contestationPeriodSeconds } : {}),
 		...(input.unsyncedPeriodSeconds != null ? { unsyncedPeriodSeconds: input.unsyncedPeriodSeconds } : {}),
 	};
+
+	// Refused here rather than at head creation, which is where mainnet's floor
+	// used to be checked for the first time: by then this side has a provisioned
+	// node with keys, a peer port and its funding, the counterparty has a mirror
+	// of all three, and neither can be reused.
+	assertContestationPeriodAllowed(wallet.network, periods.contestationPeriodSeconds);
 
 	// Half the dispute window is a ceiling, not a preference. Hydra's guarantee is
 	// that an in-sync node always has at least that long to observe an on-chain
@@ -341,6 +348,10 @@ export async function redeemHeadInvite(input: {
 		depositPeriodSeconds: payload.depositPeriodSeconds,
 		unsyncedPeriodSeconds: payload.unsyncedPeriodSeconds,
 	};
+	// The issuer's periods, judged against our own network's floor before a node
+	// is reserved for them. An invite that cannot become a head on mainnet must
+	// not cost this side a node and its fuel to discover that.
+	assertContestationPeriodAllowed(wallet.network, periods.contestationPeriodSeconds);
 	const node = await reserveNodeForExchange(wallet.network, wallet.id, payload.nonce, periods);
 	if (node.ledgerParamsHash !== payload.ledgerParamsHash) {
 		throw createHttpError(409, 'the selected local Hydra Host does not match the invite ledger protocol parameters');

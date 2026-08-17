@@ -167,6 +167,19 @@ export type NodeRecord = {
 	 */
 	restartRequested?: boolean;
 	/**
+	 * Set when an operator asks for the node to be removed, and cleared only by
+	 * giving up on the removal.
+	 *
+	 * Separate from `state: 'Removing'` because removal begins with a stop, and a
+	 * stop overwrites the state — first `Draining`, then `Stopped`. That window
+	 * lasts the whole drain timeout plus the SIGKILL grace, and a host restart
+	 * inside it used to lose the intent entirely: the record came back up saying
+	 * `Stopped`, `desired` still said `Running`, and the node the operator had
+	 * been told (202) was being removed was started again and kept forever, with
+	 * its persistence directory and peer port along with it.
+	 */
+	removalRequested?: boolean;
+	/**
 	 * When the chain follower first passed the drift guard without recovering.
 	 *
 	 * A restart is the only way a Blockfrost-backed node ever closes a gap: its
@@ -192,7 +205,12 @@ export function isKeyMaterialReadable(record: NodeRecord): boolean {
 }
 
 export function canStart(record: NodeRecord): boolean {
-	return record.peers.length > 0 && record.escrowAckedAt !== null && record.state !== 'Removing';
+	return (
+		record.peers.length > 0 &&
+		record.escrowAckedAt !== null &&
+		record.state !== 'Removing' &&
+		record.removalRequested !== true
+	);
 }
 
 /**

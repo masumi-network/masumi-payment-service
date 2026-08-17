@@ -427,6 +427,7 @@ export default function HydraHeadsPage() {
           if (!nextOpen) setPendingLifecycleAction(null);
         }}
         localParticipantId={pendingLifecycleAction?.head.LocalParticipant?.id ?? null}
+        network={selectedNetwork}
         onConfirm={handleConfirmLifecycleAction}
         isRunning={
           pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false

@@ -87,6 +87,9 @@ describe('waitForDrain', () => {
 		const outcome = await waitForDrain({ fetchLastSeen, timeoutMs: 60_000, pollIntervalMs: 1_000, sleep, now });
 
 		expect(outcome.drained).toBe(true);
+		// Reported separately from `drained`, because a caller that knows the
+		// process is still running reads this as wedged rather than gone.
+		expect(outcome.reason).toBe('unreachable');
 		expect(fetchLastSeen).toHaveBeenCalledTimes(1);
 	});
 

@@ -389,7 +389,8 @@ export function IssueHydraInviteDialog({
             <HydraDetailSection
               title="Timings"
               summary={`${formatDuration(settleSeconds)} settle, ${formatDuration(contestationSeconds)} dispute`}
-              defaultOpen={advancedOpen}
+              open={advancedOpen}
+              onOpenChange={setAdvancedOpen}
             >
               <div className="space-y-4">
                 {/* The same control as the periods below it. A week expressed as

@@ -128,9 +128,36 @@ export class Supervisor {
 					await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Running' }));
 					continue;
 				}
-				// The process is gone but the record still says it was up, so the host
-				// died without draining — an OOM kill, host failure or eviction. That
-				// is exactly the case the unwedge check exists for, so flag it;
+				// Silence is not death. A node opens its API only once etcd has quorum
+				// and its chain follower has synced, which with two participants takes
+				// minutes — and the record itself says so by being `Starting`. Writing
+				// it off here erased the pid, which is the only evidence left that the
+				// process survived the host: the next tick then saw nothing running,
+				// started a second hydra-node over the same persistence directory, api
+				// port and etcd data dir, and burned the restart budget watching it die
+				// on the peer-port bind. The node that was serving all along ended up
+				// recorded as `Failed`.
+				//
+				// So ask the operating system before concluding anything: a pid that is
+				// still running THIS node's process settles it.
+				if (await this.adoptProcess(record)) {
+					this.logger.info(
+						`[supervisor] ${record.nodeId} is not answering yet, but pid ${record.pid} is still running it; keeping it`,
+					);
+					// `Starting` rather than the state it had: nothing has answered, and
+					// the first successful probe promotes it. A drain the host did not
+					// finish carries its undrained flag forward, because nothing else
+					// records that the round was left in flight.
+					await this.store.update(record.nodeId, (current) => ({
+						...current,
+						state: 'Starting',
+						lastStopUndrained: current.state === 'Draining' ? true : current.lastStopUndrained,
+					}));
+					continue;
+				}
+				// The process really is gone but the record still says it was up, so the
+				// host died without draining — an OOM kill, host failure or eviction.
+				// That is exactly the case the unwedge check exists for, so flag it;
 				// otherwise a round stranded by the kill is never detected.
 				this.logger.warn(
 					`[supervisor] ${record.nodeId} was ${record.state} at shutdown; treating as an undrained stop`,
@@ -562,7 +589,19 @@ export class Supervisor {
 			now: () => Date.now(),
 		});
 
-		if (!outcome.drained) {
+		// The drain is only reached with a live process — checked above — so an
+		// unreachable node here is not a node that has exited, it is a node that
+		// has stopped answering while still running: a wedged event loop, a hung
+		// etcd client, a round left in flight. That is the exact case the unwedge
+		// check exists for, and taking `drained` at face value recorded it as a
+		// clean stop and skipped the check on the way back up.
+		const wedged = outcome.reason === 'unreachable';
+		if (wedged) {
+			this.logger.warn(
+				`[supervisor] ${record.nodeId} stopped answering while its process was still running; ` +
+					'stopping it as an undrained stop and will check for a stranded round on restart',
+			);
+		} else if (!outcome.drained) {
 			this.logger.warn(
 				`[supervisor] ${record.nodeId} did not drain within ${this.config.drainTimeoutMs}ms ` +
 					`(last tag ${String(outcome.lastTag)}); stopping anyway and will check for a stranded round on restart`,
@@ -574,7 +613,7 @@ export class Supervisor {
 			this.logger.warn(`[supervisor] ${record.nodeId} required SIGKILL`);
 		}
 
-		const undrained = !outcome.drained || !stopResult.graceful;
+		const undrained = !outcome.drained || wedged || !stopResult.graceful;
 		await this.store.update(record.nodeId, (current) => ({
 			...current,
 			state: 'Stopped',
@@ -635,18 +674,41 @@ export class Supervisor {
 				'the node is still answering after a stop attempt, so its files and peer port are still in use; ' +
 				'stop the process on the machine, then remove the node again';
 			this.logger.error(`[supervisor] refusing to remove ${record.nodeId}: ${failureReason}`);
-			await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Failed', failureReason }));
+			// The intent is cleared with the failure. Left set, the plan asks for the
+			// same removal on every tick, it is refused for the same reason every
+			// time, and the log fills with a failure nobody is being asked to act on.
+			await this.store.update(record.nodeId, (current) => ({
+				...current,
+				state: 'Failed',
+				removalRequested: false,
+				failureReason,
+			}));
 			return;
 		}
 
 		try {
 			await this.store.remove(record.nodeId);
-		} finally {
-			// Release the slot even if the directory could not be deleted; a leaked
-			// port would otherwise persist until the next boot rebuilds from disk.
-			this.ports.release(record.peerPort);
-			this.clients.delete(record.nodeId);
+		} catch (error) {
+			// The record is still on disk, and it still carries this peer port. So
+			// the port is NOT free: releasing it hands the same number to the next
+			// provision, and the next boot — which rebuilds the allocator from the
+			// records on disk — claims it twice and throws `PortLayoutError` out of
+			// `main()`, crash-looping a host that supervises nothing until someone
+			// deletes the directory by hand.
+			const failureReason =
+				`the node directory could not be deleted (${(error as Error).message}), so its port and files are still in use; ` +
+				'remove the node again once the volume is writable';
+			this.logger.error(`[supervisor] removing ${record.nodeId} failed: ${failureReason}`);
+			await this.store.update(record.nodeId, (current) => ({
+				...current,
+				state: 'Failed',
+				removalRequested: false,
+				failureReason,
+			}));
+			return;
 		}
+		this.ports.release(record.peerPort);
+		this.clients.delete(record.nodeId);
 	}
 
 	/** Drain and stop every node. Called on SIGTERM. */

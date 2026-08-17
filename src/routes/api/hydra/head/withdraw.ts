@@ -2,9 +2,10 @@ import createHttpError from 'http-errors';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { HydraDecommitStatus } from '@/generated/prisma/client';
+import { HydraDecommitStatus, HydraHeadStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import { executeHydraDecommit } from '@/services/hydra-decommit/execute';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 
 export const withdrawInput = z.object({
 	headId: z.string().describe('The Hydra head to withdraw from'),
@@ -139,6 +140,31 @@ export const listWithdrawalsGet = adminAuthenticatedEndpointFactory.build({
 });
 
 /**
+ * Refuse an amount that does not describe one withdrawal.
+ *
+ * Half an asset withdrawal is not a smaller withdrawal, it is a different one:
+ * with only one of the two fields set the asset is dropped, and a request with
+ * no amount at all means "take every eligible UTxO whole". An operator who
+ * asked for 5 of a token and left the amount out of the body would have emptied
+ * their side of the head instead.
+ *
+ * Exported so the shape can be asserted directly; the handler is the only
+ * caller.
+ */
+export function assertWithdrawAmountShape(input: {
+	lovelace?: string | undefined;
+	assetUnit?: string | undefined;
+	assetAmount?: string | undefined;
+}): void {
+	if ((input.assetUnit === undefined) !== (input.assetAmount === undefined)) {
+		throw createHttpError(400, 'assetUnit and assetAmount go together; supply both or neither');
+	}
+	if (input.assetUnit !== undefined && input.lovelace !== undefined) {
+		throw createHttpError(400, 'withdraw either lovelace or one native asset per request, not both');
+	}
+}
+
+/**
  * Start a withdrawal. Does not wait for it.
  *
  * Same reasoning as the top-up endpoint: the work outlives the request. An
@@ -152,23 +178,31 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 	input: withdrawInput,
 	output: withdrawOutput,
 	handler: async ({ input }) => {
-		// Half an asset withdrawal is not a smaller withdrawal, it is a different
-		// one: with only one of the two fields set the asset is dropped, and a
-		// request with no amount at all means "take every eligible UTxO whole". An
-		// operator who asked for 5 of a token and left the amount out of the body
-		// would have emptied their side of the head instead.
-		if ((input.assetUnit === undefined) !== (input.assetAmount === undefined)) {
-			throw createHttpError(400, 'assetUnit and assetAmount go together; supply both or neither');
-		}
-		if (input.assetUnit !== undefined && input.lovelace !== undefined) {
-			throw createHttpError(400, 'withdraw either lovelace or one native asset per request, not both');
-		}
+		assertWithdrawAmountShape(input);
 
-		// Checked before answering. The work itself outlives the request, but an
-		// operator asking about a head that does not exist should be told so rather
-		// than shown "Withdrawal started" and left to find the reason in a log.
-		const head = await prisma.hydraHead.findUnique({ where: { id: input.headId }, select: { id: true } });
+		// Checked before answering, the same three as the top-up endpoint. The work
+		// itself outlives the request, but each of these refusals is decided in
+		// milliseconds and every one of them is thrown by the executor *before* its
+		// try block — so nothing records them: no `HydraDecommit` row, no head
+		// error, nothing in the withdrawal list. The operator was shown "Withdrawal
+		// started" for a withdrawal that had already been refused, and the reason
+		// went to a log they were never going to read. The executor re-checks all
+		// of it, because minutes pass before it acts.
+		const head = await prisma.hydraHead.findUnique({
+			where: { id: input.headId },
+			select: { isEnabled: true, status: true, headIdentifier: true },
+		});
 		if (!head) throw createHttpError(404, 'Hydra head not found');
+		if (!head.isEnabled) throw createHttpError(409, 'Cannot withdraw from a disabled Hydra head');
+		if (head.status !== HydraHeadStatus.Open) {
+			throw createHttpError(409, `Cannot withdraw: head status is ${head.status}, expected Open`);
+		}
+		if (!head.headIdentifier) {
+			throw createHttpError(409, 'Cannot withdraw before the Hydra head identifier has been observed');
+		}
+		if (getHydraConnectionManager().getHead(input.headId) === null) {
+			throw createHttpError(502, 'No active connection to Hydra head');
+		}
 
 		void executeHydraDecommit({
 			headId: input.headId,

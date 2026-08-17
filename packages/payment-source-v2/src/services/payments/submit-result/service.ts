@@ -63,6 +63,7 @@ import {
 } from '../../../builders/batch-interaction';
 import { COLLATERAL_RESERVE_LOVELACE, ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
+import { rotateDeferredL2PaymentRequest } from '../../l2-queue-rotation';
 import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 import { submitReservedL2Action } from '../../l2-submission';
@@ -673,6 +674,12 @@ async function processL2SubmitResult(
 		hydraHeadId: headId,
 		signedTx,
 		initiatedAction: PaymentAction.SubmitResultInitiated,
+		// Stamped on both, the same as the two L1 paths. An ambiguous or
+		// db-pending submit parks the request in `SubmitResultInitiated` holding
+		// its reservation, and the action row is what an operator resolving that
+		// by hand reads — with no hash on it, the one thing needed to reconstruct
+		// what was being submitted was missing exactly where recovery is manual.
+		initiatedActionData: { resultHash: request.NextAction.resultHash },
 		retryAction: PaymentAction.SubmitResultRequested,
 		retryActionData: { resultHash: request.NextAction.resultHash },
 		submitTx: async (transaction) => await hydraProvider.submitTx(transaction),
@@ -1392,6 +1399,11 @@ async function runSubmitResultL2Pass(): Promise<void> {
 						}
 						if (isLookupDeferred(error)) {
 							logger.info('L2 submit-result deferred to next tick', { requestId: request.id, reason });
+							// Same head-of-line reasoning as the window-closed park above,
+							// for the failures that are not terminal: one request per wallet
+							// per tick means a request that defers every tick holds the
+							// whole queue behind it.
+							await rotateDeferredL2PaymentRequest(request.id);
 						} else {
 							logger.error('L2 submit-result failed', {
 								requestId: request.id,

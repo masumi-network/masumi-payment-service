@@ -24,7 +24,7 @@ const SIBLING_DIR = '/var/lib/hydra-host/node-2';
 function spawnIdleProcess(nodeDir: string = NODE_DIR): ChildProcess {
 	const child = spawn(
 		process.execPath,
-		['-e', 'setInterval(() => {}, 1000)', '--persistence-dir', `${nodeDir}/persistence`],
+		['-e', 'setInterval(() => {}, 1000)', '--', '--persistence-dir', `${nodeDir}/persistence`],
 		{ stdio: 'ignore' },
 	);
 	spawned.push(child);

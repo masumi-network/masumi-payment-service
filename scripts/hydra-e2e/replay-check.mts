@@ -106,10 +106,24 @@ for (let index = 1; index < numbers.length; index++) {
 	// The decommit transaction is carried in the partition, not in `confirmed`,
 	// but it is a real transaction and it is what explains the delta — including
 	// its own L1 fee. Feed it through the same conservation walk.
+	//
+	// Only where it is newly declared, exactly as the replay does. A decommit
+	// stays pending across every snapshot signed while its L1 decrement settles,
+	// and re-applying an already-applied transaction gives the walk inputs the
+	// previous state no longer holds. Mirrored here so this script keeps
+	// reproducing what the replay actually computes.
+	const previouslyDeclared = new Set(
+		[
+			...Object.keys(previousRaw.utxo ?? {}),
+			...Object.keys(previousRaw.utxoToCommit ?? {}),
+			...Object.keys(previousRaw.utxoToDecommit ?? {}),
+		].map((reference) => reference.toLowerCase()),
+	);
 	const pendingDecommitTxIds = new Set(
-		Object.keys(currentRaw.utxoToDecommit ?? {}).map((reference) =>
-			reference.slice(0, reference.indexOf('#')).toLowerCase(),
-		),
+		Object.keys(currentRaw.utxoToDecommit ?? {})
+			.map((reference) => reference.toLowerCase())
+			.filter((reference) => !previouslyDeclared.has(reference))
+			.map((reference) => reference.slice(0, reference.indexOf('#'))),
 	);
 	const extra = [...pendingDecommitTxIds]
 		.map((txId) => decommitTxs.get(txId))

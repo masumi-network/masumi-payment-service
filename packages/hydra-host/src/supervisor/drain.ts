@@ -37,6 +37,17 @@ export type LastSeenSnapshotResponse = {
 
 export type DrainOutcome = {
 	drained: boolean;
+	/**
+	 * How the wait ended.
+	 *
+	 * `unreachable` is reported rather than folded into `drained`, because what
+	 * it means depends on something only the caller knows: whether the process is
+	 * still running. A node that has already exited has nothing left to drain; a
+	 * node whose process is alive but has stopped answering is the wedged case
+	 * the unwedge check exists for, and calling that one cleanly drained is what
+	 * skipped the check for exactly the node that needed it.
+	 */
+	reason: 'safe' | 'unreachable' | 'timeout';
 	/** Last tag observed, for logging when a drain times out. */
 	lastTag: string | null;
 	waitedMs: number;
@@ -78,15 +89,17 @@ export async function waitForDrain(options: DrainOptions): Promise<DrainOutcome>
 			response = await fetchLastSeen();
 		} catch (error) {
 			if (error instanceof NodeUnreachableError) {
-				// The node is already gone; there is nothing left to drain, so stop
-				// waiting rather than burn the timeout.
-				return { drained: true, lastTag, waitedMs: now() - startedAt };
+				// Nothing to wait for either way, so stop rather than burn the whole
+				// timeout — but say WHY, because only the caller knows whether the
+				// process is still there. Reported as drained for a node that has
+				// exited; the caller downgrades it when the process is alive.
+				return { drained: true, reason: 'unreachable', lastTag, waitedMs: now() - startedAt };
 			}
 			// It answered with something unusable. That is NOT the same as being
 			// gone — the node is live and may have a round in flight — so keep
 			// polling and let the timeout decide.
 			if (now() - startedAt >= timeoutMs) {
-				return { drained: false, lastTag, waitedMs: now() - startedAt };
+				return { drained: false, reason: 'timeout', lastTag, waitedMs: now() - startedAt };
 			}
 			await sleep(pollIntervalMs);
 			continue;
@@ -94,11 +107,11 @@ export async function waitForDrain(options: DrainOptions): Promise<DrainOutcome>
 
 		lastTag = readTag(response) ?? lastTag;
 		if (isSafeToStop(response)) {
-			return { drained: true, lastTag, waitedMs: now() - startedAt };
+			return { drained: true, reason: 'safe', lastTag, waitedMs: now() - startedAt };
 		}
 
 		if (now() - startedAt >= timeoutMs) {
-			return { drained: false, lastTag, waitedMs: now() - startedAt };
+			return { drained: false, reason: 'timeout', lastTag, waitedMs: now() - startedAt };
 		}
 
 		await sleep(pollIntervalMs);

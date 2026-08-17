@@ -39,6 +39,7 @@ import {
 	decommitRequestedMessageSchema,
 	hasFinalizedUtxoField,
 } from './schemas';
+import { resolveNewlyDeclaredDecommitTransactions } from './decommit-resolution';
 import {
 	doesHydraTransactionTransitionReachSnapshot,
 	serializeHydraSnapshotOutput,
@@ -506,28 +507,6 @@ export class HydraHistoryReplay {
 		}
 	}
 
-	/**
-	 * The transactions that produced a snapshot's pending decommit outputs.
-	 *
-	 * Matched by the transaction id embedded in each output reference, so only a
-	 * transaction the signed state actually names is ever handed to the check.
-	 */
-	private resolvePendingDecommitTransactions(
-		partition: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>['snapshot']['utxoToDecommit'],
-	): HydraTransaction[] {
-		if (!partition) return [];
-		const resolved: HydraTransaction[] = [];
-		const seen = new Set<string>();
-		for (const reference of Object.keys(partition)) {
-			const txId = reference.slice(0, reference.indexOf('#')).toLowerCase();
-			if (txId === '' || seen.has(txId)) continue;
-			seen.add(txId);
-			const transaction = this._decommitTransactions.get(txId);
-			if (transaction) resolved.push(transaction);
-		}
-		return resolved;
-	}
-
 	private recordHistorySnapshot(parsedMessage: ReturnType<typeof historySnapshotConfirmedMessageSchema.parse>): void {
 		if (this._lastSequence != null && parsedMessage.seq <= this._lastSequence) {
 			throw new HydraProtocolError('Hydra history sequence was duplicate or non-monotonic');
@@ -565,7 +544,11 @@ export class HydraHistoryReplay {
 		// accounting accounts for that fee exactly, with nothing relaxed.
 		const transitionTransactions = [
 			...parsedMessage.snapshot.confirmed,
-			...this.resolvePendingDecommitTransactions(parsedMessage.snapshot.utxoToDecommit),
+			...resolveNewlyDeclaredDecommitTransactions(
+				Object.keys(parsedMessage.snapshot.utxoToDecommit ?? {}),
+				previousSnapshot.outputs,
+				(txId) => this._decommitTransactions.get(txId),
+			),
 		];
 		if (!doesHydraTransactionTransitionReachSnapshot(previousSnapshot, verifiedSnapshot, transitionTransactions)) {
 			// Name the transition. This rejection stops the head forming a live

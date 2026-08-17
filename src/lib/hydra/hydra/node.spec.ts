@@ -419,6 +419,24 @@ describe('HydraNode', () => {
 			expect(statuses).toEqual([HydraHeadStatus.Initializing]);
 		});
 
+		// An abort ends a head before it opens, and the frame carries no
+		// `headStatus` — so nothing was emitted at all and the head sat at
+		// `Initializing` for the life of the socket: `init()` short-circuits on
+		// that status, so even a retry never reached the node.
+		it('emits StatusChange with Idle when HeadIsAborted received', () => {
+			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
+			node.connect();
+
+			const statuses: HydraHeadStatus[] = [];
+			node.on(HydraNodeEvent.StatusChange, (data) => statuses.push((data as { status: HydraHeadStatus }).status));
+
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsInitializing', headId: HEAD_ID_A }));
+			mockConnectionInstance.emit('message', JSON.stringify({ tag: 'HeadIsAborted', headId: HEAD_ID_A }));
+
+			expect(statuses).toEqual([HydraHeadStatus.Initializing, HydraHeadStatus.Idle]);
+			expect(node.status).toBe(HydraHeadStatus.Idle);
+		});
+
 		it('emits StatusChange with Closed when HeadIsClosed received', () => {
 			const node = new HydraNode({ httpUrl: 'http://localhost:4001' });
 			node.connect();
@@ -883,9 +901,7 @@ describe('HydraNode', () => {
 			it('emits a finalization that only the replay carries', async () => {
 				const { node, historyConnection } = await startSignedNode();
 				const seen: Array<{ decommitTxId: string; outcome: string }> = [];
-				node.on(HydraNodeEvent.DecommitSettled, (data) =>
-					seen.push(data as { decommitTxId: string; outcome: string }),
-				);
+				node.on(HydraNodeEvent.DecommitSettled, (data) => seen.push(data as { decommitTxId: string; outcome: string }));
 
 				historyConnection.emit(
 					'message',
@@ -898,9 +914,7 @@ describe('HydraNode', () => {
 					}),
 				);
 
-				expect(seen).toEqual([
-					expect.objectContaining({ decommitTxId: DECOMMIT_TX_ID, outcome: 'finalized' }),
-				]);
+				expect(seen).toEqual([expect.objectContaining({ decommitTxId: DECOMMIT_TX_ID, outcome: 'finalized' })]);
 			});
 
 			// Held, not dropped, when the replay runs ahead of the live session's
@@ -936,9 +950,7 @@ describe('HydraNode', () => {
 				await connectPromise;
 				liveConnection.emit('message', JSON.stringify(liveGreetings()));
 
-				expect(seen).toEqual([
-					expect.objectContaining({ decommitTxId: DECOMMIT_TX_ID, outcome: 'finalized' }),
-				]);
+				expect(seen).toEqual([expect.objectContaining({ decommitTxId: DECOMMIT_TX_ID, outcome: 'finalized' })]);
 			});
 		});
 

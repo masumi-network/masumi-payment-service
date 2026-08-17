@@ -108,7 +108,28 @@ function HydraWithdrawalList({
   /** When one was last started here, so a new row is watched for. */
   startedAt: number | null;
 }) {
-  const { withdrawals } = useHydraWithdrawals(headId, isOpen, startedAt);
+  const { withdrawals, isError, refetch } = useHydraWithdrawals(headId, isOpen, startedAt);
+
+  // Told apart from having none, for the same reason the deposits list does it:
+  // a withdrawal takes minutes across two systems, and a section that vanishes
+  // while one is in flight reads as "it never started".
+  if (isError && withdrawals.length === 0) {
+    return (
+      <div className="space-y-2 border-t pt-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Withdrawals
+        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-destructive/40 px-3 py-2">
+          <span className="text-sm text-muted-foreground">
+            Could not read this head&apos;s withdrawals. Any that are in flight are unaffected.
+          </span>
+          <Button type="button" size="sm" variant="outline" onClick={() => void refetch()}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (withdrawals.length === 0) return null;
 

@@ -3,8 +3,13 @@
  *
  * The lock is a directory containing an immutable owner token and a heartbeat
  * named for that token. A candidate directory is fully prepared and atomically
- * renamed into place. Stale takeover first atomically renames the old lease out
- * of the way, then contenders race on the same rename; only one can win.
+ * renamed into place.
+ *
+ * Taking a stale lease empties the path and then fills it, and the gap between
+ * those two renames is long enough for another contender to walk into — so the
+ * whole attempt runs behind a second `mkdir` gate. Renames alone are not
+ * enough: they are atomic, but they address a path rather than the object that
+ * was inspected at it.
  *
  * The random token is the fence. An old process checks it before every
  * heartbeat and release, so it cannot refresh or delete a replacement lease.
@@ -19,7 +24,13 @@ import { writeFileAtomic } from './atomic-write.js';
 import { getOwnInteger, getOwnString, isPlainObject } from './json.js';
 
 const LOCK_DIRECTORY = 'host.lock';
+const TAKEOVER_DIRECTORY = 'host.lock.takeover';
 const OWNER_FILE = 'owner.json';
+
+/** How long a takeover may hold the gate before it is assumed to have died. */
+const TAKEOVER_STALE_AFTER_MS = 30_000;
+/** A takeover is a handful of file operations, so contenders wait it out. */
+const TAKEOVER_RETRY_MS = 25;
 
 /** How often the holder refreshes its heartbeat. */
 export const HEARTBEAT_INTERVAL_MS = 10_000;
@@ -84,6 +95,7 @@ function isAlreadyExists(error: unknown): boolean {
 
 export class HostLock {
 	private readonly lockPath: string;
+	private readonly takeoverPath: string;
 	private readonly ownerToken = randomUUID();
 	private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 	private acquiredAt: string | undefined;
@@ -97,6 +109,7 @@ export class HostLock {
 		private readonly onLeaseLost: (reason: string) => void = () => undefined,
 	) {
 		this.lockPath = path.join(dataDir, LOCK_DIRECTORY);
+		this.takeoverPath = path.join(dataDir, TAKEOVER_DIRECTORY);
 	}
 
 	private owner(acquiredAt: string): LeaseOwner {
@@ -153,6 +166,47 @@ export class HostLock {
 		return (await this.readHolder())?.ownerToken === this.ownerToken;
 	}
 
+	/**
+	 * Run one acquisition attempt with every other contender excluded.
+	 *
+	 * Taking over a stale lease means emptying the lock path and then filling it,
+	 * and between those two renames the path is briefly free. Without this gate
+	 * any other contender's plain rename lands in that gap and succeeds — so a
+	 * crowd starting together against one stale lease produced several hosts that
+	 * each believed they held the volume, which is a duplicate hydra-node for
+	 * every node on it until a heartbeat notices, up to ten seconds later.
+	 *
+	 * `mkdir` is the mutex because it is atomic and fails with EEXIST rather than
+	 * clobbering. Returns null when someone else holds it.
+	 */
+	private async withTakeover<T>(action: () => Promise<T>): Promise<T | null> {
+		const taken = await fs.mkdir(this.takeoverPath).then(
+			() => true,
+			(error: unknown) => {
+				if (!isAlreadyExists(error)) {
+					throw error;
+				}
+				return false;
+			},
+		);
+		if (!taken) {
+			// Held, or left behind by a contender that died mid-takeover. Judged on
+			// real filesystem time rather than the injected clock: this measures how
+			// long ago the directory was made, not the heartbeat freshness the
+			// injected clock exists to simulate.
+			const stat = await fs.stat(this.takeoverPath).catch(() => null);
+			if (stat !== null && Date.now() - stat.mtimeMs > TAKEOVER_STALE_AFTER_MS) {
+				await fs.rm(this.takeoverPath, { recursive: true, force: true });
+			}
+			return null;
+		}
+		try {
+			return await action();
+		} finally {
+			await fs.rm(this.takeoverPath, { recursive: true, force: true });
+		}
+	}
+
 	async acquire(): Promise<void> {
 		await fs.mkdir(path.dirname(this.lockPath), { recursive: true });
 		const acquiredAt = new Date(this.now()).toISOString();
@@ -160,52 +214,43 @@ export class HostLock {
 
 		try {
 			for (let attempt = 0; attempt < 8; attempt += 1) {
-				try {
+				const installed = await this.withTakeover(async () => {
+					const stat = await fs.lstat(this.lockPath).catch(() => null);
+					if (stat !== null) {
+						const existing = await this.readHolder();
+						if (existing !== null) {
+							const liveness = assessHolder(existing, this.hostId, this.now());
+							if (liveness.live) {
+								throw new HostLockError(
+									`another Hydra Host (host ${existing.hostId}, heartbeat ${existing.heartbeatAt}) already holds ` +
+										`${this.lockPath}; two hosts on one volume would spawn duplicate nodes`,
+								);
+							}
+						}
+						// Dead, or unreadable — which includes the earlier single-file
+						// format. Moved aside rather than deleted in place, so nothing
+						// half-removed can be mistaken for a lease, and dropped only once
+						// it is out of the way.
+						const quarantine = `${this.lockPath}.stale.${randomUUID()}`;
+						await fs.rename(this.lockPath, quarantine).catch((error: unknown) => {
+							if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+								throw error;
+							}
+						});
+						await fs.rm(quarantine, { recursive: true, force: true });
+					}
 					await fs.rename(candidate, this.lockPath);
+					return true;
+				});
+
+				if (installed === true) {
 					candidate = '';
 					this.finishAcquisition(acquiredAt);
 					return;
-				} catch (error) {
-					if (!isAlreadyExists(error)) {
-						throw error;
-					}
 				}
-
-				const existing = await this.readHolder();
-				if (existing !== null) {
-					const liveness = assessHolder(existing, this.hostId, this.now());
-					if (liveness.live) {
-						throw new HostLockError(
-							`another Hydra Host (host ${existing.hostId}, heartbeat ${existing.heartbeatAt}) already holds ` +
-								`${this.lockPath}; two hosts on one volume would spawn duplicate nodes`,
-						);
-					}
-				}
-
-				const quarantine = `${this.lockPath}.stale.${randomUUID()}`;
-				try {
-					// Renaming the exact object inspected is the stale-owner CAS. A
-					// concurrent contender can move it first, but cannot overwrite it.
-					await fs.rename(this.lockPath, quarantine);
-				} catch (error) {
-					if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-						continue;
-					}
-					throw error;
-				}
-
-				try {
-					await fs.rename(candidate, this.lockPath);
-					candidate = '';
-					await fs.rm(quarantine, { recursive: true, force: true });
-					this.finishAcquisition(acquiredAt);
-					return;
-				} catch (error) {
-					await fs.rm(quarantine, { recursive: true, force: true });
-					if (!isAlreadyExists(error)) {
-						throw error;
-					}
-				}
+				// Another contender is mid-takeover. Its whole turn is a handful of
+				// file operations, so this waits rather than races it.
+				await new Promise((resolve) => setTimeout(resolve, TAKEOVER_RETRY_MS));
 			}
 			throw new HostLockError(`could not acquire ${this.lockPath}; another contender repeatedly won the lease`);
 		} finally {

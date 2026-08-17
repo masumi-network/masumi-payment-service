@@ -97,8 +97,15 @@ export function useHydraTopups(headId: string | null, isOpen: boolean) {
     },
     enabled: !!apiClient && headId !== null && isOpen,
     staleTime: 5000,
+    // Preparing counts as in flight, exactly as it does for withdrawals below.
+    // It is the state every exact-amount deposit starts in and stays in while
+    // its L1 pre-split confirms — minutes — and keying the poll on Pending
+    // alone meant the row sat at "Preparing / amount pending" until the
+    // operator reloaded the page by hand.
     refetchInterval: (query) =>
-      (query.state.data ?? []).some((topup) => topup.status === 'Pending') ? 10_000 : false,
+      (query.state.data ?? []).some((topup) => ['Preparing', 'Pending'].includes(topup.status))
+        ? 10_000
+        : false,
   });
 
   return { ...query, topups: query.data ?? [] };

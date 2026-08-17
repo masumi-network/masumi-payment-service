@@ -228,6 +228,8 @@ export class LiveFrameProcessor {
 		// the same proof of identity every other persisted transition does.
 		let decommitSettled: ReturnType<typeof readDecommitSettled>;
 		let depositRecorded: DepositRecordedData | undefined;
+		/** Acted on after the status change is emitted, never before — see below. */
+		let headWasAborted = false;
 		try {
 			const message = parseBoundedJsonFrame(rawMessage);
 			this.host.assertPersistenceReplayIsSupported(message);
@@ -242,6 +244,9 @@ export class LiveFrameProcessor {
 			}
 			if (envelope.tag === 'NetworkDisconnected' || envelope.tag === 'PeerDisconnected') {
 				this.host.setNetworkConnected(false);
+			}
+			if (envelope.tag === 'HeadIsAborted') {
+				headWasAborted = true;
 			}
 			if (envelope.tag === 'HeadIsInitializing' || envelope.tag === 'HeadIsOpen') {
 				this.host.bindSnapshotPartyOrder(message);
@@ -354,6 +359,20 @@ export class LiveFrameProcessor {
 		if (changeData && changeData.status !== this._status) {
 			this._status = changeData.status;
 			this.emitter.emit(HydraNodeEvent.StatusChange, changeData);
+		}
+		if (headWasAborted) {
+			// The head is over before it ever opened, and nothing this session proved
+			// about it survives: there is no head left to clock, and a fanout map
+			// held from a replay belongs to a head that no longer exists. The same
+			// clearing the headless-Idle Greetings path does, for the same reason —
+			// both describe a node back at Idle.
+			//
+			// After the emission above, not before: clearing the session head id
+			// makes `isLiveSessionReady` false, and the early return that follows
+			// from it would swallow the very status change this exists to deliver.
+			this._liveSessionHeadId = undefined;
+			this._headClock = undefined;
+			this.host.clearFinalizedFanout();
 		}
 	}
 

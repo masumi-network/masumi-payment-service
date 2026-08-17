@@ -20,7 +20,7 @@ import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { getExplorerUrl } from '@/lib/utils';
+import { formatAssetAmount, getExplorerUrl } from '@/lib/utils';
 import { useResync } from '@/lib/hooks/useResync';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
@@ -147,7 +147,7 @@ function HydraTopupList({
 }) {
   const { apiClient } = useAppContext();
   const resync = useResync();
-  const { topups, refetch } = useHydraTopups(headId, isOpen);
+  const { topups, isError, refetch } = useHydraTopups(headId, isOpen);
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 15_000);
@@ -182,6 +182,29 @@ function HydraTopupList({
     }
   }
 
+  // A failed read is not an empty list. Drawn as one, the whole Deposits
+  // section disappears — no rows, no error, no way back — while the section
+  // beside it says in as many words that nothing is in the head yet, which is
+  // exactly how an operator ends up sending a second deposit.
+  if (isError && topups.length === 0) {
+    return (
+      <div className="space-y-2 border-t pt-3">
+        <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Deposits
+          <DepositPeriodHint />
+        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-destructive/40 px-3 py-2">
+          <span className="text-sm text-muted-foreground">
+            Could not read this head&apos;s deposits. Any that are in flight are unaffected.
+          </span>
+          <Button type="button" size="sm" variant="outline" onClick={() => void refetch()}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (topups.length === 0) {
     return null;
   }
@@ -212,13 +235,14 @@ function HydraTopupList({
                   unusable, which read as success when both said "Confirmed". */}
                   <Badge
                     variant="outline"
-                    // Never green. Nothing here can prove the head absorbed this
-                    // particular deposit: the times say when it became eligible, and
-                    // the in-head balance is the only thing that says it arrived.
+                    // Green only where something proves it. `Absorbed` is set from
+                    // on-chain evidence that the head spent the deposit output;
+                    // everything before it is amber, because the times only say
+                    // when a deposit became eligible, never that it arrived.
                     className={
                       topup.status === 'Failed'
                         ? 'text-red-600 dark:text-red-400'
-                        : topup.status === 'Recovered'
+                        : topup.status === 'Recovered' || topup.status === 'Absorbed'
                           ? 'text-green-600 dark:text-green-400'
                           : 'text-amber-600 dark:text-amber-400'
                     }
@@ -228,23 +252,40 @@ function HydraTopupList({
                     )}
                     {topup.status === 'Recovered'
                       ? 'Returned'
-                      : topup.status === 'Failed'
-                        ? 'Expired'
-                        : topup.status === 'Preparing'
-                          ? 'Preparing'
-                          : topup.status === 'Pending'
-                            ? 'Sending'
-                            : isUsable(topup)
-                              ? 'Submitted'
-                              : 'Settling'}
+                      : topup.status === 'Absorbed'
+                        ? 'In the head'
+                        : topup.status === 'Failed'
+                          ? 'Expired'
+                          : topup.status === 'Preparing'
+                            ? 'Preparing'
+                            : topup.status === 'Pending'
+                              ? 'Sending'
+                              : isUsable(topup)
+                                ? 'Submitted'
+                                : 'Settling'}
                   </Badge>
-                  <span className="font-mono text-sm">
+                  {/* Tokens first, carrier ADA second, as the withdrawal rows do.
+                  A native-asset deposit commits a UTxO that holds both, and
+                  showing only the lovelace named a different asset and a
+                  different amount than the one that was actually sent. */}
+                  <span className="flex flex-wrap items-baseline gap-x-2 font-mono text-sm">
+                    {Object.entries(topup.committedAssets ?? {}).map(([unit, quantity]) => (
+                      <span key={unit}>{formatAssetAmount(quantity, unit, network)}</span>
+                    ))}
                     {/* A whole-UTxO top-up commits whatever the selection turns out
                     to hold, so the amount is unknown until the deposit is built.
                     Zero would read as "nothing moved". */}
-                    {topup.status === 'Preparing' && topup.committedLovelace === '0'
-                      ? 'amount pending'
-                      : formatLovelace(topup.committedLovelace, network)}
+                    <span
+                      className={
+                        Object.keys(topup.committedAssets ?? {}).length > 0
+                          ? 'text-xs text-muted-foreground'
+                          : undefined
+                      }
+                    >
+                      {topup.status === 'Preparing' && topup.committedLovelace === '0'
+                        ? 'amount pending'
+                        : formatLovelace(topup.committedLovelace, network)}
+                    </span>
                   </span>
                 </div>
                 {/* One transaction per row, named for what it is. The hash used to

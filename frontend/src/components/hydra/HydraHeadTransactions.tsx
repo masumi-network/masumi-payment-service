@@ -122,7 +122,8 @@ export function HydraHeadTransactions({
   /** 'Preprod' or 'Mainnet', passed straight to the explorer URL builder. */
   network: string;
 }) {
-  const { transactions, isLoading, isFetching, refetch } = useHydraHeadTransactions(headId);
+  const { transactions, isLoading, isError, isFetching, refetch } =
+    useHydraHeadTransactions(headId);
 
   return (
     <div className="space-y-2">
@@ -158,6 +159,17 @@ export function HydraHeadTransactions({
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading
         </p>
+      ) : isError && transactions.length === 0 ? (
+        // Never the affirmative empty state on a failed read: "nothing yet" is a
+        // claim about the head, and this is a claim about the request.
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-destructive/40 px-3 py-2">
+          <span className="text-sm text-muted-foreground">
+            Could not read this head&apos;s transactions.
+          </span>
+          <Button type="button" size="sm" variant="outline" onClick={() => void refetch()}>
+            Try again
+          </Button>
+        </div>
       ) : transactions.length === 0 ? (
         <p className="py-2 text-sm text-muted-foreground">
           Nothing yet. Payments routed through this head show up here as they happen.

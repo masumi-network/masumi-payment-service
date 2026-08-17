@@ -126,6 +126,33 @@ export function defaultUnsyncedPeriodFor(contestationPeriodSeconds: number): num
 /** For the callers that have no network in hand yet. */
 export const DEFAULT_PERIODS: HeadPeriods = defaultPeriodsFor(Network.Preprod);
 
+/**
+ * The shortest dispute window a mainnet head may be created with.
+ *
+ * Half a day, so a close that has to be contested is contested by an operator
+ * who can be woken rather than by one who happens to be watching.
+ */
+export const MAINNET_MIN_CONTESTATION_PERIOD_SECONDS = 43_200;
+
+/**
+ * Refuse a dispute window mainnet will not accept, as early as it can be known.
+ *
+ * The head-creation endpoint enforces this too, but by then both sides have
+ * provisioned a node, generated keys, reserved a peer port and — with autoFund
+ * on — sent real ADA to it, and `--peer` is startup configuration so neither
+ * node can be reused for anything else. Refusing at the invite is the
+ * difference between a 400 and two burnt nodes on an invite that can never
+ * produce a head.
+ */
+export function assertContestationPeriodAllowed(network: Network, contestationPeriodSeconds: number): void {
+	if (network === Network.Mainnet && contestationPeriodSeconds < MAINNET_MIN_CONTESTATION_PERIOD_SECONDS) {
+		throw createHttpError(
+			400,
+			`Mainnet Hydra heads require a contestation period of at least ${MAINNET_MIN_CONTESTATION_PERIOD_SECONDS} seconds`,
+		);
+	}
+}
+
 export type ReservedNode = {
 	hostId: string;
 	hostBaseUrl: string;
@@ -211,16 +238,18 @@ export async function reserveNodeForExchange(
 		}
 		throw error;
 	}
-	// The reviewed expectation for this network pins the hydra release and the
-	// script catalogue. The ledger hash is taken per Host when we have one stored,
-	// because a Host may legitimately run its own reviewed ledger — falling back
-	// to this service's expectation, never to the probe's own answer, which would
-	// compare the Host against itself and check nothing.
-	const expected = expectedHostCapabilitiesForNetwork(network);
-	assertHostCompatible(capabilities, {
-		...expected,
-		ledgerParamsHash: host.ledgerParamsHash ?? expected.ledgerParamsHash,
-	});
+	// Compared against this service's own expectation, and only that.
+	//
+	// It used to fall back to `HydraHost.ledgerParamsHash` "when we have one
+	// stored", on the theory that a Host may run its own reviewed ledger. But
+	// nothing reviews that column: it is written verbatim from every probe,
+	// including probes whose compatibility check failed. So the fallback compared
+	// the Host against its own last answer and passed by construction — and an
+	// operator who cleared a failed Host back to Active (a plain enum field) got a
+	// head provisioned on a Host whose cost models differ from the ones the V2
+	// builders use, which surfaces as `PPViewHashesDontMatch` at the first in-head
+	// script spend, after funds are committed.
+	assertHostCompatible(capabilities, expectedHostCapabilitiesForNetwork(network));
 
 	const provisioned = await provisionNodeOnHost(host.baseUrl, host.adminToken, nonce, periods, transport);
 	const urls = hostNodeUrls(host.baseUrl, provisioned.nodeId, transport);

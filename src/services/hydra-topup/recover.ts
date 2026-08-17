@@ -37,7 +37,10 @@ export type DepositRecovery = {
  * the deposit's own datum.
  */
 export async function recoverHydraDeposit(topupId: string): Promise<DepositRecovery> {
-	const topup = await prisma.hydraTopup.findUniqueOrThrow({
+	// `findUnique` and an explicit 404: the throwing variant raises a Prisma
+	// P2025 that nothing on this path maps, so an id that does not exist came
+	// back as a 500 while every neighbouring Hydra endpoint answered 404.
+	const topup = await prisma.hydraTopup.findUnique({
 		where: { id: topupId },
 		select: {
 			id: true,
@@ -46,6 +49,9 @@ export async function recoverHydraDeposit(topupId: string): Promise<DepositRecov
 			hydraHeadId: true,
 		},
 	});
+	if (topup === null) {
+		throw createHttpError(404, 'Hydra top-up not found');
+	}
 
 	if (topup.depositTxHash === null) {
 		// Still being prepared: there is no deposit on chain to recover, and the

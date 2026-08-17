@@ -132,7 +132,7 @@ export const recoverTopupPost = adminAuthenticatedEndpointFactory.build({
  * on the deadline rather than on the deposit time because the deadline is the
  * only one of the three the head ever tells anyone.
  */
-function shiftPeriods(deadline: Date | null, periods: number, depositPeriodSeconds: number): string | null {
+export function shiftPeriods(deadline: Date | null, periods: number, depositPeriodSeconds: number): string | null {
 	if (deadline === null) return null;
 	return new Date(deadline.getTime() + periods * depositPeriodSeconds * 1000).toISOString();
 }

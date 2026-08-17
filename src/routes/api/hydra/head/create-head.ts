@@ -11,12 +11,13 @@
  * and stay there.
  */
 
-import { HydraHeadStatus, Network, Prisma } from '@/generated/prisma/client';
+import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import createHttpError from 'http-errors';
 
+import { assertContestationPeriodAllowed } from '@/services/hydra-invite/provisioning';
 import { hasUnsettledHydraRequestState, unsettledL2TransactionWhere } from '../deletion-guard';
 import { headInclude, verifyPriorHydraFanouts, type HydraHeadRecord } from './index';
 
@@ -56,9 +57,9 @@ export async function createBoundHydraHead(input: {
 						if (relation.network !== verifiedPriorFanouts.network) {
 							throw createHttpError(409, 'Hydra relation network changed during replacement verification');
 						}
-						if (relation.network === Network.Mainnet && input.contestationPeriod < 43_200n) {
-							throw createHttpError(400, 'Mainnet Hydra heads require a contestation period of at least 43200 seconds');
-						}
+						// The same floor the invite path applies before it reserves anything,
+						// from the same constant, so the two cannot drift apart.
+						assertContestationPeriodAllowed(relation.network, Number(input.contestationPeriod));
 
 						// Serialize replacement with rollback invalidation and fanout
 						// adoption. Once these rows are locked, no previous Final head

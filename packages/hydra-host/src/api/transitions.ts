@@ -108,7 +108,15 @@ export async function requestRemoval(
 			409,
 		);
 	}
-	const updated = await store.update(nodeId, (current) => ({ ...current, state: 'Removing' }));
+	// Both, and the flag is the one that survives: removal starts by stopping the
+	// node, and stopping it overwrites the state for as long as the drain and the
+	// SIGKILL grace take. `removalRequested` is what the supervisor reads back
+	// after a restart that lands in that window.
+	const updated = await store.update(nodeId, (current) => ({
+		...current,
+		state: 'Removing',
+		removalRequested: true,
+	}));
 	return updated ?? record;
 }
 

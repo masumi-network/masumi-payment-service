@@ -163,6 +163,12 @@ export function HydraHeadTable({
                 style={{ animationDelay: `${Math.min(index, 9) * 35}ms` }}
                 onClick={() => onOpenHead(head)}
                 onKeyDown={(event) => {
+                  // Only the row's own key events. A keydown that bubbled up from
+                  // a control inside the row — the copy buttons next to the ids —
+                  // was being preventDefault()ed here, which cancelled the
+                  // button's activation: Enter on a copy button opened the
+                  // details dialog and copied nothing.
+                  if (event.target !== event.currentTarget) return;
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
                     onOpenHead(head);

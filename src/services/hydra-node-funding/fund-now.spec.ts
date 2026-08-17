@@ -96,13 +96,21 @@ describe('fundHydraNodeNow', () => {
 	// The gap that actually bit was *after* confirmation: our row says Confirmed
 	// a little before the chain indexer shows the funds, and in that gap the
 	// balance still reads zero. Guarding on Pending alone paid every node twice.
+	//
+	// The two statuses age differently, though. A Confirmed transfer leaves the
+	// window once the indexer has certainly caught up; a Pending one never does,
+	// because a transfer stuck for an hour may still land, and forgetting it
+	// would pay the node a second time for funds that are already on the way.
 	it('counts a recently confirmed transfer as still in flight', async () => {
 		await fundHydraNodeNow('participant-1');
 
 		const where = mockFindTransfer.mock.calls[0][0].where;
 		expect(where.toAddress).toBe('addr_test1_node');
-		expect(where.status.in).toEqual([TransactionStatus.Pending, TransactionStatus.Confirmed]);
-		expect(where.createdAt.gte).toBeInstanceOf(Date);
+
+		const [pending, confirmed] = where.OR;
+		expect(pending).toEqual({ status: TransactionStatus.Pending });
+		expect(confirmed.status).toBe(TransactionStatus.Confirmed);
+		expect(confirmed.createdAt.gte).toBeInstanceOf(Date);
 	});
 
 	it('does not pay again just after the first transfer confirmed', async () => {

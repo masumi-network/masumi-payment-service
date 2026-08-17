@@ -424,6 +424,10 @@ export async function refreshHydraHostCapabilities(id: string): Promise<PublicHy
 			// Host does not erase a value a newer one already supplied.
 			...(capabilities.exchangePort === null ? {} : { exchangePort: capabilities.exchangePort }),
 			scriptCatalogueHash: capabilities.scriptCatalogueHash,
+			// An observation, for the operator to look at. Never an expectation:
+			// this is written even when the compatibility check just failed on it,
+			// so anything comparing a Host against this column compares it against
+			// itself.
 			ledgerParamsHash: capabilities.ledgerParamsHash,
 			status: nextHostStatus(host.status, compatibilityError === null),
 			lastHealthAt: new Date(),

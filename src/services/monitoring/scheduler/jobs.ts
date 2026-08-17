@@ -20,6 +20,7 @@ import type { JobDefinition } from '@/services/shared';
 import { checkHydraTransactions } from '@/services/hydra-tx-handler';
 import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
 import { pollHydraRedemptions, reapExpiredInvites } from '@/services/hydra-invite/adoption';
+import { releaseAbandonedReservations } from '@/services/hydra-invite/release-reservation';
 import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service';
 import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
 import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
@@ -31,6 +32,7 @@ import {
 import { runHydraLowBalanceMonitoringCycle } from '@/services/hydra-low-balance/monitor';
 import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { releaseStalledCloseAdmissions } from '@/services/hydra-close-admission';
 import { isHydraInUse } from '@/services/hydra-usage';
 import { logger } from '@masumi/payment-core/logger';
 
@@ -117,6 +119,11 @@ export const scheduledJobs: JobDefinition[] = [
 		// different counterparty. Sweeping is the only way they come back.
 		run: async () => {
 			await reapExpiredInvites();
+			// Reaping a node sweeps its fuel back first, and a sweep can fail on a
+			// chain query — in which case the reservation is kept, because its key
+			// is the only way to move the ADA the funding cycle already sent it.
+			// This is what retries those.
+			await releaseAbandonedReservations();
 		},
 	},
 	{
@@ -161,6 +168,12 @@ export const scheduledJobs: JobDefinition[] = [
 			if (reconnected > 0) {
 				logger.info(`[HydraScheduler] Connected ${reconnected} Hydra head(s) that had no session`);
 			}
+			// The close admission latch is set before the command goes out and
+			// cleared only by a status frame that moves the head on. A Close that
+			// fails on chain therefore leaves a healthy head refusing every escrow
+			// operation and every retry of the close itself, with no way back but a
+			// manual UPDATE. This is the way back.
+			await releaseStalledCloseAdmissions();
 		},
 	},
 	{

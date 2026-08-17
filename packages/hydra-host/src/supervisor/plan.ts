@@ -96,7 +96,11 @@ function escrowExpired(record: NodeRecord, nowMs: number, ttlSeconds: number): b
  * so a node that cannot start does not loop forever.
  */
 export function planNodeAction(record: NodeRecord, observation: NodeObservation, limits: PlanLimits): SupervisorAction {
-	if (record.state === 'Removing') {
+	// Keyed on the durable flag as well as the state, because the removal itself
+	// destroys the state: `remove` stops the node first, and the stop writes
+	// `Draining` and then `Stopped` over `Removing`. A host restart inside that
+	// window would otherwise resume a node the operator was told was going away.
+	if (record.state === 'Removing' || record.removalRequested === true) {
 		return { kind: 'Remove', reason: 'removal requested' };
 	}
 

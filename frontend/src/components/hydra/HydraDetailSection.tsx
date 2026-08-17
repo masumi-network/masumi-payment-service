@@ -21,16 +21,31 @@ export function HydraDetailSection({
   title,
   summary,
   defaultOpen = false,
+  open,
+  onOpenChange,
   children,
 }: {
   title: string;
   /** Shown in the header, so a collapsed section still says what is inside. */
   summary?: ReactNode;
   defaultOpen?: boolean;
+  /**
+   * Drive the section from outside, for the callers that have to open it.
+   *
+   * `defaultOpen` is read once, at mount, so a form that collapses this
+   * section and then reports a validation error inside it could not reveal
+   * what it was complaining about: the message rendered where nobody could
+   * see it, no toast was raised, and the button looked dead.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   children: ReactNode;
 }) {
   return (
-    <Collapsible defaultOpen={defaultOpen} className="rounded-md border">
+    <Collapsible
+      {...(open === undefined ? { defaultOpen } : { open, onOpenChange })}
+      className="rounded-md border"
+    >
       <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-accent/50">
         <span className="flex items-center gap-2 font-medium">
           <ChevronDown

@@ -65,6 +65,7 @@ import {
 import { COLLATERAL_RESERVE_LOVELACE, ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { submitReservedL2Action } from '../../l2-submission';
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
+import { rotateDeferredL2PaymentRequest } from '../../l2-queue-rotation';
 import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 
@@ -1141,6 +1142,12 @@ async function runAuthorizeRefundL2Pass(): Promise<void> {
 					} catch (error) {
 						if (isLookupDeferred(error)) {
 							logger.info('L2 authorize-refund deferred to next tick', { requestId: request.id, error });
+							// Stood down for a cooldown. This pass takes the oldest eligible
+							// request per wallet, so one that defers every tick — a request
+							// carrying an unresolved terminal hash never matches its UTxO
+							// again — would be picked forever while every other escrow on
+							// that wallet waited behind it.
+							await rotateDeferredL2PaymentRequest(request.id);
 						} else {
 							logger.error('L2 authorize-refund failed', { requestId: request.id, error });
 						}
