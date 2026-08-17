@@ -86,8 +86,13 @@ export function RedeemHydraInviteDialog({
   onOpenChange,
   onRedeemed,
 }: RedeemHydraInviteDialogProps) {
-  const { apiClient } = useAppContext();
+  const { apiClient, selectedPaymentSource } = useAppContext();
   const { wallets } = useWallets();
+  // Same rule as issuing: payments only reach a head through the V2 path, so a
+  // head redeemed onto a V1 source's wallet would sit open and unused. The
+  // service refuses it; this says so before the counterparty's single-use nonce
+  // is spent on a redemption that cannot complete.
+  const isHeadCapableSource = selectedPaymentSource?.paymentSourceType === 'Web3CardanoV2';
   const queryClient = useQueryClient();
   const [code, setCode] = useState('');
   const [hotWalletId, setHotWalletId] = useState('');
@@ -219,7 +224,15 @@ export function RedeemHydraInviteDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {preview === null ? (
+        {!isHeadCapableSource ? (
+          <HydraNotice tone="warn">
+            <p>
+              The selected payment source is not a Web3CardanoV2 source. Payments on it settle on
+              chain and never enter a head, so redeeming would open a head nothing would use, and
+              spend the invite. Switch to a V2 payment source first.
+            </p>
+          </HydraNotice>
+        ) : preview === null ? (
           <div className="space-y-2">
             <Label htmlFor="hydra-invite-code">Invite code</Label>
             <Textarea
@@ -451,7 +464,11 @@ export function RedeemHydraInviteDialog({
               <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="button" onClick={() => void handlePreview()} disabled={isLoading}>
+              <Button
+                type="button"
+                onClick={() => void handlePreview()}
+                disabled={isLoading || !isHeadCapableSource}
+              >
                 {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                 Read invite
               </Button>

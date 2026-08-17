@@ -72,7 +72,11 @@ export default function HydraHeadsPage() {
   // Read here rather than through the nodes card: the card now lives in a
   // dialog, so leaving the count to it reported zero until the operator happened
   // to open one, and the page gates its primary action on this.
-  const { hosts } = useHydraHosts(selectedNetwork);
+  const {
+    hosts,
+    error: hostsError,
+    refetch: refetchHosts,
+  } = useHydraHosts(selectedNetwork);
   const [backUpKeysParticipantId, setBackUpKeysParticipantId] = useState<string | null>(null);
   const [selectedHeadId, setSelectedHeadId] = useState<string | null>(null);
   const [runningLifecycleHeadId, setRunningLifecycleHeadId] = useState<string | null>(null);
@@ -320,11 +324,13 @@ export default function HydraHeadsPage() {
               </p>
             </div>
 
-            <RefreshButton onRefresh={() => void refetch()} isRefreshing={isFetching} />
+            <RefreshButton onRefresh={() => void resync('hydra')} isRefreshing={isFetching} />
           </div>
 
           <HydraNodeStrip
             hosts={hosts}
+            loadFailed={hostsError != null}
+            onRetry={() => void refetchHosts()}
             headCounts={headCountsByHost}
             selectedHostId={selectedHostId}
             onSelectHost={setSelectedHostId}
@@ -477,7 +483,10 @@ export default function HydraHeadsPage() {
       <IssueHydraInviteDialog
         open={isIssueInviteOpen}
         onOpenChange={setIsIssueInviteOpen}
-        onIssued={() => void refetch()}
+        // The invite becomes an "awaiting counterparty" row built from the
+        // invites query, not the heads query, so refetching heads alone left the
+        // page looking as though nothing had been issued.
+        onIssued={() => void resync('hydra')}
       />
       <RedeemHydraInviteDialog
         open={isRedeemInviteOpen}

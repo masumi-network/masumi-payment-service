@@ -19,6 +19,7 @@ import { decrypt } from '@/utils/security/encryption';
 import { fetchHostRedemptions, forgetHostInvite, type HostInviteRecord } from '@/services/hydra-host/client';
 import { verifyHydraRedemption } from './invite-signing';
 import { createHeadFromExchange } from './orchestrator';
+import { releaseReservedParticipants } from './release-reservation';
 import { fundHydraNodeNow } from '@/services/hydra-node-funding/service';
 
 /**
@@ -76,7 +77,20 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 
 		outcome.polled += 1;
 		for (const record of redemptions.invites) {
-			const result = await adoptRedemption(record);
+			let result: AdoptionResult;
+			try {
+				result = await adoptRedemption(record);
+			} catch (error) {
+				// One redemption that cannot be adopted must not stop the others, and
+				// must not stop the pass. It used to: the throw escaped this loop and
+				// the Host loop, the watermark was never advanced, and every later
+				// Host went unpolled — so a single counterparty whose relation still
+				// held a live head silently froze invite adoption for everybody, and
+				// re-ran the same failure on every tick.
+				logger.warn(`hydra: could not adopt redemption ${record.nonce}: ${(error as Error).message}`);
+				outcome.rejected += 1;
+				continue;
+			}
 			if (result === 'adopted') {
 				outcome.adopted += 1;
 				// The database nonce remains the permanent replay guard. Once the
@@ -217,20 +231,33 @@ export async function reapExpiredInvites(): Promise<number> {
 		try {
 			if (invite.HydraHost.encryptedAdminToken !== null) {
 				const adminToken = decrypt(invite.HydraHost.encryptedAdminToken);
-				const { forgetHostInvite, removeHostNode } = await import('@/services/hydra-host/client');
+				const { removeHostNode } = await import('@/services/hydra-host/client');
+				const transport = { allowInsecureHttp: invite.HydraHost.allowInsecureHttp };
+
+				// An invite is expired here but may have been redeemed a moment before
+				// it expired — the Host accepts a redemption right up to the deadline,
+				// and the poll that adopts it runs on its own schedule and skips a
+				// Host it could not reach. Forgetting it destroys the only copy of the
+				// counterparty's signed redemption there is, leaving them with a live
+				// head whose peer will never join and us with nothing to reconstruct
+				// it from. Adoption gets the next tick instead; the sweep gets it
+				// afterwards, when the invite is Completed or still unredeemed.
+				const held = await fetchHostRedemptions(invite.HydraHost.baseUrl, adminToken, 0, transport);
+				if (held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null)) {
+					logger.info(`hydra: not reaping expired invite ${invite.nonce}; the Host is holding its redemption`);
+					continue;
+				}
+
 				// The Host stops honouring the nonce before the node goes, so a
 				// redemption arriving mid-sweep cannot start something we are about
 				// to delete.
-				const transport = { allowInsecureHttp: invite.HydraHost.allowInsecureHttp };
 				await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
 				await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
 					force: false,
 					...transport,
 				});
 			}
-			await prisma.hydraLocalParticipant.deleteMany({
-				where: { hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId, hydraHeadId: null },
-			});
+			await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
 			await prisma.hydraHeadInvite.update({
 				where: { id: invite.id },
 				data: { status: HydraInviteStatus.Expired },

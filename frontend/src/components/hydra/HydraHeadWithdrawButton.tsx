@@ -312,8 +312,8 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
               id={`hydra-withdraw-${headId}`}
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
-              placeholder="0.00"
-              inputMode="decimal"
+              placeholder={selectedUnit === ADA_CHOICE ? '0.00' : '0'}
+              inputMode={selectedUnit === ADA_CHOICE ? 'decimal' : 'numeric'}
               className="w-44 pr-16 font-mono"
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-w-14 truncate text-xs text-muted-foreground">
@@ -321,12 +321,15 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
             </span>
           </div>
           {selectedUnit !== ADA_CHOICE && (
-            /* Worth saying before the click, not after: a token cannot travel
-               alone, so the payout arrives with roughly 2 ADA carrying it and
-               the rest of the ADA it was sitting on stays in the head. */
+            /* Worth saying before the click, not after: the number is the
+               token's smallest unit even though the field is labelled with its
+               ticker, and a token cannot travel alone, so the payout arrives
+               with roughly 2 ADA carrying it and the rest of the ADA it was
+               sitting on stays in the head. */
             <p className="max-w-sm text-xs text-muted-foreground">
-              The token is moved onto its own UTxO first, so about 2 {adaLabel} goes out with it to
-              carry it. Any other {adaLabel} it shares a UTxO with stays in the head.
+              Enter a whole number in {formatFundUnit(selectedUnit, network)}&apos;s smallest unit,
+              not {adaLabel}. The token is moved onto its own UTxO first, so about 2 {adaLabel} goes
+              out with it to carry it. Any other {adaLabel} it shares a UTxO with stays in the head.
             </p>
           )}
         </div>

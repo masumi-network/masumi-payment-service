@@ -236,9 +236,13 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
           ? (result.reason ?? 'Nothing to send back')
           : `Sending ${ada(result.balanceLovelace)} back to the wallet`,
       );
+      // On the way out, not in the catch: the successful withdrawal is the one
+      // that changes the node's balance and the wallet's, and it was the only
+      // path that refreshed neither — while a failure, which moves nothing,
+      // refetched everything.
+      await resync('hydra', 'wallets');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The withdrawal failed');
-      await resync('hydra', 'wallets');
     } finally {
       setBusyId(null);
     }

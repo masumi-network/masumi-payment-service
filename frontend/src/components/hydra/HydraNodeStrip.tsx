@@ -37,6 +37,9 @@ export type HydraNodeStripProps = {
   onSelectHost: (hostId: string | null) => void;
   onOpenHost: (host: HydraHost) => void;
   onAddNode: () => void;
+  /** The node list could not be read. Not the same as having no nodes. */
+  loadFailed?: boolean;
+  onRetry?: () => void;
 };
 
 export function HydraNodeStrip({
@@ -46,7 +49,29 @@ export function HydraNodeStrip({
   onSelectHost,
   onOpenHost,
   onAddNode,
+  loadFailed = false,
+  onRetry,
 }: HydraNodeStripProps) {
+  // Told apart from an empty list on purpose. A failed request drawn as "no node
+  // connected yet" is a screen that lies about the operator's own
+  // infrastructure, and it offers Connect node — the wrong thing to press when
+  // the nodes are there and only the answer went missing.
+  if (loadFailed) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-destructive/40 px-4 py-3">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Server className="h-4 w-4" />
+          Could not read your nodes. They are still running; this page could not reach the API.
+        </div>
+        {onRetry ? (
+          <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+            Try again
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
   if (hosts.length === 0) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed px-4 py-3">

@@ -464,13 +464,23 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
               placeholder={isAda ? '0.00' : '0'}
-              inputMode="decimal"
+              inputMode={isAda ? 'decimal' : 'numeric'}
               className="w-44 pr-16 font-mono"
             />
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 max-w-14 truncate text-xs text-muted-foreground">
               {unitLabel}
             </span>
           </div>
+          {!isAda && (
+            /* The ticker beside the field is the token's display name, but the
+               number sent is its smallest unit — 1 tUSDM is 1000000 here, and
+               the balances above are shown converted. Said for every token, not
+               only the hand-typed ones: a preset is exactly as easy to get
+               wrong by a factor of a million. */
+            <p className="max-w-sm text-xs text-muted-foreground">
+              Enter a whole number in {unitLabel}&apos;s smallest unit, not {adaLabel}.
+            </p>
+          )}
         </div>
 
         <Button onClick={() => void handleTopup()} disabled={isSubmitting}>
@@ -494,9 +504,6 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
             placeholder="policyId + assetName, in hex"
             className="w-full max-w-md font-mono text-xs"
           />
-          <p className="text-xs text-muted-foreground">
-            Amounts for a native asset are in its own smallest unit, not {adaLabel}.
-          </p>
         </div>
       )}
 

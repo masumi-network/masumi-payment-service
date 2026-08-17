@@ -124,8 +124,25 @@ describe('applyDecommitOutcome', () => {
 
 		await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt });
 
-		// Filtered on the approval, which a finalization can never precede.
-		expect(mockFindMany.mock.calls[0]![0].where.approvedAt).toEqual({ lte: observedAt });
+		// Filtered on the approval, which a finalization can never precede — and,
+		// for a row whose approval was never written, on when the row was created,
+		// since `approvedAt: { lte: … }` matches no NULL and would otherwise leave
+		// that withdrawal open with its funds already on L1.
+		expect(mockFindMany.mock.calls[0]![0].where.OR).toEqual([
+			{ approvedAt: { lte: observedAt } },
+			{ approvedAt: null, createdAt: { lte: observedAt } },
+		]);
+	});
+
+	// The row the stamping branch below was written for: approved but never
+	// recorded as approved, which is what a missed frame or a failed write leaves.
+	it('attributes a finalization to a withdrawal whose approval was never written', async () => {
+		const observedAt = new Date('2026-08-05T22:37:49.553Z');
+		mockFindMany.mockResolvedValue([{ ...OPEN_ROW, approvedAt: null }]);
+
+		expect(await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized', observedAt })).toBe(true);
+		expect(mockUpdate.mock.calls[0]![0].data.status).toBe('Finalized');
+		expect(mockUpdate.mock.calls[0]![0].data.approvedAt).toBeInstanceOf(Date);
 	});
 
 	// Older heads report no timestamp; the filter is dropped rather than being
@@ -134,6 +151,7 @@ describe('applyDecommitOutcome', () => {
 		await applyDecommitOutcome({ hydraHeadId: HEAD, outcome: 'finalized' });
 
 		expect(mockFindMany.mock.calls[0]![0].where.approvedAt).toBeUndefined();
+		expect(mockFindMany.mock.calls[0]![0].where.OR).toBeUndefined();
 	});
 
 	// Guessing wrong marks the wrong withdrawal paid out, which is worse than

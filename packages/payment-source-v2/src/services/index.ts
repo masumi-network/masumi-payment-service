@@ -14,7 +14,9 @@ export { authorizeRefundL2V2 as authorizeRefundL2 } from './payments/authorize-r
 export { collectRefundL2V2 as collectRefundL2 } from './purchases/collect-refund/service';
 export { requestRefundsL2V2 as requestRefundL2 } from './purchases/request-refund/service';
 export { authorizeWithdrawalsL2V2 as authorizeWithdrawalL2 } from './purchases/authorize-withdrawal/service';
-export { processL2PurchaseLocks as lockFundsL2 } from './purchases/batch-payments/l2-lock';
+// Under the batch mutex, never the bare pass: the nudge and the L1 batch would
+// otherwise select the same request and escrow it twice.
+export { processL2PurchaseLocksExclusively as lockFundsL2 } from './purchases/batch-payments/service';
 
 export { authorizeWithdrawalsV2 as authorizeWithdrawals } from './purchases/authorize-withdrawal/service';
 export { batchLatestPaymentEntriesV2 as batchLatestPaymentEntries } from './purchases/batch-payments/service';

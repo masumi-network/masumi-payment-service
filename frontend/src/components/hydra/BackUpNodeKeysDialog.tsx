@@ -84,6 +84,11 @@ export function BackUpNodeKeysDialog({
     setIsLoading(true);
     try {
       setKeys(await revealHydraNodeKeys(apiClient, { id: participantId }));
+      // The reveal is what changes the record — it is one-time and the service
+      // marks it so. Refreshing here rather than on Done means a window closed
+      // with escape or the corner cross does not leave the node still offering
+      // a backup that can no longer be taken.
+      onDone();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to read the node keys');
     } finally {
@@ -161,14 +166,7 @@ export function BackUpNodeKeysDialog({
               </Button>
             </>
           ) : (
-            <Button
-              type="button"
-              disabled={!saved}
-              onClick={() => {
-                onDone();
-                handleClose(false);
-              }}
-            >
+            <Button type="button" disabled={!saved} onClick={() => handleClose(false)}>
               Done
             </Button>
           )}

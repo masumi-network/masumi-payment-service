@@ -98,6 +98,16 @@ export class HydraHistoryReplay {
 	private _lastSequence: number | undefined;
 	private _partyIdentityVerified = false;
 	private _verifiedSnapshot: VerifiedHydraSnapshot | undefined;
+	/**
+	 * Bumped by every rejection, and never reset.
+	 *
+	 * `_failed` cannot be used to tell whether a rejection happened during a
+	 * stretch of code: rejecting invalidates the socket, the socket's close
+	 * handler starts a fresh pass, and a fresh pass clears `_failed` — all
+	 * synchronously, before `fail()` returns. A monotonic counter is the one
+	 * thing that survives that.
+	 */
+	private _failureGeneration = 0;
 
 	/**
 	 * Decommit transactions seen so far, by transaction id. Bounded: a head
@@ -145,6 +155,7 @@ export class HydraHistoryReplay {
 				? error
 				: new HydraProtocolError('Hydra history replay failed protocol validation', { cause: error });
 		const isFirstFailure = !this._failed;
+		this._failureGeneration += 1;
 		this._failed = true;
 		this._complete = false;
 		this._error = normalizedError;
@@ -243,8 +254,17 @@ export class HydraHistoryReplay {
 			);
 			return;
 		}
+		// Stopped on the failure counter, not on `_failed`. Rejecting a frame
+		// invalidates the socket, whose close handler starts a fresh pass, and a
+		// fresh pass clears `_failed` — synchronously, inside this loop. Reading
+		// the flag therefore saw `false` immediately after a rejection and carried
+		// on feeding the rest of the page into what was now a *new* pass: its
+		// closing `Greetings` then installed an unsigned anchor and marked the
+		// replay complete, reporting a verified history for a head whose signed
+		// history had just been rejected.
+		const failureGenerationAtStart = this._failureGeneration;
 		for (const frame of bufferedFrames) {
-			if (this._failed) break;
+			if (this._failureGeneration !== failureGenerationAtStart) break;
 			this.processPinnedMessage(frame);
 		}
 	}

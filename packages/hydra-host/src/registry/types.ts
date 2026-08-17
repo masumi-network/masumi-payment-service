@@ -132,6 +132,19 @@ export type NodeRecord = {
 	 * as having restarted once.
 	 */
 	startAttempts: number;
+	/**
+	 * Pid of the hydra-node process this host last spawned.
+	 *
+	 * A node outlives the host: restarting the host — a deploy, a crash, a
+	 * developer — leaves the node serving on its own port with nobody holding a
+	 * handle to it. Without a pid the supervisor could see that it was alive (it
+	 * answers) but could not act on it, so stop, restart and remove all became
+	 * silent no-ops for every node after the first host restart.
+	 *
+	 * Advisory, never authoritative: pids are reused, so the process is checked
+	 * against the hydra-node binary before this host signals it.
+	 */
+	pid?: number;
 	/** Last supervisor probe. Absent until the node has been observed at least once. */
 	lastObservation?: NodeObservationRecord;
 	/** True when the last stop could not be drained, so the unwedge check looks harder on the way up. */

@@ -27,7 +27,7 @@ import { isDefinitiveNodeRejection } from '@masumi/payment-core/submit-error-cla
 import { makeHotWalletUnlocker, makePurchaseRequestFailureMarker } from '../../request-failure';
 import { findMatchingPurchaseUtxo } from '../../utxo-matching';
 import { advancedRetry, delayErrorResolver } from 'advanced-retry';
-import { sortAndLimitUtxos } from '@/utils/utxo';
+import { pickCollateralUtxo, sortAndLimitUtxos } from '@/utils/utxo';
 import { Mutex, MutexInterface, tryAcquire } from 'async-mutex';
 // V2-pinned single-item builder. MUST NOT use the root V1-mesh generator (@/utils/generator/transaction-generator) — that bundles the V1 cost models and CBOR serializer, which produce a script-data-hash the ledger rejects for V2 scripts (PPViewHashesDontMatch). See docs/adr/0005.
 import { generateMasumiSmartContractInteractionTransactionAutomaticFees } from '../../../builders/single-interaction';
@@ -59,7 +59,7 @@ import {
 	type BatchInteractionItem,
 	generateMasumiSmartContractBatchInteractionTransactionAutomaticFees,
 } from '../../../builders/batch-interaction';
-import { ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
+import { COLLATERAL_RESERVE_LOVELACE, ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
 import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
@@ -1091,9 +1091,16 @@ async function processL2RequestRefund(
 	});
 
 	const limitedUtxos = sortAndLimitUtxos(headWalletUtxos, 8000000);
-	const collateralUtxo = limitedUtxos[0];
+	// Collateral is chosen the way every other rail chooses it: by value, with a
+	// floor. `limitedUtxos[0]` is ordered by asset count and has no floor at all,
+	// so the buyer's own lock change — pure ADA, sitting at the 2 ADA minimum —
+	// won whenever its reference sorted first. The builder declares 3 ADA of
+	// total collateral regardless, which makes the collateral-return output
+	// negative: the head refuses the body, every retry rebuilds the same one, and
+	// that escrow can no longer be collected, refunded or authorized in the head.
+	const collateralUtxo = pickCollateralUtxo(headWalletUtxos, COLLATERAL_RESERVE_LOVELACE);
 	if (collateralUtxo == null) {
-		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no collateral UTxO in head`);
+		throw new Error(`${LOOKUP_DEFERRED_PREFIX} L2 wallet has no collateral UTxO of at least 5 ADA in head`);
 	}
 
 	const hydraV2Provider = asV2Provider(hydraProvider);

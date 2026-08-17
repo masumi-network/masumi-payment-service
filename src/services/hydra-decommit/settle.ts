@@ -120,7 +120,18 @@ async function finalizeDecommit(params: {
 			// Filtered on the approval rather than on creation: a finalization
 			// cannot precede the approval it follows, so this excludes a withdrawal
 			// that was merely requested in the seconds before the replayed event.
-			...(observedAt === undefined ? {} : { approvedAt: { lte: observedAt } }),
+			//
+			// A row whose approval was never written falls back to its creation
+			// time. `approvedAt: { lte: … }` does not match NULL, so a withdrawal
+			// whose DecommitApproved was missed — the frame arrived while the socket
+			// was down, or its write failed — could never be finalized at all: the
+			// row stayed open, the funds were already on L1, and every later
+			// withdrawal by that participant was refused as one already in flight.
+			...(observedAt === undefined
+				? {}
+				: {
+						OR: [{ approvedAt: { lte: observedAt } }, { approvedAt: null, createdAt: { lte: observedAt } }],
+					}),
 		},
 		orderBy: { createdAt: 'desc' },
 	});

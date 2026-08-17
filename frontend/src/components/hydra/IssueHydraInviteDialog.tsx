@@ -15,7 +15,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, Ticket } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { useQueryClient } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DurationPicker, formatDuration } from '@/components/hydra/DurationPicker';
@@ -114,8 +113,13 @@ export function IssueHydraInviteDialog({
   onOpenChange,
   onIssued,
 }: IssueHydraInviteDialogProps) {
-  const { apiClient, network } = useAppContext();
+  const { apiClient, network, selectedPaymentSource } = useAppContext();
   const { wallets } = useWallets();
+  // In-head escrow runs on the V2 payment path only, so a head opened on a V1
+  // source's wallet is refused by the service. Said here rather than after the
+  // form is filled in, because the wallets on screen come from whichever source
+  // is selected and there is nothing about them that shows which kind it is.
+  const isHeadCapableSource = selectedPaymentSource?.paymentSourceType === 'Web3CardanoV2';
   const defaults = defaultsFor(network);
   const [hotWalletId, setHotWalletId] = useState('');
   /**
@@ -265,7 +269,15 @@ export function IssueHydraInviteDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {issued === null ? (
+        {issued === null && !isHeadCapableSource ? (
+          <HydraNotice tone="warn">
+            <p>
+              The selected payment source is not a Web3CardanoV2 source. Payments on it settle on
+              chain and never enter a head, so an invite issued from its wallets would open a head
+              nothing would use. Switch to a V2 payment source first.
+            </p>
+          </HydraNotice>
+        ) : issued === null ? (
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Our side of this head</Label>
@@ -525,7 +537,11 @@ export function IssueHydraInviteDialog({
               <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="button" onClick={() => void handleIssue()} disabled={isLoading}>
+              <Button
+                type="button"
+                onClick={() => void handleIssue()}
+                disabled={isLoading || !isHeadCapableSource}
+              >
                 {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                 Create invite
               </Button>

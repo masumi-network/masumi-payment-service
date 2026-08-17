@@ -118,6 +118,7 @@ export class LiveFrameProcessor {
 		this._liveSessionHeadId = undefined;
 		this._livePartyIdentityVerified = false;
 		this._headClock = undefined;
+		this.clearPendingIncrements();
 		return { hadLiveIdentity };
 	}
 
@@ -126,6 +127,28 @@ export class LiveFrameProcessor {
 		this._liveSessionHeadId = undefined;
 		this._livePartyIdentityVerified = false;
 		this._headClock = undefined;
+		this.clearPendingIncrements();
+	}
+
+	/**
+	 * Forget deposits this session saw being folded in.
+	 *
+	 * The pair is derived from `CommitApproved`/`CommitFinalized`, which are live
+	 * frames only: the live socket is opened with `history=no`, and the replay
+	 * handles no `Commit*` tag but `CommitRecorded`. A finalization that lands
+	 * while the socket is down is therefore never observed by anything, so state
+	 * carried across the gap can only be wrong — and it was wrong in the
+	 * expensive direction: the counter stayed above zero for the life of the
+	 * attachment, and every UTxO in the set stayed excluded from withdrawal and
+	 * from L2 locking, so the topped-up funds could not leave the head at all.
+	 *
+	 * Clearing can re-open the fold-in window for a deposit that really is still
+	 * in flight. That costs a transaction refused with "inputs are spent", which
+	 * is retried; the alternative cost funds that never move again.
+	 */
+	private clearPendingIncrements(): void {
+		this._pendingIncrementCount = 0;
+		this._pendingIncrementUtxos.clear();
 	}
 
 	/** Replay met a deposit record; hold it with the live-observed ones. */

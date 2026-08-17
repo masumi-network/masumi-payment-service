@@ -147,6 +147,16 @@ export async function fetchHydraPages<T extends { id: string }>(
       },
     );
 
+    // A failed page is not an empty page. `handleApiCall` answers null on any
+    // failure, and reading that as "no rows" resolved the query as a success
+    // holding whatever had arrived so far — a truncated list on a later page,
+    // and on the first page an empty one, which every screen here renders as
+    // "you have none of these". Throwing puts the query in its error state,
+    // where the retry and the error UI can reach it.
+    if (response === null) {
+      throw new Error(`Failed to load ${url}`);
+    }
+
     const pageItems = response?.data?.data?.[dataKey] ?? [];
     for (const item of pageItems) {
       if (seenIds.has(item.id)) continue;

@@ -164,6 +164,12 @@ export async function syncMeshCostModelsFromHeadV2(raw: HeadRawCostModels): Prom
 
 		const anyPatched = v1Patched || v2Patched || v3Patched;
 		if (anyPatched) {
+			// The chain sync's TTL marker now describes arrays that no longer hold
+			// chain values. Left alone, the next L1 build inside the TTL window took
+			// its early return and built against the head's cost models — the exact
+			// drift this module exists to remove, with the same
+			// `PPViewHashesDontMatch` at the end of it.
+			lastV2SyncByKey.clear();
 			logger.info('Synced mesh-sdk Plutus cost models from Hydra head (V2 mesh line)', {
 				v1: v1Patched,
 				v2: v2Patched,

@@ -140,8 +140,7 @@ const walletLockTimeoutInterval = parseNumberEnv(
 	5,
 );
 
-const checkHydraTxInterval = Number(process.env.CHECK_HYDRA_TX_INTERVAL ?? '10');
-if (checkHydraTxInterval < 5) throw new Error('CHECK_HYDRA_TX_INTERVAL must be at least 5 seconds');
+const checkHydraTxInterval = parseNumberEnv('CHECK_HYDRA_TX_INTERVAL', process.env.CHECK_HYDRA_TX_INTERVAL, '10', 5);
 
 export type LowBalanceDefaultRule = {
 	assetUnit: string;

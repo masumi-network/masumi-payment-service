@@ -36,7 +36,7 @@ import { isTransientPreSubmitError } from '@masumi/payment-core/pre-submit-error
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
-import { processL2PurchaseLocks } from './l2-lock';
+import { processL2PurchaseLocks, type L2LockPassResult } from './l2-lock';
 
 /**
  * --- V2 batch-payments: defensive submit invariant ---
@@ -640,6 +640,36 @@ async function executeSpecificBatchPayment(
 		txHash,
 		requestIds,
 	};
+}
+
+/**
+ * The L2 funds-lock pass on its own, for the Hydra nudge.
+ *
+ * The pass is written to run under this module's mutex, serialized with the L1
+ * batch — it selects `FundsLockingRequested` requests that have no
+ * CurrentTransaction yet, and the L1 pass claims them only later, in its own
+ * pre-submit write. The nudge called the pass directly, so a nudge landing
+ * inside an L1 tick could reserve a lock in the head for a request the L1 pass
+ * had already selected and was about to lock on chain: the same funds escrowed
+ * twice, with an L2 reservation left holding the head wallet and no request
+ * pointing at it.
+ *
+ * Skipped rather than queued when the batch is already running: that cycle runs
+ * this very pass first, so the work is not missed.
+ */
+export async function processL2PurchaseLocksExclusively(): Promise<L2LockPassResult> {
+	let release: MutexInterface.Releaser;
+	try {
+		release = await tryAcquire(mutex).acquire();
+	} catch {
+		logger.info('batch_payments_v2 is already running; its own L2 pass covers this nudge');
+		return { deferredRequestIds: [] };
+	}
+	try {
+		return await processL2PurchaseLocks();
+	} finally {
+		release();
+	}
 }
 
 export async function batchLatestPaymentEntriesV2() {

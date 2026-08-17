@@ -23,6 +23,7 @@ import { forgetHostInvite, removeHostNode } from '@/services/hydra-host/client';
 import { MIN_UNSYNCED_PERIOD_SECONDS } from '@/services/hydra-invite/provisioning';
 import { decodeInviteCode } from '@/services/hydra-invite/invite-code';
 import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
+import { releaseReservedParticipants } from '@/services/hydra-invite/release-reservation';
 import { mintHeadInvite, redeemHeadInvite } from '@/services/hydra-invite/orchestrator';
 import { inspectExchangeNetwork } from '@/services/hydra-invite/exchange-client';
 import {
@@ -421,9 +422,7 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 			...transport,
 		});
 
-		await prisma.hydraLocalParticipant.deleteMany({
-			where: { hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId, hydraHeadId: null },
-		});
+		await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
 		const updated = await prisma.hydraHeadInvite.update({
 			where: { id: invite.id },
 			data: { status: HydraInviteStatus.Revoked },

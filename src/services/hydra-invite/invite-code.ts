@@ -15,6 +15,7 @@
 
 import createHttpError from 'http-errors';
 import { getOwnValue, isPlainObject } from '@masumi/payment-core/object-properties';
+import { Network } from '@/generated/prisma/client';
 import type { HydraHeadInvitePayloadInput } from './invite-payload';
 import type { InviteSignature } from './invite-signing';
 
@@ -22,6 +23,10 @@ export const INVITE_CODE_PREFIX = 'masumi-hydra-invite-1.';
 
 /** Refuse anything implausibly large before spending work parsing it. */
 const MAX_CODE_LENGTH = 8 * 1024;
+
+/** The two enum-valued payload fields, checked here so nothing downstream has to. */
+const ACCEPTED_NETWORKS = new Set<string>(Object.values(Network));
+const ACCEPTED_ISSUER_ROLES = new Set<string>(['Buyer', 'Seller']);
 
 export type DecodedInvite = {
 	payload: HydraHeadInvitePayloadInput;
@@ -99,6 +104,22 @@ export function decodeInviteCode(code: string): DecodedInvite {
 	const ledgerParamsHash = getOwnValue(payload, 'ledgerParamsHash');
 	if (ledgerParamsHash !== null && typeof ledgerParamsHash !== 'string') {
 		throw createHttpError(400, 'the invite has a malformed ledgerParamsHash');
+	}
+	// Both are read as enum values by everything downstream — the network goes
+	// straight into a Prisma `where`, the role into a wallet lookup — and the
+	// counterparty writes both. An invite naming a network this service does not
+	// have (Preview, or a typo) reached the query as a string and came back as an
+	// unhandled 500, on an endpoint whose entire job is to tell the operator
+	// whether an invite is good.
+	if (!ACCEPTED_NETWORKS.has(getOwnValue(payload, 'network') as string)) {
+		throw createHttpError(400, 'the invite names a network this service does not run');
+	}
+	const issuerWalletRole = getOwnValue(payload, 'issuerWalletRole');
+	// Optional on the wire — the preview reports it as optional and the role
+	// check tolerates its absence — but a value that is neither role is a value
+	// nothing downstream can read.
+	if (issuerWalletRole !== undefined && !ACCEPTED_ISSUER_ROLES.has(issuerWalletRole as string)) {
+		throw createHttpError(400, 'the invite says the issuer is neither buying nor selling');
 	}
 	if (typeof getOwnValue(signature, 'signature') !== 'string' || typeof getOwnValue(signature, 'key') !== 'string') {
 		throw createHttpError(400, 'the invite signature is malformed');

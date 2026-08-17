@@ -11,7 +11,14 @@
 
 import createHttpError from 'http-errors';
 import { createId } from '@paralleldrive/cuid2';
-import { HotWalletType, HydraInviteRole, HydraInviteStatus, Network, WalletType } from '@/generated/prisma/client';
+import {
+	HotWalletType,
+	HydraInviteRole,
+	HydraInviteStatus,
+	Network,
+	PaymentSourceType,
+	WalletType,
+} from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { createBoundHydraHead } from '@/routes/api/hydra/head/create-head';
@@ -55,6 +62,19 @@ async function loadWallet(hotWalletId: string): Promise<WalletContext> {
 	}
 	if (wallet.type === HotWalletType.Funding) {
 		throw createHttpError(409, 'a funding wallet cannot be a head participant; pick a buying or selling wallet');
+	}
+	// In-head escrow exists only in `packages/payment-source-v2`: every L2 lock,
+	// result submission and collection is reached through a V2 code path. A head
+	// opened on a V1 wallet is therefore openable, fundable and permanently
+	// unused — the payments it was opened for keep going to L1 — and the only
+	// way out of it is to close the head again. Refused here rather than left to
+	// be discovered, because opening one costs about 10 ADA and a counterparty's
+	// time.
+	if (wallet.PaymentSource.paymentSourceType !== PaymentSourceType.Web3CardanoV2) {
+		throw createHttpError(
+			409,
+			'Hydra heads only carry payments for a Web3CardanoV2 payment source; pick a wallet on a V2 source',
+		);
 	}
 	return {
 		id: wallet.id,
@@ -529,12 +549,33 @@ export async function createHeadFromExchange(input: {
 		},
 	});
 
-	const head = await createBoundHydraHead({
-		hydraRelationId: relation.id,
-		contestationPeriod: BigInt(input.contestationPeriodSeconds),
-		localParticipantId: input.localParticipantId,
-		remoteParticipantId: remoteParticipant.id,
-	});
+	let head: { id: string };
+	try {
+		head = await createBoundHydraHead({
+			hydraRelationId: relation.id,
+			contestationPeriod: BigInt(input.contestationPeriodSeconds),
+			localParticipantId: input.localParticipantId,
+			remoteParticipantId: remoteParticipant.id,
+		});
+	} catch (error) {
+		// The participant exists only to be attached to the head this call is
+		// creating, and `@@unique([hydraHeadId, walletId])` does not constrain rows
+		// whose `hydraHeadId` is still null. A refused head — the counterparty
+		// already has a live one on this relation is the ordinary case — therefore
+		// left a participant and its verification key behind, and the poll that
+		// retries the adoption left another pair every tick.
+		await prisma.hydraRemoteParticipant
+			.delete({ where: { id: remoteParticipant.id } })
+			.then(() => prisma.hydraVerificationKey.delete({ where: { id: remoteParticipant.hydraVerificationKeyId } }))
+			.catch((cleanupError: unknown) =>
+				logger.warn(
+					`hydra: could not roll back the remote participant for a refused head: ${
+						cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+					}`,
+				),
+			);
+		throw error;
+	}
 
 	return { hydraHeadId: head.id, hydraRelationId: relation.id };
 }

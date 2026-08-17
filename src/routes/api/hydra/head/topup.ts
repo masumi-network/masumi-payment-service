@@ -2,7 +2,7 @@ import createHttpError from 'http-errors';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import { HydraTopupStatus } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraTopupStatus } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import type { CommitUtxoFilter } from '@/lib/hydra';
 import { executeHydraTopup } from '@/services/hydra-topup/execute';
@@ -214,6 +214,22 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 	input: topupInput,
 	output: topupOutput,
 	handler: async ({ input }) => {
+		// Answered before the work is detached, the same as the withdraw endpoint.
+		// The refusals below are decided in milliseconds and are the operator's to
+		// see: without them a top-up of a head that does not exist, is disabled, or
+		// is not Open returned "Top-up started" and put the reason in a log the
+		// operator was never going to read. The executor re-checks all three —
+		// minutes pass before it acts, and the head can change in between.
+		const head = await prisma.hydraHead.findUnique({
+			where: { id: input.headId },
+			select: { isEnabled: true, status: true },
+		});
+		if (!head) throw createHttpError(404, 'Hydra head not found');
+		if (!head.isEnabled) throw createHttpError(409, 'Cannot top up a disabled Hydra head');
+		if (head.status !== HydraHeadStatus.Open) {
+			throw createHttpError(409, `Cannot top up: head status is ${head.status}, expected Open`);
+		}
+
 		const filter: CommitUtxoFilter = input.assetUnit ? { unit: input.assetUnit } : input.assetFilter;
 		const exact = input.exactAmount ? { unit: input.assetUnit ?? 'lovelace', amount: BigInt(input.exactAmount) } : null;
 

@@ -23,7 +23,7 @@ import { buildHydraNodeArgs } from './args.js';
 import { waitForDrain } from './drain.js';
 import { classifyDrift, driftBreachFields, measureDrift, resolveDriftThresholds, type SlotConfig } from './drift.js';
 import { planNodeAction, shouldAdoptAsRunning, type NodeObservation, type PlanLimits } from './plan.js';
-import { NodeProcessManager } from './process.js';
+import { isProcessRunningBinary, NodeProcessManager } from './process.js';
 import { unwedgeNode } from './unwedge.js';
 
 /** One initial start plus four retries before a node is declared Failed. */
@@ -117,6 +117,12 @@ export class Supervisor {
 					this.logger.info(
 						`[supervisor] ${record.nodeId} was ${record.state} at shutdown and is still answering; adopting it`,
 					);
+					// Adopting the record is not enough. Without the process too, the
+					// node is visible but untouchable: stop, restart and remove all
+					// checked the child table, found nothing, and returned as if they
+					// had succeeded — so after any host restart the operator could see
+					// a node and ask it to stop, and nothing would ever happen.
+					await this.adoptProcess(record);
 					await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Running' }));
 					continue;
 				}
@@ -165,6 +171,34 @@ export class Supervisor {
 		}
 	}
 
+	/**
+	 * Take back a node this host started but no longer holds a handle to.
+	 *
+	 * The pid is checked against the hydra-node binary before it is adopted,
+	 * because pids are reused and everything this manager does with one is send
+	 * it a signal. A node that cannot be verified is left unadopted and said so
+	 * out loud: the supervisor can still observe it, but an operator who asks it
+	 * to stop needs to know the request will not reach it.
+	 */
+	private async adoptProcess(record: NodeRecord): Promise<boolean> {
+		if (this.processes.isRunning(record.nodeId)) {
+			return true;
+		}
+		if (record.pid === undefined) {
+			return false;
+		}
+		const adopted = await this.processes.adopt(record.nodeId, record.pid, this.config.hydraNodeBin);
+		if (adopted) {
+			this.logger.info(`[supervisor] took back ${record.nodeId} (pid ${record.pid}); it can be stopped again`);
+		} else {
+			this.logger.warn(
+				`[supervisor] ${record.nodeId} recorded pid ${record.pid}, which is not a live ${this.config.hydraNodeBin}; ` +
+					'this host cannot stop or restart it',
+			);
+		}
+		return adopted;
+	}
+
 	private async observe(record: NodeRecord): Promise<NodeObservation> {
 		const client = this.client(record);
 		if (!this.processes.isRunning(record.nodeId)) {
@@ -173,8 +207,16 @@ export class Supervisor {
 			// the child table alone would mark a live node dead one tick after boot
 			// adopted it — and keep doing so on every tick after that.
 			if (!(await client.isResponsive())) {
+				// One slow probe is not evidence that the process is gone, and the
+				// action taken on that evidence is a spawn: a second hydra-node over
+				// the first one's persistence directory, api port and etcd data dir.
+				// A recorded pid that is still running hydra-node settles it — the
+				// node is up and merely busy, which is exactly how an owned child is
+				// already treated one branch below.
+				const alive =
+					record.pid !== undefined && (await isProcessRunningBinary(record.pid, this.config.hydraNodeBin));
 				return {
-					processRunning: false,
+					processRunning: alive,
 					drift: null,
 					driftSeconds: null,
 					responsive: false,
@@ -378,7 +420,7 @@ export class Supervisor {
 		}));
 
 		this.logger.info(`[supervisor] starting ${record.nodeId} (peer ${record.peerPort}, api ${record.apiPort})`);
-		await this.processes.start(
+		const started = await this.processes.start(
 			{ nodeId: record.nodeId, binary: this.config.hydraNodeBin, args, nodeDir },
 			(nodeId, code, signal) => {
 				void this.onExit(nodeId, code, signal).catch((error: unknown) => {
@@ -386,6 +428,13 @@ export class Supervisor {
 				});
 			},
 		);
+
+		// Persisted after the spawn, because only then is there a pid. This is what
+		// the next host gets instead of a handle: without it, a node started here
+		// and surviving a host restart can be observed but never signalled again.
+		if (started.pid !== undefined) {
+			await this.store.update(record.nodeId, (current) => ({ ...current, pid: started.pid }));
+		}
 	}
 
 	private async onExit(nodeId: string, code: number | null, signal: NodeJS.Signals | null): Promise<void> {
@@ -403,6 +452,29 @@ export class Supervisor {
 
 	private async stop(record: NodeRecord, reason: string): Promise<void> {
 		if (!this.processes.isRunning(record.nodeId)) {
+			// A node this host restarted away from is still stoppable by pid.
+			await this.adoptProcess(record);
+		}
+		if (!this.processes.isRunning(record.nodeId)) {
+			// Nothing to signal. This used to return as though the stop had
+			// succeeded, which left `desired: Stopped` permanently unreachable: the
+			// plan asked for a stop every tick, the stop did nothing, and the record
+			// went on saying Running while the payment service kept routing work to
+			// a node the operator had asked to take down.
+			if (await this.client(record).isResponsive()) {
+				const failureReason =
+					'the node is answering but this host holds no way to signal it, so it cannot be stopped or restarted here; ' +
+					'stop the process on the machine, then start or remove the node again';
+				this.logger.error(`[supervisor] cannot stop ${record.nodeId} (${reason}): ${failureReason}`);
+				await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Failed', failureReason }));
+				return;
+			}
+			// Genuinely down, and nothing drained it.
+			await this.store.update(record.nodeId, (current) => ({
+				...current,
+				state: 'Stopped',
+				lastStopUndrained: true,
+			}));
 			return;
 		}
 		this.logger.info(`[supervisor] draining ${record.nodeId} before stop: ${reason}`);
@@ -475,9 +547,24 @@ export class Supervisor {
 
 	private async remove(record: NodeRecord, reason: string): Promise<void> {
 		this.logger.info(`[supervisor] removing ${record.nodeId}: ${reason}`);
-		if (this.processes.isRunning(record.nodeId)) {
-			await this.stop(record, reason);
+		// Unconditionally, because "not a child of this host" is not the same as
+		// "not running": `stop` takes the process back by pid when it can, and says
+		// so when it cannot.
+		await this.stop(record, reason);
+
+		// A node that still answers is one the stop could not reach. Deleting its
+		// persistence directory out from under it and handing its peer port to the
+		// next node turns one stuck node into two: the orphan keeps writing and
+		// keeps the port bound, and the node that inherits the port cannot start.
+		if (await this.client(record).isResponsive()) {
+			const failureReason =
+				'the node is still answering after a stop attempt, so its files and peer port are still in use; ' +
+				'stop the process on the machine, then remove the node again';
+			this.logger.error(`[supervisor] refusing to remove ${record.nodeId}: ${failureReason}`);
+			await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Failed', failureReason }));
+			return;
 		}
+
 		try {
 			await this.store.remove(record.nodeId);
 		} finally {

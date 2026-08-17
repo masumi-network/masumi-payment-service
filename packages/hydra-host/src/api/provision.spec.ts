@@ -90,6 +90,22 @@ describe('provisionNode', () => {
 		expect(second.record.peerPort).toBe(5002);
 	});
 
+	// The caller retries a provision whose response was lost, and it does not wait
+	// for a response that may still be in flight — so the retry routinely overlaps
+	// the original. Two nodes under one key means two ports and two key pairs, of
+	// which the caller stores one; the other holds signing keys on disk for a node
+	// nobody will ever acknowledge.
+	it('provisions once when the same idempotency key arrives concurrently', async () => {
+		const [first, second] = await Promise.all([provisionNode(REQUEST, deps), provisionNode(REQUEST, deps)]);
+
+		expect(second.record.nodeId).toBe(first.record.nodeId);
+		expect(second.record.peerPort).toBe(first.record.peerPort);
+		expect(await deps.store.list()).toHaveLength(1);
+		// Both callers are handed key material, and it is the same material.
+		expect(second.secrets).toEqual(first.secrets);
+		expect([first.replayed, second.replayed]).toEqual([false, true]);
+	});
+
 	it('requires an idempotency key', async () => {
 		await expect(provisionNode({ ...REQUEST, idempotencyKey: '  ' }, deps)).rejects.toThrow(/Idempotency-Key/);
 	});

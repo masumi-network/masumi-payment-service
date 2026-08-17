@@ -83,11 +83,54 @@ async function readSecrets(store: NodeRegistryStore, nodeId: string): Promise<Pr
 	return { hydraSigningKey, cardanoSigningKey };
 }
 
-export async function provisionNode(request: ProvisionRequest, deps: ProvisionDeps): Promise<ProvisionResult> {
-	if (request.idempotencyKey.trim().length === 0) {
-		throw new ProvisionError('an Idempotency-Key header is required so a lost response can be retried safely', 400);
+/**
+ * In-flight provisions, keyed by idempotency key.
+ *
+ * The key check is a read-modify-write across the whole registry: scan every
+ * record for the key, then write a new one. Two requests carrying the same key —
+ * which is exactly what a caller does when the first response is lost, and it
+ * does not wait for a response that may still be in flight — both scanned before
+ * either wrote, both found nothing, and both provisioned. That leaves two nodes,
+ * two ports and two key pairs under one key, of which the caller stores one; the
+ * other holds key material on disk for a node nobody will ever acknowledge.
+ *
+ * Chained rather than rejected, because a retry is a legitimate request: the
+ * second call waits for the first, then takes the normal replay path and returns
+ * the same node and the same keys.
+ */
+const inFlightProvisions = new Map<string, Promise<unknown>>();
+
+export function provisionNode(request: ProvisionRequest, deps: ProvisionDeps): Promise<ProvisionResult> {
+	const key = request.idempotencyKey.trim();
+	if (key.length === 0) {
+		return Promise.reject(
+			new ProvisionError('an Idempotency-Key header is required so a lost response can be retried safely', 400),
+		);
 	}
 
+	const previous = inFlightProvisions.get(key) ?? Promise.resolve();
+	// Both arms run the provision: a predecessor that failed must not prevent the
+	// retry it is being retried by.
+	const result = previous.then(
+		() => runProvision(request, deps),
+		() => runProvision(request, deps),
+	);
+	const settled = result.then(
+		() => undefined,
+		() => undefined,
+	);
+	inFlightProvisions.set(key, settled);
+	void settled.then(() => {
+		// Only the tail clears the entry, so a key that is being retried again
+		// keeps its chain.
+		if (inFlightProvisions.get(key) === settled) {
+			inFlightProvisions.delete(key);
+		}
+	});
+	return result;
+}
+
+async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Promise<ProvisionResult> {
 	// The scan below deliberately uses the strict listing, which throws on a
 	// damaged record. Failing closed is correct here: if we cannot read every
 	// record we cannot prove this idempotency key is unused, and guessing would

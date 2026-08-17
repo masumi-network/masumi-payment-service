@@ -152,6 +152,18 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 	input: withdrawInput,
 	output: withdrawOutput,
 	handler: async ({ input }) => {
+		// Half an asset withdrawal is not a smaller withdrawal, it is a different
+		// one: with only one of the two fields set the asset is dropped, and a
+		// request with no amount at all means "take every eligible UTxO whole". An
+		// operator who asked for 5 of a token and left the amount out of the body
+		// would have emptied their side of the head instead.
+		if ((input.assetUnit === undefined) !== (input.assetAmount === undefined)) {
+			throw createHttpError(400, 'assetUnit and assetAmount go together; supply both or neither');
+		}
+		if (input.assetUnit !== undefined && input.lovelace !== undefined) {
+			throw createHttpError(400, 'withdraw either lovelace or one native asset per request, not both');
+		}
+
 		// Checked before answering. The work itself outlives the request, but an
 		// operator asking about a head that does not exist should be told so rather
 		// than shown "Withdrawal started" and left to find the reason in a log.

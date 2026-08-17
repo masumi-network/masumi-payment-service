@@ -91,7 +91,15 @@ export function useHydraHosts(network?: 'Preprod' | 'Mainnet') {
           errorMessage: 'Failed to load connected Hydra nodes',
         },
       );
-      return response?.data?.data?.hosts ?? [];
+      // Not an empty list: a failure here used to resolve the query as a
+      // success holding nothing, so a 401 or a dropped connection was reported
+      // on screen as "no Hydra node connected yet" — with the only control that
+      // could have refetched hosts sitting behind a node that was not being
+      // rendered. Reloading the page was the sole way back.
+      if (response === null) {
+        throw new Error('Failed to load connected Hydra nodes');
+      }
+      return response.data?.data?.hosts ?? [];
     },
     enabled: !!apiClient,
     staleTime: 10000,

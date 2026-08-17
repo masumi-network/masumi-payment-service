@@ -233,6 +233,11 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
             ? { supportedPaymentSourceIndex: selectedAgent.supportedPaymentSourceIndex }
             : {}),
           ...(requestedFunds ? { RequestedFunds: requestedFunds } : {}),
+          // The form offers this and the field says the choice is signed into
+          // the payment terms; leaving it out of the body meant Force Hydra was
+          // read, acknowledged and then dropped, and the one dialog that
+          // exercises a whole L2 cycle could not route a payment into a head.
+          ...(forceLayerToApi(data.forceLayer) ? { forceLayer: forceLayerToApi(data.forceLayer) } : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
