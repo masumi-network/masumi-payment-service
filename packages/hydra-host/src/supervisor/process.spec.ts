@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from '@jest/globals';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { isProcessAlive, isProcessRunningBinary, NodeProcessManager } from './process.js';
+import { isProcessAlive, isProcessRunningNode, NodeProcessManager } from './process.js';
 
 /**
  * Adoption is what makes a host restart survivable: the hydra-nodes keep running
@@ -12,8 +12,21 @@ import { isProcessAlive, isProcessRunningBinary, NodeProcessManager } from './pr
 
 const spawned: ChildProcess[] = [];
 
-function spawnIdleProcess(): ChildProcess {
-	const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+const NODE_DIR = '/var/lib/hydra-host/node-1';
+const SIBLING_DIR = '/var/lib/hydra-host/node-2';
+
+/**
+ * A stand-in for a running hydra-node: the same binary every node on the host
+ * runs, told which directory it belongs to in the same way — an argument on its
+ * command line. That argument is the only thing distinguishing one node's
+ * process from its neighbour's.
+ */
+function spawnIdleProcess(nodeDir: string = NODE_DIR): ChildProcess {
+	const child = spawn(
+		process.execPath,
+		['-e', 'setInterval(() => {}, 1000)', '--persistence-dir', `${nodeDir}/persistence`],
+		{ stdio: 'ignore' },
+	);
 	spawned.push(child);
 	return child;
 }
@@ -35,18 +48,26 @@ afterEach(() => {
 	}
 });
 
-describe('isProcessRunningBinary', () => {
-	it('recognises a process running the expected binary', async () => {
+describe('isProcessRunningNode', () => {
+	it('recognises a process running the expected binary out of the expected directory', async () => {
 		const child = spawnIdleProcess();
-		expect(await isProcessRunningBinary(child.pid as number, process.execPath)).toBe(true);
+		expect(await isProcessRunningNode(child.pid as number, process.execPath, NODE_DIR)).toBe(true);
+	});
+
+	// The case the binary check alone cannot see. One host runs a hydra-node per
+	// head, all from the same binary, so a stale pid matches a sibling's live
+	// process — and the next thing done with that pid is a SIGKILL sent in the
+	// wrong node's name.
+	it('refuses a pid running the same binary for a different node', async () => {
+		const child = spawnIdleProcess(SIBLING_DIR);
+		expect(await isProcessRunningNode(child.pid as number, process.execPath, NODE_DIR)).toBe(false);
 	});
 
 	// Pids are reused. A record that outlived a reboot can name a pid belonging to
-	// something else entirely, and the next thing this manager does with a pid is
-	// send it a signal.
+	// something else entirely.
 	it('refuses a pid running something else', async () => {
 		const child = spawnIdleProcess();
-		expect(await isProcessRunningBinary(child.pid as number, '/opt/hydra/bin/hydra-node')).toBe(false);
+		expect(await isProcessRunningNode(child.pid as number, '/opt/hydra/bin/hydra-node', NODE_DIR)).toBe(false);
 	});
 
 	it('refuses a pid that is gone', async () => {
@@ -54,7 +75,7 @@ describe('isProcessRunningBinary', () => {
 		const pid = child.pid as number;
 		child.kill('SIGKILL');
 		await waitUntilGone(pid);
-		expect(await isProcessRunningBinary(pid, process.execPath)).toBe(false);
+		expect(await isProcessRunningNode(pid, process.execPath, NODE_DIR)).toBe(false);
 	});
 });
 
@@ -64,7 +85,7 @@ describe('NodeProcessManager adoption', () => {
 		const child = spawnIdleProcess();
 
 		expect(manager.isRunning('node-1')).toBe(false);
-		expect(await manager.adopt('node-1', child.pid as number, process.execPath)).toBe(true);
+		expect(await manager.adopt('node-1', child.pid as number, process.execPath, NODE_DIR)).toBe(true);
 		expect(manager.isRunning('node-1')).toBe(true);
 	});
 
@@ -72,7 +93,15 @@ describe('NodeProcessManager adoption', () => {
 		const manager = new NodeProcessManager();
 		const child = spawnIdleProcess();
 
-		expect(await manager.adopt('node-1', child.pid as number, '/opt/hydra/bin/hydra-node')).toBe(false);
+		expect(await manager.adopt('node-1', child.pid as number, '/opt/hydra/bin/hydra-node', NODE_DIR)).toBe(false);
+		expect(manager.isRunning('node-1')).toBe(false);
+	});
+
+	it('refuses to adopt the process of a different node', async () => {
+		const manager = new NodeProcessManager();
+		const child = spawnIdleProcess(SIBLING_DIR);
+
+		expect(await manager.adopt('node-1', child.pid as number, process.execPath, NODE_DIR)).toBe(false);
 		expect(manager.isRunning('node-1')).toBe(false);
 	});
 
@@ -83,7 +112,7 @@ describe('NodeProcessManager adoption', () => {
 		child.kill('SIGKILL');
 		await waitUntilGone(pid);
 
-		expect(await manager.adopt('node-1', pid, process.execPath)).toBe(false);
+		expect(await manager.adopt('node-1', pid, process.execPath, NODE_DIR)).toBe(false);
 		expect(manager.isRunning('node-1')).toBe(false);
 	});
 
@@ -93,7 +122,7 @@ describe('NodeProcessManager adoption', () => {
 		const manager = new NodeProcessManager();
 		const child = spawnIdleProcess();
 		const pid = child.pid as number;
-		await manager.adopt('node-1', pid, process.execPath);
+		await manager.adopt('node-1', pid, process.execPath, NODE_DIR);
 
 		const result = await manager.stop('node-1', 5_000);
 

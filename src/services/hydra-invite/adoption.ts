@@ -76,11 +76,23 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		}
 
 		outcome.polled += 1;
+		// The oldest redemption this batch could not adopt, so the next pass can
+		// see it again. The Host filters strictly on `redeemedAt > since`, so a
+		// watermark moved past a failure hides that redemption for the life of the
+		// process — and the ordinary failure here is temporary: the relation still
+		// holds a head that has not reached Final, which the operator finalises
+		// minutes later. Nothing retried it, the invite stayed Issued with no
+		// head, and only a restart (which falls back to the cold-start lookback)
+		// ever picked it up again.
+		let retryFromMs: number | null = null;
 		for (const record of redemptions.invites) {
 			let result: AdoptionResult;
 			try {
 				result = await adoptRedemption(record);
 			} catch (error) {
+				if (record.redeemedAt !== null) {
+					retryFromMs = retryFromMs === null ? record.redeemedAt : Math.min(retryFromMs, record.redeemedAt);
+				}
 				// One redemption that cannot be adopted must not stop the others, and
 				// must not stop the pass. It used to: the throw escaped this loop and
 				// the Host loop, the watermark was never advanced, and every later
@@ -107,8 +119,11 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 		}
 		// Advanced only after the batch is processed, and to the Host's clock
 		// rather than ours: a skewed local clock would otherwise step over
-		// redemptions that arrived in the gap.
-		watermarks.set(host.id, redemptions.now);
+		// redemptions that arrived in the gap. Held back to just before the oldest
+		// failure when there was one, so the next pass is offered it again.
+		// A redemption that was *rejected* rather than failed is not retried: its
+		// signature did not hold, and asking again cannot change that.
+		watermarks.set(host.id, retryFromMs !== null ? retryFromMs - 1 : redemptions.now);
 	}
 	return outcome;
 }

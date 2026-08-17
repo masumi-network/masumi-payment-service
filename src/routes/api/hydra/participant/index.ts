@@ -313,11 +313,14 @@ export const getRemoteParticipantGet = adminAuthenticatedEndpointFactory.build({
 		const participants = await prisma.hydraRemoteParticipant.findMany({
 			where: {
 				...(input.walletId ? { walletId: input.walletId } : {}),
-				...(input.hydraHostId ? { hydraHostId: input.hydraHostId } : {}),
 				...(input.unassigned === true ? { hydraHeadId: null } : {}),
 				...(input.unassigned === false ? { hydraHeadId: { not: null } } : {}),
 			},
-			include: localParticipantContext,
+			// No host filter and no context join, both copied from the local
+			// handler above and neither reachable here: a remote participant is the
+			// counterparty's node, so it has no Host of ours to be filtered by, and
+			// the joined wallet address and head status are dropped again by
+			// `remoteParticipantSchema` on the way out.
 			orderBy: { createdAt: 'desc' },
 			take: input.limit,
 			cursor: input.cursorId ? { id: input.cursorId } : undefined,

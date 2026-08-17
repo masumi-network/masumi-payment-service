@@ -35,7 +35,16 @@ export async function fetchHydraHeadBalance(
       errorMessage: 'Failed to load Hydra head balance',
     },
   );
-  return response?.data?.data ?? null;
+  // Thrown rather than returned as null. React Query keeps the previous data
+  // for a failed refetch and drops it for a successful empty one, and the
+  // difference is not cosmetic here: the withdraw form derives its asset list
+  // from this balance, so a null turned a head holding tokens into a head
+  // holding none, silently reset the chosen asset to ADA, and left the typed
+  // amount in place — a token amount about to be submitted as lovelace.
+  if (response?.data?.data == null) {
+    throw new Error('Failed to load Hydra head balance');
+  }
+  return response.data.data;
 }
 
 /**
@@ -76,7 +85,15 @@ export function useHydraTopups(headId: string | null, isOpen: boolean) {
           }),
         { errorMessage: 'Failed to load the deposits' },
       );
-      return response?.data?.data?.topups ?? [];
+      // A failed read is not an empty list: rendered as one, the Deposits
+      // section disappears entirely — no rows, no error, no retry — and the
+      // polling that would bring it back keys on pending rows that are no
+      // longer there. An operator reads that as "the deposit never happened"
+      // and sends another.
+      if (response?.data?.data?.topups == null) {
+        throw new Error('Failed to load the deposits');
+      }
+      return response.data.data.topups;
     },
     enabled: !!apiClient && headId !== null && isOpen,
     staleTime: 5000,
@@ -130,7 +147,10 @@ export function useHydraWithdrawals(
           }),
         { errorMessage: 'Failed to load the withdrawals' },
       );
-      return response?.data?.data?.withdrawals ?? [];
+      if (response?.data?.data?.withdrawals == null) {
+        throw new Error('Failed to load the withdrawals');
+      }
+      return response.data.data.withdrawals;
     },
     enabled: !!apiClient && headId !== null && isOpen,
     staleTime: 5000,

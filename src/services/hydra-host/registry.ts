@@ -7,7 +7,7 @@
  */
 
 import createHttpError from 'http-errors';
-import { HydraHeadStatus, HydraHostStatus, Network } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraHostStatus, HydraInviteStatus, Network } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { decrypt, encrypt } from '@/utils/security/encryption';
@@ -348,7 +348,31 @@ export async function deleteHydraHost(id: string): Promise<void> {
 		);
 	}
 
-	await prisma.hydraHost.delete({ where: { id } });
+	// Invites hold the Host too, and nothing ever deletes an invite row: reaping
+	// and revoking only move it to a terminal status. Left unhandled, the first
+	// invite a Host ever issued made it undeletable for good — the participant
+	// guard above passed, the delete hit the invite foreign key, and the operator
+	// got a bare 500 naming a constraint rather than the thing to do about it.
+	const liveInvites = await prisma.hydraHeadInvite.count({
+		where: {
+			hydraHostId: id,
+			status: { in: [HydraInviteStatus.Issued, HydraInviteStatus.Redeemed, HydraInviteStatus.Started] },
+		},
+	});
+	if (liveInvites > 0) {
+		throw createHttpError(
+			409,
+			`this hydra host has ${liveInvites} invite(s) still outstanding; revoke them first, or wait for them to expire`,
+		);
+	}
+
+	// The remaining rows are finished invites, and an invite that named a Host
+	// this service no longer has is a record of nothing. Deleted with the Host
+	// rather than before it, so a failure leaves both.
+	await prisma.$transaction(async (tx) => {
+		await tx.hydraHeadInvite.deleteMany({ where: { hydraHostId: id } });
+		await tx.hydraHost.delete({ where: { id } });
+	});
 }
 
 /**

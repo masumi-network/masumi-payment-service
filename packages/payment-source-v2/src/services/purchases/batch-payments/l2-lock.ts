@@ -196,6 +196,15 @@ export async function processL2PurchaseLocks(): Promise<L2LockPassResult> {
 				if (!free) {
 					// Genuinely busy; another wallet may be free, and if none is the
 					// request retries next tick (not failed).
+					//
+					// Withdrawn from the pass as well, when it was one we were willing
+					// to wait for. A wallet whose confirmation never arrives does not
+					// arrive any sooner for the next request either, and the wait is
+					// three seconds each time: with a counterparty offline and fifty
+					// queued locks that is two and a half minutes of the batch mutex
+					// held for nothing, during which no L1 funds-lock is built at all.
+					usedWalletIds.add(hotWallet.id);
+					awaitingConfirmation.delete(hotWallet.id);
 					continue;
 				}
 

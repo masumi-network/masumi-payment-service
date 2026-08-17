@@ -10,7 +10,7 @@ import {
 	TransactionLayer,
 	TransactionStatus,
 } from '@/generated/prisma/client';
-import { HydraTransactionRejectedError } from '@/lib/hydra/hydra/errors';
+import { HydraTransactionRejectedError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 import { requireHydraValidityUpperSlot } from '@/services/hydra-connection-manager/hydra-transaction-evidence';
 import { connectPreviousAction, createNextPaymentAction, createNextPurchaseAction } from '@/services/shared';
 
@@ -22,9 +22,17 @@ export type ReservedL2SubmissionOutcome =
 			phase: 'submit' | 'hash-mismatch' | 'rollback';
 			intendedTxHash: string;
 			error: unknown;
-			rejectionError?: HydraTransactionRejectedError;
+			rejectionError?: HydraTransactionRejectedError | HydraTransportError;
 	  }
-	| { status: 'definitively-rejected'; intendedTxHash: string; error: HydraTransactionRejectedError };
+	| { status: 'definitively-rejected'; intendedTxHash: string; error: HydraTransactionRejectedError }
+	/**
+	 * The command never left this process, so there is no transaction to
+	 * reconcile against and the reservation was rolled back.
+	 *
+	 * Distinct from a rejection: nothing was judged, and the request goes back to
+	 * its retry action rather than being recorded as refused by the head.
+	 */
+	| { status: 'not-dispatched'; intendedTxHash: string; error: HydraTransportError };
 
 /**
  * Serialize L2 reservations with head finalization and reject stale providers.
@@ -91,10 +99,26 @@ export async function executeReservedL2Submission<TReservation>(
 	try {
 		txHash = await callbacks.submit(callbacks.signedTx);
 	} catch (error) {
-		if (error instanceof HydraTransactionRejectedError) {
+		// Two errors permit rollback, for opposite reasons. A rejection is the head
+		// judging this exact body and refusing it. A transport error is the
+		// command never reaching the socket at all: the class is raised only while
+		// `wasQueued` is false — the provider was withdrawn, or the transport
+		// closed or timed out before any byte was handed over — and its own
+		// contract says retrying is safe. Everything else, including
+		// `HydraTransportAmbiguousError`, stays held for reconciliation.
+		//
+		// Treating a never-sent command as ambiguous was not a harmless excess of
+		// caution: nothing reconciles a transaction that does not exist. The
+		// reservation stayed Pending, the wallet stayed leased to it, the request
+		// stayed in its `*Initiated` action, and the head's final handoff refused
+		// to complete for every request in that head, because it counts pending L2
+		// transactions and this one could never reach zero.
+		if (error instanceof HydraTransactionRejectedError || error instanceof HydraTransportError) {
 			try {
 				await callbacks.rollback(reservation, intendedTxHash);
-				return { status: 'definitively-rejected', intendedTxHash, error };
+				return error instanceof HydraTransportError
+					? { status: 'not-dispatched', intendedTxHash, error }
+					: { status: 'definitively-rejected', intendedTxHash, error };
 			} catch (rollbackError) {
 				return {
 					status: 'ambiguous',
@@ -227,6 +251,11 @@ export async function submitReservedL2Action(
 		logger.info('L2 action submitted to head', { ...context, txHash: outcome.txHash });
 	} else if (outcome.status === 'definitively-rejected') {
 		logger.warn('L2 action explicitly rejected; matching reservation rolled back', {
+			...context,
+			error: outcome.error,
+		});
+	} else if (outcome.status === 'not-dispatched') {
+		logger.warn('L2 action never reached the head; reservation rolled back for retry', {
 			...context,
 			error: outcome.error,
 		});

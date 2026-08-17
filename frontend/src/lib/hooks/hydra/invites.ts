@@ -29,7 +29,15 @@ export function useHydraInvites(network?: string) {
           }),
         { errorMessage: 'Failed to load Hydra invites' },
       );
-      return response?.data?.data?.invites ?? [];
+      // An empty list means there are no invites; a failed read means nobody
+      // knows. Conflating them hid outstanding invites — with them the
+      // "awaiting counterparty" rows and the invite count — so an operator who
+      // had already invited someone saw no trace of it and invited again,
+      // reserving a second node and a second peer port.
+      if (response?.data?.data?.invites == null) {
+        throw new Error('Failed to load Hydra invites');
+      }
+      return response.data.data.invites;
     },
     enabled: !!apiClient,
     staleTime: 10000,

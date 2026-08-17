@@ -845,6 +845,19 @@ describe('HydraNode', () => {
 				expect(seen).toEqual([{ depositTxId: DEPOSIT_TX_ID, deadline: new Date(DEADLINE) }]);
 			});
 
+			// A head with nothing happening on it sends no live frames at all —
+			// 2.3 does not stream ticks over the API — so "the next authenticated
+			// frame drains it" is not a drain on the head this matters most for.
+			it('emits a replayed deposit on a quiet head, with no further live frame', async () => {
+				const { node, historyConnection } = await startSignedNode();
+				const seen: Array<{ depositTxId: string; deadline: Date }> = [];
+				node.on(HydraNodeEvent.DepositRecorded, (data) => seen.push(data as { depositTxId: string; deadline: Date }));
+
+				historyConnection.emit('message', JSON.stringify(commitRecorded()));
+
+				expect(seen).toEqual([{ depositTxId: DEPOSIT_TX_ID, deadline: new Date(DEADLINE) }]);
+			});
+
 			// Written straight to the database and shown to someone deciding whether
 			// to recover funds, so an unusable date is better absent than stored.
 			it('reports nothing for a deadline that is not a date', async () => {
@@ -855,6 +868,77 @@ describe('HydraNode', () => {
 				liveConnection.emit('message', JSON.stringify(commitRecorded('not-a-date')));
 
 				expect(seen).toEqual([]);
+			});
+		});
+
+		// A withdrawal settles on L1 minutes after the head approves it, and the
+		// live socket carries no history. A service that was down for those
+		// minutes hears the finalization from the replay or from nowhere — and
+		// from nowhere left the row `Approved` for good, which is the state that
+		// refuses every later withdrawal for that participant.
+		describe('withdrawal settlements met in replay', () => {
+			const DECOMMIT_TX_ID = 'cd'.repeat(32);
+			const SETTLED_AT = '2026-08-07T12:14:02.000Z';
+
+			it('emits a finalization that only the replay carries', async () => {
+				const { node, historyConnection } = await startSignedNode();
+				const seen: Array<{ decommitTxId: string; outcome: string }> = [];
+				node.on(HydraNodeEvent.DecommitSettled, (data) =>
+					seen.push(data as { decommitTxId: string; outcome: string }),
+				);
+
+				historyConnection.emit(
+					'message',
+					JSON.stringify({
+						tag: 'DecommitFinalized',
+						headId: HEAD_ID_A,
+						seq: 31,
+						decommitTxId: DECOMMIT_TX_ID,
+						timestamp: SETTLED_AT,
+					}),
+				);
+
+				expect(seen).toEqual([
+					expect.objectContaining({ decommitTxId: DECOMMIT_TX_ID, outcome: 'finalized' }),
+				]);
+			});
+
+			// Held, not dropped, when the replay runs ahead of the live session's
+			// identity proof — the same rule every other persisted transition follows.
+			it('holds a replayed finalization until the session authenticates', async () => {
+				const node = new HydraNode({
+					httpUrl: 'http://localhost:4001',
+					expectedHeadId: HEAD_ID_A,
+					snapshotVerificationKeys: TEST_PARTIES.map(({ cborVerificationKey }) => cborVerificationKey),
+					expectedNodeVerificationKey: TEST_PARTIES[0].cborVerificationKey,
+					trustLocalNodeSnapshotMetadata: true,
+				});
+				const connectPromise = node.connect();
+				const historyConnection = mockConnectionInstances[0];
+				const liveConnection = mockConnectionInstances[1];
+				const seen: unknown[] = [];
+				node.on(HydraNodeEvent.DecommitSettled, (data) => seen.push(data));
+
+				historyConnection.emit(
+					'message',
+					JSON.stringify({
+						tag: 'DecommitFinalized',
+						headId: HEAD_ID_A,
+						seq: 31,
+						decommitTxId: DECOMMIT_TX_ID,
+						timestamp: SETTLED_AT,
+					}),
+				);
+				expect(seen).toEqual([]);
+
+				liveConnection.emit('message', JSON.stringify(headIsOpen()));
+				liveConnection.emit('message', JSON.stringify(liveGreetings()));
+				await connectPromise;
+				liveConnection.emit('message', JSON.stringify(liveGreetings()));
+
+				expect(seen).toEqual([
+					expect.objectContaining({ decommitTxId: DECOMMIT_TX_ID, outcome: 'finalized' }),
+				]);
 			});
 		});
 

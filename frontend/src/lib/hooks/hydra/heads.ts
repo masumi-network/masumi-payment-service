@@ -93,7 +93,10 @@ export function useHydraHeadErrors(headId: string | null) {
           }),
         { errorMessage: 'Failed to load the head errors' },
       );
-      return response?.data?.data?.errors ?? [];
+      if (response?.data?.data?.errors == null) {
+        throw new Error('Failed to load the head errors');
+      }
+      return response.data.data.errors;
     },
     enabled: !!apiClient && headId !== null,
     staleTime: 10000,
@@ -120,7 +123,10 @@ export function useHydraHeadTransactions(headId: string | null) {
           }),
         { errorMessage: 'Could not load this head\u2019s transactions' },
       );
-      return response?.data?.data?.transactions ?? [];
+      if (response?.data?.data?.transactions == null) {
+        throw new Error('Could not load this head\u2019s transactions');
+      }
+      return response.data.data.transactions;
     },
     enabled: !!apiClient && headId !== null,
     staleTime: 5000,

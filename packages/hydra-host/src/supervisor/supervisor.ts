@@ -23,7 +23,7 @@ import { buildHydraNodeArgs } from './args.js';
 import { waitForDrain } from './drain.js';
 import { classifyDrift, driftBreachFields, measureDrift, resolveDriftThresholds, type SlotConfig } from './drift.js';
 import { planNodeAction, shouldAdoptAsRunning, type NodeObservation, type PlanLimits } from './plan.js';
-import { isProcessRunningBinary, NodeProcessManager } from './process.js';
+import { isProcessRunningNode, NodeProcessManager } from './process.js';
 import { unwedgeNode } from './unwedge.js';
 
 /** One initial start plus four retries before a node is declared Failed. */
@@ -71,6 +71,8 @@ export class Supervisor {
 	private readonly inFlight = new Set<string>();
 	private ticking = false;
 	private stopped = false;
+	/** The tick in flight, so a shutdown can wait for it instead of racing it. */
+	private currentTick: Promise<void> | null = null;
 
 	constructor(
 		private readonly config: HostConfig,
@@ -137,6 +139,7 @@ export class Supervisor {
 					...current,
 					state: 'Stopped',
 					lastStopUndrained: true,
+					pid: undefined,
 				}));
 			}
 		}
@@ -148,6 +151,23 @@ export class Supervisor {
 			return;
 		}
 		this.ticking = true;
+		// Held so `shutdown` can wait for it. A tick blocks for minutes — a drain
+		// runs to `drainTimeoutMs`, an unwedge waits out a settle — and SIGTERM
+		// arriving mid-tick used to walk a node list in which the node being
+		// reconciled still looked stopped, skip it, and then watch that same
+		// reconcile spawn a fresh hydra-node on the way out. Nothing drains that
+		// one, and outside a container it outlives the host holding its peer port,
+		// so the next boot cannot start the node at all.
+		this.currentTick = this.runTick();
+		try {
+			await this.currentTick;
+		} finally {
+			this.ticking = false;
+			this.currentTick = null;
+		}
+	}
+
+	private async runTick(): Promise<void> {
 		try {
 			const records = await this.store.list();
 			await mapWithConcurrency(records, RECONCILE_CONCURRENCY, async (record) => {
@@ -187,7 +207,12 @@ export class Supervisor {
 		if (record.pid === undefined) {
 			return false;
 		}
-		const adopted = await this.processes.adopt(record.nodeId, record.pid, this.config.hydraNodeBin);
+		const adopted = await this.processes.adopt(
+			record.nodeId,
+			record.pid,
+			this.config.hydraNodeBin,
+			this.store.nodeDir(record.nodeId),
+		);
 		if (adopted) {
 			this.logger.info(`[supervisor] took back ${record.nodeId} (pid ${record.pid}); it can be stopped again`);
 		} else {
@@ -214,7 +239,8 @@ export class Supervisor {
 				// node is up and merely busy, which is exactly how an owned child is
 				// already treated one branch below.
 				const alive =
-					record.pid !== undefined && (await isProcessRunningBinary(record.pid, this.config.hydraNodeBin));
+					record.pid !== undefined &&
+					(await isProcessRunningNode(record.pid, this.config.hydraNodeBin, this.store.nodeDir(record.nodeId)));
 				return {
 					processRunning: alive,
 					drift: null,
@@ -296,8 +322,27 @@ export class Supervisor {
 	 * and that is worth more than the write it saves.
 	 */
 	private async recordObservation(record: NodeRecord, observation: NodeObservation): Promise<NodeRecord> {
-		const healthy = observation.responsive && observation.drift === 'Healthy';
+		// Refunded for a node that is answering and not stalled, rather than only
+		// for one whose drift is `Healthy`. Degraded drift is a node that is behind
+		// and closing the gap — the catch-up loop working, not a fault, and the
+		// plan does not restart for it. Withholding the refund there left a node
+		// that had been serving for hours carrying the attempts from whatever
+		// brought it up, so its next single crash met the exhausted budget and was
+		// marked `Failed` — "failed to stay up after 5 attempts" about a node that
+		// had just been up all afternoon.
+		const earnedBudget =
+			observation.responsive && (observation.drift === 'Healthy' || observation.drift === 'Degraded');
 		const promote = shouldAdoptAsRunning(record, observation);
+		// A node this host did not spawn has no exit handler, so its death is not
+		// reported by anything — it simply stops being in `processes`. Left at
+		// that, the next tick starts it again with `lastStopUndrained` false and
+		// the unwedge check is skipped for exactly the nodes that survived a host
+		// restart, which are the ones most likely to be carrying a stranded round.
+		// This is the same conclusion `onExit` draws for an owned child.
+		const diedUnobserved =
+			!observation.processRunning &&
+			!observation.responsive &&
+			(record.state === 'Running' || record.state === 'Starting');
 
 		const updated = await this.store.update(record.nodeId, (current) => ({
 			...current,
@@ -310,8 +355,17 @@ export class Supervisor {
 			},
 			...driftBreachFields(current, observation),
 			...(promote && shouldAdoptAsRunning(current, observation) ? { state: 'Running' as const } : {}),
-			...(healthy && current.startAttempts !== 0 ? { startAttempts: 0 } : {}),
+			...(earnedBudget && current.startAttempts !== 0 ? { startAttempts: 0 } : {}),
+			...(diedUnobserved && (current.state === 'Running' || current.state === 'Starting')
+				? { state: 'Stopped' as const, lastStopUndrained: true, pid: undefined }
+				: {}),
 		}));
+
+		if (diedUnobserved && updated?.state === 'Stopped') {
+			this.logger.warn(
+				`[supervisor] ${record.nodeId} is gone and nothing recorded its exit; treating as an undrained stop`,
+			);
+		}
 
 		if (promote && updated?.state === 'Running' && record.state !== 'Running') {
 			this.logger.info(
@@ -322,6 +376,12 @@ export class Supervisor {
 	}
 
 	private async reconcile(record: NodeRecord): Promise<void> {
+		if (this.stopped) {
+			// SIGTERM landed while this tick was still walking the list. Whatever
+			// this node needed, starting or restarting it now produces a process the
+			// shutdown has already decided not to drain.
+			return;
+		}
 		const observation = await this.observe(record);
 		record = await this.recordObservation(record, observation);
 
@@ -373,6 +433,13 @@ export class Supervisor {
 	}
 
 	private async start(record: NodeRecord): Promise<void> {
+		if (this.stopped) {
+			// Last gate before the spawn: the shutdown may have begun during the
+			// awaits above (the args build touches the disk), and a node spawned
+			// after the shutdown has taken its list of what to drain is a node
+			// nothing will ever stop.
+			return;
+		}
 		const nodeDir = this.store.nodeDir(record.nodeId);
 		const peersDir = path.join(nodeDir, 'peers');
 
@@ -446,7 +513,12 @@ export class Supervisor {
 			}
 			// An exit we did not ask for: nothing drained it, so the next tick must
 			// check for a stranded round before trusting this node.
-			return { ...current, state: 'Stopped', lastStopUndrained: true };
+			//
+			// The pid goes with it. Kept, it outlives the process that owned it and
+			// the operating system hands the number to something else — on a fresh
+			// container, quite possibly to a sibling hydra-node — and a stale pid
+			// is not an inert field here: it is what stop and restart signal.
+			return { ...current, state: 'Stopped', lastStopUndrained: true, pid: undefined };
 		});
 	}
 
@@ -474,6 +546,7 @@ export class Supervisor {
 				...current,
 				state: 'Stopped',
 				lastStopUndrained: true,
+				pid: undefined,
 			}));
 			return;
 		}
@@ -506,6 +579,7 @@ export class Supervisor {
 			...current,
 			state: 'Stopped',
 			lastStopUndrained: undrained,
+			pid: undefined,
 		}));
 	}
 
@@ -579,6 +653,10 @@ export class Supervisor {
 	async shutdown(): Promise<void> {
 		this.stopped = true;
 		this.logger.info('[supervisor] shutting down; draining all nodes');
+		// Waited for before the list is taken, so the list cannot miss a node the
+		// tick was in the middle of starting. `runTick` handles its own errors, so
+		// there is nothing here to catch.
+		await this.currentTick;
 		const records = await this.store.list();
 		await mapWithConcurrency(records, RECONCILE_CONCURRENCY, async (record) => {
 			if (!this.processes.isRunning(record.nodeId)) {

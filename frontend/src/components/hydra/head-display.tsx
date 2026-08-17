@@ -60,9 +60,21 @@ export function getLifecycleDate(head: HydraHead) {
   return head.latestActivityAt ?? head.updatedAt;
 }
 
+/**
+ * Statuses that mean the head exists but is not doing anything on chain yet.
+ *
+ * `Disconnected`, `Connected` and `Connecting` are persisted statuses — a head
+ * sits at `Disconnected` between being redeemed and its session forming — and
+ * naming no tab, they matched only All: an operator on Idle, which is where a
+ * head waiting to be opened is looked for, saw nothing, and a head that later
+ * dropped to `Disconnected` vanished from whatever tab they were watching.
+ */
+const IDLE_STATUSES: HydraHeadStatus[] = ['Idle', 'Disconnected', 'Connected', 'Connecting'];
+
 export function matchesStatusTab(head: HydraHead, activeTab: StatusTab) {
   if (activeTab === 'All') return true;
   if (activeTab === 'Closed') return head.status === 'Closed' || head.status === 'FanoutPossible';
+  if (activeTab === 'Idle') return IDLE_STATUSES.includes(head.status);
   return head.status === activeTab;
 }
 

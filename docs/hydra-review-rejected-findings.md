@@ -15,6 +15,38 @@ Confirmed findings are not recorded here. Those became commits.
 
 <!-- Entries: newest first. Keep the shape: claim, where, why it is not a defect. -->
 
+## Round 2
+
+### The initial L2 lock should release its reservation on a transport error
+
+**Claim.** `executeReservedL2Submission` now rolls back when the command never reached the
+socket (`HydraTransportError`), so `l2-lock-execute.ts` should do the same for the initial
+funds lock — otherwise a provider swapped out mid-submit strands that reservation.
+
+**Why it is not a defect.** The initial lock is deliberately fail-closed, and the file says
+why: its reservation is the only thing standing between a retry and a *second* lock built
+from different wallet inputs. The six non-locking actions can be rolled back because every
+retry of one spends the same unique prior script UTxO — the lock has no such invariant.
+Rolling it back on a transport error would trade a stuck reservation, which an operator can
+see and reconciliation can settle, for the possibility of locking the same funds twice.
+
+The half of the finding that was real is fixed: the six non-locking actions no longer treat
+a never-dispatched command as ambiguous, because nothing reconciles a transaction that does
+not exist.
+
+### `HydraProtocolError` should also roll back a reservation
+
+**Claim.** Like `HydraTransportError`, a protocol error is raised before bytes reach the
+socket, so it should permit rollback too.
+
+**Why it is not a defect.** Only *some* protocol errors are pre-dispatch. The command
+channel converts a malformed response into `HydraTransportAmbiguousError` once `wasQueued`
+is set, but `HydraProtocolError` is also raised from frame validation and from the provider
+on paths that are not reachable only before dispatch. `HydraTransportError` carries the
+guarantee in its own contract — it is constructed exclusively on the `!wasQueued` branches —
+and that guarantee is what makes rollback safe. Widening the rule to a class that does not
+carry it would roll back reservations for transactions that may well have been submitted.
+
 ## Round 1
 
 ### The pre-submit nudge should be a compare-and-swap on `currentTransactionId`

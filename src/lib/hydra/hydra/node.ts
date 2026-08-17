@@ -211,6 +211,7 @@ export class HydraNode extends EventEmitter {
 			},
 			recordFinalizedFanout: (message) => this.recordFinalizedFanout(message),
 			rememberReplayedDeposit: (data) => this._live.rememberReplayedDeposit(data),
+			rememberReplayedDecommit: (data) => this._live.rememberReplayedDecommit(data),
 			emitTxConfirmed: (txId, transaction) => {
 				this.emit(HydraNodeEvent.TxConfirmed, txId, transaction);
 			},

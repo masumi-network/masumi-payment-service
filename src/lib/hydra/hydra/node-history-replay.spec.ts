@@ -29,6 +29,7 @@ function createReplay() {
 		setNetworkConnected: () => undefined,
 		recordFinalizedFanout: () => undefined,
 		rememberReplayedDeposit: () => undefined,
+		rememberReplayedDecommit: () => undefined,
 		emitTxConfirmed: () => undefined,
 		onProtocolDrift: () => undefined,
 		onRotationReplayFailure: () => undefined,

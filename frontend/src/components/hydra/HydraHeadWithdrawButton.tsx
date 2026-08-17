@@ -204,7 +204,12 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
   // 'ada' rather than '' because Radix refuses an empty Select value, and the
   // whole panel throws rather than the field misbehaving.
   const [assetUnit, setAssetUnit] = useState(ADA_CHOICE);
-  const { data: balance } = useHydraHeadBalance(headId, isOpen);
+  const { data: balance, refetch: refetchBalance } = useHydraHeadBalance(headId, isOpen);
+  // Nothing is offered from a balance nobody could read. The asset list is
+  // derived from it, so an unread balance looks exactly like a head holding
+  // only ADA — which silently turns a token amount already typed into the field
+  // into that many lovelace.
+  const isBalanceKnown = balance != null;
   const heldAssets = (balance?.balance ?? []).filter((asset) => asset.unit !== '');
   // Withdrawing the last of a token unmounts the Select that chose it, so a
   // remembered choice would leave the form submitting an asset the head no
@@ -334,7 +339,7 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
           )}
         </div>
 
-        <Button onClick={() => void handleWithdraw()} disabled={isSubmitting}>
+        <Button onClick={() => void handleWithdraw()} disabled={isSubmitting || !isBalanceKnown}>
           {isSubmitting && !isDraining ? (
             <>
               <Spinner className="mr-2 h-4 w-4" /> Taking out…
@@ -344,6 +349,19 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
           )}
         </Button>
       </div>
+
+      {!isBalanceKnown && (
+        <p className="text-xs text-muted-foreground">
+          What this head holds could not be read, so there is nothing to take out from.{' '}
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-foreground"
+            onClick={() => void refetchBalance()}
+          >
+            Try again
+          </button>
+        </p>
+      )}
 
       {/* Behind a confirmation rather than a checkbox beside the amount. Taking
           the collateral is not a variation on withdrawing, it ends this
@@ -361,7 +379,7 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
               type="button"
               variant="destructive"
               size="sm"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isBalanceKnown}
               onClick={() => void submit({ drain: true })}
             >
               {isSubmitting && <Spinner className="mr-2 h-4 w-4" />}

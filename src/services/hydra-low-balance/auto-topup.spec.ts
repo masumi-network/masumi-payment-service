@@ -81,6 +81,24 @@ describe('runHydraAutoTopupCycle', () => {
 		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
 	});
 
+	// A deposit that has confirmed on chain has not reached the head: the node
+	// leaves it alone for a whole deposit period first, and the rule stays Low
+	// for all of it. Counting only `Pending` made that window look idle and sent
+	// a fresh deposit every cycle.
+	it('counts a confirmed but unabsorbed deposit as in flight', async () => {
+		mockFindMany.mockResolvedValue([rule()]);
+		mockCount.mockResolvedValue(0);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockCount).toHaveBeenCalledWith({
+			where: {
+				hydraLocalParticipantId: 'participant-1',
+				status: { in: ['Preparing', 'Pending', 'Confirmed'] },
+			},
+		});
+	});
+
 	it('skips when the head is not open', async () => {
 		mockFindMany.mockResolvedValue([
 			rule({ LocalParticipant: { id: 'participant-1', HydraHead: { id: 'head-1', status: 'Closed' } } }),

@@ -32,10 +32,25 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 			if (!head || head.status !== HydraHeadStatus.Open) continue;
 			if (rule.topupAmount == null || rule.topupAmount <= 0n) continue;
 
-			const pending = await prisma.hydraTopup.count({
-				where: { hydraLocalParticipantId: rule.hydraLocalParticipantId, status: HydraTopupStatus.Pending },
+			// Counted up to and including `Confirmed`, not just `Pending`. A deposit
+			// reaching the chain is not the head holding it: the node ignores a
+			// deposit until it is older than the deposit period — ten minutes on
+			// preprod, twenty on mainnet — so between confirmation and absorption
+			// the in-head balance is unchanged and the rule is still Low. With only
+			// `Pending` counted, that whole window looked like "no top-up in
+			// flight", and this cycle, which runs every thirty seconds, sent
+			// another deposit, and another, until the wallet ran out of matching
+			// UTxOs: the rule's `topupAmount` moved into the head ten or twenty
+			// times over.
+			const inFlight = await prisma.hydraTopup.count({
+				where: {
+					hydraLocalParticipantId: rule.hydraLocalParticipantId,
+					status: {
+						in: [HydraTopupStatus.Preparing, HydraTopupStatus.Pending, HydraTopupStatus.Confirmed],
+					},
+				},
 			});
-			if (pending > 0) continue;
+			if (inFlight > 0) continue;
 
 			const filter: CommitUtxoFilter = rule.assetUnit === 'lovelace' ? 'all' : { unit: rule.assetUnit };
 			const result = await executeHydraTopup({

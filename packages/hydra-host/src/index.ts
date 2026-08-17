@@ -91,6 +91,11 @@ async function main(): Promise<void> {
 		advertiseFor: (peerPort: number) => advertiseAddress(config, peerPort),
 		newNodeId: () => randomUUID(),
 		now: () => new Date(),
+		// Passed, or the one report that must never be silent is: a provision that
+		// fails after writing signing keys and then fails to clean them up leaves
+		// key material on the volume for a node no record mentions. Without this,
+		// that rollback failure was logged to an optional logger nothing supplied.
+		logger,
 	};
 
 	const server = createControlPlane({

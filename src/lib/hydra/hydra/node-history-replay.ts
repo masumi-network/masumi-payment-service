@@ -25,6 +25,7 @@ import {
 	assertExpectedFrameHeadId,
 	parseBoundedJsonFrame,
 	protocolErrorToString,
+	readDecommitSettled,
 	readDepositRecorded,
 } from './node-frames';
 import { MAX_HYDRA_WS_FRAME_BYTES } from './schemas';
@@ -44,7 +45,7 @@ import {
 	verifyHydraSnapshot,
 	type VerifiedHydraSnapshot,
 } from './snapshot-verification';
-import { DepositRecordedData, HydraConfirmedTransaction, HydraTransaction } from './types';
+import { DecommitSettledData, DepositRecordedData, HydraConfirmedTransaction, HydraTransaction } from './types';
 
 const HISTORY_STATUS_REQUIRING_STATE_ANCHOR = new Set<HydraHeadStatus>([
 	HydraHeadStatus.Open,
@@ -78,6 +79,7 @@ export interface HistoryReplayHost {
 	/** Record a finalized fanout map, shared with the live session's copy. */
 	recordFinalizedFanout(message: unknown): void;
 	rememberReplayedDeposit(data: DepositRecordedData): void;
+	rememberReplayedDecommit(data: DecommitSettledData): void;
 	emitTxConfirmed(txId: string, transaction: HydraConfirmedTransaction): void;
 	onProtocolDrift(description: string): void;
 	/** Rotation is fatal for this client instance: tear down the live session and both transports. */
@@ -352,6 +354,18 @@ export class HydraHistoryReplay {
 				const recorded = readDepositRecorded(message);
 				if (recorded) this.host.rememberReplayedDeposit(recorded);
 			}
+
+			// And the same for a withdrawal leaving the head. A decommit settles on
+			// L1 minutes after the head approves it, and the live socket is opened
+			// with history=no, so a service that was down for those minutes never
+			// hears the finalization from anywhere else. Without this the row stays
+			// `Approved` for good — and `Approved` is what makes every later
+			// withdrawal for that participant refuse with "a prior withdrawal is
+			// still settling on L1". Deposits were wired through replay; withdrawals
+			// were not, though the ordering guarantee that makes it safe (held back,
+			// flushed oldest-first, timestamp-attributed) was built for both.
+			const settled = readDecommitSettled(parsedEnvelope.tag, message);
+			if (settled) this.host.rememberReplayedDecommit(settled);
 
 			// Before the snapshot that reflects it, always: the head reports the
 			// request first, and the transaction it carries is what accounts for the

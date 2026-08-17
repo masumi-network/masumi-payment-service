@@ -298,6 +298,12 @@ model WalletFundTransfer {
 
   @@index([hotWalletId])
   @@index([status, txHash])
+  /// The Hydra node-funding claim reads by destination address inside a
+  /// Serializable transaction, and the head's transaction history reads the
+  /// same way per page load. Without this the claim scans the table, which
+  /// takes a relation-wide predicate lock and turns every concurrent insert
+  /// into a serialization conflict.
+  @@index([toAddress, createdAt])
 }
 
 model WalletSecret {

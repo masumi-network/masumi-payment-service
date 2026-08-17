@@ -67,7 +67,7 @@ export function isProcessAlive(pid: number): boolean {
 }
 
 /**
- * Whether the process at `pid` is running the binary we expect.
+ * Whether the process at `pid` is running THIS node.
  *
  * Pids are reused, and this manager's whole purpose is to send signals to one.
  * A record that survived a machine reboot can name a pid that now belongs to
@@ -75,10 +75,19 @@ export function isProcessAlive(pid: number): boolean {
  * ever treated as a hydra-node. Anything unverifiable answers false: refusing
  * to adopt costs a supervisor that cannot stop one node, while adopting wrongly
  * costs an unrelated process a SIGKILL.
+ *
+ * The binary alone is not enough to identify a node, because one host runs many
+ * of them: every head gets its own hydra-node, all from the same binary, so a
+ * stale pid from a previous incarnation of the host matches its neighbour's
+ * live process just as readily as its own. That match is not a false positive
+ * that costs a probe — it is the supervisor reporting node A as up because node
+ * B is, and later sending node B a SIGKILL in node A's name, mid-round. So the
+ * node's own directory, which appears in its argv as `--persistence-dir` and is
+ * unique per node, has to be there too.
  */
-export async function isProcessRunningBinary(pid: number, binary: string): Promise<boolean> {
+export async function isProcessRunningNode(pid: number, binary: string, nodeDir: string): Promise<boolean> {
 	const needle = path.basename(binary);
-	if (needle.length === 0) {
+	if (needle.length === 0 || nodeDir.length === 0) {
 		return false;
 	}
 	const command = await new Promise<string | null>((resolve) => {
@@ -86,7 +95,7 @@ export async function isProcessRunningBinary(pid: number, binary: string): Promi
 			resolve(error === null ? stdout : null);
 		});
 	});
-	return command !== null && command.includes(needle);
+	return command !== null && command.includes(needle) && command.includes(nodeDir);
 }
 
 export class NodeProcessManager {
@@ -114,14 +123,15 @@ export class NodeProcessManager {
 	/**
 	 * Take responsibility for a hydra-node this host did not spawn.
 	 *
-	 * Returns false when the pid is dead or is not running `binary`, in which
-	 * case nothing is registered and the caller is no worse off than before.
+	 * Returns false when the pid is dead or is not running this node's own
+	 * `binary` out of `nodeDir`, in which case nothing is registered and the
+	 * caller is no worse off than before.
 	 */
-	async adopt(nodeId: string, pid: number, binary: string): Promise<boolean> {
+	async adopt(nodeId: string, pid: number, binary: string, nodeDir: string): Promise<boolean> {
 		if (this.isRunning(nodeId)) {
 			return false;
 		}
-		if (!isProcessAlive(pid) || !(await isProcessRunningBinary(pid, binary))) {
+		if (!isProcessAlive(pid) || !(await isProcessRunningNode(pid, binary, nodeDir))) {
 			return false;
 		}
 		this.running.set(nodeId, { nodeId, pid, startedAtMs: Date.now() });

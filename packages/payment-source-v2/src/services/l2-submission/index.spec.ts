@@ -1,6 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { HydraHeadStatus } from '@/generated/prisma/client';
-import { HydraTransactionRejectedError } from '@/lib/hydra/hydra/errors';
+import { HydraTransactionRejectedError, HydraTransportError } from '@/lib/hydra/hydra/errors';
 import { executeReservedL2Submission, lockOpenHydraHeadForL2Reservation } from '.';
 
 const signedTx = 'signed-transaction-cbor';
@@ -56,6 +56,42 @@ describe('executeReservedL2Submission', () => {
 		});
 		expect(callbacks.rollback).toHaveBeenCalledWith({ id: 'reservation-1' }, intendedTxHash);
 		expect(callbacks.finalize).not.toHaveBeenCalled();
+	});
+
+	// The class is raised only before any byte is queued, so there is no
+	// transaction anywhere to reconcile against — a retained reservation here
+	// could never be resolved by anything, and it keeps the wallet leased and the
+	// head's final handoff blocked behind it.
+	it('rolls back a command that never reached the transport', async () => {
+		const callbacks = makeCallbacks();
+		const notSent = new HydraTransportError('Hydra provider is no longer admitted for transaction submission');
+		callbacks.submit.mockRejectedValue(notSent);
+
+		await expect(executeReservedL2Submission(callbacks)).resolves.toEqual({
+			status: 'not-dispatched',
+			intendedTxHash,
+			error: notSent,
+		});
+		expect(callbacks.rollback).toHaveBeenCalledWith({ id: 'reservation-1' }, intendedTxHash);
+		expect(callbacks.finalize).not.toHaveBeenCalled();
+	});
+
+	// A rollback that itself fails leaves the reservation in place: that is the
+	// one outcome where the never-sent command stops being the whole story.
+	it('retains the reservation when rolling back a never-sent command fails', async () => {
+		const callbacks = makeCallbacks();
+		const notSent = new HydraTransportError('transport closed before the command was sent');
+		const rollbackError = new Error('database unavailable');
+		callbacks.submit.mockRejectedValue(notSent);
+		callbacks.rollback.mockRejectedValue(rollbackError);
+
+		await expect(executeReservedL2Submission(callbacks)).resolves.toEqual({
+			status: 'ambiguous',
+			phase: 'rollback',
+			intendedTxHash,
+			error: rollbackError,
+			rejectionError: notSent,
+		});
 	});
 
 	it('retains the reservation when submission fails ambiguously', async () => {

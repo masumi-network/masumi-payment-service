@@ -66,22 +66,27 @@ export default function HydraHeadsPage() {
   const [isIssueInviteOpen, setIsIssueInviteOpen] = useState(false);
   const [isRedeemInviteOpen, setIsRedeemInviteOpen] = useState(false);
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
-  const [detailsHost, setDetailsHost] = useState<HydraHost | null>(null);
+  // The id, not the host object. The dialog's own actions — check now, start
+  // draining, disconnect — refetch the host list, and a stored snapshot cannot
+  // see any of it: the badge kept saying Unreachable after a successful check,
+  // and "Stop taking new heads" stayed on offer after the node was already
+  // draining, so pressing it again re-sent the same request.
+  const [detailsHostId, setDetailsHostId] = useState<string | null>(null);
   const { invites } = useHydraInvites(selectedNetwork);
   const inviteCount = invites.length;
   // Read here rather than through the nodes card: the card now lives in a
   // dialog, so leaving the count to it reported zero until the operator happened
   // to open one, and the page gates its primary action on this.
-  const {
-    hosts,
-    error: hostsError,
-    refetch: refetchHosts,
-  } = useHydraHosts(selectedNetwork);
+  const { hosts, error: hostsError, refetch: refetchHosts } = useHydraHosts(selectedNetwork);
   const [backUpKeysParticipantId, setBackUpKeysParticipantId] = useState<string | null>(null);
   const [selectedHeadId, setSelectedHeadId] = useState<string | null>(null);
   const [runningLifecycleHeadId, setRunningLifecycleHeadId] = useState<string | null>(null);
   const [pendingLifecycleAction, setPendingLifecycleAction] =
     useState<PendingLifecycleAction | null>(null);
+  // Looked up on every render, so the dialog shows whatever the last refetch
+  // returned. A host that disappears from the list while its dialog is open
+  // resolves to null, which the dialog already renders as nothing.
+  const detailsHost = hosts.find((host) => host.id === detailsHostId) ?? null;
 
   const stats = useMemo(() => {
     const openHeads = heads.filter((head) => head.status === 'Open').length;
@@ -334,7 +339,7 @@ export default function HydraHeadsPage() {
             headCounts={headCountsByHost}
             selectedHostId={selectedHostId}
             onSelectHost={setSelectedHostId}
-            onOpenHost={setDetailsHost}
+            onOpenHost={(host) => setDetailsHostId(host.id)}
             onAddNode={() => setIsConnectNodeOpen(true)}
           />
 
@@ -475,9 +480,9 @@ export default function HydraHeadsPage() {
       />
       <HydraNodeDetailsDialog
         host={detailsHost}
-        open={detailsHost !== null}
+        open={detailsHostId !== null}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen) setDetailsHost(null);
+          if (!nextOpen) setDetailsHostId(null);
         }}
       />
       <IssueHydraInviteDialog

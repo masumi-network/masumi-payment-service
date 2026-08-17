@@ -18,7 +18,7 @@
  * possible, on L1, and against a different address.
  */
 
-import { HydraInviteStatus, Prisma, TransactionStatus } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraInviteStatus, Prisma, TransactionStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import { logger } from '@masumi/payment-core/logger';
@@ -175,7 +175,13 @@ export async function runHydraNodeFundingCycle(): Promise<NodeFundingOutcome> {
 	const participants = await prisma.hydraLocalParticipant.findMany({
 		where: {
 			OR: [
-				{ hydraHeadId: { not: null } },
+				// Every head but a finished one. A node stops needing fuel the moment
+				// its head reaches Final — that is exactly when sweeping it is
+				// allowed — and funding one that has been swept re-sends the target
+				// balance to a dead node, which the operator sweeps again, at two L1
+				// fees per round for as long as both keep running. The status was
+				// already being selected; it was simply never consulted.
+				{ HydraHead: { status: { not: HydraHeadStatus.Final } } },
 				// Reserved by an invite that is still alive. A revoked or expired
 				// one is reaped, and its node goes with it.
 				...liveInvites.map((invite) => ({

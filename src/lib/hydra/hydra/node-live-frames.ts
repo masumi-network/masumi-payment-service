@@ -25,7 +25,7 @@ import {
 } from './node-frames';
 import { HeldBackEmissions } from './node-held-back';
 import { hasFinalizedUtxoField, headClockMessageSchema, messageSchema } from './schemas';
-import { DepositRecordedData, HydraNodeEvent, StatusChangeData } from './types';
+import { DecommitSettledData, DepositRecordedData, HydraNodeEvent, StatusChangeData } from './types';
 
 export const LIVE_SESSION_READY_EVENT = 'hydraLiveSessionReady';
 export const LIVE_SESSION_REJECTED_EVENT = 'hydraLiveSessionRejected';
@@ -154,6 +154,34 @@ export class LiveFrameProcessor {
 	/** Replay met a deposit record; hold it with the live-observed ones. */
 	rememberReplayedDeposit(data: DepositRecordedData): void {
 		this._heldBack.rememberDeposit(data);
+		this.flushHeldBackWhenLive();
+	}
+
+	/** Replay met a withdrawal settling; same handling as a deposit. */
+	rememberReplayedDecommit(data: DecommitSettledData): void {
+		this._heldBack.rememberDecommit(data);
+		this.flushHeldBackWhenLive();
+	}
+
+	/**
+	 * Emit what replay left behind, as soon as there is a proven identity to
+	 * emit it under.
+	 *
+	 * The only other drain is at the end of `processStatus`, which needs a live
+	 * frame to arrive — and a quiet head sends none: Hydra 2.3 does not stream
+	 * ticks over the API, and the clock refresh that compensates runs on its own
+	 * probe socket. Replay reaches this class after the live `Greetings` has
+	 * already authenticated the session, so on an idle head a deposit or a
+	 * settlement met only in history was parked here with nothing left to release
+	 * it — the deposit's deadline never written, the withdrawal never finalized.
+	 */
+	private flushHeldBackWhenLive(): void {
+		if (!this.isLiveSessionReady()) return;
+		// Withdrawals before deposits, and each oldest-first, exactly as the live
+		// path drains them: an approval must not be applied after the
+		// finalization that followed it.
+		this._heldBack.flushDecommits((data) => this.emitter.emit(HydraNodeEvent.DecommitSettled, data));
+		this._heldBack.flushDeposits((data) => this.emitter.emit(HydraNodeEvent.DepositRecorded, data));
 	}
 
 	applyObservedHeadClock(chainTimeMs: number, chainSlot: number): void {
