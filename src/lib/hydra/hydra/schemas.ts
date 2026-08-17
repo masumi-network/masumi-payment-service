@@ -40,7 +40,13 @@ export const messageSchema = z.looseObject({
 
 export const hydraHeadStatusSchema = z.enum(Object.values(HydraHeadStatus));
 
-export const hydraTransactionSchema = z.strictObject({
+// Loose, unlike the command envelope below. This one describes what a head
+// *sends* us — inside every replayed `SnapshotConfirmed` — and only `cborHex`
+// and `txId` are ever read off it. Refusing an envelope over a field a newer
+// hydra-node added would reject the same replayed frame on every reconnect and
+// take the head's whole L2 surface down, which is the outage `protocol-drift`
+// exists to avoid. The command envelope stays strict because we author it.
+export const hydraTransactionSchema = z.looseObject({
 	type: z.enum(HydraTransactionType),
 	cborHex: hydraCborHexSchema,
 	description: z.string().max(MAX_HYDRA_TRANSACTION_DESCRIPTION_LENGTH),
@@ -154,8 +160,16 @@ export const commitRecordedMessageSchema = z.looseObject({
  * id whose value maps asset name to quantity. Quantities arrive as JSON numbers,
  * so they are accepted as numbers or strings and converted to BigInt by the
  * caller rather than being trusted as JavaScript numbers.
+ *
+ * `bigint` belongs in that union for the same reason it does in
+ * `hydraQuantitySchema`: frames are parsed by json-bigint, which hands back a
+ * native bigint for any integer literal at or above 1e15 — one billion units of
+ * an ordinary six-decimal token. Without it, a large enough decommit makes
+ * `DecommitFinalized` unparseable, and since the history socket replays from the
+ * beginning on every reconnect, that one frame rejects forever and takes every
+ * L2 operation on the head down with it.
  */
-const hydraAssetQuantitySchema = z.union([z.number(), z.string()]);
+const hydraAssetQuantitySchema = z.union([z.number(), z.string(), z.bigint()]);
 const hydraOutputValueSchema = z.record(
 	z.string(),
 	z.union([hydraAssetQuantitySchema, z.record(z.string(), hydraAssetQuantitySchema)]),

@@ -65,7 +65,7 @@ import {
 import { COLLATERAL_RESERVE_LOVELACE, ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { submitReservedL2Action } from '../../l2-submission';
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
-import { rotateDeferredL2PaymentRequest } from '../../l2-queue-rotation';
+import { deferredL2RequestIds, markL2RequestDeferred } from '../../l2-queue-rotation';
 import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 
@@ -1130,6 +1130,9 @@ async function runAuthorizeRefundL2Pass(): Promise<void> {
 		maxBatchSize: 1,
 		paymentSourceType: PaymentSourceType.Web3CardanoV2,
 		layer: TransactionLayer.L2,
+		// A request that just deferred stands aside for a moment so the rest of
+		// its wallet's queue can move.
+		excludeRequestIds: deferredL2RequestIds(),
 	});
 	await Promise.allSettled(
 		l2PaymentContracts.map(async (paymentContract) => {
@@ -1147,7 +1150,7 @@ async function runAuthorizeRefundL2Pass(): Promise<void> {
 							// carrying an unresolved terminal hash never matches its UTxO
 							// again — would be picked forever while every other escrow on
 							// that wallet waited behind it.
-							await rotateDeferredL2PaymentRequest(request.id);
+							markL2RequestDeferred(request.id);
 						} else {
 							logger.error('L2 authorize-refund failed', { requestId: request.id, error });
 						}

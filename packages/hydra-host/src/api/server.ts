@@ -14,7 +14,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFile } from 'node:fs/promises';
 import type { HostConfig } from '../config.js';
 import { readCapabilities } from '../capabilities.js';
-import type { PortAllocator } from '../registry/ports.js';
+import { PortExhaustedError, type PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { ExchangeStore } from '../registry/exchange-store.js';
 import { isUsable, restartCountOf, type PeerRecord } from '../registry/types.js';
@@ -201,6 +201,16 @@ export function createControlPlane(deps: ServerDeps): Server {
 					send(response, error.status, { error: error.message });
 					return;
 				}
+				// A full host is not a broken one, and the caller routes on the
+				// difference: 500 says "this host is unwell, investigate", 507 says
+				// "this one is at capacity, provision on another". Every node slot
+				// being in use is an ordinary condition on a host that is working
+				// perfectly.
+				if (error instanceof PortExhaustedError) {
+					logger.warn(`[api] ${method} ${pathname} refused: ${error.message}`);
+					send(response, 507, { error: error.message });
+					return;
+				}
 				logger.error(`[api] ${method} ${pathname} failed: ${(error as Error).message}`);
 				send(response, 500, { error: 'internal error' });
 			}
@@ -289,7 +299,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 
 			case 'registerInvite': {
 				const body = await readBody(request);
-				send(response, 201, await registerInvite(exchange, body));
+				send(response, 201, await registerInvite(exchange, store, body));
 				return;
 			}
 

@@ -68,7 +68,7 @@ export function HydraInvitesCard({
 }) {
   const { apiClient, network } = useAppContext();
   // One network's invites, matching the heads and nodes on the page behind it.
-  const { invites, refetch, isLoading } = useHydraInvites(
+  const { invites, refetch, isLoading, isError } = useHydraInvites(
     network === 'Preprod' || network === 'Mainnet' ? network : undefined,
   );
   const [isIssueOpen, setIsIssueOpen] = useState(false);
@@ -145,6 +145,17 @@ export function HydraInvitesCard({
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading invites…
           </p>
+        ) : isError && invites.length === 0 ? (
+          // Never the affirmative empty state on a failed read. An operator who
+          // is told there are no invites, next to a button offering to make
+          // one, invites again — and a second invite reserves a second node and
+          // a second peer port while the first is still outstanding.
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-destructive/40 px-3 py-2">
+            <span className="text-sm text-muted-foreground">Could not read your invites.</span>
+            <Button type="button" size="sm" variant="outline" onClick={() => void refetch()}>
+              Try again
+            </Button>
+          </div>
         ) : invites.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No invites yet. Invite someone to open the first head, or redeem a code they sent you.

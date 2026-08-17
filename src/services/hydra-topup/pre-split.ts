@@ -29,6 +29,15 @@ function isPureLovelace(utxo: UTxO): boolean {
 	return utxo.output.amount.every((asset) => asset.unit === 'lovelace');
 }
 
+/** Whether this UTxO is exactly what a carve of `amount` `unit` would produce. */
+function isCarveOf(utxo: UTxO, walletAddress: string, unit: string, amount: bigint): boolean {
+	return (
+		utxo.output.address === walletAddress &&
+		unitAmount(utxo, unit) === amount &&
+		(unit !== 'lovelace' || isPureLovelace(utxo))
+	);
+}
+
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Build, sign and submit the L1 self-payment that carves the exact UTxO. */
@@ -66,6 +75,16 @@ export async function carveExactUtxo(params: {
 	amount: bigint;
 	network: Network;
 	rpcProviderApiKey: string;
+	/**
+	 * The wallet's current L1 UTxOs, if the caller already has them.
+	 *
+	 * A carve is an L1 self-payment, so the step that follows it — building and
+	 * submitting the deposit — can fail after the money has already been split
+	 * off. Retrying then carved *another* dedicated UTxO: a second fee, and a
+	 * first one left sitting in the wallet with nothing naming it. Passing the
+	 * snapshot lets a retry recognise its own earlier carve and commit that.
+	 */
+	existingUtxos?: UTxO[];
 	now?: () => number;
 	sleep?: (ms: number) => Promise<void>;
 	submitCarveTx?: (wallet: MeshWallet, walletAddress: string, unit: string, amount: bigint) => Promise<string>;
@@ -79,6 +98,22 @@ export async function carveExactUtxo(params: {
 	onCarveSubmitted?: (txHash: string) => Promise<void>;
 }): Promise<UTxO> {
 	if (params.amount <= 0n) throw new HydraPreSplitError('exact top-up amount must be positive');
+
+	// Reuse before carving. An exact, pure UTxO of this amount is indistinguishable
+	// from one this wallet carved a moment ago and could not commit, and committing
+	// it means the same thing either way: exactly `amount` goes into the head.
+	const reusable = params.existingUtxos?.find((utxo) =>
+		isCarveOf(utxo, params.walletAddress, params.unit, params.amount),
+	);
+	if (reusable) {
+		logger.info('hydra-pre-split: reusing an exact UTxO the wallet already holds', {
+			txHash: reusable.input.txHash,
+			outputIndex: reusable.input.outputIndex,
+			unit: params.unit,
+			amount: params.amount.toString(),
+		});
+		return reusable;
+	}
 
 	const submitCarveTx = params.submitCarveTx ?? defaultSubmitCarveTx;
 	let txHash: string;
@@ -121,12 +156,7 @@ export async function carveExactUtxo(params: {
 	}
 
 	const outputs = await params.blockchainProvider.fetchUTxOs(txHash);
-	const carved = outputs.find(
-		(utxo) =>
-			utxo.output.address === params.walletAddress &&
-			unitAmount(utxo, params.unit) === params.amount &&
-			(params.unit !== 'lovelace' || isPureLovelace(utxo)),
-	);
+	const carved = outputs.find((utxo) => isCarveOf(utxo, params.walletAddress, params.unit, params.amount));
 	if (!carved) {
 		throw new HydraPreSplitError(`carved UTxO of exactly ${params.amount} ${params.unit} not found in tx ${txHash}`);
 	}

@@ -289,32 +289,47 @@ export async function setPeers(nodeId: string, peers: PeerRecord[], deps: Provis
 	const nodeDir = deps.store.nodeDir(nodeId);
 	const peersDir = path.join(nodeDir, 'peers');
 	await fs.mkdir(peersDir, { recursive: true });
-	// Clear any files from a previous, larger peer set. They are unreferenced —
-	// the launcher only reads indices below the peer count — but leaving stale
-	// verification keys on disk is misleading during an incident.
+	// Written first, pruned second. Emptying the directory before refilling it
+	// left a window in which the files the launcher names in argv did not exist:
+	// a start landing inside it passed `--hydra-verification-key <peers>/0-hydra.vk`
+	// for a file that was not there, and the node died on it. Overwriting in
+	// place has no such window — every index a peer set uses is written before
+	// anything is removed.
+	const written = new Set<string>();
+	await Promise.all(
+		peers.flatMap((peer, index) => {
+			const hydraKeyFile = `${index}-hydra.vk`;
+			const cardanoKeyFile = `${index}-cardano.vk`;
+			written.add(hydraKeyFile);
+			written.add(cardanoKeyFile);
+			return [
+				fs.writeFile(
+					path.join(peersDir, hydraKeyFile),
+					serializeEnvelope({
+						type: 'HydraVerificationKey_ed25519',
+						description: '',
+						cborHex: peer.hydraVerificationKey,
+					}),
+				),
+				fs.writeFile(
+					path.join(peersDir, cardanoKeyFile),
+					serializeEnvelope({
+						type: 'PaymentVerificationKeyShelley_ed25519',
+						description: 'Payment Verification Key',
+						cborHex: peer.cardanoVerificationKey,
+					}),
+				),
+			];
+		}),
+	);
+
+	// Whatever a previous, larger peer set left behind. Unreferenced — the
+	// launcher only reads indices below the peer count — but stale verification
+	// keys on disk are misleading during an incident.
 	for (const entry of await fs.readdir(peersDir).catch(() => [])) {
+		if (written.has(entry)) continue;
 		await fs.rm(path.join(peersDir, entry), { force: true });
 	}
-	await Promise.all(
-		peers.flatMap((peer, index) => [
-			fs.writeFile(
-				path.join(peersDir, `${index}-hydra.vk`),
-				serializeEnvelope({
-					type: 'HydraVerificationKey_ed25519',
-					description: '',
-					cborHex: peer.hydraVerificationKey,
-				}),
-			),
-			fs.writeFile(
-				path.join(peersDir, `${index}-cardano.vk`),
-				serializeEnvelope({
-					type: 'PaymentVerificationKeyShelley_ed25519',
-					description: 'Payment Verification Key',
-					cborHex: peer.cardanoVerificationKey,
-				}),
-			),
-		]),
-	);
 
 	const updated = await deps.store.update(nodeId, (current) => ({ ...current, peers }));
 	if (updated === null) {

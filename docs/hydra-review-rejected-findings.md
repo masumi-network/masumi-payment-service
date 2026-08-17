@@ -15,6 +15,38 @@ Confirmed findings are not recorded here. Those became commits.
 
 <!-- Entries: newest first. Keep the shape: claim, where, why it is not a defect. -->
 
+## Round 4
+
+### The L2 stand-down should write the cooldown columns
+
+**Claim.** When an L2 pass defers a request (the head is not usable yet), it should push
+`sellerCoolDownTime` / `buyerCoolDownTime` into the future so the next batch skips it,
+the way the L1 paths space out their retries.
+
+**Why it is a defect to do so.** Those two columns are not scheduler state. They are a
+mirror of the on-chain datum: `hydra-datum-sync` writes them from `decoded.sellerCooldownTime`
+/ `decoded.buyerCooldownTime`, and `continuationHasAuthorizedActor` in
+`src/utils/logic/hydra-datum-guards` reads them back as `startsAfter(request.sellerCoolDownTime)`
+against the signed body's `invalid_before`. A fabricated future value makes that guard
+unsatisfiable, `applyDatumStateToLocalRequests` returns `'retry'` forever, the head is
+marked stalled by `markReconciliationStalled`, and replay wedges for *every* request on it —
+not only the deferred one.
+
+This was written and shipped in round 3, and caught in round 4. The replacement is
+`packages/payment-source-v2/src/services/l2-queue-rotation.ts`: an in-memory set of deferred
+request ids with a one-minute cooldown, passed to `lockAndQueryPayments` /
+`lockAndQueryPurchases` as `excludeRequestIds`. It rotates the queue without touching a
+single column the chain owns. Do not re-suggest the column write.
+
+### A decommit transition should carry its transaction on every step
+
+**Claim.** `transition-shapes.spec.ts` passes `[]` for the transactions of a transition
+that finalises a decommit, so the replay must be dropping it.
+
+**Why it is not a defect.** A decommit's transaction is supplied on the transition that
+first *declares* it, not on the later ones that carry it to finality. See the round-3 entry
+below, which this repeats.
+
 ## Round 3
 
 Every finding this round survived checking and became a commit. The one entry

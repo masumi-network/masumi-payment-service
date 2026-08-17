@@ -130,14 +130,36 @@ export function validatePortLayout(layout: PortLayout): void {
 export class PortAllocator {
 	private readonly layout: PortLayout;
 	private readonly takenPeerPorts: Set<number>;
+	/**
+	 * Ports held by a node on disk that this layout cannot express, with the
+	 * reason. The caller logs them; the host still boots.
+	 */
+	readonly unclaimablePorts: ReadonlyArray<{ peerPort: number; reason: string }>;
 
 	constructor(layout: PortLayout, takenPeerPorts: Iterable<number> = []) {
 		validatePortLayout(layout);
 		this.layout = layout;
 		this.takenPeerPorts = new Set();
+		// Recorded rather than thrown. This runs at boot over the ports of nodes
+		// that already exist, and an operator who narrows the range or moves its
+		// base — a supported edit that `validatePortLayout` accepts — would
+		// otherwise take a `PortLayoutError` out of `main()` and crash-loop a host
+		// that then supervises nothing: no drain, no drift watchdog, no health, for
+		// every node on the volume. A port outside the range is unreachable by
+		// `allocate` anyway, so skipping it cannot hand it out twice.
+		const unclaimable: Array<{ peerPort: number; reason: string }> = [];
 		for (const port of takenPeerPorts) {
-			this.claim(port);
+			if (!this.isInRange(port)) {
+				unclaimable.push({ peerPort: port, reason: 'lies outside the configured peer port range' });
+				continue;
+			}
+			if (this.takenPeerPorts.has(port)) {
+				unclaimable.push({ peerPort: port, reason: 'is recorded by more than one node' });
+				continue;
+			}
+			this.takenPeerPorts.add(port);
 		}
+		this.unclaimablePorts = unclaimable;
 	}
 
 	/** Re-take a port recorded on disk. Used when rebuilding state at boot. */

@@ -75,6 +75,15 @@ async function main(): Promise<void> {
 		config.ports,
 		existing.map((record) => record.peerPort),
 	);
+	for (const { peerPort, reason } of allocator.unclaimablePorts) {
+		// Loud, because the node holding it keeps running and keeps that port
+		// bound: nothing here will hand the number out again, but an operator who
+		// narrowed the range is now running a node the layout cannot describe.
+		logger.error(
+			`[host] peer port ${peerPort} ${reason}; the node holding it still runs, but this layout cannot account for it. ` +
+				'Restore the previous HYDRA_HOST_PEER_PORT_START / _COUNT, or remove that node',
+		);
+	}
 	logger.info(`[host] ${allocator.used} of ${config.ports.capacity} node slots in use`);
 
 	const supervisor = new Supervisor(config, store, allocator, resolveSlotConfig(config.network), logger);

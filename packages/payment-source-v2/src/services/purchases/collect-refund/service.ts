@@ -65,7 +65,7 @@ import {
 } from '../../../builders/batch-interaction';
 import { COLLATERAL_RESERVE_LOVELACE, ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
-import { rotateDeferredL2PurchaseRequest } from '../../l2-queue-rotation';
+import { deferredL2RequestIds, markL2RequestDeferred } from '../../l2-queue-rotation';
 import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 import { submitReservedL2Action } from '../../l2-submission';
@@ -1100,6 +1100,9 @@ async function runCollectRefundL2Pass(): Promise<void> {
 		maxBatchSize: 1,
 		paymentSourceType: PaymentSourceType.Web3CardanoV2,
 		layer: TransactionLayer.L2,
+		// A request that just deferred stands aside for a moment so the rest of
+		// its wallet's queue can move.
+		excludeRequestIds: deferredL2RequestIds(),
 		orFilters: [
 			{
 				onChainState: { in: [OnChainState.RefundRequested, OnChainState.FundsLocked] },
@@ -1126,7 +1129,7 @@ async function runCollectRefundL2Pass(): Promise<void> {
 							// carrying an unresolved terminal hash never matches its UTxO
 							// again — would be picked forever while every other escrow on
 							// that wallet waited behind it.
-							await rotateDeferredL2PurchaseRequest(request.id);
+							markL2RequestDeferred(request.id);
 						} else {
 							logger.error('L2 collect-refund failed', { requestId: request.id, error });
 						}

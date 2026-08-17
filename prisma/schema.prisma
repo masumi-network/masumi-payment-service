@@ -1804,6 +1804,14 @@ model HydraLocalParticipant {
   /// (Set to the funding wallet's vkey only for legacy coupled heads.)
   cardanoVkey String
 
+  /// Whether this service keeps the node's L1 fuel topped up from `walletId`.
+  /// False when the operator said they would fund the node key themselves: the
+  /// scheduled funding cycle then leaves it alone, and so does redemption.
+  /// Without this the documented opt-out did nothing — the cycle funds any node
+  /// held by a live invite or a non-final head, so 30 ADA left the wallet within
+  /// one tick of an invite that had asked us not to.
+  autoFund Boolean @default(true)
+
   /// The Hydra Host this participant's node runs on. Required: every node is
   /// provisioned through a Host, which generates its keys and supervises its
   /// process — a node configured by hand is not representable. Restrict: a Host

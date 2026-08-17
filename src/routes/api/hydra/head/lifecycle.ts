@@ -44,6 +44,7 @@ import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context'
 
 import { buildHydraCommitFlowDeps } from './commit-flow-deps';
 import { assertNodeReadyForDeposit, getErrorMessage, verifyPersistedHydraHeadOnChain } from './index';
+import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 
 // --- Lifecycle: POST init ---
 
@@ -278,6 +279,13 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 		}
 		await assertNodeReadyForDeposit(localParticipant.id);
 
+		// A commit spends the participant's own hot wallet on L1, and that wallet is
+		// an ordinary selling or purchasing wallet the payment batchers also build
+		// from. They claim it before they build; this did not, so a collect and a
+		// commit could choose the same UTxO and one of them would be rejected on
+		// chain after being signed and submitted. Held until the commit is away,
+		// including across the carve's own wait for confirmation.
+		await claimHotWalletForL1(localParticipant.walletId, 'commit');
 		try {
 			let verifiedHead: Awaited<ReturnType<typeof verifyPersistedHydraHeadOnChain>>;
 			try {
@@ -370,6 +378,10 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 					amount: BigInt(input.lovelace),
 					network: hotWallet.PaymentSource.network,
 					rpcProviderApiKey,
+					// A commit that failed after its carve left the amount sitting in
+					// the wallet as its own UTxO. Retrying used to carve a second one
+					// beside it, at another fee, and leave the first stranded.
+					existingUtxos: utxos,
 				});
 			} catch (splitError) {
 				if (splitError instanceof HydraPreSplitError) {
@@ -544,6 +556,8 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 		} catch (error) {
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Commit');
 			throw error;
+		} finally {
+			await releaseHotWalletAfterL1(localParticipant.walletId);
 		}
 	},
 });

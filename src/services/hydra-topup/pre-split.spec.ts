@@ -113,6 +113,42 @@ describe('carveExactUtxo', () => {
 		expect(result.output.amount.find((a: any) => a.unit === unit)?.quantity).toBe('750');
 	});
 
+	// A carve is an L1 self-payment: the deposit that follows it can fail with the
+	// money already split off. Carving again then cost a second fee and left the
+	// first dedicated UTxO in the wallet with nothing pointing at it.
+	it('reuses an exact UTxO the wallet already holds instead of carving another', async () => {
+		const already = carvedUtxo('lovelace', '50000000', 3);
+		const params = baseParams({ existingUtxos: [carvedUtxo('lovelace', '49999999', 1), already] });
+
+		const result = await carveExactUtxo(params);
+
+		expect(result).toBe(already);
+		expect(params.submitCarveTx as AnyMock).not.toHaveBeenCalled();
+		expect(mockLookupConfirmedChainTx).not.toHaveBeenCalled();
+	});
+
+	// The reuse must be as strict as the match on a carve's own outputs: a UTxO
+	// of the right lovelace amount that also carries tokens is not a carve, and
+	// committing it would put an agent's registry NFT inside the head.
+	it('does not reuse a UTxO that carries other assets', async () => {
+		const withToken = {
+			input: { txHash: TX, outputIndex: 7 },
+			output: {
+				address: ADDR,
+				amount: [
+					{ unit: 'lovelace', quantity: '50000000' },
+					{ unit: 'ff'.repeat(28) + '4e4654', quantity: '1' },
+				],
+			},
+		};
+		const params = baseParams({ existingUtxos: [withToken] });
+
+		const result = await carveExactUtxo(params);
+
+		expect(result).not.toBe(withToken);
+		expect(params.submitCarveTx as AnyMock).toHaveBeenCalledTimes(1);
+	});
+
 	it('throws when no output matches the exact amount', async () => {
 		const params = baseParams({
 			blockchainProvider: { fetchUTxOs: jest.fn(async () => [carvedUtxo('lovelace', '49999999')]) } as any,

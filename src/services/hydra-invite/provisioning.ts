@@ -216,6 +216,12 @@ export async function reserveNodeForExchange(
 	localHotWalletId: string,
 	nonce: string,
 	periods: HeadPeriods,
+	/**
+	 * Whether this service keeps the node's L1 fuel topped up. Recorded on the
+	 * participant, because the scheduled funding cycle runs long after the
+	 * invite that asked us not to fund it is gone.
+	 */
+	autoFund = true,
 ): Promise<ReservedNode> {
 	const host = await selectHostForNetwork(network);
 
@@ -281,6 +287,7 @@ export async function reserveNodeForExchange(
 		const participant = await prisma.hydraLocalParticipant.create({
 			data: {
 				Wallet: { connect: { id: localHotWalletId } },
+				autoFund,
 				cardanoVkey: deriveNodeCardanoVkey(provisioned.cardanoVerificationKey),
 				nodeUrl: urls.nodeUrl,
 				nodeHttpUrl: urls.nodeHttpUrl,

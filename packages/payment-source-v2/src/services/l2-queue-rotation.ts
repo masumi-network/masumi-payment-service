@@ -11,13 +11,23 @@
  * unresolved terminal hash defers on every single tick, forever, and every
  * other escrow on that wallet waits behind it while its own deadlines pass.
  *
- * The cooldown the selection already honours is what breaks the cycle. Pushing
- * it forward skips this request for a minute and lets the queue behind it move;
- * nothing else changes, and the request stays exactly as retryable as it was.
+ * The stand-down is held here, in memory, and not written to the request.
+ *
+ * The obvious place to put it — `sellerCoolDownTime` / `buyerCoolDownTime`,
+ * which the selection already honours — is not a scheduler field. Those two
+ * columns are the persisted mirror of the *spent datum's* cooldowns, written by
+ * the datum sync from the decoded datum and read back by
+ * `continuationHasAuthorizedActor` as the floor a continuing action's
+ * `invalid_before` must clear. Pushing one forward to skip a tick therefore
+ * raises the bar the next signed body has to meet, and the body anchors its
+ * lower bound to the datum rather than to us: the guard then cannot be
+ * satisfied by any retry, the replay reports `retry` forever, and reconciliation
+ * stalls for every escrow in that head — not just this one.
+ *
+ * Memory is the right lifetime anyway. A stand-down means "not this minute",
+ * and a process that restarts inside that minute has already lost the queue it
+ * was rotating; the request is simply retried, which is where it started.
  */
-
-import { prisma } from '@masumi/payment-core/db';
-import { logger } from '@masumi/payment-core/logger';
 
 /**
  * How long a deferred request stands aside.
@@ -30,36 +40,54 @@ import { logger } from '@masumi/payment-core/logger';
 export const L2_DEFERRAL_COOLDOWN_MS = 60_000;
 
 /**
- * Stand a payment request down for one cooldown.
- *
- * Failure is logged and swallowed: this runs inside a catch arm whose job is to
- * unlock the wallet, and a throw here would skip that.
+ * A stand-down is a hint, so it is bounded rather than allowed to accumulate.
+ * Reached only if thousands of distinct requests defer inside one minute, in
+ * which case the oldest hints are the least useful ones to keep.
  */
-export async function rotateDeferredL2PaymentRequest(requestId: string): Promise<void> {
-	try {
-		await prisma.paymentRequest.update({
-			where: { id: requestId },
-			data: { sellerCoolDownTime: BigInt(Date.now() + L2_DEFERRAL_COOLDOWN_MS) },
-		});
-	} catch (error) {
-		logger.warn('Could not apply the L2 deferral cooldown to a payment request', {
-			requestId,
-			error: (error as Error).message,
-		});
+const MAX_TRACKED_DEFERRALS = 5_000;
+
+/** Request id -> the moment its stand-down ends. */
+const deferredUntilMs = new Map<string, number>();
+
+function prune(now: number): void {
+	for (const [requestId, until] of deferredUntilMs) {
+		if (until <= now) {
+			deferredUntilMs.delete(requestId);
+		}
 	}
 }
 
-/** The buyer-side twin. */
-export async function rotateDeferredL2PurchaseRequest(requestId: string): Promise<void> {
-	try {
-		await prisma.purchaseRequest.update({
-			where: { id: requestId },
-			data: { buyerCoolDownTime: BigInt(Date.now() + L2_DEFERRAL_COOLDOWN_MS) },
-		});
-	} catch (error) {
-		logger.warn('Could not apply the L2 deferral cooldown to a purchase request', {
-			requestId,
-			error: (error as Error).message,
-		});
+/**
+ * Stand a request down for one cooldown, so the queue behind it can move.
+ *
+ * Safe to call from a catch arm: it touches nothing outside this map and cannot
+ * throw, so it can never displace the unlock the arm exists to perform.
+ */
+export function markL2RequestDeferred(requestId: string): void {
+	const now = Date.now();
+	prune(now);
+	if (deferredUntilMs.size >= MAX_TRACKED_DEFERRALS && !deferredUntilMs.has(requestId)) {
+		const oldest = deferredUntilMs.keys().next();
+		if (oldest.done !== true) {
+			deferredUntilMs.delete(oldest.value);
+		}
 	}
+	deferredUntilMs.set(requestId, now + L2_DEFERRAL_COOLDOWN_MS);
+}
+
+/**
+ * The requests currently standing aside, for the selection to skip.
+ *
+ * Excluding them is a scheduling choice and nothing more: a skipped request is
+ * as eligible as it ever was, and the next pass after its stand-down ends picks
+ * it up unchanged.
+ */
+export function deferredL2RequestIds(): string[] {
+	prune(Date.now());
+	return [...deferredUntilMs.keys()];
+}
+
+/** Test seam: forget every stand-down. */
+export function clearL2Deferrals(): void {
+	deferredUntilMs.clear();
 }

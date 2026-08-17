@@ -84,7 +84,7 @@ const RECENT_TRANSFER_WINDOW_MS = 15 * 60 * 1000;
  * once when the wallet finally came free. Only `Confirmed` needs the window,
  * for the gap between our own confirmation and the chain indexer reflecting it.
  */
-function recentlySentTo() {
+export function recentlySentTo() {
 	return {
 		OR: [
 			{ status: TransactionStatus.Pending },
@@ -186,6 +186,11 @@ export async function runHydraNodeFundingCycle(): Promise<NodeFundingOutcome> {
 
 	const participants = await prisma.hydraLocalParticipant.findMany({
 		where: {
+			// The opt-out, honoured where the money actually moves. `autoFund: false`
+			// was accepted at the invite and then read by nothing, so this cycle sent
+			// the target balance to a node whose operator had said they fund that key
+			// themselves — within a tick of minting the invite.
+			autoFund: true,
 			OR: [
 				// Every head but a finished one. A node stops needing fuel the moment
 				// its head reaches Final — that is exactly when sweeping it is

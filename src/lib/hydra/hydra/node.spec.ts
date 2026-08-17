@@ -952,6 +952,31 @@ describe('HydraNode', () => {
 
 				expect(seen).toEqual([expect.objectContaining({ decommitTxId: DECOMMIT_TX_ID, outcome: 'finalized' })]);
 			});
+
+			// A quantity at or above 1e15 — a billion units of an ordinary
+			// six-decimal token — arrives from json-bigint as a native bigint, not a
+			// number. A schema that took only numbers and strings rejected the frame,
+			// and because the history socket replays from the beginning on every
+			// reconnect, that one withdrawal rejected forever: no verified session,
+			// and every L2 operation on the head failing closed behind it.
+			it('accepts a distribution too large to be a JavaScript number', async () => {
+				const { node, historyConnection } = await startSignedNode();
+				const seen: Array<{ decommitTxId: string; distributed?: { assets: Record<string, string> } }> = [];
+				node.on(HydraNodeEvent.DecommitSettled, (data) =>
+					seen.push(data as { decommitTxId: string; distributed?: { assets: Record<string, string> } }),
+				);
+				const policyId = 'ab'.repeat(28);
+
+				historyConnection.emit(
+					'message',
+					`{"tag":"DecommitFinalized","headId":"${HEAD_ID_A}","seq":31,"decommitTxId":"${DECOMMIT_TX_ID}",` +
+						`"timestamp":"${SETTLED_AT}","distributedUTxO":{"${DECOMMIT_TX_ID}#0":{"address":"addr_test1_seller","value":` +
+						`{"lovelace":2000000,"${policyId}":{"7465737431":1000000000000000}}}}}`,
+				);
+
+				expect(seen).toHaveLength(1);
+				expect(seen[0].distributed?.assets[`${policyId}7465737431`]).toBe('1000000000000000');
+			});
 		});
 
 		// Hydra 2.3 stopped putting the opening ledger on HeadIsOpen and reports it

@@ -139,6 +139,23 @@ describe('Supervisor boot', () => {
 		expect(after?.startAttempts).toBe(0);
 	});
 
+	// The pid can only be written once the spawn returns, so a host that died in
+	// that window left a live node with nothing naming it. Reading the missing
+	// pid as "it never came up" started a second hydra-node over the first one's
+	// persistence directory, api port and etcd data dir.
+	it('takes back a running node that no record names', async () => {
+		const record = makeRecord({ state: 'Starting' });
+		await store.write(record);
+		const child = spawnNodeLike(store.nodeDir(record.nodeId));
+
+		await supervisor.boot();
+
+		const after = await store.read(record.nodeId);
+		expect(after?.pid).toBe(child.pid);
+		expect(after?.state).toBe('Starting');
+		expect(after?.startAttempts).toBe(0);
+	});
+
 	// The case the pid check is there to still allow: the host died and took the
 	// node with it. Nothing drained that stop.
 	it('records a node whose process is really gone as an undrained stop', async () => {

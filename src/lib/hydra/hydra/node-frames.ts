@@ -440,7 +440,8 @@ export function extractStatusChangeData(rawMessage: string, expectedHeadId?: str
  * unit the rest of the service speaks, so nothing downstream has to know the
  * head's nesting.
  */
-type HydraAssetQuantity = number | string;
+/** Mirrors `hydraAssetQuantitySchema`: json-bigint hands back a bigint past 1e15. */
+type HydraAssetQuantity = number | string | bigint;
 type HydraOutputValue = Record<string, HydraAssetQuantity | Record<string, HydraAssetQuantity>>;
 
 export function summarizeDistributedUtxo(

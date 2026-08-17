@@ -70,12 +70,23 @@ function unitAmount(utxo: UTxO, unit: string): bigint {
 }
 
 /**
- * Select the MINIMAL set of matching plain UTxOs whose combined `target.unit`
- * amount reaches `target.amount` (largest-first, so the fewest inputs are
- * committed). Used to bound an automatic top-up to roughly its target: because
- * Hydra commits whole UTxOs the committed amount is >= the target, never split.
- * If the wallet cannot reach the target, every matching UTxO is committed (best
- * effort). Non-matching and unused matching UTxOs are returned as excluded.
+ * Select matching plain UTxOs whose combined `target.unit` amount reaches
+ * `target.amount`, overshooting as little as possible.
+ *
+ * Hydra commits whole UTxOs, so the committed amount is always >= the target
+ * and the only question is by how much. Taking the largest first minimises the
+ * number of inputs but maximises that excess: an unattended 10 ADA top-up
+ * against a wallet holding one 5 000 ADA UTxO put the whole 5 000 into the
+ * head, recoverable only by a decommit or a close — on mainnet, behind the
+ * contestation window.
+ *
+ * So the smallest UTxO that covers the target on its own wins: one input, and
+ * the least excess available. Only when nothing covers it alone does this
+ * accumulate largest-first, which keeps the input count down and still bounds
+ * the excess below the target, since every remaining candidate is smaller than
+ * it. If the wallet cannot reach the target at all, every matching UTxO is
+ * committed (best effort). Non-matching and unused matching UTxOs are returned
+ * as excluded.
  */
 export function selectCommitUtxosUpToTarget(
 	utxos: UTxO[],
@@ -89,6 +100,16 @@ export function selectCommitUtxosUpToTarget(
 	});
 
 	const commitUtxos: UTxO[] = [];
+	const smallestSufficient = [...sorted].reverse().find((utxo) => unitAmount(utxo, target.unit) >= target.amount);
+	if (smallestSufficient !== undefined) {
+		commitUtxos.push(smallestSufficient);
+		const onlyChosen = new Set(commitUtxos);
+		return {
+			commitUtxos,
+			excludedUtxos: [...excludedUtxos, ...matching.filter((utxo) => !onlyChosen.has(utxo))],
+		};
+	}
+
 	let accumulated = 0n;
 	for (const utxo of sorted) {
 		if (accumulated >= target.amount) break;

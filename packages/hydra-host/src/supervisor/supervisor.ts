@@ -23,7 +23,7 @@ import { buildHydraNodeArgs } from './args.js';
 import { waitForDrain } from './drain.js';
 import { classifyDrift, driftBreachFields, measureDrift, resolveDriftThresholds, type SlotConfig } from './drift.js';
 import { planNodeAction, shouldAdoptAsRunning, type NodeObservation, type PlanLimits } from './plan.js';
-import { isProcessRunningNode, NodeProcessManager } from './process.js';
+import { findProcessRunningNode, isProcessRunningNode, NodeProcessManager } from './process.js';
 import { unwedgeNode } from './unwedge.js';
 
 /** One initial start plus four retries before a node is declared Failed. */
@@ -231,24 +231,40 @@ export class Supervisor {
 		if (this.processes.isRunning(record.nodeId)) {
 			return true;
 		}
-		if (record.pid === undefined) {
-			return false;
-		}
-		const adopted = await this.processes.adopt(
-			record.nodeId,
-			record.pid,
-			this.config.hydraNodeBin,
-			this.store.nodeDir(record.nodeId),
-		);
-		if (adopted) {
-			this.logger.info(`[supervisor] took back ${record.nodeId} (pid ${record.pid}); it can be stopped again`);
-		} else {
+		const nodeDir = this.store.nodeDir(record.nodeId);
+		if (record.pid !== undefined) {
+			const adopted = await this.processes.adopt(record.nodeId, record.pid, this.config.hydraNodeBin, nodeDir);
+			if (adopted) {
+				this.logger.info(`[supervisor] took back ${record.nodeId} (pid ${record.pid}); it can be stopped again`);
+				return true;
+			}
 			this.logger.warn(
-				`[supervisor] ${record.nodeId} recorded pid ${record.pid}, which is not a live ${this.config.hydraNodeBin}; ` +
-					'this host cannot stop or restart it',
+				`[supervisor] ${record.nodeId} recorded pid ${record.pid}, which is not a live ${this.config.hydraNodeBin}`,
 			);
 		}
-		return adopted;
+
+		// No usable pid is not the same as no process. The pid can only be written
+		// once the spawn has returned, so a host that died in that window left a
+		// node running with nothing naming it — and the next boot, seeing no pid,
+		// started a second hydra-node over the first one's persistence directory,
+		// api port and etcd data dir. The node's own directory identifies it just
+		// as well as a pid does, so ask the machine what is running.
+		const found = await findProcessRunningNode(this.config.hydraNodeBin, nodeDir);
+		if (found === null) {
+			if (record.pid !== undefined) {
+				this.logger.warn(`[supervisor] ${record.nodeId} is not running here; this host cannot stop or restart it`);
+			}
+			return false;
+		}
+		const adopted = await this.processes.adopt(record.nodeId, found, this.config.hydraNodeBin, nodeDir);
+		if (!adopted) {
+			return false;
+		}
+		this.logger.warn(
+			`[supervisor] found ${record.nodeId} running as pid ${found}, which no record named; taking it back`,
+		);
+		await this.store.update(record.nodeId, (current) => ({ ...current, pid: found }));
+		return true;
 	}
 
 	private async observe(record: NodeRecord): Promise<NodeObservation> {
@@ -423,9 +439,9 @@ export class Supervisor {
 			case 'Stop':
 				await this.stop(record, action.reason);
 				return;
-			case 'Restart':
+			case 'Restart': {
 				this.logger.warn(`[supervisor] restarting ${record.nodeId}: ${action.reason}`);
-				await this.stop(record, action.reason);
+				const stopped = await this.stop(record, action.reason);
 				// Clear the request before starting, so a restart that fails partway
 				// is retried by the normal Start path rather than looping here.
 				//
@@ -440,8 +456,22 @@ export class Supervisor {
 					driftBreachSeconds: undefined,
 					lastDriftRestartAt: new Date().toISOString(),
 				}));
+				// Only ever the half of a restart that follows a stop that worked.
+				// The stop above records `Failed` with an actionable reason when the
+				// node is answering but unreachable by signal; starting anyway both
+				// buried that message under `Starting` and spawned a second
+				// hydra-node onto the live one's persistence directory, api port and
+				// etcd data dir. `remove` already refuses on the same evidence.
+				if (!stopped) {
+					this.logger.error(
+						`[supervisor] not restarting ${record.nodeId}: it could not be stopped, and starting a second one ` +
+							'would run two nodes over the same persistence directory',
+					);
+					return;
+				}
 				await this.start(record);
 				return;
+			}
 			case 'Unwedge':
 				await this.unwedge(record, action.reason);
 				return;
@@ -470,25 +500,43 @@ export class Supervisor {
 		const nodeDir = this.store.nodeDir(record.nodeId);
 		const peersDir = path.join(nodeDir, 'peers');
 
+		// Claimed before argv is built, not after. A peer change is refused unless
+		// the node is quiescent, and it read that from a record this start had
+		// already decided to act on: the change could pass its check and rewrite
+		// the key files while argv was being assembled from the old peer list,
+		// leaving the process bootstrapping an etcd cluster that matches neither
+		// its own record nor the files on disk. Claiming first makes that window
+		// answer 409, and re-reading afterwards picks up any change that beat it.
+		const claimed = await this.store.update(record.nodeId, (current) => ({
+			...current,
+			state: 'Starting',
+			startAttempts: current.startAttempts + 1,
+		}));
+		if (claimed === null) {
+			this.logger.warn(`[supervisor] ${record.nodeId} disappeared before it could be started`);
+			return;
+		}
+		const starting = claimed;
+
 		const args = buildHydraNodeArgs({
-			nodeId: record.nodeId,
+			nodeId: starting.nodeId,
 			nodeDir,
-			network: record.network,
-			apiPort: record.apiPort,
-			startChainFrom: record.startChainFrom,
-			peerPort: record.peerPort,
+			network: starting.network,
+			apiPort: starting.apiPort,
+			startChainFrom: starting.startChainFrom,
+			peerPort: starting.peerPort,
 			// Null unless explicitly enabled: the Prometheus server binds every
 			// interface and hydra-node offers no way to confine it.
-			monitoringPort: this.config.monitoringEnabled ? record.monitoringPort : null,
-			advertise: record.advertise,
-			peers: record.peers.map((peer) => peer.advertise),
-			peerHydraVerificationKeyFiles: record.peers.map((_, i) => path.join(peersDir, `${i}-hydra.vk`)),
-			peerCardanoVerificationKeyFiles: record.peers.map((_, i) => path.join(peersDir, `${i}-cardano.vk`)),
+			monitoringPort: this.config.monitoringEnabled ? starting.monitoringPort : null,
+			advertise: starting.advertise,
+			peers: starting.peers.map((peer) => peer.advertise),
+			peerHydraVerificationKeyFiles: starting.peers.map((_, i) => path.join(peersDir, `${i}-hydra.vk`)),
+			peerCardanoVerificationKeyFiles: starting.peers.map((_, i) => path.join(peersDir, `${i}-cardano.vk`)),
 			ledgerProtocolParametersFile: this.config.ledgerProtocolParametersFile,
 			blockfrostProjectFile: this.config.blockfrostProjectFile,
-			contestationPeriodSeconds: record.contestationPeriodSeconds,
-			depositPeriodSeconds: record.depositPeriodSeconds,
-			unsyncedPeriodSeconds: record.unsyncedPeriodSeconds,
+			contestationPeriodSeconds: starting.contestationPeriodSeconds,
+			depositPeriodSeconds: starting.depositPeriodSeconds,
+			unsyncedPeriodSeconds: starting.unsyncedPeriodSeconds,
 			useSystemEtcd: this.config.useSystemEtcd,
 		});
 
@@ -500,22 +548,9 @@ export class Supervisor {
 			await fs.rm(path.join(nodeDir, 'persistence', 'bin', 'etcd'), { force: true }).catch(() => undefined);
 		}
 
-		// Count the attempt and mark it starting BEFORE spawning. Writing after the
-		// spawn would race the exit handler for a node that dies immediately, and
-		// the later write would clobber the undrained flag the handler just set.
-		//
-		// `Starting`, not `Running`: nothing has answered yet, and with two
-		// participants nothing can until the peer is up too. The next probe
-		// promotes it.
-		await this.store.update(record.nodeId, (current) => ({
-			...current,
-			state: 'Starting',
-			startAttempts: current.startAttempts + 1,
-		}));
-
-		this.logger.info(`[supervisor] starting ${record.nodeId} (peer ${record.peerPort}, api ${record.apiPort})`);
+		this.logger.info(`[supervisor] starting ${starting.nodeId} (peer ${starting.peerPort}, api ${starting.apiPort})`);
 		const started = await this.processes.start(
-			{ nodeId: record.nodeId, binary: this.config.hydraNodeBin, args, nodeDir },
+			{ nodeId: starting.nodeId, binary: this.config.hydraNodeBin, args, nodeDir },
 			(nodeId, code, signal) => {
 				void this.onExit(nodeId, code, signal).catch((error: unknown) => {
 					this.logger.error(`[supervisor] recording exit for ${nodeId} failed: ${(error as Error).message}`);
@@ -549,7 +584,15 @@ export class Supervisor {
 		});
 	}
 
-	private async stop(record: NodeRecord, reason: string): Promise<void> {
+	/**
+	 * Take a node down.
+	 *
+	 * Returns whether it is actually down afterwards. A stop can fail — a node
+	 * that answers but that this host cannot signal is recorded `Failed` and left
+	 * running — and a caller that goes on to start it spawns a second hydra-node
+	 * over the first one's persistence directory, api port and etcd data dir.
+	 */
+	private async stop(record: NodeRecord, reason: string): Promise<boolean> {
 		if (!this.processes.isRunning(record.nodeId)) {
 			// A node this host restarted away from is still stoppable by pid.
 			await this.adoptProcess(record);
@@ -566,7 +609,7 @@ export class Supervisor {
 					'stop the process on the machine, then start or remove the node again';
 				this.logger.error(`[supervisor] cannot stop ${record.nodeId} (${reason}): ${failureReason}`);
 				await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Failed', failureReason }));
-				return;
+				return false;
 			}
 			// Genuinely down, and nothing drained it.
 			await this.store.update(record.nodeId, (current) => ({
@@ -575,7 +618,7 @@ export class Supervisor {
 				lastStopUndrained: true,
 				pid: undefined,
 			}));
-			return;
+			return true;
 		}
 		this.logger.info(`[supervisor] draining ${record.nodeId} before stop: ${reason}`);
 		await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Draining' }));
@@ -620,6 +663,7 @@ export class Supervisor {
 			lastStopUndrained: undrained,
 			pid: undefined,
 		}));
+		return true;
 	}
 
 	private async unwedge(record: NodeRecord, reason: string): Promise<void> {

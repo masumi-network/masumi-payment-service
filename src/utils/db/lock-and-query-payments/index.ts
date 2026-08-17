@@ -21,6 +21,7 @@ export async function lockAndQueryPayments({
 	paymentSourceType = undefined,
 	orFilters = undefined,
 	layer = undefined,
+	excludeRequestIds = undefined,
 }: {
 	paymentStatus: PaymentAction | { in: PaymentAction[] };
 	submitResultTime?: { lte?: number; gte?: number; lt?: number; gt?: number } | undefined;
@@ -40,6 +41,13 @@ export async function lockAndQueryPayments({
 	orFilters?: Prisma.PaymentRequestWhereInput[];
 	/// When set, only lock requests on this blockchain layer (L1 vs Hydra L2).
 	layer?: TransactionLayer | undefined;
+	/// Requests to pass over this tick. A wallet holds one L2 reservation at a
+	/// time, so the oldest eligible request is chosen on every tick and the rest
+	/// of that wallet's queue waits behind it — which never resolves when the
+	/// chosen one cannot progress at all. The L2 passes stand such a request
+	/// down for a minute and name it here. Scheduling only: an excluded request
+	/// is exactly as eligible as it was.
+	excludeRequestIds?: string[] | undefined;
 }) {
 	// Step 1: read the candidate payment sources + their unlocked hot wallets
 	// outside any transaction. This is a read-only snapshot used purely to
@@ -96,6 +104,9 @@ export async function lockAndQueryPayments({
 								async (prisma) => {
 									const potentialPaymentRequests = await prisma.paymentRequest.findMany({
 										where: {
+											...(excludeRequestIds !== undefined && excludeRequestIds.length > 0
+												? { id: { notIn: excludeRequestIds } }
+												: {}),
 											NextAction: {
 												requestedAction: paymentStatus,
 												errorType: null,

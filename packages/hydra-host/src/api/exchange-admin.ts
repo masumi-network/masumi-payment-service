@@ -10,6 +10,7 @@
 
 import { ProvisionError } from './provision.js';
 import type { ExchangeStore } from '../registry/exchange-store.js';
+import type { NodeRegistryStore } from '../registry/store.js';
 import type { InviteRecord } from '../registry/exchange-types.js';
 
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
@@ -52,8 +53,21 @@ function readRegisterBody(body: unknown): RegisterInviteBody {
 	return { nonce: candidate.nonce, hostNodeId: candidate.hostNodeId, expiresAt: candidate.expiresAt };
 }
 
-export async function registerInvite(store: ExchangeStore, body: unknown): Promise<{ nonce: string }> {
+export async function registerInvite(
+	store: ExchangeStore,
+	nodes: NodeRegistryStore,
+	body: unknown,
+): Promise<{ nonce: string }> {
 	const parsed = readRegisterBody(body);
+	// The pattern above says the id is well formed, not that it names anything.
+	// A nonce is single-use and the Exchange Plane burns it before the node is
+	// touched: registering one against a node that does not exist means the
+	// counterparty publishes their material, is told the redemption succeeded,
+	// and the start then fails with `no such node` on an invite that can never be
+	// redeemed again.
+	if ((await nodes.read(parsed.hostNodeId)) === null) {
+		throw new ProvisionError(`no such node: ${parsed.hostNodeId}`, 404);
+	}
 	const record: InviteRecord = {
 		nonce: parsed.nonce,
 		hostNodeId: parsed.hostNodeId,

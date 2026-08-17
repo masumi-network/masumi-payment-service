@@ -41,8 +41,18 @@ export type ReservationRelease = {
  */
 const ORPHAN_MIN_AGE_MS = 60 * 60 * 1000;
 
-/** Sweep outcomes after which nothing of value is left behind the node's key. */
-const SETTLED_CODES = new Set(['swept', 'dust', 'no-key']);
+/**
+ * Sweep outcomes after which nothing of value is left behind the node's key.
+ *
+ * `swept` is deliberately not one of them. A sweep reports success when its
+ * transaction is accepted by the submit endpoint, which is not the same as
+ * being on chain: it can still be evicted from the mempool, rolled back, or
+ * expire against its own TTL. Deleting the key on that evidence is the one
+ * mistake here with no recovery, so a swept node keeps its row and is released
+ * by a later pass — by which time the chain itself reports the address empty
+ * and the outcome is `dust`.
+ */
+const SETTLED_CODES = new Set(['dust', 'no-key']);
 
 /**
  * Return a reserved node's fuel, and say whether its key may now be destroyed.

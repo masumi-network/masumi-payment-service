@@ -7,7 +7,7 @@
  */
 
 import createHttpError from 'http-errors';
-import { HydraHeadStatus, HydraHostStatus, HydraInviteStatus, Network } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraHostStatus, HydraInviteStatus, Network, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { decrypt, encrypt } from '@/utils/security/encryption';
@@ -397,16 +397,12 @@ export async function refreshHydraHostCapabilities(id: string): Promise<PublicHy
 			allowInsecureHttp: host.allowInsecureHttp,
 		});
 	} catch (error) {
-		const updated = await prisma.hydraHost.update({
-			where: { id },
-			data: {
-				status: nextHostStatus(host.status, false),
+		return toPublicHydraHost(
+			await recordHostProbe(id, false, {
 				lastHealthAt: new Date(),
 				lastHealthError: truncateError((error as Error).message),
-			},
-			include: { _count: { select: { Participants: true } } },
-		});
-		return toPublicHydraHost(updated);
+			}),
+		);
 	}
 
 	let compatibilityError: string | null = null;
@@ -416,24 +412,40 @@ export async function refreshHydraHostCapabilities(id: string): Promise<PublicHy
 		compatibilityError = (error as Error).message;
 	}
 
-	const updated = await prisma.hydraHost.update({
-		where: { id },
-		data: {
-			hydraVersion: capabilities.hydraVersion || null,
-			// Kept only when the Host reports one, so a probe against an older
-			// Host does not erase a value a newer one already supplied.
-			...(capabilities.exchangePort === null ? {} : { exchangePort: capabilities.exchangePort }),
-			scriptCatalogueHash: capabilities.scriptCatalogueHash,
-			// An observation, for the operator to look at. Never an expectation:
-			// this is written even when the compatibility check just failed on it,
-			// so anything comparing a Host against this column compares it against
-			// itself.
-			ledgerParamsHash: capabilities.ledgerParamsHash,
-			status: nextHostStatus(host.status, compatibilityError === null),
-			lastHealthAt: new Date(),
-			lastHealthError: compatibilityError === null ? null : truncateError(compatibilityError),
-		},
-		include: { _count: { select: { Participants: true } } },
+	const updated = await recordHostProbe(id, compatibilityError === null, {
+		hydraVersion: capabilities.hydraVersion || null,
+		// Kept only when the Host reports one, so a probe against an older
+		// Host does not erase a value a newer one already supplied.
+		...(capabilities.exchangePort === null ? {} : { exchangePort: capabilities.exchangePort }),
+		scriptCatalogueHash: capabilities.scriptCatalogueHash,
+		// An observation, for the operator to look at. Never an expectation:
+		// this is written even when the compatibility check just failed on it,
+		// so anything comparing a Host against this column compares it against
+		// itself.
+		ledgerParamsHash: capabilities.ledgerParamsHash,
+		lastHealthAt: new Date(),
+		lastHealthError: compatibilityError === null ? null : truncateError(compatibilityError),
 	});
 	return toPublicHydraHost(updated);
+}
+
+/**
+ * Write a probe's result, deciding the new status from the status as it stands
+ * now rather than as it stood before the probe.
+ *
+ * A probe spends up to fifteen seconds on the network, and `nextHostStatus`
+ * exists to hold a Host in `Draining` or `Disabled` once an operator puts it
+ * there. Deciding from the value read before that wait undoes the very thing it
+ * protects: an operator who drains a Host mid-probe has their choice overwritten
+ * with `Active`, and placements resume onto a Host they took out of service.
+ */
+async function recordHostProbe(id: string, probeSucceeded: boolean, data: Omit<Prisma.HydraHostUpdateInput, 'status'>) {
+	return await prisma.$transaction(async (tx) => {
+		const current = await tx.hydraHost.findUniqueOrThrow({ where: { id }, select: { status: true } });
+		return await tx.hydraHost.update({
+			where: { id },
+			data: { ...data, status: nextHostStatus(current.status, probeSucceeded) },
+			include: { _count: { select: { Participants: true } } },
+		});
+	});
 }

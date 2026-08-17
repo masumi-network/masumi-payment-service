@@ -63,9 +63,20 @@ export function getLifecycleActionDisabledReason(
   action: HydraLifecycleAction,
   readiness?: { isReady: boolean; reason: string | null } | null,
 ) {
+  // Stage first, readiness second. A finished head has no action left to take,
+  // and its node is stopped — so asking about readiness first answered every
+  // action with "the node is not running", and a correctly settled head read as
+  // four things to go and fix rather than as one thing that is done.
+  const stageReason = getStageDisabledReason(head, action);
+  if (stageReason !== undefined) return stageReason;
   if (readiness != null && !readiness.isReady) {
     return readiness.reason ?? 'The node is not ready yet.';
   }
+  return undefined;
+}
+
+/** Whether the head's own stage permits this action, ignoring the node. */
+export function getStageDisabledReason(head: HydraHead, action: HydraLifecycleAction) {
   if (action === 'init') {
     if (!head.LocalParticipant) return 'This head has no node on your side';
     // One side opens, and it is the side that redeemed: two Inits race for the
@@ -184,9 +195,18 @@ export function HydraLifecycleActionMenu({
   isRunning: boolean;
   onRequestLifecycle: (head: HydraHead, action: HydraLifecycleAction) => void;
 }) {
-  // Only asked for a head with a node to ask about, and only polled while that
-  // node is not ready, a healthy head costs one request.
-  const { connection } = useHydraHeadReadiness(head.id, head.LocalParticipant != null);
+  // Only asked for a head with a node to ask about, only while its stage still
+  // permits some action, and only polled while the node is not ready. Without
+  // the stage condition every settled head on screen re-asked a Host round trip
+  // plus a chain read every ten seconds, for good: a finished head's node is
+  // stopped, so readiness is false and the poll never turns itself off.
+  const stagePermitsAnyAction = lifecycleActions.some(
+    (actionConfig) => getStageDisabledReason(head, actionConfig.action) === undefined,
+  );
+  const { connection } = useHydraHeadReadiness(
+    head.id,
+    head.LocalParticipant != null && stagePermitsAnyAction,
+  );
   const configs = getLifecycleButtonConfigs(head, connection);
   const sharedBlocker = findSharedBlocker(configs);
 

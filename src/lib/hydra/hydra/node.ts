@@ -82,12 +82,16 @@ export class HydraNode extends EventEmitter {
 	/**
 	 * Whether this node is in its Hydra cluster, as the node last reported.
 	 *
-	 * Null until it says either way. A restart replays history, so an old
-	 * connectivity frame can arrive again; that is harmless here because the
-	 * newest one wins and the node re-reports on every reconnect. Shared: both
-	 * the live socket and replay learn it.
+	 * Null until it says either way, and held per socket because the two are not
+	 * one stream. The history socket replays the whole log while the live socket
+	 * is already delivering current events, so a replay whose last connectivity
+	 * frame is `NetworkConnected` can land after a fresh live `NetworkDisconnected`
+	 * and report a counterparty that just went down as reachable. The live socket
+	 * is the one saying something about now, so it wins whenever it has spoken;
+	 * replay answers only until then.
 	 */
-	private _networkConnected: boolean | null = null;
+	private _liveNetworkConnected: boolean | null = null;
+	private _replayedNetworkConnected: boolean | null = null;
 	private readonly _httpUrl: string;
 	private readonly _wsUrl: string;
 	private readonly _connection: Connection;
@@ -182,7 +186,7 @@ export class HydraNode extends EventEmitter {
 				this._finalizedFanoutOutputs = undefined;
 			},
 			setNetworkConnected: (connected) => {
-				this._networkConnected = connected;
+				this._liveNetworkConnected = connected;
 			},
 			onRotationError: (error) => this._replay.fail(error),
 			invalidateLiveConnection: (error) => this._connection.invalidate(error),
@@ -207,7 +211,7 @@ export class HydraNode extends EventEmitter {
 			bindSnapshotPartyOrder: (message) => this.bindSnapshotPartyOrder(message),
 			verifyGreetingsPartyIdentity: (message) => this._partyIdentity.verifyGreetingsPartyIdentity(message),
 			setNetworkConnected: (connected) => {
-				this._networkConnected = connected;
+				this._replayedNetworkConnected = connected;
 			},
 			recordFinalizedFanout: (message) => this.recordFinalizedFanout(message),
 			rememberReplayedDeposit: (data) => this._live.rememberReplayedDeposit(data),
@@ -575,7 +579,8 @@ export class HydraNode extends EventEmitter {
 		// Forgotten with the rest of the session state. A closed transport tells us
 		// nothing about the cluster, and keeping the last frame would report the
 		// counterparty as reachable long after we stopped being able to see them.
-		this._networkConnected = null;
+		this._liveNetworkConnected = null;
+		this._replayedNetworkConnected = null;
 		this._live.resetOnDisconnect();
 		this._replay.resetPass();
 		this._ledger.clear();
@@ -644,9 +649,9 @@ export class HydraNode extends EventEmitter {
 		return this._live.status;
 	}
 
-	/** See `_networkConnected`. Null means the node has not said yet. */
+	/** See `_liveNetworkConnected`. Null means the node has not said yet. */
 	get networkConnected(): boolean | null {
-		return this._networkConnected;
+		return this._liveNetworkConnected ?? this._replayedNetworkConnected;
 	}
 
 	get httpUrl() {

@@ -455,10 +455,18 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
       // fire-and-forget, so a single refetch here races it and finds nothing.
       // Telling the operator it "appears below" and then not showing it is
       // worse than waiting the second it actually takes.
+      //
+      // Waited on the count, not on emptiness. Asking "are there any rows" is
+      // answered instantly by an earlier deposit, which is the normal case for
+      // every head after its first: the wait ended before the new row existed,
+      // the poll then saw nothing preparing and stayed off, and the deposit
+      // stayed invisible until the dialog was reopened.
+      const rowsBefore =
+        queryClient.getQueryData<HydraTopup[]>(['hydra-topups', headId])?.length ?? 0;
       for (let attempt = 0; attempt < 8; attempt += 1) {
         await queryClient.invalidateQueries({ queryKey: ['hydra-topups', headId] });
         const rows = queryClient.getQueryData<HydraTopup[]>(['hydra-topups', headId]);
-        if ((rows?.length ?? 0) > 0) break;
+        if ((rows?.length ?? 0) > rowsBefore) break;
         await new Promise((resolve) => setTimeout(resolve, 750));
       }
     } catch (error) {

@@ -145,7 +145,7 @@ export async function updateHydraHost(apiClient: Client, payload: UpdateHydraHos
 }
 
 export async function disconnectHydraHost(apiClient: Client, id: string) {
-  await handleApiCall(
+  const response = await handleApiCall(
     () =>
       apiClient.delete<{ 200: ApiEnvelope<{ id: string }> }>({
         responseType: 'json',
@@ -154,6 +154,14 @@ export async function disconnectHydraHost(apiClient: Client, id: string) {
       }),
     { errorMessage: 'Failed to disconnect the Hydra node' },
   );
+
+  // The server refuses this outright while the node still runs heads, and
+  // `handleApiCall` reports a refusal by returning nothing rather than by
+  // throwing. Without this the caller's catch was unreachable: a 409 drew the
+  // error toast and the success toast together, closed the dialog, and left the
+  // node in the list — telling the operator two contradictory things about
+  // their own infrastructure.
+  return ensureData(response?.data?.data, 'The node was not disconnected');
 }
 
 /**

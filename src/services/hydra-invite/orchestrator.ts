@@ -13,6 +13,7 @@ import createHttpError from 'http-errors';
 import { createId } from '@paralleldrive/cuid2';
 import {
 	HotWalletType,
+	HydraHeadStatus,
 	HydraInviteRole,
 	HydraInviteStatus,
 	Network,
@@ -198,7 +199,7 @@ export async function mintHeadInvite(input: {
 	const nonce = createId();
 	const expiresAt = new Date(Date.now() + (input.ttlMs ?? INVITE_TTL_MS));
 
-	const node = await reserveNodeForExchange(wallet.network, wallet.id, nonce, periods);
+	const node = await reserveNodeForExchange(wallet.network, wallet.id, nonce, periods, input.autoFund !== false);
 	const exchangeUrl = exchangeUrlForHost(node.hostBaseUrl, requireExchangePort(node));
 
 	const payload: HydraHeadInvitePayloadInput = {
@@ -286,6 +287,39 @@ export type RedeemedInvite = {
  * because a redemption the issuer never received would leave us holding a head
  * whose counterparty does not know it exists.
  */
+/**
+ * Refuse a redemption this service could not turn into a head.
+ *
+ * An advisory check, deliberately outside the transaction that creates the head:
+ * that one holds the row locks and remains the authority. This one exists to
+ * spend the refusal before the nonce is burned rather than after, so the pair
+ * can simply try again with a fresh invite.
+ */
+async function assertRelationHasNoLiveHead(input: {
+	network: Network;
+	localHotWalletId: string;
+	counterpartyWalletAddress: string;
+}): Promise<void> {
+	const liveHead = await prisma.hydraHead.findFirst({
+		where: {
+			status: { not: HydraHeadStatus.Final },
+			HydraRelation: {
+				network: input.network,
+				localHotWalletId: input.localHotWalletId,
+				RemoteWallet: { walletAddress: input.counterpartyWalletAddress },
+			},
+		},
+		select: { status: true },
+	});
+	if (liveHead !== null) {
+		throw createHttpError(
+			409,
+			`you already have a ${liveHead.status.toLowerCase()} head with this counterparty on ${input.network}; ` +
+				'close and settle it before opening another, then ask them for a new invite',
+		);
+	}
+}
+
 export async function redeemHeadInvite(input: {
 	invite: DecodedInvite;
 	localHotWalletId: string;
@@ -352,7 +386,24 @@ export async function redeemHeadInvite(input: {
 	// is reserved for them. An invite that cannot become a head on mainnet must
 	// not cost this side a node and its fuel to discover that.
 	assertContestationPeriodAllowed(wallet.network, periods.contestationPeriodSeconds);
-	const node = await reserveNodeForExchange(wallet.network, wallet.id, payload.nonce, periods);
+	// Asked here, where the answer still costs nothing. The head is only created
+	// after the redemption is posted, and a nonce is single-use: the issuer's Host
+	// burns it on first use, so a `createHeadFromExchange` that refuses — because
+	// this pair already has a live head, or a previous one is not yet fully
+	// reconciled — leaves the invite dead for both sides, our node reserved and
+	// funded, and the issuer holding a head whose peer can never join.
+	await assertRelationHasNoLiveHead({
+		network: wallet.network,
+		localHotWalletId: wallet.id,
+		counterpartyWalletAddress: payload.issuerWalletAddress,
+	});
+	const node = await reserveNodeForExchange(
+		wallet.network,
+		wallet.id,
+		payload.nonce,
+		periods,
+		input.autoFund !== false,
+	);
 	if (node.ledgerParamsHash !== payload.ledgerParamsHash) {
 		throw createHttpError(409, 'the selected local Hydra Host does not match the invite ledger protocol parameters');
 	}

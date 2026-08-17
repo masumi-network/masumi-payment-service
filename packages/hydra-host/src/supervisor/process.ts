@@ -90,12 +90,94 @@ export async function isProcessRunningNode(pid: number, binary: string, nodeDir:
 	if (needle.length === 0 || nodeDir.length === 0) {
 		return false;
 	}
-	const command = await new Promise<string | null>((resolve) => {
+	const command = await readProcessCommand(pid);
+	return command !== null && command.includes(needle) && command.includes(nodeDir);
+}
+
+/**
+ * One process's command line, or null if it cannot be read.
+ *
+ * `/proc` first, and not only because it is faster: the runtime image is a slim
+ * Debian with Node and certificates on it, so `ps` is a dependency this package
+ * would rather not have. Where `/proc` exists the answer is authoritative and
+ * needs no subprocess at all; `ps` remains the fallback for macOS, where the
+ * native launcher runs during development.
+ */
+async function readProcessCommand(pid: number): Promise<string | null> {
+	try {
+		const raw = await fs.readFile(`/proc/${pid}/cmdline`, 'utf8');
+		// argv arrives NUL-separated, with a trailing NUL.
+		return raw.replace(/\0+$/, '').split('\0').join(' ');
+	} catch {
+		// Not Linux, or the process is gone. `ps` distinguishes the two.
+	}
+	return await new Promise<string | null>((resolve) => {
 		execFile('ps', ['-p', String(pid), '-o', 'command='], { timeout: 5_000 }, (error, stdout) => {
 			resolve(error === null ? stdout : null);
 		});
 	});
-	return command !== null && command.includes(needle) && command.includes(nodeDir);
+}
+
+/**
+ * Find the live process running this node, by what it is running rather than by
+ * a pid we recorded.
+ *
+ * The recorded pid can only be written once the spawn returns, so a host that
+ * dies in that window leaves a node running with nothing naming it: the record
+ * says `Starting` with no pid, and the next boot has no way to tell a node that
+ * survived from one that never came up. It then starts a second hydra-node over
+ * the first one's persistence directory, api port and etcd data dir.
+ *
+ * The node's own directory is the identity, exactly as in `isProcessRunningNode`
+ * — it appears in argv as `--persistence-dir` and no two nodes share one — so a
+ * match here is the same evidence, arrived at from the other direction.
+ */
+export async function findProcessRunningNode(binary: string, nodeDir: string): Promise<number | null> {
+	const needle = path.basename(binary);
+	if (needle.length === 0 || nodeDir.length === 0) {
+		return null;
+	}
+	for (const { pid, command } of await listProcessCommands()) {
+		if (command.includes(needle) && command.includes(nodeDir)) {
+			return pid;
+		}
+	}
+	return null;
+}
+
+/**
+ * Every visible process and its command line.
+ *
+ * Read in one pass rather than one probe per pid: a machine has hundreds of
+ * processes, and a `ps` for each would be hundreds of subprocesses for a single
+ * question asked at boot.
+ */
+async function listProcessCommands(): Promise<Array<{ pid: number; command: string }>> {
+	try {
+		const entries = await fs.readdir('/proc');
+		const pids = entries.filter((entry) => /^\d+$/.test(entry)).map((entry) => Number(entry));
+		if (pids.length > 0) {
+			const read = await Promise.all(
+				pids.map(async (pid) => ({ pid, command: (await readProcessCommand(pid)) ?? '' })),
+			);
+			return read.filter((entry) => entry.command.length > 0);
+		}
+	} catch {
+		// Not Linux.
+	}
+	const listing = await new Promise<string | null>((resolve) => {
+		execFile('ps', ['-eo', 'pid=,command='], { timeout: 5_000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
+			resolve(error === null ? stdout : null);
+		});
+	});
+	if (listing === null) return [];
+	const rows: Array<{ pid: number; command: string }> = [];
+	for (const line of listing.split('\n')) {
+		const match = /^\s*(\d+)\s+(.*)$/.exec(line);
+		if (match === null) continue;
+		rows.push({ pid: Number(match[1]), command: match[2] });
+	}
+	return rows;
 }
 
 export class NodeProcessManager {

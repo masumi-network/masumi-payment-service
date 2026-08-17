@@ -26,6 +26,7 @@ import { decrypt } from '@/utils/security/encryption';
 import { convertNetwork, convertNetworkToId } from '@/utils/converter/network-convert';
 import { getCachedBlockfrostProvider } from '@/utils/mesh-cost-model-sync';
 import { nodeCardanoAddress } from './node-address';
+import { recentlySentTo } from './service';
 
 /**
  * Below this, sweeping costs more than it returns.
@@ -41,8 +42,9 @@ export const MINIMUM_WITHDRAWABLE_LOVELACE = 2_000_000n;
  * `reason` is prose for an operator; this is the same answer for code. The
  * distinction that matters is whether the node's key still has anything to
  * protect: releasing a reservation deletes that key, so it may only follow a
- * `swept`, a `dust` or a `no-key` — never an outcome where the balance is
- * simply unknown.
+ * `dust` or a `no-key` — never an outcome where the balance is unknown, and
+ * not even a `swept`, whose transaction has been submitted but not yet seen
+ * on chain.
  */
 export type NodeWithdrawalCode =
 	/** Funds were sent back to the funding wallet. */
@@ -55,6 +57,8 @@ export type NodeWithdrawalCode =
 	| 'invite-holds'
 	/** The chain could not be read, so the balance is unknown. */
 	| 'chain-unreadable'
+	/** Fuel is on its way to this node, so what the chain shows is not the balance. */
+	| 'funding-in-flight'
 	/** No Cardano signing key is stored here, so nothing can move these funds. */
 	| 'no-key';
 
@@ -131,6 +135,28 @@ export async function withdrawNodeFunds(localParticipantId: string): Promise<Nod
 				code: 'invite-holds',
 			};
 		}
+	}
+
+	// What the chain shows is only the whole balance when nothing is on its way.
+	// The funding cycle claims a transfer before it is built, and the worker
+	// submits it whenever the hot wallet next comes free — the wait is minutes,
+	// and a submitted transfer is invisible to Blockfrost for a while longer. A
+	// sweep during that window reads an empty address, reports `dust`, and the
+	// release that follows deletes the only key that could ever spend the 30 ADA
+	// still in flight. So an in-flight transfer means "come back later", not
+	// "there is nothing here".
+	const incoming = await prisma.walletFundTransfer.findFirst({
+		where: { toAddress: address, ...recentlySentTo() },
+		select: { id: true, status: true },
+	});
+	if (incoming !== null) {
+		return {
+			address,
+			balanceLovelace: '0',
+			txHash: null,
+			reason: `a transfer to this node is still ${incoming.status.toLowerCase()}, so its balance is not settled yet`,
+			code: 'funding-in-flight',
+		};
 	}
 
 	const provider = getCachedBlockfrostProvider(participant.Wallet.PaymentSource.PaymentSourceConfig.rpcProviderApiKey);

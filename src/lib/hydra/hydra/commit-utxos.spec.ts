@@ -107,16 +107,30 @@ describe('selectCommitUtxos', () => {
 describe('selectCommitUtxosUpToTarget', () => {
 	const target = (amount: bigint) => ({ unit: 'lovelace', amount });
 
-	it('commits the minimal largest-first set reaching the target', () => {
+	it('commits a single UTxO that reaches the target on its own', () => {
 		const small = utxo(0, '10000000');
 		const medium = utxo(1, '20000000');
 		const large = utxo(2, '100000000');
 
 		const result = selectCommitUtxosUpToTarget([small, medium, large], 'all', target(30_000_000n));
 
-		// large (100M) alone already reaches 30M
+		// large (100M) is the only one that reaches 30M by itself
 		expect(result.commitUtxos).toEqual([large]);
 		expect(result.excludedUtxos).toEqual(expect.arrayContaining([small, medium]));
+	});
+
+	// Hydra commits whole UTxOs, so the excess over the target is the entire
+	// question. Taking the largest first put a wallet's whole balance into the
+	// head for a 10 ADA rule — recoverable only by a decommit or a close.
+	it('prefers the smallest UTxO that covers the target on its own', () => {
+		const small = utxo(0, '10000000');
+		const sufficient = utxo(1, '50000000');
+		const whole_wallet = utxo(2, '5000000000');
+
+		const result = selectCommitUtxosUpToTarget([small, sufficient, whole_wallet], 'all', target(30_000_000n));
+
+		expect(result.commitUtxos).toEqual([sufficient]);
+		expect(result.excludedUtxos).toEqual(expect.arrayContaining([small, whole_wallet]));
 	});
 
 	it('accumulates multiple UTxOs when one is not enough', () => {

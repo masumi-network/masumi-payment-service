@@ -279,6 +279,27 @@ export const previewInviteSchemaOutput = z.object({
 });
 
 /**
+ * An invite's expiry, as a date, or a refusal naming what is wrong with it.
+ *
+ * The decoder types this field as a string and nothing more, so a code carrying
+ * `"soon"` — or a number past the range of a Date — reached `toISOString()` and
+ * threw a `RangeError`. Preview is the endpoint an operator uses to find out
+ * whether a pasted code is any good, so answering "internal error" is the one
+ * answer it must not give.
+ */
+function previewExpiryIso(rawExpiresAt: string): string {
+	const expiresAtMs = Number(rawExpiresAt);
+	if (!Number.isFinite(expiresAtMs)) {
+		throw createHttpError(400, 'this invite code carries an expiry that is not a time, so it cannot be redeemed');
+	}
+	const expiresAt = new Date(expiresAtMs);
+	if (Number.isNaN(expiresAt.getTime())) {
+		throw createHttpError(400, 'this invite code carries an expiry outside the representable range');
+	}
+	return expiresAt.toISOString();
+}
+
+/**
  * Decode and verify an invite without acting on it.
  *
  * Separate from redemption on purpose: redeeming provisions a node and tells a
@@ -320,7 +341,10 @@ export const previewInvitePost = adminAuthenticatedEndpointFactory.build({
 			issuerWalletRole: decoded.payload.issuerWalletRole,
 			advertise: decoded.payload.advertise,
 			exchangeUrl: decoded.payload.exchangeUrl,
-			expiresAt: new Date(Number(decoded.payload.expiresAt)).toISOString(),
+			// The redeem path rejects a non-numeric expiry; preview only reads it, so
+			// it reported one as a 500 — from the endpoint whose whole job is to tell
+			// an operator whether a pasted code is good.
+			expiresAt: previewExpiryIso(decoded.payload.expiresAt),
 			contestationPeriodSeconds: decoded.payload.contestationPeriodSeconds,
 			depositPeriodSeconds: decoded.payload.depositPeriodSeconds,
 			unsyncedPeriodSeconds: decoded.payload.unsyncedPeriodSeconds,
@@ -426,10 +450,26 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		// the wallet that supplied it, and that sweep refuses while the invite is
 		// still live — the node would need those funds to post an Init. Called the
 		// other way round it kept both the participant and its ADA.
-		const updated = await prisma.hydraHeadInvite.update({
-			where: { id: invite.id },
+		//
+		// Conditional on the status this request checked, not on the id alone. Two
+		// Host round trips happen between that check and this write, and the
+		// redemption poller runs every ten seconds: it can carry the invite all the
+		// way to a head in that gap, and an unconditional write would then stamp
+		// `Revoked` over a redemption that produced a live head — leaving the head
+		// running under an invite that reads as revoked, and its node no longer
+		// counted as held.
+		const revoked = await prisma.hydraHeadInvite.updateMany({
+			where: { id: invite.id, status: HydraInviteStatus.Issued },
 			data: { status: HydraInviteStatus.Revoked },
 		});
+		if (revoked.count !== 1) {
+			const current = await prisma.hydraHeadInvite.findUniqueOrThrow({ where: { id: invite.id } });
+			throw createHttpError(
+				409,
+				`this invite was ${current.status.toLowerCase()} while the revoke was in progress, so it was not revoked`,
+			);
+		}
+		const updated = await prisma.hydraHeadInvite.findUniqueOrThrow({ where: { id: invite.id } });
 		const release = await releaseReservedParticipants({
 			hydraHostId: invite.hydraHostId,
 			hostNodeId: invite.hostNodeId,

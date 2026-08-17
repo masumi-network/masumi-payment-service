@@ -99,9 +99,29 @@ describe('PortAllocator', () => {
 		expect(() => allocator.allocate()).toThrow(/add another host/);
 	});
 
-	it('rejects rehydrating a duplicate or out-of-range port', () => {
-		expect(() => new PortAllocator(LAYOUT, [5001, 5001])).toThrow(/already allocated/);
-		expect(() => new PortAllocator(LAYOUT, [9999])).toThrow(/outside the configured range/);
+	// Reported, not thrown. This runs at boot over the ports of nodes that
+	// already exist, so an operator who narrows the range — which the layout
+	// validator accepts — would otherwise crash-loop a host that then supervises
+	// nothing at all: no drains, no drift watchdog, no health, for every node on
+	// the volume.
+	it('reports a duplicate or out-of-range port instead of refusing to start', () => {
+		const duplicate = new PortAllocator(LAYOUT, [5001, 5001]);
+		expect(duplicate.unclaimablePorts).toEqual([
+			{ peerPort: 5001, reason: expect.stringMatching(/more than one node/) },
+		]);
+
+		const outOfRange = new PortAllocator(LAYOUT, [9999]);
+		expect(outOfRange.unclaimablePorts).toEqual([
+			{ peerPort: 9999, reason: expect.stringMatching(/outside the configured peer port range/) },
+		]);
+	});
+
+	// A port the layout cannot express is unreachable by `allocate` anyway, so
+	// skipping it cannot hand the same number to two nodes.
+	it('allocates from the layout regardless of a port it could not claim', () => {
+		const allocator = new PortAllocator({ ...LAYOUT, capacity: 1 }, [9999]);
+		expect(allocator.allocate().peerPort).toBe(5001);
+		expect(() => allocator.allocate()).toThrow(PortExhaustedError);
 	});
 
 	it('tracks free capacity', () => {

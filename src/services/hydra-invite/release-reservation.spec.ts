@@ -55,7 +55,7 @@ beforeEach(() => {
 	jest.clearAllMocks();
 	mockParticipantFindMany.mockResolvedValue([{ id: 'participant-1', hydraSecretKeyId: 'key-1' }]);
 	mockInviteFindMany.mockResolvedValue([]);
-	mockWithdrawNodeFunds.mockResolvedValue(sweep('swept'));
+	mockWithdrawNodeFunds.mockResolvedValue(sweep('dust'));
 });
 
 describe('releaseReservedParticipants', () => {
@@ -68,9 +68,18 @@ describe('releaseReservedParticipants', () => {
 		expect(result).toEqual({ released: 1, retained: 0 });
 	});
 
-	it('deletes a node with nothing worth moving', async () => {
-		mockWithdrawNodeFunds.mockResolvedValue(sweep('dust'));
-		expect(await releaseReservedParticipants(RESERVATION)).toEqual({ released: 1, retained: 0 });
+	// A sweep reports `swept` when the submit endpoint accepted its transaction,
+	// which is not the same as that transaction being on chain: it can still be
+	// evicted, rolled back, or expire against its own TTL. The key is the only
+	// copy, so the row survives until the chain itself says the address is empty.
+	it('keeps a node whose sweep has been submitted but not confirmed', async () => {
+		mockWithdrawNodeFunds.mockResolvedValue(sweep('swept'));
+
+		const result = await releaseReservedParticipants(RESERVATION);
+
+		expect(mockParticipantDeleteMany).not.toHaveBeenCalled();
+		expect(mockSecretDeleteMany).not.toHaveBeenCalled();
+		expect(result).toEqual({ released: 0, retained: 1 });
 	});
 
 	// Nothing is behind a key that does not exist here, so keeping the row would
@@ -115,7 +124,7 @@ describe('releaseReservedParticipants', () => {
 			{ id: 'participant-2', hydraSecretKeyId: 'key-2' },
 		]);
 		mockWithdrawNodeFunds.mockImplementation((id: string) =>
-			Promise.resolve(sweep(id === 'participant-1' ? 'swept' : 'chain-unreadable')),
+			Promise.resolve(sweep(id === 'participant-1' ? 'dust' : 'chain-unreadable')),
 		);
 
 		const result = await releaseReservedParticipants(RESERVATION);

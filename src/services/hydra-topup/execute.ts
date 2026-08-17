@@ -24,6 +24,7 @@ import {
 import { buildHydraCommitFlowDeps } from '@/routes/api/hydra/head/commit-flow-deps';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import { carveExactUtxo, HydraPreSplitError } from './pre-split';
+import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 
 /**
  * After this, a Preparing row is treated as abandoned.
@@ -108,6 +109,14 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	// Hoisted so the outer catch can resolve the row it created: a Preparing row
 	// is invisible to reconciliation, which has no deposit hash to look for.
 	let preparingTopupId: string | null = null;
+
+	// The `Preparing` claim below serializes top-ups against each other. It says
+	// nothing to the payment batchers, which build from this same hot wallet and
+	// claim it before they do — so without this a collect and a carve could pick
+	// the same UTxO, and the loser's signed transaction would be rejected on
+	// chain. Held across the carve's wait for confirmation too: a UTxO spent
+	// during that wait is just as gone by the time the commit selects it.
+	await claimHotWalletForL1(localParticipant.walletId, 'top-up');
 
 	try {
 		let verifiedHead: Awaited<ReturnType<typeof verifyPersistedHydraHeadOnChain>>;
@@ -220,6 +229,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 					amount: params.exact.amount,
 					network: hotWallet.PaymentSource.network,
 					rpcProviderApiKey,
+					existingUtxos: utxos,
 					// So the row an operator is watching names the transaction that
 					// took their funds, rather than saying only that something is
 					// happening.
@@ -345,5 +355,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		}
 		await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Topup');
 		throw error;
+	} finally {
+		await releaseHotWalletAfterL1(localParticipant.walletId);
 	}
 }
