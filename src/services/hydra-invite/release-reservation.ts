@@ -22,6 +22,8 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraInviteStatus } from '@/generated/prisma/client';
 import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
+import { decrypt } from '@/utils/security/encryption';
+import { HydraHostRequestError, removeHostNode } from '@/services/hydra-host/client';
 
 export type ReservationRelease = {
 	/** Participants deleted, along with their keys. */
@@ -116,6 +118,23 @@ export async function releaseReservedParticipants(input: {
 		return { released: 0, retained };
 	}
 
+	// The Host's node goes before the rows that name it.
+	//
+	// `hostNodeId` is recorded nowhere else, so deleting the participant while
+	// the node still exists leaves the operator with no way to name it: its peer
+	// port stays allocated, its persistence directory stays on disk, and its
+	// slot counts against the Host's capacity until someone reads the Host's own
+	// registry by hand. The invite paths already remove the node before calling
+	// here, and this is a no-op 404 for them; `releaseAbandonedReservations` is
+	// the one that never had an invite to remove it from, and every failed mint
+	// or redeem between reserving the node and writing the invite row leaked one.
+	if (!(await removeReservedHostNode(input.hydraHostId, input.hostNodeId))) {
+		// Kept, not deleted, for the same reason a node whose funds did not settle
+		// is kept: the keys here are the only ones that can move what is on that
+		// node, and a node the Host still holds may still be running.
+		return { released: 0, retained: retained + settled.length };
+	}
+
 	await prisma.$transaction(async (tx) => {
 		// Participants first: the key rows are the parents, and the foreign key is
 		// `onDelete: Restrict`, so deleting them the other way round fails.
@@ -123,6 +142,40 @@ export async function releaseReservedParticipants(input: {
 		await tx.hydraSecretKey.deleteMany({ where: { id: { in: settled.map((row) => row.hydraSecretKeyId) } } });
 	});
 	return { released: settled.length, retained };
+}
+
+/**
+ * Take the Host's node away, or say why it could not be taken.
+ *
+ * A Host with no admin token counts as done: there is nothing we can send it,
+ * and holding the local rows forever on that basis would strand the node's fuel
+ * behind a key we refuse to delete. The operator is told which node to remove.
+ */
+async function removeReservedHostNode(hydraHostId: string, hostNodeId: string): Promise<boolean> {
+	const host = await prisma.hydraHost.findUnique({
+		where: { id: hydraHostId },
+		select: { baseUrl: true, encryptedAdminToken: true, allowInsecureHttp: true },
+	});
+	if (host == null) return true;
+	if (host.encryptedAdminToken === null) {
+		logger.warn(
+			`hydra: releasing a reservation on a host with no admin token; node ${hostNodeId} and its peer port must be removed by hand`,
+		);
+		return true;
+	}
+	try {
+		await removeHostNode(host.baseUrl, decrypt(host.encryptedAdminToken), hostNodeId, {
+			force: false,
+			allowInsecureHttp: host.allowInsecureHttp,
+		});
+		return true;
+	} catch (error) {
+		// A node the Host no longer has is the outcome this asks for — the usual
+		// case, because revoke and the expiry sweep both remove it before calling.
+		if (error instanceof HydraHostRequestError && error.status === 404) return true;
+		logger.warn(`hydra: could not remove reserved node ${hostNodeId}: ${(error as Error).message}`);
+		return false;
+	}
 }
 
 /**

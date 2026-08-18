@@ -9,6 +9,7 @@ import createHttpError from 'http-errors';
 import { HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import {
+	assertNoUnrecoveredHydraDeposits,
 	quiesceHydraHeadsForDeletion,
 	reconciledFinalHeadFilter,
 	unsettledL2TransactionWhere,
@@ -161,7 +162,13 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 	if ((deletionPlan.hydraHeadId == null) !== (deletionPlan.HydraHead == null)) {
 		throw createHttpError(409, 'Cannot delete: participant head relation is inconsistent');
 	}
-	if (deletionPlan.hydraHeadId) await quiesceHydraHeadsForDeletion([deletionPlan.hydraHeadId]);
+	// Before quiesce and before the sweep below, both of which take away what a
+	// recovery needs: quiesce disconnects the head, and the sweep empties the key
+	// that pays for the recovery transaction.
+	if (deletionPlan.hydraHeadId) {
+		await assertNoUnrecoveredHydraDeposits([deletionPlan.hydraHeadId]);
+		await quiesceHydraHeadsForDeletion([deletionPlan.hydraHeadId]);
+	}
 
 	// Sweep the node's own fuel back before the key that spends it is destroyed.
 	//

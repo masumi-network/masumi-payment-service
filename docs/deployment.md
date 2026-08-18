@@ -79,7 +79,7 @@ failed migration left the database half-changed. You decide, and you tell it.
    of the deploy that first broke, and in `_prisma_migrations`:
 
    ```bash
-   psql "$DATABASE_URL" -c "select migration_name, started_at, finished_at, logs from \"_prisma_migrations\" where finished_at is null"
+   psql "$DATABASE_URL" -c "select migration_name, started_at, finished_at, logs from \"_prisma_migrations\" where finished_at is null and rolled_back_at is null"
    ```
 
 2. Decide which of the two it was.

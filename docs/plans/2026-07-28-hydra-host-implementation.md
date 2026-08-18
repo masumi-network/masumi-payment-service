@@ -1,8 +1,8 @@
 # Hydra Host — implementation plan
 
 Companion to [the architecture plan](./2026-07-28-hydra-host-production.md) and
-[ADR 0010](../adr/0010-hydra-host-provisioning-and-exposure.md). That pair
-records *what* and *why*; this document is *how*.
+[ADR 0015](../adr/0015-hydra-host-provisioning-and-exposure.md). That pair
+records _what_ and _why_; this document is _how_.
 
 Branch: `gd/hydra-node-ops`. Each phase below ships as its own branch and PR.
 
@@ -91,32 +91,32 @@ crash mid-write cannot corrupt the registry. Key files are `0600`; the
 
 ```ts
 type NodeState =
-  | 'PendingEscrow'   // keys generated, NOT started, material still readable
-  | 'Stopped'         // escrowed; desired state stopped
-  | 'Starting'
-  | 'Running'
-  | 'Draining'        // waiting for a safe stop point
-  | 'Failed'          // supervisor gave up; needs operator
-  | 'Removing';
+	| 'PendingEscrow' // keys generated, NOT started, material still readable
+	| 'Stopped' // escrowed; desired state stopped
+	| 'Starting'
+	| 'Running'
+	| 'Draining' // waiting for a safe stop point
+	| 'Failed' // supervisor gave up; needs operator
+	| 'Removing';
 
 type NodeRecord = {
-  nodeId: string;
-  state: NodeState;
-  desired: 'Running' | 'Stopped';
-  network: 'preprod' | 'mainnet';
-  apiPort: number;         // loopback only
-  peerPort: number;        // published; immutable for the head's life
-  monitoringPort: number;  // loopback only
-  advertise: string;       // <publicHost>:<peerPort>
-  peers: string[];         // hostnames, not IPs
-  hydraVkOfPeers: string[];
-  cardanoVkeyOfPeers: string[];
-  contestationPeriodSeconds: number;
-  depositPeriodSeconds: number;
-  unsyncedPeriodSeconds: number;
-  escrowAckedAt: string | null;
-  idempotencyKey: string;
-  createdAt: string;
+	nodeId: string;
+	state: NodeState;
+	desired: 'Running' | 'Stopped';
+	network: 'preprod' | 'mainnet';
+	apiPort: number; // loopback only
+	peerPort: number; // published; immutable for the head's life
+	monitoringPort: number; // loopback only
+	advertise: string; // <publicHost>:<peerPort>
+	peers: string[]; // hostnames, not IPs
+	hydraVkOfPeers: string[];
+	cardanoVkeyOfPeers: string[];
+	contestationPeriodSeconds: number;
+	depositPeriodSeconds: number;
+	unsyncedPeriodSeconds: number;
+	escrowAckedAt: string | null;
+	idempotencyKey: string;
+	createdAt: string;
 };
 ```
 
@@ -184,7 +184,7 @@ technique already proven in
 `drift > threshold`: drain, restart, wait for sync, alert. Thresholds default
 to the launcher's current values (target 180 s, guard 400 s).
 
-**Unwedge (automatic, levels 2–3).** Draining only covers *voluntary* stops; an
+**Unwedge (automatic, levels 2–3).** Draining only covers _voluntary_ stops; an
 OOM kill or host failure will strand a snapshot round eventually. After any
 restart the supervisor checks for the stranded pattern — `/snapshot/last-seen`
 stuck on an in-flight round while transactions fail `TxInvalid` — and recovers
@@ -213,12 +213,12 @@ Three ports per node; only `peerPort` is ever published.
 
 **Why `peerPort` is immutable.** hydra-node content-addresses the etcd data
 directory by hashing the cluster configuration, so changing `--listen` /
-`--advertise` / `--peer` does not migrate a cluster — it bootstraps a *fresh,
-empty* one. Two independent confirmations:
+`--advertise` / `--peer` does not migrate a cluster — it bootstraps a _fresh,
+empty_ one. Two independent confirmations:
 
 - Locally, the two parties of the running head have different data-dir hashes
   (`3b14f6d7…` vs `0a19ff2d…`), and `hydra.db`, `last-known-revision` and
-  `pending-broadcast/` all live *outside* that hashed directory — so they
+  `pending-broadcast/` all live _outside_ that hashed directory — so they
   survive a config change and would then reference a cluster that no longer
   exists.
 - Upstream, the broadcast key is literally `msg-<advertise host:port>` and
@@ -247,7 +247,7 @@ another node's peer port. This is far above practical need, but it is a hard
 ceiling and the allocator must enforce it rather than discover it as a bind
 failure.
 
-Production runs `--network host` so port *publication* imposes no limit; a
+Production runs `--network host` so port _publication_ imposes no limit; a
 published range (`-p 5001-5032:5001-5032`) is the dev fallback and is then the
 binding limit. Allocation is dynamic within the range and freed ports are
 reused after removal.
@@ -255,7 +255,7 @@ reused after removal.
 **Advertise consistency.** Because etcd validates a member's
 `--initial-advertise-peer-urls` against its `--initial-cluster` entry at
 bootstrap, and Hydra's self-filtering compares strings exactly, both
-participants must configure the *same externally reachable* URL for a given
+participants must configure the _same externally reachable_ URL for a given
 node. The Host therefore returns its `advertise` string at provisioning and
 that exact string is what the counterparty must be given — not a
 reconstructed one.
@@ -265,20 +265,20 @@ reconstructed one.
 `Authorization: Bearer <token>`. Tokens are compared against salted hashes in
 `host.json`, in constant time.
 
-| Method | Path | Tier | Notes |
-|---|---|---|---|
-| POST | `/v1/nodes` | admin | `Idempotency-Key` required. Generates keys, allocates ports, writes record as `PendingEscrow`. **Does not start.** Returns key material. |
-| POST | `/v1/nodes/{id}/escrow-ack` | admin | Seals disclosure, sets `desired=Running`, starts. |
-| GET | `/v1/nodes` | admin | Records without key material. |
-| GET | `/v1/nodes/{id}` | admin | |
-| PATCH | `/v1/nodes/{id}` | admin | Peers, periods. Rejects `peerPort` changes. Requires stopped. |
-| POST | `/v1/nodes/{id}/start\|stop\|restart` | admin | Always drained. |
-| DELETE | `/v1/nodes/{id}` | admin | Drain → remove → release port. Refuses unless the head is `Final` or `force`. |
-| GET | `/v1/nodes/{id}/health` | user | State, drift, sync, last-seen-snapshot, restart count. |
-| GET | `/v1/capabilities` | admin | hydra version, `--hydra-script-catalogue`, params hash, free port count. |
-| GET/PUT | `/v1/nodes/{id}/allowlist` | admin | Per-head peer allowlist; dynamic. |
-| ANY | `/v1/nodes/{id}/api/*` | user | Proxied hydra-node HTTP. |
-| WS | `/v1/nodes/{id}/api` | user | Proxied hydra-node WebSocket. |
+| Method  | Path                                  | Tier  | Notes                                                                                                                                    |
+| ------- | ------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| POST    | `/v1/nodes`                           | admin | `Idempotency-Key` required. Generates keys, allocates ports, writes record as `PendingEscrow`. **Does not start.** Returns key material. |
+| POST    | `/v1/nodes/{id}/escrow-ack`           | admin | Seals disclosure, sets `desired=Running`, starts.                                                                                        |
+| GET     | `/v1/nodes`                           | admin | Records without key material.                                                                                                            |
+| GET     | `/v1/nodes/{id}`                      | admin |                                                                                                                                          |
+| PATCH   | `/v1/nodes/{id}`                      | admin | Peers, periods. Rejects `peerPort` changes. Requires stopped.                                                                            |
+| POST    | `/v1/nodes/{id}/start\|stop\|restart` | admin | Always drained.                                                                                                                          |
+| DELETE  | `/v1/nodes/{id}`                      | admin | Drain → remove → release port. Refuses unless the head is `Final` or `force`.                                                            |
+| GET     | `/v1/nodes/{id}/health`               | user  | State, drift, sync, last-seen-snapshot, restart count.                                                                                   |
+| GET     | `/v1/capabilities`                    | admin | hydra version, `--hydra-script-catalogue`, params hash, free port count.                                                                 |
+| GET/PUT | `/v1/nodes/{id}/allowlist`            | admin | Per-head peer allowlist; dynamic.                                                                                                        |
+| ANY     | `/v1/nodes/{id}/api/*`                | user  | Proxied hydra-node HTTP.                                                                                                                 |
+| WS      | `/v1/nodes/{id}/api`                  | user  | Proxied hydra-node WebSocket.                                                                                                            |
 
 Provision request/response sketch:
 
@@ -522,11 +522,11 @@ model HydraHeadOffer {
 Inbound, cross-org — authenticated by **signature, not by API key**, and rate
 limited:
 
-| Method | Path | Caller |
-|---|---|---|
-| POST | `/api/v1/hydra/handshake/offer` | counterparty's service |
-| POST | `/api/v1/hydra/handshake/accept` | counterparty's service |
-| POST | `/api/v1/hydra/handshake/decline` | counterparty's service |
+| Method | Path                              | Caller                 |
+| ------ | --------------------------------- | ---------------------- |
+| POST   | `/api/v1/hydra/handshake/offer`   | counterparty's service |
+| POST   | `/api/v1/hydra/handshake/accept`  | counterparty's service |
+| POST   | `/api/v1/hydra/handshake/decline` | counterparty's service |
 
 Operator-facing (admin): `POST /hydra/head/propose` starts the flow for a
 Relation.
@@ -585,15 +585,15 @@ in-head script spend.
 
 ## Part C — delivery
 
-| Phase | Scope | Depends on |
-|---|---|---|
-| 1 | Package skeleton, image, registry, supervisor (spawn/drain/restart/drift) | — |
-| 2 | Control-plane API + auth + two-phase provisioning + allowlist | 1 |
-| 3 | Reverse proxy (HTTP + WS passthrough) | 1 |
-| 4 | Payment-service auth plumbing (B1) | — (parallel) |
-| 5 | `HydraHost` model, routes, placement, capabilities check | 2,3,4 |
-| 6 | Cross-org handshake (Part D): offer/accept/decline, tie-break, reaper | 5 |
-| 7 | Head creation via host API; retire `HYDRA_*` seeding for new heads | 6 |
+| Phase | Scope                                                                     | Depends on   |
+| ----- | ------------------------------------------------------------------------- | ------------ |
+| 1     | Package skeleton, image, registry, supervisor (spawn/drain/restart/drift) | —            |
+| 2     | Control-plane API + auth + two-phase provisioning + allowlist             | 1            |
+| 3     | Reverse proxy (HTTP + WS passthrough)                                     | 1            |
+| 4     | Payment-service auth plumbing (B1)                                        | — (parallel) |
+| 5     | `HydraHost` model, routes, placement, capabilities check                  | 2,3,4        |
+| 6     | Cross-org handshake (Part D): offer/accept/decline, tie-break, reaper     | 5            |
+| 7     | Head creation via host API; retire `HYDRA_*` seeding for new heads        | 6            |
 
 ### Testing
 

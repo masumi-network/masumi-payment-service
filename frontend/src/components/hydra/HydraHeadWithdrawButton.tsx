@@ -225,7 +225,11 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
   // 'ada' rather than '' because Radix refuses an empty Select value, and the
   // whole panel throws rather than the field misbehaving.
   const [assetUnit, setAssetUnit] = useState(ADA_CHOICE);
-  const { data: balance, refetch: refetchBalance } = useHydraHeadBalance(headId, isOpen);
+  const {
+    data: balance,
+    isPending: isBalancePending,
+    refetch: refetchBalance,
+  } = useHydraHeadBalance(headId, isOpen);
   // Nothing is offered from a balance nobody could read. The asset list is
   // derived from it, so an unread balance looks exactly like a head holding
   // only ADA — which silently turns a token amount already typed into the field
@@ -371,7 +375,14 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
         </Button>
       </div>
 
-      {!isBalanceKnown && (
+      {/* The first fetch is not a failure. `data` is undefined until it lands, so
+          reading that alone told every operator opening the panel that the head's
+          contents could not be read — for the second or two before they were. */}
+      {!isBalanceKnown && isBalancePending && (
+        <p className="text-xs text-muted-foreground">Reading what this head holds…</p>
+      )}
+
+      {!isBalanceKnown && !isBalancePending && (
         <p className="text-xs text-muted-foreground">
           What this head holds could not be read, so there is nothing to take out from.{' '}
           <button

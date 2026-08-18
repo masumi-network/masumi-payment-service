@@ -411,6 +411,20 @@ export class NodeProcessManager {
 			return { graceful: true, stopped: true, exitCode: null, signal: 'SIGTERM' };
 		}
 
+		// Re-checked a second time, because `graceMs` of polling sits between the
+		// SIGTERM above and this SIGKILL and `waitForExit` decides on the pid alone.
+		// An adopted node that exits promptly on its SIGTERM frees its number for
+		// the rest of that window, and `isProcessAlive` answers true for whatever
+		// then holds it — so the escalation could land on the neighbour the
+		// identity field exists to protect.
+		if (
+			entry.identity !== undefined &&
+			!(await isProcessRunningNode(pid, entry.identity.binary, entry.identity.nodeDir))
+		) {
+			this.running.delete(entry.nodeId);
+			return { graceful: true, stopped: true, exitCode: null, signal: 'SIGTERM' };
+		}
+
 		try {
 			process.kill(pid, 'SIGKILL');
 		} catch {

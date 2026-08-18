@@ -52,30 +52,52 @@ export class NodeClient {
 	 */
 	private async request(path: string, init?: RequestInit, timeoutMs = 10_000): Promise<unknown> {
 		const controller = new AbortController();
+		// The timeout stays armed across the BODY read, not just the headers.
+		// `fetch` resolves the moment headers arrive, so clearing the timer there
+		// left the body unbounded: a node that answered and then stopped writing
+		// held a declared 5s probe for undici's `bodyTimeout` (300s, measured), and
+		// because that timeout resets per chunk, a node dribbling one byte a minute
+		// held it forever.
+		//
+		// Every supervisor probe comes through here from inside `runTick`, which
+		// cannot resolve until all its workers do — so one stalled body stopped the
+		// host reconciling EVERY node, not just that one, and then blocked SIGTERM
+		// behind the same wait. A wedged node that answers headers and then goes
+		// quiet is precisely what the supervisor exists to detect.
 		const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-		let response: Response;
 		try {
-			response = await fetch(`${this.base}${path}`, { ...init, signal: controller.signal });
-		} catch (error) {
-			throw new NodeUnreachableError(
-				`${init?.method ?? 'GET'} ${path} could not reach the node: ${(error as Error).message}`,
-			);
+			let response: Response;
+			try {
+				response = await fetch(`${this.base}${path}`, { ...init, signal: controller.signal });
+			} catch (error) {
+				throw new NodeUnreachableError(
+					`${init?.method ?? 'GET'} ${path} could not reach the node: ${(error as Error).message}`,
+				);
+			}
+
+			if (!response.ok) {
+				throw new NodeResponseError(`${init?.method ?? 'GET'} ${path} returned ${response.status}`);
+			}
+			let text: string;
+			try {
+				text = await response.text();
+			} catch (error) {
+				// A body that stalls or stops mid-stream is the node going away, not
+				// the node answering badly — drain branches on that difference.
+				throw new NodeUnreachableError(
+					`${init?.method ?? 'GET'} ${path} could not read the node's response: ${(error as Error).message}`,
+				);
+			}
+			if (text.length === 0) {
+				return null;
+			}
+			try {
+				return JSON.parse(text);
+			} catch {
+				throw new NodeResponseError(`${init?.method ?? 'GET'} ${path} returned a body that is not JSON`);
+			}
 		} finally {
 			clearTimeout(timer);
-		}
-
-		if (!response.ok) {
-			throw new NodeResponseError(`${init?.method ?? 'GET'} ${path} returned ${response.status}`);
-		}
-		const text = await response.text();
-		if (text.length === 0) {
-			return null;
-		}
-		try {
-			return JSON.parse(text);
-		} catch {
-			throw new NodeResponseError(`${init?.method ?? 'GET'} ${path} returned a body that is not JSON`);
 		}
 	}
 

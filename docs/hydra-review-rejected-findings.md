@@ -28,8 +28,8 @@ already moved on.
 maximum was wrong, and the partitions are disjoint by reference — but summing
 value multisets was not enough, and the function it names no longer exists.
 
-**What was still wrong.** Disjointness proves the two outputs *exist*, not that
-both *left*. Every allowance was derived from value multisets, which cannot tell
+**What was still wrong.** Disjointness proves the two outputs _exist_, not that
+both _left_. Every allowance was derived from value multisets, which cannot tell
 one pending output from another of the same size, and three separate holes
 followed. A deposit that was ABSORBED — the normal ending — still counted as
 recoverable, so an in-head output of that value could vanish with no
@@ -77,7 +77,7 @@ twice the value actually pending.
 
 **Why the maximum was wrong.** `canonicalSnapshotOutputs`
 ([snapshot-verification.ts](../src/lib/hydra/hydra/snapshot-verification.ts))
-throws when one output *reference* appears in two partitions, so the partitions
+throws when one output _reference_ appears in two partitions, so the partitions
 are disjoint by construction. The multisets are keyed by serialized value, not
 reference, so a shared key means two different outputs whose bytes match — the
 ordinary shape of a pure-ADA withdrawal and a pure-ADA top-up of the same size
@@ -117,7 +117,7 @@ mirror of the on-chain datum: `hydra-datum-sync` writes them from `decoded.selle
 `src/utils/logic/hydra-datum-guards` reads them back as `startsAfter(request.sellerCoolDownTime)`
 against the signed body's `invalid_before`. A fabricated future value makes that guard
 unsatisfiable, `applyDatumStateToLocalRequests` returns `'retry'` forever, the head is
-marked stalled by `markReconciliationStalled`, and replay wedges for *every* request on it —
+marked stalled by `markReconciliationStalled`, and replay wedges for _every_ request on it —
 not only the deferred one.
 
 This was written and shipped in round 3, and caught in round 4. The replacement is
@@ -132,7 +132,7 @@ single column the chain owns. Do not re-suggest the column write.
 that finalises a decommit, so the replay must be dropping it.
 
 **Why it is not a defect.** A decommit's transaction is supplied on the transition that
-first *declares* it, not on the later ones that carry it to finality. See the round-3 entry
+first _declares_ it, not on the later ones that carry it to finality. See the round-3 entry
 below, which this repeats.
 
 ## Round 3
@@ -153,7 +153,7 @@ lost transactions.
 **Why it is not a defect.** The conservation walk in
 [node-history-replay.ts](../src/lib/hydra/hydra/node-history-replay.ts) checks that a
 transition's transactions account for the difference between two snapshots.
-`previous.outputs` is the *canonical* output set and spans all three partitions —
+`previous.outputs` is the _canonical_ output set and spans all three partitions —
 `utxo`, `utxoToCommit` and `utxoToDecommit` (see `canonicalSnapshotOutputs`) — so
 once a decommit has been declared, the outputs it removes are already on the
 previous side of every later comparison. Supplying its transaction again would
@@ -174,7 +174,7 @@ socket (`HydraTransportError`), so `l2-lock-execute.ts` should do the same for t
 funds lock — otherwise a provider swapped out mid-submit strands that reservation.
 
 **Why it is not a defect.** The initial lock is deliberately fail-closed, and the file says
-why: its reservation is the only thing standing between a retry and a *second* lock built
+why: its reservation is the only thing standing between a retry and a _second_ lock built
 from different wallet inputs. The six non-locking actions can be rolled back because every
 retry of one spends the same unique prior script UTxO — the lock has no such invariant.
 Rolling it back on a transport error would trade a stuck reservation, which an operator can
@@ -189,7 +189,7 @@ not exist.
 **Claim.** Like `HydraTransportError`, a protocol error is raised before bytes reach the
 socket, so it should permit rollback too.
 
-**Why it is not a defect.** Only *some* protocol errors are pre-dispatch. The command
+**Why it is not a defect.** Only _some_ protocol errors are pre-dispatch. The command
 channel converts a malformed response into `HydraTransportAmbiguousError` once `wasQueued`
 is set, but `HydraProtocolError` is also raised from frame validation and from the provider
 on paths that are not reachable only before dispatch. `HydraTransportError` carries the
@@ -216,7 +216,7 @@ finding wants already exists and is not in the `where`: the batch holds the per-
 mutex for the whole build-and-submit, and `nextActionId` in the `where` is itself the fence
 against a second writer that has moved the action on.
 
-Half of the original finding *was* real and was fixed: the hash is now written before
+Half of the original finding _was_ real and was fixed: the hash is now written before
 submission rather than after, so a process that dies between submit and update leaves a
 recoverable record rather than an orphan transaction.
 
@@ -224,7 +224,41 @@ recoverable record rather than an orphan transaction.
 
 **Claim.** Two files are over the repository's hard file-length limit.
 
-**Why it is not a defect *now*.** They were, and they were split — see ADR 0014 and the
+**Why it is not a defect _now_.** They were, and they were split — see ADR 0014 and the
 registry / `HeadSession` / collaborator decomposition. A reviewer measuring the files as
 they stand on `gd/impl-hydra` will find them under the ceiling. Re-file only with the
 current line count in hand.
+
+## Round 7
+
+**"The port table wrongly marks the peer range exposed."** Half right, and the
+half that was wrong is the important one. `5001-5032` genuinely does have to be
+reachable — a head whose peer port is closed cannot reach its counterparty — so
+"exposed" is not the error. What the table left out is that the base compose
+file deliberately does _not_ publish it: the range is unauthenticated etcd raft,
+and it only comes up through `docker-compose.public-peer.yml` after the
+generated nftables ruleset has been applied. The row now says so.
+
+**"Two `initialDelayMs` collisions"** — there were six. Four belong to this PR's
+Hydra jobs and are re-staggered; `55000` and `60000` are a pre-existing pair on
+the fund-transfer jobs and are left alone, being neither Hydra nor in this PR's
+diff.
+
+**"Six unregistered Hydra endpoints in `docs.ts`"** — seven. `init`, `close`
+and `fanout` look unregistered to a naive grep because they are registered from
+a `for` loop over a template literal; the genuinely missing ones were
+`GET /hydra/head/topup`, `POST /hydra/head/topup/recover`,
+`GET /hydra/head/connection`, `DELETE /hydra/head/errors`,
+`GET`/`POST /hydra/participant/local/fund` and
+`POST /hydra/participant/local/withdraw`.
+
+**Corrections to earlier rounds' own fixes.** Round 6 claimed "both reapers skip
+a purposed lock". There were three, and the third — `timedOutLockedHotWallets`
+in `wallet-timeouts/service.ts` — was unguarded, so the Hydra L1 hold was still
+freed at 300s. Six further relation-driven lock clears in the same file had the
+same hole. Round 6 also rewrote `doesHydraTransactionTransitionReachSnapshot`
+around reference-derived allowances and left the solver picking a single point
+on an equation with a free variable per value; the round-7 fix replaces that
+with an interval and makes an authenticated removal mandatory rather than
+optional. The interval solver was checked against a brute-force feasibility
+oracle over 9,437,184 two-value cases with zero disagreements.

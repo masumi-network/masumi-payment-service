@@ -41,11 +41,11 @@ Two Hosts rather than one, because a Head has two participants and in production
 they belong to different organisations. Separate Hosts keep that boundary real:
 separate registries, locks, port ranges and tokens.
 
-| | Host A | Host B |
-| --- | --- | --- |
-| control plane | `:18443` | `:18444` |
-| peer ports | `5001+` | `5101+` |
-| derived etcd client ports | `2379+` | `2479+` |
+|                           | Host A   | Host B   |
+| ------------------------- | -------- | -------- |
+| control plane             | `:18443` | `:18444` |
+| peer ports                | `5001+`  | `5101+`  |
+| derived etcd client ports | `2379+`  | `2479+`  |
 
 `hydra-node` derives its etcd client port from the peer port (peer − 2622), so
 the peer ranges are far enough apart that the derived ranges do not collide
@@ -55,17 +55,22 @@ The payment service runs on `:3010` and a counterparty stub on `:3011`.
 
 ## What each phase asserts
 
-| Phase | Substance |
-| --- | --- |
-| `hosts: capabilities` | the probe ran the real binary — a populated script catalogue with no probe error can only come from `hydra-node --hydra-script-catalogue` executing |
-| `hosts: auth tiers` | admin/user separation, and that one Host rejects the other's token |
-| `provision: escrow contract` | keys are disclosed once, a replay of the same idempotency key re-discloses, a replay with different parameters is refused, and acknowledgement seals the path permanently |
-| `cluster: start` | both nodes reach a serving API. With two members raft has no quorum until the peers find each other, so a serving API is itself proof the peer plane works |
-| `cluster: peer connection` | each node logged connecting to the other's advertise address — mutual and named, not just "something connected" |
-| `proxy: allow-list` | `/config` is unreachable by construction, unauthenticated requests are refused, and one Host does not serve the other's node ids |
-| `lifecycle` | a stop drains before killing, a restart reuses persistence, and removing a live node needs an explicit `force` |
-| `lifecycle: host crash recovery` | after `SIGKILL` the Host boots again despite the unreleased lock and reconciles its nodes back to serving, unattended |
-| `handshake` | an offer signed by the Relation's wallet is accepted and one signed by anyone else gets an indistinguishable 401 |
+| Phase                                 | Substance                                                                                                                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hosts: capabilities`                 | the probe ran the real binary — a populated script catalogue with no probe error can only come from `hydra-node --hydra-script-catalogue` executing                       |
+| `hosts: auth tiers`                   | admin/user separation, and that one Host rejects the other's token                                                                                                        |
+| `provision: escrow contract`          | keys are disclosed once, a replay of the same idempotency key re-discloses, a replay with different parameters is refused, and acknowledgement seals the path permanently |
+| `cluster: start`                      | both nodes reach a serving API. With two members raft has no quorum until the peers find each other, so a serving API is itself proof the peer plane works                |
+| `cluster: peer connection`            | each node logged connecting to the other's advertise address — mutual and named, not just "something connected"                                                           |
+| `proxy: allow-list`                   | `/config` is unreachable by construction, unauthenticated requests are refused, and one Host does not serve the other's node ids                                          |
+| `lifecycle: drain and stop`           | a stop drains the node before killing it, rather than cutting it off mid-round                                                                                            |
+| `lifecycle: restart from persistence` | a restarted node comes back on the same event store and etcd WAL                                                                                                          |
+| `lifecycle: removal guard`            | removing a live node needs an explicit `force`                                                                                                                            |
+| `lifecycle: host crash recovery`      | after `SIGKILL` the Host boots again despite the unreleased lock and reconciles its nodes back to serving, unattended                                                     |
+| `invites: minting` / `preview`        | an invite is minted against a reserved node, and previewing one discloses nothing that identifies the issuer                                                              |
+| `invites: exchange plane`             | a redemption signed by the invited wallet is accepted, and one signed by anyone else gets an indistinguishable answer                                                     |
+| `invites: exchange plane surface`     | the Exchange Plane serves the redeem route and nothing else — no fleet operation and no proxied node API                                                                  |
+| `invites: revocation`                 | a revoked invite stops being redeemable and gives its node and peer port back                                                                                             |
 
 ## Opening a real Head
 
@@ -124,16 +129,16 @@ pnpm exec tsx scripts/hydra-e2e/sweep.mts .hydra-e2e/hostA/nodes/<id>/keys/carda
 
 ## Layout
 
-| File | Role |
-| --- | --- |
-| `run.mts` | orchestration |
-| `env.mts` | ports, tokens, paths, prerequisites |
-| `procs.mts` | process and HTTP helpers |
-| `check.mts` | assertion recorder — records rather than throws, so one failure does not hide the twenty after it |
-| `cardano.mts` | address derivation and balances |
-| `head-ws.mts` | node WebSocket commands and head teardown |
-| `fixture.mts` | seeds the database; runs as its own process so `DATABASE_URL` is set before Prisma loads |
-| `resume.mts` | restart a previous run's Hosts without wiping |
-| `sweep.mts` | return a node's leftover funds to the harness wallet |
-| `balance.mts` | report what a key envelope controls on chain |
-| `phases/` | one file per phase |
+| File          | Role                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------- |
+| `run.mts`     | orchestration                                                                                     |
+| `env.mts`     | ports, tokens, paths, prerequisites                                                               |
+| `procs.mts`   | process and HTTP helpers                                                                          |
+| `check.mts`   | assertion recorder — records rather than throws, so one failure does not hide the twenty after it |
+| `cardano.mts` | address derivation and balances                                                                   |
+| `head-ws.mts` | node WebSocket commands and head teardown                                                         |
+| `fixture.mts` | seeds the database; runs as its own process so `DATABASE_URL` is set before Prisma loads          |
+| `resume.mts`  | restart a previous run's Hosts without wiping                                                     |
+| `sweep.mts`   | return a node's leftover funds to the harness wallet                                              |
+| `balance.mts` | report what a key envelope controls on chain                                                      |
+| `phases/`     | one file per phase                                                                                |

@@ -61,8 +61,8 @@ export default function HydraHeadsPage() {
   const { heads, isLoading, isFetching, refetch } = useHydraHeads(selectedNetwork);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<StatusTab>('All');
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isConnectNodeOpen, setIsConnectNodeOpen] = useState(false);
+  const [editingHost, setEditingHost] = useState<HydraHost | null>(null);
   const [isInvitesOpen, setIsInvitesOpen] = useState(false);
   const [isIssueInviteOpen, setIsIssueInviteOpen] = useState(false);
   const [isRedeemInviteOpen, setIsRedeemInviteOpen] = useState(false);
@@ -521,6 +521,7 @@ export default function HydraHeadsPage() {
         onOpenChange={(nextOpen) => {
           if (!nextOpen) setDetailsHostId(null);
         }}
+        onEdit={setEditingHost}
       />
       <IssueHydraInviteDialog
         open={isIssueInviteOpen}
@@ -539,6 +540,20 @@ export default function HydraHeadsPage() {
         open={isConnectNodeOpen}
         onOpenChange={setIsConnectNodeOpen}
         onConnected={() => void refetch()}
+      />
+      {/* A second instance rather than one with a `host` that toggles: the form
+          seeds its fields from the host it opens with, and reusing the add
+          dialog left the edit opening blank on the first press. */}
+      <ConnectHydraNodeDialog
+        open={editingHost !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setEditingHost(null);
+        }}
+        host={editingHost}
+        onConnected={() => {
+          setEditingHost(null);
+          void refetchHosts();
+        }}
       />
     </MainLayout>
   );

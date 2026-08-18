@@ -69,6 +69,29 @@ const SPLIT_POLL_MS = 500;
 const PREPARING_STALE_AFTER_MS = 10 * 60 * 1000;
 
 /**
+ * After this, a Pending row is treated as one the head never received.
+ *
+ * A withdrawal request whose transport answer was ambiguous stays Pending on
+ * purpose — only the head can say whether it took it. But nothing else could
+ * ever move that row: `Pending` and `Approved` are written only by the head's
+ * own events, so a request the node provably never saw (a Host-proxy 502 while
+ * the node restarts is enough) left the row Pending for good, and the claim
+ * above refuses every later withdrawal from that head. The only way out was to
+ * close the head.
+ *
+ * An hour is far past any decommit round. The head answers a request it took
+ * within seconds, with DecommitApproved or DecommitInvalid, and a reconnect
+ * replays the whole history so a missed frame is re-delivered. It is also safe
+ * if that reasoning is somehow wrong: hydra-node refuses a second decommit
+ * while one is in flight, so a fresh request cannot become a second withdrawal
+ * of the same funds — it is refused by the node instead.
+ *
+ * `Approved` is deliberately NOT aged out. The head approved it, so the funds
+ * are on their way to L1, and only the settlement can close that row.
+ */
+const PENDING_STALE_AFTER_MS = 60 * 60 * 1000;
+
+/**
  * The least a split may leave behind.
  *
  * A split produces the exact amount plus a remainder, and an output below the
@@ -209,15 +232,25 @@ export async function executeHydraDecommit(params: ExecuteHydraDecommitParams): 
 					});
 
 					if (active !== null) {
-						const isStalePreparation =
+						const stale =
 							active.status === HydraDecommitStatus.Preparing &&
-							Date.now() - active.createdAt.getTime() > PREPARING_STALE_AFTER_MS;
-						if (!isStalePreparation) return { claimed: false as const, active };
+							Date.now() - active.createdAt.getTime() > PREPARING_STALE_AFTER_MS
+								? { status: HydraDecommitStatus.Preparing, reason: 'the in-head split never confirmed' }
+								: active.status === HydraDecommitStatus.Pending &&
+									  Date.now() - active.updatedAt.getTime() > PENDING_STALE_AFTER_MS
+									? {
+											status: HydraDecommitStatus.Pending,
+											reason: 'the head never answered the withdrawal request',
+										}
+									: null;
+						if (stale === null) return { claimed: false as const, active };
 						await tx.hydraDecommit.updateMany({
-							where: { id: active.id, status: HydraDecommitStatus.Preparing },
-							data: { status: HydraDecommitStatus.Failed, failureReason: 'the in-head split never confirmed' },
+							where: { id: active.id, status: stale.status },
+							data: { status: HydraDecommitStatus.Failed, failureReason: stale.reason },
 						});
-						logger.warn(`[HydraDecommit] failed a stale preparing withdrawal ${active.id} so a new one can start`);
+						logger.warn(
+							`[HydraDecommit] failed a stale ${stale.status.toLowerCase()} withdrawal ${active.id} so a new one can start`,
+						);
 					}
 
 					const created = await tx.hydraDecommit.create({

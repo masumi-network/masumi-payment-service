@@ -33847,7 +33847,7 @@
                                     },
                                     "lovelace": {
                                         "type": "string",
-                                        "pattern": "^\\d+$",
+                                        "pattern": "^[1-9]\\d*$",
                                         "description": "How much to put into the head. A dedicated UTxO of exactly this amount is carved on L1 first and only that is committed, so the rest of the wallet — its other ADA, its stablecoins, an agent's registry NFT — stays on L1 and spendable. Costs one L1 confirmation before the deposit is built."
                                     }
                                 },
@@ -33966,7 +33966,7 @@
                                     },
                                     "exactAmount": {
                                         "type": "string",
-                                        "pattern": "^\\d+$",
+                                        "pattern": "^[1-9]\\d*$",
                                         "description": "Exact top-up amount (base unit) of assetUnit (or lovelace). Pre-splits a dedicated L1 UTxO first, then commits it — adds an L1 confirmation wait."
                                     }
                                 },
@@ -33983,7 +33983,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "Top-up result",
+                        "description": "Top-up accepted",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -34022,11 +34022,7 @@
                                         "status": "success",
                                         "data": {
                                             "headId": "cuid_v2_auto_generated",
-                                            "topupId": "cuid_v2_auto_generated",
-                                            "depositTxHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                                            "confirmed": false,
-                                            "committedLovelace": "10000000",
-                                            "committedAssets": {}
+                                            "accepted": true
                                         }
                                     }
                                 }
@@ -34047,6 +34043,161 @@
                     },
                     "502": {
                         "description": "The node returned an unsafe or invalid top-up draft"
+                    }
+                }
+            },
+            "get": {
+                "summary": "List the deposits made into a head. (admin access required)",
+                "description": "Every top-up of this head, newest first, with the status of its L1 deposit. This is where a top-up is followed after POST /hydra/head/topup returns.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "description": "The Hydra head whose top-ups to list"
+                        },
+                        "required": true,
+                        "description": "The Hydra head whose top-ups to list",
+                        "name": "headId",
+                        "in": "query"
+                    },
+                    {
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 50,
+                            "default": 10
+                        },
+                        "required": false,
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Head top-ups",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "topups": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "id": {
+                                                                "type": "string"
+                                                            },
+                                                            "createdAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "updatedAt": {
+                                                                "type": "string"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "Preparing",
+                                                                    "Pending",
+                                                                    "Confirmed",
+                                                                    "Failed",
+                                                                    "Absorbed",
+                                                                    "Recovered"
+                                                                ]
+                                                            },
+                                                            "depositTxHash": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "splitTxHash": {
+                                                                "type": "string",
+                                                                "nullable": true,
+                                                                "description": "The L1 transaction that carved the exact amount, while a top-up is still preparing"
+                                                            },
+                                                            "committedLovelace": {
+                                                                "type": "string"
+                                                            },
+                                                            "committedAssets": {
+                                                                "type": "object",
+                                                                "additionalProperties": {
+                                                                    "type": "string"
+                                                                }
+                                                            },
+                                                            "deadline": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "usableFrom": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "absorbBy": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            },
+                                                            "recoveryRequestedAt": {
+                                                                "type": "string",
+                                                                "nullable": true
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "id",
+                                                            "createdAt",
+                                                            "updatedAt",
+                                                            "status",
+                                                            "depositTxHash",
+                                                            "splitTxHash",
+                                                            "committedLovelace",
+                                                            "committedAssets",
+                                                            "deadline",
+                                                            "usableFrom",
+                                                            "absorbBy",
+                                                            "recoveryRequestedAt"
+                                                        ]
+                                                    }
+                                                }
+                                            },
+                                            "required": [
+                                                "topups"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "topups": []
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
                     }
                 }
             }
@@ -34075,7 +34226,7 @@
                                     },
                                     "lovelace": {
                                         "type": "string",
-                                        "pattern": "^\\d+$",
+                                        "pattern": "^[1-9]\\d*$",
                                         "description": "Exact lovelace to withdraw. Omit to withdraw every eligible in-head UTxO whole. An exact amount is split off inside the head first, which costs nothing and takes about a second."
                                     },
                                     "assetUnit": {
@@ -34085,7 +34236,7 @@
                                     },
                                     "assetAmount": {
                                         "type": "string",
-                                        "pattern": "^\\d+$",
+                                        "pattern": "^[1-9]\\d*$",
                                         "description": "How much of assetUnit to withdraw, in that asset's own smallest unit."
                                     },
                                     "drain": {
@@ -34658,6 +34809,242 @@
                 }
             }
         },
+        "/hydra/head/topup/recover": {
+            "post": {
+                "summary": "Recover a deposit the head never absorbed. (admin access required)",
+                "description": "A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "topupId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "The deposit to recover"
+                                    }
+                                },
+                                "required": [
+                                    "topupId"
+                                ],
+                                "example": {
+                                    "topupId": "cuid_v2_auto_generated"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Recovery request",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "depositTxHash": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "requested": {
+                                                    "type": "boolean"
+                                                },
+                                                "reason": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "required": [
+                                                "depositTxHash",
+                                                "requested",
+                                                "reason"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "depositTxHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                            "requested": true,
+                                            "reason": null
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "The deposit is not recoverable yet, or has already been absorbed or recovered"
+                    }
+                }
+            }
+        },
+        "/hydra/head/connection": {
+            "get": {
+                "summary": "Read the state of this service's connection to the head's node. (admin access required)",
+                "description": "Whether a verified live session exists for this head, and what the node last reported. The first thing to read when a head is Open but L2 operations are failing.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "required": true,
+                        "name": "headId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Head connection",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "headId": {
+                                                    "type": "string"
+                                                },
+                                                "connected": {
+                                                    "type": "boolean"
+                                                },
+                                                "nodeState": {
+                                                    "type": "string"
+                                                },
+                                                "isReady": {
+                                                    "type": "boolean"
+                                                },
+                                                "peerConnected": {
+                                                    "type": "boolean",
+                                                    "nullable": true,
+                                                    "description": "Whether this node is in its Hydra cluster, which for a two-party head means the counterparty's node is up and reachable. Null until the node reports either way. Not a statement about their chain sync."
+                                                },
+                                                "reason": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "paramDrift": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "parameter": {
+                                                                "type": "string"
+                                                            },
+                                                            "head": {
+                                                                "type": "number"
+                                                            },
+                                                            "chain": {
+                                                                "type": "number"
+                                                            },
+                                                            "blocksFanout": {
+                                                                "type": "boolean"
+                                                            }
+                                                        },
+                                                        "required": [
+                                                            "parameter",
+                                                            "head",
+                                                            "chain",
+                                                            "blocksFanout"
+                                                        ]
+                                                    },
+                                                    "description": "Empty when the head ledger matches the chain."
+                                                },
+                                                "l2Blocked": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "closeWithActiveWork": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Null when closing costs nothing beyond the close itself."
+                                                },
+                                                "checkedAt": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "required": [
+                                                "headId",
+                                                "connected",
+                                                "nodeState",
+                                                "isReady",
+                                                "peerConnected",
+                                                "reason",
+                                                "paramDrift",
+                                                "l2Blocked",
+                                                "closeWithActiveWork",
+                                                "checkedAt"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "headId": "cuid_v2_auto_generated"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    }
+                }
+            }
+        },
         "/hydra/head/errors": {
             "get": {
                 "summary": "List recorded Hydra head errors. (admin access required)",
@@ -34811,6 +35198,385 @@
                     },
                     "404": {
                         "description": "Hydra head not found"
+                    }
+                }
+            },
+            "delete": {
+                "summary": "Clear the recorded errors for a head. (admin access required)",
+                "description": "Acknowledges the errors recorded against a head. It changes nothing about the head itself — it only clears what the operator has already read.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "ID of the HydraHead"
+                        },
+                        "required": true,
+                        "description": "ID of the HydraHead",
+                        "name": "headId",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cleared head errors",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "cleared": {
+                                                    "type": "number"
+                                                }
+                                            },
+                                            "required": [
+                                                "cleared"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "cleared": 0
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    }
+                }
+            }
+        },
+        "/hydra/participant/local/fund": {
+            "get": {
+                "summary": "Read a node's own balance and funding history. (admin access required)",
+                "description": "A hydra-node posts its head's L1 transactions from a Cardano key of its own, so it needs ADA that is not the head's. This reports what it holds and what has been sent to it.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        "required": true,
+                        "name": "id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Node funding",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "address": {
+                                                    "type": "string"
+                                                },
+                                                "balanceLovelace": {
+                                                    "type": "string"
+                                                },
+                                                "isUnderfunded": {
+                                                    "type": "boolean"
+                                                },
+                                                "shortfallLovelace": {
+                                                    "type": "string"
+                                                },
+                                                "checked": {
+                                                    "type": "boolean",
+                                                    "description": "False when the chain could not be consulted — unknown, not zero"
+                                                },
+                                                "node": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "state": {
+                                                            "type": "string"
+                                                        },
+                                                        "isReady": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "reason": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "description": "Why it is not ready, when it is not"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "state",
+                                                        "isReady",
+                                                        "reason"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "address",
+                                                "balanceLovelace",
+                                                "isUnderfunded",
+                                                "shortfallLovelace",
+                                                "checked",
+                                                "node"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    }
+                }
+            },
+            "post": {
+                "summary": "Send ADA to a node's own Cardano key. (admin access required)",
+                "description": "Tops the node up now rather than waiting for the funding cycle. Without this balance the node cannot post an Init, a Close or a Fanout.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Local participant whose node should be funded"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "cuid_v2_auto_generated"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Node funding result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "address": {
+                                                    "type": "string",
+                                                    "description": "The node's own Cardano address, derived from its key hash"
+                                                },
+                                                "balanceLovelace": {
+                                                    "type": "string"
+                                                },
+                                                "transferredLovelace": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Null when the node already had enough"
+                                                }
+                                            },
+                                            "required": [
+                                                "address",
+                                                "balanceLovelace",
+                                                "transferredLovelace"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "The funding wallet is busy, or the node does not need funds"
+                    }
+                }
+            }
+        },
+        "/hydra/participant/local/withdraw": {
+            "post": {
+                "summary": "Sweep what a node did not spend back to its wallet. (admin access required)",
+                "description": "Returns the node's remaining ADA once its head is final. Refused while the head is still live or an invite still holds the node, because the node would need those funds.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "Local participant whose node should be swept"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "cuid_v2_auto_generated"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Node sweep result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "address": {
+                                                    "type": "string"
+                                                },
+                                                "balanceLovelace": {
+                                                    "type": "string"
+                                                },
+                                                "txHash": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "reason": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "description": "Why nothing was swept, when nothing was"
+                                                }
+                                            },
+                                            "required": [
+                                                "address",
+                                                "balanceLovelace",
+                                                "txHash",
+                                                "reason"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "id": "cuid_v2_auto_generated"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "The node is still needed, so its funds are kept"
                     }
                 }
             }

@@ -445,9 +445,9 @@ export function RedeemHydraInviteDialog({
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                This starts a node on your side and tells them you are ready. About 10 ADA moves
-                from this wallet to that node to cover the head&apos;s on-chain fees, separate from
-                whatever you later put into the head.
+                This starts a node on your side and tells them you are ready. About 30 ADA moves
+                from this wallet to that node to cover the head&apos;s on-chain fees, topped back up
+                whenever it falls under 15, separate from whatever you later put into the head.
               </p>
               {errors.wallet && <p className="text-xs text-destructive">{errors.wallet}</p>}
               <p className="text-xs text-muted-foreground">

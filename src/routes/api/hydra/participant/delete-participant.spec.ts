@@ -15,6 +15,7 @@ const mockFindRemote = jest.fn() as AnyMock;
 const mockDeleteRemote = jest.fn() as AnyMock;
 const mockDeleteVerification = jest.fn() as AnyMock;
 const mockQuiesceHydraHeadsForDeletion = jest.fn() as AnyMock;
+const mockAssertNoUnrecoveredHydraDeposits = jest.fn() as AnyMock;
 const mockWithdrawNodeFunds = jest.fn() as AnyMock;
 
 const unrecoveredHydraTopupWhere = {
@@ -69,6 +70,7 @@ jest.unstable_mockModule('../deletion-guard', () => ({
 	reconciledFinalHeadFilter,
 	unsettledL2TransactionWhere: reconciledFinalHeadFilter.Transactions.none,
 	unrecoveredHydraTopupWhere,
+	assertNoUnrecoveredHydraDeposits: mockAssertNoUnrecoveredHydraDeposits,
 }));
 
 jest.unstable_mockModule('@/services/hydra-node-funding/withdraw', () => ({
@@ -124,6 +126,7 @@ beforeEach(() => {
 		return [];
 	});
 	mockQuiesceHydraHeadsForDeletion.mockResolvedValue(undefined);
+	mockAssertNoUnrecoveredHydraDeposits.mockResolvedValue(undefined);
 	// Settled by default: the node's address is empty, so destroying its key
 	// costs nothing.
 	mockWithdrawNodeFunds.mockResolvedValue({
@@ -182,6 +185,24 @@ describe('deleteHydraLocalParticipant', () => {
 		});
 		expect(mockQuiesceHydraHeadsForDeletion).not.toHaveBeenCalled();
 		expect(mockDeleteSecret).toHaveBeenCalledWith({ where: { id: 'local-key' } });
+	});
+
+	// Ordering, not just the refusal. Quiesce disconnects the head and the sweep
+	// empties the key that pays for a recovery, so a deposit gate that fires after
+	// either of them tells the operator to recover through a door the same request
+	// just closed.
+	it('refuses a head with an unrecovered deposit before disconnecting it or sweeping the node', async () => {
+		mockFindLocalPlan.mockResolvedValue(assignedDeletionPlan());
+		mockAssertNoUnrecoveredHydraDeposits.mockRejectedValue(
+			Object.assign(new Error('Cannot delete: 1 deposit(s) were never absorbed or recovered.'), {
+				statusCode: 409,
+			}),
+		);
+
+		await expect(deleteHydraLocalParticipant('local-1')).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockQuiesceHydraHeadsForDeletion).not.toHaveBeenCalled();
+		expect(mockWithdrawNodeFunds).not.toHaveBeenCalled();
+		expect(mockDeleteLocal).not.toHaveBeenCalled();
 	});
 
 	// The key stored on this row is the only signer for the node's L1 address, and

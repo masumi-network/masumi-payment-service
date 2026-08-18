@@ -494,3 +494,121 @@ describe('Hydra 2.3 snapshot verification', () => {
 		).toBeNull();
 	});
 });
+
+describe('doesHydraTransactionTransitionReachSnapshot conservation solver', () => {
+	/**
+	 * The transition equation has a free variable per value, and picking a point
+	 * on it is not the same as deciding whether the equation has a solution.
+	 *
+	 * Both cases below turn on one serialized value being BOTH injected by a
+	 * newly declared deposit and consumed by a confirmed transaction. Exact
+	 * amounts collide constantly here: a top-up is an exact-amount carve
+	 * committed whole to the participant's own wallet address, so a second
+	 * top-up of the same size is byte-identical to what the first one left
+	 * sitting in the head.
+	 */
+	function payingTransaction(spentReferences: string[], paidLovelace: number) {
+		const inputs = TransactionInputs.new();
+		for (const reference of spentReferences) {
+			const [hash, index] = reference.split('#');
+			inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from(hash, 'hex')), Number(index)));
+		}
+		const outputs = TransactionOutputs.new();
+		outputs.add(TransactionOutput.new(Address.from_bech32(ADDRESS), Value.new(BigNum.from_str(String(paidLovelace)))));
+		const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('1000000'));
+		const cborHex = Buffer.from(Transaction.new(body, TransactionWitnessSet.new()).to_bytes()).toString('hex');
+		const txId = String(resolveTxHash(cborHex)).toLowerCase();
+		return { confirmed: [{ type: HydraTransactionType.TxConwayEra, cborHex, description: '', txId }], txId };
+	}
+
+	it('accepts a top-up declared in the same snapshot that spends an output of its size', () => {
+		const spentTen = `${'11'.repeat(32)}#0`;
+		const spentThree = `${'22'.repeat(32)}#0`;
+		const depositReference = `${'44'.repeat(32)}#0`;
+		const ten = serializeHydraSnapshotOutput(output({ lovelace: 10_000_000 }));
+		const three = serializeHydraSnapshotOutput(output({ lovelace: 3_000_000 }));
+		const thirteen = serializeHydraSnapshotOutput(output({ lovelace: 13_000_000 }));
+		const { confirmed, txId } = payingTransaction([spentTen, spentThree], 13_000_000);
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 4,
+			version: 2,
+			outputs: new Map([
+				[spentTen, ten],
+				[spentThree, three],
+			]),
+			outputMultiset: new Map([
+				[ten, 1],
+				[three, 1],
+			]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+		// The 10 ADA output is spent by the transaction and a fresh 10 ADA top-up
+		// is declared in the very same snapshot. Both are legitimate; the value is
+		// simultaneously consumed and injected.
+		const current = {
+			headId: HEAD_ID,
+			number: 5,
+			version: 3,
+			outputs: new Map([
+				[`${txId}#0`, thirteen],
+				[depositReference, ten],
+			]),
+			outputMultiset: new Map([
+				[thirteen, 1],
+				[ten, 1],
+			]),
+			committedOutputs: new Map([[depositReference, ten]]),
+			decommitOutputs: new Map<string, string>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, confirmed)).toBe(true);
+	});
+
+	it('refuses an output that appears in place of a settled decommit', () => {
+		const keptReference = `${'11'.repeat(32)}#0`;
+		const decommitReference = `${'33'.repeat(32)}#0`;
+		const appearedReference = `${'55'.repeat(32)}#0`;
+		const ten = serializeHydraSnapshotOutput(output({ lovelace: 10_000_000 }));
+		const seven = serializeHydraSnapshotOutput(output({ lovelace: 7_000_000 }));
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 4,
+			version: 2,
+			outputs: new Map([
+				[keptReference, ten],
+				[decommitReference, seven],
+			]),
+			outputMultiset: new Map([
+				[ten, 1],
+				[seven, 1],
+			]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map([[decommitReference, seven]]),
+		};
+		// The decommit settled on L1 — that value has definitely left the head —
+		// and an output of exactly its size appears with nothing creating it. The
+		// authenticated removal must not be treated as optional slack that pays
+		// for the arrival.
+		const current = {
+			headId: HEAD_ID,
+			number: 5,
+			version: 3,
+			outputs: new Map([
+				[keptReference, ten],
+				[appearedReference, seven],
+			]),
+			outputMultiset: new Map([
+				[ten, 1],
+				[seven, 1],
+			]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(false);
+	});
+});

@@ -2,12 +2,12 @@
 
 ## Status
 
-Proposed. Revises ADR 0010 §4b, which put the cross-org handshake on the
+Proposed. Revises ADR 0015 §4b, which put the cross-org handshake on the
 payment service.
 
 ## Context
 
-ADR 0010 §4b made a per-Head exchange of public material mandatory, and put it
+ADR 0015 §4b made a per-Head exchange of public material mandatory, and put it
 on the payment service: a counterparty POSTs a signed Head Offer to
 `/api/v1/hydra/handshake/offer`, which is unauthenticated and authorised by a
 signature bound to `HydraRelation.RemoteWallet`.
@@ -56,7 +56,7 @@ authenticating, and finding that it did not.
 
 We rejected a delegated per-invite signing key on the Host, which would have
 been necessary had the reply carried material. We rejected trusting the
-transport — TLS plus a signed URL — because ADR 0010 §7 has the Host serving
+transport — TLS plus a signed URL — because ADR 0015 §7 has the Host serving
 plain HTTP behind a load balancer, so the Host cannot guarantee the property
 the security would then rest on.
 
@@ -114,9 +114,10 @@ check people click past; an agent name is one they perform.
 - The Host gains a second listening surface with a security model opposite to
   the Control Plane's. The route table must keep them disjoint: no fleet
   operation and no proxied node API is reachable from the Exchange Plane.
-- Unredeemed invites strand a node and a peer port. They need an expiry far
-  longer than `OFFER_TTL_MS`'s 15 minutes — an invite is read by a human, on
-  human timescales — plus a reaper that releases the allocation.
+- Unredeemed invites strand a node and a peer port. They need an expiry on
+  human timescales — an invite is read by a person, not a process — plus a
+  reaper that releases the allocation. Implemented as `INVITE_TTL_MS`, seven
+  days by default and overridable per invite.
 - An operator can be in a Head with a party they have not yet reviewed, for as
   long as one poll interval. Acceptable only because reaching L1 stays a
   deliberate admin action.

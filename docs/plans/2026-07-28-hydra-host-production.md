@@ -32,10 +32,10 @@ the counterparty's `--listen`. That link is raft/gRPC over TCP.
 **Consequence: the counterparty-facing route cannot be a path on an HTTP
 reverse proxy.** The deployment has two distinct planes:
 
-| Plane | Traffic | Exposure | Auth |
-|---|---|---|---|
-| **Peer plane** | etcd raft, one port per head | L4/TCP, per-head port, public | network-level (allowlist / VPN / mTLS tunnel) |
-| **Control plane** | hydra-node API (WS + HTTP) | L7, one published port | bearer token (user / admin) |
+| Plane             | Traffic                      | Exposure                      | Auth                                          |
+| ----------------- | ---------------------------- | ----------------------------- | --------------------------------------------- |
+| **Peer plane**    | etcd raft, one port per head | L4/TCP, per-head port, public | network-level (allowlist / VPN / mTLS tunnel) |
+| **Control plane** | hydra-node API (WS + HTTP)   | L7, one published port        | bearer token (user / admin)                   |
 
 Three flags make this tractable, and they are the backbone of the container:
 
@@ -57,7 +57,7 @@ On preprod/mainnet the node runs without a cardano-node (`--blockfrost FILE`).
 Its steady-state follower sleeps one block-time then processes **exactly one
 block**, losing ≈17 s per minute with no catch-up path (upstream
 `cardano-scaling/hydra#2753`, still open in 2.3.0). Past `--unsynced-period`
-the node rejects *all* client input with `RejectedInputBecauseUnsynced`.
+the node rejects _all_ client input with `RejectedInputBecauseUnsynced`.
 
 Today the mitigation is bash: `hydra-native.sh drift|wait-sync|restart`, which
 parses `chainTime` out of the node's **stdout log file** and restarts.
@@ -247,7 +247,7 @@ Out of scope here, but it interacts with this work.
 ## 3. Resolved decisions
 
 Settled in the grilling session; recorded in
-[ADR 0010](../adr/0010-hydra-host-provisioning-and-exposure.md).
+[ADR 0015](../adr/0015-hydra-host-provisioning-and-exposure.md).
 
 1. **Trust model** — Host and payment service are one security domain, with the
    Host treated as the more exposed side because it carries a public port.

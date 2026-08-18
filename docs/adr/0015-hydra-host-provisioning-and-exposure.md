@@ -1,4 +1,4 @@
-# ADR 0010 — Hydra Host: API-driven node provisioning and exposure model
+# ADR 0015 — Hydra Host: API-driven node provisioning and exposure model
 
 ## Status
 
@@ -17,7 +17,7 @@ Four properties of `hydra-node` 2.3.0 constrain any solution. All were verified
 against the pinned binary and the running preprod nodes, not assumed:
 
 - **One process per head.** Upstream `#383` ("multiple heads per hydra-node")
-  is closed as *not planned*. N heads means N processes, each with its own
+  is closed as _not planned_. N heads means N processes, each with its own
   `--persistence-dir`, `--api-port` and `--listen` port.
 - **Peer traffic is etcd, not HTTP-on-a-path.** `--listen` is an embedded etcd
   peer address and `--peer host:port` becomes etcd's `--initial-cluster`.
@@ -30,7 +30,7 @@ against the pinned binary and the running preprod nodes, not assumed:
   auth of any kind, and `GET /config` (new in 2.3.0) discloses signing-key
   paths. `Hydra/Network/Etcd.hs` passes no TLS flags to etcd and carries the
   comment `-- XXX: Could use TLS to secure peer connections`. Peer messages are
-  *signed* (forgery is blocked) but not *encrypted*.
+  _signed_ (forgery is blocked) but not _encrypted_.
 - **Persistence is authoritative and non-rotatable.** `hydra.db` plus the etcd
   WAL are the head state; the service permanently fail-closes a session that
   emits `EventLogRotated`, so rotation stays disabled and the log grows without
@@ -56,7 +56,7 @@ absorbed by DNS rather than forcing a restart.
 **2. Two token tiers.** The admin token covers fleet operations — provision,
 escrow-ack, delete, reconfigure, read capabilities. The user token covers
 operating an existing node, including the whole proxied API and WebSocket. WS
-frames are deliberately *not* tag-gated: `Init`, `Close` and `Fanout` share the
+frames are deliberately _not_ tag-gated: `Init`, `Close` and `Fanout` share the
 single long-lived socket with the event stream (`node.ts:1246`, `:1524`,
 `:1534`), so gating them would force that socket to admin and leave the user
 tier unused. The residual risk is bounded — a leaked user token can close a
@@ -82,7 +82,7 @@ because an escrowed copy is what makes a destroyed host rebuildable.
 be guaranteed.** Stopping a node mid-snapshot-round can strand it: etcd
 persists `last-known-revision` before the head logic durably consumes the
 message, so a lost `ReqSn`/`AckSn` is never redelivered and later txs fail
-`TxInvalid`. The supervisor therefore drains before any *voluntary* stop,
+`TxInvalid`. The supervisor therefore drains before any _voluntary_ stop,
 polling `/snapshot/last-seen` until `LastSeenSnapshot`/`NoSeenSnapshot`.
 
 But a container can always be killed involuntarily — OOM, host failure,
@@ -90,13 +90,13 @@ platform eviction — so **draining is a probability reduction, not a guarantee*
 and correctness rests on recovery rather than on clean shutdown. Recovery is
 automatic and needs no operator:
 
-| Level | Situation | Action |
-|---|---|---|
-| 0 | process crash, volume intact | restart with backoff; `hydra.db` replays, etcd resumes its WAL |
-| 1 | container/host SIGKILL | identical to level 0 on next boot |
-| 2 | restarted but snapshot round stranded | detect, then side-load the node's own confirmed snapshot via `POST /snapshot` |
-| 3 | offline past etcd's compaction window | same side-load path |
-| 4 | persistence volume destroyed | restore a volume snapshot plus the escrowed keys — the only manual case |
+| Level | Situation                             | Action                                                                        |
+| ----- | ------------------------------------- | ----------------------------------------------------------------------------- |
+| 0     | process crash, volume intact          | restart with backoff; `hydra.db` replays, etcd resumes its WAL                |
+| 1     | container/host SIGKILL                | identical to level 0 on next boot                                             |
+| 2     | restarted but snapshot round stranded | detect, then side-load the node's own confirmed snapshot via `POST /snapshot` |
+| 3     | offline past etcd's compaction window | same side-load path                                                           |
+| 4     | persistence volume destroyed          | restore a volume snapshot plus the escrowed keys — the only manual case       |
 
 The level-2/3 procedure is not new: it is already proven in
 `hydra-l2-flow/run-hydra-e2e.sh:909-921`, which detects a stranded round and
@@ -117,7 +117,7 @@ hydra-node serves exactly one Head and is provisioned with fresh keys and a
 fresh peer port each time. Because `--peer`, `--hydra-verification-key` and
 `--initial-cluster` are all startup configuration — and the etcd data dir is
 content-addressed by that configuration — both participants must agree the
-full cluster config *before either node boots*. They need not act
+full cluster config _before either node boots_. They need not act
 simultaneously, but the agreement is a precondition, so each Head requires an
 exchange of public material between the two operators.
 

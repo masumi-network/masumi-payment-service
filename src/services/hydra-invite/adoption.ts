@@ -136,6 +136,86 @@ export async function pollHydraRedemptions(): Promise<AdoptionOutcome> {
 type AdoptionResult = 'adopted' | 'rejected' | 'skipped';
 
 /**
+ * Give up on a redemption that can never be adopted, and free what it holds.
+ *
+ * A rejected redemption used to be a permanent wedge. The Host accepts a
+ * redemption on the strength of the nonce alone, burns the nonce, sets
+ * `redeemedAt` and starts the node; if the signature then fails here, nothing
+ * wrote a row, nothing forgot the Host record, and the invite stayed `Issued`
+ * with a `redeemedAt` behind it. Every escape was closed by that pair: the
+ * expiry sweep skips a redeemed invite, revoke answers 409 for the same reason,
+ * the fuel sweep answers `invite-holds`, and neither the participant nor the
+ * Host could be deleted while a live invite named them. One unsigned POST to an
+ * unauthenticated plane cost a node slot, its ~30 ADA of fuel and the ability
+ * to delete that Host, recoverable only by hand-editing the database.
+ *
+ * Order matters. The local status is what blocks every operator action, so it
+ * is written first and the Host is told afterwards — the reverse of revoke and
+ * of the expiry sweep, both of which go Host-first to stop a redemption in
+ * flight from starting a node they are deleting. There is no redemption in
+ * flight here: this nonce has already been spent, which is why we are looking
+ * at it. The node's keys are released last of all, and only once the Host has
+ * actually let go of the node, so a refusal leaves the keys with us rather than
+ * leaving a running node nobody holds keys for.
+ */
+async function discardUnadoptableRedemption(
+	invite: {
+		id: string;
+		nonce: string;
+		hydraHostId: string;
+		hostNodeId: string;
+		HydraHost: { baseUrl: string; encryptedAdminToken: string | null; allowInsecureHttp: boolean };
+	},
+	removeNode: boolean,
+): Promise<void> {
+	const discarded = await prisma.hydraHeadInvite.updateMany({
+		where: { id: invite.id, status: HydraInviteStatus.Issued },
+		data: { status: HydraInviteStatus.Revoked },
+	});
+	if (discarded.count !== 1) return;
+
+	if (invite.HydraHost.encryptedAdminToken === null) {
+		logger.error(
+			`hydra: discarded invite ${invite.nonce}, but its host has no admin token; ` +
+				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
+		);
+		return;
+	}
+
+	const adminToken = decrypt(invite.HydraHost.encryptedAdminToken);
+	const transport = { allowInsecureHttp: invite.HydraHost.allowInsecureHttp };
+	try {
+		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
+		if (removeNode) {
+			const { removeHostNode } = await import('@/services/hydra-host/client');
+			try {
+				await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
+					force: false,
+					...transport,
+				});
+			} catch (error) {
+				// A node the Host no longer has is the outcome this asks for.
+				if (!(error instanceof HydraHostRequestError && error.status === 404)) throw error;
+			}
+		}
+	} catch (error) {
+		// Never rethrown. The invite is already terminal, so the operator is
+		// unblocked either way, and a throw here would be reported as an adoption
+		// failure and hold the watermark back on a redemption that can never be
+		// adopted.
+		logger.error(
+			`hydra: discarded invite ${invite.nonce} locally, but its host refused (${(error as Error).message}); ` +
+				`node ${invite.hostNodeId} and its peer port must be removed by hand`,
+		);
+		return;
+	}
+
+	if (removeNode) {
+		await releaseReservedParticipants({ hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId });
+	}
+}
+
+/**
  * Turn one Host-side redemption into a head, if it checks out.
  *
  * This is where the signature the Host could not verify is verified. The Host
@@ -151,13 +231,17 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 
 	const invite = await prisma.hydraHeadInvite.findUnique({
 		where: { nonce: record.nonce },
-		include: { LocalHotWallet: true },
+		include: { LocalHotWallet: true, HydraHost: true },
 	});
 	if (!invite || invite.role !== HydraInviteRole.Issuer) {
 		return 'skipped';
 	}
-	if (invite.hydraHeadId !== null || invite.status === HydraInviteStatus.Completed) {
-		// Already adopted. This is the normal case for a replayed watermark.
+	// Any status other than `Issued` is finished with, not just `Completed`: an
+	// invite that was revoked, expired, or discarded below must not be walked
+	// through verification again on the next replayed watermark.
+	if (invite.hydraHeadId !== null || invite.status !== HydraInviteStatus.Issued) {
+		// Already adopted, or already given up on. This is the normal case for a
+		// replayed watermark.
 		return 'skipped';
 	}
 
@@ -177,8 +261,9 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 	} catch (error) {
 		logger.error(
 			`hydra: invite ${record.nonce} was redeemed with a signature that does not verify (${(error as Error).message}); ` +
-				'the node it reserved is running and should be removed',
+				'discarding it and removing the node it reserved',
 		);
+		await discardUnadoptableRedemption(invite, true);
 		return 'rejected';
 	}
 
@@ -187,7 +272,18 @@ async function adoptRedemption(record: HostInviteRecord): Promise<AdoptionResult
 		select: { id: true, autoFund: true },
 	});
 	if (!participant) {
-		logger.error(`hydra: invite ${record.nonce} has no unbound local participant to attach to a head`);
+		// The node is only removed when nothing at all claims it. A participant on
+		// this host node that is bound to a head means the node is serving that
+		// head, whatever went wrong with this invite, and taking it away would end
+		// a live head to tidy up a dead invite.
+		const claimed = await prisma.hydraLocalParticipant.count({
+			where: { hydraHostId: invite.hydraHostId, hostNodeId: invite.hostNodeId },
+		});
+		logger.error(
+			`hydra: invite ${record.nonce} has no unbound local participant to attach to a head; discarding it` +
+				(claimed > 0 ? `, but leaving node ${invite.hostNodeId} in place because a head still claims it` : ''),
+		);
+		await discardUnadoptableRedemption(invite, claimed === 0);
 		return 'rejected';
 	}
 

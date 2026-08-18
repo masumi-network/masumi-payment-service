@@ -6,6 +6,7 @@ import { Network, HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import {
 	quiesceHydraHeadsForDeletion,
+	assertNoUnrecoveredHydraDeposits,
 	reconciledFinalHeadFilter,
 	unrecoveredHydraTopupWhere,
 	unsettledL2TransactionWhere,
@@ -174,6 +175,8 @@ export async function deleteHydraRelation(id: string): Promise<void> {
 		select: { Heads: { select: { id: true } } },
 	});
 	if (!deletionPlan) throw createHttpError(404, 'Hydra relation not found');
+	// Before quiesce, which disconnects the heads a recovery would need.
+	await assertNoUnrecoveredHydraDeposits(deletionPlan.Heads.map(({ id: headId }) => headId));
 	await quiesceHydraHeadsForDeletion(deletionPlan.Heads.map(({ id: headId }) => headId));
 
 	await withSerializableSlotRetry(

@@ -189,11 +189,14 @@ async function main(): Promise<void> {
 		// Bound the drain so a stuck node cannot hold the container open past the
 		// platform's own kill timeout; losing the race just means the next boot
 		// checks for a stranded round.
-		const guard = setTimeout(() => {
+		// Assigned so the intent is readable, then deliberately left alone.
+		const _guard = setTimeout(() => {
 			logger.error('[host] shutdown exceeded its grace period; exiting');
 			process.exit(1);
 		}, SHUTDOWN_GRACE_MS);
-		guard.unref?.();
+		// Deliberately NOT unref'd. This timer's only job is to force a non-zero
+		// exit, and an unref'd one lets an otherwise-idle loop exit 0 first — which
+		// reports a shutdown that never drained as a clean one.
 
 		void supervisor
 			.shutdown()

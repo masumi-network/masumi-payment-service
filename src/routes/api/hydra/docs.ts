@@ -11,9 +11,19 @@ import {
 	headBalanceSchemaOutput,
 	listHeadErrorsSchemaInput,
 	listHeadErrorsSchemaOutput,
+	clearHeadErrorsSchemaInput,
+	clearHeadErrorsSchemaOutput,
 } from '@/routes/api/hydra/head';
 import { lifecycleInput, lifecycleOutput, commitInput, commitOutput } from '@/routes/api/hydra/head/lifecycle';
-import { topupInput, topupOutput } from '@/routes/api/hydra/head/topup';
+import {
+	topupInput,
+	topupOutput,
+	listTopupsInput,
+	listTopupsOutput,
+	recoverTopupInput,
+	recoverTopupOutput,
+} from '@/routes/api/hydra/head/topup';
+import { headConnectionSchemaInput, headConnectionSchemaOutput } from '@/routes/api/hydra/head/observability';
 import {
 	withdrawInput,
 	withdrawOutput,
@@ -40,6 +50,12 @@ import {
 	getRemoteParticipantOutput,
 	deleteRemoteParticipantInput,
 	deleteRemoteParticipantOutput,
+	fundParticipantNodeInput,
+	fundParticipantNodeOutput,
+	participantFundingSchemaInput,
+	participantFundingSchemaOutput,
+	withdrawParticipantNodeInput,
+	withdrawParticipantNodeOutput,
 } from '@/routes/api/hydra/participant';
 import {
 	getRelationSchemaInput,
@@ -379,14 +395,9 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		security: secured,
 		request: { body: jsonBody(topupInput, { headId: HEAD_ID, assetFilter: 'all' }) },
 		responses: {
-			200: successResponse('Top-up result', topupOutput, {
-				headId: HEAD_ID,
-				topupId: 'cuid_v2_auto_generated',
-				depositTxHash: 'a'.repeat(64),
-				confirmed: false,
-				committedLovelace: '10000000',
-				committedAssets: {},
-			}),
+			// The endpoint answers as soon as the deposit is reserved; everything
+			// about its progress is read from GET /hydra/head/topup afterwards.
+			200: successResponse('Top-up accepted', topupOutput, { headId: HEAD_ID, accepted: true }),
 			...unauthorized,
 			...notFound,
 			400: { description: 'No plain wallet UTxOs match the requested asset filter' },
@@ -481,6 +492,56 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 	});
 	registry.registerPath({
 		method: 'get',
+		path: '/hydra/head/topup',
+		summary: 'List the deposits made into a head. (admin access required)',
+		description:
+			'Every top-up of this head, newest first, with the status of its L1 deposit. This is where a top-up is followed after POST /hydra/head/topup returns.',
+		tags: TAG,
+		security: secured,
+		request: { query: listTopupsInput },
+		responses: {
+			200: successResponse('Head top-ups', listTopupsOutput, { topups: [] }),
+			...unauthorized,
+			...notFound,
+		},
+	});
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/head/topup/recover',
+		summary: 'Recover a deposit the head never absorbed. (admin access required)',
+		description:
+			'A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed.',
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(recoverTopupInput, { topupId: 'cuid_v2_auto_generated' }) },
+		responses: {
+			200: successResponse('Recovery request', recoverTopupOutput, {
+				depositTxHash: 'a'.repeat(64),
+				requested: true,
+				reason: null,
+			}),
+			...unauthorized,
+			...notFound,
+			409: { description: 'The deposit is not recoverable yet, or has already been absorbed or recovered' },
+		},
+	});
+	registry.registerPath({
+		method: 'get',
+		path: '/hydra/head/connection',
+		summary: "Read the state of this service's connection to the head's node. (admin access required)",
+		description:
+			'Whether a verified live session exists for this head, and what the node last reported. The first thing to read when a head is Open but L2 operations are failing.',
+		tags: TAG,
+		security: secured,
+		request: { query: headConnectionSchemaInput },
+		responses: {
+			200: successResponse('Head connection', headConnectionSchemaOutput, { headId: HEAD_ID }),
+			...unauthorized,
+			...notFound,
+		},
+	});
+	registry.registerPath({
+		method: 'get',
 		path: '/hydra/head/errors',
 		summary: 'List recorded Hydra head errors. (admin access required)',
 		description: 'Lists the most recent errors recorded for a head (lifecycle command failures, etc.).',
@@ -491,6 +552,70 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			200: successResponse('Hydra head errors', listHeadErrorsSchemaOutput, { errors: [] }),
 			...unauthorized,
 			...notFound,
+		},
+	});
+	registry.registerPath({
+		method: 'delete',
+		path: '/hydra/head/errors',
+		summary: 'Clear the recorded errors for a head. (admin access required)',
+		description:
+			'Acknowledges the errors recorded against a head. It changes nothing about the head itself — it only clears what the operator has already read.',
+		tags: TAG,
+		security: secured,
+		request: { query: clearHeadErrorsSchemaInput },
+		responses: {
+			200: successResponse('Cleared head errors', clearHeadErrorsSchemaOutput, { cleared: 0 }),
+			...unauthorized,
+			...notFound,
+		},
+	});
+
+	// ---- participant: node fuel ----
+	registry.registerPath({
+		method: 'get',
+		path: '/hydra/participant/local/fund',
+		summary: "Read a node's own balance and funding history. (admin access required)",
+		description:
+			"A hydra-node posts its head's L1 transactions from a Cardano key of its own, so it needs ADA that is not the head's. This reports what it holds and what has been sent to it.",
+		tags: TAG,
+		security: secured,
+		request: { query: participantFundingSchemaInput },
+		responses: {
+			200: successResponse('Node funding', participantFundingSchemaOutput, { id: 'cuid_v2_auto_generated' }),
+			...unauthorized,
+			...notFound,
+		},
+	});
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/participant/local/fund',
+		summary: "Send ADA to a node's own Cardano key. (admin access required)",
+		description:
+			'Tops the node up now rather than waiting for the funding cycle. Without this balance the node cannot post an Init, a Close or a Fanout.',
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(fundParticipantNodeInput, { id: 'cuid_v2_auto_generated' }) },
+		responses: {
+			200: successResponse('Node funding result', fundParticipantNodeOutput, { id: 'cuid_v2_auto_generated' }),
+			...unauthorized,
+			...notFound,
+			409: { description: 'The funding wallet is busy, or the node does not need funds' },
+		},
+	});
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/participant/local/withdraw',
+		summary: 'Sweep what a node did not spend back to its wallet. (admin access required)',
+		description:
+			"Returns the node's remaining ADA once its head is final. Refused while the head is still live or an invite still holds the node, because the node would need those funds.",
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(withdrawParticipantNodeInput, { id: 'cuid_v2_auto_generated' }) },
+		responses: {
+			200: successResponse('Node sweep result', withdrawParticipantNodeOutput, { id: 'cuid_v2_auto_generated' }),
+			...unauthorized,
+			...notFound,
+			409: { description: 'The node is still needed, so its funds are kept' },
 		},
 	});
 

@@ -15,6 +15,8 @@ const mockParticipantFindMany = jest.fn() as AnyMock;
 const mockParticipantDeleteMany = jest.fn() as AnyMock;
 const mockSecretDeleteMany = jest.fn() as AnyMock;
 const mockInviteFindMany = jest.fn() as AnyMock;
+const mockHostFindUnique = jest.fn() as AnyMock;
+const mockRemoveHostNode = jest.fn() as AnyMock;
 const mockWithdrawNodeFunds = jest.fn() as AnyMock;
 
 const tx = {
@@ -26,8 +28,25 @@ jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraLocalParticipant: { findMany: mockParticipantFindMany },
 		hydraHeadInvite: { findMany: mockInviteFindMany },
+		hydraHost: { findUnique: mockHostFindUnique },
 		$transaction: (run: (client: typeof tx) => Promise<unknown>) => run(tx),
 	},
+}));
+
+jest.unstable_mockModule('@/services/hydra-host/client', () => ({
+	removeHostNode: mockRemoveHostNode,
+	HydraHostRequestError: class HydraHostRequestError extends Error {
+		constructor(
+			message: string,
+			readonly status: number,
+		) {
+			super(message);
+		}
+	},
+}));
+
+jest.unstable_mockModule('@/utils/security/encryption', () => ({
+	decrypt: (value: string) => value,
 }));
 
 jest.unstable_mockModule('@/services/hydra-node-funding/withdraw', () => ({
@@ -46,6 +65,7 @@ beforeAll(async () => {
 });
 
 const RESERVATION = { hydraHostId: 'host-1', hostNodeId: 'node-1' };
+const HOST = { baseUrl: 'https://host.example', encryptedAdminToken: 'token', allowInsecureHttp: false };
 
 function sweep(code: string) {
 	return { address: 'addr', balanceLovelace: '0', txHash: null, reason: null, code };
@@ -56,6 +76,8 @@ beforeEach(() => {
 	mockParticipantFindMany.mockResolvedValue([{ id: 'participant-1', hydraSecretKeyId: 'key-1' }]);
 	mockInviteFindMany.mockResolvedValue([]);
 	mockWithdrawNodeFunds.mockResolvedValue(sweep('dust'));
+	mockHostFindUnique.mockResolvedValue(HOST);
+	mockRemoveHostNode.mockResolvedValue(undefined);
 });
 
 describe('releaseReservedParticipants', () => {
@@ -174,5 +196,36 @@ describe('releaseAbandonedReservations', () => {
 		};
 		expect(where.hydraHeadId).toBeNull();
 		expect(Date.now() - where.createdAt.lt.getTime()).toBeGreaterThanOrEqual(60 * 60 * 1000);
+	});
+});
+
+describe('the Host node behind a reservation', () => {
+	it('is removed before the rows that name it are deleted', async () => {
+		await releaseReservedParticipants(RESERVATION);
+
+		expect(mockRemoveHostNode).toHaveBeenCalledWith('https://host.example', 'token', 'node-1', {
+			force: false,
+			allowInsecureHttp: false,
+		});
+		expect(mockParticipantDeleteMany).toHaveBeenCalled();
+	});
+
+	it('keeps the participant when the Host will not give the node up', async () => {
+		mockRemoveHostNode.mockRejectedValue(new Error('host unreachable'));
+
+		// `hostNodeId` is recorded nowhere else, so deleting the rows here would
+		// leave a running node nobody can name, with the only keys to its funds
+		// gone.
+		await expect(releaseReservedParticipants(RESERVATION)).resolves.toEqual({ released: 0, retained: 1 });
+		expect(mockParticipantDeleteMany).not.toHaveBeenCalled();
+		expect(mockSecretDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it('treats a node the Host no longer has as removed', async () => {
+		const { HydraHostRequestError } = await import('@/services/hydra-host/client');
+		mockRemoveHostNode.mockRejectedValue(new HydraHostRequestError('gone', 404));
+
+		await expect(releaseReservedParticipants(RESERVATION)).resolves.toEqual({ released: 1, retained: 0 });
+		expect(mockParticipantDeleteMany).toHaveBeenCalled();
 	});
 });

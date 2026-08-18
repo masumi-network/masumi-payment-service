@@ -221,9 +221,12 @@ export class Supervisor {
 			});
 		} catch (error) {
 			this.logger.error(`[supervisor] tick failed: ${(error as Error).message}`);
-		} finally {
-			this.ticking = false;
 		}
+		// The flag is cleared by `tick`, together with `currentTick`, and only
+		// there. Clearing it here as well opened a microtask-wide window in which a
+		// second `tick` could start before the first had nulled `currentTick` — and
+		// the first one then nulled the second one's handle, leaving `shutdown()`
+		// with nothing to await.
 	}
 
 	/**
@@ -729,10 +732,27 @@ export class Supervisor {
 
 	private async remove(record: NodeRecord, reason: string): Promise<void> {
 		this.logger.info(`[supervisor] removing ${record.nodeId}: ${reason}`);
+		// The intent is written down BEFORE anything destroys the state it was
+		// derived from. `stop` writes `Draining` and then `Stopped` over whatever
+		// the record said, and the planner reads the state to decide what to do
+		// next — so a host killed between the stop and `store.remove` resumed a
+		// node it was in the middle of deleting.
+		//
+		// `requestRemoval` sets this on the API path for exactly that reason. The
+		// planner-initiated removals did not, and the escrow one is the case that
+		// bites: an expired `PendingEscrow` node whose state is overwritten by the
+		// stop can never match the `PendingEscrow` reaper again, so it settles into
+		// `Idle` forever holding its peer port, its persistence directory and the
+		// signing keys of a node the payment service never acknowledged — the exact
+		// orphan the escrow design exists to prevent.
+		const doomed =
+			record.removalRequested === true
+				? record
+				: ((await this.store.update(record.nodeId, (current) => ({ ...current, removalRequested: true }))) ?? record);
 		// Unconditionally, because "not a child of this host" is not the same as
 		// "not running": `stop` takes the process back by pid when it can, and says
 		// so when it cannot.
-		const stopped = await this.stop(record, reason);
+		const stopped = await this.stop(doomed, reason);
 
 		// A node that still answers is one the stop could not reach. Deleting its
 		// persistence directory out from under it and handing its peer port to the
@@ -796,7 +816,21 @@ export class Supervisor {
 		// there is nothing here to catch.
 		await this.currentTick;
 		const records = await this.store.list();
-		await mapWithConcurrency(records, RECONCILE_CONCURRENCY, async (record) => {
+		// Every node drains at once, not RECONCILE_CONCURRENCY at a time.
+		//
+		// Shutdown is one round of waiting, not work: a node costs drainTimeoutMs
+		// (120s) plus SIGKILL_GRACE_MS (30s) plus SIGKILL_WAIT_MS (5s) = 155s worst
+		// case, almost all of it idle. Batching them at 8 made the worst case
+		// `ceil(nodes / 8) x 155s`, so a host at its default capacity of 32 needed
+		// 620s — and `SHUTDOWN_GRACE_MS` hard-exits the process at 240s. Past the
+		// first batch SIGTERM never finished: the runtime killed the remaining
+		// hydra-nodes mid-round and every one of them came back `lastStopUndrained`,
+		// each carrying an unwedge check and a possibly stranded round.
+		//
+		// Raising the compose grace does not help while the host kills itself
+		// first, so the fan-out is what has to change. The reconcile path keeps its
+		// limit: that one really is work, and it runs every 15s.
+		await mapWithConcurrency(records, Math.max(1, records.length), async (record) => {
 			if (!this.processes.isRunning(record.nodeId)) {
 				return;
 			}

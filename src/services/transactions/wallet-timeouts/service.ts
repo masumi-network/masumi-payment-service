@@ -161,9 +161,18 @@ export async function updateWalletTransactionHash() {
 						});
 						for (const paymentRequest of result) {
 							if (paymentRequest.currentTransactionId == null) {
+								// `lockPurpose == null` appears in every lock-clearing condition
+								// in this file: a lock naming a purpose is not a batcher's and
+								// is not subject to this timeout. A Hydra L1 deposit holds its
+								// wallet across a full L1 confirmation and never attaches a
+								// PendingTransaction, so it matches these predicates exactly
+								// while being entirely healthy; clearing one hands the wallet to
+								// a batcher mid-carve and one of the two spends then dies on
+								// chain as BadInputsUTxO. See `HYDRA_L1_LOCK_PURPOSE`.
 								if (
 									paymentRequest.SmartContractWallet != null &&
 									paymentRequest.SmartContractWallet.pendingTransactionId == null &&
+									paymentRequest.SmartContractWallet.lockPurpose == null &&
 									paymentRequest.SmartContractWallet.lockedAt &&
 									new Date(paymentRequest.SmartContractWallet.lockedAt) <
 										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -183,6 +192,7 @@ export async function updateWalletTransactionHash() {
 															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
 															lockedAt:
 																paymentRequest.SmartContractWallet.pendingTransactionId == null &&
+																paymentRequest.SmartContractWallet.lockPurpose == null &&
 																paymentRequest.SmartContractWallet.lockedAt &&
 																new Date(paymentRequest.SmartContractWallet.lockedAt) <
 																	new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -202,7 +212,8 @@ export async function updateWalletTransactionHash() {
 									paymentRequest.SmartContractWallet != null &&
 									((paymentRequest.SmartContractWallet.pendingTransactionId != null &&
 										paymentRequest.SmartContractWallet.pendingTransactionId == paymentRequest.currentTransactionId) ||
-										(paymentRequest.SmartContractWallet.lockedAt &&
+										(paymentRequest.SmartContractWallet.lockPurpose == null &&
+											paymentRequest.SmartContractWallet.lockedAt &&
 											new Date(paymentRequest.SmartContractWallet.lockedAt) <
 												new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL)))
 								) {
@@ -223,7 +234,8 @@ export async function updateWalletTransactionHash() {
 																(paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	paymentRequest.SmartContractWallet?.pendingTransactionId ==
 																		paymentRequest.currentTransactionId) ||
-																(paymentRequest.SmartContractWallet?.lockedAt &&
+																(paymentRequest.SmartContractWallet?.lockPurpose == null &&
+																	paymentRequest.SmartContractWallet?.lockedAt &&
 																	new Date(paymentRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -232,7 +244,8 @@ export async function updateWalletTransactionHash() {
 																(paymentRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	paymentRequest.SmartContractWallet?.pendingTransactionId ==
 																		paymentRequest.currentTransactionId) ||
-																(paymentRequest.SmartContractWallet?.lockedAt &&
+																(paymentRequest.SmartContractWallet?.lockPurpose == null &&
+																	paymentRequest.SmartContractWallet?.lockedAt &&
 																	new Date(paymentRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -320,6 +333,7 @@ export async function updateWalletTransactionHash() {
 								if (
 									purchaseRequest.SmartContractWallet != null &&
 									purchaseRequest.SmartContractWallet.pendingTransactionId == null &&
+									purchaseRequest.SmartContractWallet.lockPurpose == null &&
 									purchaseRequest.SmartContractWallet.lockedAt &&
 									new Date(purchaseRequest.SmartContractWallet.lockedAt) <
 										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -339,6 +353,7 @@ export async function updateWalletTransactionHash() {
 															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
 															lockedAt:
 																purchaseRequest.SmartContractWallet.pendingTransactionId == null &&
+																purchaseRequest.SmartContractWallet.lockPurpose == null &&
 																purchaseRequest.SmartContractWallet.lockedAt &&
 																new Date(purchaseRequest.SmartContractWallet.lockedAt) <
 																	new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -358,7 +373,8 @@ export async function updateWalletTransactionHash() {
 									purchaseRequest.SmartContractWallet != null &&
 									((purchaseRequest.SmartContractWallet.pendingTransactionId != null &&
 										purchaseRequest.SmartContractWallet.pendingTransactionId == purchaseRequest.currentTransactionId) ||
-										(purchaseRequest.SmartContractWallet.lockedAt &&
+										(purchaseRequest.SmartContractWallet.lockPurpose == null &&
+											purchaseRequest.SmartContractWallet.lockedAt &&
 											new Date(purchaseRequest.SmartContractWallet.lockedAt) <
 												new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL)))
 								) {
@@ -379,7 +395,8 @@ export async function updateWalletTransactionHash() {
 																(purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	purchaseRequest.SmartContractWallet?.pendingTransactionId ==
 																		purchaseRequest.currentTransactionId) ||
-																(purchaseRequest.SmartContractWallet?.lockedAt &&
+																(purchaseRequest.SmartContractWallet?.lockPurpose == null &&
+																	purchaseRequest.SmartContractWallet?.lockedAt &&
 																	new Date(purchaseRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -388,7 +405,8 @@ export async function updateWalletTransactionHash() {
 																(purchaseRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	purchaseRequest.SmartContractWallet?.pendingTransactionId ==
 																		purchaseRequest.currentTransactionId) ||
-																(purchaseRequest.SmartContractWallet?.lockedAt &&
+																(purchaseRequest.SmartContractWallet?.lockPurpose == null &&
+																	purchaseRequest.SmartContractWallet?.lockedAt &&
 																	new Date(purchaseRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -467,6 +485,7 @@ export async function updateWalletTransactionHash() {
 								if (
 									registryRequest.SmartContractWallet != null &&
 									registryRequest.SmartContractWallet.pendingTransactionId == null &&
+									registryRequest.SmartContractWallet.lockPurpose == null &&
 									registryRequest.SmartContractWallet.lockedAt &&
 									new Date(registryRequest.SmartContractWallet.lockedAt) <
 										new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -497,6 +516,7 @@ export async function updateWalletTransactionHash() {
 															//we expect there not to be a pending transaction. Otherwise we do not unlock the wallet
 															lockedAt:
 																registryRequest.SmartContractWallet.pendingTransactionId == null &&
+																registryRequest.SmartContractWallet.lockPurpose == null &&
 																registryRequest.SmartContractWallet.lockedAt &&
 																new Date(registryRequest.SmartContractWallet.lockedAt) <
 																	new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL)
@@ -544,7 +564,8 @@ export async function updateWalletTransactionHash() {
 									registryRequest.SmartContractWallet != null &&
 									((registryRequest.SmartContractWallet.pendingTransactionId != null &&
 										registryRequest.SmartContractWallet.pendingTransactionId == registryRequest.currentTransactionId) ||
-										(registryRequest.SmartContractWallet.lockedAt &&
+										(registryRequest.SmartContractWallet.lockPurpose == null &&
+											registryRequest.SmartContractWallet.lockedAt &&
 											new Date(registryRequest.SmartContractWallet.lockedAt) <
 												new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL)))
 								) {
@@ -576,7 +597,8 @@ export async function updateWalletTransactionHash() {
 																(registryRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	registryRequest.SmartContractWallet?.pendingTransactionId ==
 																		registryRequest.currentTransactionId) ||
-																(registryRequest.SmartContractWallet?.lockedAt &&
+																(registryRequest.SmartContractWallet?.lockPurpose == null &&
+																	registryRequest.SmartContractWallet?.lockedAt &&
 																	new Date(registryRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -585,7 +607,8 @@ export async function updateWalletTransactionHash() {
 																(registryRequest.SmartContractWallet?.pendingTransactionId != null &&
 																	registryRequest.SmartContractWallet?.pendingTransactionId ==
 																		registryRequest.currentTransactionId) ||
-																(registryRequest.SmartContractWallet?.lockedAt &&
+																(registryRequest.SmartContractWallet?.lockPurpose == null &&
+																	registryRequest.SmartContractWallet?.lockedAt &&
 																	new Date(registryRequest.SmartContractWallet.lockedAt) <
 																		new Date(Date.now() - DEFAULTS.TX_TIMEOUT_INTERVAL))
 																	? null
@@ -1261,6 +1284,13 @@ export async function updateWalletTransactionHash() {
 				deletedAt: null,
 				PendingTransaction: null,
 				PendingSwapTransaction: null,
+				// A lock naming a purpose is not a batcher's and does not belong to
+				// this timeout. See `HYDRA_L1_LOCK_PURPOSE`: a Hydra L1 deposit holds
+				// its wallet across a full L1 confirmation and never attaches a
+				// PendingTransaction, so it matches this predicate exactly while being
+				// entirely healthy. `unlockStalePurposeWalletLocks` sweeps those on
+				// their own, much longer clock.
+				lockPurpose: null,
 			},
 			include: {
 				PaymentSource: { include: { PaymentSourceConfig: true } },
@@ -1273,6 +1303,12 @@ export async function updateWalletTransactionHash() {
 						where: { id: wallet.id, deletedAt: null },
 						data: {
 							lockedAt: null,
+							// Cleared together with the lock it describes. A marker left
+							// behind on an unlocked wallet would be adopted by the next
+							// holder — a batcher, which sets only `lockedAt` — and the next
+							// `releaseHotWalletAfterL1` would then free that batcher's lock
+							// during its build window.
+							lockPurpose: null,
 						},
 					});
 

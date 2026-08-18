@@ -387,9 +387,10 @@ export function IssueHydraInviteDialog({
                       only.
                     </p>
                     <p>
-                      Once they redeem, about 10 ADA moves from this wallet to the node to cover the
-                      head&apos;s on-chain fees. Nothing leaves the wallet while the invite is
-                      unused, and this is separate from whatever you later put into the head.
+                      Once they redeem, about 30 ADA moves from this wallet to the node to cover the
+                      head&apos;s on-chain fees, topped back up whenever it falls under 15. Nothing
+                      leaves the wallet while the invite is unused, and this is separate from
+                      whatever you later put into the head.
                     </p>
                   </InfoHint>
                 </p>

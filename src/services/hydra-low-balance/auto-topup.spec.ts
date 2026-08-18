@@ -6,11 +6,12 @@ type AnyMock = Mock<(...args: any[]) => any>;
 const mockFindMany = jest.fn() as AnyMock;
 const mockCount = jest.fn() as AnyMock;
 const mockExecuteHydraTopup = jest.fn() as AnyMock;
+const mockLoggerWarn = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@masumi/payment-core/db', () => ({
 	prisma: {
 		hydraLowBalanceRule: { findMany: mockFindMany },
-		hydraTopup: { count: mockCount },
+		hydraTopup: { findMany: mockCount },
 	},
 }));
 
@@ -19,7 +20,7 @@ jest.unstable_mockModule('@/services/hydra-topup/execute', () => ({
 }));
 
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
-	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+	logger: { info: jest.fn(), warn: mockLoggerWarn, error: jest.fn(), debug: jest.fn() },
 }));
 
 let runHydraAutoTopupCycle: typeof import('./auto-topup').runHydraAutoTopupCycle;
@@ -42,7 +43,7 @@ function rule(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
 	jest.clearAllMocks();
-	mockCount.mockResolvedValue(0);
+	mockCount.mockResolvedValue([]);
 	mockExecuteHydraTopup.mockResolvedValue({ topupId: 't1', depositTxHash: 'a'.repeat(64) });
 });
 
@@ -74,11 +75,36 @@ describe('runHydraAutoTopupCycle', () => {
 
 	it('skips when a top-up is already pending for the participant', async () => {
 		mockFindMany.mockResolvedValue([rule()]);
-		mockCount.mockResolvedValue(1);
+		mockCount.mockResolvedValue([{ id: 'topup-1', status: 'Pending', updatedAt: new Date(), depositTxHash: null }]);
 
 		await runHydraAutoTopupCycle();
 
 		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
+		expect(mockLoggerWarn).not.toHaveBeenCalled();
+	});
+
+	// A deposit the head never picks up leaves its row `Confirmed` for good, and
+	// that row disables auto top-up for the participant from then on. The rule
+	// stays Low and the low-balance webhook fires only on the Healthy -> Low
+	// edge, so without this the failure is completely silent.
+	it('says so when the deposit blocking it has been in flight for an hour', async () => {
+		mockFindMany.mockResolvedValue([rule()]);
+		mockCount.mockResolvedValue([
+			{
+				id: 'topup-1',
+				status: 'Confirmed',
+				updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+				depositTxHash: 'aa'.repeat(32),
+			},
+		]);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
+		expect(mockLoggerWarn).toHaveBeenCalledWith(
+			expect.stringContaining('in flight too long'),
+			expect.objectContaining({ topupId: 'topup-1' }),
+		);
 	});
 
 	// A deposit that has confirmed on chain has not reached the head: the node
@@ -87,7 +113,7 @@ describe('runHydraAutoTopupCycle', () => {
 	// a fresh deposit every cycle.
 	it('counts a confirmed but unabsorbed deposit as in flight', async () => {
 		mockFindMany.mockResolvedValue([rule()]);
-		mockCount.mockResolvedValue(0);
+		mockCount.mockResolvedValue([]);
 
 		await runHydraAutoTopupCycle();
 
@@ -96,6 +122,8 @@ describe('runHydraAutoTopupCycle', () => {
 				hydraLocalParticipantId: 'participant-1',
 				status: { in: ['Preparing', 'Pending', 'Confirmed'] },
 			},
+			select: { id: true, status: true, updatedAt: true, depositTxHash: true },
+			orderBy: { updatedAt: 'asc' },
 		});
 	});
 

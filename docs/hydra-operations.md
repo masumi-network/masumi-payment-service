@@ -36,7 +36,7 @@ cannot come back.
 | **A Hydra Host**                     | Supervises one `hydra-node` process per head. Ships as a container; see [hydra-host-native-mode.md](hydra-host-native-mode.md) for macOS and arm64 Linux, where it runs as a plain Node process instead. |
 | **A public address**                 | Your counterparty's node connects to yours directly. A hostname or IP that resolves from outside, and one open TCP port per head.                                                                        |
 | **A Blockfrost project**             | The node follows the chain through it. Same network as your payment source.                                                                                                                              |
-| **ADA in a purchasing wallet**       | For the funds you put in the head, plus about 10 ADA per head for its node to pay the on-chain fees.                                                                                                     |
+| **ADA in a purchasing wallet**       | For the funds you put in the head, plus about 30 ADA per head for its node to pay the on-chain fees (topped back up whenever it falls under 15).                                                         |
 | **A counterparty who also runs one** | Both sides need a node. There is no one-sided head.                                                                                                                                                      |
 
 Both nodes must run the **same `hydra-node` version** (2.3.0 at the time of
@@ -59,6 +59,7 @@ holding a mainnet head.
 ```bash
 # Local testing.
 cd packages/hydra-host
+HYDRA_HOST_IMAGE=hydra-host:local \
 HYDRA_HOST_PUBLIC_HOST=hydra.example.com \
 HYDRA_HOST_NETWORK=preprod \
 HYDRA_HOST_ADMIN_TOKEN="$(openssl rand -hex 32)" \
@@ -73,10 +74,13 @@ only hurt later:
 - **A durable volume at `/data`.** It holds a SQLite event store and etcd's raft
   WAL, both of which need real fsync — block storage, not a network filesystem.
   Losing it loses the heads.
-- **A shutdown grace period of about two minutes** (`--stop-timeout 120`, or
-  `terminationGracePeriodSeconds: 120`). The supervisor drains a snapshot round
+- **A shutdown grace period of about four minutes** (`--stop-timeout 250`, or
+  `terminationGracePeriodSeconds: 250`). The supervisor drains a snapshot round
   before stopping, and etcd's raft WAL does not tolerate being cut off
-  mid-round. The default 10 seconds will eventually corrupt it.
+  mid-round. The arithmetic: a node that will not drain takes 120 s, then 30 s
+  before SIGKILL, then 5 s waiting on it — and the Host gives up on its own
+  drain at 240 s, so the platform's timeout has to sit past that. The default
+  10 seconds will eventually corrupt it.
 - **One instance per Host identity.** The peer ports, the advertise address and
   the volume all belong to a specific Host. Do not scale it horizontally.
 - **The Blockfrost file, mounted read-only.**
@@ -92,24 +96,28 @@ a head. `HYDRA_HOST_PUBLIC_HOST` is a bare hostname or IP with no scheme, port
 or path; the Host refuses to start otherwise, because that value becomes each
 node's advertise identity and must not change for a head's lifetime.
 
-The ports are the security boundary. Four ranges exist and only three may leave
+The ports are the security boundary. Five ranges exist and only three may leave
 the machine:
 
 | Port        | Plane                                        | Exposed?                                                                                |
 | ----------- | -------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `8443`      | Control. Your payment service talks to this. | Yes, bearer-token gated                                                                 |
 | `8444`      | Exchange. Where invites are redeemed.        | Yes, to whoever you invite                                                              |
-| `5001-5032` | Peer. One per head.                          | Yes — and see below                                                                     |
+| `5001-5032` | Peer. One per head.                          | Yes, but not by the base compose file — see below                                       |
 | `4001-4032` | `hydra-node` API                             | **Never.** Unauthenticated, can close a head.                                           |
 | `6001-6032` | Prometheus                                   | **Never.** No bind-host option exists, so `HYDRA_HOST_MONITORING_ENABLED` defaults off. |
 
 The API range is additionally bound to `127.0.0.1` inside the container, so it
 stays shut even if someone switches to host networking.
 
-**The peer plane cannot authenticate its callers.** Fetch the per-head
-allow-list from `GET /v1/peer-allowlist` — it renders an nftables ruleset — and
-re-apply it whenever a head is added or removed. Skipping this leaves your peer
-ports open to the internet.
+**The peer plane cannot authenticate its callers**, which is why the base
+compose file does not publish it. It has to be reachable — a head whose peer
+port is closed cannot reach its counterparty — so the order matters. Fetch the
+per-head allow-list from `GET /v1/peer-allowlist` — it renders an nftables
+ruleset — apply it, and only then bring the range up with
+`-f docker-compose.public-peer.yml`. Re-apply the ruleset whenever a head is
+added or removed. Skipping it leaves 32 unauthenticated etcd raft ports open to
+the internet.
 
 `BLOCKFROST_PROJECT_FILE` is a **path to a file** containing the project id,
 not the id itself: it is handed to `hydra-node` as `--blockfrost` and the node
@@ -254,12 +262,12 @@ Two things follow from how Hydra works here:
 
 Set once per head, in the invite, and fixed for its life.
 
-|                         | Preprod  | Mainnet  | What it does                                                                                                                                                                                                   |
-| ----------------------- | -------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Dispute window**      | 12 hours | 5 days   | After a head closes, how long either side may challenge the final balances. Nothing settles until it passes, so it is also how long after closing before you have your funds back. Long is the safe direction. |
-| **Out-of-sync limit**   | 30 min   | 30 min   | How long a node may fall behind before it refuses to keep transacting. Capped at half the dispute window, so a head with a short window gets a shorter limit, and never under 2 minutes.                       |
-| **Deposit settle time** | 10 min   | 20 min   | The deposit period above.                                                                                                                                                                                      |
-| **Invite lifetime**     | 7 days   | 7 days   | How long the node and peer port stay reserved for an unredeemed invite.                                                                                                                                        |
+|                         | Preprod  | Mainnet | What it does                                                                                                                                                                                                   |
+| ----------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Dispute window**      | 12 hours | 5 days  | After a head closes, how long either side may challenge the final balances. Nothing settles until it passes, so it is also how long after closing before you have your funds back. Long is the safe direction. |
+| **Out-of-sync limit**   | 30 min   | 30 min  | How long a node may fall behind before it refuses to keep transacting. Capped at half the dispute window, so a head with a short window gets a shorter limit, and never under 2 minutes.                       |
+| **Deposit settle time** | 10 min   | 20 min  | The deposit period above.                                                                                                                                                                                      |
+| **Invite lifetime**     | 7 days   | 7 days  | How long the node and peer port stay reserved for an unredeemed invite.                                                                                                                                        |
 
 The out-of-sync limit used to be half the dispute window outright — 6 hours on
 preprod, 2.5 days on mainnet — which meant a node could keep signing for days on
@@ -278,7 +286,7 @@ close within five days.
 goes through it; anything else goes to L1. There is no per-payment switch, and
 a head that is not usable is never an error — it is a slower payment.
 
-**Watch the node balance.** Each head's node holds about 10 ADA of its own to
+**Watch the node balance.** Each head's node holds about 30 ADA of its own to
 pay for opening, depositing and closing. It is topped up automatically from the
 assigned wallet. A node that cannot pay cannot close its head, which is the one
 failure that costs you the dispute window.

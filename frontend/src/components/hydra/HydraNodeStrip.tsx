@@ -131,6 +131,21 @@ export function HydraNodeStrip({
         );
       })}
 
+      {/* Offered here as well as in the empty state. A head needs a node at each
+          end, and this was the only control that connected one — inside the
+          `hosts.length === 0` branch above, so the moment the first node was
+          connected there was no way anywhere in the app to connect a second. */}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="text-xs text-muted-foreground"
+        onClick={onAddNode}
+      >
+        <Plus className="h-4 w-4" />
+        Connect node
+      </Button>
+
       {selectedHostId !== null && (
         <Button
           type="button"

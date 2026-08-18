@@ -307,6 +307,32 @@ export const unrecoveredHydraTopupWhere = {
 	status: { notIn: [HydraTopupStatus.Absorbed, HydraTopupStatus.Recovered] },
 } satisfies Prisma.HydraTopupWhereInput;
 
+/**
+ * Refuse deletion while any of these heads still has money at a deposit script.
+ *
+ * Runs BEFORE anything else deletion does, and that ordering is the point.
+ * `quiesceHydraHeadsForDeletion` writes `isEnabled: false` and disconnects the
+ * head, and the participant path then sweeps the node's L1 fuel — so by the
+ * time the filter in `reconciledFinalHeadFilter` refused the delete, the two
+ * things a recovery needs were both gone: `recoverHydraDeposit` requires a live
+ * node session for the head, and the node needs fuel to pay for the recovery.
+ * The operator was told to recover first by an error whose own request had just
+ * made recovering impossible.
+ */
+export async function assertNoUnrecoveredHydraDeposits(headIds: readonly string[]): Promise<void> {
+	if (headIds.length === 0) return;
+	const unrecovered = await prisma.hydraTopup.count({
+		where: { hydraHeadId: { in: [...headIds] }, ...unrecoveredHydraTopupWhere },
+	});
+	if (unrecovered > 0) {
+		throw createHttpError(
+			409,
+			`Cannot delete: ${unrecovered} deposit(s) were never absorbed or recovered. ` +
+				'Recover them from the head first — deleting this takes the transaction hashes that name them.',
+		);
+	}
+}
+
 export const reconciledFinalHeadFilter = {
 	status: HydraHeadStatus.Final,
 	isEnabled: false,

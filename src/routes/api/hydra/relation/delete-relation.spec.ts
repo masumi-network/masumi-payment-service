@@ -12,6 +12,7 @@ const mockDeleteRelation = jest.fn() as AnyMock;
 const mockDeleteSecrets = jest.fn() as AnyMock;
 const mockDeleteVerificationKeys = jest.fn() as AnyMock;
 const mockQuiesceHydraHeadsForDeletion = jest.fn() as AnyMock;
+const mockAssertNoUnrecoveredHydraDeposits = jest.fn() as AnyMock;
 
 const unrecoveredHydraTopupWhere = {
 	depositTxHash: { not: null },
@@ -67,6 +68,7 @@ jest.unstable_mockModule('../deletion-guard', () => ({
 	reconciledFinalHeadFilter,
 	unsettledL2TransactionWhere: reconciledFinalHeadFilter.Transactions.none,
 	unrecoveredHydraTopupWhere,
+	assertNoUnrecoveredHydraDeposits: mockAssertNoUnrecoveredHydraDeposits,
 }));
 
 let deleteHydraRelation: typeof import('./index').deleteHydraRelation;
@@ -83,6 +85,7 @@ beforeEach(() => {
 	mockFindRelationPlan.mockResolvedValue({ Heads: [{ id: 'head-1' }] });
 	mockQueryRaw.mockResolvedValue([]);
 	mockQuiesceHydraHeadsForDeletion.mockResolvedValue(undefined);
+	mockAssertNoUnrecoveredHydraDeposits.mockResolvedValue(undefined);
 	mockDeleteRelation.mockResolvedValue({ count: 1 });
 	mockDeleteSecrets.mockResolvedValue({ count: 1 });
 	mockDeleteVerificationKeys.mockResolvedValue({ count: 1 });
@@ -109,6 +112,21 @@ describe('deleteHydraRelation', () => {
 			expect(mockDeleteRelation).not.toHaveBeenCalled();
 		},
 	);
+
+	// Ordering, not just the refusal: quiesce disconnects the very head a recovery
+	// would have to go through, so the error's own instruction has to still be
+	// followable when it is raised.
+	it('refuses a relation with an unrecovered deposit before disconnecting its heads', async () => {
+		mockAssertNoUnrecoveredHydraDeposits.mockRejectedValue(
+			Object.assign(new Error('Cannot delete: 1 deposit(s) were never absorbed or recovered.'), {
+				statusCode: 409,
+			}),
+		);
+
+		await expect(deleteHydraRelation('relation-1')).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockQuiesceHydraHeadsForDeletion).not.toHaveBeenCalled();
+		expect(mockDeleteRelation).not.toHaveBeenCalled();
+	});
 
 	it('deletes an all-final relation and every participant-owned key atomically', async () => {
 		mockFindRelation.mockResolvedValue({

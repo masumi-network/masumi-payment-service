@@ -673,11 +673,17 @@ export function doesHydraTransactionTransitionReachSnapshot(
 		// was absorbed keeps its reference on its way into `utxo` — and one that a
 		// transaction spent is already accounted for by that transaction's input.
 		// Neither earns an allowance; counting either would let value vanish twice.
-		const removalAllowance = new Map<string, number>();
+		//
+		// A removal identified this way is CERTAIN, not an upper bound: the entry
+		// was pending, it is not in `current`, and no transaction spent it, so it
+		// left. Treating it as optional slack let an unexplained output of the same
+		// value take its place — the settled decommit paid for the arrival and the
+		// transition was accepted with value appearing from nowhere.
+		const removalCount = new Map<string, number>();
 		for (const pendingOutputs of [previous.decommitOutputs, previous.committedOutputs]) {
 			for (const [reference, value] of pendingOutputs) {
 				if (current.outputs.has(reference) || spentReferences.has(reference)) continue;
-				removalAllowance.set(value, (removalAllowance.get(value) ?? 0) + 1);
+				removalCount.set(value, (removalCount.get(value) ?? 0) + 1);
 			}
 		}
 		const allOutputs = new Set([
@@ -685,28 +691,53 @@ export function doesHydraTransactionTransitionReachSnapshot(
 			...current.outputMultiset.keys(),
 			...survivingCreated.keys(),
 			...injectionAllowance.keys(),
-			...removalAllowance.keys(),
+			...removalCount.keys(),
 		]);
-		let derivedConsumedOutputCount = 0;
+		// Per serialized value the transition equation is
+		//
+		//   current = previous + created + injected - consumed - removed
+		//
+		// with `injected` free in [0, injectionAllowance] and `removed` fixed at
+		// `removalCount`. That leaves ONE free variable per value, so `consumed` is
+		// not a number to compute but an interval to intersect: every extra deposit
+		// admitted is an extra previous output the confirmed list may have spent.
+		//
+		// Choosing a point on that interval — the minimum injection, which is also
+		// the minimum consumption — and then demanding it equal `externalInputCount`
+		// exactly was wrong whenever one value was both injected and consumed in the
+		// same transition. That is an ordinary shape, not a corner: a top-up is an
+		// exact-amount carve committed whole to the participant's own wallet, so a
+		// second top-up of the same size is byte-identical to what the first left in
+		// the head, and any L2 transaction spending the first one collides with it.
+		// The walk under-counted consumption, rejected the frame, and history
+		// replays from the beginning on every reconnect — so the head lost its
+		// verified session for good and every L2 escrow operation on it failed
+		// closed.
+		//
+		// Writing the free variable as d = injected - removed, the bounds are the
+		// allowance itself plus `consumed >= 0` and `consumed <= previous` (the
+		// confirmed list cannot spend a deposit that has not landed yet).
+		let minimumConsumed = 0;
+		let maximumConsumed = 0;
 		for (const output of allOutputs) {
 			const previousCount = previous.outputMultiset.get(output) ?? 0;
 			const createdCount = survivingCreated.get(output) ?? 0;
 			const currentCount = current.outputMultiset.get(output) ?? 0;
-			// Any surplus of `current` beyond what the previous state plus confirmed-tx
-			// outputs can supply must be an authenticated incremental-commit deposit.
-			const injectionNeeded = Math.max(0, currentCount - previousCount - createdCount);
-			if (injectionNeeded > (injectionAllowance.get(output) ?? 0)) return false;
-			// The remaining shortfall is confirmed-tx consumption from the previous
-			// state, less any authenticated decommit removal (not a transaction input,
-			// so it must not count toward externalInputCount).
-			let consumed = previousCount + createdCount + injectionNeeded - currentCount;
-			consumed -= Math.min(consumed, removalAllowance.get(output) ?? 0);
-			if (!Number.isSafeInteger(consumed) || consumed < 0 || consumed > previousCount) {
-				return false;
-			}
-			derivedConsumedOutputCount += consumed;
+			const removed = removalCount.get(output) ?? 0;
+			const injectable = injectionAllowance.get(output) ?? 0;
+			const lowestDelta = Math.max(-removed, currentCount - previousCount - createdCount);
+			const highestDelta = Math.min(injectable - removed, currentCount - createdCount);
+			// No injection count can satisfy the equation for this value at all: the
+			// surplus exceeds what the declared deposits can supply, or the shortfall
+			// exceeds what the previous state held.
+			if (lowestDelta > highestDelta) return false;
+			minimumConsumed += previousCount + createdCount - currentCount + lowestDelta;
+			maximumConsumed += previousCount + createdCount - currentCount + highestDelta;
 		}
-		return derivedConsumedOutputCount === externalInputCount;
+		if (!Number.isSafeInteger(minimumConsumed) || !Number.isSafeInteger(maximumConsumed)) return false;
+		// Each value's delta moves independently over a contiguous integer range, so
+		// every total in between is reachable and the tie is a containment test.
+		return externalInputCount >= minimumConsumed && externalInputCount <= maximumConsumed;
 	} catch {
 		return false;
 	}

@@ -26,8 +26,10 @@ jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
 
 jest.unstable_mockModule('../deletion-guard', () => ({
 	quiesceHydraHeadsForDeletion: jest.fn(),
+	assertNoUnrecoveredHydraDeposits: jest.fn(),
 	reconciledFinalHeadFilter: {},
 	unsettledL2TransactionWhere: {},
+	unrecoveredHydraTopupWhere: {},
 }));
 
 // Decryption is the identity here so the test can assert the *plaintext* that

@@ -24,6 +24,7 @@ import {
   Loader2,
   MoreHorizontal,
   PauseCircle,
+  Pencil,
   PlayCircle,
   RefreshCw,
   Server,
@@ -69,6 +70,15 @@ type HydraNodeDetailsDialogProps = {
   host: HydraHost | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Open the connection form for this node.
+   *
+   * Editing lived on a card that nothing rendered any more, so the URL, the
+   * network and — the one that matters — the admin key of a connected node
+   * could not be changed from anywhere in the app, while this dialog's own
+   * no-admin-key notice told the operator to "add the key from Edit".
+   */
+  onEdit: (host: HydraHost) => void;
 };
 
 /**
@@ -153,7 +163,12 @@ function drainingDescription(host: HydraHost, isDraining: boolean): string {
   );
 }
 
-export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDetailsDialogProps) {
+export function HydraNodeDetailsDialog({
+  host,
+  open,
+  onOpenChange,
+  onEdit,
+}: HydraNodeDetailsDialogProps) {
   const { apiClient } = useAppContext();
   const resync = useResync();
   const { participants, refetch: refetchParticipants } = useHydraLocalParticipants(
@@ -335,6 +350,21 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
               <DropdownMenuContent align="start" className="max-w-80">
                 <DropdownMenuItem
                   className="items-start gap-2"
+                  onClick={() => {
+                    onOpenChange(false);
+                    onEdit(host);
+                  }}
+                >
+                  <Pencil className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="space-y-0.5">
+                    <span className="block">Edit connection</span>
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      Change the URL or replace the admin key. Running heads are untouched.
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="items-start gap-2"
                   onClick={() => setIsTogglingDraining(true)}
                 >
                   {isDraining ? (
@@ -383,7 +413,7 @@ export function HydraNodeDetailsDialog({ host, open, onOpenChange }: HydraNodeDe
             <HydraNotice tone="warn">
               <p>
                 No admin key stored. This node keeps its heads running but cannot start a new one.
-                Add the key from Edit to open heads here again.
+                Add the key from Edit connection to open heads here again.
               </p>
             </HydraNotice>
           )}

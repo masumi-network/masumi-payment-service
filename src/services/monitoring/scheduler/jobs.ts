@@ -95,7 +95,7 @@ export const scheduledJobs: JobDefinition[] = [
 		run: reconcileRecoveredHydraTopups,
 	},
 	{
-		initialDelayMs: 15000,
+		initialDelayMs: 15200,
 		// Its own interval, not the shared Hydra one: each row costs a walk of
 		// address history, and nothing is waiting on the answer.
 		intervalMs: PAYOUT_LOOKUP_INTERVAL_MS,
@@ -127,7 +127,7 @@ export const scheduledJobs: JobDefinition[] = [
 		},
 	},
 	{
-		initialDelayMs: 13000,
+		initialDelayMs: 17000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting Hydra init-tx backfill',
 		shouldRun: isHydraInUse,
@@ -190,7 +190,7 @@ export const scheduledJobs: JobDefinition[] = [
 		},
 	},
 	{
-		initialDelayMs: 14000,
+		initialDelayMs: 18000,
 		intervalMs: CONFIG.LOW_BALANCE_CHECK_INTERVAL * 1000,
 		startMessage: 'Starting Hydra in-head low-balance monitoring',
 		shouldRun: isHydraInUse,
@@ -494,7 +494,7 @@ export const scheduledJobs: JobDefinition[] = [
 		run: checkFundTransferConfirmations,
 	},
 	{
-		initialDelayMs: 15000,
+		initialDelayMs: 19000,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting L2 hydra transaction polling',
 		shouldRun: isHydraInUse,
@@ -506,7 +506,7 @@ export const scheduledJobs: JobDefinition[] = [
 		// advances this node's own payment/purchase rows to the observed state, so a
 		// counterparty-driven in-head transition is not missed (payment/purchase
 		// onChainState divergence). Idempotent; runs on the hydra cadence.
-		initialDelayMs: 20000,
+		initialDelayMs: 20500,
 		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
 		startMessage: 'Starting L2 hydra escrow-state reconcile',
 		shouldRun: isHydraInUse,
