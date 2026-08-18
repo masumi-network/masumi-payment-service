@@ -564,8 +564,20 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
           // real funds, and the amount should be confirmed by the person doing
           // it, not replayed behind their back.
           setAsset('ada');
-          setAmount((Number(failed.committedLovelace) / 1_000_000).toString());
-          toast.info('Amount filled in. Press Add funds to try the deposit again.');
+          // A deposit started without an exact amount commits whole UTxOs and is
+          // recorded with nothing committed, so there is no figure to refill —
+          // filling `0` put the form in a state that rejects on submit with
+          // "Enter how much tADA to move into the head", which reads as a bug in
+          // the retry rather than a deposit that never had an amount.
+          const committedLovelace = Number(failed.committedLovelace ?? 0);
+          if (Number.isFinite(committedLovelace) && committedLovelace > 0) {
+            setAmount((committedLovelace / 1_000_000).toString());
+            toast.info('Amount filled in. Press Add funds to try the deposit again.');
+            return;
+          }
+          toast.info(
+            'That deposit was started without a set amount. Enter how much to move in, then press Add funds.',
+          );
         }}
       />
     </div>

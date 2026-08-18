@@ -731,9 +731,16 @@ export class Supervisor {
 			sideLoadSnapshot: (snapshot) => client.sideLoadSnapshot(snapshot),
 			settleWaitMs: STRANDED_SETTLE_WAIT_MS,
 			sleep,
+			isAborted: () => this.stopped,
 		});
 
 		switch (outcome.kind) {
+			case 'Deferred':
+				this.logger.info(
+					`[supervisor] deferring the stranded-round check for ${record.nodeId}: a shutdown began. ` +
+						'The undrained stop stays recorded, so the check runs on the way back up',
+				);
+				return;
 			case 'Healthy':
 			case 'Progressing':
 			case 'Recovered':

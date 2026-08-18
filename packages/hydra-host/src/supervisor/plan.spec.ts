@@ -230,3 +230,21 @@ describe('planNodeAction while the node is behind', () => {
 		expect(action.kind).not.toBe('Restart');
 	});
 });
+
+// The intervention of last resort must not be reachable only through a code
+// path that is working. `Unwedge` runs several node reads and a side-load; a
+// node that cannot complete them replans `Unwedge` every tick, and with the
+// operator's request checked after it the API answered 202 and did nothing.
+describe('operator restart outranks the unwedge check', () => {
+	it('restarts a node whose previous stop could not be drained when asked to', () => {
+		const action = planNodeAction(record({ lastStopUndrained: true, restartRequested: true }), observe(), LIMITS);
+
+		expect(action.kind).toBe('Restart');
+	});
+
+	it('still unwedges when no operator asked for anything', () => {
+		const action = planNodeAction(record({ lastStopUndrained: true }), observe(), LIMITS);
+
+		expect(action.kind).toBe('Unwedge');
+	});
+});

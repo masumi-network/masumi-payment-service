@@ -65,6 +65,39 @@ export function buildInvalidPendingWalletReleaseWhere(
 	};
 }
 
+/**
+ * The compare-and-swap every unlock in this file writes through.
+ *
+ * Each sweep reads a batch of wallets, does work, then clears the lock — and
+ * between the read and the write another holder can legitimately take the same
+ * wallet. A Hydra L1 deposit is the dangerous one: it holds its wallet across a
+ * full L1 confirmation and never attaches a PendingTransaction, so every
+ * predicate these sweeps select on is also true of a perfectly healthy deposit
+ * moments after it claims. Clearing by wallet id alone frees that deposit
+ * mid-carve, hands the wallet to the batchers, and one of the two spends over
+ * the same input dies on chain as BadInputsUTxO.
+ *
+ * Each builder therefore names the state its sweep actually observed; a write
+ * that matches no row means the wallet moved on and is left alone.
+ */
+export function buildSwapUnlockWhere(walletId: string, swapTransactionId: string): Prisma.HotWalletWhereInput {
+	return { id: walletId, deletedAt: null, pendingSwapTransactionId: swapTransactionId };
+}
+
+export function buildOrphanLockClearWhere(walletId: string): Prisma.HotWalletWhereInput {
+	return { id: walletId, deletedAt: null, pendingTransactionId: null, lockPurpose: null };
+}
+
+export function buildTimedOutUnlockWhere(walletId: string): Prisma.HotWalletWhereInput {
+	return {
+		id: walletId,
+		deletedAt: null,
+		pendingTransactionId: null,
+		pendingSwapTransactionId: null,
+		lockPurpose: null,
+	};
+}
+
 export async function updateWalletTransactionHash() {
 	let release: MutexInterface.Releaser | null;
 	try {
@@ -738,10 +771,24 @@ export async function updateWalletTransactionHash() {
 						// a PendingTransaction. Clear the lock so the next scheduler tick can
 						// re-pick this wallet up.
 						logger.warn(`Wallet ${wallet.id} locked without PendingTransaction past timeout — clearing orphan lock`);
-						await prisma.hotWallet.update({
-							where: { id: wallet.id, deletedAt: null },
+						// Fenced on the unpurposed, unattached state this row was read in.
+						// Between the read and here a Hydra L1 deposit can claim the wallet
+						// — its own staleness threshold is longer, but a lock this branch
+						// considers timed out can already have crossed it — and the deposit
+						// holds no PendingTransaction, so an unguarded clear by id would
+						// free it mid-carve. It would also leave `lockPurpose` set on an
+						// unlocked wallet, the one half-state `unstickPurposeLocks` exists
+						// to repair, so the leak would not even be visible as one.
+						const unlocked = await prisma.hotWallet.updateMany({
+							where: buildOrphanLockClearWhere(wallet.id),
 							data: { lockedAt: null },
 						});
+						if (unlocked.count !== 1) {
+							logger.info('wallet-timeouts: wallet moved on before the orphan-lock clear; leaving it', {
+								walletId: wallet.id,
+							});
+							return;
+						}
 						tallyUnlockedWallet(wallet);
 						markUnlockedByType(wallet.PaymentSource.paymentSourceType);
 						return;
@@ -1289,10 +1336,27 @@ export async function updateWalletTransactionHash() {
 					}
 
 					if (shouldUnlock) {
-						await prisma.hotWallet.update({
-							where: { id: wallet.id, deletedAt: null },
+						// Fenced on the swap this poll actually resolved. The two Blockfrost
+						// round trips above are seconds long, and inside them the swap status
+						// endpoint can settle this same swap and free the wallet, after which
+						// a Hydra L1 deposit can claim it — `claimHotWalletForL1` needs only
+						// `pendingTransactionId` and `pendingSwapTransactionId` to be null.
+						// An unguarded clear by wallet id would then free a wallet whose carve
+						// is still unconfirmed on chain, hand it to the batchers, and one of
+						// the two spends over the same input dies as BadInputsUTxO. Clearing
+						// `lockPurpose` with it is what makes the unguarded form destroy the
+						// evidence too: the release at the deposit's end matches nothing and
+						// `unstickPurposeLocks` sees no violation to repair.
+						const unlocked = await prisma.hotWallet.updateMany({
+							where: buildSwapUnlockWhere(wallet.id, swapTxId),
 							data: { pendingSwapTransactionId: null, lockedAt: null, lockPurpose: null },
 						});
+						if (unlocked.count !== 1) {
+							logger.info('wallet-timeouts: wallet moved on before the swap unlock; leaving it', {
+								walletId: wallet.id,
+								swapTransactionId: swapTxId,
+							});
+						}
 					}
 				} catch (error) {
 					logger.error(`Error updating swap wallet transaction hash: ${errorToString(error)}`);
@@ -1323,8 +1387,12 @@ export async function updateWalletTransactionHash() {
 		await Promise.allSettled(
 			timedOutLockedHotWallets.map(async (wallet) => {
 				try {
-					await prisma.hotWallet.update({
-						where: { id: wallet.id, deletedAt: null },
+					// Fenced on the same three columns this row was selected by. A Hydra
+					// L1 deposit that claims the wallet between the read and the write
+					// sets `lockPurpose`, and clearing by id alone would free its carve
+					// and destroy the marker in the same statement.
+					const unlocked = await prisma.hotWallet.updateMany({
+						where: buildTimedOutUnlockWhere(wallet.id),
 						data: {
 							lockedAt: null,
 							// Cleared together with the lock it describes. A marker left
@@ -1335,6 +1403,12 @@ export async function updateWalletTransactionHash() {
 							lockPurpose: null,
 						},
 					});
+					if (unlocked.count !== 1) {
+						logger.info('wallet-timeouts: wallet moved on before the timeout unlock; leaving it', {
+							walletId: wallet.id,
+						});
+						return;
+					}
 
 					tallyUnlockedWallet(wallet);
 					markUnlockedByType(wallet.PaymentSource.paymentSourceType);

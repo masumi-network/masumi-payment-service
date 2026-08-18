@@ -167,7 +167,9 @@ export const createInviteSchemaInput = z.object({
 		.int()
 		// Five minutes. A node measures a deposit's age in its OWN chain time, and
 		// the window in which it will take one is a single period wide: from
-		// deposit + period to deposit + three periods.
+		// deposit + one period to deposit + two periods. The deadline it writes is
+		// deposit + three periods — a further period later, and the moment
+		// recovery opens, not the moment absorption closes.
 		//
 		// The old floor of two minutes assumed a chain view about half a minute
 		// behind. A Blockfrost-backed node on preprod was measured 140 to 360

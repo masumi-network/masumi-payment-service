@@ -111,8 +111,15 @@ export class NodeClient {
 		}
 	}
 
-	async fetchLastSeen(): Promise<LastSeenSnapshotResponse> {
-		const body = await this.request('/snapshot/last-seen');
+	/**
+	 * `timeoutMs` exists so a caller working to a deadline can bound the read.
+	 * The drain loop checks its budget only after this resolves, so with the
+	 * default 10s a poll starting just inside a 120s budget returns at ~130s —
+	 * making the real per-node stop 165s against the 155s the shutdown grace is
+	 * sized from.
+	 */
+	async fetchLastSeen(timeoutMs?: number): Promise<LastSeenSnapshotResponse> {
+		const body = await this.request('/snapshot/last-seen', undefined, timeoutMs);
 		return isPlainObject(body) ? (body as LastSeenSnapshotResponse) : {};
 	}
 

@@ -306,6 +306,24 @@ export function HydraHeadDetailsDialog({
             </HydraNotice>
           )}
 
+          {head.reconciliationStalledTxId && (
+            <HydraNotice tone="error">
+              <p className="font-medium">This head has stopped syncing and needs an operator.</p>
+              <p>
+                A confirmed in-head transaction could not be processed
+                {head.reconciliationStalledReason ? ` (${head.reconciliationStalledReason})` : ''},
+                and every later sync pass stops at it. Payments on this head will not settle until
+                it is cleared.
+              </p>
+              <p className="mt-1 font-mono text-xs break-all">{head.reconciliationStalledTxId}</p>
+              {head.reconciliationStalledSince && (
+                <p className="text-xs">
+                  Stalled since {new Date(head.reconciliationStalledSince).toLocaleString()}
+                </p>
+              )}
+            </HydraNotice>
+          )}
+
           <HydraHeadConnectionPanel headId={head.id} />
 
           <HydraHeadInHeadBalance

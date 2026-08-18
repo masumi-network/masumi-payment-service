@@ -48,14 +48,19 @@ beforeEach(() => {
 });
 
 describe('runHydraAutoTopupCycle', () => {
-	it('tops up a Low rule from its participant wallet, bounded to topupAmount', async () => {
+	// An automatic rule runs unattended and commits WHOLE UTxOs — no exact-amount
+	// carve on this path — and the selector takes the smallest single UTxO that
+	// covers the target. Under `all` that is routinely ordinary change carrying a
+	// native asset, so an ADA top-up would sweep an agent's registry NFT into the
+	// head, recoverable only by a decommit or a close.
+	it('tops up a Low rule from pure-ADA UTxOs only, bounded to topupAmount', async () => {
 		mockFindMany.mockResolvedValue([rule()]);
 
 		await runHydraAutoTopupCycle();
 
 		expect(mockExecuteHydraTopup).toHaveBeenCalledWith({
 			headId: 'head-1',
-			filter: 'all',
+			filter: 'ada-only',
 			target: { unit: 'lovelace', amount: 100_000_000n },
 		});
 	});

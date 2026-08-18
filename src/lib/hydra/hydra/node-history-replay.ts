@@ -502,7 +502,18 @@ export class HydraHistoryReplay {
 		const txId = transaction.txId?.toLowerCase();
 		if (!txId) return;
 		if (this._decommitTransactions.has(txId)) return;
-		this._decommitTransactions.set(txId, transaction);
+		// Narrowed to the modelled fields, not stored verbatim. `hydraTransactionSchema`
+		// is deliberately loose so a field a newer node adds cannot wedge replay, and
+		// this map's only bound is an entry count — 64 frames each just under the 4 MiB
+		// frame limit because of one unmodelled field retain ~256 MiB per node, four
+		// times the whole configured CBOR budget, and nothing clears the map on
+		// disconnect. Only `txId` and `cborHex` are ever read back off these entries.
+		this._decommitTransactions.set(txId, {
+			type: transaction.type,
+			cborHex: transaction.cborHex,
+			description: transaction.description,
+			txId: transaction.txId,
+		});
 		if (this._decommitTransactions.size > MAX_TRACKED_DECOMMIT_TRANSACTIONS) {
 			const oldest = this._decommitTransactions.keys().next().value;
 			if (oldest !== undefined) this._decommitTransactions.delete(oldest);

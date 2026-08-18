@@ -119,3 +119,55 @@ describe('waitForDrain', () => {
 		expect(outcome.drained).toBe(false);
 	});
 });
+
+// The deadline is checked only after a read resolves, so an unbounded poll that
+// starts just inside the budget overruns it by a whole request timeout: 130s
+// against 120s, which makes the per-node stop 165s rather than the 155s the
+// shutdown grace is sized from.
+describe('waitForDrain read budget', () => {
+	it('bounds each read by what is left of the drain budget', async () => {
+		const requested: Array<number | undefined> = [];
+		let clock = 0;
+
+		await waitForDrain({
+			fetchLastSeen: (timeoutMs) => {
+				requested.push(timeoutMs);
+				clock += 40_000;
+				return Promise.resolve({ tag: 'SeenSnapshot' });
+			},
+			timeoutMs: 100_000,
+			pollIntervalMs: 2_000,
+			sleep: () => {
+				clock += 2_000;
+				return Promise.resolve();
+			},
+			now: () => clock,
+		});
+
+		expect(requested[0]).toBe(100_000);
+		// Every later read is offered only the remainder, never the full budget.
+		for (const [index, timeout] of requested.entries()) {
+			expect(timeout).toBeLessThanOrEqual(100_000 - index * 40_000 + 1);
+		}
+	});
+
+	it('stops without issuing a read once the budget is spent', async () => {
+		let calls = 0;
+		let clock = 0;
+
+		const outcome = await waitForDrain({
+			fetchLastSeen: () => {
+				calls += 1;
+				clock += 100_000;
+				return Promise.resolve({ tag: 'SeenSnapshot' });
+			},
+			timeoutMs: 50_000,
+			pollIntervalMs: 2_000,
+			sleep: () => Promise.resolve(),
+			now: () => clock,
+		});
+
+		expect(calls).toBe(1);
+		expect(outcome).toMatchObject({ drained: false, reason: 'timeout' });
+	});
+});

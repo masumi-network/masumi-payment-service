@@ -94,7 +94,17 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 				continue;
 			}
 
-			const filter: CommitUtxoFilter = rule.assetUnit === 'lovelace' ? 'all' : { unit: rule.assetUnit };
+			// `ada-only`, not `all`. An automatic rule runs unattended and commits
+			// WHOLE UTxOs — there is no exact-amount carve on this path — and
+			// `selectCommitUtxosUpToTarget` picks the smallest single UTxO that
+			// covers the target. Under `all` that is very often ordinary change
+			// carrying a native asset, so an ADA top-up would sweep an agent's
+			// registry NFT into the head, recoverable only by a decommit or a
+			// close. When no pure-ADA UTxO reaches the target the top-up fails and
+			// is retried next cycle, which is the safe direction: a delayed top-up
+			// is an alert, a swept token is an asset the operator has lost control
+			// of. A token rule is already narrowed to its own unit.
+			const filter: CommitUtxoFilter = rule.assetUnit === 'lovelace' ? 'ada-only' : { unit: rule.assetUnit };
 			const result = await executeHydraTopup({
 				headId: head.id,
 				filter,

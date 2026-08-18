@@ -34,7 +34,7 @@ const MockWebSocket = jest.fn<MockWebSocketConstructor>().mockImplementation(() 
 
 jest.unstable_mockModule('ws', () => ({ default: MockWebSocket }));
 
-const { Connection } = await import('./connection');
+const { Connection, toWebSocketUrl } = await import('./connection');
 
 describe('Connection', () => {
 	beforeEach(() => {
@@ -382,5 +382,22 @@ describe('Connection', () => {
 
 		expect(listener).not.toHaveBeenCalled();
 		expect(conn.isOpen()).toBe(false);
+	});
+});
+
+// A bare `replace('http', 'ws')` rewrites the first `http` anywhere in the URL,
+// and by the time a URL reaches the socket its scheme is already ws/wss — so
+// the only thing left for it to corrupt is the host, path or query.
+describe('toWebSocketUrl', () => {
+	it('leaves an already-ws URL exactly as it is, host included', () => {
+		expect(toWebSocketUrl('wss://hydra-http-1.internal:4001?history=no')).toBe(
+			'wss://hydra-http-1.internal:4001?history=no',
+		);
+		expect(toWebSocketUrl('ws://http-node.example:4001/http/api')).toBe('ws://http-node.example:4001/http/api');
+	});
+
+	it('upgrades an http URL by scheme only', () => {
+		expect(toWebSocketUrl('http://hydra-http-1.internal:4001')).toBe('ws://hydra-http-1.internal:4001');
+		expect(toWebSocketUrl('https://hydra-http-1.internal:4001')).toBe('wss://hydra-http-1.internal:4001');
 	});
 });

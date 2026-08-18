@@ -216,9 +216,10 @@ deposit confirms on L1
         │  ← deposit period (10 min preprod, 20 min mainnet)
         ▼
 head may absorb it        ─┐
-                           │ ← the window it may be absorbed in
+                           │ ← one deposit period: the window it may be absorbed in
 head stops being able to  ─┘
         │
+        │  ← one more deposit period: absorption is over, recovery is not open yet
         ▼
 recover it back to the wallet
 ```
@@ -230,7 +231,11 @@ _In the head_ once the deposit's own output is seen spent on chain — which is
 what proves the head took that particular deposit.
 
 A row still amber past the end of its absorption window is the failure case, not
-the normal one: the head never took it, and it needs **Recover**.
+the normal one: the head never took it, and it needs **Recover** — but not yet.
+Recovery opens a further deposit period later, at `deposit + 3 periods`, so
+between the two there is a window in which the deposit can neither be absorbed
+nor sent back. The button stays hidden through it and names the time it appears;
+that wait is the protocol, not a stuck request.
 
 ### 5. Take money out
 

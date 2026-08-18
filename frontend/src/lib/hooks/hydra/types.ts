@@ -92,6 +92,17 @@ export type HydraHead = {
   initTxHash: string | null;
   closeTxHash: string | null;
   fanoutTxHash: string | null;
+  /**
+   * A confirmed in-head transaction the replay could not process. Reconciliation
+   * returns early on every later pass while this is set, so datum sync and
+   * expired-reservation reporting stop for this head — and nothing else in the
+   * UI shows it: the status stays Open, the connection panel stays Ready, and no
+   * head error is recorded. Without these three fields an operator's only way to
+   * see a wedged head is raw SQL.
+   */
+  reconciliationStalledTxId: string | null;
+  reconciliationStalledReason: string | null;
+  reconciliationStalledSince: string | null;
   /** Absent for heads that predate invites; decides which side may Init. */
   Invite?: {
     role: 'Issuer' | 'Redeemer';
@@ -165,24 +176,19 @@ export type CreateHydraRelationPayload = {
   counterpartyBaseUrl: string;
 };
 
+/**
+ * What `POST /hydra/head/topup` actually answers.
+ *
+ * The endpoint is fire-and-forget: it admits the request and the deposit is
+ * carried out in the background, so the result carries no transaction hash and
+ * no committed amounts. This type used to describe the older synchronous shape
+ * (`topupId`, `depositTxHash`, `committedLovelace`, deadlines) — all of which
+ * type-checked at call sites and were `undefined` at runtime. Follow the row in
+ * the top-up list for the outcome.
+ */
 export type HydraTopupResult = {
   headId: string;
-  topupId: string;
-  depositTxHash: string;
-  confirmed: boolean;
-  committedLovelace: string;
-  committedAssets: Record<string, string>;
-  /**
-   * When the deposit may be sent back. Null until the head has stated it.
-   *
-   * NOT the last moment it might still be absorbed — that is `absorbBy`, a
-   * whole deposit period earlier.
-   */
-  deadline?: string | null;
-  /** Before this, the head will not take it however confirmed the transaction is. */
-  usableFrom?: string | null;
-  /** After this the head will no longer absorb it, and recovery is not yet open. */
-  absorbBy?: string | null;
+  accepted: true;
 };
 
 export type HydraTopupRequest = {

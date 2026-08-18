@@ -165,19 +165,24 @@ export function planNodeAction(record: NodeRecord, observation: NodeObservation,
 			: { kind: 'Idle' };
 	}
 
+	// An explicit operator restart, checked before everything the supervisor
+	// decides for itself. It is the intervention of last resort, so it must not
+	// be reachable only through a code path that is working: `Unwedge` below
+	// runs several node reads and a side-load, and a node that cannot complete
+	// them replans `Unwedge` every tick — with the request checked after it, the
+	// API answered 202 and the operator had no way in at all. Also checked
+	// before drift, since a healthy-looking node is otherwise indistinguishable
+	// from the steady state. The not-answering case is handled at the responsive
+	// gate above.
+	if (record.restartRequested === true) {
+		return { kind: 'Restart', reason: 'restart requested through the API' };
+	}
+
 	// A stop that could not be drained may have stranded a round; check before
 	// trusting the node, and before drift handling, since a wedged node also
 	// stops advancing its chain view.
 	if (record.lastStopUndrained) {
 		return { kind: 'Unwedge', reason: 'previous stop could not be drained' };
-	}
-
-	// An explicit operator restart. Checked before drift so the request is
-	// honoured even when the node looks healthy — otherwise it would be
-	// indistinguishable from the steady state and silently ignored. The
-	// not-answering case is handled at the responsive gate above.
-	if (record.restartRequested === true) {
-		return { kind: 'Restart', reason: 'restart requested through the API' };
 	}
 
 	// A restart is the only thing that closes a chain-follower gap. The node's

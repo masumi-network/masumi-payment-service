@@ -54,7 +54,8 @@ export type DrainOutcome = {
 };
 
 export type DrainOptions = {
-	fetchLastSeen: () => Promise<LastSeenSnapshotResponse>;
+	/** `timeoutMs` bounds the individual read, so a poll cannot overrun the budget. */
+	fetchLastSeen: (timeoutMs?: number) => Promise<LastSeenSnapshotResponse>;
 	timeoutMs: number;
 	pollIntervalMs: number;
 	sleep: (ms: number) => Promise<void>;
@@ -84,9 +85,18 @@ export async function waitForDrain(options: DrainOptions): Promise<DrainOutcome>
 	let lastTag: string | null = null;
 
 	for (;;) {
+		// Bounded by what is left of the budget, not by the client's own default.
+		// The deadline is checked only after a read resolves, so an unbounded poll
+		// starting just inside the budget overran it by a full request timeout —
+		// 130s against a 120s budget, which makes the per-node stop 165s and the
+		// fleet's worst case exceed the shutdown grace the numbers are sized from.
+		const remainingMs = Math.max(0, timeoutMs - (now() - startedAt));
+		if (remainingMs === 0) {
+			return { drained: false, reason: 'timeout', lastTag, waitedMs: now() - startedAt };
+		}
 		let response: LastSeenSnapshotResponse | null = null;
 		try {
-			response = await fetchLastSeen();
+			response = await fetchLastSeen(remainingMs);
 		} catch (error) {
 			if (error instanceof NodeUnreachableError) {
 				// Nothing to wait for either way, so stop rather than burn the whole

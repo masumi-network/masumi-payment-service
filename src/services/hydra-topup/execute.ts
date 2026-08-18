@@ -264,7 +264,16 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 				: selectCommitUtxos(utxos, params.filter);
 			commitUtxos = selection.commitUtxos;
 			if (commitUtxos.length === 0) {
-				throw createHttpError(400, 'No plain wallet UTxOs match the requested top-up asset filter');
+				const describedFilter =
+					params.filter === 'ada-only'
+						? 'hold only lovelace'
+						: params.filter === 'all'
+							? 'are plain outputs'
+							: `hold ${params.filter.unit}`;
+				throw createHttpError(
+					400,
+					`No wallet UTxOs that ${describedFilter} are available for this top-up. Fund the wallet, or split an existing UTxO, so one large enough to cover the amount exists`,
+				);
 			}
 		}
 

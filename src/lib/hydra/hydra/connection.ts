@@ -16,6 +16,26 @@ const INITIAL_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const RECONNECT_JITTER_RATIO = 0.2;
 
+/**
+ * Anchored to the scheme, which a bare `replace('http', 'ws')` is not.
+ *
+ * A first-substring replace on the whole URL rewrites the first `http` it finds
+ * anywhere — and by the time a URL reaches here the scheme is already `ws:` or
+ * `wss:` (`parseHydraNodeUrl` refuses anything else), so the only thing left to
+ * hit is the host, path or query. A node reachable at `hydra-http-1.internal`
+ * was dialed as `hydra-ws-1.internal`: DNS fails, the socket never opens, and
+ * the head sits in a permanent reconnect loop with no live session and no head
+ * clock while the HTTP client — which never passes through here — keeps
+ * answering, so the outage presents as a Hydra protocol fault rather than a URL
+ * bug.
+ */
+export function toWebSocketUrl(url: string): string {
+	if (url.startsWith('ws://') || url.startsWith('wss://')) return url;
+	if (url.startsWith('http://')) return `ws://${url.slice('http://'.length)}`;
+	if (url.startsWith('https://')) return `wss://${url.slice('https://'.length)}`;
+	return url;
+}
+
 export class Connection extends EventEmitter {
 	private _url: string;
 	private _status: HydraHeadStatus;
@@ -50,7 +70,7 @@ export class Connection extends EventEmitter {
 		// `ws` enforces maxPayload inside its receiver, before a complete oversized
 		// message is assembled for application code. Disable compression so the same
 		// explicit byte budget applies without a decompression stage.
-		const websocket = new WebSocket(this._url.replace('http', 'ws'), {
+		const websocket = new WebSocket(toWebSocketUrl(this._url), {
 			maxPayload: MAX_HYDRA_WS_FRAME_BYTES,
 			perMessageDeflate: false,
 			...(Object.keys(this._authHeaders).length === 0 ? {} : { headers: this._authHeaders }),

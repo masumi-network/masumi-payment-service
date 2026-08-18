@@ -413,3 +413,43 @@ approval, the cost of not decrementing is over-blocking L2 transactions until th
 next `CommitFinalized`, which is the same direction the two-deposit case already
 argues for. Over-blocking is a delay; under-blocking is "all inputs are spent" on
 a transaction the operator has no way to diagnose.
+
+## Round 10
+
+**"A drain that only ever gets unusable answers should be reported as
+drained."** Declined. The argument was that `lastTag: null` after a full timeout
+means the node never answered at all, which is distinguishable from a real stuck
+round (which always yields a tag), and that the shell procedure this was ported
+from treats an empty tag as "idle or unreachable". Both are true, and the
+conclusion still does not follow: a node answering non-2xx is live, may have a
+round in flight, and is exactly the node whose stop we cannot verify. Calling
+that drained skips the unwedge check for the only node that needs it — the bug
+the `unreachable` / `timeout` split was introduced to fix. The cost of keeping it
+is a full drain budget spent on a node that had nothing to drain; the cost of
+changing it is a permanently stranded head. The budget half of the complaint was
+real and is fixed separately: each poll is now bounded by what is left of the
+drain budget, so a read can no longer overrun it by a whole request timeout.
+
+**The `Unrecovered` outcome now covers "could not be read", which is a heavier
+verdict than before.** Worth stating plainly, because it is a deliberate
+trade. A node whose `/snapshot/last-seen` keeps failing is recorded `Failed` with
+the reason on it, rather than being retried silently. That is the file's own
+stated principle — "terminal to the TIMER, so a failure is never hidden by
+silent retrying" — and `Failed` is not terminal to an operator: a restart request
+is honoured from it. The alternative that was there before is worse in every
+way: the rejection escaped, `lastStopUndrained` was never written, and because
+`Unwedge` outranked everything the node replanned the same throwing check every
+tick for good while reading as Running and usable.
+
+**Operator restart moved above the unwedge check.** Not a finding on its own,
+but the reason is worth recording so it is not reordered back: an intervention of
+last resort must not be reachable only through a code path that is working. The
+same argument already appears twice in `plan.ts` — at the responsive gate and in
+the `Failed` branch — and the unwedge check is a longer, more failure-prone
+procedure than either.
+
+**`HydraTopupResult` described a response the endpoint had stopped returning.**
+Latent rather than live — the only caller discards the value — so it is recorded
+here as well as fixed: nothing misbehaved, but `const { depositTxHash } = await
+topupHydraHead(...)` type-checked and was `undefined` at runtime, which is the
+kind of defect that only surfaces when someone trusts the type.

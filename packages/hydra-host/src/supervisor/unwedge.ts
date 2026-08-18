@@ -26,7 +26,12 @@ export type UnwedgeOutcome =
 	/** Stranded and recovered by side-loading the confirmed snapshot. */
 	| { kind: 'Recovered'; tag: string | null }
 	/** Stranded, side-load attempted, still stuck. Needs an operator. */
-	| { kind: 'Unrecovered'; tag: string | null; reason: string };
+	| { kind: 'Unrecovered'; tag: string | null; reason: string }
+	/**
+	 * A shutdown began mid-check. The record is left exactly as it was, so the
+	 * undrained stop is still on it and the check runs again on the way back up.
+	 */
+	| { kind: 'Deferred' };
 
 export type UnwedgeOptions = {
 	fetchLastSeen: () => Promise<LastSeenSnapshotResponse>;
@@ -37,6 +42,14 @@ export type UnwedgeOptions = {
 	/** How long to let a round settle before calling it stranded. */
 	settleWaitMs: number;
 	sleep: (ms: number) => Promise<void>;
+	/**
+	 * Checked between steps, because this whole procedure can cost ~90 seconds —
+	 * a 10s read, a 30s settle wait, two more reads and a side-load — and it runs
+	 * inside the tick, holding the node against the shutdown's drain. Charged in
+	 * full against a 240s stop grace it does not know about, one unwedge is the
+	 * difference between draining the fleet and being SIGKILLed mid-drain.
+	 */
+	isAborted?: () => boolean;
 };
 
 /**
@@ -72,16 +85,44 @@ function readTag(response: LastSeenSnapshotResponse | null | undefined): string 
  * discard in-flight work for no reason.
  */
 export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutcome> {
-	const { fetchLastSeen, fetchConfirmedSnapshot, sideLoadSnapshot, settleWaitMs, sleep } = options;
+	const { fetchLastSeen, fetchConfirmedSnapshot, sideLoadSnapshot, settleWaitMs, sleep, isAborted } = options;
+	const aborted = (): boolean => isAborted?.() === true;
 
-	const first = await fetchLastSeen();
+	/**
+	 * Every read here is guarded, like the side-load and the snapshot read below.
+	 *
+	 * An escaping rejection is the worst outcome available: `lastStopUndrained`
+	 * is never written, `Unwedge` outranks the drift watchdog, and the tick's
+	 * per-node catch only logs — so the node replans `Unwedge`, throws, and does
+	 * it again every tick for good. It reads as Running and usable the whole
+	 * time while its drift watchdog is dead. Reported as unrecoverable instead:
+	 * the record goes `Failed` with the reason on it, which is visible and which
+	 * an operator can restart out of.
+	 */
+	const readLastSeen = async (): Promise<
+		{ ok: true; value: LastSeenSnapshotResponse | null } | { ok: false; reason: string }
+	> => {
+		try {
+			return { ok: true, value: (await fetchLastSeen()) ?? null };
+		} catch (error) {
+			return { ok: false, reason: `could not read the last-seen snapshot: ${(error as Error).message}` };
+		}
+	};
+
+	const firstRead = await readLastSeen();
+	if (!firstRead.ok) return { kind: 'Unrecovered', tag: null, reason: firstRead.reason };
+	const first = firstRead.value;
 	if (isSafeToStop(first)) {
 		return { kind: 'Healthy' };
 	}
 
 	const before = roundSignature(first);
+	if (aborted()) return { kind: 'Deferred' };
 	await sleep(settleWaitMs);
-	const second = await fetchLastSeen();
+	if (aborted()) return { kind: 'Deferred' };
+	const secondRead = await readLastSeen();
+	if (!secondRead.ok) return { kind: 'Unrecovered', tag: readTag(first), reason: secondRead.reason };
+	const second = secondRead.value;
 
 	if (isSafeToStop(second)) {
 		return { kind: 'Progressing', tag: readTag(second) };
@@ -91,6 +132,7 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 	}
 
 	const tag = readTag(second);
+	if (aborted()) return { kind: 'Deferred' };
 
 	let confirmed: unknown;
 	try {
@@ -115,7 +157,11 @@ export async function unwedgeNode(options: UnwedgeOptions): Promise<UnwedgeOutco
 	}
 
 	// Trust nothing: confirm the side-load actually cleared the round.
-	const after = await fetchLastSeen();
+	const afterRead = await readLastSeen();
+	if (!afterRead.ok) {
+		return { kind: 'Unrecovered', tag, reason: `side-load completed but ${afterRead.reason}` };
+	}
+	const after = afterRead.value;
 	if (isSafeToStop(after) || roundSignature(after) !== before) {
 		return { kind: 'Recovered', tag };
 	}

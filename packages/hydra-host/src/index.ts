@@ -114,7 +114,20 @@ async function main(): Promise<void> {
 	if (startup.signal !== null) {
 		supervisor.beginShutdown();
 	}
-	await supervisor.boot();
+	// A ref'd handle for the length of the boot. Every wait the supervisor and
+	// the process manager use is unref'd on purpose (a stray timer must never
+	// hold the host open at exit), the HostLock heartbeat is unref'd too, and the
+	// HTTP listeners are not bound until after this returns — so during boot the
+	// process can hold NO ref'd handle at all. A boot that ends up stopping an
+	// adopted node then polls for its exit on unref'd sleeps against a process
+	// that is not a child handle, the loop drains, and node exits 0 mid-stop:
+	// hydra-node SIGTERMed, the record left saying Draining, and no log line.
+	const bootKeepAlive = setInterval(() => {}, 60_000);
+	try {
+		await supervisor.boot();
+	} finally {
+		clearInterval(bootKeepAlive);
+	}
 	const tickSupervisor = (source: string): void => {
 		void supervisor.tick().catch((error: unknown) => {
 			logger.error(`[host] supervisor tick from ${source} failed: ${(error as Error).message}`);

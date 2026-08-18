@@ -134,6 +134,7 @@ stateDiagram-v2
     Connected --> Disconnected: WS drops (auto-reconnect)
     Idle --> Initializing: Admin POST /hydra/head/init\nhydra-node posts InitTx on L1 (HeadIsInitializing)
     Initializing --> Open: both parties open with empty commits (HeadIsOpen)
+    Initializing --> Idle: either party aborts before both open (HeadIsAborted)
     Open --> Open: Admin POST /hydra/head/commit\nfunds enter as a deposit; L2 escrow txs move them
     Open --> Closed: Admin POST /hydra/head/close (HeadIsClosed)
     Closed --> FanoutPossible: contestation period passes (ReadyToFanout)
@@ -157,6 +158,7 @@ stateDiagram-v2
   | `HeadIsClosed`                     | Closed                                      |
   | `ReadyToFanout`                    | FanoutPossible                              |
   | `HeadIsFinalized`                  | Final                                       |
+  | `HeadIsAborted`                    | Idle (the manager quarantines the head)     |
 
 ### Committing / funding a head
 
