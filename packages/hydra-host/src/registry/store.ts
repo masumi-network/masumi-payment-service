@@ -123,12 +123,36 @@ export class NodeRegistryStore {
 	 * Returns the written record, or null when the node no longer exists.
 	 */
 	async update(nodeId: string, mutate: (current: NodeRecord) => NodeRecord): Promise<NodeRecord | null> {
+		return await this.updateAsync(nodeId, (current) => Promise.resolve(mutate(current)));
+	}
+
+	/**
+	 * `update`, for a mutator that has work of its own to do first.
+	 *
+	 * The queue is the only thing serialising a node's writers, and it used to
+	 * cover the record write alone — so a caller that had to touch the node's
+	 * directory as well did that outside any lock. `setPeers` is the case: it
+	 * checked the node was stopped, wrote every peer key file, pruned the
+	 * leftovers, and only then updated the record. A start claiming the node
+	 * inside that window read the OLD peer list and launched against the NEW key
+	 * files, naming one peer's address with another's key — a one-member cluster
+	 * that never reaches quorum, never opens its API, and is planned `Idle`
+	 * forever because an unresponsive node is exactly what the plan waits on.
+	 *
+	 * Holding the queue across the whole sequence closes it: a claim lands either
+	 * wholly before (the mutator reads `Starting` and refuses) or wholly after
+	 * (the files it launches against are the ones the record names).
+	 *
+	 * The mutator runs with the node's queue HELD: it must not call back into
+	 * `update`/`updateAsync` for the same node, which would wait on itself.
+	 */
+	async updateAsync(nodeId: string, mutate: (current: NodeRecord) => Promise<NodeRecord>): Promise<NodeRecord | null> {
 		return this.enqueue(nodeId, async () => {
 			const current = await this.read(nodeId);
 			if (current === null) {
 				return null;
 			}
-			const next = mutate(current);
+			const next = await mutate(current);
 			if (next.nodeId !== nodeId) {
 				throw new RegistryError(`a mutator may not change nodeId (${nodeId} -> ${next.nodeId})`);
 			}

@@ -9,7 +9,7 @@ import {
 	requestRestart,
 	requestStart,
 	requestStop,
-	requireQuiescentForPeerChange,
+	assertQuiescentForPeerChange,
 } from './transitions.js';
 
 const PEER = {
@@ -135,21 +135,17 @@ describe('requestRemoval', () => {
 	});
 });
 
-describe('requireQuiescentForPeerChange', () => {
-	it('permits a peer change while stopped or pending escrow', async () => {
-		await store.write(record({ state: 'Stopped' }));
-		await expect(requireQuiescentForPeerChange(store, 'node-1')).resolves.toBeDefined();
-
-		await store.write(record({ state: 'PendingEscrow', escrowAckedAt: null }));
-		await expect(requireQuiescentForPeerChange(store, 'node-1')).resolves.toBeDefined();
+describe('assertQuiescentForPeerChange', () => {
+	it('permits a peer change while stopped or pending escrow', () => {
+		expect(() => assertQuiescentForPeerChange(record({ state: 'Stopped' }))).not.toThrow();
+		expect(() => assertQuiescentForPeerChange(record({ state: 'PendingEscrow', escrowAckedAt: null }))).not.toThrow();
 	});
 
 	// Changing peers under a running node leaves the process on its old cluster
 	// and makes the next restart bootstrap a different, empty one.
-	it('refuses a peer change while the node is live', async () => {
+	it('refuses a peer change while the node is live', () => {
 		for (const state of ['Running', 'Starting', 'Draining', 'Failed'] as const) {
-			await store.write(record({ state }));
-			await expect(requireQuiescentForPeerChange(store, 'node-1')).rejects.toMatchObject({ status: 409 });
+			expect(() => assertQuiescentForPeerChange(record({ state }))).toThrow(expect.objectContaining({ status: 409 }));
 		}
 	});
 });

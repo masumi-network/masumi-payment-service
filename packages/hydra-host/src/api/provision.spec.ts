@@ -208,4 +208,36 @@ describe('setPeers', () => {
 	it('404s for an unknown node', async () => {
 		await expect(setPeers('missing', [peer], deps)).rejects.toMatchObject({ status: 404 });
 	});
+
+	// Two writers over one directory. A writes indices 0 and 1; B writes 0 and
+	// prunes 1. Interleaved, the record ends up naming two peers whose second key
+	// file does not exist, and the launcher passes a missing path in argv — the
+	// exact failure the write-then-prune ordering exists to prevent. Serialising
+	// the whole sequence on the node's write queue is what makes the last record
+	// written describe the directory that is actually there.
+	it('leaves the directory agreeing with the record when two peer changes overlap', async () => {
+		const { record } = await provisionNode(REQUEST, deps);
+		const second = {
+			advertise: 'hydra3.example.com:5001',
+			hydraVerificationKey: `5820${'ef'.repeat(32)}`,
+			cardanoVerificationKey: `5820${'12'.repeat(32)}`,
+		};
+
+		const [a, b] = await Promise.all([
+			setPeers(record.nodeId, [peer, second], deps),
+			setPeers(record.nodeId, [peer], deps),
+		]);
+
+		const stored = await deps.store.read(record.nodeId);
+		const peersDir = path.join(deps.store.nodeDir(record.nodeId), 'peers');
+		const files = (await fs.readdir(peersDir)).sort();
+		// Whichever landed last, the files present are exactly the ones its peer
+		// list names — no orphan index, no missing one.
+		const expected =
+			stored?.peers.length === 2
+				? ['0-cardano.vk', '0-hydra.vk', '1-cardano.vk', '1-hydra.vk']
+				: ['0-cardano.vk', '0-hydra.vk'];
+		expect(files).toEqual(expected);
+		expect([a.peers.length, b.peers.length].sort()).toEqual([1, 2]);
+	});
 });

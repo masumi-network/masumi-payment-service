@@ -175,7 +175,7 @@ describe('beginHydraHeadClose', () => {
 			where: {
 				hydraHeadId: 'head-1',
 				depositTxHash: { not: null },
-				status: { notIn: ['Absorbed', 'Recovered'] },
+				status: { notIn: ['Absorbed', 'Recovered', 'Failed'] },
 			},
 		});
 	});

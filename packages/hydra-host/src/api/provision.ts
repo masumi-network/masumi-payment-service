@@ -25,7 +25,7 @@ import type { SupervisorLogger } from '../supervisor/supervisor.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord, PeerRecord } from '../registry/types.js';
 import { HostApiError, type HttpErrorStatus } from './http-error.js';
-import { requireQuiescentForPeerChange } from './transitions.js';
+import { assertQuiescentForPeerChange } from './transitions.js';
 
 export class ProvisionError extends HostApiError {
 	constructor(message: string, status: HttpErrorStatus) {
@@ -269,18 +269,11 @@ export async function acknowledgeEscrow(nodeId: string, deps: ProvisionDeps): Pr
  * peer set becomes etcd's `--initial-cluster`, which is fixed at process start.
  */
 export async function setPeers(nodeId: string, peers: PeerRecord[], deps: ProvisionDeps): Promise<NodeRecord> {
-	// Enforced, not merely documented: the peer set becomes --initial-cluster,
-	// which is fixed at process start and determines the content-addressed etcd
-	// data directory.
-	const record = await requireQuiescentForPeerChange(deps.store, nodeId);
 	if (peers.length === 0) {
 		throw new ProvisionError('at least one peer is required', 400);
 	}
 	if (peers.some((peer) => parsePeerAdvertise(peer.advertise) === null)) {
 		throw new ProvisionError('every peer advertise address must be a valid host:port', 400);
-	}
-	if (peers.some((peer) => peer.advertise === record.advertise)) {
-		throw new ProvisionError('a node cannot list its own advertise address as a peer', 400);
 	}
 	if (new Set(peers.map((peer) => peer.advertise)).size !== peers.length) {
 		throw new ProvisionError('duplicate peer advertise addresses', 400);
@@ -288,50 +281,73 @@ export async function setPeers(nodeId: string, peers: PeerRecord[], deps: Provis
 
 	const nodeDir = deps.store.nodeDir(nodeId);
 	const peersDir = path.join(nodeDir, 'peers');
-	await fs.mkdir(peersDir, { recursive: true });
-	// Written first, pruned second. Emptying the directory before refilling it
-	// left a window in which the files the launcher names in argv did not exist:
-	// a start landing inside it passed `--hydra-verification-key <peers>/0-hydra.vk`
-	// for a file that was not there, and the node died on it. Overwriting in
-	// place has no such window — every index a peer set uses is written before
-	// anything is removed.
-	const written = new Set<string>();
-	await Promise.all(
-		peers.flatMap((peer, index) => {
-			const hydraKeyFile = `${index}-hydra.vk`;
-			const cardanoKeyFile = `${index}-cardano.vk`;
-			written.add(hydraKeyFile);
-			written.add(cardanoKeyFile);
-			return [
-				fs.writeFile(
-					path.join(peersDir, hydraKeyFile),
-					serializeEnvelope({
-						type: 'HydraVerificationKey_ed25519',
-						description: '',
-						cborHex: peer.hydraVerificationKey,
-					}),
-				),
-				fs.writeFile(
-					path.join(peersDir, cardanoKeyFile),
-					serializeEnvelope({
-						type: 'PaymentVerificationKeyShelley_ed25519',
-						description: 'Payment Verification Key',
-						cborHex: peer.cardanoVerificationKey,
-					}),
-				),
-			];
-		}),
-	);
 
-	// Whatever a previous, larger peer set left behind. Unreferenced — the
-	// launcher only reads indices below the peer count — but stale verification
-	// keys on disk are misleading during an incident.
-	for (const entry of await fs.readdir(peersDir).catch(() => [])) {
-		if (written.has(entry)) continue;
-		await fs.rm(path.join(peersDir, entry), { force: true });
-	}
+	// Every write below happens with this node's write queue held, and the checks
+	// that authorise them are made inside it too. Taken outside, they answered
+	// about a node that could be claimed and launched before the first key file
+	// landed: the launcher fixes `--initial-cluster` at process start, so a start
+	// reading the OLD peer list against the NEW key files boots a cluster naming
+	// one peer's address with another's key. It never reaches quorum, never opens
+	// its API, and an unresponsive node is precisely what the plan idles on — so
+	// it is never restarted and never failed, while the record shows the peer set
+	// the operator asked for the whole time.
+	//
+	// Two `setPeers` in flight were the other half: A writes indices 0 and 1, B
+	// writes 0 and prunes 1, and whichever record write lands last leaves the
+	// directory disagreeing with it.
+	const updated = await deps.store.updateAsync(nodeId, async (current) => {
+		// Enforced, not merely documented: the peer set becomes --initial-cluster,
+		// which is fixed at process start and determines the content-addressed etcd
+		// data directory.
+		assertQuiescentForPeerChange(current);
+		if (peers.some((peer) => peer.advertise === current.advertise)) {
+			throw new ProvisionError('a node cannot list its own advertise address as a peer', 400);
+		}
+		await fs.mkdir(peersDir, { recursive: true });
+		// Written first, pruned second. Emptying the directory before refilling it
+		// left a window in which the files the launcher names in argv did not exist:
+		// a start landing inside it passed `--hydra-verification-key <peers>/0-hydra.vk`
+		// for a file that was not there, and the node died on it. Overwriting in
+		// place has no such window — every index a peer set uses is written before
+		// anything is removed.
+		const written = new Set<string>();
+		await Promise.all(
+			peers.flatMap((peer, index) => {
+				const hydraKeyFile = `${index}-hydra.vk`;
+				const cardanoKeyFile = `${index}-cardano.vk`;
+				written.add(hydraKeyFile);
+				written.add(cardanoKeyFile);
+				return [
+					fs.writeFile(
+						path.join(peersDir, hydraKeyFile),
+						serializeEnvelope({
+							type: 'HydraVerificationKey_ed25519',
+							description: '',
+							cborHex: peer.hydraVerificationKey,
+						}),
+					),
+					fs.writeFile(
+						path.join(peersDir, cardanoKeyFile),
+						serializeEnvelope({
+							type: 'PaymentVerificationKeyShelley_ed25519',
+							description: 'Payment Verification Key',
+							cborHex: peer.cardanoVerificationKey,
+						}),
+					),
+				];
+			}),
+		);
 
-	const updated = await deps.store.update(nodeId, (current) => ({ ...current, peers }));
+		// Whatever a previous, larger peer set left behind. Unreferenced — the
+		// launcher only reads indices below the peer count — but stale verification
+		// keys on disk are misleading during an incident.
+		for (const entry of await fs.readdir(peersDir).catch(() => [])) {
+			if (written.has(entry)) continue;
+			await fs.rm(path.join(peersDir, entry), { force: true });
+		}
+
+		return { ...current, peers };
+	});
 	if (updated === null) {
 		throw new ProvisionError(`no such node: ${nodeId}`, 404);
 	}

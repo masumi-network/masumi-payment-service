@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import type { Asset, UTxO } from '@meshsdk/core';
-import { isPlainCommitUtxo, selectCommitUtxos, selectCommitUtxosUpToTarget } from './commit-utxos';
+import { isPlainCommitUtxo, selectCommitUtxos } from './commit-utxos';
 
 function utxo(index: number, lovelace: string, output: Partial<UTxO['output']> = {}): UTxO {
 	const amount: Asset[] = [{ unit: 'lovelace', quantity: lovelace }];
@@ -101,123 +101,6 @@ describe('selectCommitUtxos', () => {
 		it('all (default) commits both', () => {
 			expect(selectCommitUtxos([adaOnly, withToken], 'all').commitUtxos).toEqual([adaOnly, withToken]);
 		});
-	});
-});
-
-describe('selectCommitUtxosUpToTarget', () => {
-	const target = (amount: bigint) => ({ unit: 'lovelace', amount });
-
-	it('commits a single UTxO that reaches the target on its own', () => {
-		const small = utxo(0, '10000000');
-		const medium = utxo(1, '20000000');
-		const large = utxo(2, '100000000');
-
-		const result = selectCommitUtxosUpToTarget([small, medium, large], 'all', target(30_000_000n));
-
-		// large (100M) is the only one that reaches 30M by itself
-		expect(result.commitUtxos).toEqual([large]);
-		expect(result.excludedUtxos).toEqual(expect.arrayContaining([small, medium]));
-	});
-
-	// Hydra commits whole UTxOs, so the excess over the target is the entire
-	// question. Taking the largest first put a wallet's whole balance into the
-	// head for a 10 ADA rule — recoverable only by a decommit or a close.
-	it('prefers the smallest UTxO that covers the target on its own', () => {
-		const small = utxo(0, '10000000');
-		const sufficient = utxo(1, '50000000');
-		const whole_wallet = utxo(2, '5000000000');
-
-		const result = selectCommitUtxosUpToTarget([small, sufficient, whole_wallet], 'all', target(30_000_000n));
-
-		expect(result.commitUtxos).toEqual([sufficient]);
-		expect(result.excludedUtxos).toEqual(expect.arrayContaining([small, whole_wallet]));
-	});
-
-	it('accumulates multiple UTxOs when one is not enough', () => {
-		const a = utxo(0, '10000000');
-		const b = utxo(1, '9000000');
-		const c = utxo(2, '8000000');
-
-		const result = selectCommitUtxosUpToTarget([a, b, c], 'all', target(18_000_000n));
-
-		// 10M + 9M = 19M >= 18M
-		expect(result.commitUtxos).toEqual([a, b]);
-	});
-
-	it('commits everything matching (best effort) when the target is unreachable', () => {
-		const a = utxo(0, '10000000');
-		const b = utxo(1, '5000000');
-
-		const result = selectCommitUtxosUpToTarget([a, b], 'all', target(1_000_000_000n));
-
-		expect(result.commitUtxos).toEqual(expect.arrayContaining([a, b]));
-		expect(result.commitUtxos).toHaveLength(2);
-	});
-
-	it('bounds by a token unit and excludes non-matching UTxOs', () => {
-		const USDM = 'bb'.repeat(28) + '0014df10';
-		const adaOnly = utxo(0, '10000000');
-		const tokenA: UTxO = {
-			input: { txHash: 'tok-a', outputIndex: 0 },
-			output: {
-				address: 'addr_test1participant',
-				amount: [
-					{ unit: 'lovelace', quantity: '2000000' },
-					{ unit: USDM, quantity: '600' },
-				],
-			},
-		};
-		const tokenB: UTxO = {
-			input: { txHash: 'tok-b', outputIndex: 0 },
-			output: {
-				address: 'addr_test1participant',
-				amount: [
-					{ unit: 'lovelace', quantity: '2000000' },
-					{ unit: USDM, quantity: '500' },
-				],
-			},
-		};
-
-		const result = selectCommitUtxosUpToTarget([adaOnly, tokenA, tokenB], { unit: USDM }, { unit: USDM, amount: 550n });
-
-		// tokenA (600) alone reaches 550; ada-only excluded by the filter
-		expect(result.commitUtxos).toEqual([tokenA]);
-		expect(result.excludedUtxos).toEqual(expect.arrayContaining([adaOnly, tokenB]));
-	});
-});
-
-// An unreachable target does not produce an empty selection — it produces EVERY
-// matching UTxO, best effort. A caller that reads "non-empty" as "worked" then
-// commits the whole wallet balance, and the wallet that pays L1 fees for
-// collections, results and refunds is left empty until someone decommits or
-// closes the head.
-describe('reachedTarget', () => {
-	it('is false when the wallet cannot cover the target, even though UTxOs were chosen', () => {
-		const selection = selectCommitUtxosUpToTarget([utxo(0, '60000000'), utxo(1, '60000000')], 'ada-only', {
-			unit: 'lovelace',
-			amount: 500_000_000n,
-		});
-
-		expect(selection.commitUtxos).toHaveLength(2);
-		expect(selection.reachedTarget).toBe(false);
-	});
-
-	it('is true when a single UTxO covers it', () => {
-		const selection = selectCommitUtxosUpToTarget([utxo(0, '600000000')], 'ada-only', {
-			unit: 'lovelace',
-			amount: 500_000_000n,
-		});
-
-		expect(selection.reachedTarget).toBe(true);
-	});
-
-	it('is true when several together cover it', () => {
-		const selection = selectCommitUtxosUpToTarget([utxo(0, '300000000'), utxo(1, '300000000')], 'ada-only', {
-			unit: 'lovelace',
-			amount: 500_000_000n,
-		});
-
-		expect(selection.reachedTarget).toBe(true);
 	});
 });
 

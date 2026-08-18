@@ -374,6 +374,48 @@ describe('Supervisor shutdown', () => {
 		expect(elapsedMs).toBeLessThan(DRAIN_COST_MS * 1.6);
 	}, 45_000);
 
+	// `list()` fails wholesale — one unparseable `node.json`, one I/O error off the
+	// volume — and the catch that stopped SIGTERM from rejecting drained nothing
+	// instead, on both passes, after which index.ts logged "all nodes drained" and
+	// exited 0 while the runtime SIGKILLed the fleet mid-round.
+	it('still drains the nodes it is holding when the store cannot list them', async () => {
+		const config = {
+			...loadHostConfig(env),
+			dataDir,
+			hydraNodeBin: process.execPath,
+			drainTimeoutMs: DRAIN_TIMEOUT_MS,
+		};
+		const draining = new Supervisor(
+			config,
+			store,
+			new PortAllocator(config.ports),
+			resolveSlotConfig('preprod'),
+			silentLogger,
+		);
+
+		const damaged = makeRecord({
+			nodeId: 'node-damaged',
+			apiPort: await serveNodeApi(),
+			pid: spawnNodeLike(store.nodeDir('node-damaged')).pid,
+		});
+		await store.write(damaged);
+		await draining.boot();
+
+		// Every per-node read still works; only the listing is broken, which is
+		// exactly how one damaged record presents.
+		const listing = store.list.bind(store);
+		store.list = async () => {
+			throw new Error('EIO: i/o error, scandir');
+		};
+		try {
+			await draining.shutdown();
+		} finally {
+			store.list = listing;
+		}
+
+		expect((await store.read(damaged.nodeId))?.state).toBe('Stopped');
+	}, 45_000);
+
 	// The shape the first attempt at this fix still got wrong. Pass 1 SKIPPED any
 	// node the tick held and left it to the pass after `await pendingTick`, which
 	// made the two passes additive whenever the tick's action was not itself a

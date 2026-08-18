@@ -175,6 +175,18 @@ describe('shouldAdoptAsRunning', () => {
 		expect(shouldAdoptAsRunning(record('PendingEscrow', 'Running'), { responsive: true })).toBe(false);
 		expect(shouldAdoptAsRunning(record('Removing', 'Running'), { responsive: true })).toBe(false);
 	});
+
+	// The case `desired` cannot express. `requestRemoval` sets the flag and leaves
+	// `desired` at Running on purpose, because `stop` overwrites the state with
+	// Draining and then Stopped and the flag is the only thing that survives it.
+	// A node mid-teardown answers for its whole drain, so without this it was
+	// promoted to Running on a host restart and /health advertised it as usable
+	// while the next tick was about to delete its persistence directory.
+	it('never adopts a node that is being removed, whatever its desired state says', () => {
+		expect(
+			shouldAdoptAsRunning({ state: 'Stopped', desired: 'Running', removalRequested: true }, { responsive: true }),
+		).toBe(false);
+	});
 });
 
 /**

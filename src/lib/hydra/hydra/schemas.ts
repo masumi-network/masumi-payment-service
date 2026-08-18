@@ -465,27 +465,35 @@ export const historySnapshotConfirmedMessageSchema = snapshotConfirmedMessageSch
 const boundedProtocolIntegerSchema = z.number().int().nonnegative().finite().max(Number.MAX_SAFE_INTEGER);
 const boundedProtocolNumberSchema = z.number().nonnegative().finite().max(Number.MAX_SAFE_INTEGER);
 
+/**
+ * Loose for the same reason the object around it is.
+ *
+ * These were strict, which meant an additive change upstream — an era-specific
+ * unit, a new price field — made the whole parameter fetch throw, and every L2
+ * transaction build on the head fails with it until the schema is patched. The
+ * fields that are read are pinned by being named; a field that is not read
+ * cannot break anything by existing.
+ */
+const executionUnitsSchema = z.looseObject({
+	memory: boundedProtocolIntegerSchema,
+	steps: boundedProtocolIntegerSchema,
+});
+
 export const hydraProtocolParametersSchema = z.looseObject({
 	utxoCostPerByte: boundedProtocolIntegerSchema,
 	collateralPercentage: boundedProtocolIntegerSchema,
-	maxBlockExecutionUnits: z.strictObject({
-		memory: boundedProtocolIntegerSchema,
-		steps: boundedProtocolIntegerSchema,
-	}),
+	maxBlockExecutionUnits: executionUnitsSchema,
 	maxBlockHeaderSize: boundedProtocolIntegerSchema,
 	maxBlockBodySize: boundedProtocolIntegerSchema,
 	maxCollateralInputs: boundedProtocolIntegerSchema,
-	maxTxExecutionUnits: z.strictObject({
-		memory: boundedProtocolIntegerSchema,
-		steps: boundedProtocolIntegerSchema,
-	}),
+	maxTxExecutionUnits: executionUnitsSchema,
 	maxTxSize: boundedProtocolIntegerSchema,
 	maxValueSize: boundedProtocolIntegerSchema,
 	txFeePerByte: boundedProtocolIntegerSchema,
 	txFeeFixed: boundedProtocolIntegerSchema,
 	minPoolCost: boundedProtocolIntegerSchema,
 	stakePoolDeposit: boundedProtocolIntegerSchema,
-	executionUnitPrices: z.strictObject({
+	executionUnitPrices: z.looseObject({
 		priceMemory: boundedProtocolNumberSchema,
 		priceSteps: boundedProtocolNumberSchema,
 	}),

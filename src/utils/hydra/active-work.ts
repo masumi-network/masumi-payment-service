@@ -17,10 +17,30 @@ import { HydraTopupStatus, type Prisma, TransactionLayer, TransactionStatus } fr
 /**
  * A deposit that reached L1 and has neither been taken by the head nor sent
  * back. The single definition, shared with the deletion guard.
+ *
+ * Three endings mean no money is waiting at the deposit script, and `Failed` is
+ * one of them, however much it reads like the opposite. Only two writers set it
+ * with a deposit hash attached, and both prove the deposit's output does not
+ * exist: `confirmed-invalid` is a phase-2 failure, which creates no outputs at
+ * all, and the other branch fires only once a trusted current slot is past the
+ * signed TTL plus the rollback grace with the hash still absent from L1 — after
+ * which that transaction can never be included. The status's own definition
+ * says as much: "rejected/absent past its validity window; retry is safe".
+ *
+ * Counting it anyway made every failed top-up permanent: the head, its
+ * participants and their relations could not be deleted, and nothing could ever
+ * clear the row, because `reconcileRecoveredHydraTopups` resolves a deposit only
+ * by watching its output be spent and an output that was never created is never
+ * spent. That reconciler still watches Failed rows, so a verdict that turns out
+ * wrong is still corrected while the head exists — which is the right place for
+ * that doubt, rather than in a guard with no way out.
+ *
+ * Stated as an exclusion rather than an allow-list: a status added later should
+ * block a delete until someone has thought about it, not slip past this.
  */
 export const unrecoveredHydraTopupWhere = {
 	depositTxHash: { not: null },
-	status: { notIn: [HydraTopupStatus.Absorbed, HydraTopupStatus.Recovered] },
+	status: { notIn: [HydraTopupStatus.Absorbed, HydraTopupStatus.Recovered, HydraTopupStatus.Failed] },
 } satisfies Prisma.HydraTopupWhereInput;
 
 /** Work that survives into L1 if the head is closed now. */

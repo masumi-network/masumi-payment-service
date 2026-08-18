@@ -37,6 +37,16 @@ import type { DecommitDistributedValue, DecommitSettledData, DepositRecordedData
 
 const MAX_HYDRA_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024;
 
+/**
+ * How many distinct assets a decommit summary will describe.
+ *
+ * A 4MB frame can carry a value map with ~10^5 keys, and the summary it produces
+ * is held in memory and written to the decommit row. Past this the summary is
+ * dropped rather than the frame rejected: the frame has to parse, because a
+ * rejected one is re-rejected on every replay.
+ */
+const MAX_SUMMARIZED_DISTRIBUTED_ASSETS = 1_000;
+
 const UNSUPPORTED_PERSISTENCE_ROTATION_MESSAGE =
 	'Hydra persistence event-log rotation is unsupported because compacted replay cannot restore the authenticated head-state anchors';
 
@@ -65,6 +75,22 @@ const HEAD_SCOPED_SERVER_OUTPUT_TAGS = new Set([
 	'CommitRecovered',
 	'SnapshotSideLoaded',
 ]);
+
+/**
+ * Frames whose `headId` names a head that is not ours, by construction.
+ *
+ * `IgnoredHeadInitializing` is the node reporting that it saw some OTHER head
+ * being initialized and declined to take part, so the identifier it carries is
+ * the ignored head's. Checked against the pinned head, the normal case reads as
+ * an attack: on the history socket the throw fails the replay, which — since
+ * history replays from the beginning on every reconnect — rejects that frame
+ * forever, and on the live socket it clears the session, the party verification,
+ * the head clock and every held-back deposit and decommit outcome.
+ *
+ * Nothing in this service reads the frame, so exempting it costs nothing even if
+ * a node were to emit it with our own identifier.
+ */
+const FOREIGN_HEAD_ID_TAGS = new Set(['IgnoredHeadInitializing']);
 
 export class CircularBuffer<T> {
 	// `new Array(n)` is typed any[]; the writes are all through add(), which is
@@ -243,6 +269,7 @@ export function assertExpectedFrameHeadId(
 	if (new Set(suppliedIds).size > 1) {
 		throw new HydraProtocolError('Hydra frame contained conflicting head identifiers');
 	}
+	if (message.tag != null && FOREIGN_HEAD_ID_TAGS.has(message.tag)) return undefined;
 	if (frameRequiresHeadId(message) && suppliedIds.length === 0) {
 		throw new HydraProtocolError(`Hydra ${message.tag ?? 'head-scoped'} frame omitted its head identifier`);
 	}
@@ -449,11 +476,25 @@ export function summarizeDistributedUtxo(
 ): DecommitDistributedValue | undefined {
 	if (!distributed) return undefined;
 	let lovelace = 0n;
-	const assets: Record<string, string> = {};
+	// A Map, not an object literal. The unit is `policyId + assetName`, both
+	// node-supplied strings, and an object literal answers for keys nobody put in
+	// it: `assets['constructor']` is a function, `BigInt()` of it throws, and the
+	// throw lands inside the replay's try — which, because history replays from
+	// the beginning on every reconnect, rejects that frame forever and takes every
+	// L2 operation on the head with it. `toString`, `valueOf` and `__proto__` do
+	// the same. Every sibling accumulator in this file already guards it.
+	const totals = new Map<string, bigint>();
 	for (const entry of Object.values(distributed)) {
 		for (const [policyId, held] of Object.entries(entry.value)) {
 			if (policyId === 'lovelace') {
-				const quantity = toAssetQuantity(held as HydraAssetQuantity);
+				// Checked rather than cast. `hydraOutputValueSchema` admits a nested
+				// map under any key, `lovelace` included, so the cast that used to
+				// stand here asserted away the one shape `toAssetQuantity` cannot
+				// read: it falls through to `value.trim()`, and an object has no
+				// `.trim`. Real hydra-node serializes lovelace flat, which is
+				// precisely why a frame that did not would have been unrecoverable.
+				if (typeof held === 'object') return undefined;
+				const quantity = toAssetQuantity(held);
 				if (quantity === null) return undefined;
 				lovelace += quantity;
 				continue;
@@ -462,11 +503,23 @@ export function summarizeDistributedUtxo(
 			for (const [assetName, held0] of Object.entries(held)) {
 				const quantity = toAssetQuantity(held0);
 				if (quantity === null) return undefined;
-				const unit = `${policyId}${assetName}`;
-				assets[unit] = (BigInt(assets[unit] ?? '0') + quantity).toString();
+				totals.set(`${policyId}${assetName}`, (totals.get(`${policyId}${assetName}`) ?? 0n) + quantity);
+				// Reporting detail, held in memory and persisted to
+				// `HydraDecommit.settledAssets`. The value map has no entry cap — it
+				// cannot have one, since a cap that rejects a frame is a cap that
+				// wedges the head — so the bound belongs here, where dropping the
+				// summary costs nothing but the summary.
+				if (totals.size > MAX_SUMMARIZED_DISTRIBUTED_ASSETS) return undefined;
 			}
 		}
 	}
+	// Null-prototype for the same reason the accumulator is a Map: assigning
+	// `__proto__` on an object literal sets the prototype instead of creating the
+	// property, so that asset would vanish from the summary rather than be
+	// reported. JSON.stringify and Object.entries treat this like any other
+	// object, which is all the persistence layer asks of it.
+	const assets = Object.create(null) as Record<string, string>;
+	for (const [unit, quantity] of totals) assets[unit] = quantity.toString();
 	return { lovelace, assets };
 }
 
@@ -536,8 +589,20 @@ export function readDecommitSettled(tag: string, message: unknown): DecommitSett
 	}
 	if (tag === 'DecommitInvalid') {
 		const invalid = decommitInvalidMessageSchema.parse(message);
+		// The schema checks the cborHex is hex of a plausible length, not that it
+		// decodes. `resolveTxHash` throws on the difference, and this reader runs
+		// inside the replay: an undecodable body would reject the frame, and a
+		// rejected frame is re-rejected on every reconnect, so the head never gets
+		// a verified session again. Dropping the outcome loses one decommit's
+		// invalidity report, which the L1 reconciler resolves anyway.
+		let decommitTxId: string;
+		try {
+			decommitTxId = String(resolveTxHash(invalid.decommitTx.cborHex)).toLowerCase();
+		} catch {
+			return undefined;
+		}
 		return {
-			decommitTxId: String(resolveTxHash(invalid.decommitTx.cborHex)),
+			decommitTxId,
 			outcome: 'invalid',
 			reason: describeDecommitInvalidReason(invalid.decommitInvalidReason),
 		};

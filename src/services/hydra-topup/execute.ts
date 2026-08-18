@@ -9,7 +9,6 @@ import {
 	HydraTransactionType,
 	interpretCardanoTxSubmitResult,
 	selectCommitUtxos,
-	selectCommitUtxosUpToTarget,
 	type CommitUtxoFilter,
 } from '@/lib/hydra';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
@@ -24,6 +23,7 @@ import {
 import { buildHydraCommitFlowDeps } from '@/routes/api/hydra/head/commit-flow-deps';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import { carveExactUtxo, HydraPreSplitError } from './pre-split';
+import { canReleaseTopupWallet, outstandingOwnTopupWhere } from './wallet-release';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 
 /**
@@ -46,19 +46,6 @@ export type ExecuteHydraTopupParams = {
 	headId: string;
 	/** Which plain wallet UTxOs to draw from. */
 	filter: CommitUtxoFilter;
-	/**
-	 * Refuse rather than commit a best-effort shortfall.
-	 *
-	 * Set by the unattended paths. An operator asking for a top-up by hand has
-	 * chosen the amount and can see the wallet; a rule firing every 30 seconds
-	 * has done neither.
-	 */
-	requireFullTarget?: boolean;
-	/**
-	 * Bound the top-up to the minimal whole-UTxO set reaching this amount of the
-	 * given asset (auto-topup). Omit to commit every matching UTxO (manual top-up).
-	 */
-	target?: { unit: string; amount: bigint } | null;
 	/**
 	 * Exact-amount top-up: first carve a dedicated wallet UTxO of exactly this
 	 * amount via an L1 self-payment (pre-split), then commit only that UTxO.
@@ -267,35 +254,33 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			walletUtxos = await wallet.getUtxos();
 			commitUtxos = [carved];
 		} else {
-			const selection = params.target
-				? selectCommitUtxosUpToTarget(utxos, params.filter, params.target)
-				: selectCommitUtxos(utxos, params.filter);
-			commitUtxos = selection.commitUtxos;
-			// An unreachable target does not produce an empty selection — it
-			// produces EVERY matching UTxO, best effort. For an operator who asked
-			// for that, taking what there is is the useful answer. For an unattended
-			// rule it is not: a 500 ADA top-up against a wallet holding 240 ADA in
-			// small UTxOs commits all of it, and the wallet that pays the L1 fees
-			// for collections, results and refunds is left empty until someone
-			// decommits or closes the head.
-			if (params.requireFullTarget === true && selection.reachedTarget !== true) {
-				throw createHttpError(
-					400,
-					'The wallet does not hold enough in matching UTxOs to cover this top-up. Fund it before topping up, ' +
-						'rather than moving everything it has left into the head',
-				);
-			}
+			// Whole matching UTxOs, all of them: this is the branch an operator
+			// reaches by naming no exact amount, and "commit what matches" is what
+			// they asked for. Every unattended caller uses `exact` instead, because
+			// bounding a whole-UTxO selection cannot bound the overshoot — the
+			// smallest UTxO covering a 50 ADA rule is whatever the wallet's change
+			// consolidated into.
+			commitUtxos = selectCommitUtxos(utxos, params.filter).commitUtxos;
 			if (commitUtxos.length === 0) {
 				const describedFilter =
 					params.filter === 'ada-only'
 						? 'hold only lovelace'
 						: params.filter === 'all'
 							? 'are plain outputs'
-							: `hold ${params.filter.unit}`;
-				throw createHttpError(
-					400,
-					`No wallet UTxOs that ${describedFilter} are available for this top-up. Fund the wallet, or split an existing UTxO, so one large enough to cover the amount exists`,
-				);
+							: params.filter.exclusive === true
+								? `hold ${params.filter.unit} and nothing else`
+								: `hold ${params.filter.unit}`;
+				// The remedy is named because the commonest way to reach this is a
+				// wallet whose every token UTxO also carries something else — an
+				// agent's registry NFT, most often. Those are excluded on purpose:
+				// Hydra commits whole UTxOs, so committing one takes the NFT into the
+				// head too. An exact amount carves a clean UTxO first and leaves the
+				// rest of the wallet where it is, which is the way out of that.
+				const remedy =
+					typeof params.filter === 'object' && params.filter.exclusive === true
+						? 'Ask for an exact amount instead: it carves a dedicated UTxO on L1 first, leaving every other asset — a registry NFT included — behind in the wallet'
+						: 'Fund the wallet, or split an existing UTxO, so one large enough to cover the amount exists';
+				throw createHttpError(400, `No wallet UTxOs that ${describedFilter} are available for this top-up. ${remedy}`);
 			}
 		}
 
@@ -403,18 +388,28 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Topup');
 		throw error;
 	} finally {
-		// Held while a deposit of ours is still unconfirmed on L1: the call returns
+		// Held while a deposit of OURS is still unconfirmed on L1: the call returns
 		// on submission, and the inputs it spends read as unspent from Blockfrost
 		// until it lands, so a batcher that took the wallet here would build a
 		// second transaction over the same input. `reconcilePendingHydraTopups`
 		// releases it once the deposit confirms or fails.
-		const pending = await prisma.hydraTopup.findFirst({
-			where: {
-				hydraLocalParticipantId: localParticipant.id,
-				status: { in: [HydraTopupStatus.Pending, HydraTopupStatus.Preparing] },
-			},
-			select: { id: true },
-		});
+		//
+		// Scoped to this operation's own row rather than to the participant. Asked
+		// the participant-wide question, the commonest failure answered it wrongly:
+		// a call that is refused because an EARLIER top-up is still Pending has put
+		// nothing on chain, but it sees that earlier row, keeps the lock it just
+		// took, and the wallet leaves every L1 batcher for the full
+		// HOT_WALLET_LOCK_STALE_AFTER_MS window. With an unresolvable Pending row —
+		// one whose deposit expired while the reconciler was down — the 30-second
+		// auto-top-up cycle then renews that lock indefinitely, and the payment
+		// batchers never see the wallet again.
+		const outstanding =
+			preparingTopupId === null
+				? null
+				: await prisma.hydraTopup.findFirst({
+						where: outstandingOwnTopupWhere(preparingTopupId),
+						select: { id: true },
+					});
 		// A carve that was signed is a transaction that may be in the mempool, and
 		// a failure here says nothing about that: the carve is submitted first and
 		// everything after it — waiting for its confirmation, building the deposit
@@ -423,7 +418,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		// batch tick build over them and lose one of the two to `BadInputsUTxO`.
 		// Nothing tracks a carve after this returns, so the lock is left for the
 		// stale-lock sweep, which frees it half an hour later.
-		if (pending === null && (carveTxHash === null || depositConfirmed)) {
+		if (canReleaseTopupWallet({ outstandingOwnTopup: outstanding !== null, carveTxHash, depositConfirmed })) {
 			await releaseHotWalletAfterL1(localParticipant.walletId);
 		}
 	}

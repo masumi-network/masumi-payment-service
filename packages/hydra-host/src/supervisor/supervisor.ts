@@ -154,7 +154,19 @@ export class Supervisor {
 					// the whole of boot plus its wait in the reconcile queue — long enough
 					// for the payment service to open a head or lock funds into a node
 					// that is being taken down. Left as it is, the tick replans the stop.
-					if (shouldAdoptAsRunning({ state: 'Stopped', desired: record.desired }, { responsive: true })) {
+					// `state: 'Stopped'` is deliberate rather than the record's own: what
+					// is being asked is "the process survived a host that thought it
+					// hadn't", so the stale state is exactly what must not decide it.
+					// `desired` and `removalRequested` carry the intent, and the removal
+					// flag has to be passed because a teardown never touches `desired` —
+					// without it a node mid-`remove()` answered, was promoted, and was
+					// advertised as usable until the next tick deleted its directory.
+					const intent = {
+						state: 'Stopped' as const,
+						desired: record.desired,
+						removalRequested: record.removalRequested,
+					};
+					if (shouldAdoptAsRunning(intent, { responsive: true })) {
 						await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Running' }));
 					} else {
 						this.logger.info(
@@ -889,6 +901,47 @@ export class Supervisor {
 	}
 
 	/**
+	 * The records a shutdown has to work through, however damaged the store is.
+	 *
+	 * `list()` fails wholesale: one unparseable `node.json`, or one I/O error off
+	 * the data volume, and it throws for every node. Catching that stopped SIGTERM
+	 * from becoming a hard kill — `shutdown` no longer rejected — but it drained
+	 * nothing either, on both passes, and then `index.ts` logged "all nodes
+	 * drained" and exited 0 while the runtime SIGKILLed a fleet mid-round. A clean
+	 * log for the exact outcome the drain machinery exists to prevent.
+	 *
+	 * So the fall-back asks the one source that cannot be corrupted by a file: the
+	 * live child handles this host is holding. Each record is then read on its
+	 * own, which skips only the node that is actually damaged.
+	 */
+	private async listRecordsToDrain(): Promise<NodeRecord[]> {
+		try {
+			return await this.store.list();
+		} catch (error) {
+			this.logger.error(
+				`[supervisor] could not list nodes to drain: ${(error as Error).message}; falling back to the running processes`,
+			);
+		}
+		const recovered: NodeRecord[] = [];
+		for (const running of this.processes.list()) {
+			try {
+				const record = await this.store.read(running.nodeId);
+				if (record !== null) recovered.push(record);
+				else
+					this.logger.error(
+						`[supervisor] ${running.nodeId} is running with no readable record; leaving it to the runtime`,
+					);
+			} catch (error) {
+				this.logger.error(
+					`[supervisor] could not read ${running.nodeId} to drain it: ${(error as Error).message}; leaving it to the runtime`,
+				);
+			}
+		}
+		this.logger.info(`[supervisor] recovered ${recovered.length} running node record(s) to drain`);
+		return recovered;
+	}
+
+	/**
 	 * Every node drains at once, not RECONCILE_CONCURRENCY at a time.
 	 *
 	 * Shutdown is one round of waiting, not work: a node costs drainTimeoutMs
@@ -905,17 +958,7 @@ export class Supervisor {
 	 * that one really is work, and it runs every 15s.
 	 */
 	private async drainRunningNodes(attempted: Set<string>): Promise<void> {
-		let records: NodeRecord[];
-		try {
-			records = await this.store.list();
-		} catch (error) {
-			// `list` throws on a damaged record, and letting that out of here turned
-			// SIGTERM into a hard kill of the whole fleet: `shutdown` rejected,
-			// index.ts logged and exited 1, and not one node was drained. `runTick`
-			// already swallows the same failure.
-			this.logger.error(`[supervisor] could not list nodes to drain: ${(error as Error).message}`);
-			return;
-		}
+		const records = await this.listRecordsToDrain();
 		await mapWithConcurrency(records, Math.max(1, records.length), async (record) => {
 			if (attempted.has(record.nodeId)) {
 				// Already stopped, or tried and failed — a second SIGTERM would

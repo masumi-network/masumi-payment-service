@@ -60,8 +60,26 @@ describe('countHydraHeadActiveWork', () => {
 		expect(calls.hydraTopup.where).toEqual({
 			hydraHeadId: 'head-1',
 			depositTxHash: { not: null },
-			status: { notIn: ['Absorbed', 'Recovered'] },
+			status: { notIn: ['Absorbed', 'Recovered', 'Failed'] },
 		});
+	});
+
+	// `Failed` reads like the opposite of settled and is not. Both writers that
+	// set it with a deposit hash prove the output does not exist: a phase-2
+	// failure creates no outputs, and the other branch fires only once a trusted
+	// slot is past the signed TTL with the hash still absent, after which that
+	// transaction can never be included.
+	//
+	// Counting it made every failed top-up permanent. Nothing can clear the row —
+	// the recovery reconciler resolves a deposit by watching its output be spent,
+	// and an output that was never created is never spent — so the head, its
+	// participants and their relations could not be deleted, ever.
+	it('does not count a failed deposit as money left at the script', async () => {
+		const { client, calls } = fakeClient({ transactions: 0, payments: 0, purchases: 0, topups: 0 });
+
+		await countHydraHeadActiveWork(client, 'head-1');
+
+		expect(calls.hydraTopup.where).toMatchObject({ status: { notIn: expect.arrayContaining(['Failed']) as string[] } });
 	});
 
 	// Both sides have to be counted the same way. Asking them differently is how

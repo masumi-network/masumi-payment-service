@@ -222,6 +222,34 @@ describe('NodeRegistryStore concurrency', () => {
 		expect((await store.read('node-1'))?.startAttempts).toBe(40);
 	});
 
+	// The lock a caller with side effects of its own needs. `setPeers` authorises
+	// a peer change, writes every key file, prunes the leftovers and only then
+	// updates the record; while the queue covered the record write alone, a start
+	// could claim the node in the middle — reading the OLD peer list and launching
+	// against the NEW key files, which fixes `--initial-cluster` on a cluster that
+	// never reaches quorum and a node that is then planned Idle forever.
+	it('holds the node queue for as long as an awaiting mutator runs', async () => {
+		await store.write(record());
+		const order: string[] = [];
+
+		const slow = store.updateAsync('node-1', async (current) => {
+			order.push('slow-start');
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			order.push('slow-end');
+			return { ...current, desired: 'Stopped' };
+		});
+		const claim = store.update('node-1', (current) => {
+			order.push('claim');
+			return { ...current, state: 'Starting' };
+		});
+		await Promise.all([slow, claim]);
+
+		expect(order).toEqual(['slow-start', 'slow-end', 'claim']);
+		const final = await store.read('node-1');
+		expect(final?.desired).toBe('Stopped');
+		expect(final?.state).toBe('Starting');
+	});
+
 	// The two writers in the observed failure were doing different things, so
 	// the danger is not just a rename clash but one update discarding the other.
 	it('does not let concurrent updates discard each other', async () => {

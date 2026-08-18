@@ -70,12 +70,23 @@ export type PlanLimits = {
  *    failure it exists to surface.
  *  - `PendingEscrow` gates key-material readability and `Removing` is teardown.
  *    Neither means "in service" just because a port answers.
+ *  - `removalRequested` outranks all of it. It is the only field a teardown
+ *    leaves standing once `stop` has overwritten the state.
  */
 export function shouldAdoptAsRunning(
-	record: Pick<NodeRecord, 'state' | 'desired'>,
+	record: Pick<NodeRecord, 'state' | 'desired' | 'removalRequested'>,
 	observation: Pick<NodeObservation, 'responsive'>,
 ): boolean {
 	if (!observation.responsive) return false;
+	// Removal is the intent `desired` does not carry. `requestRemoval` writes
+	// `state: 'Removing'` and this flag and deliberately leaves `desired` alone,
+	// because stopping the node overwrites the state with `Draining` and then
+	// `Stopped` — the flag is what survives that. A node being torn down is
+	// therefore indistinguishable from a healthy one by `desired` alone, and it
+	// answers for the whole of its drain: promoted, /health advertised it as
+	// usable and the payment service could lock funds into a node whose
+	// persistence directory the next `remove()` deletes.
+	if (record.removalRequested === true) return false;
 	if (record.desired !== 'Running') return false;
 	return record.state === 'Starting' || record.state === 'Stopped';
 }

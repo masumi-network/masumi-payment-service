@@ -151,6 +151,15 @@ export function driftBreachFields(
 	current: DriftBreachState,
 	observation: { drift: DriftVerdict | null; driftSeconds: number | null; nowMs: number },
 ): DriftBreachState {
+	// No verdict is not a good verdict. `observe()` reports `drift: null` for a
+	// node that is down, one that did not answer inside the 5s responsiveness
+	// probe, and one whose chain probe did not deliver a Greetings frame inside
+	// 8s — none of which say the gap has closed. Clearing on those meant a node
+	// that was stalled AND intermittently slow could never be restarted: the
+	// stall needs to survive eight consecutive ticks, and one missed probe
+	// anywhere in that window put the count back to zero, forever. Leave the
+	// fields as they are and let an actual sub-guard measurement clear them.
+	if (observation.drift === null) return {};
 	const breached = observation.drift === 'Unsynced' && observation.driftSeconds !== null;
 	if (!breached) {
 		// Undefined rather than omitted: this has to clear the stored fields.

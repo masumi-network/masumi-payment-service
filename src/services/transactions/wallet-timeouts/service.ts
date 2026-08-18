@@ -84,17 +84,33 @@ export function buildSwapUnlockWhere(walletId: string, swapTransactionId: string
 	return { id: walletId, deletedAt: null, pendingSwapTransactionId: swapTransactionId };
 }
 
-export function buildOrphanLockClearWhere(walletId: string): Prisma.HotWalletWhereInput {
-	return { id: walletId, deletedAt: null, pendingTransactionId: null, lockPurpose: null };
+export function buildOrphanLockClearWhere(walletId: string, lockedBefore: Date): Prisma.HotWalletWhereInput {
+	return {
+		id: walletId,
+		deletedAt: null,
+		pendingTransactionId: null,
+		lockPurpose: null,
+		// The read that selected this row also required the lock to be older than
+		// the timeout, and leaving that out of the write is not a smaller fence —
+		// it is a different one. A batcher claims a wallet by setting `lockedAt`
+		// alone and attaches its PendingTransaction a moment later, so a lock
+		// taken seconds ago matches every other column here. Clearing it hands
+		// the same wallet to a second batcher mid-build, and one of the two
+		// spends over the same input dies on chain as BadInputsUTxO.
+		lockedAt: { lt: lockedBefore },
+	};
 }
 
-export function buildTimedOutUnlockWhere(walletId: string): Prisma.HotWalletWhereInput {
+export function buildTimedOutUnlockWhere(walletId: string, lockedBefore: Date): Prisma.HotWalletWhereInput {
 	return {
 		id: walletId,
 		deletedAt: null,
 		pendingTransactionId: null,
 		pendingSwapTransactionId: null,
 		lockPurpose: null,
+		// See `buildOrphanLockClearWhere`: the age is part of what was observed,
+		// so it is part of what is fenced on.
+		lockedAt: { lt: lockedBefore },
 	};
 }
 
@@ -686,6 +702,9 @@ export async function updateWalletTransactionHash() {
 		//      caller that crashed/exited between committing the lock and creating
 		//      its PendingTransaction. Without this branch the wallet stays locked
 		//      forever (the relation filter requires `PendingTransaction != null`).
+		// One cutoff for the read and for every write it leads to: a lock taken
+		// after this instant was not the one this sweep judged.
+		const staleLockBefore = new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL);
 		const lockedHotWallets = await prisma.hotWallet.findMany({
 			where: {
 				deletedAt: null,
@@ -727,14 +746,7 @@ export async function updateWalletTransactionHash() {
 						//    risk — the alternative (skipping the null branch)
 						//    leaves corrupt half-states stranded indefinitely,
 						//    which is worse for operators.
-						OR: [
-							{
-								lockedAt: {
-									lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
-								},
-							},
-							{ lockedAt: null },
-						],
+						OR: [{ lockedAt: { lt: staleLockBefore } }, { lockedAt: null }],
 					},
 					{
 						pendingTransactionId: null,
@@ -744,9 +756,7 @@ export async function updateWalletTransactionHash() {
 						// this branch would free one mid-carve. `unlockStaleOrphanWalletLocks`
 						// sweeps those on their own, much longer threshold.
 						lockPurpose: null,
-						lockedAt: {
-							lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
-						},
+						lockedAt: { lt: staleLockBefore },
 					},
 				],
 			},
@@ -780,7 +790,7 @@ export async function updateWalletTransactionHash() {
 						// unlocked wallet, the one half-state `unstickPurposeLocks` exists
 						// to repair, so the leak would not even be visible as one.
 						const unlocked = await prisma.hotWallet.updateMany({
-							where: buildOrphanLockClearWhere(wallet.id),
+							where: buildOrphanLockClearWhere(wallet.id, staleLockBefore),
 							data: { lockedAt: null },
 						});
 						if (unlocked.count !== 1) {
@@ -1364,11 +1374,11 @@ export async function updateWalletTransactionHash() {
 			}),
 		);
 
+		// Read and written against the same instant — see `staleLockBefore` above.
+		const timedOutLockBefore = new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL);
 		const timedOutLockedHotWallets = await prisma.hotWallet.findMany({
 			where: {
-				lockedAt: {
-					lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
-				},
+				lockedAt: { lt: timedOutLockBefore },
 				deletedAt: null,
 				PendingTransaction: null,
 				PendingSwapTransaction: null,
@@ -1387,12 +1397,14 @@ export async function updateWalletTransactionHash() {
 		await Promise.allSettled(
 			timedOutLockedHotWallets.map(async (wallet) => {
 				try {
-					// Fenced on the same three columns this row was selected by. A Hydra
-					// L1 deposit that claims the wallet between the read and the write
-					// sets `lockPurpose`, and clearing by id alone would free its carve
-					// and destroy the marker in the same statement.
+					// Fenced on every column this row was selected by, the lock's age
+					// included. A Hydra L1 deposit that claims the wallet between the read
+					// and the write sets `lockPurpose`, and clearing by id alone would
+					// free its carve and destroy the marker in the same statement; a
+					// batcher claiming it sets only `lockedAt`, which is why the age has
+					// to be part of the fence rather than only part of the read.
 					const unlocked = await prisma.hotWallet.updateMany({
-						where: buildTimedOutUnlockWhere(wallet.id),
+						where: buildTimedOutUnlockWhere(wallet.id, timedOutLockBefore),
 						data: {
 							lockedAt: null,
 							// Cleared together with the lock it describes. A marker left

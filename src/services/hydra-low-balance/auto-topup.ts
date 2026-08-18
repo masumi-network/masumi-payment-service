@@ -1,7 +1,6 @@
 import { HydraHeadStatus, HydraTopupStatus, LowBalanceStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
-import type { CommitUtxoFilter } from '@/lib/hydra';
 import { executeHydraTopup } from '@/services/hydra-topup/execute';
 
 /**
@@ -94,33 +93,27 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 				continue;
 			}
 
-			// `ada-only`, not `all`. An automatic rule runs unattended and commits
-			// WHOLE UTxOs — there is no exact-amount carve on this path — and
-			// `selectCommitUtxosUpToTarget` picks the smallest single UTxO that
-			// covers the target. Under `all` that is very often ordinary change
-			// carrying a native asset, so an ADA top-up would sweep an agent's
-			// registry NFT into the head, recoverable only by a decommit or a
-			// close. When no pure-ADA UTxO reaches the target the top-up fails and
-			// is retried next cycle, which is the safe direction: a delayed top-up
-			// is an alert, a swept token is an asset the operator has lost control
-			// of. A token rule is already narrowed to its own unit.
-			// `exclusive` for a token rule, for the same reason `ada-only` is used for
-			// a lovelace one: Hydra commits WHOLE UTxOs, and a wallet's change
-			// consolidates, so the smallest UTxO covering 600 USDM is routinely one
-			// that also carries the agent's registry NFT. Narrowing to "contains the
-			// unit" is not narrow enough — it has to be "contains the unit and
-			// nothing else".
-			const filter: CommitUtxoFilter =
-				rule.assetUnit === 'lovelace' ? 'ada-only' : { unit: rule.assetUnit, exclusive: true };
+			// Carved to the exact amount, not selected from what the wallet happens
+			// to hold. Hydra commits WHOLE UTxOs, so a bounded selection can only
+			// choose which ones — it cannot bound the overshoot. Taking the smallest
+			// single UTxO that covers the target still means the wallet's whole
+			// balance whenever its change has consolidated into one output: a 50 ADA
+			// rule against one 5 000 ADA UTxO put all 5 000 into the head,
+			// recoverable only by a decommit or a close. Refusing a shortfall did
+			// not help, because that selection was not short, it was over.
+			//
+			// An exact carve is an L1 self-payment that pays the rule's amount into
+			// its own UTxO — every other asset, an agent's registry NFT included,
+			// stays behind in the change output — and only that UTxO is committed.
+			// It costs one extra L1 fee and a confirmation wait, during which this
+			// rule's row is `Preparing`, so the in-flight check above holds the next
+			// cycle off rather than starting a second carve.
 			const result = await executeHydraTopup({
 				headId: head.id,
-				filter,
-				target: { unit: rule.assetUnit, amount: rule.topupAmount },
-				// An unreachable target commits every matching UTxO rather than
-				// failing, which for a rule firing every 30 seconds means the whole
-				// wallet balance goes into the head and the L1 fee funding for that
-				// payment source goes with it.
-				requireFullTarget: true,
+				// Unused on the exact path, which commits the carve alone. Kept
+				// honest for the wallet reads that precede it.
+				filter: rule.assetUnit === 'lovelace' ? 'ada-only' : { unit: rule.assetUnit, exclusive: true },
+				exact: { unit: rule.assetUnit, amount: rule.topupAmount },
 			});
 			logger.info('hydra-auto-topup: submitted low-balance top-up', {
 				ruleId: rule.id,

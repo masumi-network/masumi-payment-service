@@ -131,6 +131,19 @@ describe('driftBreachFields', () => {
 	it('writes nothing when there is no breach and none was recorded', () => {
 		expect(driftBreachFields({}, { drift: 'Healthy', driftSeconds: 10, nowMs: NOW })).toEqual({});
 	});
+
+	// A tick that could not measure is not a tick that measured "fine". `drift`
+	// is null when the node is down, when it misses the 5s responsiveness probe,
+	// and when its chain probe misses the 8s Greetings frame — all of which
+	// happen to a node that is stalled and busy. The stall has to survive eight
+	// consecutive ticks to earn a restart, so treating a missed probe as a clear
+	// disarmed the watchdog completely on the one node it exists for.
+	it('keeps an open breach across a tick that could not measure the gap', () => {
+		const open = { driftBreachSince: new Date(NOW).toISOString(), driftBreachSeconds: 400 };
+		// Strict: `toEqual` reads `{ driftBreachSince: undefined }` — the shape that
+		// CLEARS the breach — as equal to `{}`, which leaves it standing.
+		expect(driftBreachFields(open, { drift: null, driftSeconds: null, nowMs: NOW + 30_000 })).toStrictEqual({});
+	});
 });
 
 describe('shouldRestartForDrift', () => {

@@ -42,3 +42,38 @@ describe('summarizeDistributedUtxo', () => {
 		).toBeUndefined();
 	});
 });
+
+// The value map is `z.record(string, quantity | record(string, quantity))` — it
+// admits a nested map under ANY key, `lovelace` included, and its keys are
+// node-supplied strings. Both were read as if they were neither.
+describe('summarizeDistributedUtxo against the shapes the schema admits', () => {
+	// The cast that used to stand on this branch asserted away the one shape
+	// `toAssetQuantity` cannot read: it falls through to `value.trim()`, and an
+	// object has no `.trim`. The TypeError lands inside the replay's try.
+	it('reports nothing rather than throwing on a nested lovelace value', () => {
+		expect(summarizeDistributedUtxo({ [REFERENCE]: { value: { lovelace: { '': 1 } } } })).toBeUndefined();
+	});
+
+	// `assets['constructor']` on an object literal is a function, and `BigInt()`
+	// of one throws. The unit is `policyId + assetName`, both node-supplied.
+	it.each(['constructor', 'toString', 'valueOf', '__proto__'])(
+		'sums an asset named after Object.prototype.%s without throwing',
+		(inherited) => {
+			const summary = summarizeDistributedUtxo({
+				[REFERENCE]: { value: { '': { [inherited]: '7' } } },
+			});
+
+			expect(summary?.assets[inherited]).toBe('7');
+		},
+	);
+
+	// A 4MB frame can carry ~10^5 keys, and the summary is persisted. The bound
+	// belongs here rather than in the schema: a cap that rejects a frame is a cap
+	// that wedges the head.
+	it('drops the summary rather than persisting an unbounded asset map', () => {
+		const value: Record<string, Record<string, string>> = {};
+		for (let index = 0; index <= 1_001; index += 1) value[`${index}`.padStart(56, '0')] = { '00': '1' };
+
+		expect(summarizeDistributedUtxo({ [REFERENCE]: { value } })).toBeUndefined();
+	});
+});

@@ -3,15 +3,6 @@ import type { UTxO } from '@meshsdk/core';
 export type CommitUtxoSelection = {
 	commitUtxos: UTxO[];
 	excludedUtxos: UTxO[];
-	/**
-	 * Whether the selection actually covers the target it was given.
-	 *
-	 * Only meaningful for `selectCommitUtxosUpToTarget`, and reported because
-	 * the unreachable case is not an empty selection — it is EVERY matching
-	 * UTxO, best-effort. A caller that reads "non-empty" as "worked" therefore
-	 * commits the whole wallet balance when the target is out of reach.
-	 */
-	reachedTarget?: boolean;
 };
 
 /**
@@ -83,69 +74,4 @@ export function selectCommitUtxos(utxos: UTxO[], filter: CommitUtxoFilter = 'all
 		}
 	}
 	return { commitUtxos, excludedUtxos };
-}
-
-function unitAmount(utxo: UTxO, unit: string): bigint {
-	const target = unit.toLowerCase();
-	let total = 0n;
-	for (const asset of utxo.output.amount) {
-		if (asset.unit.toLowerCase() === target) total += BigInt(asset.quantity);
-	}
-	return total;
-}
-
-/**
- * Select matching plain UTxOs whose combined `target.unit` amount reaches
- * `target.amount`, overshooting as little as possible.
- *
- * Hydra commits whole UTxOs, so the committed amount is always >= the target
- * and the only question is by how much. Taking the largest first minimises the
- * number of inputs but maximises that excess: an unattended 10 ADA top-up
- * against a wallet holding one 5 000 ADA UTxO put the whole 5 000 into the
- * head, recoverable only by a decommit or a close — on mainnet, behind the
- * contestation window.
- *
- * So the smallest UTxO that covers the target on its own wins: one input, and
- * the least excess available. Only when nothing covers it alone does this
- * accumulate largest-first, which keeps the input count down and still bounds
- * the excess below the target, since every remaining candidate is smaller than
- * it. If the wallet cannot reach the target at all, every matching UTxO is
- * committed (best effort). Non-matching and unused matching UTxOs are returned
- * as excluded.
- */
-export function selectCommitUtxosUpToTarget(
-	utxos: UTxO[],
-	filter: CommitUtxoFilter,
-	target: { unit: string; amount: bigint },
-): CommitUtxoSelection {
-	const { commitUtxos: matching, excludedUtxos } = selectCommitUtxos(utxos, filter);
-	const sorted = [...matching].sort((a, b) => {
-		const diff = unitAmount(b, target.unit) - unitAmount(a, target.unit);
-		return diff > 0n ? 1 : diff < 0n ? -1 : 0;
-	});
-
-	const commitUtxos: UTxO[] = [];
-	const smallestSufficient = [...sorted].reverse().find((utxo) => unitAmount(utxo, target.unit) >= target.amount);
-	if (smallestSufficient !== undefined) {
-		commitUtxos.push(smallestSufficient);
-		const onlyChosen = new Set(commitUtxos);
-		return {
-			commitUtxos,
-			excludedUtxos: [...excludedUtxos, ...matching.filter((utxo) => !onlyChosen.has(utxo))],
-			reachedTarget: true,
-		};
-	}
-
-	let accumulated = 0n;
-	for (const utxo of sorted) {
-		if (accumulated >= target.amount) break;
-		commitUtxos.push(utxo);
-		accumulated += unitAmount(utxo, target.unit);
-	}
-	const chosen = new Set(commitUtxos);
-	return {
-		commitUtxos,
-		excludedUtxos: [...excludedUtxos, ...matching.filter((utxo) => !chosen.has(utxo))],
-		reachedTarget: accumulated >= target.amount,
-	};
 }

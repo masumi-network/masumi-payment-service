@@ -231,7 +231,15 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(409, `Cannot top up: head status is ${head.status}, expected Open`);
 		}
 
-		const filter: CommitUtxoFilter = input.assetUnit ? { unit: input.assetUnit } : input.assetFilter;
+		// `exclusive` for a token top-up. Hydra commits WHOLE UTxOs and a wallet's
+		// change consolidates, so a UTxO holding the requested token alongside an
+		// agent's registry NFT is routinely the one this would pick — and the NFT
+		// goes into the head with it, off L1 and out of reach of any registry
+		// update until someone decommits or closes the head. Nobody asked for that
+		// by naming an asset unit, and `exactAmount` is the way to top up from a
+		// mixed wallet: it carves the amount into its own UTxO and leaves every
+		// other asset behind in the change.
+		const filter: CommitUtxoFilter = input.assetUnit ? { unit: input.assetUnit, exclusive: true } : input.assetFilter;
 		const exact = input.exactAmount ? { unit: input.assetUnit ?? 'lovelace', amount: BigInt(input.exactAmount) } : null;
 
 		// Detached deliberately. A rejection here is logged rather than returned

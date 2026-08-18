@@ -48,12 +48,13 @@ beforeEach(() => {
 });
 
 describe('runHydraAutoTopupCycle', () => {
-	// An automatic rule runs unattended and commits WHOLE UTxOs — no exact-amount
-	// carve on this path — and the selector takes the smallest single UTxO that
-	// covers the target. Under `all` that is routinely ordinary change carrying a
-	// native asset, so an ADA top-up would sweep an agent's registry NFT into the
-	// head, recoverable only by a decommit or a close.
-	it('tops up a Low rule from pure-ADA UTxOs only, bounded to topupAmount', async () => {
+	// Hydra commits WHOLE UTxOs, so a bounded selection chooses which ones and
+	// nothing more — it cannot bound the overshoot. The smallest single UTxO
+	// covering a 100 ADA rule is the wallet's entire balance whenever its change
+	// has consolidated into one output, and that whole balance then sits in the
+	// head, recoverable only by a decommit or a close. An exact carve is the only
+	// form of this that is bounded, so the unattended path takes it.
+	it('carves the exact rule amount rather than committing whole UTxOs', async () => {
 		mockFindMany.mockResolvedValue([rule()]);
 
 		await runHydraAutoTopupCycle();
@@ -61,17 +62,15 @@ describe('runHydraAutoTopupCycle', () => {
 		expect(mockExecuteHydraTopup).toHaveBeenCalledWith({
 			headId: 'head-1',
 			filter: 'ada-only',
-			target: { unit: 'lovelace', amount: 100_000_000n },
-			requireFullTarget: true,
+			exact: { unit: 'lovelace', amount: 100_000_000n },
 		});
 	});
 
-	// Narrowing to "contains the unit" is not narrow enough. Hydra commits WHOLE
-	// UTxOs and a wallet's change consolidates, so the smallest UTxO covering the
-	// amount is routinely one that also carries the agent's registry NFT — which
-	// the deposit would then take into the head, off L1, out of reach of any
-	// registry update until a decommit or a close.
-	it('uses an exclusive token filter for a token rule', async () => {
+	// A token rule carves too, for the same reason plus one more: the smallest
+	// UTxO covering the amount is routinely one that also carries the agent's
+	// registry NFT. A carve pays the token into its own output and leaves every
+	// other asset behind in the change.
+	it('carves a token rule to its exact amount', async () => {
 		const unit = 'cc'.repeat(28) + '0014df10';
 		mockFindMany.mockResolvedValue([rule({ assetUnit: unit, topupAmount: 500n })]);
 
@@ -80,8 +79,7 @@ describe('runHydraAutoTopupCycle', () => {
 		expect(mockExecuteHydraTopup).toHaveBeenCalledWith({
 			headId: 'head-1',
 			filter: { unit, exclusive: true },
-			target: { unit, amount: 500n },
-			requireFullTarget: true,
+			exact: { unit, amount: 500n },
 		});
 	});
 

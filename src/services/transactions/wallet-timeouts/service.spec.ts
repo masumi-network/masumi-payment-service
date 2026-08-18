@@ -42,6 +42,8 @@ describe('wallet-timeouts L1 cleanup boundary', () => {
 // wallet id frees the deposit mid-carve and the batchers spend its inputs out
 // from under it. Worse, the clears that also null `lockPurpose` destroy the one
 // marker that would have made the leak visible to `unstickPurposeLocks`.
+const CUTOFF = new Date('2026-08-18T12:00:00.000Z');
+
 describe('wallet-timeouts unlock fences', () => {
 	it('clears a swap lock only for the swap the poll actually resolved', () => {
 		expect(buildSwapUnlockWhere('wallet-1', 'swap-1')).toEqual({
@@ -52,29 +54,42 @@ describe('wallet-timeouts unlock fences', () => {
 	});
 
 	it('clears an orphan lock only while it is still unattached and unpurposed', () => {
-		expect(buildOrphanLockClearWhere('wallet-1')).toEqual({
+		expect(buildOrphanLockClearWhere('wallet-1', CUTOFF)).toEqual({
 			id: 'wallet-1',
 			deletedAt: null,
 			pendingTransactionId: null,
 			lockPurpose: null,
+			lockedAt: { lt: CUTOFF },
 		});
 	});
 
-	it('clears a timed-out lock only on the three columns it was selected by', () => {
-		expect(buildTimedOutUnlockWhere('wallet-1')).toEqual({
+	it('clears a timed-out lock only on the columns it was selected by', () => {
+		expect(buildTimedOutUnlockWhere('wallet-1', CUTOFF)).toEqual({
 			id: 'wallet-1',
 			deletedAt: null,
 			pendingTransactionId: null,
 			pendingSwapTransactionId: null,
 			lockPurpose: null,
+			lockedAt: { lt: CUTOFF },
 		});
 	});
 
 	// The marker is the whole point: without it in the fence, a purposed lock is
 	// indistinguishable from the batcher lock these sweeps are built to reap.
 	it('never lets an unlock match a wallet a Hydra L1 deposit is holding', () => {
-		for (const where of [buildOrphanLockClearWhere('wallet-1'), buildTimedOutUnlockWhere('wallet-1')]) {
+		for (const where of [buildOrphanLockClearWhere('wallet-1', CUTOFF), buildTimedOutUnlockWhere('wallet-1', CUTOFF)]) {
 			expect(where.lockPurpose).toBeNull();
+		}
+	});
+
+	// The dangerous claimant is not only the Hydra deposit. A batcher claims a
+	// wallet by setting `lockedAt` and nothing else, and attaches its
+	// PendingTransaction seconds later — so for those seconds it matches every
+	// other column these fences name. Fencing on the age the read observed is
+	// what keeps the sweep from clearing a lock that was taken after it looked.
+	it('refuses to clear a lock taken after the sweep read the wallet', () => {
+		for (const where of [buildOrphanLockClearWhere('wallet-1', CUTOFF), buildTimedOutUnlockWhere('wallet-1', CUTOFF)]) {
+			expect(where.lockedAt).toEqual({ lt: CUTOFF });
 		}
 	});
 });

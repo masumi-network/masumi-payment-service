@@ -518,3 +518,91 @@ deposit while the first sat recoverable at the deposit script. All three said
 what someone assumed the code did. Worth a standing check whenever a money path
 changes: search the UI for prose describing the old behaviour, not just the
 call sites.
+
+**`requireFullTarget` was the wrong instrument, not a missing check.** Round 11
+added it to stop an unattended top-up committing a best-effort shortfall, and it
+does — but the disaster its own docblock described was the opposite one. Hydra
+commits WHOLE UTxOs, so a bounded selection chooses which ones and cannot bound
+the overshoot: `selectCommitUtxosUpToTarget` takes the smallest single UTxO that
+covers the target, which for a wallet whose change has consolidated is the
+wallet's entire balance, and that selection is not short, it is over — so the
+new guard passed it. Recorded because the fix was to stop selecting: the
+unattended path now carves the exact amount on L1 first (`exact`), which was
+already implemented for the manual path. `selectCommitUtxosUpToTarget`,
+`reachedTarget` and `requireFullTarget` were deleted rather than patched; a
+bounded whole-UTxO selector has no correct caller.
+
+**`Failed` deposits were being counted as money at the deposit script.** The
+round-11 comment said Failed "says only that this service gave up on it", and
+that is not what the code does: both writers that set Failed with a deposit hash
+prove the output does not exist — `confirmed-invalid` is a phase-2 failure,
+which creates no outputs, and the other branch fires only once a trusted current
+slot is past the signed TTL plus grace with the hash still absent, after which
+the transaction can never be included. The status's own schema comment says
+"rejected/absent past its validity window; retry is safe". Counting it made
+every failed top-up permanent: nothing could clear the row, because
+`reconcileRecoveredHydraTopups` resolves a deposit by watching its output be
+spent and an output that was never created is never spent — so the head, its
+participants and their relations could not be deleted, ever. The reconciler
+still watches Failed rows, which is the right place for the residual doubt.
+
+**Two fixes were written against a read that had already been taken.** The
+wallet-timeout fences (round 10) named three columns while the read that
+selected the row named four, leaving out the lock's age — so a batcher's fresh
+claim, which sets `lockedAt` and nothing else for a second or two, matched the
+fence exactly. And `executeHydraTopup`'s release probe asked whether the
+PARTICIPANT had an outstanding top-up rather than whether THIS call did, so the
+409 path — refused because an earlier top-up was still Pending — kept the lock
+it had just taken for the full 30-minute stale window, renewed every 30 seconds
+by the auto-top-up cycle. Both are the same mistake: a fence that describes the
+situation rather than the operation.
+
+**Two hydra-host guards that only half landed.** `shouldAdoptAsRunning` (round
+11) consulted `desired`, but `requestRemoval` deliberately leaves `desired`
+alone — it writes `removalRequested`, because stopping the node overwrites the
+state with Draining and then Stopped and the flag is what survives that. So a
+node mid-teardown was still promoted to Running on a host restart and advertised
+as usable. And the round-10 catch around `store.list()` in `drainRunningNodes`
+stopped SIGTERM from rejecting without making it drain anything: the host then
+logged "all nodes drained" and exited 0 while the runtime SIGKILLed the fleet.
+The author's own unreachable log line was the tell in the first case; in the
+second it was that the fix addressed the rejection rather than the outcome.
+
+**A "no measurement" tick was being read as a good measurement.** `observe()`
+reports `drift: null` for a node that is down, one that misses the 5s
+responsiveness probe, and one whose chain probe misses the 8s Greetings frame.
+`driftBreachFields` cleared the breach on all three, and the stall has to
+survive eight consecutive ticks to earn a restart — so a node that was stalled
+AND intermittently slow disarmed the watchdog that exists for exactly that node.
+Worth remembering with the Jest detail that hid it: `toEqual` reads
+`{ driftBreachSince: undefined }` — the shape that CLEARS the breach — as equal
+to `{}`, which leaves it standing. The regression test needs `toStrictEqual`.
+
+**The peer-change lock covered the record and not the directory.** `setPeers`
+checked quiescence, wrote every key file, pruned the leftovers and only then
+updated the record; the registry's write queue covered the update alone. A start
+claiming the node inside that window read the OLD peer list and launched against
+the NEW key files, which fixes `--initial-cluster` on a cluster that never
+reaches quorum — and an unresponsive node is precisely what the plan idles on,
+so it was never restarted and never failed. The fix is `store.updateAsync`,
+which holds the node's queue across an awaiting mutator, with the quiescence
+check moved inside it. The overlapping-writers test that came with it passes
+against the old code too: the interleaving is timing-dependent and did not
+reproduce, so the mechanism is pinned at the store instead.
+
+**Reader width has to match schema width, and this file had three more.**
+`hydraOutputValueSchema` admits a nested map under any key — `lovelace`
+included — and its keys are node-supplied strings, and `summarizeDistributedUtxo`
+was written as if neither were true: an unchecked cast on the lovelace branch
+reaching `.trim()` on an object, and `assets['constructor']` answering with a
+function that `BigInt()` throws on. Both throws land inside the replay, and a
+rejected frame is re-rejected on every reconnect. `__proto__` needed the output
+object to be null-prototype as well, since assigning it on a literal sets the
+prototype instead of the key. The other two: `IgnoredHeadInitializing` was
+registered head-scoped although its `headId` names the head the node DECLINED to
+join, so the pinned-head check rejected the ordinary case; and the
+`DecommitInvalid` reader called `resolveTxHash` with no try, though the schema
+checks the cborHex is hex of a plausible length and not that it decodes (every
+input probed throws with a CBOR error). Three `z.strictObject` islands inside
+`hydraProtocolParametersSchema`, itself `looseObject`, are the same family: an
+additive upstream field would have failed every L2 build on the head.

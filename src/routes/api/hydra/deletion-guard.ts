@@ -297,10 +297,9 @@ export async function quiesceHydraHeadsForDeletion(headIds: readonly string[]): 
  * deleting a head that still has one of these takes the only record of where
  * the money is with it.
  *
- * Absorbed and Recovered are the two endings that mean the deposit is
- * accounted for. Everything else with a hash — including Failed, which says
- * only that this service gave up on it — leaves an output that may still be
- * there.
+ * Absorbed, Recovered and Failed are the endings that mean nothing is waiting
+ * at the script — see `unrecoveredHydraTopupWhere` for why a Failed deposit is
+ * provably absent rather than merely given up on.
  */
 export { unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
 

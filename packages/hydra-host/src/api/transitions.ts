@@ -126,8 +126,15 @@ export async function requestRemoval(
  * running node would leave the process on its old cluster and make the next
  * restart bootstrap an empty one, so the node must be quiescent.
  */
-export async function requireQuiescentForPeerChange(store: NodeRegistryStore, nodeId: string): Promise<NodeRecord> {
-	const record = await load(store, nodeId);
+/**
+ * Decided on a record the caller already holds, never on a fresh read.
+ *
+ * The check has to happen under the node's write queue, beside the key-file
+ * writes it guards: a read taken before the lock answers about a node that can
+ * be claimed and started before the first file is written, and the peer set is
+ * fixed at process start.
+ */
+export function assertQuiescentForPeerChange(record: NodeRecord): void {
 	if (!QUIESCENT_STATES.has(record.state)) {
 		throw new HostApiError(
 			`peers cannot be changed while the node is ${record.state}: the peer set is fixed at process start, ` +
@@ -135,7 +142,6 @@ export async function requireQuiescentForPeerChange(store: NodeRegistryStore, no
 			409,
 		);
 	}
-	return record;
 }
 
 export type { PeerRecord };
