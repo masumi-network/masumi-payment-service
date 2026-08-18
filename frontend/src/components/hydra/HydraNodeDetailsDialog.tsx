@@ -277,10 +277,19 @@ export function HydraNodeDetailsDialog({
     setBusyId(participantId);
     try {
       const result = await fundHydraNode(apiClient, { id: participantId });
+      if (result.outcome === 'in-flight') {
+        // Not "already funded": nothing was sent because an earlier transfer is
+        // still unconfirmed, and the balance shown is the pre-transfer one.
+        toast.info(
+          `A transfer to this node has not confirmed yet, so nothing was sent. It still holds ${ada(result.balanceLovelace, host?.network)}.`,
+        );
+        return;
+      }
+      const sent = result.transferredLovelace;
       toast.success(
-        result.transferredLovelace === null
+        result.outcome === 'sufficient' || sent === null
           ? `Already funded, holding ${ada(result.balanceLovelace, host?.network)}`
-          : `Sending ${ada(result.transferredLovelace, host?.network)} to the node`,
+          : `Sending ${ada(sent, host?.network)} to the node`,
       );
       await resync('hydra', 'wallets');
     } catch (error) {

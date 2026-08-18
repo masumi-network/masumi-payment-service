@@ -441,9 +441,18 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			200: successResponse('Withdrawal accepted', withdrawOutput, { headId: HEAD_ID, accepted: true }),
 			...unauthorized,
 			...notFound,
-			400: { description: 'No eligible in-head funds, or less is eligible than was requested' },
-			409: { description: 'Head not open, or a withdrawal from it is already in progress' },
-			502: { description: 'The node rejected the withdrawal request' },
+			// What the withdrawal itself gets wrong — nothing eligible, less eligible
+			// than was asked for, a node that refuses the request — is reported
+			// against the withdrawal row, because it is decided after this answers.
+			// These are the refusals a caller can actually receive.
+			400: {
+				description:
+					'Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant',
+			},
+			409: {
+				description: 'Head not open, disabled, not yet identified on chain, or its node is still catching up',
+			},
+			502: { description: 'No live connection to the head' },
 		},
 	});
 	registry.registerPath({
@@ -631,7 +640,9 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			200: successResponse('Node funding result', fundParticipantNodeOutput, { id: 'cuid_v2_auto_generated' }),
 			...unauthorized,
 			...notFound,
-			409: { description: 'The funding wallet is busy, or the node does not need funds' },
+			// No 409 for a node that needs nothing, or for one whose earlier transfer
+			// is still unconfirmed: both answer 200 and say which in `outcome`.
+			// Reporting them as refusals told the operator to go and fix something.
 		},
 	});
 	registry.registerPath({

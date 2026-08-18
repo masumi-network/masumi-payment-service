@@ -91,14 +91,36 @@ export class ExchangeStore {
 	}
 
 	async listInvites(): Promise<InviteRecord[]> {
+		return (await this.listInvitesWithWatermark()).invites;
+	}
+
+	/**
+	 * The invites, and the instant a later redemption is guaranteed to beat.
+	 *
+	 * The watermark has to be read inside this task, not around it. The poller
+	 * stores what it gets back and asks for `redeemedAt > since` next time, so a
+	 * redemption stamped earlier than the watermark but written later is invisible
+	 * for good: its invite stays `Issued` with no head, holding a node, its port
+	 * and its fuel, and blocking deletion of the Host until a process restart
+	 * falls back to the cold-start lookback. Taking it after `await listInvites()`
+	 * resolved was exactly that window — the queue is FIFO, so a redemption
+	 * enqueued behind this read has its own timestamp taken behind it too, and
+	 * only a clock read from inside the queue orders the two.
+	 */
+	async listInvitesWithWatermark(): Promise<{ invites: InviteRecord[]; now: number }> {
 		return await this.enqueue(async () => {
+			const now = Date.now();
 			const state = await this.read();
-			if (pruneRetainedInvites(state, Date.now())) {
+			if (pruneRetainedInvites(state, now)) {
 				await this.write(state);
 			}
-			// Callers must not be able to mutate the cached durable state outside
-			// this store's serial queue.
-			return state.invites.map(copyInvite);
+			// One millisecond behind the read, because the poller's filter is
+			// strict: a redemption enqueued behind this task can read the very same
+			// millisecond off the clock, and `redeemedAt > since` would then step
+			// over it forever. Reporting a millisecond earlier can at worst repeat
+			// a redemption this response already carried, which the owning service
+			// resolves idempotently.
+			return { invites: state.invites.map(copyInvite), now: now - 1 };
 		});
 	}
 
@@ -129,9 +151,13 @@ export class ExchangeStore {
 		nonce: string,
 		redeemer: ExchangeMaterial,
 		signature: ExchangeSignature,
-		now: number,
 	): Promise<{ ok: true; invite: InviteRecord } | { ok: false; reason: string; status: 404 | 409 | 410 }> {
 		return await this.enqueue(async () => {
+			// Read here rather than passed in from the handler. The stamp is what
+			// the owning service's watermark is compared against, and a timestamp
+			// taken before the queue wait can predate a poll that ran during it —
+			// which loses the redemption for good. See `listInvitesWithWatermark`.
+			const now = Date.now();
 			const state = await this.read();
 			pruneRetainedInvites(state, now);
 			const invite = state.invites.find((candidate) => candidate.nonce === nonce);

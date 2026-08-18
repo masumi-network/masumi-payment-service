@@ -34311,7 +34311,7 @@
                         }
                     },
                     "400": {
-                        "description": "No eligible in-head funds, or less is eligible than was requested"
+                        "description": "Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant"
                     },
                     "401": {
                         "description": "Unauthorized"
@@ -34320,10 +34320,10 @@
                         "description": "Hydra head not found"
                     },
                     "409": {
-                        "description": "Head not open, or a withdrawal from it is already in progress"
+                        "description": "Head not open, disabled, not yet identified on chain, or its node is still catching up"
                     },
                     "502": {
-                        "description": "The node rejected the withdrawal request"
+                        "description": "No live connection to the head"
                     }
                 }
             },
@@ -35464,13 +35464,23 @@
                                                 "transferredLovelace": {
                                                     "type": "string",
                                                     "nullable": true,
-                                                    "description": "Null when the node already had enough"
+                                                    "description": "Null unless this request started a transfer; read `outcome` for why"
+                                                },
+                                                "outcome": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "sent",
+                                                        "sufficient",
+                                                        "in-flight"
+                                                    ],
+                                                    "description": "`sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent — the balance below is still the pre-transfer one."
                                                 }
                                             },
                                             "required": [
                                                 "address",
                                                 "balanceLovelace",
-                                                "transferredLovelace"
+                                                "transferredLovelace",
+                                                "outcome"
                                             ]
                                         }
                                     },
@@ -35493,9 +35503,6 @@
                     },
                     "404": {
                         "description": "Hydra head not found"
-                    },
-                    "409": {
-                        "description": "The funding wallet is busy, or the node does not need funds"
                     }
                 }
             }

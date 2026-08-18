@@ -101,6 +101,14 @@ describe('fundHydraNodeNow', () => {
 	// window once the indexer has certainly caught up; a Pending one never does,
 	// because a transfer stuck for an hour may still land, and forgetting it
 	// would pay the node a second time for funds that are already on the way.
+	//
+	// And the window is measured from the CONFIRMATION, not from the row's
+	// creation. The submitter waits for a hot wallet that is busy doing this
+	// head's L2 work, so a transfer routinely sits Pending for longer than the
+	// whole window and would already be outside it the moment it confirmed —
+	// which puts the indexing gap back exactly where it was. `withdrawNodeFunds`
+	// shares this helper, so the same gap let a sweep report `dust` and delete
+	// the participant's only signing key with 30 ADA still on its way.
 	it('counts a recently confirmed transfer as still in flight', async () => {
 		await fundHydraNodeNow('participant-1');
 
@@ -110,7 +118,10 @@ describe('fundHydraNodeNow', () => {
 		const [pending, confirmed] = where.OR;
 		expect(pending).toEqual({ status: TransactionStatus.Pending });
 		expect(confirmed.status).toBe(TransactionStatus.Confirmed);
-		expect(confirmed.createdAt.gte).toBeInstanceOf(Date);
+		const [byConfirmation, byCreation] = confirmed.OR;
+		expect(byConfirmation.lastCheckedAt.gte).toBeInstanceOf(Date);
+		// Only as the fallback for a row nothing stamped.
+		expect(byCreation).toEqual({ lastCheckedAt: null, createdAt: { gte: expect.any(Date) } });
 	});
 
 	it('does not pay again just after the first transfer confirmed', async () => {
@@ -129,5 +140,44 @@ describe('fundHydraNodeNow', () => {
 
 		expect(result.transferredLovelace).toBeNull();
 		expect(mockCreateTransfer).not.toHaveBeenCalled();
+	});
+
+	// A null transfer meant both "already funded" and "your money is still on
+	// the way", and every caller read it as the first. The admin UI announced
+	// `Already funded, holding 0.00 tADA` on a node holding nothing, the
+	// operator retried Init, got NoSeedInput, and came back to the same
+	// sentence — the Pending window has no age bound, deliberately, because the
+	// wallet doing L2 work is busy for far longer than any window would allow.
+	describe('says which of the two nothing-sent cases happened', () => {
+		it('reports a node that needs nothing as sufficient', async () => {
+			mockReadLovelaceAt.mockResolvedValue(NODE_MINIMUM_LOVELACE + 1n);
+
+			await expect(fundHydraNodeNow('participant-1')).resolves.toMatchObject({ outcome: 'sufficient' });
+		});
+
+		it('reports an unconfirmed earlier transfer as in-flight', async () => {
+			mockFindTransfer.mockResolvedValue({ id: 'transfer-0', status: TransactionStatus.Pending });
+
+			await expect(fundHydraNodeNow('participant-1')).resolves.toMatchObject({
+				outcome: 'in-flight',
+				balanceLovelace: '0',
+			});
+		});
+
+		it('reports a transfer it started as sent', async () => {
+			await expect(fundHydraNodeNow('participant-1')).resolves.toMatchObject({ outcome: 'sent' });
+		});
+	});
+
+	// The cycle is damped after a failure, because a shortfall the funding wallet
+	// cannot cover throws before broadcast and leaves nothing in flight — so the
+	// ten-second cycle rebuilt the same doomed transfer forever. An operator
+	// pressing Send has already decided to try again, so their request is not.
+	it('retries immediately after a failure when an operator asks', async () => {
+		await fundHydraNodeNow('participant-1');
+
+		const queries = mockFindTransfer.mock.calls.map((call) => call[0].where);
+		expect(queries.some((where) => where.status?.in !== undefined)).toBe(false);
+		expect(mockCreateTransfer).toHaveBeenCalled();
 	});
 });

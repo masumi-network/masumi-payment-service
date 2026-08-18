@@ -92,10 +92,19 @@ export function HydraInitDialog({
     setIsFunding(true);
     try {
       const result = await fundHydraNode(apiClient, { id: localParticipantId });
+      // Three outcomes, not two. A transfer already in flight sends nothing and
+      // used to be reported as "already funded" — on a node holding zero, whose
+      // Init then fails with NoSeedInput. The dialog also stays open for it,
+      // because nothing has changed yet and the operator has nothing to retry.
+      if (result.outcome === 'in-flight') {
+        toast.info('A transfer to this node is already on its way. Retry once it confirms.');
+        return;
+      }
+      const sent = result.transferredLovelace;
       toast.success(
-        result.transferredLovelace === null
+        result.outcome === 'sufficient' || sent === null
           ? 'The node is already funded'
-          : `Sending ${ada(result.transferredLovelace)} to the node. Retry once it confirms.`,
+          : `Sending ${ada(sent)} to the node. Retry once it confirms.`,
       );
       onOpenChange(false);
     } catch (error) {

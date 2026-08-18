@@ -619,7 +619,15 @@ export const fundParticipantNodeInput = z.object({
 export const fundParticipantNodeOutput = z.object({
 	address: z.string().describe("The node's own Cardano address, derived from its key hash"),
 	balanceLovelace: z.string(),
-	transferredLovelace: z.string().nullable().describe('Null when the node already had enough'),
+	transferredLovelace: z
+		.string()
+		.nullable()
+		.describe('Null unless this request started a transfer; read `outcome` for why'),
+	outcome: z
+		.enum(['sent', 'sufficient', 'in-flight'])
+		.describe(
+			'`sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent — the balance below is still the pre-transfer one.',
+		),
 });
 
 // --- GET: is this node funded enough to act on chain? ---

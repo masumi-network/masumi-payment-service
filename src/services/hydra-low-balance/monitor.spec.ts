@@ -65,9 +65,32 @@ describe('evaluateHydraLowBalanceRules', () => {
 
 		expect(alerts).toHaveLength(1);
 		expect(alerts[0]).toMatchObject({ ruleId: 'rule-1', hydraHeadId: 'head-1', currentAmount: 10_000_000n });
-		expect(mockUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({ where: { id: 'rule-1', status: { not: 'Low' } } }),
-		);
+		// Won by the edge OR by the age of the last alert. Edge alone made the
+		// webhook unrecoverable when anything failed between this write and the
+		// queueing that follows it: every later cycle found the row already Low,
+		// took the refresh branch, and nobody was ever told.
+		const where = mockUpdateMany.mock.calls[0]?.[0]?.where as {
+			id: string;
+			OR: Array<Record<string, unknown>>;
+		};
+		expect(where.id).toBe('rule-1');
+		expect(where.OR).toEqual([
+			{ status: { not: 'Low' } },
+			{ lastAlertedAt: null },
+			{ lastAlertedAt: { lt: expect.any(Date) } },
+		]);
+	});
+
+	it('alerts again once a rule has been Low without an alert for long enough', async () => {
+		mockFindMany.mockResolvedValue([rule()]);
+		mockGetOwnInHeadBalance.mockResolvedValue(balance('10000000'));
+		mockUpdateMany.mockResolvedValue({ count: 1 });
+
+		const alerts = await evaluateHydraLowBalanceRules();
+
+		// The write is what decides; a rule already Low whose `lastAlertedAt` is
+		// older than the interval matches it, so the alert is emitted again.
+		expect(alerts).toHaveLength(1);
 	});
 
 	it('does not re-alert when the rule is already Low (atomic guard misses)', async () => {

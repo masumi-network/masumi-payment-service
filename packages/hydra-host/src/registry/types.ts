@@ -198,6 +198,17 @@ export type NodeRecord = {
 	driftBreachSeconds?: number;
 	/** Guards against a node that restarts, fails to catch up, and restarts again. */
 	lastDriftRestartAt?: string;
+	/**
+	 * When a node that had answered before stopped answering.
+	 *
+	 * Distinct from the drift breach, which needs a verdict the node itself
+	 * supplies — a node that has gone silent supplies none, so the drift
+	 * watchdog cannot see it. Only clocked while the record says `Running`:
+	 * `Starting` is the normal way up and waits without a bound.
+	 */
+	muteSince?: string;
+	/** Guards against a node that restarts, comes up silent again, and restarts again. */
+	lastMuteRestartAt?: string;
 };
 
 export function isKeyMaterialReadable(record: NodeRecord): boolean {

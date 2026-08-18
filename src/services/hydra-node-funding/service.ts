@@ -67,6 +67,20 @@ const MAX_TOPUPS_PER_CYCLE = 5;
  * extra minutes to top up a node that is already funded costs nothing.
  */
 const RECENT_TRANSFER_WINDOW_MS = 15 * 60 * 1000;
+/**
+ * How long a failed transfer stops another being created for the same node.
+ *
+ * `recentlySentTo` deliberately ignores terminal statuses, because a transfer
+ * that definitively did not happen must not block the retry that replaces it.
+ * That is right for one retry and wrong for a loop: the funding cycle runs
+ * every ten seconds, so a shortfall the funding wallet cannot cover — it is out
+ * of ADA, the build throws before broadcast — created a `WalletFundTransfer`
+ * row per tick, thousands a day per node, and claimed and released the
+ * participant's hot wallet on every submitter pass while the V2 batcher was
+ * selecting on the same lock. The retry still happens; it happens once a
+ * minute instead of six times.
+ */
+const FAILED_TRANSFER_COOLDOWN_MS = 60 * 1000;
 
 /**
  * Anything sent to this address that may still land.
@@ -85,10 +99,26 @@ const RECENT_TRANSFER_WINDOW_MS = 15 * 60 * 1000;
  * for the gap between our own confirmation and the chain indexer reflecting it.
  */
 export function recentlySentTo() {
+	// Measured from the confirmation, not from the row's creation. The two are
+	// far apart for exactly the reason the paragraph above gives: the submitter
+	// waits for a hot wallet that is busy doing this head's L2 work, so a
+	// transfer routinely sits `Pending` for longer than the whole window and is
+	// already outside it the instant it confirms. That put the indexing gap back
+	// where it started — the next cycle reads a zero balance, sees nothing in
+	// flight and sends a second 30 ADA — and worse, `withdrawNodeFunds` shares
+	// this helper: a sweep in that gap reports `dust`, which is a settled code,
+	// and the participant and its only signing key are deleted while 30 ADA is
+	// still on its way to the node's address.
+	const cutoff = new Date(Date.now() - RECENT_TRANSFER_WINDOW_MS);
 	return {
 		OR: [
 			{ status: TransactionStatus.Pending },
-			{ status: TransactionStatus.Confirmed, createdAt: { gte: new Date(Date.now() - RECENT_TRANSFER_WINDOW_MS) } },
+			{
+				status: TransactionStatus.Confirmed,
+				// `createdAt` remains the fallback for a row confirmed by a path that
+				// never stamped `lastCheckedAt`.
+				OR: [{ lastCheckedAt: { gte: cutoff } }, { lastCheckedAt: null, createdAt: { gte: cutoff } }],
+			},
 		],
 	};
 }
@@ -106,7 +136,15 @@ async function claimFunding(args: {
 	hotWalletId: string;
 	address: string;
 	amount: bigint;
-}): Promise<'claimed' | 'already-in-flight'> {
+	/**
+	 * Whether a recent failure blocks this claim.
+	 *
+	 * Set by the unattended cycle and not by the operator's own "Send": damping
+	 * exists to stop a loop rebuilding a doomed transfer every ten seconds, and
+	 * an operator asking for one has already decided to try again.
+	 */
+	respectFailureCooldown: boolean;
+}): Promise<'claimed' | 'already-in-flight' | 'recently-failed'> {
 	return await withSerializableSlotRetry(() =>
 		prisma.$transaction(
 			async (tx) => {
@@ -114,6 +152,20 @@ async function claimFunding(args: {
 					where: { toAddress: args.address, ...recentlySentTo() },
 				});
 				if (inFlight !== null) return 'already-in-flight' as const;
+
+				// Damping, not a second in-flight check: a failure leaves nothing in
+				// flight, so without this the cycle rebuilds the same doomed transfer
+				// every ten seconds forever.
+				if (args.respectFailureCooldown) {
+					const recentFailure = await tx.walletFundTransfer.findFirst({
+						where: {
+							toAddress: args.address,
+							status: { in: [TransactionStatus.FailedViaManualReset, TransactionStatus.RolledBack] },
+							updatedAt: { gte: new Date(Date.now() - FAILED_TRANSFER_COOLDOWN_MS) },
+						},
+					});
+					if (recentFailure !== null) return 'recently-failed' as const;
+				}
 
 				await tx.walletFundTransfer.create({
 					data: { hotWalletId: args.hotWalletId, toAddress: args.address, lovelaceAmount: args.amount },
@@ -245,7 +297,13 @@ export async function runHydraNodeFundingCycle(): Promise<NodeFundingOutcome> {
 		// on-demand `fundHydraNodeNow` are different callers, and between a separate
 		// check and create both can pass. See `claimFunding`.
 		const amount = NODE_TARGET_LOVELACE - balance;
-		if ((await claimFunding({ hotWalletId: participant.walletId, address, amount })) === 'already-in-flight') {
+		const claim = await claimFunding({
+			hotWalletId: participant.walletId,
+			address,
+			amount,
+			respectFailureCooldown: true,
+		});
+		if (claim !== 'claimed') {
 			outcome.skipped += 1;
 			continue;
 		}
@@ -306,6 +364,16 @@ export async function readNodeFundingState(localParticipantId: string): Promise<
 }
 
 /**
+ * What a funding request actually did.
+ *
+ * `sufficient` and `in-flight` both transfer nothing, and they mean opposite
+ * things to the operator: one says the node is ready, the other says its money
+ * has not arrived yet and no second transfer will be sent while the first is
+ * outstanding.
+ */
+export type NodeFundingRequestOutcome = 'sent' | 'sufficient' | 'in-flight';
+
+/**
  * Fund one node now, rather than waiting for the cycle.
  *
  * Exists because the wait is the worst part of the first head an operator
@@ -316,6 +384,9 @@ export async function fundHydraNodeNow(localParticipantId: string): Promise<{
 	address: string;
 	balanceLovelace: string;
 	transferredLovelace: string | null;
+	// Written out rather than aliased: express-zod-api compares the handler's
+	// return against the literal union the response schema produces.
+	outcome: 'sent' | 'sufficient' | 'in-flight';
 }> {
 	const participant = await prisma.hydraLocalParticipant.findUniqueOrThrow({
 		where: { id: localParticipantId },
@@ -329,7 +400,7 @@ export async function fundHydraNodeNow(localParticipantId: string): Promise<{
 		0n;
 
 	if (balance >= NODE_MINIMUM_LOVELACE) {
-		return { address, balanceLovelace: balance.toString(), transferredLovelace: null };
+		return { address, balanceLovelace: balance.toString(), transferredLovelace: null, outcome: 'sufficient' };
 	}
 
 	// The same one-in-flight rule the cycle applies, for the same reason: the
@@ -338,11 +409,22 @@ export async function fundHydraNodeNow(localParticipantId: string): Promise<{
 	// node immediately and the cycle funds it too, which is exactly this window —
 	// it sent 10 ADA twice to every node opened so far.
 	const amount = NODE_TARGET_LOVELACE - balance;
-	const claim = await claimFunding({ hotWalletId: participant.walletId, address, amount });
+	const claim = await claimFunding({
+		hotWalletId: participant.walletId,
+		address,
+		amount,
+		respectFailureCooldown: false,
+	});
+	// Reported apart from `sufficient`, not folded into a null transfer. Both
+	// outcomes send nothing, and the callers all read that as "already funded" —
+	// so a node holding zero, whose first transfer is stuck behind a hot wallet
+	// that stays Pending for as long as it is doing L2 work, was announced as
+	// `Already funded, holding 0.00 tADA`. The operator then retries Init, gets
+	// `NoSeedInput`, and comes back to the same sentence.
 	if (claim === 'already-in-flight') {
-		return { address, balanceLovelace: balance.toString(), transferredLovelace: null };
+		return { address, balanceLovelace: balance.toString(), transferredLovelace: null, outcome: 'in-flight' };
 	}
 
 	logger.info(`hydra: funding node ${participant.hostNodeId} with ${amount} lovelace on request`);
-	return { address, balanceLovelace: balance.toString(), transferredLovelace: amount.toString() };
+	return { address, balanceLovelace: balance.toString(), transferredLovelace: amount.toString(), outcome: 'sent' };
 }

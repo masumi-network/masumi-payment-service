@@ -322,11 +322,11 @@ export function createControlPlane(deps: ServerDeps): Server {
 				// A watermark rather than a per-invite poll: the owning service asks
 				// once and learns about every redemption since it last asked.
 				const since = Number(new URL(request.url ?? '/', 'http://host.invalid').searchParams.get('redeemedSince') ?? 0);
-				const invites = await exchange.listInvites();
+				const { invites, now } = await exchange.listInvitesWithWatermark();
 				const changed = Number.isFinite(since)
 					? invites.filter((invite) => invite.redeemedAt !== null && invite.redeemedAt > since)
 					: invites;
-				send(response, 200, { invites: changed, now: Date.now() });
+				send(response, 200, { invites: changed, now });
 				return;
 			}
 

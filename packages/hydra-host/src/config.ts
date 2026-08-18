@@ -100,6 +100,22 @@ function positiveInteger(env: EnvSource, key: string, fallback: number): number 
 	return parsed;
 }
 
+/**
+ * A port the process will actually bind or publish.
+ *
+ * `0` is a legal argument to `listen` and means "any free port", which is not
+ * what an operator who typed it meant: the host would bind an ephemeral port
+ * while `/v1/capabilities` still reported `exchangePort: 0`, and the invite URL
+ * the payment service builds from that value points nowhere.
+ */
+function tcpPort(env: EnvSource, key: string, fallback: number): number {
+	const parsed = integer(env, key, fallback);
+	if (parsed < 1 || parsed > 65535) {
+		throw new ConfigError(`${key} must be a TCP port between 1 and 65535, received ${String(parsed)}`);
+	}
+	return parsed;
+}
+
 function integer(env: EnvSource, key: string, fallback: number): number {
 	const raw = env.get(key)?.trim();
 	if (raw === undefined || raw.length === 0) {
@@ -151,7 +167,7 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 	};
 	validatePortLayout(ports);
 
-	const defaultUnsyncedPeriodSeconds = integer(env, 'HYDRA_HOST_UNSYNCED_PERIOD_SECONDS', 1800);
+	const defaultUnsyncedPeriodSeconds = positiveInteger(env, 'HYDRA_HOST_UNSYNCED_PERIOD_SECONDS', 1800);
 	// An override, not a default. Thresholds are derived per node from that
 	// node's own unsynced period, because that is the value they have to stay
 	// below and it is per node — a host-wide default that suits an 1800s node
@@ -169,8 +185,8 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 	return {
 		dataDir: optional(env, 'HYDRA_HOST_DATA_DIR', '/data'),
 		hydraNodeBin: optional(env, 'HYDRA_NODE_BIN', '/usr/local/bin/hydra-node'),
-		listenPort: integer(env, 'HYDRA_HOST_PORT', 8443),
-		exchangePort: integer(env, 'HYDRA_HOST_EXCHANGE_PORT', 8444),
+		listenPort: tcpPort(env, 'HYDRA_HOST_PORT', 8443),
+		exchangePort: tcpPort(env, 'HYDRA_HOST_EXCHANGE_PORT', 8444),
 		publicHost,
 		network,
 		blockfrostProjectFile: optional(env, 'BLOCKFROST_PROJECT_FILE', '/run/secrets/blockfrost.txt'),
@@ -179,8 +195,15 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		userToken,
 		ports,
 		drift,
-		defaultContestationPeriodSeconds: integer(env, 'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS', 220),
-		defaultDepositPeriodSeconds: integer(env, 'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS', 300),
+		// Positive, not merely whole: a provision that omits its own period falls
+		// back to these verbatim and the value is written into the durable record
+		// and the 201 response. `buildHydraNodeArgs` then refuses to launch — but
+		// it refuses after `start` has claimed the record and charged an attempt,
+		// so the node burns its whole start budget and lands `Failed` with
+		// "failed to stay up after 5 attempts", while the reason it could never
+		// start only ever reached the log.
+		defaultContestationPeriodSeconds: positiveInteger(env, 'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS', 220),
+		defaultDepositPeriodSeconds: positiveInteger(env, 'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS', 300),
 		defaultUnsyncedPeriodSeconds,
 		escrowTtlSeconds: positiveInteger(env, 'HYDRA_HOST_ESCROW_TTL_SECONDS', 3600),
 		drainTimeoutMs: positiveInteger(env, 'HYDRA_HOST_DRAIN_TIMEOUT_MS', 120_000),

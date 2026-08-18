@@ -245,7 +245,18 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
       ? assetUnit
       : ADA_CHOICE;
 
-  if (!isOpen) return null;
+  // Only the form is gated on the head being Open. The LIST is not, for the
+  // same reason the deposit side is not: `HydraDecommit` rows appear in no
+  // other view — the head's transaction list merges only Ledger, Deposit and
+  // NodeFunding — so returning null here took away the only record of a payout
+  // the head had already signed. `approvedAt` is the point of no return: the
+  // funds have left the head whether or not L1 has reported them, and a head
+  // leaves Open immediately after the drain the control above invites.
+  if (!isOpen) {
+    return (
+      <HydraWithdrawalList headId={headId} isOpen={false} network={network} startedAt={null} />
+    );
+  }
 
   const adaLabel = network?.toLowerCase() === 'mainnet' ? 'ADA' : 'tADA';
 

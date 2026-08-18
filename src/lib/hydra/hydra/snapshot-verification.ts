@@ -445,6 +445,38 @@ function numberMapsEqual(left: ReadonlyMap<string, number>, right: ReadonlyMap<s
 }
 
 /**
+ * What the fanout may legitimately pay out for this signed state.
+ *
+ * The canonical set the accumulator is computed over is all three partitions,
+ * because that is what the signature commits to. The fanout is not: a deposit
+ * still sitting in `utxoToCommit` has not entered the head — its funds are at
+ * the L1 deposit script, where the depositor recovers them — and distributing
+ * it as well would be a double spend. A pending DECOMMIT is the mirror image:
+ * the decrement has not landed, so those funds are still in the head's L1 UTxO
+ * and the fanout does pay them out.
+ *
+ * Both forms are accepted rather than only the second, because the snapshot
+ * this is checked against is the one the database recorded, and an increment
+ * that landed on L1 just before the close moves the same outputs from
+ * `utxoToCommit` into `utxo` — which our copy may not have seen yet. Requiring
+ * the full set was the bug: a head closed with any deposit in flight resolved
+ * no fanout reference at all, so `prepareFinalHandoff` returned null on every
+ * poll — deterministically, from replayed history — and every payment in that
+ * head stayed pinned to in-head UTxOs that no longer exist, on a head already
+ * Final with no protocol action left to unstick it.
+ */
+function expectedFanoutMultisets(snapshot: VerifiedHydraSnapshot): Array<ReadonlyMap<string, number>> {
+	if (snapshot.committedOutputs.size === 0) return [snapshot.outputMultiset];
+	const withoutCommitted = new Map(snapshot.outputMultiset);
+	for (const serializedOutput of snapshot.committedOutputs.values()) {
+		const remaining = (withoutCommitted.get(serializedOutput) ?? 0) - 1;
+		if (remaining > 0) withoutCommitted.set(serializedOutput, remaining);
+		else withoutCommitted.delete(serializedOutput);
+	}
+	return [snapshot.outputMultiset, withoutCommitted];
+}
+
+/**
  * Bind the complete signature-verified final state to hydra-node's complete
  * chain-observed fanout map. Unlike the single-output resolver below, this can
  * retain duplicate values because every actual L1 reference is independently
@@ -454,7 +486,8 @@ export function resolveVerifiedHydraFanoutReferences(
 	snapshot: VerifiedHydraSnapshot,
 	fanoutOutputs: ReadonlyMap<string, string>,
 ): VerifiedHydraFanoutReference[] | null {
-	if (!numberMapsEqual(snapshot.outputMultiset, outputMultiset(fanoutOutputs.values()))) return null;
+	const observed = outputMultiset(fanoutOutputs.values());
+	if (!expectedFanoutMultisets(snapshot).some((expected) => numberMapsEqual(expected, observed))) return null;
 	const references: VerifiedHydraFanoutReference[] = [];
 	for (const [reference, serializedOutput] of fanoutOutputs) {
 		const parsed = parseFanoutReference(reference, snapshot.number, serializedOutput);

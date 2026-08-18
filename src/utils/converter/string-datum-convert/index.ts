@@ -228,6 +228,15 @@ export function decodeV1ContractDatum(
 	}
 }
 
+/**
+ * The largest datum integer this service can store.
+ *
+ * Every numeric datum field is written to a Postgres `int8`. A Plutus integer
+ * has no such bound, and nothing on chain rejects a larger one, so the check
+ * has to live where the datum is read.
+ */
+const MAX_DATUM_INT = 2n ** 63n - 1n;
+
 export function decodeV2ContractDatum(
 	decodedDatum: unknown,
 	network: Network,
@@ -296,6 +305,15 @@ export function decodeV2ContractDatum(
 		const buyerCooldownTime = BigInt(fields[17]?.int ?? -1);
 		const state = valueToStatus(fields[18]);
 
+		// Bounded from ABOVE as well as below. Plutus integers are arbitrary
+		// precision and every one of these lands in a Postgres `int8`, so a
+		// counterparty who puts 2^64 in a cooldown gets a datum the validator
+		// accepts (`vested_pay.ak` compares `>=`, and so does our own
+		// authorized-actor guard) and Prisma refuses. On L1 that is one failed
+		// write; inside a head it is permanent — the write happens in the ordered
+		// replay, the throw is caught per head and the cursor never advances, so
+		// the same transaction is retried on every tick and every reconnect and no
+		// escrow on that head ever moves again, with the funds inside it.
 		if (
 			collateralReturnLovelace < 0n ||
 			payByTime < 0n ||
@@ -304,6 +322,13 @@ export function decodeV2ContractDatum(
 			externalDisputeUnlockTime < 0n ||
 			sellerCooldownTime < 0n ||
 			buyerCooldownTime < 0n ||
+			collateralReturnLovelace > MAX_DATUM_INT ||
+			payByTime > MAX_DATUM_INT ||
+			resultTime > MAX_DATUM_INT ||
+			unlockTime > MAX_DATUM_INT ||
+			externalDisputeUnlockTime > MAX_DATUM_INT ||
+			sellerCooldownTime > MAX_DATUM_INT ||
+			buyerCooldownTime > MAX_DATUM_INT ||
 			state == null
 		) {
 			return null;

@@ -8,7 +8,21 @@ const STAKE_KH = 'dd'.repeat(28);
 
 type AddressData = ReturnType<typeof pubKeyAddress>;
 
-function v2Datum({ buyerReturn, sellerReturn }: { buyerReturn?: AddressData; sellerReturn?: AddressData } = {}) {
+type Numbers = {
+	collateralReturnLovelace?: bigint | number;
+	payByTime?: bigint | number;
+	submitResultTime?: bigint | number;
+	unlockTime?: bigint | number;
+	externalDisputeUnlockTime?: bigint | number;
+	sellerCooldownTime?: bigint | number;
+	buyerCooldownTime?: bigint | number;
+};
+
+function v2Datum({
+	buyerReturn,
+	sellerReturn,
+	numbers = {},
+}: { buyerReturn?: AddressData; sellerReturn?: AddressData; numbers?: Numbers } = {}) {
 	return conStr0([
 		pubKeyAddress(BUYER_PKH, STAKE_KH),
 		buyerReturn ? conStr0([buyerReturn]) : conStr1([]),
@@ -19,18 +33,21 @@ function v2Datum({ buyerReturn, sellerReturn }: { buyerReturn?: AddressData; sel
 		byteString('03'.repeat(32)), // sellerNonce
 		byteString('04'.repeat(16)), // buyerNonce
 		byteString('05'.repeat(16)), // agentIdentifier
-		integer(0), // collateralReturnLovelace
+		integer(numbers.collateralReturnLovelace ?? 0), // collateralReturnLovelace
 		byteString(''), // inputHash
 		byteString(''), // resultHash
-		integer(1), // payByTime
-		integer(2), // submitResultTime
-		integer(3), // unlockTime
-		integer(4), // externalDisputeUnlockTime
-		integer(0), // sellerCooldownTime
-		integer(0), // buyerCooldownTime
+		integer(numbers.payByTime ?? 1), // payByTime
+		integer(numbers.submitResultTime ?? 2), // submitResultTime
+		integer(numbers.unlockTime ?? 3), // unlockTime
+		integer(numbers.externalDisputeUnlockTime ?? 4), // externalDisputeUnlockTime
+		integer(numbers.sellerCooldownTime ?? 0), // sellerCooldownTime
+		integer(numbers.buyerCooldownTime ?? 0), // buyerCooldownTime
 		conStr0([]), // state = FundsLocked
 	]);
 }
+
+/** One past what a Postgres `int8` can hold. Plutus has no such bound. */
+const TOO_LARGE = 2n ** 63n;
 
 const CONTRACT_ADDRESS = 'addr_test1wzs4e6wc95hkwezlccjw9mdvq0r0rsgx6zk34avptga3ftgn37w4g';
 
@@ -61,6 +78,37 @@ describe('decodeV2ContractDatum', () => {
 		const poisonedAddress = serializeAddressObj(poisoned, 0);
 		const decoded = decodeV2ContractDatum(v2Datum({ buyerReturn: poisoned }), 'preprod', poisonedAddress);
 		expect(decoded).toBeNull();
+	});
+
+	/**
+	 * Every numeric datum field is written to a Postgres `int8`, and nothing on
+	 * chain bounds a Plutus integer from above: `vested_pay.ak` compares cooldowns
+	 * with `>=`, which a huge value satisfies, and so does this service's own
+	 * authorized-actor guard. So a counterparty could put 2^64 in a cooldown, have
+	 * the head confirm the transaction, and leave Prisma refusing the write.
+	 *
+	 * On L1 that is one failed write. Inside a head it is permanent: the write
+	 * happens in the ordered replay, the throw is caught per head and the cursor
+	 * never advances, so the same transaction is retried on every tick and on
+	 * every reconnect, no escrow on that head moves again, and the funds are
+	 * inside it.
+	 */
+	it.each([
+		'collateralReturnLovelace',
+		'payByTime',
+		'submitResultTime',
+		'unlockTime',
+		'externalDisputeUnlockTime',
+		'sellerCooldownTime',
+		'buyerCooldownTime',
+	] as const)('rejects a datum whose %s does not fit the column it is stored in', (field) => {
+		expect(decodeV2ContractDatum(v2Datum({ numbers: { [field]: TOO_LARGE } }), 'preprod', CONTRACT_ADDRESS)).toBeNull();
+	});
+
+	it('still accepts the largest value that does fit', () => {
+		expect(
+			decodeV2ContractDatum(v2Datum({ numbers: { payByTime: TOO_LARGE - 1n } }), 'preprod', CONTRACT_ADDRESS),
+		).not.toBeNull();
 	});
 
 	it('rejects a datum whose seller return address equals the contract address', () => {

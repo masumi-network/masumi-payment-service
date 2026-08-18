@@ -63,7 +63,12 @@ import {
 } from '../../../builders/batch-interaction';
 import { COLLATERAL_RESERVE_LOVELACE, ensureCollateralReady } from '../../wallet-collateral/ensure-collateral-ready';
 import { LOOKUP_DEFERRED_PREFIX, isLookupDeferred } from '../../lookup-defer';
-import { deferredL2RequestIds, markL2RequestDeferred } from '../../l2-queue-rotation';
+import {
+	NO_PROGRESS_NOTE,
+	clearL2RequestAttempts,
+	deferredL2RequestIds,
+	standDownL2Request,
+} from '../../l2-queue-rotation';
 import { fetchUTxOsWithDeferOnEmpty } from '../../utxo-fetch-helpers';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
 import { submitReservedL2Action } from '../../l2-submission';
@@ -784,7 +789,7 @@ async function processWalletBatch(
 		// a transient infra issue. Unlock the hot wallet and leave the
 		// requests in their queued state — next tick (after the wallet
 		// session loads cleanly) re-batches them.
-		await unlockHotWallet(wallet.id);
+		await unlockHotWallet(wallet.id, wallet.lockedAt);
 		return;
 	}
 	const { wallet: meshWallet, utxos, address } = walletSession;
@@ -796,7 +801,7 @@ async function processWalletBatch(
 		// Empty wallet is a transient operational issue (faucet ran out,
 		// pending state still settling). NOT a per-item failure — leave
 		// items queued for the next tick after the wallet has UTxOs.
-		await unlockHotWallet(wallet.id);
+		await unlockHotWallet(wallet.id, wallet.lockedAt);
 		return;
 	}
 
@@ -876,7 +881,7 @@ async function processWalletBatch(
 			'No V2 submit-result items in this tick reached the batch builder (every item was either deferred for tx-sync to reconcile or marked failed); leaving wallet unlocked',
 			{ walletId: wallet.id, deferredIds, failedIds },
 		);
-		await unlockHotWallet(wallet.id);
+		await unlockHotWallet(wallet.id, wallet.lockedAt);
 		return;
 	}
 
@@ -1080,7 +1085,7 @@ async function processWalletBatch(
 		);
 	} catch (dbError) {
 		logger.error('V2 submit-result batch DB pre-submit update failed', { error: dbError });
-		await unlockHotWallet(wallet.id);
+		await unlockHotWallet(wallet.id, wallet.lockedAt);
 		return;
 	}
 
@@ -1388,12 +1393,16 @@ async function runSubmitResultL2Pass(): Promise<void> {
 				paymentContract.PaymentRequests.map(async (request) => {
 					try {
 						const progressed = await processL2SubmitResult(request, paymentContract, network);
-						if (!progressed) {
+						if (progressed) {
+							clearL2RequestAttempts(request.id);
+						} else {
 							// Rolled back rather than thrown, so the deferral in the catch
 							// arm below never saw it. Without this the same request is the
 							// oldest eligible row on this wallet every tick, is refused
 							// again, and every escrow behind it runs out its deadlines.
-							markL2RequestDeferred(request.id);
+							await standDownL2Request(request.id, () =>
+								markRequestFailed(request, new Error(NO_PROGRESS_NOTE), { unlockWallet: false }),
+							);
 						}
 					} catch (error) {
 						// Spelled out rather than passed as an object: an Error serialises to
@@ -1414,11 +1423,6 @@ async function runSubmitResultL2Pass(): Promise<void> {
 						}
 						if (isLookupDeferred(error)) {
 							logger.info('L2 submit-result deferred to next tick', { requestId: request.id, reason });
-							// Same head-of-line reasoning as the window-closed park above,
-							// for the failures that are not terminal: one request per wallet
-							// per tick means a request that defers every tick holds the
-							// whole queue behind it.
-							markL2RequestDeferred(request.id);
 						} else {
 							logger.error('L2 submit-result failed', {
 								requestId: request.id,
@@ -1426,6 +1430,13 @@ async function runSubmitResultL2Pass(): Promise<void> {
 								stack: error instanceof Error ? error.stack?.slice(0, 1200) : undefined,
 							});
 						}
+						// Same head-of-line reasoning as the window-closed park above, for
+						// the failures that do not announce themselves as terminal: one
+						// request per wallet per tick means a request that fails every tick
+						// holds the whole queue behind it. The stand-down grows each time,
+						// and one that never clears is parked rather than retried until the
+						// submission window closes on it too.
+						await standDownL2Request(request.id, () => markRequestFailed(request, error, { unlockWallet: false }));
 						await unlockHotWalletIfNoPendingTransaction(
 							request.SmartContractWallet!.id,
 							'submit-result-l2-pre-reservation',

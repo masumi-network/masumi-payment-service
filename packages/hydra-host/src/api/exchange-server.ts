@@ -159,7 +159,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			return;
 		}
 
-		const result = await store.redeem(body.nonce, body.redeemer, body.signature, Date.now());
+		const result = await store.redeem(body.nonce, body.redeemer, body.signature);
 		if (!result.ok) {
 			send(response, result.status, { error: result.reason });
 			return;

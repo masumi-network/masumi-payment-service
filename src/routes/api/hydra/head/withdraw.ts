@@ -7,6 +7,7 @@ import { z } from '@masumi/payment-core/zod';
 import { executeHydraDecommit } from '@/services/hydra-decommit/execute';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
+import { assertNodeReadyForDeposit } from '@/routes/api/hydra/head';
 
 export const withdrawInput = z.object({
 	headId: z.string().describe('The Hydra head to withdraw from'),
@@ -181,29 +182,37 @@ export const withdrawHeadPost = adminAuthenticatedEndpointFactory.build({
 	handler: async ({ input }) => {
 		assertWithdrawAmountShape(input);
 
-		// Checked before answering, the same three as the top-up endpoint. The work
-		// itself outlives the request, but each of these refusals is decided in
-		// milliseconds and every one of them is thrown by the executor *before* its
-		// try block — so nothing records them: no `HydraDecommit` row, no head
-		// error, nothing in the withdrawal list. The operator was shown "Withdrawal
-		// started" for a withdrawal that had already been refused, and the reason
-		// went to a log they were never going to read. The executor re-checks all
-		// of it, because minutes pass before it acts.
+		// Every refusal the executor decides before its `try` block, mirrored here.
+		// The work itself outlives the request, but none of these is recorded: no
+		// `HydraDecommit` row, no head error, nothing in the withdrawal list. The
+		// operator was shown "Withdrawal started" for a withdrawal that had already
+		// been refused, and the reason went to a log they were never going to read.
+		// The executor re-checks all of it, because minutes pass before it acts.
+		//
+		// Kept in step with `executeHydraDecommit` deliberately: this list used to
+		// stop at the connection check while the executor went on to refuse a
+		// participant-less head and a node still catching up, which are exactly the
+		// two an operator hits on a head that is otherwise healthy.
 		const head = await prisma.hydraHead.findUnique({
 			where: { id: input.headId },
-			select: { isEnabled: true, status: true, headIdentifier: true },
+			select: { isEnabled: true, status: true, headIdentifier: true, LocalParticipant: { select: { id: true } } },
 		});
 		if (!head) throw createHttpError(404, 'Hydra head not found');
 		if (!head.isEnabled) throw createHttpError(409, 'Cannot withdraw from a disabled Hydra head');
 		if (head.status !== HydraHeadStatus.Open) {
 			throw createHttpError(409, `Cannot withdraw: head status is ${head.status}, expected Open`);
 		}
+		if (!head.LocalParticipant) throw createHttpError(400, 'Head has no local participant');
 		if (!head.headIdentifier) {
 			throw createHttpError(409, 'Cannot withdraw before the Hydra head identifier has been observed');
 		}
 		if (getHydraConnectionManager().getHead(input.headId) === null) {
 			throw createHttpError(502, 'No active connection to Hydra head');
 		}
+		// A withdrawal makes no L1 deposit, so it has no deadline to miss, but it
+		// still needs the head to sign and a node that is catching up will not.
+		// Decided in milliseconds, and the operator is the one who can act on it.
+		await assertNodeReadyForDeposit(head.LocalParticipant.id);
 
 		void executeHydraDecommit({
 			headId: input.headId,

@@ -235,6 +235,12 @@ export async function fundHydraNode(apiClient: Client, payload: { id: string }) 
           address: string;
           balanceLovelace: string;
           transferredLovelace: string | null;
+          /**
+           * `sufficient` and `in-flight` both transfer nothing and mean
+           * opposite things: one says the node is ready, the other that its
+           * money is still on the way and the balance below is the old one.
+           */
+          outcome: 'sent' | 'sufficient' | 'in-flight';
         }>;
       }>({
         responseType: 'json',

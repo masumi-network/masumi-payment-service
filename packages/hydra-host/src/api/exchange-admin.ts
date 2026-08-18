@@ -65,8 +65,22 @@ export async function registerInvite(
 	// counterparty publishes their material, is told the redemption succeeded,
 	// and the start then fails with `no such node` on an invite that can never be
 	// redeemed again.
-	if ((await nodes.read(parsed.hostNodeId)) === null) {
+	const node = await nodes.read(parsed.hostNodeId);
+	if (node === null) {
 		throw new ProvisionError(`no such node: ${parsed.hostNodeId}`, 404);
+	}
+	// The same reasoning one step further: a node that WILL not exist is no
+	// better than one that does not. An un-acknowledged node is `PendingEscrow`,
+	// and the supervisor removes one once `escrowTtlSeconds` is up — an hour by
+	// default, against an invite this host will hold for up to thirty days. The
+	// reservation would outlive the node it names by a factor of seven hundred,
+	// and the counterparty finds that out only after their nonce is spent and
+	// their material is published.
+	if (node.escrowAckedAt === null) {
+		throw new ProvisionError(
+			`node ${parsed.hostNodeId} has not been escrow-acknowledged, so it may still be reaped; acknowledge it before reserving it`,
+			409,
+		);
 	}
 	const record: InviteRecord = {
 		nonce: parsed.nonce,

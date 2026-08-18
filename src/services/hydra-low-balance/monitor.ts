@@ -14,6 +14,23 @@ export type HydraLowBalanceAlert = {
 	checkedAt: Date;
 };
 
+/**
+ * How long a rule stays Low before it will alert again.
+ *
+ * The alert used to be a pure edge: the row was flipped to Low in one statement
+ * and the webhook was queued in another, outside it. Anything between the two —
+ * a transient failure inside `queueWebhook`, which the webhook service swallows
+ * and logs, or a restart — lost the alert for good, because every later cycle
+ * saw the row already Low and took the branch that only refreshes the amount.
+ * Nobody was told, and with `topupEnabled` false (the default) nothing else
+ * reads the Low state either: the balance runs down and L2 escrow operations
+ * start failing with no warning at all.
+ *
+ * Re-arming on the timestamp makes a dropped alert retry itself, and gives a
+ * head that stays low a reminder rather than one message ever.
+ */
+const LOW_BALANCE_REALERT_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
 /** Rule `assetUnit` uses 'lovelace'; the balance snapshot keys ADA as ''. */
 function balanceKeyForAssetUnit(assetUnit: string): string {
 	const normalized = assetUnit.toLowerCase();
@@ -50,11 +67,23 @@ export async function evaluateHydraLowBalanceRules(): Promise<HydraLowBalanceAle
 			const checkedAt = new Date();
 
 			if (currentAmount < rule.thresholdAmount) {
-				// Atomic once-only guard: only the cycle that flips the row into Low
-				// (status not already Low) emits the alert; concurrent/repeat cycles
-				// just refresh the observed amount.
+				// Atomic once-only guard: only the cycle that wins this write emits the
+				// alert; concurrent cycles just refresh the observed amount.
+				//
+				// Won by the edge, or by the age of the last alert. Edge alone made
+				// the webhook unrecoverable if anything went wrong between this
+				// statement and the queueing that follows it, since every later cycle
+				// found the row already Low.
+				const realertBefore = new Date(checkedAt.getTime() - LOW_BALANCE_REALERT_INTERVAL_MS);
 				const transitioned = await prisma.hydraLowBalanceRule.updateMany({
-					where: { id: rule.id, status: { not: LowBalanceStatus.Low } },
+					where: {
+						id: rule.id,
+						OR: [
+							{ status: { not: LowBalanceStatus.Low } },
+							{ lastAlertedAt: null },
+							{ lastAlertedAt: { lt: realertBefore } },
+						],
+					},
 					data: {
 						status: LowBalanceStatus.Low,
 						lastKnownAmount: currentAmount,

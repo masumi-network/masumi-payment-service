@@ -22,6 +22,8 @@ import type { NodeRecord } from '../registry/types.js';
 import { buildHydraNodeArgs } from './args.js';
 import { drainReader, waitForDrain } from './drain.js';
 import { classifyDrift, driftBreachFields, measureDrift, resolveDriftThresholds, type SlotConfig } from './drift.js';
+import { muteFields } from './mute.js';
+import { earnsStartBudgetRefund } from './start-budget.js';
 import {
 	mayStillBeRunning,
 	planNodeAction,
@@ -431,16 +433,7 @@ export class Supervisor {
 	 * and that is worth more than the write it saves.
 	 */
 	private async recordObservation(record: NodeRecord, observation: NodeObservation): Promise<NodeRecord> {
-		// Refunded for a node that is answering and not stalled, rather than only
-		// for one whose drift is `Healthy`. Degraded drift is a node that is behind
-		// and closing the gap — the catch-up loop working, not a fault, and the
-		// plan does not restart for it. Withholding the refund there left a node
-		// that had been serving for hours carrying the attempts from whatever
-		// brought it up, so its next single crash met the exhausted budget and was
-		// marked `Failed` — "failed to stay up after 5 attempts" about a node that
-		// had just been up all afternoon.
-		const earnedBudget =
-			observation.responsive && (observation.drift === 'Healthy' || observation.drift === 'Degraded');
+		const earnedBudget = earnsStartBudgetRefund(observation);
 		const promote = shouldAdoptAsRunning(record, observation);
 		// A node this host did not spawn has no exit handler, so its death is not
 		// reported by anything — it simply stops being in `processes`. Left at
@@ -463,6 +456,7 @@ export class Supervisor {
 				driftSeconds: observation.driftSeconds,
 			},
 			...driftBreachFields(current, observation),
+			...muteFields(current, observation),
 			// The reason goes with the state. It is written by six paths and was cleared
 			// by none, so a node that failed its start budget, was fixed and came back
 			// reported `state: Running, usable: true` alongside the failure it recovered
@@ -527,6 +521,12 @@ export class Supervisor {
 					driftBreachSince: undefined,
 					driftBreachSeconds: undefined,
 					lastDriftRestartAt: new Date().toISOString(),
+					// Same reasoning for silence: the node is about to be replaced by a
+					// fresh process, so the silence that justified this restart is
+					// answered, and the stamp is what stops one that comes back mute
+					// from restarting every few minutes forever.
+					muteSince: undefined,
+					lastMuteRestartAt: new Date().toISOString(),
 				}));
 				// Only ever the half of a restart that follows a stop that worked.
 				// The stop above records `Failed` with an actionable reason when the

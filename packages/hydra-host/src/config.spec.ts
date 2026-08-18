@@ -90,9 +90,29 @@ describe('numbers that must be above zero', () => {
 	// Zero is the natural spelling of "turn this off", and for these two it is
 	// the opposite: a zero TTL reaps every node on the tick after it is
 	// provisioned, keys and directory included, before escrow-ack can arrive.
-	it.each(['HYDRA_HOST_ESCROW_TTL_SECONDS', 'HYDRA_HOST_DRAIN_TIMEOUT_MS'])('refuses %s of zero', (key) => {
+	// The three head periods are the same class and were not checked. A
+	// provision that omits its own falls back to these verbatim, the value is
+	// written into the durable record and returned in the 201, and the node then
+	// never starts: `buildHydraNodeArgs` refuses it after `start` has already
+	// claimed the record and charged an attempt, so the node burns its whole
+	// budget and lands `Failed` with "failed to stay up after 5 attempts".
+	it.each([
+		'HYDRA_HOST_ESCROW_TTL_SECONDS',
+		'HYDRA_HOST_DRAIN_TIMEOUT_MS',
+		'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS',
+		'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS',
+		'HYDRA_HOST_UNSYNCED_PERIOD_SECONDS',
+	])('refuses %s of zero', (key) => {
 		expect(() => loadHostConfig(env({ [key]: '0' }))).toThrow(ConfigError);
 		expect(() => loadHostConfig(env({ [key]: '-1' }))).toThrow(ConfigError);
+	});
+
+	// A port of zero binds an ephemeral one while `/v1/capabilities` still
+	// reports 0 — which is the number the payment service builds invite URLs
+	// from.
+	it.each(['HYDRA_HOST_PORT', 'HYDRA_HOST_EXCHANGE_PORT'])('refuses %s outside the TCP range', (key) => {
+		expect(() => loadHostConfig(env({ [key]: '0' }))).toThrow(ConfigError);
+		expect(() => loadHostConfig(env({ [key]: '65536' }))).toThrow(ConfigError);
 	});
 
 	it('still accepts a positive one', () => {

@@ -14466,7 +14466,7 @@ export type PostHydraHeadWithdrawData = {
 
 export type PostHydraHeadWithdrawErrors = {
     /**
-     * No eligible in-head funds, or less is eligible than was requested
+     * Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant
      */
     400: unknown;
     /**
@@ -14478,11 +14478,11 @@ export type PostHydraHeadWithdrawErrors = {
      */
     404: unknown;
     /**
-     * Head not open, or a withdrawal from it is already in progress
+     * Head not open, disabled, not yet identified on chain, or its node is still catching up
      */
     409: unknown;
     /**
-     * The node rejected the withdrawal request
+     * No live connection to the head
      */
     502: unknown;
 };
@@ -14899,10 +14899,6 @@ export type PostHydraParticipantLocalFundErrors = {
      * Hydra head not found
      */
     404: unknown;
-    /**
-     * The funding wallet is busy, or the node does not need funds
-     */
-    409: unknown;
 };
 
 export type PostHydraParticipantLocalFundResponses = {
@@ -14918,9 +14914,13 @@ export type PostHydraParticipantLocalFundResponses = {
             address: string;
             balanceLovelace: string;
             /**
-             * Null when the node already had enough
+             * Null unless this request started a transfer; read `outcome` for why
              */
             transferredLovelace: string | null;
+            /**
+             * `sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent — the balance below is still the pre-transfer one.
+             */
+            outcome: 'sent' | 'sufficient' | 'in-flight';
         };
     };
 };

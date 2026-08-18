@@ -92,8 +92,39 @@ describe('planNodeAction', () => {
 		expect(planNodeAction(record(), observe({ drift: 'Degraded' }), LIMITS)).toEqual({ kind: 'Idle' });
 	});
 
+	// `Starting`, explicitly: this fixture used to take the default `Running`,
+	// which made it assert the opposite of its own name — and covered the bug
+	// below, where a node that HAD answered and then went silent idled forever.
 	it('waits for a starting node to become responsive before judging it', () => {
-		expect(planNodeAction(record(), observe({ responsive: false, drift: null }), LIMITS)).toEqual({ kind: 'Idle' });
+		expect(planNodeAction(record({ state: 'Starting' }), observe({ responsive: false, drift: null }), LIMITS)).toEqual({
+			kind: 'Idle',
+		});
+	});
+
+	// Nothing else in the plan reaches a node that is up and silent: the drift
+	// watchdog needs a verdict the node is not answering to give, `Unwedge`
+	// needs an answering node, `Fail` counts start attempts, and the death check
+	// needs the process to be gone. It idled on every tick, forever.
+	describe('a node that stops answering after it had been running', () => {
+		it('is given a grace window rather than restarted at the first miss', () => {
+			const quiet = record({ muteSince: new Date(NOW - 30_000).toISOString() });
+			expect(planNodeAction(quiet, observe({ responsive: false, drift: null }), LIMITS)).toEqual({ kind: 'Idle' });
+		});
+
+		it('is restarted once the silence outlives the window', () => {
+			const wedged = record({ muteSince: new Date(NOW - 10 * 60_000).toISOString() });
+			expect(planNodeAction(wedged, observe({ responsive: false, drift: null }), LIMITS)).toMatchObject({
+				kind: 'Restart',
+			});
+		});
+
+		it('is not restarted again inside the cooldown', () => {
+			const wedged = record({
+				muteSince: new Date(NOW - 10 * 60_000).toISOString(),
+				lastMuteRestartAt: new Date(NOW - 60_000).toISOString(),
+			});
+			expect(planNodeAction(wedged, observe({ responsive: false, drift: null }), LIMITS)).toEqual({ kind: 'Idle' });
+		});
 	});
 
 	// A node that is up but mute is the exact case an operator reaches for

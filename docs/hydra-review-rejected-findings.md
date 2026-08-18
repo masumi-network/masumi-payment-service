@@ -736,3 +736,72 @@ is routinely more than 5 ADA. The admin UI, the operations guide and the OpenAPI
 description all said "5 ADA stays behind". All three now describe the whole-UTxO
 rule. The top-up path's documented statuses were stale in the same way: the
 handler throws 400 and 502 that the OpenAPI block said it never would.
+
+## Round 15
+
+Nothing was refuted this round. What is recorded here is the reasoning behind
+five fixes whose shape a later reviewer is likely to read as a defect and
+"correct" back.
+
+**The fanout is not the canonical multiset, and the asymmetry is deliberate.**
+`resolveVerifiedHydraFanoutReferences` required the fanout outputs to equal the
+snapshot's accumulator — which includes `utxoToCommit`, because that is what the
+signatures commit to. But a deposit whose increment never landed on L1 did not
+enter the head: its funds sit at the deposit script where the depositor recovers
+them, and paying it out in the fanout as well would be a double spend. So the
+expectation now accepts the multiset with the pending commit and the one without
+it. A pending _decommit_ is the mirror image and is still required: the
+decrement never landed, so those funds are still in the head's L1 UTxO and the
+fanout does pay them out. Requiring the full canonical set made every fanout
+reference unresolvable for a head closed with any deposit in flight — and the
+inputs are deterministic, so it failed identically on every poll, forever, on a
+head already `Final` with no protocol action left.
+
+**The exchange watermark is handed back one millisecond behind the read.** The
+poller stores the `now` the Host returns and asks for `redeemedAt > since` next
+time. Both the clock read and the redemption stamp now happen inside the store's
+own FIFO task, and the watermark is returned as `now - 1`. The subtraction looks
+like an off-by-one; it is not. A redemption enqueued in the same millisecond as
+a poll is excluded by the strict `>`, and the next poll's `since` has already
+passed it — the invite then stays `Issued` with no head, holding a node, its
+peer port and its fuel. The cost of the subtraction is at worst re-reporting one
+redemption that was already reported, and `adoptRedemption` answers a replay
+with `'skipped'`.
+
+**A start-budget refund is earned by answering, not by the drift verdict.**
+`earnsStartBudgetRefund` reduces to `responsive`, which reads like a function
+that should be inlined. It is kept because the previous expression tied the
+refund to a drift verdict computed for a different purpose: a node that came up
+and answered, but whose parameters had drifted, spent a start it had actually
+used correctly. The predicate names the rule so the next change to drift
+handling does not silently move it again.
+
+**`lastCheckedAt` with a `createdAt` fallback, not the reverse.** The
+`@updatedAt` rule from Round 14 says to age off a column no second loop writes.
+`WalletFundTransfer` is the exception that proves it: the transfer row is
+created once and then re-checked by the confirmation loop, so `createdAt` is the
+moment the transfer was _requested_ and `lastCheckedAt` the moment it was last
+_confirmed still good_. A `Confirmed` transfer must be aged off the latter or a
+long-confirmed transfer looks recent forever and suppresses every later top-up.
+`createdAt` remains only as the fallback for rows the loop has not yet touched.
+
+**Only the unattended funding cycle is damped.** `claimFunding` grew a
+`respectFailureCooldown` flag, and `fundHydraNodeNow` deliberately passes
+`false`. The cooldown exists so an automatic cycle does not re-attempt a failing
+transfer every tick; an operator pressing the button in the admin UI is the
+signal that something changed, and making them wait out a cooldown they cannot
+see would read as the button doing nothing.
+
+**Six in-head passes now park a request that can never progress.** The passes
+take the oldest eligible request per wallet, and every failure stood it down for
+a flat minute. A request whose failure can never clear — a body the head
+deterministically refuses, a head latched closing — was therefore re-picked
+every minute forever, decrypting a mnemonic and signing a body each time, while
+its escrow ran out its deadline and never reached the manual-action queue an
+operator reads. The stand-down now doubles to a half-hour ceiling and, after
+twelve of them, the request is parked in `WaitingForManualAction`. Twelve
+attempts across that schedule is a little over three hours, which is long enough
+that no transient head condition is mistaken for a permanent one. The park is
+allowed to fail: every caller's next statement is the wallet unlock, and a
+wallet left locked stops every request on it, while a request left unparked is
+merely retried.

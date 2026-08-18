@@ -8,6 +8,7 @@
 
 import type { NodeRecord } from '../registry/types.js';
 import { shouldRestartForDrift } from './drift.js';
+import { shouldRestartForMute } from './mute.js';
 
 export type SupervisorAction =
 	/** Do nothing this tick. */
@@ -180,9 +181,20 @@ export function planNodeAction(record: NodeRecord, observation: NodeObservation,
 		// attempts — so returning `Idle` unconditionally made
 		// POST /v1/nodes/{id}/restart answer 202 and then do nothing, with the
 		// request left sitting on the record for good.
-		return record.restartRequested === true
-			? { kind: 'Restart', reason: 'restart requested through the API' }
-			: { kind: 'Idle' };
+		if (record.restartRequested === true) {
+			return { kind: 'Restart', reason: 'restart requested through the API' };
+		}
+		// A node the record calls `Running` has answered a probe, so silence is
+		// not the way up — it is a wedged event loop or a hung etcd client. This
+		// used to idle on every tick forever: the drift watchdog cannot see it
+		// (`observe()` reports no verdict for a node that did not answer), the
+		// death check needs the process to be gone, `Unwedge` needs an answering
+		// node, and `Fail` only counts start attempts. The node was unusable to
+		// the payment service and its head was dead until a human noticed.
+		if (shouldRestartForMute(record, observation.nowMs)) {
+			return { kind: 'Restart', reason: 'node stopped answering after it had been running' };
+		}
+		return { kind: 'Idle' };
 	}
 
 	// An explicit operator restart, checked before everything the supervisor

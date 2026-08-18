@@ -58,7 +58,11 @@ export function DepositPeriodHint() {
 export function HeadBalanceHint() {
   return (
     <InfoHint label="in-head balance">
-      <p>What the two wallets hold inside the head right now, as of the latest signed snapshot.</p>
+      <p>
+        What this side&apos;s wallet holds inside the head right now, as of the latest signed
+        snapshot. The counterparty&apos;s funds are not counted, so this is not the head&apos;s
+        total.
+      </p>
       <p>
         Readable only while the head is open. It is not an on-chain balance: it becomes one when the
         head closes and settles.
