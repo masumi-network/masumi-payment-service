@@ -27,6 +27,23 @@ const EXPLANATIONS: Record<string, string> = {
 	SavedTxIdMismatch: 'SavedTxIdMismatch: the node built a transaction whose id it did not expect',
 };
 
+/**
+ * The explanation for a tag, or the tag itself.
+ *
+ * `EXPLANATIONS[tag]` on a plain object answers for keys nobody put in it: the
+ * tag is node-supplied, and `EXPLANATIONS['toString']` is a function, which the
+ * `??` does not catch because a function is not nullish. It is returned through
+ * a `string` signature, reaches `HydraDecommit.failureReason`, and Prisma
+ * refuses to write it — so the refusal is never recorded, the withdrawal stays
+ * Pending, and every later withdrawal for that participant is refused because
+ * one is "still settling". The same reader runs on the replay path, so it
+ * recurs on every reconnect. `__proto__` and `constructor` reach it too.
+ */
+function explain(tag: string): string {
+	const explanation = getOwnValue(EXPLANATIONS, tag);
+	return typeof explanation === 'string' ? explanation : tag;
+}
+
 /** The `tag` of a hydra-node error object, when it has one. */
 export function postTxErrorTag(postTxError: unknown): string | null {
 	if (!isPlainObject(postTxError)) {
@@ -41,7 +58,7 @@ export function describePostTxError(postTxError: unknown): string {
 	if (tag === null) {
 		return 'no reason given';
 	}
-	return EXPLANATIONS[tag] ?? tag;
+	return explain(tag);
 }
 
 /**
@@ -59,7 +76,7 @@ export function describeDecommitInvalidReason(reason: unknown): string {
 	}
 	const tag = postTxErrorTag(reason);
 	if (tag !== null) {
-		return EXPLANATIONS[tag] ?? tag;
+		return explain(tag);
 	}
 	if (isPlainObject(reason)) {
 		const nested = getOwnValue(reason, 'reason');

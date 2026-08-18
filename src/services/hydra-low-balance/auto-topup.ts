@@ -99,11 +99,12 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 			// thirty seconds for as long as the rule stays Low.
 			const recentAttempts = await prisma.hydraTopup.findMany({
 				where: { hydraLocalParticipantId: rule.hydraLocalParticipantId },
-				// createdAt is attempt order. updatedAt is not: the reconciler rotates it
-				// on unresolved deposits, which would sort an old row to the front.
+				// createdAt throughout — order AND age. The reconciler rotates `updatedAt`
+				// on every unresolved deposit check, so a failed deposit's row is always
+				// seconds old by that field and the wait would never elapse.
 				orderBy: { createdAt: 'desc' },
 				take: AUTO_TOPUP_BACKOFF_SAMPLE,
-				select: { status: true, updatedAt: true },
+				select: { status: true, createdAt: true },
 			});
 			const backoff = evaluateAutoTopupBackoff(recentAttempts, new Date());
 			if (backoff.blocked) {

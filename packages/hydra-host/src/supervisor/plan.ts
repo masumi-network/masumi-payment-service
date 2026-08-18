@@ -134,6 +134,15 @@ export function planNodeAction(record: NodeRecord, observation: NodeObservation,
 		if (record.restartRequested === true) {
 			return { kind: 'Restart', reason: 'operator restarted a failed node' };
 		}
+		// A stop is an intervention too, and this branch swallowed it: the
+		// `desired === 'Stopped'` check sits below, so POST /v1/nodes/{id}/stop
+		// answered 202 and then idled on every tick. A node that failed while still
+		// running — `unwedgeNode` reports Unrecovered for a node that answers but
+		// whose snapshot reads keep failing — ran on forever, and the only way to
+		// stop it was to restart it first.
+		if (record.desired === 'Stopped') {
+			return observation.processRunning ? { kind: 'Stop', reason: 'desired state is stopped' } : { kind: 'Idle' };
+		}
 		return { kind: 'Idle' };
 	}
 
@@ -236,8 +245,14 @@ export function planNodeAction(record: NodeRecord, observation: NodeObservation,
  * reason: it is an operator-facing state, and a shutdown should not overwrite
  * it with a generic stop.
  */
-export function mayStillBeRunning(record: Pick<NodeRecord, 'state' | 'pid'>): boolean {
+export function mayStillBeRunning(record: Pick<NodeRecord, 'state' | 'pid'>, pidAlive = false): boolean {
 	if (record.pid === undefined) return false;
+	// Failed, but only when the process can be SEEN to be alive. A node that
+	// failed while still running has to be drained like any other — `unwedgeNode`
+	// reports Unrecovered for a node that answers perfectly well — but stopping a
+	// Failed record whose process is already gone would rewrite an
+	// operator-facing state, and the reason with it, for nothing.
+	if (record.state === 'Failed') return pidAlive;
 	return (
 		record.state === 'Starting' ||
 		record.state === 'Running' ||

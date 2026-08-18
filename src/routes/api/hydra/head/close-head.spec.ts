@@ -219,7 +219,10 @@ describe('beginHydraHeadClose', () => {
 				isClosing: false,
 				initTxHash: { not: null },
 			},
-			data: { isClosing: true },
+			// `closingSince` starts the reaper's clock. It has to be the latch's own
+			// timestamp: `updatedAt` is rewritten by every attach, so a head that
+			// reconnects often never looked stale and its latch was never released.
+			data: { isClosing: true, closingSince: expect.any(Date) },
 		});
 	});
 });
@@ -355,7 +358,7 @@ describe('Hydra head state convergence', () => {
 
 		expect(mockReleaseClose).toHaveBeenCalledWith({
 			where: { id: 'head-1', status: HydraHeadStatus.Open, isClosing: true },
-			data: { isClosing: false },
+			data: { isClosing: false, closingSince: null },
 		});
 	});
 });

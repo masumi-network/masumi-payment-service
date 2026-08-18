@@ -47,7 +47,12 @@ export async function releaseStalledCloseAdmissions(): Promise<number> {
 			isClosing: true,
 			isEnabled: true,
 			closeTxHash: null,
-			updatedAt: { lt: new Date(Date.now() - STALLED_CLOSE_AFTER_MS) },
+			// `closingSince`, not `updatedAt`. The latter is @updatedAt, and the
+			// connection manager writes the row on every successful attach — it
+			// increments the ownership fence — so a head whose node session flaps more
+			// often than this window never looked stale and its stuck latch was never
+			// released, refusing new L2 work on a head that is still Open.
+			closingSince: { lt: new Date(Date.now() - STALLED_CLOSE_AFTER_MS) },
 		},
 		select: { id: true },
 	});
@@ -83,7 +88,7 @@ export async function releaseStalledCloseAdmissions(): Promise<number> {
 				isEnabled: true,
 				closeTxHash: null,
 			},
-			data: { isClosing: false },
+			data: { isClosing: false, closingSince: null },
 		});
 		if (cleared.count === 1) {
 			released += 1;

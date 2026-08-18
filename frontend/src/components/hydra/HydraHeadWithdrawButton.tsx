@@ -305,8 +305,10 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
               the head. Both nodes have to sign, so this needs the counterparty to be reachable.
             </p>
             <p>
-              5 {adaLabel} stays behind as collateral. Spending an escrow inside the head requires
-              it, so a wallet without any can no longer settle payments here.
+              One UTxO stays behind as collateral: the smallest the wallet holds that is worth at
+              least 5 {adaLabel}, so what is withheld is often more than 5. Collateral cannot be
+              assembled from several UTxOs, and spending an escrow inside the head requires it, so a
+              wallet without one can no longer settle payments here.
             </p>
           </InfoHint>
         </h4>

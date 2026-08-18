@@ -33,8 +33,23 @@ export const AUTO_TOPUP_BACKOFF_SAMPLE = 8;
 
 export type AutoTopupAttempt = {
 	status: HydraTopupStatus;
-	/** When the row reached its current status: for a failure, when it failed. */
-	updatedAt: Date;
+	/**
+	 * When the attempt was made.
+	 *
+	 * `createdAt`, emphatically not `updatedAt`. A failed deposit keeps its
+	 * `depositTxHash`, which leaves it in `reconcileRecoveredHydraTopups`'
+	 * candidate set forever, and that sweep rotates `updatedAt` to now on every
+	 * tick so an unresolvable row cannot starve its fixed budget. Aged off
+	 * `updatedAt`, the newest failure is always seconds old, the wait never
+	 * elapses, and auto top-up for that participant stops for good — the silent
+	 * stop this backoff had to avoid, arrived at from the other side.
+	 *
+	 * The cost is that the wait is measured from when the attempt started rather
+	 * than from when it failed, so a deposit that fails at its deadline is
+	 * retried sooner than the nominal backoff. The run still grows, so it still
+	 * converges on the cap.
+	 */
+	createdAt: Date;
 };
 
 export type AutoTopupBackoff = {
@@ -67,7 +82,7 @@ export function evaluateAutoTopupBackoff(attempts: readonly AutoTopupAttempt[], 
 	}
 	if (consecutiveFailures === 0) return { consecutiveFailures: 0, retryAt: null, blocked: false };
 
-	const lastFailure = attempts[0]?.updatedAt;
+	const lastFailure = attempts[0]?.createdAt;
 	if (lastFailure === undefined || !Number.isFinite(lastFailure.getTime())) {
 		// A row whose timestamp cannot be read is not a licence to retry every
 		// thirty seconds. Hold for the full wait the run has earned.

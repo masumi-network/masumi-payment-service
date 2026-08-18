@@ -2,6 +2,7 @@ import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { withdrawNodeFunds } from '@/services/hydra-node-funding/withdraw';
 import { Network, HydraHeadStatus, Prisma } from '@/generated/prisma/client';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import {
@@ -169,14 +170,55 @@ export const deleteRelationDelete = adminAuthenticatedEndpointFactory.build({
 	},
 });
 
+/**
+ * Take each node's fuel back before the keys that can sign for it are deleted.
+ *
+ * Deleting a relation cascades away its heads and their local participants, and
+ * deletes those participants' `HydraSecretKey` rows with them. That key's
+ * `cardanoSK` is the only signer for the node's L1 address, the Host discloses
+ * it exactly once at provisioning, and the funding cycle has been topping that
+ * address up since the node was reserved — so a head that has run for any time
+ * leaves about 30 ADA there. Deleting the relation took the key and left the ADA
+ * at an address nothing can sign for, once per head, with no warning.
+ *
+ * The participant endpoint has swept before deleting since it was written; this
+ * path was the one that did not. Same rule as there: `swept` is not enough,
+ * because a submitted sweep can still be evicted or rolled back, so only an
+ * address the chain reports as empty — `dust` — or a participant with no key
+ * settles it.
+ *
+ * Outside the transaction, and before quiesce, on purpose: this reads the chain
+ * and may submit, neither of which belongs inside a serializable block, and a
+ * refusal should land before anything has been disabled.
+ */
+async function sweepRelationNodeFunds(heads: Array<{ LocalParticipant: { id: string } | null }>): Promise<void> {
+	for (const { LocalParticipant } of heads) {
+		if (!LocalParticipant) continue;
+		const sweep = await withdrawNodeFunds(LocalParticipant.id);
+		if (sweep.code === 'dust' || sweep.code === 'no-key') continue;
+		// Named only when there is one: several refusal codes report a zero
+		// balance, so the funds are not the reason the sweep did not happen.
+		const held =
+			sweep.balanceLovelace !== '0' ? ` It still holds ${sweep.balanceLovelace} lovelace at ${sweep.address}.` : '';
+		throw createHttpError(
+			409,
+			sweep.txHash
+				? `Cannot delete this relation yet.${held} A sweep of its node funds (${sweep.txHash}) has been submitted; ` +
+						`try again once it has confirmed`
+				: `Cannot delete this relation: ${sweep.reason}.${held}`,
+		);
+	}
+}
+
 export async function deleteHydraRelation(id: string): Promise<void> {
 	const deletionPlan = await prisma.hydraRelation.findUnique({
 		where: { id },
-		select: { Heads: { select: { id: true } } },
+		select: { Heads: { select: { id: true, LocalParticipant: { select: { id: true } } } } },
 	});
 	if (!deletionPlan) throw createHttpError(404, 'Hydra relation not found');
 	// Before quiesce, which disconnects the heads a recovery would need.
 	await assertNoUnrecoveredHydraDeposits(deletionPlan.Heads.map(({ id: headId }) => headId));
+	await sweepRelationNodeFunds(deletionPlan.Heads);
 	await quiesceHydraHeadsForDeletion(deletionPlan.Heads.map(({ id: headId }) => headId));
 
 	await withSerializableSlotRetry(

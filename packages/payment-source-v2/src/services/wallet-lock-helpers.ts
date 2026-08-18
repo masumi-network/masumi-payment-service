@@ -31,6 +31,11 @@ export async function unlockHotWalletIfNoPendingTransaction(
 				id: walletId,
 				deletedAt: null,
 				pendingTransactionId: null,
+				// A Hydra L1 deposit holds a wallet with `lockPurpose` set and no
+				// PendingTransaction for the whole of a carve's confirmation, which is
+				// every other predicate here. Only a lock a payment path could have
+				// taken is a lock a payment path may clear.
+				lockPurpose: null,
 				...(expectedLockedAt == null ? {} : { lockedAt: expectedLockedAt }),
 			},
 			data: { lockedAt: null },

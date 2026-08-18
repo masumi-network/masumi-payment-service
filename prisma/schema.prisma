@@ -1751,6 +1751,14 @@ model HydraHead {
   /// the head row and refuse new L2 work once closing has begun.
   isClosing Boolean @default(false)
 
+  /// When the admission gate above was taken.
+  ///
+  /// Written once, because the stalled-close reaper has to age off something the
+  /// rest of the service does not touch: `updatedAt` is refreshed by every write
+  /// to the row, including the ownerEpoch increment the connection manager makes
+  /// on every attach, so a flapping session hid a stuck latch from it forever.
+  closingSince DateTime?
+
   /// L1 transaction hashes for head lifecycle events
   initTxHash   String?
   closeTxHash  String?

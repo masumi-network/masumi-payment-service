@@ -13,6 +13,7 @@ const mockDeleteSecrets = jest.fn() as AnyMock;
 const mockDeleteVerificationKeys = jest.fn() as AnyMock;
 const mockQuiesceHydraHeadsForDeletion = jest.fn() as AnyMock;
 const mockAssertNoUnrecoveredHydraDeposits = jest.fn() as AnyMock;
+const mockWithdrawNodeFunds = jest.fn() as AnyMock;
 
 const unrecoveredHydraTopupWhere = {
 	depositTxHash: { not: null },
@@ -63,6 +64,10 @@ jest.unstable_mockModule('@masumi/payment-core/serializable-semaphore', () => ({
 	withSerializableSlotRetry: async (operation: () => Promise<unknown>) => await operation(),
 }));
 
+jest.unstable_mockModule('@/services/hydra-node-funding/withdraw', () => ({
+	withdrawNodeFunds: mockWithdrawNodeFunds,
+}));
+
 jest.unstable_mockModule('../deletion-guard', () => ({
 	quiesceHydraHeadsForDeletion: mockQuiesceHydraHeadsForDeletion,
 	reconciledFinalHeadFilter,
@@ -82,7 +87,14 @@ beforeEach(() => {
 	mockTransaction.mockImplementation(
 		async (operation: (tx: typeof transactionClient) => Promise<unknown>) => await operation(transactionClient),
 	);
-	mockFindRelationPlan.mockResolvedValue({ Heads: [{ id: 'head-1' }] });
+	mockFindRelationPlan.mockResolvedValue({ Heads: [{ id: 'head-1', LocalParticipant: { id: 'participant-1' } }] });
+	mockWithdrawNodeFunds.mockResolvedValue({
+		address: 'addr_test1node',
+		balanceLovelace: '0',
+		txHash: null,
+		reason: null,
+		code: 'dust',
+	});
 	mockQueryRaw.mockResolvedValue([]);
 	mockQuiesceHydraHeadsForDeletion.mockResolvedValue(undefined);
 	mockAssertNoUnrecoveredHydraDeposits.mockResolvedValue(undefined);
@@ -215,5 +227,44 @@ describe('deleteHydraRelation', () => {
 		await expect(deleteHydraRelation('relation-1')).rejects.toMatchObject({ statusCode: 409 });
 		expect(mockDeleteSecrets).not.toHaveBeenCalled();
 		expect(mockDeleteVerificationKeys).not.toHaveBeenCalled();
+	});
+	// The relation cascade deletes each head's local participant and its
+	// HydraSecretKey with it, and that key's cardanoSK is the only signer for the
+	// node's L1 address — which the funding cycle has been topping up since the
+	// node was reserved. Deleting without sweeping left about 30 ADA per head at
+	// an address nothing can sign for. The participant endpoint has always swept
+	// first; this path was the one that did not.
+	it('sweeps each node before the keys that can sign for it are deleted', async () => {
+		mockFindRelation.mockResolvedValue({
+			Heads: [
+				{
+					status: HydraHeadStatus.Final,
+					isEnabled: false,
+					fanoutTxHash: 'ab'.repeat(32),
+					reconciliationCompletedAt: new Date(),
+					_count: { Transactions: 0, Topups: 0 },
+					LocalParticipant: { hydraSecretKeyId: 'secret-1' },
+					RemoteParticipants: [],
+				},
+			],
+		});
+
+		await deleteHydraRelation('relation-1');
+
+		expect(mockWithdrawNodeFunds).toHaveBeenCalledWith('participant-1');
+	});
+
+	it('refuses rather than deleting a key that still has funds behind it', async () => {
+		mockWithdrawNodeFunds.mockResolvedValue({
+			address: 'addr_test1node',
+			balanceLovelace: '30000000',
+			txHash: null,
+			reason: 'the funding wallet could not be reached',
+			code: 'no-funding-wallet',
+		});
+
+		await expect(deleteHydraRelation('relation-1')).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockQuiesceHydraHeadsForDeletion).not.toHaveBeenCalled();
+		expect(mockDeleteSecrets).not.toHaveBeenCalled();
 	});
 });

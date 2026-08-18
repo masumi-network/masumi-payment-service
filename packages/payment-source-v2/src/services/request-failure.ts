@@ -74,8 +74,13 @@ export function makePurchaseRequestFailureMarker(config: PurchaseFailureConfig) 
 export function makeHotWalletUnlocker(serviceLabel: string) {
 	return async function unlockHotWallet(walletId: string): Promise<void> {
 		try {
-			await prisma.hotWallet.update({
-				where: { id: walletId, deletedAt: null },
+			// `lockPurpose: null` is the fence, not a filter for tidiness. A Hydra L1
+			// deposit claims the same wallet with a purpose set, holds it across a full
+			// L1 confirmation and never attaches a PendingTransaction — so a tick whose
+			// own lock was reaped as stale would otherwise clear a carve's lock here,
+			// and the next batch builds over the carve's inputs.
+			await prisma.hotWallet.updateMany({
+				where: { id: walletId, deletedAt: null, lockPurpose: null },
 				data: { lockedAt: null },
 			});
 		} catch (error) {

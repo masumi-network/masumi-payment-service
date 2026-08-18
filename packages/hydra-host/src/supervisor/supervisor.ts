@@ -29,7 +29,7 @@ import {
 	type NodeObservation,
 	type PlanLimits,
 } from './plan.js';
-import { findProcessRunningNode, isProcessRunningNode, NodeProcessManager } from './process.js';
+import { findProcessRunningNode, isProcessAlive, isProcessRunningNode, NodeProcessManager } from './process.js';
 import { unwedgeNode } from './unwedge.js';
 
 /** One initial start plus four retries before a node is declared Failed. */
@@ -463,7 +463,13 @@ export class Supervisor {
 				driftSeconds: observation.driftSeconds,
 			},
 			...driftBreachFields(current, observation),
-			...(promote && shouldAdoptAsRunning(current, observation) ? { state: 'Running' as const } : {}),
+			// The reason goes with the state. It is written by six paths and was cleared
+			// by none, so a node that failed its start budget, was fixed and came back
+			// reported `state: Running, usable: true` alongside the failure it recovered
+			// from — for good, and the next incident is read through it.
+			...(promote && shouldAdoptAsRunning(current, observation)
+				? { state: 'Running' as const, failureReason: undefined }
+				: {}),
 			...(earnedBudget && current.startAttempts !== 0 ? { startAttempts: 0 } : {}),
 			...(diedUnobserved && (current.state === 'Running' || current.state === 'Starting')
 				? { state: 'Stopped' as const, lastStopUndrained: true, pid: undefined }
@@ -585,6 +591,10 @@ export class Supervisor {
 			// 15s into a multi-minute startup, which then comes back
 			// `lastStopUndrained` having never been wedged.
 			restartRequested: false,
+			// The node is being tried again, so whatever it last failed with is no
+			// longer what it is doing. Leaving it made a recovered node advertise a
+			// failure it had recovered from.
+			failureReason: undefined,
 		}));
 		if (claimed === null) {
 			this.logger.warn(`[supervisor] ${record.nodeId} disappeared before it could be started`);
@@ -992,7 +1002,10 @@ export class Supervisor {
 			// host lost the handle to — SIGTERM before boot adopted it, an entry
 			// `revalidateAdopted` dropped — is still a running process. `stop` re-adopts
 			// by pid, so reaching it is what drains that node.
-			if (!this.processes.isRunning(current.nodeId) && !mayStillBeRunning(current)) {
+			if (
+				!this.processes.isRunning(current.nodeId) &&
+				!mayStillBeRunning(current, current.pid !== undefined && isProcessAlive(current.pid))
+			) {
 				return;
 			}
 			// Same claim the tick makes, and taken the same way — checked and set

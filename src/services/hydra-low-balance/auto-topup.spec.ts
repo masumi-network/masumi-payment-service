@@ -174,7 +174,7 @@ describe('runHydraAutoTopupCycle', () => {
 		mockFindMany.mockResolvedValue([rule()]);
 		mockCount
 			.mockResolvedValueOnce([])
-			.mockResolvedValueOnce([{ status: 'Failed', updatedAt: new Date(Date.now() - 60_000) }]);
+			.mockResolvedValueOnce([{ status: 'Failed', createdAt: new Date(Date.now() - 60_000) }]);
 
 		await runHydraAutoTopupCycle();
 
@@ -185,7 +185,7 @@ describe('runHydraAutoTopupCycle', () => {
 		mockFindMany.mockResolvedValue([rule()]);
 		mockCount
 			.mockResolvedValueOnce([])
-			.mockResolvedValueOnce([{ status: 'Failed', updatedAt: new Date(Date.now() - 6 * 60_000) }]);
+			.mockResolvedValueOnce([{ status: 'Failed', createdAt: new Date(Date.now() - 6 * 60_000) }]);
 
 		await runHydraAutoTopupCycle();
 
@@ -195,8 +195,8 @@ describe('runHydraAutoTopupCycle', () => {
 	it('does not hold off when the last attempt settled', async () => {
 		mockFindMany.mockResolvedValue([rule()]);
 		mockCount.mockResolvedValueOnce([]).mockResolvedValueOnce([
-			{ status: 'Absorbed', updatedAt: new Date(Date.now() - 10_000) },
-			{ status: 'Failed', updatedAt: new Date(Date.now() - 60_000) },
+			{ status: 'Absorbed', createdAt: new Date(Date.now() - 10_000) },
+			{ status: 'Failed', createdAt: new Date(Date.now() - 60_000) },
 		]);
 
 		await runHydraAutoTopupCycle();

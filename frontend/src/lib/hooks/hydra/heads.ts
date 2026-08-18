@@ -196,6 +196,42 @@ export async function clearHydraHeadErrors(apiClient: Client, payload: { headId:
   return ensureData(response?.data?.data, 'The result was not returned by the API');
 }
 
+/**
+ * Re-enable a head the service quarantined, or disable one by hand.
+ *
+ * Enabling is not a flag flip: the endpoint drops the head's prior InitTx
+ * binding and proves the head, its participants and its configuration against
+ * L1 again before it will come back. That check is exactly what an operator
+ * needs to read when it fails — a head disabled because its InitTx never
+ * verified will refuse again for the same reason — so the message is thrown
+ * rather than toasted, like `closeHydraHead` above.
+ */
+export async function setHydraHeadEnabled(
+  apiClient: Client,
+  payload: { id: string; isEnabled: boolean },
+) {
+  let apiError: unknown = null;
+  const response = await handleApiCall(
+    () =>
+      apiClient.patch<{ 200: ApiEnvelope<HydraHead> }>({
+        responseType: 'json',
+        url: '/hydra/head',
+        body: payload,
+      }),
+    {
+      errorMessage: 'Failed to update the Hydra head',
+      onError: (error: unknown) => {
+        apiError = error;
+      },
+    },
+  );
+  if (apiError !== null) {
+    throw new Error(extractApiErrorMessage(apiError, 'Failed to update the Hydra head'));
+  }
+
+  return ensureData(response?.data?.data, 'The updated Hydra head was not returned by the API');
+}
+
 export async function initHydraHead(apiClient: Client, payload: { headId: string }) {
   const response = await handleApiCall(
     () =>

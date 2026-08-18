@@ -2061,7 +2061,7 @@ export const getHydraHeadTopup = <ThrowOnError extends boolean = false>(options:
 /**
  * Top up additional funds into an open head. (admin access required)
  *
- * Repeatable incremental commit into an already-Open head. Commits more of the local participant's L1 wallet UTxOs (optionally filtered to ADA-only or a specific native-asset unit), reusing the same draft/validate/sign safety path as the initial commit. Each top-up is its own L1 deposit.
+ * Repeatable incremental commit into an already-Open head, reusing the same draft/validate/sign safety path as the initial commit. Each top-up is its own L1 deposit. With `exactAmount`, that amount is first carved into its own L1 UTxO and only that UTxO is deposited, so everything else in the wallet — an agent's registry NFT included — stays on L1; this is the way to top up from a mixed wallet. Without it, Hydra commits WHOLE UTxOs, so every wallet UTxO matching `assetFilter`/`assetUnit` goes into the head.
  */
 export const postHydraHeadTopup = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadTopupData, ThrowOnError>): RequestResult<PostHydraHeadTopupResponses, PostHydraHeadTopupErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadTopupResponses, PostHydraHeadTopupErrors, ThrowOnError>({
     responseType: 'json',
@@ -2089,7 +2089,7 @@ export const getHydraHeadWithdraw = <ThrowOnError extends boolean = false>(optio
 /**
  * Withdraw funds from an open head back to L1. (admin access required)
  *
- * Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One UTxO of 5 ADA is held back as collateral so the wallet can still spend escrows inside the head; `drain` takes that too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.
+ * Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One whole UTxO is held back as collateral so the wallet can still spend escrows inside the head — the smallest it holds worth at least 5 ADA, so the amount withheld is often more than that; `drain` takes it too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.
  */
 export const postHydraHeadWithdraw = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadWithdrawData, ThrowOnError>): RequestResult<PostHydraHeadWithdrawResponses, PostHydraHeadWithdrawErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadWithdrawResponses, PostHydraHeadWithdrawErrors, ThrowOnError>({
     responseType: 'json',

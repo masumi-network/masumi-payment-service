@@ -88,7 +88,8 @@ export const DOCUMENTED_OPERATIONS: readonly DocumentedOperation[] = [
 		method: 'delete',
 		kind: 'removeNode',
 		tier: 'admin',
-		summary: 'Remove a node (drains first; ?force=true skips the drain)',
+		summary:
+			'Remove a node (always drains first; ?force=true overrides the refusal to remove a node whose persistence directory may hold the only copy of the head state)',
 	},
 	{
 		path: '/v1/nodes/{nodeId}/escrow-ack',

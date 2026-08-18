@@ -83,7 +83,7 @@ export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscr
 							isClosing: false,
 							initTxHash: { not: null },
 						},
-						data: { isClosing: true },
+						data: { isClosing: true, closingSince: new Date() },
 					});
 					if (claimed.count !== 1) throw createHttpError(409, 'Hydra head close eligibility changed concurrently');
 				},
@@ -100,7 +100,7 @@ export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscr
 async function releaseHydraHeadCloseAdmission(headId: string): Promise<void> {
 	await prisma.hydraHead.updateMany({
 		where: { id: headId, status: HydraHeadStatus.Open, isClosing: true },
-		data: { isClosing: false },
+		data: { isClosing: false, closingSince: null },
 	});
 }
 

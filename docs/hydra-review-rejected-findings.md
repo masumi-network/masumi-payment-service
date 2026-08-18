@@ -668,3 +668,71 @@ a stranded-round check on the next start. So it now asks the record whether the
 node is supposed to be up, re-read after the wait for the tick's hold — the
 first version of the fix stopped a node the tick had just stopped, on a record
 that still said `Draining`.
+
+## Round 14
+
+Nothing was refuted this round either. Two of the fixes reverse reasoning
+recorded in Round 13, and both reversals are here so the next reviewer does not
+restore the earlier version.
+
+**`@updatedAt` is not an age signal wherever a second loop writes the row.**
+Round 13 gave the auto-top-up backoff a per-participant cooldown aged off
+`HydraTopup.updatedAt`. That column is `@updatedAt`, and
+`reconcileRecoveredHydraTopups` rewrites every recovered row on its own cycle —
+so the newest failure kept looking newer than it was, the cooldown never
+elapsed, and a rule whose top-ups fail would have been damped into never
+retrying at all: the opposite failure to the one the backoff was added for. It
+now ages off `createdAt`, which nothing rotates. The same rule caught the
+close-admission reaper, which aged candidates off `HydraHead.updatedAt` while
+the connection manager bumps that row on every successful attach (it increments
+the ownership fence). A head reconnecting more often than the ten-minute window
+never looked stale, so its close latch stayed set and it went on refusing every
+new L2 reservation. Fixed with `HydraHead.closingSince`, written when the latch
+is taken and cleared with it.
+
+**A `Failed` node still has to be drainable.** Round 13 recorded that `Failed`
+is terminal to the timer so a failure is never hidden by silent retrying, and
+that `mayStillBeRunning` should answer for the drain gate. Both stand — but
+`Failed` in the registry says nothing about whether a process is alive:
+`unwedgeNode` marks a node that answers but will not progress. So the planner
+now returns `Stop` for a `Failed` record whose `desired` is `Stopped` and whose
+process is observed running, `mayStillBeRunning` consults liveness by pid rather
+than answering `false` outright, and `requestStart` sets `restartRequested` so
+the operator's `/start` on a failed node is honoured. None of that starts a
+failed node on its own; every path still needs an operator.
+
+**Node-supplied strings must never index a plain object.** Two more sites of the
+same class: `EXPLANATIONS[tag]` answered `describePostTxError('toString')` with a
+function, which `??` does not catch because a function is not nullish, and it
+was returned through a `string` signature into `HydraDecommit.failureReason` —
+Prisma refused the write, the refusal was never recorded, and the withdrawal
+stayed Pending, which is the state that makes every later withdrawal for that
+participant refuse as "still settling". The decoder's `HydraValue` had the same
+shape for policy ids. Both now go through `getOwnValue` / a null-prototype
+object.
+
+**A wallet lock is not this path's to clear just because the request names the
+wallet.** The transactional error transitions and the V2 request-failure
+unlocker both cleared `lockedAt` by wallet id. A Hydra L1 deposit holds the same
+`HotWallet` across a full L1 confirmation with `lockPurpose = 'hydra-l1'` and
+never attaches a `PendingTransaction`, so a payment-path failure freed a carve
+mid-flight and the next batch tick built over its inputs — one of the two dies
+on chain as `BadInputsUTxO`. Every clear is now fenced on `lockPurpose: null`.
+
+**An escrow acknowledgement has to survive the retry that skips the create.**
+`reserveNodeForExchange` acked the Host only in the branch that had just written
+the participant row. A first attempt that died after the create — or whose ack
+call failed — left the node in `PendingEscrow`, and the retry found the row and
+returned without acking. The Host's supervisor removes an unacknowledged node
+once its escrow TTL is up (an hour by default), taking the node named by an
+invite that may be valid for another thirty days and leaving a participant row
+pointing at nothing. The ack is now unconditional; the Host's handler is
+idempotent.
+
+**Copy that describes a rule the code does not implement is a bug in three
+places.** The withdrawal withholds the smallest whole UTxO worth at least 5 ADA,
+because collateral cannot be assembled from several inputs — so what is withheld
+is routinely more than 5 ADA. The admin UI, the operations guide and the OpenAPI
+description all said "5 ADA stays behind". All three now describe the whole-UTxO
+rule. The top-up path's documented statuses were stale in the same way: the
+handler throws 400 and 502 that the OpenAPI block said it never would.

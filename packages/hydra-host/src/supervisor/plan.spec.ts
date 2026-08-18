@@ -291,3 +291,38 @@ describe('mayStillBeRunning', () => {
 		expect(mayStillBeRunning({ state: 'Running', pid: undefined })).toBe(false);
 	});
 });
+
+describe('a node that failed while still running', () => {
+	// The Failed branch sits above the desired-state checks and acted on
+	// `restartRequested` alone, so POST /v1/nodes/{id}/stop answered 202 and the
+	// planner idled on every tick afterwards. `unwedgeNode` reports Unrecovered
+	// for a node that answers perfectly well, so this is not a rare shape.
+	it('is stopped when the operator asks for it', () => {
+		const failed = record({ state: 'Failed', desired: 'Stopped' });
+
+		expect(planNodeAction(failed, observe({ processRunning: true, responsive: true }), LIMITS)).toEqual({
+			kind: 'Stop',
+			reason: 'desired state is stopped',
+		});
+	});
+
+	it('has nothing to stop once its process is gone', () => {
+		const failed = record({ state: 'Failed', desired: 'Stopped' });
+
+		expect(planNodeAction(failed, observe({ processRunning: false }), LIMITS)).toEqual({ kind: 'Idle' });
+	});
+
+	it('is still not restarted by the timer alone', () => {
+		const failed = record({ state: 'Failed', desired: 'Running' });
+
+		expect(planNodeAction(failed, observe({ processRunning: false }), LIMITS)).toEqual({ kind: 'Idle' });
+	});
+
+	// The drain re-adopts by pid, so a Failed node that is genuinely alive is
+	// drained; one whose process is already gone keeps its state and its reason.
+	it('is drained at shutdown only when its process can be seen', () => {
+		expect(mayStillBeRunning({ state: 'Failed', pid: 4242 }, true)).toBe(true);
+		expect(mayStillBeRunning({ state: 'Failed', pid: 4242 }, false)).toBe(false);
+		expect(mayStillBeRunning({ state: 'Running', pid: 4242 }, false)).toBe(true);
+	});
+});

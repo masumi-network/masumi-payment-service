@@ -305,8 +305,18 @@ export async function reserveNodeForExchange(
 			},
 		});
 		localParticipantId = participant.id;
-		await acknowledgeEscrowOnHost(host.baseUrl, host.adminToken, provisioned.nodeId, transport);
 	}
+
+	// Outside the create branch, because the replay path lands here too. It used
+	// to ack only when it had just written the row, so a first attempt that died
+	// after the create — or whose ack call failed — left the node in
+	// `PendingEscrow` forever: the retry found `existing` and returned without
+	// ever acking. The Host's supervisor removes an unacknowledged node once
+	// `escrowTtlSeconds` (an hour by default) is up, taking the node named by an
+	// invite that may be valid for another thirty days, and leaving a participant
+	// row pointing at a node that no longer exists. The Host's handler is
+	// idempotent, so acking one that is already acked costs a round trip.
+	await acknowledgeEscrowOnHost(host.baseUrl, host.adminToken, provisioned.nodeId, transport);
 
 	return {
 		hostId: host.id,

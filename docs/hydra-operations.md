@@ -267,12 +267,16 @@ Two things follow from how Hydra works here:
 - **Your counterparty has to be reachable.** Removing funds needs a snapshot
   both parties sign. A counterparty whose node is down cannot be withdrawn
   around; closing the head is the only way out in that case.
-- **5 ADA stays behind.** Spending an escrow inside the head requires collateral,
-  and collateral has to be a plain UTxO the wallet already holds. Take the last
-  one and the wallet can no longer submit results, collect or refund in this
-  head — while the balance still reads as healthy, because the escrows are
-  untouched. Withdrawing everything is offered separately, for winding a head
-  down.
+- **One UTxO stays behind.** Spending an escrow inside the head requires
+  collateral, and collateral has to be a single plain UTxO the wallet already
+  holds — it cannot be assembled from several. So the withdrawal withholds a
+  whole UTxO rather than an amount: the smallest one worth at least 5 ADA, which
+  means the amount withheld is often more than 5 ADA and never less. Take the
+  last such UTxO and the wallet can no longer submit results, collect or refund
+  in this head — while the balance still reads as healthy, because the escrows
+  are untouched. Withdrawing everything is offered separately, for winding a
+  head down. When a request asks for more than is left after the reserve, the
+  refusal names how much was eligible.
 
 ## The four durations
 

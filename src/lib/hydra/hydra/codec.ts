@@ -4,7 +4,10 @@ import { MAX_HYDRA_QUANTITY } from './schemas';
 import type { HydraQuantity, HydraUTxO, HydraValue } from './types';
 
 export function mapAmountToHydraValue(amount: Asset[]): HydraValue {
-	const value: HydraValue = {};
+	// Null-prototype for the same reason the guard below is there: assigning
+	// `__proto__` on an object literal sets the prototype instead of creating the
+	// key, so that asset would vanish from the value rather than be carried.
+	const value = Object.create(null) as HydraValue;
 
 	for (const asset of amount) {
 		if (asset.unit === 'lovelace') {
@@ -14,7 +17,10 @@ export function mapAmountToHydraValue(amount: Asset[]): HydraValue {
 
 		const policyId = asset.unit.slice(0, 56);
 		const assetName = asset.unit.slice(56);
-		const policyValue = value[policyId];
+		// `Object.hasOwn`, because a unit shorter than 56 characters makes the slice
+		// return the whole string — and `value['__proto__']` is then Object.prototype,
+		// which passes the object test below and takes the asset-name write with it.
+		const policyValue = Object.hasOwn(value, policyId) ? value[policyId] : undefined;
 		const nestedPolicyValue =
 			policyValue != null && typeof policyValue === 'object' && !Array.isArray(policyValue) ? policyValue : {};
 

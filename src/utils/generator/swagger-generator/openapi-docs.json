@@ -33935,7 +33935,7 @@
         "/hydra/head/topup": {
             "post": {
                 "summary": "Top up additional funds into an open head. (admin access required)",
-                "description": "Repeatable incremental commit into an already-Open head. Commits more of the local participant's L1 wallet UTxOs (optionally filtered to ADA-only or a specific native-asset unit), reusing the same draft/validate/sign safety path as the initial commit. Each top-up is its own L1 deposit.",
+                "description": "Repeatable incremental commit into an already-Open head, reusing the same draft/validate/sign safety path as the initial commit. Each top-up is its own L1 deposit. With `exactAmount`, that amount is first carved into its own L1 UTxO and only that UTxO is deposited, so everything else in the wallet — an agent's registry NFT included — stays on L1; this is the way to top up from a mixed wallet. Without it, Hydra commits WHOLE UTxOs, so every wallet UTxO matching `assetFilter`/`assetUnit` goes into the head.",
                 "tags": [
                     "hydra"
                 ],
@@ -33979,7 +33979,8 @@
                                 ],
                                 "example": {
                                     "headId": "cuid_v2_auto_generated",
-                                    "assetFilter": "all"
+                                    "assetFilter": "ada-only",
+                                    "exactAmount": "50000000"
                                 }
                             }
                         }
@@ -34033,6 +34034,9 @@
                             }
                         }
                     },
+                    "400": {
+                        "description": "Head has no local participant, or `exactAmount` is below the minimum a UTxO can hold"
+                    },
                     "401": {
                         "description": "Unauthorized"
                     },
@@ -34040,7 +34044,10 @@
                         "description": "Hydra head not found"
                     },
                     "409": {
-                        "description": "Head not open, or disabled"
+                        "description": "Head not open, disabled, not yet identified on chain, or its node is still catching up"
+                    },
+                    "502": {
+                        "description": "No live connection to the head"
                     }
                 }
             },
@@ -34203,7 +34210,7 @@
         "/hydra/head/withdraw": {
             "post": {
                 "summary": "Withdraw funds from an open head back to L1. (admin access required)",
-                "description": "Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One UTxO of 5 ADA is held back as collateral so the wallet can still spend escrows inside the head; `drain` takes that too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.",
+                "description": "Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One whole UTxO is held back as collateral so the wallet can still spend escrows inside the head — the smallest it holds worth at least 5 ADA, so the amount withheld is often more than that; `drain` takes it too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.",
                 "tags": [
                     "hydra"
                 ],
@@ -35708,7 +35715,7 @@
                                     "topupAmount": {
                                         "type": "string",
                                         "pattern": "^\\d+$",
-                                        "description": "Target amount an auto top-up tries to reach (whole-UTxO bounded)"
+                                        "description": "Exact amount deposited by each auto top-up (carved into its own L1 UTxO first)"
                                     }
                                 },
                                 "required": [

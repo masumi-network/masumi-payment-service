@@ -80,6 +80,26 @@ function optional(env: EnvSource, key: string, fallback: string): string {
 	return value === undefined || value.length === 0 ? fallback : value;
 }
 
+/**
+ * A whole number that has to be above zero to mean anything.
+ *
+ * `0` is the natural spelling of "turn this off", and for these two it is not
+ * what it does. `HYDRA_HOST_ESCROW_TTL_SECONDS=0` makes every provisioned node
+ * expire one millisecond after it is created, so the reaper deletes it — keys,
+ * directory and all — on the tick after the 201 that handed those keys out, and
+ * escrow-ack can never arrive. `HYDRA_HOST_DRAIN_TIMEOUT_MS=0` makes every
+ * drain report a timeout at once, so every stop is recorded undrained and every
+ * start pays for an unwedge check. Both fail silently, which is what this file
+ * exists to prevent.
+ */
+function positiveInteger(env: EnvSource, key: string, fallback: number): number {
+	const parsed = integer(env, key, fallback);
+	if (parsed <= 0) {
+		throw new ConfigError(`${key} must be greater than zero, received ${String(parsed)}`);
+	}
+	return parsed;
+}
+
 function integer(env: EnvSource, key: string, fallback: number): number {
 	const raw = env.get(key)?.trim();
 	if (raw === undefined || raw.length === 0) {
@@ -162,8 +182,8 @@ export function loadHostConfig(env: EnvSource = processEnv): HostConfig {
 		defaultContestationPeriodSeconds: integer(env, 'HYDRA_HOST_CONTESTATION_PERIOD_SECONDS', 220),
 		defaultDepositPeriodSeconds: integer(env, 'HYDRA_HOST_DEPOSIT_PERIOD_SECONDS', 300),
 		defaultUnsyncedPeriodSeconds,
-		escrowTtlSeconds: integer(env, 'HYDRA_HOST_ESCROW_TTL_SECONDS', 3600),
-		drainTimeoutMs: integer(env, 'HYDRA_HOST_DRAIN_TIMEOUT_MS', 120_000),
+		escrowTtlSeconds: positiveInteger(env, 'HYDRA_HOST_ESCROW_TTL_SECONDS', 3600),
+		drainTimeoutMs: positiveInteger(env, 'HYDRA_HOST_DRAIN_TIMEOUT_MS', 120_000),
 		useSystemEtcd: optional(env, 'HYDRA_HOST_USE_SYSTEM_ETCD', 'true') !== 'false',
 		monitoringEnabled: optional(env, 'HYDRA_HOST_MONITORING_ENABLED', 'false') === 'true',
 	};

@@ -46,7 +46,16 @@ export async function requestStart(store: NodeRegistryStore, nodeId: string): Pr
 			409,
 		);
 	}
-	const updated = await store.update(nodeId, (current) => ({ ...current, desired: 'Running' }));
+	// A Failed record needs the flag as well as the desired state. `planNodeAction`
+	// reaches its Failed branch before the desired-state checks, and that branch
+	// acts on `restartRequested` alone — so /start on a failed node answered 202
+	// and then idled forever, and only /restart worked. Asking a stopped node to
+	// run and asking a failed one to run are the same request from outside.
+	const updated = await store.update(nodeId, (current) => ({
+		...current,
+		desired: 'Running',
+		...(current.state === 'Failed' ? { restartRequested: true } : {}),
+	}));
 	return updated ?? record;
 }
 

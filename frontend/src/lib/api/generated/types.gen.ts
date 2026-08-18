@@ -14339,6 +14339,10 @@ export type PostHydraHeadTopupData = {
 
 export type PostHydraHeadTopupErrors = {
     /**
+     * Head has no local participant, or `exactAmount` is below the minimum a UTxO can hold
+     */
+    400: unknown;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14347,9 +14351,13 @@ export type PostHydraHeadTopupErrors = {
      */
     404: unknown;
     /**
-     * Head not open, or disabled
+     * Head not open, disabled, not yet identified on chain, or its node is still catching up
      */
     409: unknown;
+    /**
+     * No live connection to the head
+     */
+    502: unknown;
 };
 
 export type PostHydraHeadTopupResponses = {
@@ -15056,7 +15064,7 @@ export type PostHydraLowBalanceData = {
          */
         topupEnabled?: boolean;
         /**
-         * Target amount an auto top-up tries to reach (whole-UTxO bounded)
+         * Exact amount deposited by each auto top-up (carved into its own L1 UTxO first)
          */
         topupAmount?: string;
     };

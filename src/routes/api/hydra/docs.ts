@@ -420,10 +420,12 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			200: successResponse('Top-up accepted', topupOutput, { headId: HEAD_ID, accepted: true }),
 			...unauthorized,
 			...notFound,
-			409: { description: 'Head not open, or disabled' },
-			// No 400 or 502 here. The deposit is built and submitted after this
-			// answers, so a bad asset filter or an unsafe node draft is reported
-			// against the top-up row and the head's errors, not to this caller.
+			// Everything the deposit itself can get wrong is reported against the
+			// top-up row and the head's errors, because it is built and submitted
+			// after this answers. These three are decided before that.
+			400: { description: 'Head has no local participant, or `exactAmount` is below the minimum a UTxO can hold' },
+			409: { description: 'Head not open, disabled, not yet identified on chain, or its node is still catching up' },
+			502: { description: 'No live connection to the head' },
 		},
 	});
 	registry.registerPath({
@@ -431,7 +433,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/head/withdraw',
 		summary: 'Withdraw funds from an open head back to L1. (admin access required)',
 		description:
-			"Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One UTxO of 5 ADA is held back as collateral so the wallet can still spend escrows inside the head; `drain` takes that too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.",
+			"Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One whole UTxO is held back as collateral so the wallet can still spend escrows inside the head — the smallest it holds worth at least 5 ADA, so the amount withheld is often more than that; `drain` takes it too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.",
 		tags: TAG,
 		security: secured,
 		request: { body: jsonBody(withdrawInput, { headId: HEAD_ID, lovelace: '10000000', drain: false }) },

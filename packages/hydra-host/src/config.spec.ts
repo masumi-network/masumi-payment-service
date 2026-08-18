@@ -85,3 +85,20 @@ describe('advertiseAddress', () => {
 		expect(advertiseAddress(loadHostConfig(env()), 5007)).toBe('hydra1.example.com:5007');
 	});
 });
+
+describe('numbers that must be above zero', () => {
+	// Zero is the natural spelling of "turn this off", and for these two it is
+	// the opposite: a zero TTL reaps every node on the tick after it is
+	// provisioned, keys and directory included, before escrow-ack can arrive.
+	it.each(['HYDRA_HOST_ESCROW_TTL_SECONDS', 'HYDRA_HOST_DRAIN_TIMEOUT_MS'])('refuses %s of zero', (key) => {
+		expect(() => loadHostConfig(env({ [key]: '0' }))).toThrow(ConfigError);
+		expect(() => loadHostConfig(env({ [key]: '-1' }))).toThrow(ConfigError);
+	});
+
+	it('still accepts a positive one', () => {
+		const config = loadHostConfig(env({ HYDRA_HOST_ESCROW_TTL_SECONDS: '60', HYDRA_HOST_DRAIN_TIMEOUT_MS: '1000' }));
+
+		expect(config.escrowTtlSeconds).toBe(60);
+		expect(config.drainTimeoutMs).toBe(1000);
+	});
+});

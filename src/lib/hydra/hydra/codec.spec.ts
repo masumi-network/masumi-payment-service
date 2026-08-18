@@ -174,3 +174,21 @@ describe('mapHydraUTxOToUTxO', () => {
 		expect(() => mapHydraUTxOToUTxO('txhashonly#', baseHydraUTxO)).toThrow();
 	});
 });
+
+describe('a unit that names an Object.prototype member', () => {
+	// `policyId` is `unit.slice(0, 56)`, which returns the whole string for a
+	// shorter unit — so `value['__proto__']` was Object.prototype, it passed the
+	// object test, and the asset-name write landed on the global prototype.
+	it('does not write through to the global prototype', () => {
+		const value = mapAmountToHydraValue([{ unit: '__proto__', quantity: '5' }]);
+
+		expect((Object.prototype as unknown as Record<string, unknown>)['']).toBeUndefined();
+		expect(Object.getPrototypeOf(value)).toBeNull();
+	});
+
+	it('keeps an asset whose unit is __proto__ in the value it returns', () => {
+		const value = mapAmountToHydraValue([{ unit: '__proto__', quantity: '5' }]);
+
+		expect(Object.keys(value)).toContain('__proto__');
+	});
+});

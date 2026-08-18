@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { HydraHeadErrors } from '@/components/hydra/HydraHeadErrors';
+import { HydraHeadEnableNotice } from '@/components/hydra/HydraHeadEnableNotice';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { HydraHeadWallets } from '@/components/hydra/HydraHeadWallets';
 import { HydraWalletLink } from '@/components/hydra/HydraWalletLink';
@@ -260,6 +261,11 @@ export function HydraHeadDetailsDialog({
             The wallets lead, because which two wallets a head is between is
             what decides whether a payment can use it at all. */}
         <div className="space-y-4">
+          {/* Above the wallets, because a disabled head answers every other
+              question on this screen: the balances still read as healthy and
+              every action is greyed out. */}
+          <HydraHeadEnableNotice head={head} />
+
           <HydraHeadWallets
             localWallet={head.LocalParticipant?.Wallet}
             localCardanoVkey={head.LocalParticipant?.cardanoVkey}
