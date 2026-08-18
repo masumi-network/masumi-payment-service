@@ -190,7 +190,15 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 				// hands the wallet back. Without this the deposit ends happily and the
 				// wallet stays locked out of every L1 batcher until the safety net
 				// clears it, which for a purpose-marked lock is half an hour.
-				if (candidate.status === HydraTopupStatus.Pending) {
+				//
+				// Excluding the commit handler's display row, which names the same L1
+				// transaction as `LocalParticipant.commitTxHash`: the commit reconciler
+				// owns that lock, and a second releaser for one deposit frees whatever
+				// Hydra operation holds the wallet by the time it runs, because
+				// `releaseHotWalletAfterL1` is fenced on a shared `lockPurpose` rather
+				// than on an operation's identity.
+				const isCommitDisplayRow = candidate.LocalParticipant.commitTxHash === candidate.depositTxHash;
+				if (candidate.status === HydraTopupStatus.Pending && !isCommitDisplayRow) {
 					await releaseHotWalletAfterL1(candidate.LocalParticipant.walletId);
 				}
 				logger.info(

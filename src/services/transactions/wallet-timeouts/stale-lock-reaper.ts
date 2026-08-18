@@ -88,7 +88,18 @@ async function unstickPurposeLocks(purpose: string, staleAfterMs: number): Promi
 		deletedAt: null,
 		pendingTransactionId: null,
 		lockPurpose: purpose,
-		lockedAt: { lt: new Date(Date.now() - staleAfterMs) },
+		// The `lockedAt: null` branch is not redundant. Prisma's `lt` does not
+		// match NULL, so without it a marker left behind on an ALREADY UNLOCKED row
+		// was invisible to the only sweep written for it — while every 300s orphan
+		// reaper skips the row for having a marker at all. The wallet then falls out
+		// of all of them, and the next batcher to claim it inherits the marker: it
+		// ages out at the Hydra timeout instead of the batcher's, and the next
+		// `releaseHotWalletAfterL1` for that participant frees the batcher's lock
+		// during its build window.
+		//
+		// A marker with no `lockedAt` has no holder by definition — a Hydra claim
+		// always writes both — so it is cleared on sight rather than on a timeout.
+		OR: [{ lockedAt: null }, { lockedAt: { lt: new Date(Date.now() - staleAfterMs) } }],
 	};
 	const candidates = await prisma.hotWallet.findMany({ where: staleLockFilter, select: { id: true } });
 	if (candidates.length === 0) return;
@@ -97,12 +108,15 @@ async function unstickPurposeLocks(purpose: string, staleAfterMs: number): Promi
 		data: { lockedAt: null, lockPurpose: null },
 	});
 	if (count > 0) {
-		logger.warn('Cleared stale purpose-marked wallet locks (locked past their own timeout, no pending tx)', {
-			cleared: count,
-			purpose,
-			walletIds: candidates.map((wallet) => wallet.id),
-			timeoutMs: staleAfterMs,
-		});
+		logger.warn(
+			'Cleared stale purpose-marked wallet locks (past their own timeout or already unlocked, no pending tx)',
+			{
+				cleared: count,
+				purpose,
+				walletIds: candidates.map((wallet) => wallet.id),
+				timeoutMs: staleAfterMs,
+			},
+		);
 	}
 }
 

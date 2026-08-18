@@ -202,11 +202,28 @@ export async function reconcilePendingHydraTopups(): Promise<void> {
 						topupId: candidate.id,
 						depositTxHash: candidate.depositTxHash,
 					});
-					// The top-up holds this wallet from its claim until the deposit it
-					// submitted stops being outstanding, which is here. Releasing when
-					// the request returned handed the wallet to a batcher that could
-					// still see the deposit's inputs as unspent.
-					await releaseHotWalletAfterL1(candidate.LocalParticipant.walletId);
+					// Not for the row the commit handler writes alongside its own
+					// reservation so the deposit shows up in the list. That row names the
+					// SAME L1 transaction as `LocalParticipant.commitTxHash`, and the
+					// commit reconciler already releases on it — so both jobs released,
+					// on their own schedules, for one deposit.
+					//
+					// The second release is the dangerous one. `releaseHotWalletAfterL1`
+					// is fenced on `lockPurpose` alone, which is a shared constant rather
+					// than an operation's identity, so once this row has resolved and a
+					// later Hydra top-up has claimed the same wallet, the commit job's
+					// release frees THAT operation's lock while its carve is still
+					// unconfirmed — and a batcher then builds over the carve's inputs.
+					//
+					// One deposit, one releaser: the commit reservation owns this lock.
+					const isCommitDisplayRow = candidate.LocalParticipant.commitTxHash === candidate.depositTxHash;
+					if (!isCommitDisplayRow) {
+						// The top-up holds this wallet from its claim until the deposit it
+						// submitted stops being outstanding, which is here. Releasing when
+						// the request returned handed the wallet to a batcher that could
+						// still see the deposit's inputs as unspent.
+						await releaseHotWalletAfterL1(candidate.LocalParticipant.walletId);
+					}
 				}
 			} catch (error) {
 				logger.error('hydra-topup-reconciliation: candidate failed', {

@@ -64,6 +64,11 @@ const SNAPSHOT_OUTPUT_PARTITIONS: readonly string[] = ['utxo', 'utxoToCommit', '
 /** Every field the frame around it is known to carry. */
 export const MODELLED_SNAPSHOT_FRAME_FIELDS: ReadonlySet<string> = new Set([
 	'headId',
+	// Modelled by `snapshotConfirmedMessageSchema` as `.nullable().optional()`, so
+	// its absence here made every ordinary 2.3 frame raise a standing drift alarm
+	// for a field the code already understands — which is how an operator learns
+	// to ignore the one signal that is supposed to precede a real upgrade.
+	'hydraHeadId',
 	'seq',
 	'signatures',
 	'snapshot',

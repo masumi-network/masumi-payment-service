@@ -249,7 +249,16 @@ export class LiveFrameProcessor {
 				headWasAborted = true;
 			}
 			if (envelope.tag === 'HeadIsInitializing' || envelope.tag === 'HeadIsOpen') {
-				this.host.bindSnapshotPartyOrder(message);
+				// `HeadIsOpen` is guarded on actually carrying `parties`, matching the
+				// replay pass. Unguarded, the same frame was valid on replay and threw
+				// here — a live-only fail-closed divergence from the contract replay
+				// establishes, which cost the session over a frame replay accepts.
+				if (
+					envelope.tag === 'HeadIsInitializing' ||
+					(typeof message === 'object' && message !== null && 'parties' in message)
+				) {
+					this.host.bindSnapshotPartyOrder(message);
+				}
 				if (suppliedHeadId) this._liveSessionHeadId = suppliedHeadId;
 			}
 			if (envelope.tag === 'Greetings') {
@@ -304,7 +313,20 @@ export class LiveFrameProcessor {
 				depositRecorded = readDepositRecorded(message);
 			}
 			decommitSettled = readDecommitSettled(envelope.tag, message);
-			if (envelope.tag === 'CommitFinalized' || envelope.tag === 'CommitRecovered') {
+			if (envelope.tag === 'CommitRecovered') {
+				// Deliberately does NOT decrement. Recovery is the path for a deposit
+				// the head did not take, so a recovered deposit was never
+				// `CommitApproved` and never incremented this count — decrementing here
+				// spent an unrelated, still-pending deposit's slot, cleared the fold-in
+				// set while that deposit was in flight, and every L2 transaction built
+				// against its outputs came back "all inputs are spent".
+				//
+				// If a recovery could ever follow an approval, the cost of this is
+				// over-blocking until the next finalization, which is the direction the
+				// comment below already argues for.
+				this.emitter.emit(HydraNodeEvent.IncrementFinalized);
+			}
+			if (envelope.tag === 'CommitFinalized') {
 				this._pendingIncrementCount = Math.max(0, this._pendingIncrementCount - 1);
 				// Only once nothing is in flight. A finalization names its deposit but
 				// an approval does not, so with two deposits pending there is no way

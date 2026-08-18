@@ -338,10 +338,12 @@ export class HydraHistoryReplay {
 				this.host.trustLocalNodeSnapshotMetadata &&
 				typeof message === 'object' &&
 				message !== null &&
-				'utxo' in message
+				// A value test: `'utxo' in message` is true for `{ utxo: null }`, and
+				// the parse then threw on a frame this replay must tolerate forever.
+				(message as { utxo?: unknown }).utxo != null
 			) {
 				const parsedOpen = historyHeadIsOpenMessageSchema.parse(message);
-				this.recordUnsignedLedgerAnchor(parsedOpen.headId, parsedOpen.utxo);
+				if (parsedOpen.utxo != null) this.recordUnsignedLedgerAnchor(parsedOpen.headId, parsedOpen.utxo);
 			}
 			if (parsedEnvelope.tag === 'HeadIsFinalized' && hasFinalizedUtxoField(message)) {
 				this.host.recordFinalizedFanout(message);

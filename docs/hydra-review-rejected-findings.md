@@ -372,3 +372,44 @@ wallet for the full stale-lock window because the carve was unsettled. The
 endpoint is Open-only now, the button is gated to match, and the lifecycle
 diagram — which still showed a commit self-loop on Initializing, contradicting
 the prose fifteen lines below it — was corrected with it.
+
+## Round 9b
+
+**"Two releasers race on the same hot wallet lock."** Refuted as a lock bug,
+accepted as an attribution bug. `hydra-topup-reconciliation` and
+`hydra-topup/execute` both call `releaseHotWalletAfterL1` for the same wallet,
+but the release is idempotent and neither leaves the wallet unlocked while work
+is outstanding — the wallet is genuinely free once the L1 deposit confirms. What
+is real is _which_ operation the release is attributed to: the commit display row
+carries `commitTxHash === depositTxHash`, so the reconciler treated the commit's
+own transaction as a topup deposit and released a lock the commit path was still
+holding. Fixed by skipping the release for that row in both the pending and the
+recovered path, and by making `execute.ts` release only once the carve is
+actually confirmed.
+
+**The general attribution gap in `releaseHotWalletAfterL1` is left unfixed.**
+The release takes a wallet id and nothing else, so any caller can free a lock a
+different Hydra L1 operation took. Closing it properly needs a per-operation
+token on the wallet row — a schema change — and every caller reachable today is
+now guarded at its own call site. Recorded so the next reviewer does not read the
+narrow guards as the whole answer.
+
+**`unstickPurposeLocks` and the NULL trap.** The reaper's staleness filter was
+`lockedAt: { lt: … }`, which in SQL never matches a NULL — so a row that had lost
+its `lockedAt` while keeping `lockPurpose` was invisible to the one job that
+exists to clean it up, permanently. The invariant is that `lockPurpose` must
+never outlive `lockedAt`; the reaper now also matches `lockedAt: null` so a
+violation is reaped rather than parked forever. Three further unlock paths in
+`wallet-timeouts` were clearing `lockedAt` without clearing `lockPurpose` and
+were the way rows got there.
+
+**F2: `CommitRecovered` decremented the pending-increment counter.** Confirmed,
+not refuted, but worth recording _why_ the fix is safe in the direction it errs.
+A recovered deposit is one the head declined, so it was never `CommitApproved`
+and never incremented — the decrement therefore spent an unrelated in-flight
+deposit's slot and cleared the fold-in UTxO set while that deposit was still
+being folded in. If some future node version can emit a recovery _after_ an
+approval, the cost of not decrementing is over-blocking L2 transactions until the
+next `CommitFinalized`, which is the same direction the two-deposit case already
+argues for. Over-blocking is a delay; under-blocking is "all inputs are spent" on
+a transaction the operator has no way to diagnose.

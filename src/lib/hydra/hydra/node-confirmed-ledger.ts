@@ -194,7 +194,18 @@ export class ConfirmedTransactionLedger {
 				parsedMessage.seq > this._reconciledHistoryCursor.snapshotSequence ||
 				(parsedMessage.seq === this._reconciledHistoryCursor.snapshotSequence &&
 					snapshotTransactionIndex > this._reconciledHistoryCursor.snapshotTransactionIndex);
-			return { tx: { ...tx, txId: computedTxId }, snapshotTransactionIndex, existing, isAfterCursor };
+			// Narrowed to the modelled fields, not spread. `hydraTransactionSchema` is
+			// deliberately loose so a field a newer node adds cannot wedge replay, but
+			// spreading kept those fields in a map whose memory budget is charged from
+			// `cborHex.length` alone — so a 2-byte cborHex alongside a 50KB unknown
+			// field cost 1 accounted byte and retained 50KB. Only these four are ever
+			// read off a confirmed transaction.
+			return {
+				tx: { type: tx.type, cborHex: tx.cborHex, description: tx.description, txId: computedTxId },
+				snapshotTransactionIndex,
+				existing,
+				isAfterCursor,
+			};
 		});
 		if (new Set(validatedTransactions.map(({ tx }) => tx.txId)).size !== validatedTransactions.length) {
 			throw new HydraProtocolError('SnapshotConfirmed contained duplicate transaction identifiers');

@@ -112,6 +112,16 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	// Set the moment the carve is signed, before it is submitted — see the
 	// release guard in this function's `finally`.
 	let carveTxHash: string | null = null;
+	/**
+	 * Set once this operation's own deposit is confirmed on chain.
+	 *
+	 * That settles the carve too: the deposit spends the carve's output, so a
+	 * confirmed deposit is proof the carve landed. Without it the `finally` below
+	 * refused to release on an exact-amount top-up whose inline reconcile came
+	 * back `confirmed` — no row is left Pending, so no reconciler releases either,
+	 * and the wallet sat out the full stale-lock window.
+	 */
+	let depositConfirmed = false;
 
 	// The `Preparing` claim below serializes top-ups against each other. It says
 	// nothing to the payment batchers, which build from this same hot wallet and
@@ -320,6 +330,8 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			rpcProviderApiKey,
 		});
 
+		depositConfirmed = reconciliation === 'confirmed';
+
 		if (!interpreted.ok && reconciliation !== 'confirmed') {
 			throw createHttpError(
 				502,
@@ -380,7 +392,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		// batch tick build over them and lose one of the two to `BadInputsUTxO`.
 		// Nothing tracks a carve after this returns, so the lock is left for the
 		// stale-lock sweep, which frees it half an hour later.
-		if (pending === null && carveTxHash === null) {
+		if (pending === null && (carveTxHash === null || depositConfirmed)) {
 			await releaseHotWalletAfterL1(localParticipant.walletId);
 		}
 	}

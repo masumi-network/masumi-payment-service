@@ -288,10 +288,13 @@ describe('Supervisor observation', () => {
  * so each drain runs to its timeout instead of returning early.
  */
 describe('Supervisor shutdown', () => {
-	const DRAIN_TIMEOUT_MS = 1_500;
-	// `waitForDrain` sleeps this long between polls, so a drain that times out
-	// costs one poll interval rather than the declared timeout.
-	const DRAIN_COST_MS = 2_000;
+	// Two poll cycles, not one. `waitForDrain`'s interval is a fixed 2s, so a
+	// budget under it makes a drain cost ~2s and the whole margin between one
+	// round and two is 2s — which a loaded jest worker can eat. At 3s the drain
+	// takes two cycles, so one round is ~4s against two rounds at ~8s and the
+	// assertion has seconds of headroom on both sides.
+	const DRAIN_TIMEOUT_MS = 3_000;
+	const DRAIN_COST_MS = 4_000;
 
 	let servers: Server[] = [];
 
@@ -369,7 +372,7 @@ describe('Supervisor shutdown', () => {
 		expect(elapsedMs).toBeGreaterThan(DRAIN_COST_MS / 2);
 		// And they overlapped. Serialised, this is two full drains.
 		expect(elapsedMs).toBeLessThan(DRAIN_COST_MS * 1.6);
-	}, 30_000);
+	}, 45_000);
 
 	// The shape the first attempt at this fix still got wrong. Pass 1 SKIPPED any
 	// node the tick held and left it to the pass after `await pendingTick`, which
@@ -422,7 +425,7 @@ describe('Supervisor shutdown', () => {
 		expect(elapsedMs).toBeGreaterThan(DRAIN_COST_MS / 2);
 		// Deferring the observed node to a second pass costs two full drains.
 		expect(elapsedMs).toBeLessThan(DRAIN_COST_MS * 1.6);
-	}, 30_000);
+	}, 45_000);
 });
 
 describe('Supervisor restart requests', () => {
@@ -451,5 +454,10 @@ describe('Supervisor restart requests', () => {
 		const after = await store.read(record.nodeId);
 		expect(after?.startAttempts).toBe(1);
 		expect(after?.restartRequested).toBe(false);
+
+		// This is the one test that really starts a node, so it owns the reaping.
+		// Left running, the child keeps writing its log files into the node's
+		// directory while the teardown removes it, and the rm fails ENOTEMPTY.
+		await supervisor.shutdown();
 	});
 });

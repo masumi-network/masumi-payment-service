@@ -10,6 +10,7 @@ const mockCreate = jest.fn() as AnyMock;
 const mockUpdateMany = jest.fn() as AnyMock;
 const mockFindMany = jest.fn() as AnyMock;
 const mockIsUniqueConstraintError = jest.fn() as AnyMock;
+const mockRelease = jest.fn() as AnyMock;
 
 jest.unstable_mockModule('@/services/shared/chain-tx-lookup', () => ({
 	lookupConfirmedChainTx: mockLookupConfirmedChainTx,
@@ -38,17 +39,26 @@ jest.unstable_mockModule('@masumi/payment-core/db-retry', () => ({
 	isUniqueConstraintError: mockIsUniqueConstraintError,
 }));
 
+jest.unstable_mockModule('@/utils/db/hot-wallet-lock', () => ({
+	releaseHotWalletAfterL1: mockRelease,
+}));
+
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
 let reconcilePendingHydraTopup: typeof import('./index').reconcilePendingHydraTopup;
 let reserveAndSubmitHydraTopup: typeof import('./index').reserveAndSubmitHydraTopup;
+let reconcilePendingHydraTopups: typeof import('./index').reconcilePendingHydraTopups;
 let HydraTopupReservationConflictError: typeof import('./index').HydraTopupReservationConflictError;
 
 beforeAll(async () => {
-	({ reconcilePendingHydraTopup, reserveAndSubmitHydraTopup, HydraTopupReservationConflictError } =
-		await import('./index'));
+	({
+		reconcilePendingHydraTopup,
+		reserveAndSubmitHydraTopup,
+		reconcilePendingHydraTopups,
+		HydraTopupReservationConflictError,
+	} = await import('./index'));
 });
 
 const DEPOSIT_TX_HASH = 'a'.repeat(64);
@@ -166,5 +176,60 @@ describe('reconcilePendingHydraTopup', () => {
 		mockLookupConfirmedChainTx.mockResolvedValue('transient-error');
 		await expect(reconcilePendingHydraTopup(candidate())).resolves.toBe('transient-error');
 		expect(mockUpdateMany).not.toHaveBeenCalled();
+	});
+});
+
+/**
+ * The commit handler writes a HydraTopup row alongside its own reservation so
+ * the deposit shows up in the list. That row names the SAME L1 transaction as
+ * `LocalParticipant.commitTxHash`, which the commit reconciler already releases
+ * on — so both jobs released, on their own schedules, for one deposit.
+ *
+ * The second release is the dangerous one: `releaseHotWalletAfterL1` is fenced
+ * on `lockPurpose`, a shared constant rather than an operation's identity, so
+ * once this row has resolved and a later top-up has claimed the same wallet, the
+ * stale releaser frees THAT operation's lock while its carve is unconfirmed.
+ */
+describe('reconcilePendingHydraTopups lock release attribution', () => {
+	function row(commitTxHash: string | null) {
+		return {
+			id: 'topup-1',
+			status: 'Pending',
+			depositTxHash: DEPOSIT_TX_HASH,
+			invalidHereafterSlot: INVALID_HEREAFTER_SLOT,
+			LocalParticipant: {
+				walletId: 'wallet-1',
+				commitTxHash,
+				Wallet: {
+					PaymentSource: {
+						network: 'Preprod',
+						PaymentSourceConfig: { rpcProviderApiKey: 'key' },
+					},
+				},
+			},
+		};
+	}
+
+	beforeEach(() => {
+		mockFindMany.mockResolvedValue([]);
+		// Confirmed on chain, so the row resolves and the release is reached.
+		mockLookupConfirmedChainTx.mockResolvedValue({ kind: 'confirmed', validContract: true, confirmations: 10 });
+		mockUpdateMany.mockResolvedValue({ count: 1 });
+	});
+
+	it('releases the wallet for an ordinary top-up', async () => {
+		mockFindMany.mockResolvedValue([row(null)]);
+
+		await reconcilePendingHydraTopups();
+
+		expect(mockRelease).toHaveBeenCalledWith('wallet-1');
+	});
+
+	it('leaves the release to the commit reconciler for the commit display row', async () => {
+		mockFindMany.mockResolvedValue([row(DEPOSIT_TX_HASH)]);
+
+		await reconcilePendingHydraTopups();
+
+		expect(mockRelease).not.toHaveBeenCalled();
 	});
 });

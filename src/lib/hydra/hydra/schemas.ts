@@ -312,7 +312,9 @@ export const hydraSnapshotUtxoSchema = z
 		`Hydra snapshot exceeded ${MAX_HYDRA_SNAPSHOT_OUTPUTS} outputs`,
 	);
 
-const hydraPartySchema = z.strictObject({
+// Loose, like the rest of the replay path: an added sibling field must not wedge
+// a running head, and the vkey below stays required so a rename is still caught.
+const hydraPartySchema = z.looseObject({
 	vkey: z
 		.string()
 		.regex(/^[0-9a-fA-F]{64}$/, 'Hydra party key must be a raw 32-byte verification key')
@@ -328,7 +330,13 @@ export const headPartiesMessageSchema = z.looseObject({
 export const historyHeadIsOpenMessageSchema = z.looseObject({
 	tag: z.literal('HeadIsOpen'),
 	headId: canonicalHydraHeadIdSchema,
-	utxo: hydraSnapshotUtxoSchema,
+	// `.nullish()`, like every other Maybe field here. A Haskell `Maybe` absent
+	// from the wire and one serialized as `null` are the same value, and this node
+	// demonstrably emits the null form (`hydraHeadId` everywhere). Modelled as
+	// merely required, a `utxo: null` threw — and on the replay path a throw is
+	// permanent: history replays from the beginning on every reconnect, so the
+	// same frame is rejected forever and the head never gets a verified session.
+	utxo: hydraSnapshotUtxoSchema.nullish(),
 });
 
 /**
@@ -347,7 +355,8 @@ export const historyHeadIsOpenMessageSchema = z.looseObject({
 export const greetingsSnapshotMessageSchema = z.looseObject({
 	tag: z.literal('Greetings'),
 	hydraHeadId: canonicalHydraHeadIdSchema.nullable().optional(),
-	snapshotUtxo: hydraSnapshotUtxoSchema.optional(),
+	// `.nullish()` for the same reason as historyHeadIsOpenMessageSchema.utxo.
+	snapshotUtxo: hydraSnapshotUtxoSchema.nullish(),
 });
 
 /**
@@ -371,10 +380,12 @@ export const headIsFinalizedMessageSchema = z
 	.looseObject({
 		tag: z.literal('HeadIsFinalized'),
 		headId: canonicalHydraHeadIdSchema,
-		utxo: hydraSnapshotUtxoSchema.optional(),
-		finalizedUTxO: hydraSnapshotUtxoSchema.optional(),
+		// `.nullish()` on both: the rename left `utxo` in place as a legacy field,
+		// which is exactly the kind a node emits as an explicit null.
+		utxo: hydraSnapshotUtxoSchema.nullish(),
+		finalizedUTxO: hydraSnapshotUtxoSchema.nullish(),
 	})
-	.refine((message) => message.finalizedUTxO !== undefined || message.utxo !== undefined, {
+	.refine((message) => message.finalizedUTxO != null || message.utxo != null, {
 		message: 'HeadIsFinalized carried no finalized UTxO map under either field name',
 	});
 
@@ -383,7 +394,7 @@ export function finalizedUtxoOf(
 	message: z.infer<typeof headIsFinalizedMessageSchema>,
 ): NonNullable<z.infer<typeof headIsFinalizedMessageSchema>['finalizedUTxO']> {
 	const finalized = message.finalizedUTxO ?? message.utxo;
-	if (finalized === undefined) {
+	if (finalized == null) {
 		// Unreachable through the schema, which refuses a message carrying neither.
 		throw new Error('HeadIsFinalized carried no finalized UTxO map');
 	}
@@ -392,7 +403,14 @@ export function finalizedUtxoOf(
 
 /** Whether a frame carries a finalized UTxO map under either field name. */
 export function hasFinalizedUtxoField(message: unknown): boolean {
-	return typeof message === 'object' && message !== null && ('finalizedUTxO' in message || 'utxo' in message);
+	// A VALUE test, not `'x' in message`. `in` is true for `{ utxo: null }`, so a
+	// frame carrying the legacy field as an explicit null passed this guard and
+	// then threw inside the parse — permanently, on the replay path, and on the
+	// live path silently leaving `status` at Open so the head was never recorded
+	// Final and its fanout map never captured.
+	if (typeof message !== 'object' || message === null) return false;
+	const frame = message as { finalizedUTxO?: unknown; utxo?: unknown };
+	return frame.finalizedUTxO != null || frame.utxo != null;
 }
 
 export const greetingsIdentityMessageSchema = z.looseObject({
@@ -418,7 +436,9 @@ export const snapshotConfirmedMessageSchema = z.looseObject({
 	// TimedServerOutput serializes its Haskell `time` field as the top-level
 	// JSON key `timestamp`. Missing timestamps fail closed during reconciliation.
 	timestamp: z.string().max(128).optional(),
-	signatures: z.strictObject({
+	// Loose for the same reason. The signatures themselves are checked against the
+	// party keys, so an unmodelled sibling field cannot weaken that.
+	signatures: z.looseObject({
 		multiSignature: z.array(snapshotSignatureSchema).min(1).max(128),
 	}),
 	snapshot: z.looseObject({

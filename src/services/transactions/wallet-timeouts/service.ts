@@ -855,6 +855,9 @@ export async function updateWalletTransactionHash() {
 							data: {
 								pendingTransactionId: null,
 								lockedAt: null,
+								// Goes with lockedAt, always. A marker outliving its lock is
+								// adopted by the next holder and frees that holder's lock early.
+								lockPurpose: null,
 							},
 						});
 						if (disconnected.count !== 1) {
@@ -1040,7 +1043,7 @@ export async function updateWalletTransactionHash() {
 											// other sweep in this file uses the same guard.
 											const freed = await dbTx.hotWallet.updateMany({
 												where: { id: wallet.id, deletedAt: null, pendingTransactionId: pendingTx.id },
-												data: { pendingTransactionId: null, lockedAt: null },
+												data: { pendingTransactionId: null, lockedAt: null, lockPurpose: null },
 											});
 											if (freed.count === 0) {
 												return false;
@@ -1288,7 +1291,7 @@ export async function updateWalletTransactionHash() {
 					if (shouldUnlock) {
 						await prisma.hotWallet.update({
 							where: { id: wallet.id, deletedAt: null },
-							data: { pendingSwapTransactionId: null, lockedAt: null },
+							data: { pendingSwapTransactionId: null, lockedAt: null, lockPurpose: null },
 						});
 					}
 				} catch (error) {
