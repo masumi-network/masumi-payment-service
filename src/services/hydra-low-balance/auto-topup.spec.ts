@@ -75,7 +75,7 @@ describe('runHydraAutoTopupCycle', () => {
 
 	it('skips when a top-up is already pending for the participant', async () => {
 		mockFindMany.mockResolvedValue([rule()]);
-		mockCount.mockResolvedValue([{ id: 'topup-1', status: 'Pending', updatedAt: new Date(), depositTxHash: null }]);
+		mockCount.mockResolvedValue([{ id: 'topup-1', status: 'Pending', createdAt: new Date(), depositTxHash: null }]);
 
 		await runHydraAutoTopupCycle();
 
@@ -87,13 +87,17 @@ describe('runHydraAutoTopupCycle', () => {
 	// that row disables auto top-up for the participant from then on. The rule
 	// stays Low and the low-balance webhook fires only on the Healthy -> Low
 	// edge, so without this the failure is completely silent.
+	//
+	// `updatedAt` is deliberately fresh here: the reconciler rotates it to now on
+	// every tick it cannot resolve the deposit, so ageing off it would silence
+	// this warning for the one row it exists for.
 	it('says so when the deposit blocking it has been in flight for an hour', async () => {
 		mockFindMany.mockResolvedValue([rule()]);
 		mockCount.mockResolvedValue([
 			{
 				id: 'topup-1',
 				status: 'Confirmed',
-				updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+				createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
 				depositTxHash: 'aa'.repeat(32),
 			},
 		]);
@@ -122,8 +126,8 @@ describe('runHydraAutoTopupCycle', () => {
 				hydraLocalParticipantId: 'participant-1',
 				status: { in: ['Preparing', 'Pending', 'Confirmed'] },
 			},
-			select: { id: true, status: true, updatedAt: true, depositTxHash: true },
-			orderBy: { updatedAt: 'asc' },
+			select: { id: true, status: true, createdAt: true, depositTxHash: true },
+			orderBy: { createdAt: 'asc' },
 		});
 	});
 

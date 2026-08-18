@@ -108,8 +108,12 @@ does in the container. See the
 
 There is no supervisor around the supervisor here. Use whatever the machine
 already has — `launchd` on macOS, `systemd` on Linux — and give it a **stop
-timeout of about two minutes**, because the Host drains a snapshot round before
-exiting and etcd's raft WAL does not tolerate being cut off mid-round.
+timeout of about four minutes** (250s), because the Host drains a snapshot round
+before exiting and etcd's raft WAL does not tolerate being cut off mid-round.
+Native mode runs the same binary with the same defaults as the container: a node
+that will not drain takes 120s, then 30s before SIGKILL, then 5s waiting on it,
+and the Host gives up on its own drain at 240s. A two-minute timeout kills it
+before a single stuck node has finished.
 
 ## What the container still covers exclusively
 

@@ -374,6 +374,23 @@ describe('deleteHydraRemoteParticipant', () => {
 		expect(mockDeleteVerification).toHaveBeenCalledWith({ where: { id: 'remote-key' } });
 	});
 
+	// The same ordering the local path is pinned to above. This one only ever
+	// failed inside the transaction, on the generic "eligibility changed
+	// concurrently" message, by which point the head had already been
+	// disconnected and disabled — and a recovery needs a live session.
+	it('refuses a head with an unrecovered deposit before disconnecting it', async () => {
+		mockFindRemotePlan.mockResolvedValue(assignedDeletionPlan());
+		mockAssertNoUnrecoveredHydraDeposits.mockRejectedValue(
+			Object.assign(new Error('Cannot delete: 1 deposit(s) were never absorbed or recovered.'), {
+				statusCode: 409,
+			}),
+		);
+
+		await expect(deleteHydraRemoteParticipant('remote-1')).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockQuiesceHydraHeadsForDeletion).not.toHaveBeenCalled();
+		expect(mockDeleteRemote).not.toHaveBeenCalled();
+	});
+
 	it('locks the relation before the remote participant and head so rollback invalidation wins first', async () => {
 		mockFindRemotePlan.mockResolvedValue(assignedDeletionPlan());
 		mockFindRemote.mockResolvedValue({

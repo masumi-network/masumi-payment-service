@@ -262,3 +262,63 @@ on an equation with a free variable per value; the round-7 fix replaces that
 with an interval and makes an authenticated removal mandatory rather than
 optional. The interval solver was checked against a brute-force feasibility
 oracle over 9,437,184 two-value cases with zero disagreements.
+
+## Round 8
+
+**"Relaxing the first-anchor check so a head can open with funds"** — not
+changed. `node-history-replay` adopts the first signed snapshot without checking
+it, which is only sound because it cannot have moved value: every head this
+service opens opens empty, since `validateHydraCommitDraft` requires the
+deposit-script output shape that hydra-node produces only for an Open head, so
+an initial commit is never signed. Adopting a snapshot that _does_ carry
+transactions would mean trusting an unverified `confirmed` list, which is a
+larger change than the reachable problem warrants. What was actually wrong was
+`docs/hydra-architecture.md`, which advertised initial commits as supported;
+that claim is corrected and the constraint is now stated at the throw site.
+
+**"The strict output schema is fail-closed, so leave it"** — rejected. It is
+fail-closed in the worst possible place: history replays from the beginning on
+every reconnect, so one rejected frame is rejected forever, and a head with no
+verified session has no clock and fails every L2 escrow operation. Strictness
+bought nothing the accumulator does not already enforce — a field that changes
+an output's serialized bytes fails the commitment check either way, and one that
+does not is cosmetic — so `hydraSnapshotOutputSchema` and
+`hydraReferenceScriptSchema` are now loose, with the added keys reported through
+`detectSnapshotDrift` instead. Renames are still caught: the modelled fields stay
+required.
+
+**Corrections to earlier rounds' own fixes.** Round 7 added
+`assertNoUnrecoveredHydraDeposits` to two of the three participant-delete paths;
+the remote path had it added in round 8, with a test that fails without it.
+Round 7's `docs.ts` registration put `close` in a loop with `init` and `fanout`
+even though it takes a different input schema, and described both DELETE bodies
+as query parameters — `src/app.ts` overrides the DELETE input sources to
+`['body', 'params']`, so a query would never have been read. Round 7's own
+`HydraNodeDetailsDialog` copy claimed the Edit dialog can change a node's URL; it
+cannot, and the copy said so only because I wrote it that way.
+
+**Round 7's snapshot solver, independently re-checked.** A fresh reviewer
+rebuilt the feasibility oracle from scratch and ran 29,700 two-value cases
+through the real function with real CBOR snapshots (0 disagreements), plus 400
+randomized head traces of 25 steps each — 10,000 legitimate transitions covering
+deposits declared, re-declared, absorbed and recovered, decommits declared,
+pending and settled, and a decommit spending a deposit absorbed in the same
+step — with zero false rejections. The negative control rejected 5,080 of 7,381
+single-transaction drops; the remainder are genuinely value-neutral over a
+three-value pool. Making the removal FIXED rather than an upper bound is
+load-bearing: with an optional removal, a value in `previous.decommitOutputs`
+reappearing in `current` admits `consumed = 0`, which is value appearing from
+nowhere.
+
+**Reference-level forgery, again.** Raised and again not filed. The accumulator
+commits to serialized outputs only, so an endpoint permuting which reference
+carries which value across partitions is invisible to it. That is a property of
+the commitment, is stated in the function's own docblock and in ADR 0012, and is
+gated on `trustLocalNodeSnapshotMetadata` — not a regression, and not fixable
+without a different commitment.
+
+**"The decommit stale-claim can double-withdraw"** — could not be constructed.
+Once a decommit is approved its outputs leave the `utxo` partition that
+`snapshotUTxO()` returns, so a second withdrawal cannot select them; while it is
+still pending the node refuses a second decommit and the settle path marks the
+new row Failed. Round 7's `PENDING_STALE_AFTER_MS` stands.

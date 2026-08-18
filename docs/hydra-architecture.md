@@ -163,12 +163,23 @@ stateDiagram-v2
 
 Funds enter the head via **commits**. The `commit` endpoint drafts a commit tx
 for the local participant's wallet UTxOs (hydra-node `/commit`), signs it, and
-submits through the node's `/cardano-transaction`. Commits are accepted while the
-head is **Initializing** (the initial commit) **or Open** (an incremental
-_deposit_), so a head can open with empty commits and be funded later. On preprod
-a deposit incorporates only after the node's `deposit-period` (and lags further
-behind real time by the Blockfrost chain-follower drift), so committed funds
-appear in the in-head snapshot minutes after the deposit lands on L1.
+submits through the node's `/cardano-transaction`. hydra-node accepts commits
+while the head is **Initializing** (the initial commit) or **Open** (an
+incremental _deposit_), but this service only ever signs the latter: every head
+it opens opens **empty**, and `validateHydraCommitDraft` hard-requires the
+deposit-script output with its deadline datum, which hydra-node produces only
+for an Open head. An initial commit is refused rather than signed.
+
+That is load-bearing beyond funding. An empty head has nothing to spend, so its
+first signed snapshot is always a deposit declaration with no transactions —
+which is what `node-history-replay` requires of the snapshot it adopts as its
+first anchor, having no verified predecessor to check it against. Restoring
+initial commits means giving replay a real anchor first; see ADR 0012.
+
+On preprod a deposit incorporates only after the node's `deposit-period` (and
+lags further behind real time by the Blockfrost chain-follower drift), so
+committed funds appear in the in-head snapshot minutes after the deposit lands
+on L1.
 
 > `init` is bounded: it waits a fixed window to observe `HeadIsInitializing` and
 > then fails with a retryable error, because a hydra-node InitTx dropped by the
@@ -234,7 +245,7 @@ admission because the original close transaction may still land.
 
 ## Implementation Map
 
-- `src/routes/api/hydra/head/index.ts`: Hydra head CRUD plus `init`, `commit`, `close`, and `fanout` endpoints.
+- `src/routes/api/hydra/head/index.ts`: Hydra head reads and updates. The lifecycle actions live beside it — `init` and `commit` in `head/lifecycle.ts`, `close` and `fanout` in `head/settlement.ts`, and head creation in `head/create-head.ts`.
 - `src/services/hydra-connection-manager/hydra-connection-manager.service.ts`: keeps enabled heads connected, creates `HydraProvider`, and records head status events.
 - `src/lib/hydra/hydra/connection.ts`: the WebSocket connection + auto-reconnect state machine (`Disconnected → Connecting → Connected`).
 - `src/lib/hydra/hydra/node.ts`: one hydra-node client — sends commands (`Init`, `newTx`, `/cardano-transaction`), maps WS events to head status, and bounds `init()`.
@@ -243,7 +254,7 @@ admission because the original close transaction may still land.
 - `src/utils/hydra/resolve-hydra-head.ts`: the L1/L2 routing gate — resolves the enabled, **Open** head where the buyer HotWallet is the local participant and the seller WalletBase is the remote. Returns null otherwise, so purchases fall back to L1 when no usable head exists.
 - `packages/payment-source-v2/src/utils/mesh-cost-model-sync.ts`: splices the head's cost models into the V2 mesh line so the L2 script-data-hash matches the head's ledger (prevents `PPViewHashesDontMatch`).
 - `packages/payment-source-v2/src/services/**`: normal V2 actions branch by transaction layer; the batch-payments L2 pass (`processL2PurchaseLocks`) runs first and locks eligible requests into the head, else they fall through to L1.
-- `prisma/seed.ts`: seeds the `HydraRelation` / `HydraHead` / participants for the V2 preprod source from the `HYDRA_*` env vars.
+- `src/services/hydra-invite/orchestrator.ts`: how a head actually comes into being — reserve a node on a Host, issue an invite, have the counterparty redeem it. Nothing Hydra is seeded; `prisma/seed.ts` used to build a head from `HYDRA_*` variables and no longer does, because half a head assembled by hand has no node behind it and no way to open.
 - `hydra-l2-flow/`: local/preprod harness that opens, funds, exercises, closes, and settles a Hydra head.
 
 ## Mental Model

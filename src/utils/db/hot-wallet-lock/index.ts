@@ -63,6 +63,13 @@ export async function claimHotWalletForL1(walletId: string, purpose: string): Pr
 			id: walletId,
 			deletedAt: null,
 			pendingTransactionId: null,
+			// Swaps hold the wallet through a different column and never attach a
+			// PendingTransaction, so `pendingTransactionId: null` alone reads a
+			// mid-swap wallet as free. Past HOT_WALLET_LOCK_STALE_AFTER_MS a stuck
+			// swap would hand its wallet to a deposit, which then builds over the
+			// UTxOs the swap tx spends — the same BadInputsUTxO coin toss the
+			// marker exists to prevent.
+			pendingSwapTransactionId: null,
 			OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore } }],
 		},
 		data: { lockedAt: new Date(), lockPurpose: HYDRA_L1_LOCK_PURPOSE },

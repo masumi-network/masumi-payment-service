@@ -32903,7 +32903,7 @@
                                     "example": {
                                         "status": "success",
                                         "data": {
-                                            "walletBases": []
+                                            "wallets": []
                                         }
                                     }
                                 }
@@ -33618,108 +33618,6 @@
                 }
             }
         },
-        "/hydra/head/close": {
-            "post": {
-                "summary": "Run the Hydra head close lifecycle action. (admin access required)",
-                "description": "Submits the close transaction for the head through the local Hydra node.",
-                "tags": [
-                    "hydra"
-                ],
-                "security": [
-                    {
-                        "API-Key": []
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "headId": {
-                                        "type": "string",
-                                        "minLength": 1,
-                                        "description": "ID of the HydraHead"
-                                    }
-                                },
-                                "required": [
-                                    "headId"
-                                ],
-                                "example": {
-                                    "headId": "cuid_v2_auto_generated"
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Head close result",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "enum": [
-                                                "success"
-                                            ]
-                                        },
-                                        "data": {
-                                            "type": "object",
-                                            "properties": {
-                                                "headId": {
-                                                    "type": "string"
-                                                },
-                                                "status": {
-                                                    "type": "string",
-                                                    "enum": [
-                                                        "Disconnected",
-                                                        "Connected",
-                                                        "Connecting",
-                                                        "Idle",
-                                                        "Initializing",
-                                                        "Open",
-                                                        "Closed",
-                                                        "FanoutPossible",
-                                                        "Final"
-                                                    ]
-                                                }
-                                            },
-                                            "required": [
-                                                "headId",
-                                                "status"
-                                            ]
-                                        }
-                                    },
-                                    "required": [
-                                        "status",
-                                        "data"
-                                    ],
-                                    "example": {
-                                        "status": "success",
-                                        "data": {
-                                            "headId": "cuid_v2_auto_generated",
-                                            "status": "Open"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized"
-                    },
-                    "404": {
-                        "description": "Hydra head not found"
-                    },
-                    "409": {
-                        "description": "Head is not in a state that permits close"
-                    }
-                }
-            }
-        },
         "/hydra/head/fanout": {
             "post": {
                 "summary": "Run the Hydra head fanout lifecycle action. (admin access required)",
@@ -33818,6 +33716,111 @@
                     },
                     "409": {
                         "description": "Head is not in a state that permits fanout"
+                    }
+                }
+            }
+        },
+        "/hydra/head/close": {
+            "post": {
+                "summary": "Run the Hydra head close lifecycle action. (admin access required)",
+                "description": "Submits the close transaction for the head through the local Hydra node. Refused while the head still holds escrows or unconfirmed L2 work unless `acknowledgeActiveEscrows` is set, which accepts that those escrows move to L1 and must be collected there.",
+                "tags": [
+                    "hydra"
+                ],
+                "security": [
+                    {
+                        "API-Key": []
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "headId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "ID of the HydraHead"
+                                    },
+                                    "acknowledgeActiveEscrows": {
+                                        "type": "boolean"
+                                    }
+                                },
+                                "required": [
+                                    "headId"
+                                ],
+                                "example": {
+                                    "headId": "cuid_v2_auto_generated"
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Head close result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "enum": [
+                                                "success"
+                                            ]
+                                        },
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "headId": {
+                                                    "type": "string"
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "Disconnected",
+                                                        "Connected",
+                                                        "Connecting",
+                                                        "Idle",
+                                                        "Initializing",
+                                                        "Open",
+                                                        "Closed",
+                                                        "FanoutPossible",
+                                                        "Final"
+                                                    ]
+                                                }
+                                            },
+                                            "required": [
+                                                "headId",
+                                                "status"
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "status",
+                                        "data"
+                                    ],
+                                    "example": {
+                                        "status": "success",
+                                        "data": {
+                                            "headId": "cuid_v2_auto_generated",
+                                            "status": "Closed"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized"
+                    },
+                    "404": {
+                        "description": "Hydra head not found"
+                    },
+                    "409": {
+                        "description": "Head is not in a state that permits close, or still holds active escrows"
                     }
                 }
             }
@@ -34029,9 +34032,6 @@
                             }
                         }
                     },
-                    "400": {
-                        "description": "No plain wallet UTxOs match the requested asset filter"
-                    },
                     "401": {
                         "description": "Unauthorized"
                     },
@@ -34039,10 +34039,7 @@
                         "description": "Hydra head not found"
                     },
                     "409": {
-                        "description": "Head not open, initial commit missing, or a prior top-up is still pending"
-                    },
-                    "502": {
-                        "description": "The node returned an unsafe or invalid top-up draft"
+                        "description": "Head not open, or disabled"
                     }
                 }
             },
@@ -35212,19 +35209,28 @@
                         "API-Key": []
                     }
                 ],
-                "parameters": [
-                    {
-                        "schema": {
-                            "type": "string",
-                            "minLength": 1,
-                            "description": "ID of the HydraHead"
-                        },
-                        "required": true,
-                        "description": "ID of the HydraHead",
-                        "name": "headId",
-                        "in": "query"
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "headId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "description": "ID of the HydraHead"
+                                    }
+                                },
+                                "required": [
+                                    "headId"
+                                ],
+                                "example": {
+                                    "headId": "cuid_v2_auto_generated"
+                                }
+                            }
+                        }
                     }
-                ],
+                },
                 "responses": {
                     "200": {
                         "description": "Cleared head errors",
@@ -35787,18 +35793,27 @@
                         "API-Key": []
                     }
                 ],
-                "parameters": [
-                    {
-                        "schema": {
-                            "type": "string",
-                            "description": "Low-balance rule id"
-                        },
-                        "required": true,
-                        "description": "Low-balance rule id",
-                        "name": "id",
-                        "in": "query"
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string",
+                                        "description": "Low-balance rule id"
+                                    }
+                                },
+                                "required": [
+                                    "id"
+                                ],
+                                "example": {
+                                    "id": "cuid_v2_auto_generated"
+                                }
+                            }
+                        }
                     }
-                ],
+                },
                 "responses": {
                     "200": {
                         "description": "Deleted rule",

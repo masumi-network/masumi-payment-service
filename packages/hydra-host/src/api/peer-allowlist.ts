@@ -3,7 +3,7 @@
  *
  * The peer plane is the one Hydra surface that cannot authenticate its callers:
  * it carries etcd raft, so there is no token to present and no handshake to
- * gate. ADR 0010 §1 therefore protects it with a per-head IP allow-list, which
+ * gate. ADR 0015 §1 therefore protects it with a per-head IP allow-list, which
  * costs nothing because a counterparty's address must already be known to set
  * `--peer`.
  *

@@ -14121,48 +14121,6 @@ export type PostHydraHeadInitResponses = {
 
 export type PostHydraHeadInitResponse = PostHydraHeadInitResponses[keyof PostHydraHeadInitResponses];
 
-export type PostHydraHeadCloseData = {
-    body?: {
-        /**
-         * ID of the HydraHead
-         */
-        headId: string;
-    };
-    path?: never;
-    query?: never;
-    url: '/hydra/head/close';
-};
-
-export type PostHydraHeadCloseErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Hydra head not found
-     */
-    404: unknown;
-    /**
-     * Head is not in a state that permits close
-     */
-    409: unknown;
-};
-
-export type PostHydraHeadCloseResponses = {
-    /**
-     * Head close result
-     */
-    200: {
-        status: 'success';
-        data: {
-            headId: string;
-            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
-        };
-    };
-};
-
-export type PostHydraHeadCloseResponse = PostHydraHeadCloseResponses[keyof PostHydraHeadCloseResponses];
-
 export type PostHydraHeadFanoutData = {
     body?: {
         /**
@@ -14204,6 +14162,49 @@ export type PostHydraHeadFanoutResponses = {
 };
 
 export type PostHydraHeadFanoutResponse = PostHydraHeadFanoutResponses[keyof PostHydraHeadFanoutResponses];
+
+export type PostHydraHeadCloseData = {
+    body?: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+        acknowledgeActiveEscrows?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/close';
+};
+
+export type PostHydraHeadCloseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head is not in a state that permits close, or still holds active escrows
+     */
+    409: unknown;
+};
+
+export type PostHydraHeadCloseResponses = {
+    /**
+     * Head close result
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        };
+    };
+};
+
+export type PostHydraHeadCloseResponse = PostHydraHeadCloseResponses[keyof PostHydraHeadCloseResponses];
 
 export type PostHydraHeadCommitData = {
     body?: {
@@ -14256,6 +14257,62 @@ export type PostHydraHeadCommitResponses = {
 
 export type PostHydraHeadCommitResponse = PostHydraHeadCommitResponses[keyof PostHydraHeadCommitResponses];
 
+export type GetHydraHeadTopupData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Hydra head whose top-ups to list
+         */
+        headId: string;
+        limit?: number;
+    };
+    url: '/hydra/head/topup';
+};
+
+export type GetHydraHeadTopupErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadTopupResponses = {
+    /**
+     * Head top-ups
+     */
+    200: {
+        status: 'success';
+        data: {
+            topups: Array<{
+                id: string;
+                createdAt: string;
+                updatedAt: string;
+                status: 'Preparing' | 'Pending' | 'Confirmed' | 'Failed' | 'Absorbed' | 'Recovered';
+                depositTxHash: string | null;
+                /**
+                 * The L1 transaction that carved the exact amount, while a top-up is still preparing
+                 */
+                splitTxHash: string | null;
+                committedLovelace: string;
+                committedAssets: {
+                    [key: string]: string;
+                };
+                deadline: string | null;
+                usableFrom: string | null;
+                absorbBy: string | null;
+                recoveryRequestedAt: string | null;
+            }>;
+        };
+    };
+};
+
+export type GetHydraHeadTopupResponse = GetHydraHeadTopupResponses[keyof GetHydraHeadTopupResponses];
+
 export type PostHydraHeadTopupData = {
     body?: {
         /**
@@ -14282,10 +14339,6 @@ export type PostHydraHeadTopupData = {
 
 export type PostHydraHeadTopupErrors = {
     /**
-     * No plain wallet UTxOs match the requested asset filter
-     */
-    400: unknown;
-    /**
      * Unauthorized
      */
     401: unknown;
@@ -14294,18 +14347,14 @@ export type PostHydraHeadTopupErrors = {
      */
     404: unknown;
     /**
-     * Head not open, initial commit missing, or a prior top-up is still pending
+     * Head not open, or disabled
      */
     409: unknown;
-    /**
-     * The node returned an unsafe or invalid top-up draft
-     */
-    502: unknown;
 };
 
 export type PostHydraHeadTopupResponses = {
     /**
-     * Top-up result
+     * Top-up accepted
      */
     200: {
         status: 'success';
@@ -14581,6 +14630,143 @@ export type GetHydraHeadTransactionsResponses = {
 
 export type GetHydraHeadTransactionsResponse = GetHydraHeadTransactionsResponses[keyof GetHydraHeadTransactionsResponses];
 
+export type PostHydraHeadTopupRecoverData = {
+    body?: {
+        /**
+         * The deposit to recover
+         */
+        topupId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/topup/recover';
+};
+
+export type PostHydraHeadTopupRecoverErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * The deposit is not recoverable yet, or has already been absorbed or recovered
+     */
+    409: unknown;
+};
+
+export type PostHydraHeadTopupRecoverResponses = {
+    /**
+     * Recovery request
+     */
+    200: {
+        status: 'success';
+        data: {
+            depositTxHash: string | null;
+            requested: boolean;
+            reason: string | null;
+        };
+    };
+};
+
+export type PostHydraHeadTopupRecoverResponse = PostHydraHeadTopupRecoverResponses[keyof PostHydraHeadTopupRecoverResponses];
+
+export type GetHydraHeadConnectionData = {
+    body?: never;
+    path?: never;
+    query: {
+        headId: string;
+    };
+    url: '/hydra/head/connection';
+};
+
+export type GetHydraHeadConnectionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadConnectionResponses = {
+    /**
+     * Head connection
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            connected: boolean;
+            nodeState: string;
+            isReady: boolean;
+            /**
+             * Whether this node is in its Hydra cluster, which for a two-party head means the counterparty's node is up and reachable. Null until the node reports either way. Not a statement about their chain sync.
+             */
+            peerConnected: boolean | null;
+            reason: string | null;
+            /**
+             * Empty when the head ledger matches the chain.
+             */
+            paramDrift: Array<{
+                parameter: string;
+                head: number;
+                chain: number;
+                blocksFanout: boolean;
+            }>;
+            l2Blocked: string | null;
+            /**
+             * Null when closing costs nothing beyond the close itself.
+             */
+            closeWithActiveWork: string | null;
+            checkedAt: string;
+        };
+    };
+};
+
+export type GetHydraHeadConnectionResponse = GetHydraHeadConnectionResponses[keyof GetHydraHeadConnectionResponses];
+
+export type DeleteHydraHeadErrorsData = {
+    body?: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/errors';
+};
+
+export type DeleteHydraHeadErrorsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type DeleteHydraHeadErrorsResponses = {
+    /**
+     * Cleared head errors
+     */
+    200: {
+        status: 'success';
+        data: {
+            cleared: number;
+        };
+    };
+};
+
+export type DeleteHydraHeadErrorsResponse = DeleteHydraHeadErrorsResponses[keyof DeleteHydraHeadErrorsResponses];
+
 export type GetHydraHeadErrorsData = {
     body?: never;
     path?: never;
@@ -14635,15 +14821,160 @@ export type GetHydraHeadErrorsResponses = {
 
 export type GetHydraHeadErrorsResponse = GetHydraHeadErrorsResponses[keyof GetHydraHeadErrorsResponses];
 
-export type DeleteHydraLowBalanceData = {
+export type GetHydraParticipantLocalFundData = {
     body?: never;
     path?: never;
     query: {
+        id: string;
+    };
+    url: '/hydra/participant/local/fund';
+};
+
+export type GetHydraParticipantLocalFundErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraParticipantLocalFundResponses = {
+    /**
+     * Node funding
+     */
+    200: {
+        status: 'success';
+        data: {
+            address: string;
+            balanceLovelace: string;
+            isUnderfunded: boolean;
+            shortfallLovelace: string;
+            /**
+             * False when the chain could not be consulted — unknown, not zero
+             */
+            checked: boolean;
+            node: {
+                state: string;
+                isReady: boolean;
+                /**
+                 * Why it is not ready, when it is not
+                 */
+                reason: string | null;
+            };
+        };
+    };
+};
+
+export type GetHydraParticipantLocalFundResponse = GetHydraParticipantLocalFundResponses[keyof GetHydraParticipantLocalFundResponses];
+
+export type PostHydraParticipantLocalFundData = {
+    body?: {
+        /**
+         * Local participant whose node should be funded
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/participant/local/fund';
+};
+
+export type PostHydraParticipantLocalFundErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * The funding wallet is busy, or the node does not need funds
+     */
+    409: unknown;
+};
+
+export type PostHydraParticipantLocalFundResponses = {
+    /**
+     * Node funding result
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * The node's own Cardano address, derived from its key hash
+             */
+            address: string;
+            balanceLovelace: string;
+            /**
+             * Null when the node already had enough
+             */
+            transferredLovelace: string | null;
+        };
+    };
+};
+
+export type PostHydraParticipantLocalFundResponse = PostHydraParticipantLocalFundResponses[keyof PostHydraParticipantLocalFundResponses];
+
+export type PostHydraParticipantLocalWithdrawData = {
+    body?: {
+        /**
+         * Local participant whose node should be swept
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/participant/local/withdraw';
+};
+
+export type PostHydraParticipantLocalWithdrawErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * The node is still needed, so its funds are kept
+     */
+    409: unknown;
+};
+
+export type PostHydraParticipantLocalWithdrawResponses = {
+    /**
+     * Node sweep result
+     */
+    200: {
+        status: 'success';
+        data: {
+            address: string;
+            balanceLovelace: string;
+            txHash: string | null;
+            /**
+             * Why nothing was swept, when nothing was
+             */
+            reason: string | null;
+        };
+    };
+};
+
+export type PostHydraParticipantLocalWithdrawResponse = PostHydraParticipantLocalWithdrawResponses[keyof PostHydraParticipantLocalWithdrawResponses];
+
+export type DeleteHydraLowBalanceData = {
+    body?: {
         /**
          * Low-balance rule id
          */
         id: string;
     };
+    path?: never;
+    query?: never;
     url: '/hydra/low-balance';
 };
 

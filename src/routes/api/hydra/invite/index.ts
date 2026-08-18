@@ -19,7 +19,12 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraInviteRole, HydraInviteStatus, Network } from '@/generated/prisma/client';
 import { decrypt } from '@/utils/security/encryption';
-import { fetchHostRedemptions, forgetHostInvite, removeHostNode } from '@/services/hydra-host/client';
+import {
+	fetchHostRedemptions,
+	forgetHostInvite,
+	HydraHostRequestError,
+	removeHostNode,
+} from '@/services/hydra-host/client';
 import { MIN_UNSYNCED_PERIOD_SECONDS } from '@/services/hydra-invite/provisioning';
 import { decodeInviteCode } from '@/services/hydra-invite/invite-code';
 import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
@@ -458,10 +463,20 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		// Host first: while it still honours the nonce, a redemption in flight
 		// could start the node we are about to delete.
 		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
-		await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
-			force: false,
-			...transport,
-		});
+		try {
+			await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
+				force: false,
+				...transport,
+			});
+		} catch (error) {
+			// A node the Host no longer has is the outcome this asks for — the same
+			// tolerance the reaper and the adoption discard already have. Without it
+			// a revoke that failed after the removal could never be retried: the
+			// second attempt 404s on a node the first one already took, the local
+			// invite is never marked Revoked, and its participant stays held until
+			// the invite expires on its own.
+			if (!(error instanceof HydraHostRequestError && error.status === 404)) throw error;
+		}
 
 		// Revoked first, released second. Releasing sweeps the node's fuel back to
 		// the wallet that supplied it, and that sweep refuses while the invite is

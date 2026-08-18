@@ -58,8 +58,12 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 						in: [HydraTopupStatus.Preparing, HydraTopupStatus.Pending, HydraTopupStatus.Confirmed],
 					},
 				},
-				select: { id: true, status: true, updatedAt: true, depositTxHash: true },
-				orderBy: { updatedAt: 'asc' },
+				select: { id: true, status: true, createdAt: true, depositTxHash: true },
+				// createdAt, not updatedAt: the reconciler rotates updatedAt to now on
+				// every unresolved deposit check so its fixed budget cannot starve, and
+				// a deposit the head never absorbed is exactly the row it rotates. Aged
+				// off updatedAt, that row would never look older than one tick.
+				orderBy: { createdAt: 'asc' },
 			});
 			if (inFlight.length > 0) {
 				// Said out loud once it stops looking like a deposit in flight.
@@ -76,14 +80,14 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 				// L2 escrow operations began failing with the original alert as the
 				// only symptom.
 				const stalled = inFlight[0];
-				if (Date.now() - stalled.updatedAt.getTime() > STALLED_TOPUP_AFTER_MS) {
+				if (Date.now() - stalled.createdAt.getTime() > STALLED_TOPUP_AFTER_MS) {
 					logger.warn('hydra-auto-topup: skipping a Low rule because a deposit has been in flight too long', {
 						ruleId: rule.id,
 						headId: head.id,
 						topupId: stalled.id,
 						status: stalled.status,
 						depositTxHash: stalled.depositTxHash,
-						stalledForMs: Date.now() - stalled.updatedAt.getTime(),
+						stalledForMs: Date.now() - stalled.createdAt.getTime(),
 						hint: 'recover the deposit from the head, or absorb it, before auto top-up can resume',
 					});
 				}

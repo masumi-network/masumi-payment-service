@@ -73,10 +73,13 @@ type HydraNodeDetailsDialogProps = {
   /**
    * Open the connection form for this node.
    *
-   * Editing lived on a card that nothing rendered any more, so the URL, the
-   * network and — the one that matters — the admin key of a connected node
-   * could not be changed from anywhere in the app, while this dialog's own
-   * no-admin-key notice told the operator to "add the key from Edit".
+   * Editing lived on a card that nothing rendered any more, so a connected
+   * node's name and — the one that matters — its admin key could not be
+   * changed from anywhere in the app, while this dialog's own no-admin-key
+   * notice told the operator to "add the key from Edit". The URL and the
+   * network are deliberately not editable: neither the form nor
+   * `updateHydraHostSchemaInput` accepts them, because a Host's address is
+   * each node's advertise identity for the life of its head.
    */
   onEdit: (host: HydraHost) => void;
 };
@@ -359,7 +362,7 @@ export function HydraNodeDetailsDialog({
                   <span className="space-y-0.5">
                     <span className="block">Edit connection</span>
                     <span className="block text-xs font-normal text-muted-foreground">
-                      Change the URL or replace the admin key. Running heads are untouched.
+                      Rename it, or replace a key. Running heads are untouched.
                     </span>
                   </span>
                 </DropdownMenuItem>

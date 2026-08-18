@@ -77,6 +77,15 @@ export function getLifecycleActionDisabledReason(
 
 /** Whether the head's own stage permits this action, ignoring the node. */
 export function getStageDisabledReason(head: HydraHead, action: HydraLifecycleAction) {
+  // Checked before the per-action stages, because every lifecycle endpoint
+  // refuses a disabled head whatever its status. A head disables itself when
+  // its InitTx fails verification, so this is reachable without anyone
+  // touching the toggle — and the menu used to offer Close on one and let the
+  // API answer 409.
+  if (head.isEnabled === false) {
+    return 'This head is disabled. Re-enable it before running lifecycle actions.';
+  }
+
   if (action === 'init') {
     if (!head.LocalParticipant) return 'This head has no node on your side';
     // One side opens, and it is the side that redeemed: two Inits race for the
@@ -102,6 +111,11 @@ export function getStageDisabledReason(head: HydraHead, action: HydraLifecycleAc
 
   if (action === 'close') {
     if (head.status !== 'Open') return 'Only an open head can be closed';
+    // The close builds on the Init it is closing. A head can reach Open with a
+    // null hash when the Init submit answered ambiguously, and the endpoint
+    // refuses that case; the backfill job fills it in on its own.
+    if (head.initTxHash == null)
+      return 'Waiting on this head\u2019s opening transaction to be identified on chain';
     return undefined;
   }
 

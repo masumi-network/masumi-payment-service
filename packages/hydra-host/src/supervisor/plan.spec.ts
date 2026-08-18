@@ -90,6 +90,17 @@ describe('planNodeAction', () => {
 		expect(planNodeAction(record(), observe({ responsive: false, drift: null }), LIMITS)).toEqual({ kind: 'Idle' });
 	});
 
+	// A node that is up but mute is the exact case an operator reaches for
+	// restart over, and nothing else in the plan acts on one: Unwedge needs an
+	// answering node and Fail only counts start attempts. Returning Idle here
+	// made POST /v1/nodes/{id}/restart answer 202 and then do nothing, with the
+	// request left sitting on the record for good.
+	it('restarts an unresponsive node when an operator asked for it', () => {
+		expect(
+			planNodeAction(record({ restartRequested: true }), observe({ responsive: false, drift: null }), LIMITS),
+		).toEqual({ kind: 'Restart', reason: 'restart requested through the API' });
+	});
+
 	// An undrained stop may have stranded a round; that must be checked before
 	// drift, since a wedged node also stops advancing its chain view.
 	it('checks for a stranded round after an undrained stop, ahead of drift', () => {

@@ -51,7 +51,9 @@ separate registries, locks, port ranges and tokens.
 the peer ranges are far enough apart that the derived ranges do not collide
 either.
 
-The payment service runs on `:3010` and a counterparty stub on `:3011`.
+The payment service runs on `:3010`. There is no second deployment: the
+counterparty is simulated by posting to the Exchange Plane directly, so nothing
+listens on `:3011` during a run.
 
 ## What each phase asserts
 
@@ -129,16 +131,19 @@ pnpm exec tsx scripts/hydra-e2e/sweep.mts .hydra-e2e/hostA/nodes/<id>/keys/carda
 
 ## Layout
 
-| File          | Role                                                                                              |
-| ------------- | ------------------------------------------------------------------------------------------------- |
-| `run.mts`     | orchestration                                                                                     |
-| `env.mts`     | ports, tokens, paths, prerequisites                                                               |
-| `procs.mts`   | process and HTTP helpers                                                                          |
-| `check.mts`   | assertion recorder — records rather than throws, so one failure does not hide the twenty after it |
-| `cardano.mts` | address derivation and balances                                                                   |
-| `head-ws.mts` | node WebSocket commands and head teardown                                                         |
-| `fixture.mts` | seeds the database; runs as its own process so `DATABASE_URL` is set before Prisma loads          |
-| `resume.mts`  | restart a previous run's Hosts without wiping                                                     |
-| `sweep.mts`   | return a node's leftover funds to the harness wallet                                              |
-| `balance.mts` | report what a key envelope controls on chain                                                      |
-| `phases/`     | one file per phase                                                                                |
+| File                                                                                  | Role                                                                                                      |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `run.mts`                                                                             | orchestration                                                                                             |
+| `env.mts`                                                                             | ports, tokens, paths, prerequisites                                                                       |
+| `procs.mts`                                                                           | process and HTTP helpers                                                                                  |
+| `check.mts`                                                                           | assertion recorder — records rather than throws, so one failure does not hide the twenty after it         |
+| `cardano.mts`                                                                         | address derivation and balances                                                                           |
+| `head-ws.mts`                                                                         | node WebSocket commands and head teardown                                                                 |
+| `fixture.mts`                                                                         | seeds the database; runs as its own process so `DATABASE_URL` is set before Prisma loads                  |
+| `resume.mts`                                                                          | restart a previous run's Hosts without wiping                                                             |
+| `sweep.mts`                                                                           | return a node's leftover funds to the harness wallet                                                      |
+| `balance.mts`                                                                         | report what a key envelope controls on chain                                                              |
+| `phases/`                                                                             | one file per phase                                                                                        |
+| `replay-check.mts`                                                                    | replays recorded history against snapshot verification — run it on every hydra-node upgrade, per ADR 0012 |
+| `demo.mts`                                                                            | a scripted walkthrough against a running service; needs `HYDRA_DEMO_DATABASE_URL`                         |
+| `two-nodes.mts` / `smoke-pairs.mts` / `measure-throughput.mts` / `submit-results.mts` | standalone L2 exercises against an already-open head; need `HYDRA_E2E_BLOCKFROST_KEY`                     |

@@ -7,7 +7,7 @@
  * pays its fee from the same place. Without one the node reports
  * `postTxError: NoSeedInput` and the head never leaves Idle.
  *
- * Deliberately not the funding wallet. ADR 0010 §3 keeps the node's
+ * Deliberately not the funding wallet. ADR 0015 §3 keeps the node's
  * infrastructure key separate from the custodial wallet precisely so a
  * compromised host cannot reach escrowed funds — so this address is funded by a
  * transfer, never by sharing a key.

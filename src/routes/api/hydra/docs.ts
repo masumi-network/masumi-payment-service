@@ -15,6 +15,7 @@ import {
 	clearHeadErrorsSchemaOutput,
 } from '@/routes/api/hydra/head';
 import { lifecycleInput, lifecycleOutput, commitInput, commitOutput } from '@/routes/api/hydra/head/lifecycle';
+import { closeHeadInput } from '@/routes/api/hydra/head/settlement';
 import {
 	topupInput,
 	topupOutput,
@@ -275,7 +276,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		security: secured,
 		request: { query: listWalletBaseSchemaInput },
 		responses: {
-			200: successResponse('Candidate wallets', listWalletBaseSchemaOutput, { walletBases: [] }),
+			200: successResponse('Candidate wallets', listWalletBaseSchemaOutput, { wallets: [] }),
 			...unauthorized,
 		},
 	});
@@ -351,7 +352,10 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 	});
 
 	// ---- head: lifecycle ----
-	for (const action of ['init', 'close', 'fanout'] as const) {
+	// `close` is registered on its own below: it takes an extra acknowledgement
+	// field the other two do not, and documenting it from this loop published a
+	// body that could never close a head holding escrows.
+	for (const action of ['init', 'fanout'] as const) {
 		registry.registerPath({
 			method: 'post',
 			path: `/hydra/head/${action}`,
@@ -368,6 +372,22 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			},
 		});
 	}
+	registry.registerPath({
+		method: 'post',
+		path: '/hydra/head/close',
+		summary: 'Run the Hydra head close lifecycle action. (admin access required)',
+		description:
+			'Submits the close transaction for the head through the local Hydra node. Refused while the head still holds escrows or unconfirmed L2 work unless `acknowledgeActiveEscrows` is set, which accepts that those escrows move to L1 and must be collected there.',
+		tags: TAG,
+		security: secured,
+		request: { body: jsonBody(closeHeadInput, { headId: HEAD_ID }) },
+		responses: {
+			200: successResponse('Head close result', lifecycleOutput, { headId: HEAD_ID, status: 'Closed' }),
+			...unauthorized,
+			...notFound,
+			409: { description: 'Head is not in a state that permits close, or still holds active escrows' },
+		},
+	});
 	registry.registerPath({
 		method: 'post',
 		path: '/hydra/head/commit',
@@ -400,9 +420,10 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			200: successResponse('Top-up accepted', topupOutput, { headId: HEAD_ID, accepted: true }),
 			...unauthorized,
 			...notFound,
-			400: { description: 'No plain wallet UTxOs match the requested asset filter' },
-			409: { description: 'Head not open, initial commit missing, or a prior top-up is still pending' },
-			502: { description: 'The node returned an unsafe or invalid top-up draft' },
+			409: { description: 'Head not open, or disabled' },
+			// No 400 or 502 here. The deposit is built and submitted after this
+			// answers, so a bad asset filter or an unsafe node draft is reported
+			// against the top-up row and the head's errors, not to this caller.
 		},
 	});
 	registry.registerPath({
@@ -562,7 +583,10 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 			'Acknowledges the errors recorded against a head. It changes nothing about the head itself — it only clears what the operator has already read.',
 		tags: TAG,
 		security: secured,
-		request: { query: clearHeadErrorsSchemaInput },
+		// Body, not query: `src/app.ts` sets `delete: ['body', 'params']`, so a
+		// DELETE handler never sees query at all. Documenting these as query
+		// endpoints produced a client that could only ever get a 400 back.
+		request: { body: jsonBody(clearHeadErrorsSchemaInput, { headId: HEAD_ID }) },
 		responses: {
 			200: successResponse('Cleared head errors', clearHeadErrorsSchemaOutput, { cleared: 0 }),
 			...unauthorized,
@@ -679,7 +703,7 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		description: 'Removes a low-balance rule by id.',
 		tags: TAG,
 		security: secured,
-		request: { query: deleteHydraLowBalanceRuleSchemaInput },
+		request: { body: jsonBody(deleteHydraLowBalanceRuleSchemaInput, { id: 'cuid_v2_auto_generated' }) },
 		responses: {
 			200: successResponse('Deleted rule', deleteHydraLowBalanceRuleSchemaOutput, { id: HEAD_ID }),
 			...unauthorized,

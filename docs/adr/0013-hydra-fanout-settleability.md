@@ -23,10 +23,10 @@ The chunk the node settled on carries 21 outputs, 20 of them with inline
 datums totalling **9,991 serialized bytes** (largest 812, our escrow datums
 rest at 771–812). Evaluated with the chain's own evaluator:
 
-| | steps | against the 10,000,000,000 limit |
-|---|---|---|
-| unbalanced — what the fit check evaluates | 9,996,277,404 | fits, 0.037% spare |
-| balanced — what the wallet then evaluates | 10,058,291,186 | over by 0.583% |
+|                                           | steps          | against the 10,000,000,000 limit |
+| ----------------------------------------- | -------------- | -------------------------------- |
+| unbalanced — what the fit check evaluates | 9,996,277,404  | fits, 0.037% spare               |
+| balanced — what the wallet then evaluates | 10,058,291,186 | over by 0.583%                   |
 
 Three earlier chunks of the same shape fanned out successfully, each costing
 roughly 2.2 ADA in fees from the node's own wallet, never from head value.
@@ -36,7 +36,7 @@ roughly 2.2 ADA in fees from the node's own wallet, never from head value.
 They are worth separating, because only one of them is ours to fix.
 
 1. **The fit check evaluates the wrong transaction.** `findFittingFanoutTx`
-   chooses a chunk by evaluating it *before* the wallet adds the fee input and
+   chooses a chunk by evaluating it _before_ the wallet adds the fee input and
    change output; `coverFee_` then adds them and the same script exceeds
    `maxTxExUnits`. Balancing costs 62,013,782 steps and the fit check left
    3,722,596. There is no feedback path, so the identical chunk is retried
@@ -103,10 +103,10 @@ Document all four limits. Build against none of them.
    measured.
 
 3. **Do not build an operator retire path yet.** A head that cannot reach
-   `Final` blocks its relation permanently: `head/index.ts:542` rejects any new
-   head while a non-`Final` one exists, `deletion-guard.ts:180` requires a
+   `Final` blocks its relation permanently: `head/create-head.ts` rejects any new
+   head while a non-`Final` one exists, `deletion-guard.ts` requires a
    `fanoutTxHash` verified on chain that such a head does not have, and the
-   `acknowledgeActiveEscrows` escape hatch at `head/index.ts:1649` is gated on
+   `acknowledgeActiveEscrows` escape hatch in `head/settlement.ts` is gated on
    `status === Open`. Direct database intervention is currently the only
    remedy, and we used it once. The shape when we build it: an admin endpoint
    named for what the operator accepts, retiring the head record to free the

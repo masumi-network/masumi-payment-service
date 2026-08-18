@@ -8,7 +8,7 @@
  * same key later pays for Close and Fanout, so it has to stay funded for the
  * head's whole life, not just its opening.
  *
- * This is a *transfer*, not a shared key. ADR 0010 §3 keeps the node's
+ * This is a *transfer*, not a shared key. ADR 0015 §3 keeps the node's
  * infrastructure key separate from the custodial funding wallet so that a
  * compromised host cannot reach escrowed funds; funding it by moving a small,
  * bounded amount preserves that.

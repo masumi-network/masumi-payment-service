@@ -65,7 +65,7 @@ export const localParticipantSchema = z.object({
 	hostNodeId: z.string(),
 	/**
 	 * The node's own Cardano key hash — the head's on-chain participant identity,
-	 * deliberately separate from the settling wallet (ADR 0010 §3). Public
+	 * deliberately separate from the settling wallet (ADR 0015 §3). Public
 	 * material: it is what the InitTx mints a participant token for.
 	 */
 	cardanoVkey: z.string(),
@@ -90,7 +90,7 @@ export const remoteParticipantSchema = z.object({
 	HydraVerificationKey: z.object({ hydraVK: z.string() }),
 	/**
 	 * The node's own Cardano key hash — the head's on-chain participant identity,
-	 * deliberately separate from the settling wallet (ADR 0010 §3). Public
+	 * deliberately separate from the settling wallet (ADR 0015 §3). Public
 	 * material: it is what the InitTx mints a participant token for.
 	 */
 	cardanoVkey: z.string(),

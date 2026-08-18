@@ -254,9 +254,18 @@ const hydraAssetMapSchema = z
 const hydraValueSchema = z
 	.record(z.string().min(1).max(128), z.union([hydraQuantitySchema, hydraAssetMapSchema]))
 	.refine((value) => Object.keys(value).length <= 256, 'Hydra value exceeded 256 policy entries');
-const hydraReferenceScriptSchema = z.strictObject({
+// Loose, like every other replay-path schema, and for the reason
+// protocol-drift.ts states: an added field must not break a running head over a
+// shape we could have ignored. Strictness bought nothing here — a field that
+// changes the output's serialized bytes fails the accumulator check anyway, and
+// a field that does not is cosmetic — while costing the worst failure this
+// codebase has: history replays from the start on every reconnect, so one
+// rejected frame is rejected forever, and a head with no verified session has
+// no clock and fails every L2 escrow operation closed. Renames are still
+// caught: the fields below stay required.
+const hydraReferenceScriptSchema = z.looseObject({
 	scriptLanguage: z.string().min(1).max(64),
-	script: z.strictObject({
+	script: z.looseObject({
 		cborHex: hydraCborHexSchema,
 		description: z.string().max(MAX_HYDRA_TRANSACTION_DESCRIPTION_LENGTH),
 		type: z.enum(HydraScriptLanguage),
@@ -274,7 +283,10 @@ const nullableBoundedHexSchema = z
 	.max(128 * 1024)
 	.regex(/^(?:[0-9a-fA-F]{2})*$/, 'value must be even-length hexadecimal')
 	.nullable();
-const hydraSnapshotOutputSchema = z.strictObject({
+// Loose for the same reason as hydraReferenceScriptSchema above.
+// `detectSnapshotDrift` covers these keys, so an addition is still reported to
+// the operator before it can matter — it just no longer takes the head down.
+const hydraSnapshotOutputSchema = z.looseObject({
 	address: z.string().min(1).max(256),
 	value: hydraValueSchema,
 	referenceScript: hydraReferenceScriptSchema.nullable(),

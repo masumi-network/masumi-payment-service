@@ -397,7 +397,15 @@ export async function deleteHydraRemoteParticipant(id: string): Promise<void> {
 	if ((deletionPlan.hydraHeadId == null) !== (deletionPlan.HydraHead == null)) {
 		throw createHttpError(409, 'Cannot delete: participant head relation is inconsistent');
 	}
-	if (deletionPlan.hydraHeadId) await quiesceHydraHeadsForDeletion([deletionPlan.hydraHeadId]);
+	// Before the quiesce, like the local-participant and relation paths. The
+	// filter below already refuses a head with an unrecovered deposit, but by
+	// then the head has been disconnected and disabled — and recovery needs a
+	// live session, so refusing at that point leaves the operator having to
+	// re-enable the head before they can get the money back.
+	if (deletionPlan.hydraHeadId) {
+		await assertNoUnrecoveredHydraDeposits([deletionPlan.hydraHeadId]);
+		await quiesceHydraHeadsForDeletion([deletionPlan.hydraHeadId]);
+	}
 
 	await withSerializableSlotRetry(
 		() =>

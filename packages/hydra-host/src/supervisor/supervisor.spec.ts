@@ -16,6 +16,8 @@
 
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -270,4 +272,95 @@ describe('Supervisor observation', () => {
 		expect(after?.startAttempts).toBe(0);
 		expect(after?.state).toBe('Stopped');
 	});
+});
+
+/**
+ * Shutdown is one round of waiting, not two.
+ *
+ * `shutdown` used to `await this.currentTick` before taking the node list, so a
+ * tick that was already draining one node held the whole fan-out behind it: the
+ * rest only began draining once that one had finished. At the real budget that
+ * is 155s + 155s = 310s against the 240s `SHUTDOWN_GRACE_MS` in index.ts, and
+ * past it the runtime kills every remaining hydra-node mid-round — the exact
+ * outcome the fan-out exists to avoid.
+ *
+ * The nodes here answer `{"tag":"SeenSnapshot"}`, which is never safe to stop,
+ * so each drain runs to its timeout instead of returning early.
+ */
+describe('Supervisor shutdown', () => {
+	const DRAIN_TIMEOUT_MS = 1_500;
+	// `waitForDrain` sleeps this long between polls, so a drain that times out
+	// costs one poll interval rather than the declared timeout.
+	const DRAIN_COST_MS = 2_000;
+
+	let servers: Server[] = [];
+
+	async function serveNodeApi(): Promise<number> {
+		const server = createServer((_request, response) => {
+			response.writeHead(200, { 'Content-Type': 'application/json' });
+			response.end(JSON.stringify({ tag: 'SeenSnapshot' }));
+		});
+		servers.push(server);
+		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+		return (server.address() as AddressInfo).port;
+	}
+
+	afterEach(async () => {
+		await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+	});
+
+	it('drains the rest of the fleet alongside the node the tick already holds', async () => {
+		const config = {
+			...loadHostConfig(env),
+			dataDir,
+			hydraNodeBin: process.execPath,
+			drainTimeoutMs: DRAIN_TIMEOUT_MS,
+		};
+		const draining = new Supervisor(
+			config,
+			store,
+			new PortAllocator(config.ports),
+			resolveSlotConfig('preprod'),
+			silentLogger,
+		);
+
+		// No peers on either, so `boot`'s own tick adopts both and plans Idle.
+		const held = makeRecord({
+			nodeId: 'node-held',
+			apiPort: await serveNodeApi(),
+			pid: spawnNodeLike(store.nodeDir('node-held')).pid,
+		});
+		const spare = makeRecord({
+			nodeId: 'node-spare',
+			apiPort: await serveNodeApi(),
+			pid: spawnNodeLike(store.nodeDir('node-spare')).pid,
+		});
+		await store.write(held);
+		await store.write(spare);
+		await draining.boot();
+		expect((await store.read(held.nodeId))?.state).toBe('Running');
+
+		// Asked for only now, so it is the NEXT tick that takes this node: it plans
+		// a Stop and blocks on the drain, which is the hold shutdown used to queue
+		// behind. `spare` stays Idle and is left to shutdown.
+		await store.update(held.nodeId, (current) => ({ ...current, desired: 'Stopped' }));
+
+		const tick = draining.tick();
+		// Long enough for the tick to reach the drain, short enough that it is
+		// still inside it.
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		expect((await store.read(held.nodeId))?.state).toBe('Draining');
+
+		const startedAt = Date.now();
+		await draining.shutdown();
+		const elapsedMs = Date.now() - startedAt;
+		await tick;
+
+		expect((await store.read(held.nodeId))?.state).toBe('Stopped');
+		expect((await store.read(spare.nodeId))?.state).toBe('Stopped');
+		// Both drains really ran — a fan-out that skipped one would come back fast.
+		expect(elapsedMs).toBeGreaterThan(DRAIN_COST_MS / 2);
+		// And they overlapped. Serialised, this is two full drains.
+		expect(elapsedMs).toBeLessThan(DRAIN_COST_MS * 1.6);
+	}, 30_000);
 });

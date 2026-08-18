@@ -153,7 +153,16 @@ export function planNodeAction(record: NodeRecord, observation: NodeObservation,
 		// until the peer is up, and hydra-node opens its API only once it has one
 		// and its chain follower has synced — so this is the normal way up, not a
 		// fault, and the record stays in `Starting` until a probe succeeds.
-		return { kind: 'Idle' };
+		//
+		// An operator restart is still honoured, because a node that is up but
+		// mute is the exact case they reach for it: nothing else here acts on such
+		// a node — `Unwedge` needs an answering node and `Fail` only counts start
+		// attempts — so returning `Idle` unconditionally made
+		// POST /v1/nodes/{id}/restart answer 202 and then do nothing, with the
+		// request left sitting on the record for good.
+		return record.restartRequested === true
+			? { kind: 'Restart', reason: 'restart requested through the API' }
+			: { kind: 'Idle' };
 	}
 
 	// A stop that could not be drained may have stranded a round; check before
@@ -165,7 +174,8 @@ export function planNodeAction(record: NodeRecord, observation: NodeObservation,
 
 	// An explicit operator restart. Checked before drift so the request is
 	// honoured even when the node looks healthy — otherwise it would be
-	// indistinguishable from the steady state and silently ignored.
+	// indistinguishable from the steady state and silently ignored. The
+	// not-answering case is handled at the responsive gate above.
 	if (record.restartRequested === true) {
 		return { kind: 'Restart', reason: 'restart requested through the API' };
 	}

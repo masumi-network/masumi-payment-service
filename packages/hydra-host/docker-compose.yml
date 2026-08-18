@@ -77,7 +77,7 @@ services:
     volumes:
       # Real block storage, not a network filesystem: this holds a SQLite event
       # store and an etcd raft WAL, both of which need POSIX fsync durability.
-      # Losing it loses the heads. ADR 0010 §7.
+      # Losing it loses the heads. ADR 0015 §7.
       - hydra-data:/data
       # Every node follows the chain through this. Without it the supervisor
       # starts and each node it spawns dies on a missing --blockfrost file.

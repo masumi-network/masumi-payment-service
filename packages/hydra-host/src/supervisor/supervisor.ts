@@ -811,33 +811,63 @@ export class Supervisor {
 	async shutdown(): Promise<void> {
 		this.stopped = true;
 		this.logger.info('[supervisor] shutting down; draining all nodes');
-		// Waited for before the list is taken, so the list cannot miss a node the
-		// tick was in the middle of starting. `runTick` handles its own errors, so
-		// there is nothing here to catch.
-		await this.currentTick;
+		// The in-flight tick is captured, NOT awaited first. Waiting for it up
+		// front made shutdown cost two drain rounds rather than one: a tick that
+		// was already stopping a node held the whole fan-out behind it, so the
+		// remaining nodes only began draining once that one had finished. Measured
+		// at 8.4s against a 3s per-node drain budget — against the real 155s budget
+		// that is 310s, past the 240s `SHUTDOWN_GRACE_MS` in index.ts, which is the
+		// exact outcome the fan-out below exists to avoid.
+		//
+		// Nothing the tick is still doing can spawn a node: `reconcile` bails on
+		// `stopped` before it plans, and `start` gates on it again before the spawn
+		// (including the second half of a Restart). So the tick can only be
+		// finishing work already begun, and that work drains on the same clock this
+		// does.
+		const pendingTick = this.currentTick;
+		await this.drainRunningNodes();
+		// Then the tick, and a second pass for whatever it was holding when the
+		// flag went up — the node the first pass skipped rather than stopped
+		// underneath it. That is the case the original wait existed for. Nodes
+		// already drained are `isRunning === false` here, so this is a cheap
+		// re-list on every normal shutdown.
+		await pendingTick;
+		await this.drainRunningNodes();
+	}
+
+	/**
+	 * Every node drains at once, not RECONCILE_CONCURRENCY at a time.
+	 *
+	 * Shutdown is one round of waiting, not work: a node costs drainTimeoutMs
+	 * (120s) plus SIGKILL_GRACE_MS (30s) plus SIGKILL_WAIT_MS (5s) = 155s worst
+	 * case, almost all of it idle. Batching them at 8 made the worst case
+	 * `ceil(nodes / 8) x 155s`, so a host at its default capacity of 32 needed
+	 * 620s — and `SHUTDOWN_GRACE_MS` hard-exits the process at 240s. Past the
+	 * first batch SIGTERM never finished: the runtime killed the remaining
+	 * hydra-nodes mid-round and every one of them came back `lastStopUndrained`,
+	 * each carrying an unwedge check and a possibly stranded round.
+	 *
+	 * Raising the compose grace does not help while the host kills itself first,
+	 * so the fan-out is what has to change. The reconcile path keeps its limit:
+	 * that one really is work, and it runs every 15s.
+	 */
+	private async drainRunningNodes(): Promise<void> {
 		const records = await this.store.list();
-		// Every node drains at once, not RECONCILE_CONCURRENCY at a time.
-		//
-		// Shutdown is one round of waiting, not work: a node costs drainTimeoutMs
-		// (120s) plus SIGKILL_GRACE_MS (30s) plus SIGKILL_WAIT_MS (5s) = 155s worst
-		// case, almost all of it idle. Batching them at 8 made the worst case
-		// `ceil(nodes / 8) x 155s`, so a host at its default capacity of 32 needed
-		// 620s — and `SHUTDOWN_GRACE_MS` hard-exits the process at 240s. Past the
-		// first batch SIGTERM never finished: the runtime killed the remaining
-		// hydra-nodes mid-round and every one of them came back `lastStopUndrained`,
-		// each carrying an unwedge check and a possibly stranded round.
-		//
-		// Raising the compose grace does not help while the host kills itself
-		// first, so the fan-out is what has to change. The reconcile path keeps its
-		// limit: that one really is work, and it runs every 15s.
 		await mapWithConcurrency(records, Math.max(1, records.length), async (record) => {
-			if (!this.processes.isRunning(record.nodeId)) {
+			// Same claim the tick makes, and taken the same way — checked and set
+			// with no await in between, so exactly one of the two owns the node.
+			// Without it a node could be sent SIGTERM twice and have two drains
+			// racing on its record.
+			if (this.inFlight.has(record.nodeId) || !this.processes.isRunning(record.nodeId)) {
 				return;
 			}
+			this.inFlight.add(record.nodeId);
 			try {
 				await this.stop(record, 'host shutting down');
 			} catch (error) {
 				this.logger.error(`[supervisor] stopping ${record.nodeId} failed: ${(error as Error).message}`);
+			} finally {
+				this.inFlight.delete(record.nodeId);
 			}
 		});
 	}

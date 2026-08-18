@@ -33,6 +33,25 @@ const logger: SupervisorLogger = {
 };
 
 async function main(): Promise<void> {
+	// Installed before anything can spawn a hydra-node. `supervisor.boot()` below
+	// adopts and starts nodes, and until the real handlers exist a signal there
+	// took the default disposition: the host died instantly and whatever boot had
+	// just spawned kept running undrained, holding its peer port past the only
+	// process that knew how to drain it. Recorded rather than acted on, because
+	// there is no supervisor to drain through yet; the real handler replays it.
+	// Held on an object rather than in a `let`, so the read after the handlers are
+	// swapped is not narrowed to `never` by flow analysis that cannot see the
+	// closures below run.
+	const startup: { signal: string | null } = { signal: null };
+	const deferSigterm = (): void => {
+		startup.signal ??= 'SIGTERM';
+	};
+	const deferSigint = (): void => {
+		startup.signal ??= 'SIGINT';
+	};
+	process.on('SIGTERM', deferSigterm);
+	process.on('SIGINT', deferSigint);
+
 	const config = loadHostConfig();
 
 	// Fail fast on a missing ledger params file. Only networks with a reviewed
@@ -215,8 +234,14 @@ async function main(): Promise<void> {
 		shutdown('LOCK_LOST');
 	};
 
+	process.off('SIGTERM', deferSigterm);
+	process.off('SIGINT', deferSigint);
 	process.on('SIGTERM', () => shutdown('SIGTERM'));
 	process.on('SIGINT', () => shutdown('SIGINT'));
+	if (startup.signal !== null) {
+		logger.info(`[host] ${startup.signal} arrived during startup; draining now`);
+		shutdown(startup.signal);
+	}
 }
 
 main().catch((error: unknown) => {

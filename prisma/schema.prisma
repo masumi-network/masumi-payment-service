@@ -1682,9 +1682,11 @@ model HydraRelation {
   /// Individual head sessions within this relation (1:N)
   Heads HydraHead[]
 
-  /// Base URL of the counterparty's payment service, where head offers are
-  /// delivered. Long-lived: a relation outlives the individual heads opened
-  /// under it. Null until the two operators have exchanged endpoints.
+  /// The counterparty's Hydra Host Exchange Plane, where this side redeems an
+  /// invite. Long-lived: a relation outlives the individual heads opened under
+  /// it. Null until the two operators have exchanged endpoints. It is not a
+  /// payment-service address and nothing is delivered to it — the offer-delivery
+  /// handlers this used to name were removed with ADR 0011.
   counterpartyBaseUrl String?
 
   /// One relation per wallet pair per network
@@ -2161,8 +2163,6 @@ model HydraDecommit {
   @@index([decommitTxId])
 }
 
-/// Encrypted Hydra signing key for the local participant (1:1 with HydraLocalParticipant).
-/// Fund and node wallet keys are not needed here — those come from the HotWallet.
 /// Status of a Hydra Host deployment.
 enum HydraHostStatus {
   /// Accepting new node placements.
@@ -2354,6 +2354,12 @@ model HydraHeadInvite {
   @@index([hydraHostId, status])
 }
 
+/// The signing keys one hydra-node was provisioned with, encrypted.
+///
+/// 1:1 with [[HydraLocalParticipant]]. Both the Hydra key and the node's own
+/// Cardano key live here: the Host discloses them exactly once, at
+/// provisioning, and this is the only copy afterwards — which is why deleting
+/// a participant sweeps the node's funds first.
 model HydraSecretKey {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())

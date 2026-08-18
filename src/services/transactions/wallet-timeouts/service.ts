@@ -954,13 +954,34 @@ export async function updateWalletTransactionHash() {
 							// Tx landed and validContract=true (or null couldn't determine):
 							// just unlock the wallet — no dependents to advance. Kept outside
 							// the propagation transaction because no propagation runs here.
-							await prisma.hotWallet.update({
-								where: { id: wallet.id, deletedAt: null },
+							//
+							// Fenced on the transaction we read, for the same reason as the
+							// orphan-lock disconnect above: fetchTxInfo is a Blockfrost round trip,
+							// and inside it another poller can settle this same tx and free the
+							// wallet, after which a Hydra L1 deposit can claim it (claimHotWalletForL1
+							// needs only pendingTransactionId: null). An unguarded clear by wallet id
+							// would then free a wallet whose carve is still unconfirmed on chain, and
+							// leave lockPurpose set on an unlocked row — the marker the next holder
+							// would inherit.
+							const unlocked = await prisma.hotWallet.updateMany({
+								where: {
+									id: wallet.id,
+									deletedAt: null,
+									pendingTransactionId: wallet.PendingTransaction.id,
+								},
 								data: {
-									PendingTransaction: { disconnect: true },
+									pendingTransactionId: null,
 									lockedAt: null,
+									lockPurpose: null,
 								},
 							});
+							if (unlocked.count !== 1) {
+								logger.info('wallet-timeouts: wallet moved on before the settled-tx unlock; leaving it', {
+									walletId: wallet.id,
+									transactionId: wallet.PendingTransaction.id,
+								});
+								return;
+							}
 						}
 						tallyUnlockedWallet(wallet);
 						markUnlockedByType(wallet.PaymentSource.paymentSourceType);

@@ -163,10 +163,13 @@ Two things that look like the same problem and are not:
   `hydra-node --hydra-script-catalogue | sha256sum` yields a different digest.
   Copy it from the node details.
 - **A ledger parameters mismatch is a Host misconfiguration, not a pin to
-  update.** The Host must serve the reviewed file that ships in the repository:
-  set `HYDRA_HOST_LEDGER_PARAMS_FILE` to
-  `packages/hydra-host/params/<network>.json` on the Host. Pinning your service
-  to whatever a Host happens to serve is how you get `PPViewHashesDontMatch` on
+  update.** The Host must serve the reviewed file that ships in the repository.
+  The image already does: it copies `packages/hydra-host/params` to
+  `/opt/hydra/params`, which is where `HYDRA_HOST_LEDGER_PARAMS_FILE` points by
+  default, so leave it unset under the container. Set it only in native mode,
+  where that directory does not exist — and to an absolute path, because the
+  Host refuses to boot when the file is not there. Pinning your service to
+  whatever a Host happens to serve is how you get `PPViewHashesDontMatch` on
   the first spend inside a head.
 
 Copy a fingerprint only from a Host you operate or otherwise trust. The pin
@@ -261,6 +264,13 @@ Two things follow from how Hydra works here:
 ## The four durations
 
 Set once per head, in the invite, and fixed for its life.
+
+Mainnet values are given throughout, but mainnet is not runnable yet: the Host
+refuses to boot without a reviewed ledger parameters file and
+`packages/hydra-host/params/` ships only `preprod.json`. Adding one is a
+reviewed change, not a configuration step —
+`HYDRA_EXPECTED_LEDGER_PARAMS_HASH_MAINNET` has to be set to its hash on this
+side at the same time.
 
 |                         | Preprod  | Mainnet | What it does                                                                                                                                                                                                   |
 | ----------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

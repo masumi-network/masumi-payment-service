@@ -524,6 +524,22 @@ export class HydraHistoryReplay {
 			throw new HydraProtocolError('Hydra signed snapshot number replayed or regressed');
 		}
 		if (previousSnapshot == null) {
+			// The first signed snapshot is adopted as the anchor, so nothing checks
+			// it — which is only sound while it cannot have moved value. Hydra 2.3's
+			// `HeadIsOpen` carries no `utxo`, so there is no earlier anchor to check
+			// it against, and the `Greetings.snapshotUtxo` one only arrives at the
+			// end of history.
+			//
+			// It holds here because every head this service opens opens EMPTY:
+			// `validateHydraCommitDraft` requires the deposit-script output shape,
+			// which hydra-node produces only for an Open head, so an initial commit
+			// is never signed. An empty head has nothing to spend, so snapshot 1 is
+			// always a deposit declaration with `confirmed: []`.
+			//
+			// Restoring initial commits — or peering with a counterparty that makes
+			// them — breaks that: the head's first escrow lock would land in
+			// snapshot 1's `confirmed` list and wedge its replay for good. Give
+			// replay a real anchor before relaxing this. See ADR 0012.
 			if (verifiedSnapshot.number > 1 || parsedMessage.snapshot.confirmed.length > 0) {
 				throw new HydraProtocolError(
 					'Hydra history began with transactions or a snapshot gap and no independently verified predecessor',

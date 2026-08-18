@@ -7,8 +7,9 @@
  * were legitimate protocol behaviour, both were signed by every party, and both
  * presented as an endless reconnect loop naming nothing.
  *
- * Our schemas are deliberately permissive — `z.looseObject` everywhere, so an
- * added field never breaks a running head over a shape we could have ignored.
+ * Our schemas are deliberately permissive — `z.looseObject` everywhere on the
+ * replay path, so an added field never breaks a running head over a shape we
+ * could have ignored.
  * The cost of that permissiveness is silence: a new partition would be dropped
  * on the floor and only surface later as a rejected history. This restores the
  * signal without the brittleness. It reports; it never refuses.
@@ -37,6 +38,29 @@ export const MODELLED_SNAPSHOT_FIELDS: ReadonlySet<string> = new Set([
 	'version',
 ]);
 
+/**
+ * Every field a single UTxO output is known to carry.
+ *
+ * Covered separately because outputs are where an addition is most likely and
+ * least visible: they are nested two levels down inside three partitions, and
+ * the accumulator only sees them as serialized bytes. `referenceScript`'s own
+ * inner fields are deliberately not walked — a change there shows up as a
+ * different serialization, which the accumulator check already reports.
+ */
+export const MODELLED_SNAPSHOT_OUTPUT_FIELDS: ReadonlySet<string> = new Set([
+	'address',
+	'datum',
+	'datumhash',
+	'inlineDatum',
+	'inlineDatumRaw',
+	'inlineDatumhash',
+	'referenceScript',
+	'value',
+]);
+
+/** The snapshot partitions whose values are UTxO outputs. */
+const SNAPSHOT_OUTPUT_PARTITIONS: readonly string[] = ['utxo', 'utxoToCommit', 'utxoToDecommit'];
+
 /** Every field the frame around it is known to carry. */
 export const MODELLED_SNAPSHOT_FRAME_FIELDS: ReadonlySet<string> = new Set([
 	'headId',
@@ -49,9 +73,15 @@ export const MODELLED_SNAPSHOT_FRAME_FIELDS: ReadonlySet<string> = new Set([
 
 export type ProtocolDrift = {
 	/** Where the unknown fields appeared, for the operator-facing message. */
-	location: 'snapshot' | 'frame';
+	location: 'snapshot' | 'frame' | 'output';
 	fields: string[];
 };
+
+/** `Object.entries` for a value of unknown shape, with the key/value pair typed. */
+function entriesOf(value: unknown): Array<[string, unknown]> {
+	if (typeof value !== 'object' || value === null) return [];
+	return Object.entries(value) as Array<[string, unknown]>;
+}
 
 function unknownFields(value: unknown, modelled: ReadonlySet<string>): string[] {
 	if (typeof value !== 'object' || value === null) return [];
@@ -75,6 +105,21 @@ export function detectSnapshotDrift(message: unknown): ProtocolDrift[] {
 
 	const snapshotFields = unknownFields(frame.snapshot, MODELLED_SNAPSHOT_FIELDS);
 	if (snapshotFields.length > 0) drift.push({ location: 'snapshot', fields: snapshotFields });
+
+	const outputFields = new Set<string>();
+	// Walked by entry rather than indexed by partition name, so nothing here needs
+	// an unknown-valued map type to read a JSON object of unknown shape.
+	for (const [partition, outputs] of entriesOf(frame.snapshot)) {
+		if (!SNAPSHOT_OUTPUT_PARTITIONS.includes(partition)) continue;
+		for (const [, output] of entriesOf(outputs)) {
+			for (const field of unknownFields(output, MODELLED_SNAPSHOT_OUTPUT_FIELDS)) {
+				outputFields.add(field);
+			}
+		}
+	}
+	// Deduped across every output and partition: one added field would otherwise
+	// be named once per UTxO, and a snapshot carries up to 4095 of them.
+	if (outputFields.size > 0) drift.push({ location: 'output', fields: [...outputFields].sort() });
 
 	return drift;
 }
