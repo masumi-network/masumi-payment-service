@@ -185,3 +185,71 @@ describe('selectCommitUtxosUpToTarget', () => {
 		expect(result.excludedUtxos).toEqual(expect.arrayContaining([adaOnly, tokenB]));
 	});
 });
+
+// An unreachable target does not produce an empty selection — it produces EVERY
+// matching UTxO, best effort. A caller that reads "non-empty" as "worked" then
+// commits the whole wallet balance, and the wallet that pays L1 fees for
+// collections, results and refunds is left empty until someone decommits or
+// closes the head.
+describe('reachedTarget', () => {
+	it('is false when the wallet cannot cover the target, even though UTxOs were chosen', () => {
+		const selection = selectCommitUtxosUpToTarget([utxo(0, '60000000'), utxo(1, '60000000')], 'ada-only', {
+			unit: 'lovelace',
+			amount: 500_000_000n,
+		});
+
+		expect(selection.commitUtxos).toHaveLength(2);
+		expect(selection.reachedTarget).toBe(false);
+	});
+
+	it('is true when a single UTxO covers it', () => {
+		const selection = selectCommitUtxosUpToTarget([utxo(0, '600000000')], 'ada-only', {
+			unit: 'lovelace',
+			amount: 500_000_000n,
+		});
+
+		expect(selection.reachedTarget).toBe(true);
+	});
+
+	it('is true when several together cover it', () => {
+		const selection = selectCommitUtxosUpToTarget([utxo(0, '300000000'), utxo(1, '300000000')], 'ada-only', {
+			unit: 'lovelace',
+			amount: 500_000_000n,
+		});
+
+		expect(selection.reachedTarget).toBe(true);
+	});
+});
+
+// Hydra commits WHOLE UTxOs, and a wallet's change consolidates, so the
+// smallest UTxO covering a token amount is routinely one that also carries the
+// agent's registry NFT.
+describe('exclusive token filter', () => {
+	const TOKEN = `${'cc'.repeat(28)}0014df10`;
+	const OTHER = `${'dd'.repeat(28)}0014df10`;
+
+	const mixed = utxo(0, '3000000', {
+		amount: [
+			{ unit: 'lovelace', quantity: '3000000' },
+			{ unit: TOKEN, quantity: '800' },
+			{ unit: OTHER, quantity: '1' },
+		],
+	});
+	const clean = utxo(1, '3000000', {
+		amount: [
+			{ unit: 'lovelace', quantity: '3000000' },
+			{ unit: TOKEN, quantity: '800' },
+		],
+	});
+
+	it('refuses a UTxO that carries another native asset alongside the target', () => {
+		const selection = selectCommitUtxos([mixed, clean], { unit: TOKEN, exclusive: true });
+
+		expect(selection.commitUtxos).toEqual([clean]);
+		expect(selection.excludedUtxos).toEqual([mixed]);
+	});
+
+	it('still admits both without the flag, which is what the manual path asks for', () => {
+		expect(selectCommitUtxos([mixed, clean], { unit: TOKEN }).commitUtxos).toEqual([mixed, clean]);
+	});
+});

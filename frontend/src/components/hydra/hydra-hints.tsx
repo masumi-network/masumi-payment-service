@@ -47,8 +47,9 @@ export function DepositPeriodHint() {
       </p>
       <p>
         A deposit is ignored until it is older than this period, so money added to a head is
-        confirmed but unusable for that long. If the window passes unused, the deposit is recovered
-        back to the wallet instead.
+        confirmed but unusable for that long. If the window passes unused, the deposit stays at the
+        deposit script until you press Recover — nothing sends it back on its own, and it does not
+        come back in the fanout if the head is closed.
       </p>
     </InfoHint>
   );

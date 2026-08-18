@@ -20,7 +20,7 @@ import { PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { NodeRecord } from '../registry/types.js';
 import { buildHydraNodeArgs } from './args.js';
-import { waitForDrain } from './drain.js';
+import { drainReader, waitForDrain } from './drain.js';
 import { classifyDrift, driftBreachFields, measureDrift, resolveDriftThresholds, type SlotConfig } from './drift.js';
 import { planNodeAction, shouldAdoptAsRunning, type NodeObservation, type PlanLimits } from './plan.js';
 import { findProcessRunningNode, isProcessRunningNode, NodeProcessManager } from './process.js';
@@ -144,7 +144,25 @@ export class Supervisor {
 					// had succeeded — so after any host restart the operator could see
 					// a node and ask it to stop, and nothing would ever happen.
 					await this.adoptProcess(record);
-					await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Running' }));
+					// The process is adopted either way — without it the node is visible
+					// but untouchable — but the RECORD is only promoted when the node is
+					// genuinely wanted running. `shouldAdoptAsRunning` is the one place
+					// that decision lives, and bypassing it here promoted a node the
+					// operator had already asked to stop or remove: it was mid-`Draining`
+					// when the host restarted, `lastObservation` still said responsive and
+					// synced, so `isUsable()` answered true and /health advertised it for
+					// the whole of boot plus its wait in the reconcile queue — long enough
+					// for the payment service to open a head or lock funds into a node
+					// that is being taken down. Left as it is, the tick replans the stop.
+					if (shouldAdoptAsRunning({ state: 'Stopped', desired: record.desired }, { responsive: true })) {
+						await this.store.update(record.nodeId, (current) => ({ ...current, state: 'Running' }));
+					} else {
+						this.logger.info(
+							`[supervisor] ${record.nodeId} is answering but is wanted ${record.desired}${
+								record.removalRequested === true ? ' and is marked for removal' : ''
+							}; adopting the process without advertising it as usable`,
+						);
+					}
 					continue;
 				}
 				// Silence is not death. A node opens its API only once etcd has quorum
@@ -663,7 +681,7 @@ export class Supervisor {
 
 		const client = this.client(record);
 		const outcome = await waitForDrain({
-			fetchLastSeen: () => client.fetchLastSeen(),
+			fetchLastSeen: drainReader(client),
 			timeoutMs: this.config.drainTimeoutMs,
 			pollIntervalMs: 2_000,
 			sleep,

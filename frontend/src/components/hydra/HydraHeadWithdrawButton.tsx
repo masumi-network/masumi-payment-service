@@ -403,8 +403,8 @@ export function HydraHeadWithdrawButton({ headId, isOpen }: HydraHeadWithdrawBut
         <HydraNotice tone="warn">
           <p>
             Taking everything leaves no collateral, so this wallet can no longer submit results,
-            collect, or refund inside this head. The escrows already in it stay where they are and
-            become unspendable until the head is closed.
+            collect, or refund inside this head. That is why the service refuses the drain outright
+            while any escrow is still live here — settle those first, or withdraw an amount instead.
           </p>
           <div className="mt-2 flex gap-2">
             <Button

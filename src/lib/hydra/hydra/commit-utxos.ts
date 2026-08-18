@@ -3,6 +3,15 @@ import type { UTxO } from '@meshsdk/core';
 export type CommitUtxoSelection = {
 	commitUtxos: UTxO[];
 	excludedUtxos: UTxO[];
+	/**
+	 * Whether the selection actually covers the target it was given.
+	 *
+	 * Only meaningful for `selectCommitUtxosUpToTarget`, and reported because
+	 * the unreachable case is not an empty selection — it is EVERY matching
+	 * UTxO, best-effort. A caller that reads "non-empty" as "worked" therefore
+	 * commits the whole wallet balance when the target is out of reach.
+	 */
+	reachedTarget?: boolean;
 };
 
 /**
@@ -11,8 +20,14 @@ export type CommitUtxoSelection = {
  * - `ada-only`: plain UTxOs holding ONLY lovelace (no native assets).
  * - `{ unit }`: plain UTxOs that contain the given native-asset unit
  *   (`policyId + assetNameHex`).
+ * - `{ unit, exclusive: true }`: as above, but only UTxOs carrying nothing
+ *   else. Hydra commits WHOLE UTxOs, and a wallet's change consolidates —
+ *   so a UTxO holding the target token alongside an agent's registry NFT is
+ *   routinely the smallest one covering the amount, and committing it takes
+ *   the NFT into the head with it, off L1 and out of reach of any registry
+ *   update until someone decommits or closes the head.
  */
-export type CommitUtxoFilter = 'all' | 'ada-only' | { unit: string };
+export type CommitUtxoFilter = 'all' | 'ada-only' | { unit: string; exclusive?: boolean };
 
 /**
  * Hydra's commit codec cannot faithfully carry datum or reference-script
@@ -31,10 +46,20 @@ function containsUnit(utxo: UTxO, unit: string): boolean {
 	return utxo.output.amount.some((asset) => asset.unit.toLowerCase() === target);
 }
 
+/** Holds the target unit and nothing else beyond lovelace. */
+function containsOnlyUnit(utxo: UTxO, unit: string): boolean {
+	const target = unit.toLowerCase();
+	if (!containsUnit(utxo, unit)) return false;
+	return utxo.output.amount.every((asset) => {
+		const assetUnit = asset.unit.toLowerCase();
+		return assetUnit === 'lovelace' || assetUnit === target;
+	});
+}
+
 function matchesFilter(utxo: UTxO, filter: CommitUtxoFilter): boolean {
 	if (filter === 'all') return true;
 	if (filter === 'ada-only') return hasOnlyLovelace(utxo);
-	return containsUnit(utxo, filter.unit);
+	return filter.exclusive === true ? containsOnlyUnit(utxo, filter.unit) : containsUnit(utxo, filter.unit);
 }
 
 /**
@@ -107,6 +132,7 @@ export function selectCommitUtxosUpToTarget(
 		return {
 			commitUtxos,
 			excludedUtxos: [...excludedUtxos, ...matching.filter((utxo) => !onlyChosen.has(utxo))],
+			reachedTarget: true,
 		};
 	}
 
@@ -117,5 +143,9 @@ export function selectCommitUtxosUpToTarget(
 		accumulated += unitAmount(utxo, target.unit);
 	}
 	const chosen = new Set(commitUtxos);
-	return { commitUtxos, excludedUtxos: [...excludedUtxos, ...matching.filter((utxo) => !chosen.has(utxo))] };
+	return {
+		commitUtxos,
+		excludedUtxos: [...excludedUtxos, ...matching.filter((utxo) => !chosen.has(utxo))],
+		reachedTarget: accumulated >= target.amount,
+	};
 }

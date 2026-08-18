@@ -32,6 +32,16 @@ const logger: SupervisorLogger = {
 	error: (message) => console.error(`${new Date().toISOString()} [error] ${message}`),
 };
 
+/**
+ * The acquired data-volume lease, published for the top-level failure handler.
+ *
+ * The heartbeat keeps it fresh from the moment `acquire()` returns, so a
+ * failure after that point exits still holding it — and the restarted container
+ * then reports a second host that does not exist for the whole staleness
+ * window instead of the real cause.
+ */
+const heldLease: { lock: HostLock | null } = { lock: null };
+
 async function main(): Promise<void> {
 	// Installed before anything can spawn a hydra-node. `supervisor.boot()` below
 	// adopts and starts nodes, and until the real handlers exist a signal there
@@ -86,6 +96,7 @@ async function main(): Promise<void> {
 	};
 	const lock = new HostLock(config.dataDir, os.hostname(), Date.now, (reason) => handleLeaseLoss(reason));
 	await lock.acquire();
+	heldLease.lock = lock;
 
 	const store = new NodeRegistryStore(config.dataDir);
 	const exchange = new ExchangeStore(config.dataDir);
@@ -281,5 +292,17 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
 	logger.error(`[host] failed to start: ${(error as Error).message}`);
-	process.exit(1);
+	// The lease outlives this process unless it is handed back, and the heartbeat
+	// keeps it fresh from the moment `acquire()` returns — so a failure AFTER
+	// that point (a damaged node.json, any registry I/O error) exits still
+	// holding it. The restarted container then cannot acquire the volume until
+	// HEARTBEAT_STALE_AFTER_MS and reports "another Hydra Host already holds
+	// /data/host.lock" on every attempt, which is a phantom: there is no second
+	// host, and the real cause is buried. The three other exit paths already
+	// release for exactly this reason; this was the fourth.
+	const held = heldLease.lock;
+	if (held === null) {
+		process.exit(1);
+	}
+	void held.release().finally(() => process.exit(1));
 });

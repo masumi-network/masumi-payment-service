@@ -53,6 +53,24 @@ export type DrainOutcome = {
 	waitedMs: number;
 };
 
+/**
+ * Forwards the drain's per-read budget to the client.
+ *
+ * Named and exported so it can be tested, because the mistake it exists to
+ * prevent is invisible: a zero-parameter `() => client.fetchLastSeen()` still
+ * satisfies this option's type — TypeScript accepts narrower arity — so the
+ * budget is computed, passed, and silently dropped, and every poll falls back
+ * to the client's own 10s default. The drain then overruns its budget by a
+ * whole request timeout and the per-node stop is 165s against the 155s the
+ * shutdown grace is sized from. A test with its own fake cannot catch it; only
+ * one over this function can.
+ */
+export function drainReader(client: {
+	fetchLastSeen: (timeoutMs?: number) => Promise<LastSeenSnapshotResponse>;
+}): (timeoutMs?: number) => Promise<LastSeenSnapshotResponse> {
+	return (timeoutMs) => client.fetchLastSeen(timeoutMs);
+}
+
 export type DrainOptions = {
 	/** `timeoutMs` bounds the individual read, so a poll cannot overrun the budget. */
 	fetchLastSeen: (timeoutMs?: number) => Promise<LastSeenSnapshotResponse>;

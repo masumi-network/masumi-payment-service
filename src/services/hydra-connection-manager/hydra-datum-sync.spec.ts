@@ -1831,7 +1831,11 @@ describe('applyDatumStateToLocalRequests', () => {
 		});
 		expect(mockHotWalletUpdate).toHaveBeenCalledWith({
 			where: { id: 'blocked-wallet', deletedAt: null },
-			data: { lockedAt: null },
+			// `lockPurpose` goes with the lock it describes: a marker left on an
+			// unlocked wallet is adopted by the next holder — a batcher, which sets
+			// only `lockedAt` — and the next `releaseHotWalletAfterL1` then frees
+			// that batcher's lock inside its build window.
+			data: { lockedAt: null, lockPurpose: null },
 		});
 		expect(mockPaymentUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({

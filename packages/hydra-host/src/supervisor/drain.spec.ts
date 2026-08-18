@@ -1,6 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import { NodeResponseError, NodeUnreachableError } from '../errors.js';
-import { isSafeToStop, waitForDrain, type LastSeenSnapshotResponse } from './drain.js';
+import { drainReader, isSafeToStop, waitForDrain, type LastSeenSnapshotResponse } from './drain.js';
 
 function clock(start = 0) {
 	let current = start;
@@ -169,5 +169,52 @@ describe('waitForDrain read budget', () => {
 
 		expect(calls).toBe(1);
 		expect(outcome).toMatchObject({ drained: false, reason: 'timeout' });
+	});
+});
+
+// The bug this pins is invisible in a type-check: a zero-parameter
+// `() => client.fetchLastSeen()` satisfies `DrainOptions.fetchLastSeen`, so the
+// budget is computed, passed and silently dropped, and every poll falls back to
+// the client's own 10s default. A drain test with its own fake cannot see it —
+// it asserts against the fake, not the wiring.
+describe('drainReader', () => {
+	it('forwards the budget the drain computed', async () => {
+		const seen: Array<number | undefined> = [];
+		const read = drainReader({
+			fetchLastSeen: (timeoutMs) => {
+				seen.push(timeoutMs);
+				return Promise.resolve({ tag: 'LastSeenSnapshot' });
+			},
+		});
+
+		await read(1_234);
+		await read();
+
+		expect(seen).toEqual([1_234, undefined]);
+	});
+
+	it('is what the drain actually calls, so a dropped budget shows up here', async () => {
+		const seen: Array<number | undefined> = [];
+		let clock = 0;
+
+		await waitForDrain({
+			fetchLastSeen: drainReader({
+				fetchLastSeen: (timeoutMs) => {
+					seen.push(timeoutMs);
+					clock += 30_000;
+					return Promise.resolve({ tag: 'SeenSnapshot' });
+				},
+			}),
+			timeoutMs: 60_000,
+			pollIntervalMs: 2_000,
+			sleep: () => {
+				clock += 2_000;
+				return Promise.resolve();
+			},
+			now: () => clock,
+		});
+
+		expect(seen[0]).toBe(60_000);
+		expect(seen.every((timeoutMs) => timeoutMs !== undefined)).toBe(true);
 	});
 });

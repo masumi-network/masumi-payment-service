@@ -39,6 +39,8 @@ export interface ConfirmedLedgerConfig {
 
 export class ConfirmedTransactionLedger {
 	private readonly _confirmedTransactions = new Map<string, HydraConfirmedTransaction>();
+	/** Running total of `_confirmedTransactions`' CBOR bytes — see `retainConfirmed`. */
+	private _retainedTransactionCborBytes = 0;
 	private readonly _unreconciledConfirmedTransactions = new Map<string, HydraConfirmedTransaction>();
 	private readonly _txCircularBuffer = new CircularBuffer<string>(10000);
 	private _currentSnapshotProducerTxIds = new Set<string>();
@@ -135,7 +137,7 @@ export class ConfirmedTransactionLedger {
 		this._currentSnapshotProducerTxIds = new Set(protectedProducerTxIds);
 		for (const txId of this._cursorPrefixProducerTxIds) {
 			if (this._currentSnapshotProducerTxIds.has(txId)) continue;
-			if (!this._unreconciledConfirmedTransactions.has(txId)) this._confirmedTransactions.delete(txId);
+			if (!this._unreconciledConfirmedTransactions.has(txId)) this.releaseConfirmed(txId);
 			this._cursorPrefixProducerTxIds.delete(txId);
 		}
 		this.trim();
@@ -249,7 +251,7 @@ export class ConfirmedTransactionLedger {
 				snapshotSequence: parsedMessage.seq,
 				snapshotTransactionIndex,
 			};
-			this._confirmedTransactions.set(tx.txId, confirmedTransaction);
+			this.retainConfirmed(confirmedTransaction);
 			if (isAfterCursor) {
 				this._txCircularBuffer.add(tx.txId);
 				this._unreconciledConfirmedTransactions.set(tx.txId, confirmedTransaction);
@@ -272,12 +274,41 @@ export class ConfirmedTransactionLedger {
 			.sort(compareConfirmedTransactions)
 			.slice(0, excess);
 		for (const transaction of oldest) {
-			this._confirmedTransactions.delete(transaction.txId);
+			this.releaseConfirmed(transaction.txId);
 			this._cursorPrefixProducerTxIds.delete(transaction.txId);
 		}
 	}
 
+	/**
+	 * Maintained, not recomputed.
+	 *
+	 * `record()` consults this twice for every new transaction, once inside
+	 * `evictReconciledForCborBudget` and once for the budget check. Scanning the
+	 * maps to answer made a replay quadratic: at the 10 000-transaction ceiling
+	 * a full replay spent seconds of unbroken synchronous work inside the history
+	 * socket's message handler, blocking every other head, every route and every
+	 * timer in the process — including the 10s `waitForPinnedLiveSession` timeout
+	 * armed by the same `connect()`. Starved past its deadline the connect
+	 * rejects, the manager retries, and the replay starts again from the
+	 * beginning against a ledger that is still full. The state that triggers it,
+	 * reconciliation falling behind, is exactly when the service can least afford
+	 * to stall.
+	 */
 	private getRetainedTransactionCborBytes(): number {
+		return this._retainedTransactionCborBytes;
+	}
+
+	/** The maintained total, for tests that check it against the slow one. */
+	get retainedTransactionCborBytes(): number {
+		return this._retainedTransactionCborBytes;
+	}
+
+	/**
+	 * The same total, computed the slow way. Exists so a test can prove the
+	 * maintained counter has not drifted from the maps it describes — the one
+	 * failure mode an incremental total has that a scan does not.
+	 */
+	computeRetainedTransactionCborBytes(): number {
 		const retainedIds = new Set([
 			...this._confirmedTransactions.keys(),
 			...this._unreconciledConfirmedTransactions.keys(),
@@ -290,6 +321,26 @@ export class ConfirmedTransactionLedger {
 		return retainedBytes;
 	}
 
+	/**
+	 * The only writers of `_confirmedTransactions`, so the counter cannot drift.
+	 * `_unreconciledConfirmedTransactions` is always a subset — every insert
+	 * writes both, and both eviction paths skip anything unreconciled — so its
+	 * own mutations change no bytes.
+	 */
+	private retainConfirmed(transaction: HydraConfirmedTransaction): void {
+		const previous = this._confirmedTransactions.get(transaction.txId);
+		if (previous) this._retainedTransactionCborBytes -= previous.cborHex.length / 2;
+		this._confirmedTransactions.set(transaction.txId, transaction);
+		this._retainedTransactionCborBytes += transaction.cborHex.length / 2;
+	}
+
+	private releaseConfirmed(txId: string): void {
+		const retained = this._confirmedTransactions.get(txId);
+		if (!retained) return;
+		this._confirmedTransactions.delete(txId);
+		this._retainedTransactionCborBytes -= retained.cborHex.length / 2;
+	}
+
 	private evictReconciledForCborBudget(requiredBytes: number, protectedProducerTxIds: ReadonlySet<string>): void {
 		let retainedBytes = this.getRetainedTransactionCborBytes();
 		if (retainedBytes + requiredBytes <= this._maxRetainedTransactionCborBytes) return;
@@ -297,7 +348,7 @@ export class ConfirmedTransactionLedger {
 			.filter(({ txId }) => !this._unreconciledConfirmedTransactions.has(txId) && !protectedProducerTxIds.has(txId))
 			.sort(compareConfirmedTransactions);
 		for (const transaction of evictable) {
-			this._confirmedTransactions.delete(transaction.txId);
+			this.releaseConfirmed(transaction.txId);
 			this._cursorPrefixProducerTxIds.delete(transaction.txId);
 			retainedBytes -= transaction.cborHex.length / 2;
 			if (retainedBytes + requiredBytes <= this._maxRetainedTransactionCborBytes) return;
@@ -306,6 +357,7 @@ export class ConfirmedTransactionLedger {
 
 	clear(): void {
 		this._confirmedTransactions.clear();
+		this._retainedTransactionCborBytes = 0;
 		this._unreconciledConfirmedTransactions.clear();
 		this._txCircularBuffer.clear();
 		this._currentSnapshotProducerTxIds.clear();

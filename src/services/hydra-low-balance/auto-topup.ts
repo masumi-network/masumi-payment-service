@@ -104,11 +104,23 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 			// is retried next cycle, which is the safe direction: a delayed top-up
 			// is an alert, a swept token is an asset the operator has lost control
 			// of. A token rule is already narrowed to its own unit.
-			const filter: CommitUtxoFilter = rule.assetUnit === 'lovelace' ? 'ada-only' : { unit: rule.assetUnit };
+			// `exclusive` for a token rule, for the same reason `ada-only` is used for
+			// a lovelace one: Hydra commits WHOLE UTxOs, and a wallet's change
+			// consolidates, so the smallest UTxO covering 600 USDM is routinely one
+			// that also carries the agent's registry NFT. Narrowing to "contains the
+			// unit" is not narrow enough — it has to be "contains the unit and
+			// nothing else".
+			const filter: CommitUtxoFilter =
+				rule.assetUnit === 'lovelace' ? 'ada-only' : { unit: rule.assetUnit, exclusive: true };
 			const result = await executeHydraTopup({
 				headId: head.id,
 				filter,
 				target: { unit: rule.assetUnit, amount: rule.topupAmount },
+				// An unreachable target commits every matching UTxO rather than
+				// failing, which for a rule firing every 30 seconds means the whole
+				// wallet balance goes into the head and the L1 fee funding for that
+				// payment source goes with it.
+				requireFullTarget: true,
 			});
 			logger.info('hydra-auto-topup: submitted low-balance top-up', {
 				ruleId: rule.id,

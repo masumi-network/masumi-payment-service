@@ -4,7 +4,6 @@ import { prisma } from '@masumi/payment-core/db';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import {
 	HydraHeadStatus,
-	HydraTopupStatus,
 	type Network,
 	OnChainState,
 	Prisma,
@@ -13,6 +12,7 @@ import {
 } from '@/generated/prisma/client';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
+import { unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
 
 const settledTerminalStates = [OnChainState.Withdrawn, OnChainState.RefundWithdrawn] as const;
 
@@ -302,10 +302,7 @@ export async function quiesceHydraHeadsForDeletion(headIds: readonly string[]): 
  * only that this service gave up on it — leaves an output that may still be
  * there.
  */
-export const unrecoveredHydraTopupWhere = {
-	depositTxHash: { not: null },
-	status: { notIn: [HydraTopupStatus.Absorbed, HydraTopupStatus.Recovered] },
-} satisfies Prisma.HydraTopupWhereInput;
+export { unrecoveredHydraTopupWhere } from '@/utils/hydra/active-work';
 
 /**
  * Refuse deletion while any of these heads still has money at a deposit script.

@@ -70,7 +70,17 @@ export function useHydraHeadBalance(headId: string | null, isOpen: boolean) {
  * split into its own UTxO and that split must confirm before the deposit can be
  * built, so this is the only way to tell progress from failure.
  */
-export function useHydraTopups(headId: string | null, isOpen: boolean) {
+/**
+ * `isOpen` no longer gates the read.
+ *
+ * A deposit the head never absorbed does not come back in the fanout — it comes
+ * back only through Recover, and recovery opens a deposit period AFTER the
+ * absorption window closes. Gating the list on the head being Open meant that an
+ * operator who closed a head while such a deposit was still in flight lost the
+ * Recover button before it ever appeared, leaving the funds at the L1 deposit
+ * script with no path back and head deletion refused for naming them.
+ */
+export function useHydraTopups(headId: string | null, _isOpen: boolean) {
   const { apiClient } = useAppContext();
 
   const query = useQuery<HydraTopup[]>({
@@ -95,7 +105,7 @@ export function useHydraTopups(headId: string | null, isOpen: boolean) {
       }
       return response.data.data.topups;
     },
-    enabled: !!apiClient && headId !== null && isOpen,
+    enabled: !!apiClient && headId !== null,
     staleTime: 5000,
     // Preparing counts as in flight, exactly as it does for withdrawals below.
     // It is the state every exact-amount deposit starts in and stays in while
@@ -159,7 +169,7 @@ export function useHydraWithdrawals(
       }
       return response.data.data.withdrawals;
     },
-    enabled: !!apiClient && headId !== null && isOpen,
+    enabled: !!apiClient && headId !== null,
     staleTime: 5000,
     // Approved counts as in flight: the funds have left the head but L1 has not
     // reported them yet, which is exactly when an operator is watching.

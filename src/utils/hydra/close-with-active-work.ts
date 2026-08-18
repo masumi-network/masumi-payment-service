@@ -55,12 +55,28 @@ export function describeCloseWithActiveWork(
 	contestationPeriodSeconds: bigint | number,
 	pendingL2Transactions: number,
 	activeEscrows: number,
+	unrecoveredDeposits = 0,
 ): string {
 	const held: string[] = [];
 	if (activeEscrows > 0) held.push(`${countPhrase(activeEscrows, 'escrow')} still holding funds`);
 	if (pendingL2Transactions > 0) held.push(`${countPhrase(pendingL2Transactions, 'transaction')} still in flight`);
+	if (unrecoveredDeposits > 0) {
+		held.push(`${countPhrase(unrecoveredDeposits, 'deposit')} the head has not taken`);
+	}
 
 	const wait = describeDuration(Number(contestationPeriodSeconds));
+
+	// Deposits are called out separately because closing does NOT settle them.
+	// An unabsorbed deposit is not part of the fanout: it returns only through
+	// Recover, which needs a live session for this head, so a close leaves the
+	// money at the deposit script with nothing left able to ask for it back.
+	const deposits =
+		unrecoveredDeposits > 0
+			? `\n\nThe ${unrecoveredDeposits === 1 ? 'deposit' : 'deposits'} will NOT come back in the fanout. ` +
+				`An unabsorbed deposit returns only through Recover, which needs this head's node session — so ` +
+				`recover ${unrecoveredDeposits === 1 ? 'it' : 'them'} before closing, or the funds stay at the ` +
+				`deposit script.`
+			: '';
 
 	return (
 		`This head has ${held.join(' and ')}.\n\n` +
@@ -68,6 +84,6 @@ export function describeCloseWithActiveWork(
 		`contestation period of ${wait} has elapsed, and after that each escrow is settled on chain ` +
 		`separately, paying L1 fees and waiting for confirmations.\n\n` +
 		`Settling inside the head first is far quicker — each one takes about a second there and costs ` +
-		`no fees. Consider finishing them before closing.`
+		`no fees. Consider finishing them before closing.${deposits}`
 	);
 }

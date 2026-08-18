@@ -100,9 +100,17 @@ export async function ensureObservedTransaction(
 			},
 		});
 		if (existing.BlocksWallet) {
+			// `lockPurpose` goes with the lock it describes. A marker left on an
+			// unlocked wallet is adopted by the next holder — a batcher, which sets
+			// only `lockedAt` — and the next `releaseHotWalletAfterL1` then frees
+			// that batcher's lock inside its build window. Nothing today can reach
+			// this write while a healthy Hydra L1 lock is held, so this preserves a
+			// violating state rather than creating one; it is also the state
+			// `unstickPurposeLocks` can no longer see, because `lockedAt` is fresh
+			// rather than null or half an hour stale.
 			await tx.hotWallet.update({
 				where: { id: existing.BlocksWallet.id, deletedAt: null },
-				data: { lockedAt: null },
+				data: { lockedAt: null, lockPurpose: null },
 			});
 		}
 		return existing.id;
@@ -131,8 +139,9 @@ export async function releaseBlockedWallet(
 		where: { id: currentTransaction.id },
 		data: { BlocksWallet: { disconnect: true } },
 	});
+	// Cleared with the lock, for the reason given on the sibling write above.
 	await tx.hotWallet.update({
 		where: { id: currentTransaction.BlocksWallet.id, deletedAt: null },
-		data: { lockedAt: null },
+		data: { lockedAt: null, lockPurpose: null },
 	});
 }

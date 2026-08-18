@@ -4,7 +4,7 @@ import { countHydraHeadActiveWork, hasActiveWork } from '@/utils/hydra/active-wo
 type CountArgs = { where: Record<string, unknown> };
 
 /** A client that records what it was asked and answers with fixed counts. */
-function fakeClient(counts: { transactions: number; payments: number; purchases: number }) {
+function fakeClient(counts: { transactions: number; payments: number; purchases: number; topups?: number }) {
 	const calls: Record<string, CountArgs> = {};
 	const client = {
 		transaction: {
@@ -25,6 +25,12 @@ function fakeClient(counts: { transactions: number; payments: number; purchases:
 				return counts.purchases;
 			},
 		},
+		hydraTopup: {
+			count: async (args: CountArgs) => {
+				calls.hydraTopup = args;
+				return counts.topups ?? 0;
+			},
+		},
 	} as unknown as Prisma.TransactionClient;
 
 	return { client, calls };
@@ -37,6 +43,24 @@ describe('countHydraHeadActiveWork', () => {
 		expect(await countHydraHeadActiveWork(client, 'head-1')).toEqual({
 			pendingL2Transactions: 2,
 			activeEscrows: 7,
+			unrecoveredDeposits: 0,
+		});
+	});
+
+	// Closing does NOT settle these. An unabsorbed deposit is not part of the
+	// fanout — it comes back only through Recover, which needs a live session for
+	// the head — so a close waved through leaves the money at the deposit script
+	// with nothing left able to ask for it back.
+	it('counts deposits the head has neither absorbed nor returned', async () => {
+		const { client, calls } = fakeClient({ transactions: 0, payments: 0, purchases: 0, topups: 2 });
+
+		const work = await countHydraHeadActiveWork(client, 'head-1');
+
+		expect(work.unrecoveredDeposits).toBe(2);
+		expect(calls.hydraTopup.where).toEqual({
+			hydraHeadId: 'head-1',
+			depositTxHash: { not: null },
+			status: { notIn: ['Absorbed', 'Recovered'] },
 		});
 	});
 
@@ -69,8 +93,10 @@ describe('countHydraHeadActiveWork', () => {
 
 describe('hasActiveWork', () => {
 	it('is false only when the head holds nothing', () => {
-		expect(hasActiveWork({ pendingL2Transactions: 0, activeEscrows: 0 })).toBe(false);
-		expect(hasActiveWork({ pendingL2Transactions: 1, activeEscrows: 0 })).toBe(true);
-		expect(hasActiveWork({ pendingL2Transactions: 0, activeEscrows: 1 })).toBe(true);
+		expect(hasActiveWork({ pendingL2Transactions: 0, activeEscrows: 0, unrecoveredDeposits: 0 })).toBe(false);
+		expect(hasActiveWork({ pendingL2Transactions: 1, activeEscrows: 0, unrecoveredDeposits: 0 })).toBe(true);
+		expect(hasActiveWork({ pendingL2Transactions: 0, activeEscrows: 1, unrecoveredDeposits: 0 })).toBe(true);
+		// The one closing cannot settle, so it has to block the same way.
+		expect(hasActiveWork({ pendingL2Transactions: 0, activeEscrows: 0, unrecoveredDeposits: 1 })).toBe(true);
 	});
 });

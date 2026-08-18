@@ -453,17 +453,46 @@ export function summarizeDistributedUtxo(
 	for (const entry of Object.values(distributed)) {
 		for (const [policyId, held] of Object.entries(entry.value)) {
 			if (policyId === 'lovelace') {
-				lovelace += BigInt(held as HydraAssetQuantity);
+				const quantity = toAssetQuantity(held as HydraAssetQuantity);
+				if (quantity === null) return undefined;
+				lovelace += quantity;
 				continue;
 			}
 			if (typeof held !== 'object') continue;
-			for (const [assetName, quantity] of Object.entries(held)) {
+			for (const [assetName, held0] of Object.entries(held)) {
+				const quantity = toAssetQuantity(held0);
+				if (quantity === null) return undefined;
 				const unit = `${policyId}${assetName}`;
-				assets[unit] = (BigInt(assets[unit] ?? '0') + BigInt(quantity)).toString();
+				assets[unit] = (BigInt(assets[unit] ?? '0') + quantity).toString();
 			}
 		}
 	}
 	return { lovelace, assets };
+}
+
+/**
+ * A quantity this summary can add up, or null.
+ *
+ * `hydraAssetQuantitySchema` admits numbers, strings and bigints on purpose:
+ * `json-bigint` hands back different types depending on magnitude, and refusing
+ * one of them would make `DecommitFinalized` unparseable — which, since history
+ * replays from the beginning on every reconnect, rejects that frame forever and
+ * takes every L2 operation on the head down with it. That deliberate width is
+ * exactly why a bare `BigInt()` here is wrong: a non-integral number or a string
+ * that is not a number throws inside the replay's try, and the frame the schema
+ * was widened to accept wedges the head anyway. An unreadable quantity drops the
+ * whole summary instead — it is reporting detail, and reporting nothing is
+ * recoverable in a way a permanently rejected history is not.
+ */
+function toAssetQuantity(value: HydraAssetQuantity): bigint | null {
+	if (typeof value === 'bigint') return value;
+	if (typeof value === 'number') return Number.isSafeInteger(value) ? BigInt(value) : null;
+	if (!/^-?\d+$/.test(value.trim())) return null;
+	try {
+		return BigInt(value.trim());
+	} catch {
+		return null;
+	}
 }
 
 /**

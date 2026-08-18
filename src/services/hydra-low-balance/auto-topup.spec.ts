@@ -62,10 +62,16 @@ describe('runHydraAutoTopupCycle', () => {
 			headId: 'head-1',
 			filter: 'ada-only',
 			target: { unit: 'lovelace', amount: 100_000_000n },
+			requireFullTarget: true,
 		});
 	});
 
-	it('uses a token unit filter for a token rule', async () => {
+	// Narrowing to "contains the unit" is not narrow enough. Hydra commits WHOLE
+	// UTxOs and a wallet's change consolidates, so the smallest UTxO covering the
+	// amount is routinely one that also carries the agent's registry NFT — which
+	// the deposit would then take into the head, off L1, out of reach of any
+	// registry update until a decommit or a close.
+	it('uses an exclusive token filter for a token rule', async () => {
 		const unit = 'cc'.repeat(28) + '0014df10';
 		mockFindMany.mockResolvedValue([rule({ assetUnit: unit, topupAmount: 500n })]);
 
@@ -73,8 +79,9 @@ describe('runHydraAutoTopupCycle', () => {
 
 		expect(mockExecuteHydraTopup).toHaveBeenCalledWith({
 			headId: 'head-1',
-			filter: { unit },
+			filter: { unit, exclusive: true },
 			target: { unit, amount: 500n },
+			requireFullTarget: true,
 		});
 	});
 

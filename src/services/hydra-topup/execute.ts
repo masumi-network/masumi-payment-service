@@ -47,6 +47,14 @@ export type ExecuteHydraTopupParams = {
 	/** Which plain wallet UTxOs to draw from. */
 	filter: CommitUtxoFilter;
 	/**
+	 * Refuse rather than commit a best-effort shortfall.
+	 *
+	 * Set by the unattended paths. An operator asking for a top-up by hand has
+	 * chosen the amount and can see the wallet; a rule firing every 30 seconds
+	 * has done neither.
+	 */
+	requireFullTarget?: boolean;
+	/**
 	 * Bound the top-up to the minimal whole-UTxO set reaching this amount of the
 	 * given asset (auto-topup). Omit to commit every matching UTxO (manual top-up).
 	 */
@@ -263,6 +271,20 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 				? selectCommitUtxosUpToTarget(utxos, params.filter, params.target)
 				: selectCommitUtxos(utxos, params.filter);
 			commitUtxos = selection.commitUtxos;
+			// An unreachable target does not produce an empty selection — it
+			// produces EVERY matching UTxO, best effort. For an operator who asked
+			// for that, taking what there is is the useful answer. For an unattended
+			// rule it is not: a 500 ADA top-up against a wallet holding 240 ADA in
+			// small UTxOs commits all of it, and the wallet that pays the L1 fees
+			// for collections, results and refunds is left empty until someone
+			// decommits or closes the head.
+			if (params.requireFullTarget === true && selection.reachedTarget !== true) {
+				throw createHttpError(
+					400,
+					'The wallet does not hold enough in matching UTxOs to cover this top-up. Fund it before topping up, ' +
+						'rather than moving everything it has left into the head',
+				);
+			}
 			if (commitUtxos.length === 0) {
 				const describedFilter =
 					params.filter === 'ada-only'

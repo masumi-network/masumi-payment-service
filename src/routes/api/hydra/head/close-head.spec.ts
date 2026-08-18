@@ -11,6 +11,7 @@ const mockQueryRaw = jest.fn() as AnyMock;
 const mockTransactionCount = jest.fn() as AnyMock;
 const mockPaymentCount = jest.fn() as AnyMock;
 const mockPurchaseCount = jest.fn() as AnyMock;
+const mockTopupCount = jest.fn() as AnyMock;
 const mockClaimClose = jest.fn() as AnyMock;
 const mockFindHead = jest.fn() as AnyMock;
 const mockUpdateHead = jest.fn() as AnyMock;
@@ -25,6 +26,7 @@ const transactionClient = {
 	transaction: { count: mockTransactionCount },
 	paymentRequest: { count: mockPaymentCount },
 	purchaseRequest: { count: mockPurchaseCount },
+	hydraTopup: { count: mockTopupCount },
 	hydraHead: { updateMany: mockClaimClose },
 };
 
@@ -93,6 +95,7 @@ beforeEach(() => {
 	mockTransactionCount.mockResolvedValue(0);
 	mockPaymentCount.mockResolvedValue(0);
 	mockPurchaseCount.mockResolvedValue(0);
+	mockTopupCount.mockResolvedValue(0);
 	mockClaimClose.mockResolvedValue({ count: 1 });
 	mockFindHead.mockResolvedValue(openHead);
 	mockUpdateHead.mockResolvedValue(openHead);
@@ -158,6 +161,33 @@ describe('beginHydraHeadClose', () => {
 
 	// Without the acknowledgement the refusal stands, and says what closing would
 	// do rather than only that it refused.
+	// Closing does NOT settle a deposit the head never absorbed: it is not part
+	// of the fanout, and it comes back only through Recover, which needs a live
+	// session for this head. Waved through, the money stays at the L1 deposit
+	// script with nothing left able to ask for it back — and head deletion is
+	// then refused for naming it.
+	it('refuses an unacknowledged close while a deposit is still outstanding', async () => {
+		mockTopupCount.mockResolvedValue(1);
+
+		await expect(beginHydraHeadClose('head-1')).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockClaimClose).not.toHaveBeenCalled();
+		expect(mockTopupCount).toHaveBeenCalledWith({
+			where: {
+				hydraHeadId: 'head-1',
+				depositTxHash: { not: null },
+				status: { notIn: ['Absorbed', 'Recovered'] },
+			},
+		});
+	});
+
+	it('says the deposit will not come back in the fanout', async () => {
+		mockTopupCount.mockResolvedValue(1);
+
+		await expect(beginHydraHeadClose('head-1')).rejects.toMatchObject({
+			message: expect.stringContaining('NOT come back in the fanout'),
+		});
+	});
+
 	it('says what closing would cost when it refuses', async () => {
 		mockPaymentCount.mockResolvedValue(71);
 

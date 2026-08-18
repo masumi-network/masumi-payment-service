@@ -453,3 +453,45 @@ Latent rather than live — the only caller discards the value — so it is reco
 here as well as fixed: nothing misbehaved, but `const { depositTxHash } = await
 topupHydraHead(...)` type-checked and was `undefined` at runtime, which is the
 kind of defect that only surfaces when someone trusts the type.
+
+## Round 11
+
+**A round-10 fix that did not land.** Worth recording as a process note rather
+than a defect: the drain's per-poll budget was added to `waitForDrain` and to
+`NodeClient.fetchLastSeen`, and the call site in `stop()` was left as
+`() => client.fetchLastSeen()`. TypeScript accepts the narrower arity, the
+drain's own test asserted against its own fake, and the whole thing read as
+landed while every poll still used the client's 10s default. The wiring now goes
+through a named `drainReader`, which exists so a test can cover the join rather
+than each side of it.
+
+**Two schema-width decisions that had to be paid for at the consumer.** Both
+`hydraTransactionSchema` and `hydraAssetQuantitySchema` are deliberately wide so
+a frame a newer node emits cannot wedge a replay. In each case the width was
+correct and the consumer was not: the transaction map retained unmodelled fields
+against a budget charged from `cborHex` alone (round 9b), and the decommit
+summary called a bare `BigInt()` on a value the schema admits as any string. A
+widened schema is only half a decision — the reader has to be able to survive
+everything the schema now lets through, and on the replay path "throws" and
+"rejects" have the same permanent consequence.
+
+**The deposits list was gated on the head being Open, and the close admission did
+not know about deposits at all.** Together those stranded money with no UI path
+back: an unabsorbed deposit is not part of the fanout, recovery opens a whole
+deposit period AFTER absorption closes, and the Recover button lived inside a
+panel that unmounted the moment the head left Open. An operator who closed a head
+while a deposit was in flight therefore lost the affordance before it had ever
+appeared — and head deletion then refused, naming an action the admin no longer
+offered. The list is no longer status-gated (only the Add-funds form is), and
+`countHydraHeadActiveWork` now counts unrecovered deposits so the close is
+refused by default and says why.
+
+**Two UI claims that described consequences the server does not allow.** The
+deposit hint said an unabsorbed deposit "is recovered back to the wallet" — no
+code path initiates a recovery; the reconciler only observes one an operator
+asked for. The drain warning said live escrows "become unspendable until the head
+is closed" — `executeHydraDecommit` refuses the drain outright while any escrow
+is live, so the stated consequence cannot occur. Both are recorded because the
+failure mode is the same and is easy to reintroduce: copy that describes what the
+code used to do, or what someone assumed it did, reads as authoritative to the
+operator making the decision.

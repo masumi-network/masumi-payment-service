@@ -399,10 +399,30 @@ export function HydraHeadTopupButton({ headId, isOpen }: HydraHeadTopupButtonPro
   const [customUnit, setCustomUnit] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Only the head being Open matters. Requiring a prior commit hid the button
-  // on exactly the heads that need it: one opened with an empty commit has no
-  // funds and no other way to get them.
-  if (!isOpen) return null;
+  // Only the head being Open matters for ADDING funds. Requiring a prior commit
+  // hid the button on exactly the heads that need it: one opened with an empty
+  // commit has no funds and no other way to get them.
+  //
+  // The LIST is not gated the same way. A deposit the head never absorbed does
+  // not come back in the fanout, only through Recover — and recovery opens a
+  // deposit period after the absorption window closes. Returning null here for a
+  // head that is no longer Open took the Recover button away before it had ever
+  // appeared, and the funds then sat at the L1 deposit script with no path back,
+  // while head deletion was refused for naming them.
+  if (!isOpen) {
+    return (
+      <HydraTopupList
+        headId={headId}
+        isOpen={false}
+        network={network}
+        onRetry={() => {
+          toast.info(
+            'Open the head again to add funds. Deposits already in flight can still be recovered here.',
+          );
+        }}
+      />
+    );
+  }
 
   const adaLabel = network?.toLowerCase() === 'mainnet' ? 'ADA' : 'tADA';
 

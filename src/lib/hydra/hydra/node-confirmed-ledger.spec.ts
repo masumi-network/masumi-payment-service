@@ -79,3 +79,75 @@ describe('ConfirmedTransactionLedger lookups', () => {
 		expect(ledger.getAllConfirmedSorted()).toEqual([]);
 	});
 });
+
+// An incremental total has one failure mode a scan does not: drifting from the
+// maps it describes. Every path that adds or removes a retained transaction is
+// walked here and the counter is checked against the slow computation, because
+// a counter that reads low silently disables the CBOR budget and one that reads
+// high refuses evidence the head needs.
+describe('ConfirmedTransactionLedger retained-byte accounting', () => {
+	function recordingLedger(): {
+		ledger: ConfirmedTransactionLedger;
+		retain: (tx: HydraConfirmedTransaction) => void;
+		release: (txId: string) => void;
+	} {
+		const ledger = new ConfirmedTransactionLedger({
+			maxUnreconciledTransactions: 100,
+			maxRetainedTransactionCborBytes: 1024 * 1024,
+		});
+		const internal = ledger as unknown as {
+			retainConfirmed: (tx: HydraConfirmedTransaction) => void;
+			releaseConfirmed: (txId: string) => void;
+		};
+		return {
+			ledger,
+			retain: (tx) => internal.retainConfirmed(tx),
+			release: (txId) => internal.releaseConfirmed(txId),
+		};
+	}
+
+	it('matches the slow computation as transactions are retained and released', () => {
+		const { ledger, retain, release } = recordingLedger();
+
+		retain(confirmed('aa', 1, 0));
+		retain(confirmed('bb', 1, 1));
+		retain(confirmed('cc', 2, 0));
+		expect(ledger.retainedTransactionCborBytes).toBe(ledger.computeRetainedTransactionCborBytes());
+		expect(ledger.retainedTransactionCborBytes).toBe(24);
+
+		release('bb');
+		expect(ledger.retainedTransactionCborBytes).toBe(ledger.computeRetainedTransactionCborBytes());
+		expect(ledger.retainedTransactionCborBytes).toBe(16);
+	});
+
+	it('does not double-count a transaction recorded twice', () => {
+		const { ledger, retain } = recordingLedger();
+
+		retain(confirmed('aa', 1, 0));
+		retain(confirmed('aa', 1, 0));
+
+		expect(ledger.retainedTransactionCborBytes).toBe(ledger.computeRetainedTransactionCborBytes());
+		expect(ledger.retainedTransactionCborBytes).toBe(8);
+	});
+
+	it('does not subtract for a release of something it never held', () => {
+		const { ledger, retain, release } = recordingLedger();
+
+		retain(confirmed('aa', 1, 0));
+		release('zz');
+		release('zz');
+
+		expect(ledger.retainedTransactionCborBytes).toBe(ledger.computeRetainedTransactionCborBytes());
+		expect(ledger.retainedTransactionCborBytes).toBe(8);
+	});
+
+	it('returns to zero when the ledger is cleared', () => {
+		const { ledger, retain } = recordingLedger();
+
+		retain(confirmed('aa', 1, 0));
+		ledger.clear();
+
+		expect(ledger.retainedTransactionCborBytes).toBe(0);
+		expect(ledger.computeRetainedTransactionCborBytes()).toBe(0);
+	});
+});

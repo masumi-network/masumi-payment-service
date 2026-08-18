@@ -78,6 +78,7 @@ export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscr
 								head.contestationPeriod,
 								activeWork.pendingL2Transactions,
 								activeWork.activeEscrows,
+								activeWork.unrecoveredDeposits,
 							),
 						);
 					}

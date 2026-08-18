@@ -68,8 +68,10 @@ export async function reserveAndSubmitHydraTopup<T>(
 	try {
 		// The row already exists: it was created when the operator asked, so the
 		// work would be visible while the pre-split confirmed. What happens here is
-		// the promotion that binds it to a real deposit — and the unique constraint
-		// on the hash still does the reservation work it always did.
+		// the promotion that binds it to a real deposit. The reservation work is done
+		// by `HydraTopup_one_pending_per_participant_key`, the partial unique index
+		// on `hydraLocalParticipantId WHERE status = 'Pending'` — not by anything on
+		// the hash, which has no unique constraint.
 		const promoted = await prisma.hydraTopup.update({
 			where: { id: reservation.topupId },
 			data: {
