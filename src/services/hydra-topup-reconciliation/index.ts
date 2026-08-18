@@ -218,7 +218,11 @@ export async function reconcilePendingHydraTopups(): Promise<void> {
 					// unconfirmed — and a batcher then builds over the carve's inputs.
 					//
 					// One deposit, one releaser: the commit reservation owns this lock.
-					const isCommitDisplayRow = candidate.LocalParticipant.commitTxHash === candidate.depositTxHash;
+					// Read off the row. Deriving it from `LocalParticipant.commitTxHash` meant
+					// the guard stopped holding the moment a cleared commit was retried under a
+					// new hash — and it is exactly then, resolving the abandoned commit's row,
+					// that this would free the retry's lock.
+					const isCommitDisplayRow = candidate.isInitialCommit;
 					if (!isCommitDisplayRow) {
 						// The top-up holds this wallet from its claim until the deposit it
 						// submitted stops being outstanding, which is here. Releasing when

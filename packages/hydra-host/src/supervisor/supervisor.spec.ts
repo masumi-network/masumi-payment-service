@@ -416,6 +416,40 @@ describe('Supervisor shutdown', () => {
 		expect((await store.read(damaged.nodeId))?.state).toBe('Stopped');
 	}, 45_000);
 
+	// `isRunning` answers "do I hold a handle?", not "is a process running?". A
+	// SIGTERM that lands before boot has adopted the fleet, and an entry
+	// `revalidateAdopted` drops, both leave a live node with no handle — and the
+	// drain skipped it, so `stop`, which re-adopts by pid, was never reached. The
+	// host then logged "all nodes drained" and exited 0 while the runtime
+	// SIGKILLed a node mid-round.
+	it('drains a running node this host never adopted a handle for', async () => {
+		const config = {
+			...loadHostConfig(env),
+			dataDir,
+			hydraNodeBin: process.execPath,
+			drainTimeoutMs: DRAIN_TIMEOUT_MS,
+		};
+		const draining = new Supervisor(
+			config,
+			store,
+			new PortAllocator(config.ports),
+			resolveSlotConfig('preprod'),
+			silentLogger,
+		);
+
+		// Written, alive, and never booted: the supervisor holds no handle for it.
+		const orphaned = makeRecord({
+			nodeId: 'node-orphaned',
+			apiPort: await serveNodeApi(),
+			pid: spawnNodeLike(store.nodeDir('node-orphaned')).pid,
+		});
+		await store.write(orphaned);
+
+		await draining.shutdown();
+
+		expect((await store.read(orphaned.nodeId))?.state).toBe('Stopped');
+	}, 45_000);
+
 	// The shape the first attempt at this fix still got wrong. Pass 1 SKIPPED any
 	// node the tick held and left it to the pass after `await pendingTick`, which
 	// made the two passes additive whenever the tick's action was not itself a

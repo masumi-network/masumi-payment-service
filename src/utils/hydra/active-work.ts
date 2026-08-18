@@ -37,6 +37,15 @@ import { HydraTopupStatus, type Prisma, TransactionLayer, TransactionStatus } fr
  *
  * Stated as an exclusion rather than an allow-list: a status added later should
  * block a delete until someone has thought about it, not slip past this.
+ *
+ * The deposit UI reads the same status differently — it still offers Recover on
+ * a Failed row, on the grounds that a lagging or rolled-back chain view looks
+ * exactly like an absence — and that is not a contradiction, because the two
+ * answer for different points in a head's life. Recover needs a live node
+ * session for the head, and every delete path here is gated on
+ * `reconciledFinalHeadFilter`: Final, disabled, fanned out and reconciled. By
+ * then there is no session to ask, so keeping the row would not keep the
+ * remedy. While the head is live, the row is there and Recover is offered.
  */
 export const unrecoveredHydraTopupWhere = {
 	depositTxHash: { not: null },

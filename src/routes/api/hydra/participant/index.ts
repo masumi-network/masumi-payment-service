@@ -189,10 +189,17 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 	// participant with no key at all settles this.
 	const sweep = await withdrawNodeFunds(id);
 	if (sweep.code !== 'dust' && sweep.code !== 'no-key') {
+		// Four of the refusal codes report a zero balance — the funds are not the
+		// reason, something else is holding the participant — so the balance is
+		// named only when there is one. Leading with "still holds 0 lovelace" and
+		// appending the real reason made the sentence contradict itself.
+		const held =
+			sweep.balanceLovelace !== '0' ? ` It still holds ${sweep.balanceLovelace} lovelace at ${sweep.address}.` : '';
 		throw createHttpError(
 			409,
-			`Cannot delete: this participant's node still holds ${sweep.balanceLovelace} lovelace at ${sweep.address}` +
-				`${sweep.txHash ? ` (sweep ${sweep.txHash} submitted; try again once it has confirmed)` : ` — ${sweep.reason}`}`,
+			sweep.txHash
+				? `Cannot delete this participant yet.${held} A sweep (${sweep.txHash}) has been submitted; try again once it has confirmed`
+				: `Cannot delete this participant: ${sweep.reason}.${held}`,
 		);
 	}
 

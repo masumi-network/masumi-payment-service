@@ -59,8 +59,10 @@ export function HydraCommitDialog({
         <DialogHeader>
           <DialogTitle>Fund this head</DialogTitle>
           <DialogDescription>
-            This amount is split off into its own L1 transaction and put into the head. Everything
-            else in the wallet stays on L1. It comes back when the head closes.
+            This amount is split off into its own L1 transaction and deposited into the head.
+            Everything else in the wallet stays on L1. The head takes the deposit in after its
+            deposit period; if it never does, the funds wait at the deposit script and come back
+            through Recover, not through closing.
           </DialogDescription>
         </DialogHeader>
 

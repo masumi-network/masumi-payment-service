@@ -4,10 +4,11 @@ import {
 	buildInvalidPendingWalletReleaseWhere,
 	buildInvalidPendingWalletSweepWhere,
 	buildOrphanLockClearWhere,
+	buildSwapHalfStateClearWhere,
 	buildSwapUnlockWhere,
 	buildTimedOutUnlockWhere,
 	isL1PendingTransaction,
-} from './service';
+} from './lock-fences';
 
 describe('wallet-timeouts L1 cleanup boundary', () => {
 	it('selects only invalid half-state wallets whose pending transaction is L1', () => {
@@ -91,5 +92,16 @@ describe('wallet-timeouts unlock fences', () => {
 		for (const where of [buildOrphanLockClearWhere('wallet-1', CUTOFF), buildTimedOutUnlockWhere('wallet-1', CUTOFF)]) {
 			expect(where.lockedAt).toEqual({ lt: CUTOFF });
 		}
+	});
+	// The clear that used to be written by wallet id alone. A swap starting in the
+	// gap between the read and the write attaches itself to the same wallet, and
+	// clearing by id then detached a live swap from the wallet holding it.
+	it('fences the swap half-state clear on the swap it read and the absent lock', () => {
+		expect(buildSwapHalfStateClearWhere('wallet-1', 'swap-1')).toEqual({
+			id: 'wallet-1',
+			deletedAt: null,
+			lockedAt: null,
+			pendingSwapTransactionId: 'swap-1',
+		});
 	});
 });

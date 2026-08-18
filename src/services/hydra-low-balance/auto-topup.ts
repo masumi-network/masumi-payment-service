@@ -2,6 +2,7 @@ import { HydraHeadStatus, HydraTopupStatus, LowBalanceStatus } from '@/generated
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { executeHydraTopup } from '@/services/hydra-topup/execute';
+import { AUTO_TOPUP_BACKOFF_SAMPLE, evaluateAutoTopupBackoff } from '@/services/hydra-low-balance/auto-topup-backoff';
 
 /**
  * Automatic low-balance top-up. For every rule that is currently Low with
@@ -90,6 +91,30 @@ export async function runHydraAutoTopupCycle(): Promise<void> {
 						hint: 'recover the deposit from the head, or absorb it, before auto top-up can resume',
 					});
 				}
+				continue;
+			}
+
+			// Nothing above is a brake on a rule whose top-ups keep failing: a failure
+			// leaves no deposit in flight, so without this the same attempt is made every
+			// thirty seconds for as long as the rule stays Low.
+			const recentAttempts = await prisma.hydraTopup.findMany({
+				where: { hydraLocalParticipantId: rule.hydraLocalParticipantId },
+				// createdAt is attempt order. updatedAt is not: the reconciler rotates it
+				// on unresolved deposits, which would sort an old row to the front.
+				orderBy: { createdAt: 'desc' },
+				take: AUTO_TOPUP_BACKOFF_SAMPLE,
+				select: { status: true, updatedAt: true },
+			});
+			const backoff = evaluateAutoTopupBackoff(recentAttempts, new Date());
+			if (backoff.blocked) {
+				// Debug, not warn: the failures themselves are already logged as errors
+				// where they happen, and this line would otherwise repeat every cycle.
+				logger.debug('hydra-auto-topup: holding off after consecutive failures', {
+					ruleId: rule.id,
+					headId: head.id,
+					consecutiveFailures: backoff.consecutiveFailures,
+					retryAt: backoff.retryAt?.toISOString(),
+				});
 				continue;
 			}
 

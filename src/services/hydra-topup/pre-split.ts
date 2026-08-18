@@ -9,6 +9,19 @@ const CONFIRM_POLL_MS = 15_000;
 // spend its output into the deposit that follows.
 const CARVE_CONFIRMATIONS = 1;
 
+/**
+ * The floor a lovelace carve has to clear.
+ *
+ * A carve pays its amount into an output of its own, and the ledger refuses an
+ * output holding less than the minimum its size costs — about 0.86 ADA for a
+ * plain one at 4310 lovelace per byte. Below that the carve cannot be built at
+ * all, so the request fails after the wallet has been claimed and, from a
+ * low-balance rule, once every cycle for as long as the rule stays Low. One ADA
+ * is the round number above the ledger's floor; a top-up smaller than that
+ * moves less than the L1 fee it costs.
+ */
+export const MIN_CARVE_LOVELACE = 1_000_000n;
+
 export class HydraPreSplitError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -128,6 +141,11 @@ export async function carveExactUtxo(params: {
 	onCarveSubmitted?: (txHash: string) => Promise<void>;
 }): Promise<UTxO> {
 	if (params.amount <= 0n) throw new HydraPreSplitError('exact top-up amount must be positive');
+	if (params.unit === 'lovelace' && params.amount < MIN_CARVE_LOVELACE) {
+		throw new HydraPreSplitError(
+			`exact top-up amount ${params.amount} is below the ${MIN_CARVE_LOVELACE} lovelace a carved output needs`,
+		);
+	}
 
 	// Reuse before carving, for ADA only. A pure-lovelace UTxO of exactly this
 	// amount is indistinguishable from one this wallet carved a moment ago and

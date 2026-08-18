@@ -30,6 +30,7 @@ import {
 } from './node-frames';
 import { MAX_HYDRA_WS_FRAME_BYTES } from './schemas';
 import { describeProtocolDrift, detectSnapshotDrift, type ProtocolDrift } from './protocol-drift';
+import { markDriftReported } from './params-drift';
 import {
 	greetingsSnapshotMessageSchema,
 	historyHeadIsOpenMessageSchema,
@@ -489,10 +490,11 @@ export class HydraHistoryReplay {
 		const drift = detectSnapshotDrift(message);
 		if (drift.length === 0) return;
 		const fresh: ProtocolDrift[] = drift.filter((entry) =>
-			entry.fields.some((field) => !this._reportedDriftFields.has(field)),
+			// Marks every field of the entry, so the bound applies here too. An entry
+			// whose fields were all seen reports nothing, exactly as before.
+			entry.fields.map((field) => markDriftReported(this._reportedDriftFields, field)).some(Boolean),
 		);
 		if (fresh.length === 0) return;
-		for (const entry of fresh) for (const field of entry.fields) this._reportedDriftFields.add(field);
 		const description = describeProtocolDrift(fresh);
 		logger.warn(`[HydraNode] ${description}`);
 		this.host.onProtocolDrift(description);

@@ -191,12 +191,13 @@ describe('reconcilePendingHydraTopup', () => {
  * stale releaser frees THAT operation's lock while its carve is unconfirmed.
  */
 describe('reconcilePendingHydraTopups lock release attribution', () => {
-	function row(commitTxHash: string | null) {
+	function row(commitTxHash: string | null, isInitialCommit = commitTxHash === DEPOSIT_TX_HASH) {
 		return {
 			id: 'topup-1',
 			status: 'Pending',
 			depositTxHash: DEPOSIT_TX_HASH,
 			invalidHereafterSlot: INVALID_HEREAFTER_SLOT,
+			isInitialCommit,
 			LocalParticipant: {
 				walletId: 'wallet-1',
 				commitTxHash,
@@ -227,6 +228,17 @@ describe('reconcilePendingHydraTopups lock release attribution', () => {
 
 	it('leaves the release to the commit reconciler for the commit display row', async () => {
 		mockFindMany.mockResolvedValue([row(DEPOSIT_TX_HASH)]);
+
+		await reconcilePendingHydraTopups();
+
+		expect(mockRelease).not.toHaveBeenCalled();
+	});
+	// A commit whose evidence was cleared can be retried, and the participant then
+	// names the new hash. Recognising the row by that comparison meant the
+	// abandoned commit's row stopped being recognised at exactly the moment the
+	// retry was holding the wallet — and resolving it freed the retry's lock.
+	it('still leaves it alone after the commit was retried under a new hash', async () => {
+		mockFindMany.mockResolvedValue([row('ff'.repeat(32), true)]);
 
 		await reconcilePendingHydraTopups();
 

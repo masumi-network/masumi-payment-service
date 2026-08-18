@@ -1,5 +1,10 @@
-import { describe, expect, it } from '@jest/globals';
-import { canReleaseTopupWallet, outstandingOwnTopupWhere } from './wallet-release';
+import { describe, expect, it, jest } from '@jest/globals';
+
+jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
+	logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
+const { canReleaseTopupWallet, isOwnTopupOutstanding, outstandingOwnTopupWhere } = await import('./wallet-release');
 
 describe('outstandingOwnTopupWhere', () => {
 	// The scope IS the fix. Asked participant-wide, a call refused because an
@@ -43,5 +48,28 @@ describe('canReleaseTopupWallet', () => {
 		expect(
 			canReleaseTopupWallet({ outstandingOwnTopup: false, carveTxHash: 'ab'.repeat(32), depositConfirmed: true }),
 		).toBe(true);
+	});
+});
+
+describe('isOwnTopupOutstanding', () => {
+	it('answers from the probe', async () => {
+		await expect(isOwnTopupOutstanding('topup-1', async () => true)).resolves.toBe(true);
+		await expect(isOwnTopupOutstanding('topup-1', async () => false)).resolves.toBe(false);
+	});
+
+	it('has nothing to ask about when no row was created', async () => {
+		const probe = jest.fn(async () => true);
+
+		await expect(isOwnTopupOutstanding(null, probe)).resolves.toBe(false);
+		expect(probe).not.toHaveBeenCalled();
+	});
+
+	// The caller asks from a `finally`. A throw there replaces the outcome the
+	// operation actually had — a submitted deposit reported as a failure — and
+	// skips the release with it.
+	it('keeps the lock rather than throwing when the probe cannot answer', async () => {
+		await expect(
+			isOwnTopupOutstanding('topup-1', () => Promise.reject(new Error('connection terminated'))),
+		).resolves.toBe(true);
 	});
 });

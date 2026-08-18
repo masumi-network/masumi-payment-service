@@ -166,4 +166,41 @@ describe('runHydraAutoTopupCycle', () => {
 		await expect(runHydraAutoTopupCycle()).resolves.toBeUndefined();
 		expect(mockExecuteHydraTopup).toHaveBeenCalledTimes(2);
 	});
+	// A failed top-up leaves nothing in flight, so the in-flight check above is no
+	// brake at all: the same attempt was made every thirty seconds for as long as
+	// the rule stayed Low, writing a HydraTopup and a HydraHeadError each time and
+	// burying a genuinely stranded deposit's Recover button under them.
+	it('holds off after a failure instead of retrying on the next cycle', async () => {
+		mockFindMany.mockResolvedValue([rule()]);
+		mockCount
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([{ status: 'Failed', updatedAt: new Date(Date.now() - 60_000) }]);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockExecuteHydraTopup).not.toHaveBeenCalled();
+	});
+
+	it('tries again once the wait has passed', async () => {
+		mockFindMany.mockResolvedValue([rule()]);
+		mockCount
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([{ status: 'Failed', updatedAt: new Date(Date.now() - 6 * 60_000) }]);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockExecuteHydraTopup).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not hold off when the last attempt settled', async () => {
+		mockFindMany.mockResolvedValue([rule()]);
+		mockCount.mockResolvedValueOnce([]).mockResolvedValueOnce([
+			{ status: 'Absorbed', updatedAt: new Date(Date.now() - 10_000) },
+			{ status: 'Failed', updatedAt: new Date(Date.now() - 60_000) },
+		]);
+
+		await runHydraAutoTopupCycle();
+
+		expect(mockExecuteHydraTopup).toHaveBeenCalledTimes(1);
+	});
 });

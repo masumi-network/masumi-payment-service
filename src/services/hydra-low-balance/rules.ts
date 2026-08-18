@@ -1,6 +1,7 @@
 import { HydraLowBalanceRule, LowBalanceStatus } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { MIN_CARVE_LOVELACE } from '@/services/hydra-topup/pre-split';
 
 export type SerializedHydraLowBalanceRule = {
 	id: string;
@@ -46,9 +47,26 @@ function normalizeAssetUnit(assetUnit: string): string {
 	return trimmed.toLowerCase();
 }
 
-function assertTopupConfig(topupEnabled: boolean, topupAmount: bigint | null): void {
-	if (topupEnabled && (topupAmount == null || topupAmount <= 0n)) {
+/**
+ * Refused here rather than discovered every cycle.
+ *
+ * An automatic top-up carves its amount into an L1 UTxO of its own, and the
+ * ledger refuses an output below the minimum its size costs. A lovelace rule
+ * set under that floor cannot ever succeed: it fails after claiming the wallet,
+ * writes a failed top-up and a head error, and does it again on the next cycle.
+ * The operator setting the rule is the one who can fix it, and this is the only
+ * moment they are here to be told.
+ */
+function assertTopupConfig(params: { assetUnit: string; topupEnabled: boolean; topupAmount: bigint | null }): void {
+	if (!params.topupEnabled) return;
+	if (params.topupAmount == null || params.topupAmount <= 0n) {
 		throw createHttpError(400, 'topupAmount must be a positive amount when topupEnabled is set');
+	}
+	if (params.assetUnit === 'lovelace' && params.topupAmount < MIN_CARVE_LOVELACE) {
+		throw createHttpError(
+			400,
+			`topupAmount must be at least ${MIN_CARVE_LOVELACE} lovelace: a smaller top-up cannot be carved into its own UTxO`,
+		);
 	}
 }
 
@@ -82,7 +100,7 @@ export async function upsertHydraLowBalanceRule(params: {
 	if (params.thresholdAmount <= 0n) throw createHttpError(400, 'thresholdAmount must be a positive amount');
 	const topupEnabled = params.topupEnabled ?? false;
 	const topupAmount = params.topupAmount ?? null;
-	assertTopupConfig(topupEnabled, topupAmount);
+	assertTopupConfig({ assetUnit, topupEnabled, topupAmount });
 	await assertParticipantExists(params.hydraLocalParticipantId);
 
 	// Re-arm the state machine on every (re)configuration so the next crossing of

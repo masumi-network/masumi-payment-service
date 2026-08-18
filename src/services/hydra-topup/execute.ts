@@ -23,7 +23,7 @@ import {
 import { buildHydraCommitFlowDeps } from '@/routes/api/hydra/head/commit-flow-deps';
 import { assertNodeReadyForDeposit, recordHeadError, verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 import { carveExactUtxo, HydraPreSplitError } from './pre-split';
-import { canReleaseTopupWallet, outstandingOwnTopupWhere } from './wallet-release';
+import { canReleaseTopupWallet, isOwnTopupOutstanding, outstandingOwnTopupWhere } from './wallet-release';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 
 /**
@@ -89,18 +89,6 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	// and such a head could otherwise never be funded at all: the only way in is
 	// an incremental commit, which is this. `hasCommitted` describes the
 	// CollectCom that already happened, not eligibility for a deposit.
-	if (!head.headIdentifier) {
-		throw createHttpError(409, 'Cannot top up before the Hydra head identifier has been observed');
-	}
-
-	const cm = getHydraConnectionManager();
-	const hydraHead = cm.getHead(head.id);
-	if (!hydraHead) throw createHttpError(502, 'No active connection to Hydra head');
-	// Same reasoning as the initial commit: a deposit made while the node is
-	// still catching up is on chain immediately and unabsorbable until it is not,
-	// and its deadline can pass in the meantime.
-	await assertNodeReadyForDeposit(localParticipant.id);
-
 	// Hoisted so the outer catch can resolve the row it created: a Preparing row
 	// is invisible to reconciliation, which has no deposit hash to look for.
 	let preparingTopupId: string | null = null;
@@ -118,15 +106,43 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	 */
 	let depositConfirmed = false;
 
-	// The `Preparing` claim below serializes top-ups against each other. It says
-	// nothing to the payment batchers, which build from this same hot wallet and
-	// claim it before they do — so without this a collect and a carve could pick
-	// the same UTxO, and the loser's signed transaction would be rejected on
-	// chain. Held across the carve's wait for confirmation too: a UTxO spent
-	// during that wait is just as gone by the time the commit selects it.
-	await claimHotWalletForL1(localParticipant.walletId, 'top-up');
+	/**
+	 * Whether this call is holding the wallet, and so whether it may hand it back.
+	 *
+	 * The claim moved inside the try below, which put it in front of a `finally`
+	 * that releases. Releasing a lock this call never took is not a no-op: the
+	 * release is fenced on the shared `hydra-l1` marker rather than on an
+	 * operation's identity, so it would free whichever Hydra deposit DID claim the
+	 * wallet, mid-carve.
+	 */
+	let holdsWalletLock = false;
 
 	try {
+		// Inside the try, all four of them. Raised before it, none of these reached
+		// `recordHeadError`, and none created a row either — so a top-up refused
+		// because the node was still catching up, or because a batcher held the
+		// wallet, left no trace anywhere but a log line, while the endpoint had
+		// already answered "Deposit started" and the UI polled for a row that would
+		// never exist.
+		if (!head.headIdentifier) {
+			throw createHttpError(409, 'Cannot top up before the Hydra head identifier has been observed');
+		}
+		const hydraHead = getHydraConnectionManager().getHead(head.id);
+		if (!hydraHead) throw createHttpError(502, 'No active connection to Hydra head');
+		// Same reasoning as the initial commit: a deposit made while the node is
+		// still catching up is on chain immediately and unabsorbable until it is
+		// not, and its deadline can pass in the meantime.
+		await assertNodeReadyForDeposit(localParticipant.id);
+
+		// The `Preparing` claim below serializes top-ups against each other. It says
+		// nothing to the payment batchers, which build from this same hot wallet and
+		// claim it before they do — so without this a collect and a carve could pick
+		// the same UTxO, and the loser's signed transaction would be rejected on
+		// chain. Held across the carve's wait for confirmation too: a UTxO spent
+		// during that wait is just as gone by the time the commit selects it.
+		await claimHotWalletForL1(localParticipant.walletId, 'top-up');
+		holdsWalletLock = true;
+
 		let verifiedHead: Awaited<ReturnType<typeof verifyPersistedHydraHeadOnChain>>;
 		try {
 			verifiedHead = await verifyPersistedHydraHeadOnChain(head.id);
@@ -388,6 +404,11 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Topup');
 		throw error;
 	} finally {
+		// `holdsWalletLock` gates the release below. The claim now sits inside the
+		// try, so this runs for a refusal ahead of it and for a
+		// `claimHotWalletForL1` that threw because someone else holds the wallet —
+		// and the release is fenced on the shared `hydra-l1` marker rather than on
+		// this operation, so releasing there would free whichever deposit does.
 		// Held while a deposit of OURS is still unconfirmed on L1: the call returns
 		// on submission, and the inputs it spends read as unspent from Blockfrost
 		// until it lands, so a batcher that took the wallet here would build a
@@ -403,13 +424,19 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		// one whose deposit expired while the reconciler was down — the 30-second
 		// auto-top-up cycle then renews that lock indefinitely, and the payment
 		// batchers never see the wallet again.
-		const outstanding =
-			preparingTopupId === null
-				? null
-				: await prisma.hydraTopup.findFirst({
-						where: outstandingOwnTopupWhere(preparingTopupId),
-						select: { id: true },
-					});
+		//
+		// Guarded, because this runs in a `finally`: a throw here would replace the
+		// outcome the operation actually had — a submitted deposit reported as a
+		// failure, or one error reported as another — and skip the release with it.
+		// A probe that cannot answer is not an answer of "nothing outstanding", so
+		// it keeps the lock and leaves it to the stale-lock sweep.
+		const outstandingOwnTopup = await isOwnTopupOutstanding(preparingTopupId, async (topupId) => {
+			const outstanding = await prisma.hydraTopup.findFirst({
+				where: outstandingOwnTopupWhere(topupId),
+				select: { id: true },
+			});
+			return outstanding !== null;
+		});
 		// A carve that was signed is a transaction that may be in the mempool, and
 		// a failure here says nothing about that: the carve is submitted first and
 		// everything after it — waiting for its confirmation, building the deposit
@@ -418,8 +445,17 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		// batch tick build over them and lose one of the two to `BadInputsUTxO`.
 		// Nothing tracks a carve after this returns, so the lock is left for the
 		// stale-lock sweep, which frees it half an hour later.
-		if (canReleaseTopupWallet({ outstandingOwnTopup: outstanding !== null, carveTxHash, depositConfirmed })) {
-			await releaseHotWalletAfterL1(localParticipant.walletId);
+		if (holdsWalletLock && canReleaseTopupWallet({ outstandingOwnTopup, carveTxHash, depositConfirmed })) {
+			try {
+				await releaseHotWalletAfterL1(localParticipant.walletId);
+			} catch (releaseError: unknown) {
+				// Same reason: the sweep frees a lock nobody released, but nothing
+				// recovers an outcome this `finally` overwrote.
+				logger.warn('hydra-topup: could not release the wallet lock; leaving it to the stale-lock sweep', {
+					walletId: localParticipant.walletId,
+					error: releaseError instanceof Error ? releaseError.message : 'Non-error failure',
+				});
+			}
 		}
 	}
 }

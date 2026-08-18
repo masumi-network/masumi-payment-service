@@ -2047,6 +2047,18 @@ model HydraTopup {
   /// transaction is in a block.
   nodeDeadline DateTime?
 
+  /// True when this row is the head's initial commit rather than a later top-up.
+  ///
+  /// The commit handler records its commit as a deposit so an operator can see
+  /// and recover it, and both reconcilers must then leave the participant's
+  /// wallet alone for this row: the commit reconciler owns that lock, and a
+  /// second releaser frees whatever operation holds the wallet when it runs.
+  ///
+  /// Written down rather than derived from LocalParticipant.commitTxHash, which
+  /// is mutable — a cleared commit can be retried under a new hash, and the
+  /// previous commit's row then stopped being recognised.
+  isInitialCommit Boolean @default(false)
+
   /// Lovelace committed by this top-up (sum of the committed UTxOs), for display.
   committedLovelace BigInt
 

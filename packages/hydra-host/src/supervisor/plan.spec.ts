@@ -1,5 +1,11 @@
 import { describe, expect, it } from '@jest/globals';
-import { planNodeAction, shouldAdoptAsRunning, type NodeObservation, type PlanLimits } from './plan.js';
+import {
+	mayStillBeRunning,
+	planNodeAction,
+	shouldAdoptAsRunning,
+	type NodeObservation,
+	type PlanLimits,
+} from './plan.js';
 import type { NodeRecord } from '../registry/types.js';
 
 const LIMITS: PlanLimits = { maxStartAttempts: 5, escrowTtlSeconds: 3600 };
@@ -258,5 +264,30 @@ describe('operator restart outranks the unwedge check', () => {
 		const action = planNodeAction(record({ lastStopUndrained: true }), observe(), LIMITS);
 
 		expect(action.kind).toBe('Unwedge');
+	});
+});
+
+describe('mayStillBeRunning', () => {
+	// The drain asked `processes.isRunning`, which answers "do I hold a handle?"
+	// rather than "is a process running?" — so a node whose handle this host never
+	// took, or dropped, was skipped and took SIGKILL after the host exited 0.
+	it('says a node the record calls up may still be a live process', () => {
+		expect(mayStillBeRunning({ state: 'Running', pid: 4242 })).toBe(true);
+		expect(mayStillBeRunning({ state: 'Starting', pid: 4242 })).toBe(true);
+		expect(mayStillBeRunning({ state: 'Draining', pid: 4242 })).toBe(true);
+		expect(mayStillBeRunning({ state: 'Removing', pid: 4242 })).toBe(true);
+	});
+
+	// Stopping one writes `lastStopUndrained`, which schedules a stranded-round
+	// check on the next start, and Failed carries a reason a shutdown should not
+	// overwrite with a generic stop.
+	it('leaves records that are not supposed to be up alone', () => {
+		expect(mayStillBeRunning({ state: 'Stopped', pid: 4242 })).toBe(false);
+		expect(mayStillBeRunning({ state: 'PendingEscrow', pid: 4242 })).toBe(false);
+		expect(mayStillBeRunning({ state: 'Failed', pid: 4242 })).toBe(false);
+	});
+
+	it('has nothing to signal without a pid', () => {
+		expect(mayStillBeRunning({ state: 'Running', pid: undefined })).toBe(false);
 	});
 });

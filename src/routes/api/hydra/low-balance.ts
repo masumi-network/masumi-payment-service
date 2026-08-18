@@ -53,7 +53,9 @@ export const setHydraLowBalanceRuleSchemaInput = z.object({
 	thresholdAmount: amountString.describe('Alert when the in-head balance falls below this'),
 	enabled: z.boolean().optional().default(true),
 	topupEnabled: z.boolean().optional().default(false).describe('Auto top-up from the assigned funding wallet when low'),
-	topupAmount: amountString.optional().describe('Target amount an auto top-up tries to reach (whole-UTxO bounded)'),
+	topupAmount: amountString
+		.optional()
+		.describe('Exact amount deposited by each auto top-up (carved into its own L1 UTxO first)'),
 });
 
 export const setHydraLowBalanceRuleSchemaOutput = z.object({

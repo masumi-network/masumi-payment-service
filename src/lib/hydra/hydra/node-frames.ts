@@ -47,6 +47,17 @@ const MAX_HYDRA_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024;
  */
 const MAX_SUMMARIZED_DISTRIBUTED_ASSETS = 1_000;
 
+/**
+ * The ceiling of Postgres `int8`, which is what `HydraDecommit.settledLovelace`
+ * is. Nothing bounds a quantity on the way in: `hydraAssetQuantitySchema` is a
+ * bare number/string/bigint union, deliberately, because a rejected
+ * `DecommitFinalized` is rejected forever once history replays it. So a value
+ * past the column's range — or a negative one — reaches the write, the update
+ * throws, and the withdrawal stays Approved and is retried forever. The summary
+ * is reporting detail; dropping it costs the detail and nothing else.
+ */
+const MAX_SUMMARIZED_QUANTITY = (1n << 63n) - 1n;
+
 const UNSUPPORTED_PERSISTENCE_ROTATION_MESSAGE =
 	'Hydra persistence event-log rotation is unsupported because compacted replay cannot restore the authenticated head-state anchors';
 
@@ -497,13 +508,17 @@ export function summarizeDistributedUtxo(
 				const quantity = toAssetQuantity(held);
 				if (quantity === null) return undefined;
 				lovelace += quantity;
+				if (lovelace > MAX_SUMMARIZED_QUANTITY) return undefined;
 				continue;
 			}
 			if (typeof held !== 'object') continue;
 			for (const [assetName, held0] of Object.entries(held)) {
 				const quantity = toAssetQuantity(held0);
 				if (quantity === null) return undefined;
-				totals.set(`${policyId}${assetName}`, (totals.get(`${policyId}${assetName}`) ?? 0n) + quantity);
+				const unit = `${policyId}${assetName}`;
+				const total = (totals.get(unit) ?? 0n) + quantity;
+				if (total > MAX_SUMMARIZED_QUANTITY) return undefined;
+				totals.set(unit, total);
 				// Reporting detail, held in memory and persisted to
 				// `HydraDecommit.settledAssets`. The value map has no entry cap — it
 				// cannot have one, since a cap that rejects a frame is a cap that
@@ -538,6 +553,16 @@ export function summarizeDistributedUtxo(
  * recoverable in a way a permanently rejected history is not.
  */
 function toAssetQuantity(value: HydraAssetQuantity): bigint | null {
+	const quantity = readIntegerQuantity(value);
+	if (quantity === null) return null;
+	// Held value is never negative and never leaves the int64 the ledger keeps
+	// it in. Out-of-range is a value this summary cannot report rather than a
+	// frame it should refuse.
+	if (quantity < 0n || quantity > MAX_SUMMARIZED_QUANTITY) return null;
+	return quantity;
+}
+
+function readIntegerQuantity(value: HydraAssetQuantity): bigint | null {
 	if (typeof value === 'bigint') return value;
 	if (typeof value === 'number') return Number.isSafeInteger(value) ? BigInt(value) : null;
 	if (!/^-?\d+$/.test(value.trim())) return null;

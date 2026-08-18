@@ -76,4 +76,37 @@ describe('summarizeDistributedUtxo against the shapes the schema admits', () => 
 
 		expect(summarizeDistributedUtxo({ [REFERENCE]: { value } })).toBeUndefined();
 	});
+	// `settledLovelace` is a Postgres int8. A sum past its range makes the write
+	// throw, and the withdrawal stays Approved and is retried forever — the same
+	// permanence a rejected frame has, arrived at from the other side.
+	it('drops the summary rather than reporting a total the column cannot hold', () => {
+		const half = ((1n << 63n) - 1n).toString();
+
+		expect(
+			summarizeDistributedUtxo({
+				[REFERENCE]: { value: { lovelace: half } },
+				[`${'cd'.repeat(32)}#1`]: { value: { lovelace: half } },
+			}),
+		).toBeUndefined();
+	});
+
+	it('drops the summary rather than reporting a single out-of-range quantity', () => {
+		expect(summarizeDistributedUtxo({ [REFERENCE]: { value: { lovelace: (1n << 64n).toString() } } })).toBeUndefined();
+	});
+
+	it('drops the summary rather than reporting a negative quantity', () => {
+		expect(summarizeDistributedUtxo({ [REFERENCE]: { value: { lovelace: '-1' } } })).toBeUndefined();
+		expect(summarizeDistributedUtxo({ [REFERENCE]: { value: { [POLICY]: { '0014df10': -5 } } } })).toBeUndefined();
+	});
+
+	it('drops the summary rather than reporting an out-of-range asset total', () => {
+		const half = ((1n << 62n) + 1n).toString();
+
+		expect(
+			summarizeDistributedUtxo({
+				[REFERENCE]: { value: { [POLICY]: { '0014df10': half } } },
+				[`${'cd'.repeat(32)}#1`]: { value: { [POLICY]: { '0014df10': half } } },
+			}),
+		).toBeUndefined();
+	});
 });

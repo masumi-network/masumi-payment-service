@@ -22,7 +22,13 @@ import type { NodeRecord } from '../registry/types.js';
 import { buildHydraNodeArgs } from './args.js';
 import { drainReader, waitForDrain } from './drain.js';
 import { classifyDrift, driftBreachFields, measureDrift, resolveDriftThresholds, type SlotConfig } from './drift.js';
-import { planNodeAction, shouldAdoptAsRunning, type NodeObservation, type PlanLimits } from './plan.js';
+import {
+	mayStillBeRunning,
+	planNodeAction,
+	shouldAdoptAsRunning,
+	type NodeObservation,
+	type PlanLimits,
+} from './plan.js';
 import { findProcessRunningNode, isProcessRunningNode, NodeProcessManager } from './process.js';
 import { unwedgeNode } from './unwedge.js';
 
@@ -979,7 +985,14 @@ export class Supervisor {
 			while (this.inFlight.has(record.nodeId)) {
 				await sleep(100);
 			}
-			if (!this.processes.isRunning(record.nodeId)) {
+			// Re-read after that wait. The tick may have stopped this node while we
+			// waited, and the record read before the wait still says it was Draining.
+			const current = (await this.store.read(record.nodeId).catch(() => null)) ?? record;
+			// Not `isRunning` alone: that answers "do I hold a handle?", and a node this
+			// host lost the handle to — SIGTERM before boot adopted it, an entry
+			// `revalidateAdopted` dropped — is still a running process. `stop` re-adopts
+			// by pid, so reaching it is what drains that node.
+			if (!this.processes.isRunning(current.nodeId) && !mayStillBeRunning(current)) {
 				return;
 			}
 			// Same claim the tick makes, and taken the same way — checked and set
@@ -992,7 +1005,7 @@ export class Supervisor {
 			this.inFlight.add(record.nodeId);
 			attempted.add(record.nodeId);
 			try {
-				await this.stop(record, 'host shutting down');
+				await this.stop(current, 'host shutting down');
 			} catch (error) {
 				this.logger.error(`[supervisor] stopping ${record.nodeId} failed: ${(error as Error).message}`);
 			} finally {

@@ -1,8 +1,9 @@
 /**
- * The head lifecycle: init, commit, close, fanout.
+ * The head lifecycle: init and commit.
  *
- * Split from the head route module, which was past the 750-line limit. These
- * four are the endpoints that change a head's on-chain state, and they are the
+ * Split from the head route module, which was past the 750-line limit; close
+ * and fanout moved on to `settlement.ts` when this file reached it in turn.
+ * These are the endpoints that change a head's on-chain state, and they are the
  * reason the file was large: each carries the reasoning for an irreversible
  * command.
  *
@@ -511,6 +512,9 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 							hydraLocalParticipantId: localParticipant.id,
 							depositTxHash: commitTxHash,
 							invalidHereafterSlot: validatedDraft.invalidHereafterSlot,
+							// Says what this row is, so neither reconciler has to infer it from a
+							// hash the participant can later replace by retrying the commit.
+							isInitialCommit: true,
 							committedLovelace,
 							committedAssets,
 							status: HydraTopupStatus.Pending,

@@ -197,7 +197,7 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 				// Hydra operation holds the wallet by the time it runs, because
 				// `releaseHotWalletAfterL1` is fenced on a shared `lockPurpose` rather
 				// than on an operation's identity.
-				const isCommitDisplayRow = candidate.LocalParticipant.commitTxHash === candidate.depositTxHash;
+				const isCommitDisplayRow = candidate.isInitialCommit;
 				if (candidate.status === HydraTopupStatus.Pending && !isCommitDisplayRow) {
 					await releaseHotWalletAfterL1(candidate.LocalParticipant.walletId);
 				}

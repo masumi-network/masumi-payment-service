@@ -6,8 +6,15 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { debug: jest.fn(), info: jest.fn(), warn: mockWarn, error: jest.fn() },
 }));
 
-const { detectParamsDrift, describeParamsDrift, reportParamsDrift, EXPECTED_MAX_TX_SIZE, EXPECTED_TX_EXECUTION_UNITS } =
-	await import('./params-drift');
+const {
+	detectParamsDrift,
+	describeParamsDrift,
+	reportParamsDrift,
+	markDriftReported,
+	MAX_REPORTED_DRIFT_KEYS,
+	EXPECTED_MAX_TX_SIZE,
+	EXPECTED_TX_EXECUTION_UNITS,
+} = await import('./params-drift');
 
 /** The ledger we ship, as packages/hydra-host/params/preprod.json carries it. */
 function shippedParams(): Record<string, unknown> {
@@ -187,5 +194,30 @@ describe('reportParamsDrift', () => {
 		reportParamsDrift(shippedParams(), new Set<string>());
 
 		expect(mockWarn).not.toHaveBeenCalled();
+	});
+	// The keys come from the node — an unmodelled cost-model language is reported
+	// under its own name — and the set lives as long as the node object.
+	it('stops recording once a node has named more keys than the cap', () => {
+		const seen = new Set<string>();
+
+		for (let index = 0; index < MAX_REPORTED_DRIFT_KEYS + 50; index += 1) {
+			const params = shippedParams();
+			const costModels = params.costModels as Record<string, unknown>;
+			costModels[`PlutusMade${index}`] = [];
+			reportParamsDrift(params, seen);
+		}
+
+		expect(seen.size).toBe(MAX_REPORTED_DRIFT_KEYS);
+	});
+
+	it('reports a key once and refuses to record past the cap', () => {
+		const seen = new Set<string>();
+		expect(markDriftReported(seen, 'costModels.PlutusV9')).toBe(true);
+		expect(markDriftReported(seen, 'costModels.PlutusV9')).toBe(false);
+
+		for (let index = 0; index < MAX_REPORTED_DRIFT_KEYS; index += 1) markDriftReported(seen, `filler-${index}`);
+
+		expect(seen.size).toBe(MAX_REPORTED_DRIFT_KEYS);
+		expect(markDriftReported(seen, 'costModels.PlutusV10')).toBe(false);
 	});
 });

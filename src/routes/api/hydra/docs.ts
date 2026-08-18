@@ -410,10 +410,10 @@ export function registerHydraPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		path: '/hydra/head/topup',
 		summary: 'Top up additional funds into an open head. (admin access required)',
 		description:
-			"Repeatable incremental commit into an already-Open head. Commits more of the local participant's L1 wallet UTxOs (optionally filtered to ADA-only or a specific native-asset unit), reusing the same draft/validate/sign safety path as the initial commit. Each top-up is its own L1 deposit.",
+			"Repeatable incremental commit into an already-Open head, reusing the same draft/validate/sign safety path as the initial commit. Each top-up is its own L1 deposit. With `exactAmount`, that amount is first carved into its own L1 UTxO and only that UTxO is deposited, so everything else in the wallet — an agent's registry NFT included — stays on L1; this is the way to top up from a mixed wallet. Without it, Hydra commits WHOLE UTxOs, so every wallet UTxO matching `assetFilter`/`assetUnit` goes into the head.",
 		tags: TAG,
 		security: secured,
-		request: { body: jsonBody(topupInput, { headId: HEAD_ID, assetFilter: 'all' }) },
+		request: { body: jsonBody(topupInput, { headId: HEAD_ID, assetFilter: 'ada-only', exactAmount: '50000000' }) },
 		responses: {
 			// The endpoint answers as soon as the deposit is reserved; everything
 			// about its progress is read from GET /hydra/head/topup afterwards.

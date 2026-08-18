@@ -557,8 +557,7 @@ it had just taken for the full 30-minute stale window, renewed every 30 seconds
 by the auto-top-up cycle. Both are the same mistake: a fence that describes the
 situation rather than the operation.
 
-**Two hydra-host guards that only half landed.** `shouldAdoptAsRunning` (round
-11) consulted `desired`, but `requestRemoval` deliberately leaves `desired`
+**Two hydra-host guards that only half landed.** `shouldAdoptAsRunning` (round 11) consulted `desired`, but `requestRemoval` deliberately leaves `desired`
 alone — it writes `removalRequested`, because stopping the node overwrites the
 state with Draining and then Stopped and the flag is what survives that. So a
 node mid-teardown was still promoted to Running on a host restart and advertised
@@ -606,3 +605,66 @@ checks the cborHex is hex of a plausible length and not that it decodes (every
 input probed throws with a CBOR error). Three `z.strictObject` islands inside
 `hydraProtocolParametersSchema`, itself `looseObject`, are the same family: an
 additive upstream field would have failed every L2 build on the head.
+
+## Round 13
+
+Nothing was refuted this round: every finding the four reviewers raised was
+confirmed against the code and fixed. What is recorded here is the reasoning a
+later reviewer is most likely to re-open.
+
+**json-bigint throws on a long fraction, and a fallback to `JSON.parse` would
+be worse than the bug.** `parse.js` sends every literal over 15 characters to
+`BigInt()` — sign, decimal point and exponent included in that length — with no
+check for a fractional part, so `0.05770000000000` and a drift of
+`773500.891234567` both throw. Retrying with plain `JSON.parse` trades the throw
+for rounded asset quantities above 2^53 - 1, which is the one thing
+`parseHydraJson` exists to prevent. The fallback therefore lifts only the
+offending literals out of the document — a string-aware scan, so a literal
+inside a JSON string stays the string it was — parses the rest through
+json-bigint untouched, and puts the exact doubles back afterwards. A document
+that already contains the placeholder text is not rescued: it re-throws the
+original error rather than substituting something it could not unambiguously
+undo.
+
+**Bounding a value is not the same as rejecting a frame.** `summarizeDistributedUtxo`
+now drops the summary when a quantity is negative or a running total passes the
+`int8` its column is, rather than refusing the frame. Both directions were real
+outages from the same cause: an unbounded sum reaches `settledLovelace`, the
+write throws, and the withdrawal stays Approved and is retried forever — the
+permanence of a rejected frame arrived at from the other side. Same rule for the
+drift-report dedupe sets: at `MAX_REPORTED_DRIFT_KEYS` they stop recording AND
+stop reporting, because a key that cannot be recorded would otherwise be
+re-reported on every frame.
+
+**A guard that reads a mutable field is not a guard.** Both reconcilers
+recognised the commit's display row by comparing its deposit hash against
+`HydraLocalParticipant.commitTxHash`. That hash changes: a commit whose evidence
+is cleared can be retried, and the abandoned row then stops matching at exactly
+the moment the retry is holding the wallet — so resolving it released the
+retry's lock. Fixed with a column (`HydraTopup.isInitialCommit`, backfilled from
+the same comparison) rather than by splitting `lockPurpose` into commit and
+top-up values: distinct purposes would still let one commit's row release
+another commit's lock, which is the same bug in a narrower window.
+
+**Damping is part of an unattended loop, not a nicety.** `runHydraAutoTopupCycle`
+had one brake — a deposit in flight — and a failure leaves nothing in flight, so
+a rule whose top-ups keep failing retried every thirty seconds forever: ~2,880
+`HydraTopup` and `HydraHeadError` rows a day, burying a genuinely stranded
+deposit's Recover button in an unfiltered list. The backoff doubles from five
+minutes to an hour per participant, so a rule that recovers on its own still
+does, within the hour. Its companion is a floor: a lovelace top-up below the
+minimum a carved output costs could never be built, and that is now refused
+where the operator is present to be told — the rule endpoint, the top-up
+endpoint, and `carveExactUtxo` itself.
+
+**`isRunning` answers "do I hold a handle?", not "is a process running?".** The
+shutdown drain skipped any node whose handle this host did not hold, which
+`stop` would have re-adopted by pid and drained. A SIGTERM before boot has
+adopted the fleet, and an entry `revalidateAdopted` drops, both produce that
+state — and the host then logged "all nodes drained" and exited 0 while the
+runtime SIGKILLed a node mid-round. The gate could not simply be removed:
+`stop` on a genuinely stopped record writes `lastStopUndrained`, which schedules
+a stranded-round check on the next start. So it now asks the record whether the
+node is supposed to be up, re-read after the wait for the tick's hold — the
+first version of the fix stopped a node the tick had just stopped, on a record
+that still said `Draining`.

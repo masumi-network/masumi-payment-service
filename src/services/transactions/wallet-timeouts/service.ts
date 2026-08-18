@@ -9,7 +9,6 @@ import {
 	PurchasingAction,
 	PurchaseErrorType,
 	TransactionLayer,
-	type Prisma,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { retryOnSerializationConflict } from '@masumi/payment-core/db-retry';
@@ -35,84 +34,17 @@ import {
 	updateCurrentTransactionStatus,
 } from '@/services/shared';
 import { classifyUnseenPendingTx } from './dead-tx';
+import {
+	buildInvalidPendingWalletReleaseWhere,
+	buildInvalidPendingWalletSweepWhere,
+	buildOrphanLockClearWhere,
+	buildSwapHalfStateClearWhere,
+	buildSwapUnlockWhere,
+	buildTimedOutUnlockWhere,
+	isL1PendingTransaction,
+} from './lock-fences';
 
 const mutex = new Mutex();
-
-export function isL1PendingTransaction(
-	pendingTransaction: { layer: TransactionLayer } | null,
-): pendingTransaction is { layer: typeof TransactionLayer.L1 } {
-	return pendingTransaction?.layer === TransactionLayer.L1;
-}
-
-export function buildInvalidPendingWalletSweepWhere(): Prisma.HotWalletWhereInput {
-	return {
-		PendingTransaction: { layer: TransactionLayer.L1 },
-		lockedAt: null,
-		deletedAt: null,
-	};
-}
-
-export function buildInvalidPendingWalletReleaseWhere(
-	walletId: string,
-	pendingTransactionId: string,
-): Prisma.HotWalletWhereInput {
-	return {
-		id: walletId,
-		deletedAt: null,
-		lockedAt: null,
-		pendingTransactionId,
-		PendingTransaction: { layer: TransactionLayer.L1 },
-	};
-}
-
-/**
- * The compare-and-swap every unlock in this file writes through.
- *
- * Each sweep reads a batch of wallets, does work, then clears the lock — and
- * between the read and the write another holder can legitimately take the same
- * wallet. A Hydra L1 deposit is the dangerous one: it holds its wallet across a
- * full L1 confirmation and never attaches a PendingTransaction, so every
- * predicate these sweeps select on is also true of a perfectly healthy deposit
- * moments after it claims. Clearing by wallet id alone frees that deposit
- * mid-carve, hands the wallet to the batchers, and one of the two spends over
- * the same input dies on chain as BadInputsUTxO.
- *
- * Each builder therefore names the state its sweep actually observed; a write
- * that matches no row means the wallet moved on and is left alone.
- */
-export function buildSwapUnlockWhere(walletId: string, swapTransactionId: string): Prisma.HotWalletWhereInput {
-	return { id: walletId, deletedAt: null, pendingSwapTransactionId: swapTransactionId };
-}
-
-export function buildOrphanLockClearWhere(walletId: string, lockedBefore: Date): Prisma.HotWalletWhereInput {
-	return {
-		id: walletId,
-		deletedAt: null,
-		pendingTransactionId: null,
-		lockPurpose: null,
-		// The read that selected this row also required the lock to be older than
-		// the timeout, and leaving that out of the write is not a smaller fence —
-		// it is a different one. A batcher claims a wallet by setting `lockedAt`
-		// alone and attaches its PendingTransaction a moment later, so a lock
-		// taken seconds ago matches every other column here. Clearing it hands
-		// the same wallet to a second batcher mid-build, and one of the two
-		// spends over the same input dies on chain as BadInputsUTxO.
-		lockedAt: { lt: lockedBefore },
-	};
-}
-
-export function buildTimedOutUnlockWhere(walletId: string, lockedBefore: Date): Prisma.HotWalletWhereInput {
-	return {
-		id: walletId,
-		deletedAt: null,
-		pendingTransactionId: null,
-		pendingSwapTransactionId: null,
-		lockPurpose: null,
-		// See `buildOrphanLockClearWhere`: the age is part of what was observed,
-		// so it is part of what is fenced on.
-		lockedAt: { lt: lockedBefore },
-	};
-}
 
 export async function updateWalletTransactionHash() {
 	let release: MutexInterface.Releaser | null;
@@ -1629,10 +1561,18 @@ export async function updateWalletTransactionHash() {
 						);
 					}
 				}
-				await prisma.hotWallet.update({
-					where: { id: hotWallet.id, deletedAt: null },
-					data: { lockedAt: null, pendingSwapTransactionId: null },
-				});
+				if (hotWallet.pendingSwapTransactionId) {
+					const cleared = await prisma.hotWallet.updateMany({
+						where: buildSwapHalfStateClearWhere(hotWallet.id, hotWallet.pendingSwapTransactionId),
+						data: { pendingSwapTransactionId: null, lockPurpose: null },
+					});
+					if (cleared.count !== 1) {
+						logger.info('wallet-timeouts: swap half-state advanced before the guarded clear; leaving it', {
+							walletId: hotWallet.id,
+							swapTransactionId: hotWallet.pendingSwapTransactionId,
+						});
+					}
+				}
 			}
 		} catch (error) {
 			logger.error(`Error updating swap wallet transaction hash`, { error: error });

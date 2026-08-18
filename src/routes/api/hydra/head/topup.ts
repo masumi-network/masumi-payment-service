@@ -1,4 +1,5 @@
 import createHttpError from 'http-errors';
+import { MIN_CARVE_LOVELACE } from '@/services/hydra-topup/pre-split';
 import { adminAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
@@ -9,6 +10,8 @@ import { executeHydraTopup } from '@/services/hydra-topup/execute';
 import { recoverHydraDeposit } from '@/services/hydra-topup/recover';
 import { DEFAULT_PERIODS } from '@/services/hydra-invite/provisioning';
 import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
+import { assertNodeReadyForDeposit } from '@/routes/api/hydra/head';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
 
 export const topupInput = z.object({
 	headId: z.string().describe('The Hydra head to top up'),
@@ -223,13 +226,27 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 		// minutes pass before it acts, and the head can change in between.
 		const head = await prisma.hydraHead.findUnique({
 			where: { id: input.headId },
-			select: { isEnabled: true, status: true },
+			select: { isEnabled: true, status: true, headIdentifier: true, LocalParticipant: { select: { id: true } } },
 		});
 		if (!head) throw createHttpError(404, 'Hydra head not found');
 		if (!head.isEnabled) throw createHttpError(409, 'Cannot top up a disabled Hydra head');
 		if (head.status !== HydraHeadStatus.Open) {
 			throw createHttpError(409, `Cannot top up: head status is ${head.status}, expected Open`);
 		}
+		if (!head.LocalParticipant) throw createHttpError(400, 'Head has no local participant');
+		if (!head.headIdentifier) {
+			throw createHttpError(409, 'Cannot top up before the Hydra head identifier has been observed');
+		}
+		if (getHydraConnectionManager().getHead(input.headId) === null) {
+			throw createHttpError(502, 'No active connection to Hydra head');
+		}
+		// The same check the initial commit makes inline, and for the same reason: a
+		// deposit made while the node is still catching up lands on L1 immediately
+		// and is unabsorbable until it is not, so its deadline can pass while it
+		// waits. Decided in milliseconds, and the operator is the one who can act on
+		// it — answering "Deposit started" and putting "still catching up" in a log
+		// is how the admin UI came to say one thing while the API did another.
+		await assertNodeReadyForDeposit(head.LocalParticipant.id);
 
 		// `exclusive` for a token top-up. Hydra commits WHOLE UTxOs and a wallet's
 		// change consolidates, so a UTxO holding the requested token alongside an
@@ -241,6 +258,15 @@ export const topupHeadPost = adminAuthenticatedEndpointFactory.build({
 		// other asset behind in the change.
 		const filter: CommitUtxoFilter = input.assetUnit ? { unit: input.assetUnit, exclusive: true } : input.assetFilter;
 		const exact = input.exactAmount ? { unit: input.assetUnit ?? 'lovelace', amount: BigInt(input.exactAmount) } : null;
+		// The ledger refuses an output below the minimum its size costs, so a carve
+		// under the floor cannot be built. Refused here rather than after the wallet
+		// has been claimed and the caller has already been told the top-up started.
+		if (exact && exact.unit === 'lovelace' && exact.amount < MIN_CARVE_LOVELACE) {
+			throw createHttpError(
+				400,
+				`exactAmount must be at least ${MIN_CARVE_LOVELACE} lovelace: a smaller top-up cannot be carved into its own UTxO`,
+			);
+		}
 
 		// Detached deliberately. A rejection here is logged rather than returned
 		// because the caller has already been answered, and reconciliation — not

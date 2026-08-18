@@ -17,7 +17,7 @@ import { readCapabilities } from '../capabilities.js';
 import { PortExhaustedError, type PortAllocator } from '../registry/ports.js';
 import type { NodeRegistryStore } from '../registry/store.js';
 import type { ExchangeStore } from '../registry/exchange-store.js';
-import { isUsable, restartCountOf, type PeerRecord } from '../registry/types.js';
+import { isUsable, restartCountOf, type NodeRecord, type PeerRecord } from '../registry/types.js';
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
 import { isVerificationKeyCborHex } from '../keys.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
@@ -33,7 +33,7 @@ import { buildPeerAllowlist, renderNftables, resolvePeerAllowlist } from './peer
 import { registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
 import { matchRoute } from './routes.js';
-import { toPublicNode } from './serialize.js';
+import { toPublicNode, type PublicNode } from './serialize.js';
 
 const MAX_BODY_BYTES = 256 * 1024;
 
@@ -137,6 +137,8 @@ function readPeers(body: unknown): PeerRecord[] {
 
 export function createControlPlane(deps: ServerDeps): Server {
 	const { config, store, exchange, ports, supervisor, provision, logger } = deps;
+	// Bound once so every response reports the guard this host actually enforces.
+	const publicNode = (record: NodeRecord): PublicNode => toPublicNode(record, config.drift);
 	const tokens = { adminToken: config.adminToken, userToken: config.userToken };
 	const tickSupervisor = (): void => {
 		void supervisor.tick().catch((error: unknown) => {
@@ -343,7 +345,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 
 			case 'listNodes': {
 				const records = await store.list();
-				send(response, 200, { nodes: records.map(toPublicNode) });
+				send(response, 200, { nodes: records.map(publicNode) });
 				return;
 			}
 
@@ -353,7 +355,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 					send(response, 404, { error: 'no such node' });
 					return;
 				}
-				send(response, 200, toPublicNode(record));
+				send(response, 200, publicNode(record));
 				return;
 			}
 
@@ -377,7 +379,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 				);
 				// The only response that ever carries key material.
 				send(response, result.replayed ? 200 : 201, {
-					...toPublicNode(result.record),
+					...publicNode(result.record),
 					secrets: result.secrets,
 				});
 				return;
@@ -386,7 +388,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 			case 'escrowAck': {
 				const record = await acknowledgeEscrow(nodeId ?? '', provision);
 				tickSupervisor();
-				send(response, 200, toPublicNode(record));
+				send(response, 200, publicNode(record));
 				return;
 			}
 
@@ -394,7 +396,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 				const peers = readPeers(await readBody(request));
 				const record = await setPeers(nodeId ?? '', peers, provision);
 				tickSupervisor();
-				send(response, 200, toPublicNode(record));
+				send(response, 200, publicNode(record));
 				return;
 			}
 
@@ -404,21 +406,21 @@ export function createControlPlane(deps: ServerDeps): Server {
 			case 'startNode': {
 				const record = await requestStart(store, nodeId ?? '');
 				tickSupervisor();
-				send(response, 202, toPublicNode(record));
+				send(response, 202, publicNode(record));
 				return;
 			}
 
 			case 'stopNode': {
 				const record = await requestStop(store, nodeId ?? '');
 				tickSupervisor();
-				send(response, 202, toPublicNode(record));
+				send(response, 202, publicNode(record));
 				return;
 			}
 
 			case 'restartNode': {
 				const record = await requestRestart(store, nodeId ?? '');
 				tickSupervisor();
-				send(response, 202, toPublicNode(record));
+				send(response, 202, publicNode(record));
 				return;
 			}
 
@@ -426,7 +428,7 @@ export function createControlPlane(deps: ServerDeps): Server {
 				const force = new URL(request.url ?? '/', 'http://placeholder').searchParams.get('force') === 'true';
 				const record = await requestRemoval(store, nodeId ?? '', { force });
 				tickSupervisor();
-				send(response, 202, toPublicNode(record));
+				send(response, 202, publicNode(record));
 				return;
 			}
 

@@ -17,6 +17,7 @@
  * Pure and separate so both halves can be pinned without a database.
  */
 
+import { logger } from '@masumi/payment-core/logger';
 import { HydraTopupStatus, type Prisma } from '@/generated/prisma/client';
 
 /**
@@ -45,4 +46,31 @@ export function canReleaseTopupWallet(state: {
 }): boolean {
 	if (state.outstandingOwnTopup) return false;
 	return state.carveTxHash === null || state.depositConfirmed;
+}
+
+/**
+ * Whether this operation's own row is still outstanding, asked safely.
+ *
+ * The caller asks from a `finally`. A throw there replaces the outcome the
+ * operation actually had — a submitted deposit reported as a failure, or one
+ * error reported as another — so the question is asked through this, which
+ * answers rather than throws. A probe that could not answer is not an answer of
+ * "nothing outstanding": it keeps the wallet held and leaves it to the
+ * stale-lock sweep, which is half an hour of one wallet rather than two
+ * transactions over one input.
+ */
+export async function isOwnTopupOutstanding(
+	topupId: string | null,
+	probe: (topupId: string) => Promise<boolean>,
+): Promise<boolean> {
+	if (topupId === null) return false;
+	try {
+		return await probe(topupId);
+	} catch (error: unknown) {
+		logger.warn('hydra-topup: could not check whether this top-up is still outstanding; keeping the wallet lock', {
+			topupId,
+			error: error instanceof Error ? error.message : 'Non-error failure',
+		});
+		return true;
+	}
 }

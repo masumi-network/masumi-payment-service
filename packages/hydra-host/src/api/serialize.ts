@@ -8,7 +8,7 @@
  */
 
 import { restartCountOf, isUsable, type NodeRecord } from '../registry/types.js';
-import { resolveDriftThresholds } from '../supervisor/drift.js';
+import { resolveDriftThresholds, type DriftThresholds } from '../supervisor/drift.js';
 
 export type PublicNode = {
 	nodeId: string;
@@ -62,7 +62,7 @@ export type PublicNode = {
  * port is worse — it cannot be confined to loopback at all — so naming it here
  * would advertise the one port a node exposes without auth.
  */
-export function toPublicNode(record: NodeRecord): PublicNode {
+export function toPublicNode(record: NodeRecord, driftOverride?: Partial<DriftThresholds>): PublicNode {
 	const publicNode: PublicNode = {
 		nodeId: record.nodeId,
 		state: record.state,
@@ -89,7 +89,13 @@ export function toPublicNode(record: NodeRecord): PublicNode {
 		chainSynced: record.lastObservation?.chainSynced ?? null,
 		drift: record.lastObservation?.drift ?? null,
 		driftSeconds: record.lastObservation?.driftSeconds ?? null,
-		driftGuardSeconds: Math.round(resolveDriftThresholds(record.unsyncedPeriodSeconds * 1000).guardMs / 1000),
+		// The host's own override, the same one the supervisor resolves with. Left
+		// out, this reported the derived guard while the supervisor was enforcing
+		// `HYDRA_HOST_DRIFT_GUARD_MS` — so the API said a node had seconds left of
+		// a guard it had already breached.
+		driftGuardSeconds: Math.round(
+			resolveDriftThresholds(record.unsyncedPeriodSeconds * 1000, driftOverride).guardMs / 1000,
+		),
 		driftStalledSince: record.driftBreachSince ?? null,
 		lastCheckedAt: record.lastObservation?.checkedAt ?? null,
 	};

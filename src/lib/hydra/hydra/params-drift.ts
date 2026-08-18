@@ -197,9 +197,27 @@ export function describeParamsDrift(drift: readonly ParamsDrift[]): string {
  * this a single misconfigured head would repeat the same warning for every
  * transaction it ever builds.
  */
+/**
+ * How many distinct drift keys one node may have reported.
+ *
+ * The keys are node-supplied strings and the set that remembers them lives as
+ * long as the node object, so without a bound a node emitting fresh field names
+ * grows it without limit. At the cap the set stops recording, and reporting
+ * stops with it: a key that cannot be recorded would otherwise be re-reported
+ * on every frame, which is the louder half of the same problem.
+ */
+export const MAX_REPORTED_DRIFT_KEYS = 256;
+
+/** True when `key` is newly reported. Records it, up to the cap. */
+export function markDriftReported(seen: Set<string>, key: string): boolean {
+	if (seen.has(key)) return false;
+	if (seen.size >= MAX_REPORTED_DRIFT_KEYS) return false;
+	seen.add(key);
+	return true;
+}
+
 export function reportParamsDrift(params: unknown, seen: Set<string>): void {
-	const fresh = detectParamsDrift(params).filter((entry) => !seen.has(entry.key));
+	const fresh = detectParamsDrift(params).filter((entry) => markDriftReported(seen, entry.key));
 	if (fresh.length === 0) return;
-	for (const entry of fresh) seen.add(entry.key);
 	logger.warn(`[HydraNode] ${describeParamsDrift(fresh)}`);
 }

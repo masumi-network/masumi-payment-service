@@ -217,3 +217,31 @@ export function planNodeAction(record: NodeRecord, observation: NodeObservation,
 
 	return { kind: 'Idle' };
 }
+
+/**
+ * A record this host holds no process handle for that may still be a live node.
+ *
+ * The drain asked `processes.isRunning`, which answers "do I hold a handle?"
+ * rather than "is a process running?". Two ordinary things break that: a SIGTERM
+ * arriving before boot has adopted the fleet, and `revalidateAdopted` dropping
+ * an entry whose pid check it could not complete. The node was then skipped
+ * entirely — `stop`, which re-adopts by pid and would have drained it, was never
+ * reached — and the host logged "all nodes drained" and exited 0 while the
+ * runtime SIGKILLed a node mid-round.
+ *
+ * Records that are not supposed to be up are still skipped. Running `stop` on a
+ * genuinely stopped node writes `lastStopUndrained`, which schedules a
+ * stranded-round check on the next start, so a record saying Stopped or
+ * PendingEscrow is left alone. Failed keeps its reason for the same kind of
+ * reason: it is an operator-facing state, and a shutdown should not overwrite
+ * it with a generic stop.
+ */
+export function mayStillBeRunning(record: Pick<NodeRecord, 'state' | 'pid'>): boolean {
+	if (record.pid === undefined) return false;
+	return (
+		record.state === 'Starting' ||
+		record.state === 'Running' ||
+		record.state === 'Draining' ||
+		record.state === 'Removing'
+	);
+}
