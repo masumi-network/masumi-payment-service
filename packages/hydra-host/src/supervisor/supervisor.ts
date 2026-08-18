@@ -196,6 +196,14 @@ export class Supervisor {
 
 	private async runTick(): Promise<void> {
 		try {
+			// Before anything is judged running. An adopted node has no exit event,
+			// so its entry outlives it, and a reused pid makes it read as alive for
+			// good — the supervisor would then never restart a node it has actually
+			// lost. Nothing to do on a host that has not been restarted: only
+			// adopted entries are checked, and there are none.
+			for (const nodeId of await this.processes.revalidateAdopted()) {
+				this.logger.warn(`[supervisor] ${nodeId} is no longer at the pid it was adopted at; treating it as stopped`);
+			}
 			const records = await this.store.list();
 			await mapWithConcurrency(records, RECONCILE_CONCURRENCY, async (record) => {
 				if (this.inFlight.has(record.nodeId)) {

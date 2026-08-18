@@ -66,16 +66,21 @@ function toVerified(snapshot: FixtureSnapshot): VerifiedHydraSnapshot {
 			outputs.set(reference.toLowerCase(), serializeHydraSnapshotOutput(output));
 		}
 	}
-	const partitionMultiset = (source: Record<string, FixtureOutput> | null) =>
-		multiset(Object.values(source ?? {}).map((output) => serializeHydraSnapshotOutput(output)));
+	const partitionReferences = (source: Record<string, FixtureOutput> | null) =>
+		new Map(
+			Object.entries(source ?? {}).map(([reference, output]) => [
+				reference.toLowerCase(),
+				serializeHydraSnapshotOutput(output),
+			]),
+		);
 	return {
 		headId: HEAD_ID,
 		number: snapshot.number,
 		version: snapshot.version,
 		outputs,
 		outputMultiset: multiset(outputs.values()),
-		committedMultiset: partitionMultiset(snapshot.utxoToCommit),
-		decommitMultiset: partitionMultiset(snapshot.utxoToDecommit),
+		committedOutputs: partitionReferences(snapshot.utxoToCommit),
+		decommitOutputs: partitionReferences(snapshot.utxoToDecommit),
 	};
 }
 

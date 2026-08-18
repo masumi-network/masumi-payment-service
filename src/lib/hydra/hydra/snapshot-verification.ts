@@ -76,14 +76,23 @@ export type VerifiedHydraSnapshot = {
 	/** The only UTxO state committed by Hydra 2.3's accumulator (utxo ∪ commit ∪ decommit). */
 	outputMultiset: Map<string, number>;
 	/**
-	 * Value-multiset of this snapshot's PENDING incremental-commit deposits
-	 * (`utxoToCommit`). Signature-authenticated (part of the accumulator) and
-	 * L1-backed; the transition check treats these as legitimate injections so a
-	 * topped-up head still replays. Empty when no commit is pending.
+	 * This snapshot's PENDING incremental-commit deposits (`utxoToCommit`), keyed
+	 * by reference exactly like `outputs`. Signature-authenticated (part of the
+	 * accumulator) and L1-backed; the transition check treats a newly declared
+	 * one as a legitimate injection and one that leaves without being absorbed as
+	 * a legitimate removal, so a topped-up head still replays. Empty when no
+	 * commit is pending.
+	 *
+	 * Keyed by reference rather than by value because every allowance derived
+	 * from it has to name the exact output that moved. A value-keyed allowance
+	 * cannot tell an absorbed deposit from a recovered one, nor one deposit
+	 * re-declared across consecutive snapshots from two separate deposits — and
+	 * these values collide routinely: a withdrawal and a top-up of the same size
+	 * to the same wallet serialize to the same bytes.
 	 */
-	committedMultiset: Map<string, number>;
-	/** Value-multiset of this snapshot's pending decommits (`utxoToDecommit`). */
-	decommitMultiset: Map<string, number>;
+	committedOutputs: Map<string, string>;
+	/** This snapshot's pending decommits (`utxoToDecommit`), keyed like `outputs`. */
+	decommitOutputs: Map<string, string>;
 };
 
 export type VerifiedHydraFanoutReference = {
@@ -545,45 +554,19 @@ export function verifyHydraSnapshot(
 		version: frame.snapshot.version,
 		outputs,
 		outputMultiset: outputMultiset(outputs.values()),
-		committedMultiset: partitionOutputMultiset(frame.snapshot.utxoToCommit),
-		decommitMultiset: partitionOutputMultiset(frame.snapshot.utxoToDecommit),
+		committedOutputs: partitionOutputReferences(frame.snapshot.utxoToCommit),
+		decommitOutputs: partitionOutputReferences(frame.snapshot.utxoToDecommit),
 	};
 }
 
-/**
- * How many outputs of each value may leave without a transaction input.
- *
- * The sum of the two partitions, because they are disjoint by construction:
- * `canonicalSnapshotOutputs` rejects a snapshot that repeats one *reference*
- * across partitions, so a pending decommit and a pending deposit that share a
- * key here are two different outputs whose serialized values happen to be
- * identical — the ordinary shape of a pure-ADA withdrawal and a pure-ADA
- * top-up of the same size to the same wallet.
- *
- * This took the larger of the two, on the theory that one output could sit in
- * both and be counted twice. It cannot. What the maximum actually did was
- * under-count a transition where both genuinely left at once — the decommit
- * settling while the deposit passed its deadline and was recovered — and a
- * conservation walk that fails rejects that frame on every replay, which is
- * permanent: no verified session, and every L2 escrow operation on that head
- * fails closed.
- */
-function mergeMultisets(left: Map<string, number>, right: Map<string, number>): Map<string, number> {
-	const merged = new Map(left);
-	for (const [output, count] of right) {
-		merged.set(output, (merged.get(output) ?? 0) + count);
+/** Reference-keyed outputs of one signed snapshot partition (utxoToCommit/utxoToDecommit). */
+function partitionOutputReferences(partition: SnapshotUtxo | null | undefined): Map<string, string> {
+	const result = new Map<string, string>();
+	if (!partition) return result;
+	for (const [reference, output] of Object.entries(partition)) {
+		result.set(reference.toLowerCase(), serializeHydraSnapshotOutput(output));
 	}
-	return merged;
-}
-
-/** Value-multiset of one signed snapshot partition (utxoToCommit/utxoToDecommit). */
-function partitionOutputMultiset(partition: SnapshotUtxo | null | undefined): Map<string, number> {
-	if (!partition) return new Map();
-	const serialized: string[] = [];
-	for (const output of Object.values(partition)) {
-		serialized.push(serializeHydraSnapshotOutput(output));
-	}
-	return outputMultiset(serialized);
+	return result;
 }
 
 /**
@@ -645,39 +628,58 @@ export function doesHydraTransactionTransitionReachSnapshot(
 		// Incremental commits inject value into the head and decommits remove it,
 		// both OUTSIDE the confirmed-tx list. Each is authenticated by the
 		// multi-signature over the accumulator (and, for commits, an on-chain L1
-		// deposit), so a snapshot's own pending-commit outputs are legitimate
-		// injections and the previous snapshot's pending-decommit outputs are
-		// legitimate removals. Value still cannot appear or vanish through the
-		// (unauthenticated) confirmed-tx list — that path stays bound by strict
-		// created/consumed conservation and the externalInputCount tie below.
-		const injectionAllowance = current.committedMultiset;
+		// deposit), so a snapshot's pending-commit outputs are legitimate injections
+		// and pending-decommit outputs are legitimate removals. Value still cannot
+		// appear or vanish through the (unauthenticated) confirmed-tx list — that
+		// path stays bound by strict created/consumed conservation and the
+		// externalInputCount tie below.
+		//
+		// Every allowance below is derived by REFERENCE and only then counted by
+		// value: a pending entry earns slack only if that exact output actually
+		// arrived or actually left. Deriving them from the value multisets instead
+		// was wrong in three separate directions at once, all of them reachable on
+		// an ordinary head, because a withdrawal and a top-up of the same size to
+		// the same wallet serialize to identical bytes:
+		//
+		//   - a deposit still pending in BOTH snapshots was granted injection slack
+		//     on every transition it survived, even though it is already counted in
+		//     `previous`, letting an unexplained output of that value materialise;
+		//   - a deposit that was ABSORBED — the normal ending — still counted as
+		//     recoverable, letting an in-head output of that value disappear with no
+		//     transaction to account for it;
+		//   - an ordinary spend of any same-valued in-head UTxO cancelled a real
+		//     deposit's recovery allowance, rejecting a legitimate transition. That
+		//     one is the worst of the three: history replays from the beginning on
+		//     every reconnect, so a rejected frame is rejected forever — no verified
+		//     session, and every L2 escrow operation on that head fails closed.
+		//
+		// A deposit is an injection only on the snapshot that first declares it.
+		const injectionAllowance = new Map<string, number>();
+		for (const [reference, value] of current.committedOutputs) {
+			if (previous.outputs.has(reference)) continue;
+			injectionAllowance.set(value, (injectionAllowance.get(value) ?? 0) + 1);
+		}
 		// Two authenticated ways for value to leave without a transaction.
 		//
 		// A pending decommit is the obvious one. The second is a deposit that was
 		// recovered instead of absorbed: it sits in a signed snapshot's
-		// utxoToCommit, and if the increment never lands the depositor takes it
-		// back on L1 with a recoverTx, so the next snapshot drops it having never
-		// reached `utxo`. Both are covered by the multi-signature over the
-		// accumulator, and neither moves value anywhere the ledger does not
-		// already enforce: a recovered deposit returns to whoever deposited it.
+		// utxoToCommit, and if the increment never lands the depositor takes it back
+		// on L1 with a recoverTx, so the next snapshot drops it having never reached
+		// `utxo`. Both are covered by the multi-signature over the accumulator, and
+		// neither moves value anywhere the ledger does not already enforce: a
+		// recovered deposit returns to whoever deposited it.
 		//
-		// A pending commit that a transaction DID spend is excluded, because that
-		// removal is already accounted for by the transaction's input and would
-		// otherwise be counted twice — once as a spend and once as a recovery —
-		// breaking the tie below on exactly the transition where a decommit
-		// consumes the deposit it was carved from.
-		const consumedByTransactions = new Map<string, number>();
-		for (const reference of spentReferences) {
-			const value = previous.outputs.get(reference);
-			if (value === undefined) continue;
-			consumedByTransactions.set(value, (consumedByTransactions.get(value) ?? 0) + 1);
+		// An entry that is still present in `current` has not left — a deposit that
+		// was absorbed keeps its reference on its way into `utxo` — and one that a
+		// transaction spent is already accounted for by that transaction's input.
+		// Neither earns an allowance; counting either would let value vanish twice.
+		const removalAllowance = new Map<string, number>();
+		for (const pendingOutputs of [previous.decommitOutputs, previous.committedOutputs]) {
+			for (const [reference, value] of pendingOutputs) {
+				if (current.outputs.has(reference) || spentReferences.has(reference)) continue;
+				removalAllowance.set(value, (removalAllowance.get(value) ?? 0) + 1);
+			}
 		}
-		const recoverableCommits = new Map<string, number>();
-		for (const [value, count] of previous.committedMultiset) {
-			const recoverable = count - (consumedByTransactions.get(value) ?? 0);
-			if (recoverable > 0) recoverableCommits.set(value, recoverable);
-		}
-		const removalAllowance = mergeMultisets(previous.decommitMultiset, recoverableCommits);
 		const allOutputs = new Set([
 			...previous.outputMultiset.keys(),
 			...current.outputMultiset.keys(),

@@ -84,8 +84,18 @@ services:
       - ${BLOCKFROST_PROJECT_FILE:?path to a file containing the Blockfrost project id}:/run/secrets/blockfrost.txt:ro
 
     # etcd's raft WAL is intolerant of an abrupt stop mid-round. The supervisor
-    # drains before stopping, so give it room to finish.
-    stop_grace_period: 120s
+    # drains before stopping, so give it room to finish — more room than the
+    # drain itself can take, or the container is killed mid-round and every head
+    # on it comes back marked as an undrained stop.
+    #
+    # The arithmetic, with the defaults: HYDRA_HOST_DRAIN_TIMEOUT_MS is 120s and
+    # a node that ignores its SIGTERM gets another 30s before SIGKILL, so a
+    # worst-case node takes 150s; nodes drain concurrently, so that is the whole
+    # shutdown rather than per node. The Host's own guard gives up at 240s and
+    # exits, and this has to sit past that — at 120s Docker was killing the
+    # container before a single stuck node had finished draining. Raise both
+    # together if the drain timeout is raised.
+    stop_grace_period: 250s
 
     # Deliberately an unauthenticated request to an authenticated route: a 401
     # proves the server is serving AND that auth is wired, without adding a

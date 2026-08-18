@@ -1,4 +1,4 @@
-import { Transaction, type IFetcher, type MeshWallet, type UTxO } from '@meshsdk/core';
+import { Transaction, resolveTxHash, type IFetcher, type MeshWallet, type UTxO } from '@meshsdk/core';
 import type { Network } from '@/generated/prisma/client';
 import { lookupConfirmedChainTx } from '@/services/shared/chain-tx-lookup';
 import { logger } from '@masumi/payment-core/logger';
@@ -48,12 +48,22 @@ function isCarveOf(utxo: UTxO, walletAddress: string, unit: string, amount: bigi
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Build, sign and submit the L1 self-payment that carves the exact UTxO. */
+/**
+ * Build, sign and submit the L1 self-payment that carves the exact UTxO.
+ *
+ * The hash is reported BEFORE the submit, not after. A submit that throws has
+ * not necessarily failed — a timeout or a dropped response leaves a signed
+ * transaction the node may well have accepted — and the caller's decision to
+ * hold or hand back the wallet turns on whether a carve might be in flight. The
+ * hash is deterministic (blake2b of the signed body), so computing it locally
+ * names the same transaction the node will.
+ */
 async function defaultSubmitCarveTx(
 	wallet: MeshWallet,
 	walletAddress: string,
 	unit: string,
 	amount: bigint,
+	reportIntendedHash: (txHash: string) => Promise<void>,
 ): Promise<string> {
 	const tx = new Transaction({ initiator: wallet });
 	if (unit === 'lovelace') {
@@ -63,6 +73,7 @@ async function defaultSubmitCarveTx(
 	}
 	const unsigned = await tx.build();
 	const signed = await wallet.signTx(unsigned);
+	await reportIntendedHash(String(resolveTxHash(signed)).toLowerCase());
 	return await wallet.submitTx(signed);
 }
 
@@ -95,13 +106,24 @@ export async function carveExactUtxo(params: {
 	existingUtxos?: UTxO[];
 	now?: () => number;
 	sleep?: (ms: number) => Promise<void>;
-	submitCarveTx?: (wallet: MeshWallet, walletAddress: string, unit: string, amount: bigint) => Promise<string>;
+	submitCarveTx?: (
+		wallet: MeshWallet,
+		walletAddress: string,
+		unit: string,
+		amount: bigint,
+		reportIntendedHash: (txHash: string) => Promise<void>,
+	) => Promise<string>;
 	/**
-	 * Called with the carve transaction's hash the moment it is submitted.
+	 * Called with the carve transaction's hash as soon as it is known — which is
+	 * once it is signed, before it is submitted.
 	 *
-	 * The wait for it to confirm is the longest part of a top-up, and until the
-	 * hash is recorded somewhere an operator has nothing to look up: the funds
-	 * have left the wallet and no transaction is named anywhere in the product.
+	 * Two things need it. The wait for confirmation is the longest part of a
+	 * top-up, and until the hash is recorded somewhere an operator has nothing to
+	 * look up: the funds have left the wallet and no transaction is named
+	 * anywhere in the product. And the caller has to know a carve may be in
+	 * flight even when this function throws, because until that carve settles its
+	 * inputs still read as unspent and an L1 batcher handed the same wallet would
+	 * build a second transaction over them.
 	 */
 	onCarveSubmitted?: (txHash: string) => Promise<void>;
 }): Promise<UTxO> {
@@ -131,22 +153,30 @@ export async function carveExactUtxo(params: {
 	}
 
 	const submitCarveTx = params.submitCarveTx ?? defaultSubmitCarveTx;
+	// Recording the hash must never lose the carve itself, which by then is on
+	// its way to the chain either way.
+	const reportedHashes = new Set<string>();
+	const reportHash = async (hash: string): Promise<void> => {
+		if (!params.onCarveSubmitted) return;
+		reportedHashes.add(hash);
+		await params.onCarveSubmitted(hash).catch((error: unknown) => {
+			const reason = error instanceof Error ? error.message : String(error);
+			logger.warn(`hydra-pre-split: could not record carve tx ${hash}: ${reason}`);
+		});
+	};
 	let txHash: string;
 	try {
-		txHash = await submitCarveTx(params.wallet, params.walletAddress, params.unit, params.amount);
+		txHash = await submitCarveTx(params.wallet, params.walletAddress, params.unit, params.amount, reportHash);
 	} catch (error) {
 		throw new HydraPreSplitError(
 			`failed to build/submit pre-split carve tx: ${error instanceof Error ? error.message : String(error)}`,
 		);
 	}
 	logger.info('hydra-pre-split: carve tx submitted', { txHash, unit: params.unit, amount: params.amount.toString() });
-	if (params.onCarveSubmitted) {
-		// Recording it must never lose the carve itself, which is already on chain.
-		await params.onCarveSubmitted(txHash).catch((error: unknown) => {
-			const reason = error instanceof Error ? error.message : String(error);
-			logger.warn(`hydra-pre-split: could not record carve tx ${txHash}: ${reason}`);
-		});
-	}
+	// Normally already reported, from inside the submit. An injected submitter or
+	// a node that answers with a different hash than the one signed is the
+	// exception, and the row should name what actually went out.
+	if (!reportedHashes.has(txHash.toLowerCase())) await reportHash(txHash);
 
 	const now = params.now ?? Date.now;
 	const sleep = params.sleep ?? defaultSleep;

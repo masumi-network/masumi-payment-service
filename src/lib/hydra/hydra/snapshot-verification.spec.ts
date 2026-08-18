@@ -158,11 +158,15 @@ describe('Hydra 2.3 snapshot verification', () => {
 
 	// A pending decommit and a pending deposit are different outputs, and their
 	// serialized values are identical whenever a withdrawal and a top-up of the
-	// same size go to the same wallet — the ordinary shape here. Allowing only
-	// the larger of the two counted one of them as an unexplained disappearance
-	// on the transition where both left, which fails the conservation walk. That
-	// frame then rejects on every replay of the history, so the head never gets a
-	// verified session again and every L2 escrow operation on it fails closed.
+	// same size go to the same wallet — the ordinary shape here. Both left on
+	// this transition, so both are allowed; what makes that safe is that the
+	// allowance is derived per reference, so it is granted only to the exact
+	// entries that are gone from `current`.
+	//
+	// Getting this wrong in the strict direction is the expensive one: history
+	// replays from the beginning on every reconnect, so a frame rejected once is
+	// rejected forever — the head never gets a verified session again and every
+	// L2 escrow operation on it fails closed.
 	it('lets a decommit and a recovered deposit of the same value leave together', () => {
 		const decommitReference = `${'33'.repeat(32)}#0`;
 		const depositReference = `${'44'.repeat(32)}#0`;
@@ -185,8 +189,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 				[keptOutput, 1],
 				[sharedOutput, 2],
 			]),
-			committedMultiset: new Map([[sharedOutput, 1]]),
-			decommitMultiset: new Map([[sharedOutput, 1]]),
+			committedOutputs: new Map([[depositReference, sharedOutput]]),
+			decommitOutputs: new Map([[decommitReference, sharedOutput]]),
 		};
 		// The decommit settles on L1 and the deposit passes its deadline and is
 		// recovered, both without a transaction inside the head.
@@ -196,11 +200,62 @@ describe('Hydra 2.3 snapshot verification', () => {
 			version: 3,
 			outputs: new Map([[keptReference, keptOutput]]),
 			outputMultiset: new Map([[keptOutput, 1]]),
-			committedMultiset: new Map<string, number>(),
-			decommitMultiset: new Map<string, number>(),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
 		};
 
 		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(true);
+	});
+
+	// The same collision, seen from the other side. A deposit that a transaction
+	// spent must not also count as recovered, or the removal is paid for twice —
+	// but "a transaction spent it" has to mean that exact output. Matching on
+	// value instead let any ordinary spend of a same-valued in-head UTxO cancel a
+	// real deposit's recovery, and a 10 ADA in-head UTxO alongside a 10 ADA
+	// top-up is exactly what the exact-amount carve produces.
+	it('keeps a deposit recoverable when a transaction spends a different output of the same value', () => {
+		const inHeadReference = `${'11'.repeat(32)}#0`;
+		const depositReference = `${'44'.repeat(32)}#0`;
+		const sharedOutput = serializeHydraSnapshotOutput(output({ lovelace: 10_000_000 }));
+		const spentResult = serializeHydraSnapshotOutput(output({ lovelace: 9_000_000 }));
+
+		// One ordinary in-head transaction: it spends the wallet's own 10 ADA UTxO
+		// and pays 9 ADA back, the 1 ADA difference being the L2 fee.
+		const inputs = TransactionInputs.new();
+		inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from('11'.repeat(32), 'hex')), 0));
+		const outputs = TransactionOutputs.new();
+		outputs.add(TransactionOutput.new(Address.from_bech32(ADDRESS), Value.new(BigNum.from_str('9000000'))));
+		const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('1000000'));
+		const transaction = Transaction.new(body, TransactionWitnessSet.new());
+		const cborHex = Buffer.from(transaction.to_bytes()).toString('hex');
+		const txId = String(resolveTxHash(cborHex)).toLowerCase();
+		const confirmed = [{ type: HydraTransactionType.TxConwayEra, cborHex, description: '', txId }];
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 4,
+			version: 2,
+			outputs: new Map([
+				[inHeadReference, sharedOutput],
+				[depositReference, sharedOutput],
+			]),
+			outputMultiset: new Map([[sharedOutput, 2]]),
+			committedOutputs: new Map([[depositReference, sharedOutput]]),
+			decommitOutputs: new Map<string, string>(),
+		};
+		// The transaction lands and the deposit passes its deadline and is
+		// recovered on L1 in the same transition.
+		const current = {
+			headId: HEAD_ID,
+			number: 5,
+			version: 3,
+			outputs: new Map([[`${txId}#0`, spentResult]]),
+			outputMultiset: new Map([[spentResult, 1]]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, confirmed)).toBe(true);
 	});
 
 	it('checks signed multiset deltas without trusting adversarial reference mappings', () => {
@@ -233,8 +288,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 				[`${txId}#0`, nextOutput],
 			]),
 			outputMultiset: outputMultiset([otherOutput, nextOutput]),
-			committedMultiset: new Map<string, number>(),
-			decommitMultiset: new Map<string, number>(),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
 		};
 		const honestMapping = {
 			headId: HEAD_ID,
@@ -245,8 +300,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 				[otherReference, otherOutput],
 			]),
 			outputMultiset: outputMultiset([priorOutput, otherOutput]),
-			committedMultiset: new Map<string, number>(),
-			decommitMultiset: new Map<string, number>(),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
 		};
 		const permutedMapping = {
 			...honestMapping,
@@ -273,8 +328,11 @@ describe('Hydra 2.3 snapshot verification', () => {
 			version: 0,
 			outputs: new Map([[`${'aa'.repeat(32)}#0`, deposit]]),
 			outputMultiset: new Map([[deposit, 1]]), // combined = the pending deposit
-			committedMultiset: new Map([[deposit, 1]]), // it is pending in utxoToCommit
-			decommitMultiset: new Map<string, number>(),
+			// It is pending in utxoToCommit, and named by the same reference it
+			// carries in `outputs`: that is what tells the next snapshot apart from
+			// one where a second deposit of the same size arrived.
+			committedOutputs: new Map([[`${'aa'.repeat(32)}#0`, deposit]]),
+			decommitOutputs: new Map<string, string>(),
 		};
 		const current = {
 			headId: HEAD_ID,
@@ -288,8 +346,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 				[deposit, 1], // now absorbed into utxo (still in the combined set)
 				[newDeposit, 1], // new top-up deposit, pending
 			]),
-			committedMultiset: new Map([[newDeposit, 1]]), // the new deposit is what's pending now
-			decommitMultiset: new Map<string, number>(),
+			committedOutputs: new Map([[`${'bb'.repeat(32)}#0`, newDeposit]]), // the new deposit is what's pending now
+			decommitOutputs: new Map<string, string>(),
 		};
 
 		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(true);
@@ -307,8 +365,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 			version: 0,
 			outputs: new Map([[`${'aa'.repeat(32)}#0`, deposit]]),
 			outputMultiset: new Map([[deposit, 1]]),
-			committedMultiset: new Map([[deposit, 1]]),
-			decommitMultiset: new Map<string, number>(),
+			committedOutputs: new Map([[`${'aa'.repeat(32)}#0`, deposit]]),
+			decommitOutputs: new Map<string, string>(),
 		};
 		const current = {
 			headId: HEAD_ID,
@@ -322,8 +380,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 				[deposit, 1],
 				[forged, 1],
 			]),
-			committedMultiset: new Map<string, number>(), // forged output is NOT authenticated
-			decommitMultiset: new Map<string, number>(),
+			committedOutputs: new Map<string, string>(), // forged output is NOT authenticated
+			decommitOutputs: new Map<string, string>(),
 		};
 
 		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(false);
@@ -339,8 +397,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 			version: 0,
 			outputs: new Map([[hydraReference, serializedOutput]]),
 			outputMultiset: new Map([[serializedOutput, 1]]),
-			committedMultiset: new Map<string, number>(),
-			decommitMultiset: new Map<string, number>(),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
 		};
 
 		expect(
@@ -374,8 +432,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 				[firstOutput, 1],
 				[secondOutput, 1],
 			]),
-			committedMultiset: new Map<string, number>(),
-			decommitMultiset: new Map<string, number>(),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
 		};
 		const fanoutOutputs = new Map([
 			[firstFanoutReference, firstOutput],
@@ -406,8 +464,8 @@ describe('Hydra 2.3 snapshot verification', () => {
 				[serializedOutput, 1],
 				[otherOutput, 1],
 			]),
-			committedMultiset: new Map<string, number>(),
-			decommitMultiset: new Map<string, number>(),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
 		};
 
 		expect(

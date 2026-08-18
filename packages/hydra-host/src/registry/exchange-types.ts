@@ -14,6 +14,7 @@
  */
 
 import { parsePeerAdvertise } from '../peer-address.js';
+import { isVerificationKeyCborHex } from '../keys.js';
 
 /** Public material one side contributes to a head. */
 export type ExchangeMaterial = {
@@ -56,10 +57,17 @@ export function isExchangeMaterial(value: unknown): value is ExchangeMaterial {
 		return false;
 	}
 	const candidate = value as Partial<ExchangeMaterial>;
+	// The keys are checked for shape, not only for type. They are written
+	// verbatim into the `.vk` envelopes hydra-node reads, and this is the one
+	// place a counterparty's material enters the Host — a redemption carrying
+	// anything else produces a node that dies at startup on a parse error, with
+	// the head already reserved and the operator left reading container logs.
 	return (
 		typeof candidate.walletAddress === 'string' &&
 		typeof candidate.hydraVerificationKey === 'string' &&
+		isVerificationKeyCborHex(candidate.hydraVerificationKey) &&
 		typeof candidate.cardanoVerificationKey === 'string' &&
+		isVerificationKeyCborHex(candidate.cardanoVerificationKey) &&
 		typeof candidate.advertise === 'string' &&
 		parsePeerAdvertise(candidate.advertise) !== null &&
 		typeof candidate.exchangeUrl === 'string'

@@ -62,3 +62,57 @@ provided at container runtime, and frontend `NEXT_PUBLIC_*` values must be passe
    `.env.example` files should remain available for reference.
 
 Otherwise you can run the project locally by following the Quickstart guide in the [README](../README.md)
+
+## When a migration deploy fails
+
+`prisma migrate deploy` records a failed migration and then refuses to apply
+anything else, including the fix. Every subsequent deploy exits with:
+
+```
+P3009 migrate found failed migrations in the target database
+```
+
+Prisma will not clear that row on its own, by design: it cannot know whether the
+failed migration left the database half-changed. You decide, and you tell it.
+
+1. Read what actually failed. The name and the Postgres error are in the output
+   of the deploy that first broke, and in `_prisma_migrations`:
+
+   ```bash
+   psql "$DATABASE_URL" -c "select migration_name, started_at, finished_at, logs from \"_prisma_migrations\" where finished_at is null"
+   ```
+
+2. Decide which of the two it was.
+   - **It changed nothing** — it failed on its first statement, or every
+     statement is guarded and the objects already existed. Mark it rolled back
+     so the corrected version applies on the next deploy:
+
+     ```bash
+     pnpm exec prisma migrate resolve --config prisma/prisma.config.ts --rolled-back <migration_name>
+     ```
+
+   - **It changed something and the change is what you wanted** — a partial
+     apply you have since completed by hand. Mark it applied:
+
+     ```bash
+     pnpm exec prisma migrate resolve --config prisma/prisma.config.ts --applied <migration_name>
+     ```
+
+   If it changed something and you do not want it, undo that by hand first, then
+   use `--rolled-back`.
+
+3. Deploy again, and check for drift:
+
+   ```bash
+   pnpm run prisma:migrate
+   ```
+
+   ```bash
+   pnpm exec prisma migrate diff --config prisma/prisma.config.ts --from-config-datasource --to-schema prisma/schema.prisma
+   ```
+
+   "No difference detected" means the database matches the schema.
+
+Both commands take the migration's directory name, not its path — for example
+`20260630105329_hydra_tmp`. Neither runs any SQL; they only write the row that
+`deploy` reads.

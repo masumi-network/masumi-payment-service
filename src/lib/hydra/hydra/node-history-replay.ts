@@ -470,8 +470,8 @@ export class HydraHistoryReplay {
 			outputMultiset,
 			// The collected ledger only; an incremental commit or decommit still in
 			// flight is reported separately and is not part of this state.
-			committedMultiset: new Map(),
-			decommitMultiset: new Map(),
+			committedOutputs: new Map(),
+			decommitOutputs: new Map(),
 		};
 	}
 
@@ -560,8 +560,8 @@ export class HydraHistoryReplay {
 				`Hydra history contained a non-consecutive or inconsistent signed-state transition ` +
 					`(snapshot ${previousSnapshot.number} to ${verifiedSnapshot.number}, ` +
 					`${transitionTransactions.length} transaction(s), ` +
-					`${verifiedSnapshot.committedMultiset.size} pending commit output(s), ` +
-					`${verifiedSnapshot.decommitMultiset.size} pending decommit output(s))`,
+					`${verifiedSnapshot.committedOutputs.size} pending commit output(s), ` +
+					`${verifiedSnapshot.decommitOutputs.size} pending decommit output(s))`,
 			);
 		}
 		this._verifiedSnapshot = verifiedSnapshot;

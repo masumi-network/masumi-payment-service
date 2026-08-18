@@ -110,6 +110,18 @@ export function serializeEnvelope(value: TextEnvelope): string {
 	return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+/**
+ * Whether this is the `cborHex` a Cardano or Hydra `.vk` envelope carries: the
+ * CBOR header for a 32-byte string followed by exactly that many bytes.
+ *
+ * Worth checking wherever a key arrives from outside. These strings are written
+ * verbatim into the `.vk` files hydra-node reads at startup, so anything else
+ * is a node that dies on a parse error the operator has to go and read.
+ */
+export function isVerificationKeyCborHex(value: string): boolean {
+	return new RegExp(`^${CBOR_BYTES32_PREFIX}[0-9a-fA-F]{64}$`).test(value);
+}
+
 /** Extract the raw 32-byte payload from an envelope's `cborHex`. */
 export function envelopeRawHex(value: TextEnvelope): string {
 	const { cborHex } = value;

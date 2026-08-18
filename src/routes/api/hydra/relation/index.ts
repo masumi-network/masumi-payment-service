@@ -7,6 +7,7 @@ import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-sem
 import {
 	quiesceHydraHeadsForDeletion,
 	reconciledFinalHeadFilter,
+	unrecoveredHydraTopupWhere,
 	unsettledL2TransactionWhere,
 } from '../deletion-guard';
 
@@ -205,6 +206,9 @@ export async function deleteHydraRelation(id: string): Promise<void> {
 											Transactions: {
 												where: unsettledL2TransactionWhere,
 											},
+											Topups: {
+												where: unrecoveredHydraTopupWhere,
+											},
 										},
 									},
 									LocalParticipant: { select: { hydraSecretKeyId: true } },
@@ -227,6 +231,18 @@ export async function deleteHydraRelation(id: string): Promise<void> {
 						throw createHttpError(
 							409,
 							`Cannot delete relation: ${unsafeHeadCount} head(s) have incomplete reconciliation or pending L2 work`,
+						);
+					}
+					// Said separately, because the answer is different. Reconciliation
+					// finishes on its own; a deposit the head never took has to be
+					// recovered by hand, and the row about to be deleted holds the only
+					// transaction hash that names it.
+					const unrecoveredDepositCount = relation.Heads.reduce((total, head) => total + head._count.Topups, 0);
+					if (unrecoveredDepositCount > 0) {
+						throw createHttpError(
+							409,
+							`Cannot delete relation: ${unrecoveredDepositCount} deposit(s) were never absorbed or recovered. ` +
+								'Recover them first — deleting this takes the transaction hashes that name them.',
 						);
 					}
 

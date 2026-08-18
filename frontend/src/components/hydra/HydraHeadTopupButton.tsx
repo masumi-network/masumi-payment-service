@@ -207,7 +207,14 @@ function HydraTopupList({
           // deposit that was behaving exactly as designed.
           const recoverableFrom =
             topup.deadline == null ? null : new Date(topup.deadline).getTime();
-          const isRecoverable = recoverableFrom === null || Date.now() >= recoverableFrom;
+          // An unknown deadline asserts nothing, the way `isUsable` above does
+          // not. The deadline is written from a live DepositRecorded frame and is
+          // never backfilled, so a deposit whose frame arrived while this service
+          // was disconnected keeps `deadline: null` for good — and defaulting
+          // that to recoverable offered the button on exactly the deposits the
+          // node answers with a 409, which is the red toast this gate exists to
+          // prevent.
+          const isRecoverable = recoverableFrom !== null && Date.now() >= recoverableFrom;
 
           return (
             <li key={topup.id} className="space-y-1 px-3 py-2">
@@ -304,13 +311,22 @@ function HydraTopupList({
                 {(topup.status === 'Confirmed' || topup.status === 'Failed') &&
                   topup.depositTxHash !== null &&
                   !isRecoverable &&
-                  recoverableFrom !== null && (
+                  (recoverableFrom !== null ? (
                     <span className="text-xs text-muted-foreground">
                       The node can only send it back after{' '}
                       {new Date(recoverableFrom).toLocaleTimeString()}, once the head can no longer
                       take it in.
                     </span>
-                  )}
+                  ) : (
+                    /* No deadline reached this service, so when the node will
+                       accept a recovery is unknown. Said plainly rather than
+                       guessed at: the node is the authority and it refuses early
+                       requests outright. */
+                    <span className="text-xs text-muted-foreground">
+                      This deposit&apos;s deadline never reached this service, so it cannot say when
+                      the node will send it back. Check the node.
+                    </span>
+                  ))}
                 {(topup.status === 'Confirmed' || topup.status === 'Failed') &&
                   topup.depositTxHash !== null &&
                   isRecoverable &&

@@ -7,10 +7,13 @@ import path from 'node:path';
 import { createExchangePlane } from './exchange-server.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
 
+// The keys are the real shape a `.vk` envelope carries — `5820` and 32 bytes —
+// because that is what the redemption is checked against: they are written
+// verbatim into the files hydra-node parses at startup.
 const MATERIAL = {
 	walletAddress: 'addr_test1them',
-	hydraVerificationKey: 'hvk',
-	cardanoVerificationKey: 'cvk',
+	hydraVerificationKey: `5820${'11'.repeat(32)}`,
+	cardanoVerificationKey: `5820${'22'.repeat(32)}`,
 	advertise: 'them.example.com:5101',
 	exchangeUrl: 'https://them.example.com/exchange',
 };

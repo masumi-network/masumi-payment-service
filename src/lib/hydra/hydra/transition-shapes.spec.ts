@@ -38,34 +38,59 @@ function output(lovelace: number): string {
 	} as never);
 }
 
-function multiset(values: string[]): Map<string, number> {
+/**
+ * One output, named.
+ *
+ * The name is the UTxO reference and it is what carries identity across a
+ * transition: the same entry in two consecutive snapshots is the same output,
+ * and a deposit that was absorbed keeps its reference on the way from
+ * `utxoToCommit` into `utxo`. Values collide all the time here on purpose —
+ * a withdrawal and a top-up of the same size to the same wallet are identical
+ * bytes — so nothing below may be identified by its value.
+ */
+type Entry = { reference: string; value: string };
+
+function at(name: string, value: string): Entry {
+	return { reference: `${name.padEnd(64, '0')}#0`, value };
+}
+
+function multiset(values: Iterable<string>): Map<string, number> {
 	const counts = new Map<string, number>();
 	for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
 	return counts;
 }
 
+function referenceMap(entries: Entry[]): Map<string, string> {
+	return new Map(entries.map(({ reference, value }) => [reference, value]));
+}
+
 /** A snapshot's canonical set is utxo together with both pending partitions. */
-function snapshot(number: number, utxo: string[], commit: string[], decommit: string[]): VerifiedHydraSnapshot {
-	const all = [...utxo, ...commit, ...decommit];
-	const outputs = new Map<string, string>();
-	all.forEach((value, index) => outputs.set(`${'aa'.repeat(32)}#${index}`, value));
+function snapshot(number: number, utxo: Entry[], commit: Entry[], decommit: Entry[]): VerifiedHydraSnapshot {
+	const outputs = referenceMap([...utxo, ...commit, ...decommit]);
 	return {
 		headId: 'head',
 		number,
 		version: number - 1,
 		outputs,
-		outputMultiset: multiset(all),
-		committedMultiset: multiset(commit),
-		decommitMultiset: multiset(decommit),
+		outputMultiset: multiset(outputs.values()),
+		committedOutputs: referenceMap(commit),
+		decommitOutputs: referenceMap(decommit),
 	};
 }
 
-const A = output(10_000_000);
-const B = output(7_000_000);
-const C = output(5_000_000);
+const A = at('a', output(10_000_000));
+const B = at('b', output(7_000_000));
+const C = at('c', output(5_000_000));
 // Smaller than C on purpose: a decommit pays its own L1 fee out of the value
 // that travels, so what leaves is never quite what was committed.
-const D = output(4_829_879);
+const D = at('d', output(4_829_879));
+// Same value as A, different output. This is the ordinary case, not a contrived
+// one: a withdrawal and a top-up of the same size to the same wallet serialize
+// identically, and so do two escrow outputs of the same price.
+const A_TWIN = at('a2', A.value);
+const A_DEPOSIT = at('adep', A.value);
+const A_DECOMMIT = at('adec', A.value);
+const C_GHOST = at('cghost', C.value);
 
 describe('signed-state transition shapes', () => {
 	const cases: Array<[string, VerifiedHydraSnapshot, VerifiedHydraSnapshot, boolean]> = [
@@ -84,6 +109,27 @@ describe('signed-state transition shapes', () => {
 		['decommit stays pending', snapshot(1, [A], [], [D]), snapshot(2, [A], [], [D]), true],
 		['commit and decommit pending together', snapshot(1, [A], [C], [D]), snapshot(2, [A, C], [], [D]), true],
 		['value appears from nowhere', snapshot(1, [A], [], []), snapshot(2, [A, B], [], []), false],
+		// A deposit is an injection once, on the snapshot that declares it. It then
+		// sits in utxoToCommit for as many snapshots as the increment takes to
+		// land, and granting it injection slack again on each one lets an output of
+		// its value materialise out of nothing for as long as it is pending.
+		[
+			'a deposit pending in both snapshots does not excuse a second output of its value',
+			snapshot(1, [A], [C], []),
+			snapshot(2, [A, C_GHOST], [C], []),
+			false,
+		],
+		// The normal ending for a deposit is absorption, and an absorbed deposit
+		// has not left: it keeps its reference on the way into utxo. Treating it as
+		// recoverable anyway pays for a disappearance somewhere else — here `A`
+		// leaves with no transaction naming it, under cover of a deposit and a
+		// decommit of the same size.
+		[
+			'an absorbed deposit does not pay for an unexplained disappearance',
+			snapshot(1, [A, A_TWIN], [A_DEPOSIT], [A_DECOMMIT]),
+			snapshot(2, [A_TWIN, A_DEPOSIT], [], []),
+			false,
+		],
 		['value vanishes with nothing declaring it', snapshot(1, [A, B], [], []), snapshot(2, [A], [], []), false],
 		['non-consecutive snapshot numbers', snapshot(1, [A], [], []), snapshot(3, [A], [], []), false],
 	];

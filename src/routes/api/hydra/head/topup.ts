@@ -8,6 +8,7 @@ import type { CommitUtxoFilter } from '@/lib/hydra';
 import { executeHydraTopup } from '@/services/hydra-topup/execute';
 import { recoverHydraDeposit } from '@/services/hydra-topup/recover';
 import { DEFAULT_PERIODS } from '@/services/hydra-invite/provisioning';
+import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
 
 export const topupInput = z.object({
 	headId: z.string().describe('The Hydra head to top up'),
@@ -23,7 +24,7 @@ export const topupInput = z.object({
 		.describe('Commit only UTxOs containing this native-asset unit (policyId + assetName hex)'),
 	exactAmount: z
 		.string()
-		.regex(/^\d+$/)
+		.regex(POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE)
 		.optional()
 		.describe(
 			'Exact top-up amount (base unit) of assetUnit (or lovelace). Pre-splits a dedicated L1 UTxO first, then commits it — adds an L1 confirmation wait.',

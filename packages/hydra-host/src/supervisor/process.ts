@@ -63,6 +63,9 @@ const ADOPTED_POLL_INTERVAL_MS = 250;
 /** How long to wait for an adopted process to die after SIGKILL before giving up on it. */
 const ADOPTED_SIGKILL_WAIT_MS = 5_000;
 
+/** How long a child gets to die after SIGKILL before the stop is reported failed. */
+const SIGKILL_WAIT_MS = 5_000;
+
 const sleep = (ms: number): Promise<void> =>
 	new Promise((resolve) => {
 		const timer = setTimeout(resolve, ms);
@@ -212,6 +215,34 @@ export class NodeProcessManager {
 		return entry.child.exitCode === null && !entry.child.killed;
 	}
 
+	/**
+	 * Drop adopted entries whose pid is no longer the node it was adopted as.
+	 *
+	 * `isRunning` is synchronous and reads an adopted node's liveness from the
+	 * pid alone, which is only true until that pid is reused — and on this host
+	 * the likeliest thing to inherit it is a sibling hydra-node. The entry then
+	 * reads as running forever, so the supervisor never restarts the node it
+	 * actually lost. Identity is re-established here, once per tick and only for
+	 * adopted entries, of which there are none unless the host was restarted.
+	 *
+	 * Returns the node ids it dropped, so the caller can say what happened.
+	 */
+	async revalidateAdopted(): Promise<string[]> {
+		const dropped: string[] = [];
+		for (const entry of [...this.running.values()]) {
+			if (entry.child !== undefined || entry.identity === undefined || entry.pid === undefined) continue;
+			if (
+				isProcessAlive(entry.pid) &&
+				(await isProcessRunningNode(entry.pid, entry.identity.binary, entry.identity.nodeDir))
+			) {
+				continue;
+			}
+			this.running.delete(entry.nodeId);
+			dropped.push(entry.nodeId);
+		}
+		return dropped;
+	}
+
 	get(nodeId: string): RunningNode | undefined {
 		return this.running.get(nodeId);
 	}
@@ -304,21 +335,30 @@ export class NodeProcessManager {
 			child.once('exit', settle);
 			child.once('error', () => settle(null, null));
 		});
+		const after = (ms: number): Promise<null> =>
+			new Promise<null>((resolve) => {
+				const timer = setTimeout(() => resolve(null), ms);
+				timer.unref?.();
+			});
 
 		child.kill('SIGTERM');
 
-		const timeout = new Promise<null>((resolve) => {
-			const timer = setTimeout(() => resolve(null), graceMs);
-			timer.unref?.();
-		});
-
-		const settled = await Promise.race([exited, timeout]);
+		const settled = await Promise.race([exited, after(graceMs)]);
 		if (settled !== null) {
 			return settled;
 		}
 
 		child.kill('SIGKILL');
-		return exited;
+		// Bounded, like the adopted path beside it. Waiting on the exit event alone
+		// meant a process that does not die — a hydra-node wedged in an
+		// uninterruptible disk wait on the volume its event store lives on — never
+		// resolved this promise. `stop()` is awaited inside the reconcile tick, so
+		// the tick never finishes, its in-progress flag is never cleared, and the
+		// host stops reconciling every OTHER node too; `shutdown()` then never
+		// completes either. An unstoppable process is one node's problem, and it
+		// has to be reported as one.
+		const killed = await Promise.race([exited, after(SIGKILL_WAIT_MS)]);
+		return killed ?? { graceful: false, stopped: false, exitCode: null, signal: 'SIGKILL' };
 	}
 
 	/**

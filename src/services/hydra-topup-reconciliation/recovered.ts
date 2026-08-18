@@ -18,6 +18,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { mapWithConcurrency } from '@/utils/map-with-concurrency';
+import { releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 import type { Network } from '@/generated/prisma/client';
 
 /**
@@ -159,7 +160,24 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 				rpcProviderApiKey,
 				depositTxHash: candidate.depositTxHash,
 			});
-			if (outcome !== 'recovered' && outcome !== 'absorbed') return;
+			if (outcome !== 'recovered' && outcome !== 'absorbed') {
+				// Rotate the row to the back of the queue. Both reads are ordered by
+				// `updatedAt` and take a fixed budget, so a row that never gets an
+				// answer — a deposit whose script output is still sitting there, or a
+				// lookup that keeps failing — is read again on every tick and nothing
+				// behind it is ever reached. Failed rows are the ones that pile up
+				// like this, and a full budget of them starves the Confirmed rows
+				// whose absorption is what re-enables auto top-up.
+				await prisma.hydraTopup
+					.updateMany({ where: { id: candidate.id, status: candidate.status }, data: { updatedAt: new Date() } })
+					.catch((error: unknown) =>
+						logger.warn('hydra-topup-reconciliation: could not rotate an unresolved deposit check', {
+							topupId: candidate.id,
+							error: error instanceof Error ? error.message : error,
+						}),
+					);
+				return;
+			}
 
 			const status = outcome === 'recovered' ? HydraTopupStatus.Recovered : HydraTopupStatus.Absorbed;
 			const promoted = await prisma.hydraTopup.updateMany({
@@ -167,6 +185,14 @@ export async function reconcileRecoveredHydraTopups(): Promise<void> {
 				data: { status },
 			});
 			if (promoted.count === 1) {
+				// A Pending row taken terminal here never reaches
+				// `reconcilePendingHydraTopups`, which is the only other place that
+				// hands the wallet back. Without this the deposit ends happily and the
+				// wallet stays locked out of every L1 batcher until the safety net
+				// clears it, which for a purpose-marked lock is half an hour.
+				if (candidate.status === HydraTopupStatus.Pending) {
+					await releaseHotWalletAfterL1(candidate.LocalParticipant.walletId);
+				}
 				logger.info(
 					outcome === 'recovered'
 						? `hydra: deposit ${candidate.depositTxHash} was recovered; the funds are back in the wallet`

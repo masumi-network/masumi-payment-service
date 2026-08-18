@@ -6,12 +6,13 @@ import { HydraDecommitStatus, HydraHeadStatus } from '@/generated/prisma/client'
 import { z } from '@masumi/payment-core/zod';
 import { executeHydraDecommit } from '@/services/hydra-decommit/execute';
 import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
 
 export const withdrawInput = z.object({
 	headId: z.string().describe('The Hydra head to withdraw from'),
 	lovelace: z
 		.string()
-		.regex(/^\d+$/)
+		.regex(POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE)
 		.optional()
 		.describe(
 			'Exact lovelace to withdraw. Omit to withdraw every eligible in-head UTxO whole. An exact amount is split off inside the head first, which costs nothing and takes about a second.',
@@ -25,7 +26,7 @@ export const withdrawInput = z.object({
 		),
 	assetAmount: z
 		.string()
-		.regex(/^\d+$/)
+		.regex(POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE)
 		.optional()
 		.describe("How much of assetUnit to withdraw, in that asset's own smallest unit."),
 	drain: z

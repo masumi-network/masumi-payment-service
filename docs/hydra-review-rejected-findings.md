@@ -15,6 +15,53 @@ Confirmed findings are not recorded here. Those became commits.
 
 <!-- Entries: newest first. Keep the shape: claim, where, why it is not a defect. -->
 
+## Round 6
+
+Every finding this round survived checking and became a commit. The entries
+below are corrections, not rejections: both amend a round-5 fix, and a reviewer
+reading the round-5 note without this one will re-derive a claim that has
+already moved on.
+
+### `mergeMultisets` should take the larger of the two removal allowances (superseded)
+
+**Status.** The round-5 answer below still stands as far as it goes — the
+maximum was wrong, and the partitions are disjoint by reference — but summing
+value multisets was not enough, and the function it names no longer exists.
+
+**What was still wrong.** Disjointness proves the two outputs *exist*, not that
+both *left*. Every allowance was derived from value multisets, which cannot tell
+one pending output from another of the same size, and three separate holes
+followed. A deposit that was ABSORBED — the normal ending — still counted as
+recoverable, so an in-head output of that value could vanish with no
+transaction. A deposit still pending in both snapshots was granted injection
+slack on every transition it survived, so an output of its value could appear
+from nowhere. And an ordinary spend of any same-valued in-head UTxO cancelled a
+real deposit's recovery allowance, rejecting a legitimate transition — the same
+permanent-wedge failure the round-5 entry describes, reintroduced through a
+different door.
+
+**Where it landed.** `VerifiedHydraSnapshot` now carries `committedOutputs` and
+`decommitOutputs` keyed by reference, like `outputs`, and
+`doesHydraTransactionTransitionReachSnapshot` derives both allowances by
+reference before counting them by value: a deposit is an injection only on the
+snapshot that first declares it, and a pending entry is a removal only when its
+reference is absent from `current.outputs` and no transaction spent it. Summing
+is then correct because the references are distinct. Pinned by three tests, each
+verified to fail against the old logic.
+
+### The Hydra hot-wallet hold is safe because nothing else clears `lockedAt`
+
+**Status.** Wrong, and the round-5 commit that introduced the hold said so in
+its own docblock. `unlockStaleOrphanWalletLocks` frees any wallet with no
+pending transaction after `CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL` (300s), which is
+exactly the shape `claimHotWalletForL1` produces — and a carve waits up to five
+minutes for its own confirmation. The safety net was handing the wallet to a
+batcher mid-carve.
+
+**Where it landed.** `HotWallet.lockPurpose` marks a lock that is not a
+batcher's; both reapers skip those, and a second pass frees them on
+`HOT_WALLET_LOCK_STALE_AFTER_MS` (30 minutes) instead.
+
 ## Round 5
 
 Every finding this round survived checking and became a commit, including one

@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
-import { HydraHeadStatus, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraTopupStatus, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -15,6 +15,12 @@ const mockFindRemote = jest.fn() as AnyMock;
 const mockDeleteRemote = jest.fn() as AnyMock;
 const mockDeleteVerification = jest.fn() as AnyMock;
 const mockQuiesceHydraHeadsForDeletion = jest.fn() as AnyMock;
+const mockWithdrawNodeFunds = jest.fn() as AnyMock;
+
+const unrecoveredHydraTopupWhere = {
+	depositTxHash: { not: null },
+	status: { notIn: [HydraTopupStatus.Absorbed, HydraTopupStatus.Recovered] },
+} as const;
 
 const reconciledFinalHeadFilter = {
 	status: HydraHeadStatus.Final,
@@ -31,6 +37,7 @@ const reconciledFinalHeadFilter = {
 			],
 		},
 	},
+	Topups: { none: unrecoveredHydraTopupWhere },
 } as const;
 
 const transactionClient = {
@@ -61,6 +68,11 @@ jest.unstable_mockModule('../deletion-guard', () => ({
 	quiesceHydraHeadsForDeletion: mockQuiesceHydraHeadsForDeletion,
 	reconciledFinalHeadFilter,
 	unsettledL2TransactionWhere: reconciledFinalHeadFilter.Transactions.none,
+	unrecoveredHydraTopupWhere,
+}));
+
+jest.unstable_mockModule('@/services/hydra-node-funding/withdraw', () => ({
+	withdrawNodeFunds: mockWithdrawNodeFunds,
 }));
 
 jest.unstable_mockModule('@/utils/security/encryption', () => ({
@@ -112,6 +124,15 @@ beforeEach(() => {
 		return [];
 	});
 	mockQuiesceHydraHeadsForDeletion.mockResolvedValue(undefined);
+	// Settled by default: the node's address is empty, so destroying its key
+	// costs nothing.
+	mockWithdrawNodeFunds.mockResolvedValue({
+		address: 'addr_test1node',
+		balanceLovelace: '0',
+		txHash: null,
+		reason: null,
+		code: 'dust',
+	});
 	mockDeleteLocal.mockResolvedValue({ count: 1 });
 	mockDeleteRemote.mockResolvedValue({ count: 1 });
 	mockDeleteSecret.mockResolvedValue({ id: 'local-key' });
@@ -160,6 +181,47 @@ describe('deleteHydraLocalParticipant', () => {
 			},
 		});
 		expect(mockQuiesceHydraHeadsForDeletion).not.toHaveBeenCalled();
+		expect(mockDeleteSecret).toHaveBeenCalledWith({ where: { id: 'local-key' } });
+	});
+
+	// The key stored on this row is the only signer for the node's L1 address, and
+	// the Host hands it over exactly once, at provisioning. The funding cycle has
+	// been topping that address up since the node was reserved, so deleting the
+	// row without sweeping first strands about 30 ADA nothing can ever sign for.
+	it('refuses to delete a participant whose node still holds funds', async () => {
+		mockFindLocal.mockResolvedValue({
+			hydraHeadId: null,
+			hydraSecretKeyId: 'local-key',
+			HydraHead: null,
+		});
+		mockWithdrawNodeFunds.mockResolvedValue({
+			address: 'addr_test1node',
+			balanceLovelace: '29500000',
+			txHash: 'a'.repeat(64),
+			reason: null,
+			code: 'swept',
+		});
+
+		await expect(deleteHydraLocalParticipant('local-1')).rejects.toMatchObject({ statusCode: 409 });
+		expect(mockDeleteLocal).not.toHaveBeenCalled();
+		expect(mockDeleteSecret).not.toHaveBeenCalled();
+	});
+
+	it('deletes a participant whose node has no key to sweep', async () => {
+		mockFindLocal.mockResolvedValue({
+			hydraHeadId: null,
+			hydraSecretKeyId: 'local-key',
+			HydraHead: null,
+		});
+		mockWithdrawNodeFunds.mockResolvedValue({
+			address: 'addr_test1node',
+			balanceLovelace: '0',
+			txHash: null,
+			reason: 'no Cardano signing key is stored for this node',
+			code: 'no-key',
+		});
+
+		await expect(deleteHydraLocalParticipant('local-1')).resolves.toBeUndefined();
 		expect(mockDeleteSecret).toHaveBeenCalledWith({ where: { id: 'local-key' } });
 	});
 

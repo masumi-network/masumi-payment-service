@@ -45,6 +45,7 @@ import { resolveHydraL2EvidenceSlotConfig } from '@/utils/hydra/l2-slot-context'
 import { buildHydraCommitFlowDeps } from './commit-flow-deps';
 import { assertNodeReadyForDeposit, getErrorMessage, verifyPersistedHydraHeadOnChain } from './index';
 import { claimHotWalletForL1, releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
+import { POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE } from '@/routes/api/hydra/head/amounts';
 
 // --- Lifecycle: POST init ---
 
@@ -227,7 +228,7 @@ export const commitInput = z.object({
 	headId: z.string().min(1).describe('ID of the HydraHead'),
 	lovelace: z
 		.string()
-		.regex(/^\d+$/)
+		.regex(POSITIVE_BASE_UNIT_AMOUNT, POSITIVE_BASE_UNIT_AMOUNT_MESSAGE)
 		.describe(
 			"How much to put into the head. A dedicated UTxO of exactly this amount is carved on L1 first and only that is committed, so the rest of the wallet — its other ADA, its stablecoins, an agent's registry NFT — stays on L1 and spendable. Costs one L1 confirmation before the deposit is built.",
 		),
@@ -286,6 +287,9 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 		// chain after being signed and submitted. Held until the commit is away,
 		// including across the carve's own wait for confirmation.
 		await claimHotWalletForL1(localParticipant.walletId, 'commit');
+		// Set the moment the carve is signed, before it is submitted — see the
+		// release guard in this handler's `finally`.
+		let carveTxHash: string | null = null;
 		try {
 			let verifiedHead: Awaited<ReturnType<typeof verifyPersistedHydraHeadOnChain>>;
 			try {
@@ -382,6 +386,11 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 					// the wallet as its own UTxO. Retrying used to carve a second one
 					// beside it, at another fee, and leave the first stranded.
 					existingUtxos: utxos,
+					// Reported as soon as the carve is signed, before it is submitted.
+					// The release guard in this handler's `finally` turns on it.
+					onCarveSubmitted: async (hash) => {
+						carveTxHash = hash;
+					},
 				});
 			} catch (splitError) {
 				if (splitError instanceof HydraPreSplitError) {
@@ -568,7 +577,15 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 				where: { id: localParticipant.id },
 				select: { commitTxHash: true, hasCommitted: true },
 			});
-			if (pending?.commitTxHash == null || pending.hasCommitted) {
+			// The carve is its own L1 transaction, submitted before the commit is
+			// even built, and a failure after that point says nothing about where it
+			// got to. While it is unsettled its inputs still read as unspent, so
+			// handing the wallet back here let the next batch tick build over them
+			// and lose one of the two to `BadInputsUTxO`. Nothing tracks a carve
+			// once this returns, so the lock is left for the stale-lock sweep half
+			// an hour later.
+			const carveUnsettled = carveTxHash !== null && !pending?.hasCommitted;
+			if ((pending?.commitTxHash == null || pending.hasCommitted) && !carveUnsettled) {
 				await releaseHotWalletAfterL1(localParticipant.walletId);
 			}
 		}

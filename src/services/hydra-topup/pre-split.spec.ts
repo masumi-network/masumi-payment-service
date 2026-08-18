@@ -13,8 +13,9 @@ jest.unstable_mockModule('@masumi/payment-core/logger', () => ({
 	logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-// Transaction is only referenced by the default submit path, which the tests
-// override via submitCarveTx — stub the export so importing the module is safe.
+// Transaction and resolveTxHash are only referenced by the default submit path,
+// which the tests override via submitCarveTx — stub the exports so importing the
+// module is safe.
 jest.unstable_mockModule('@meshsdk/core', () => ({
 	Transaction: class {
 		sendLovelace() {
@@ -27,6 +28,7 @@ jest.unstable_mockModule('@meshsdk/core', () => ({
 			return Promise.resolve('cbor');
 		}
 	},
+	resolveTxHash: () => 'aa'.repeat(32),
 }));
 
 let carveExactUtxo: typeof import('./pre-split').carveExactUtxo;
@@ -76,7 +78,53 @@ describe('carveExactUtxo', () => {
 		const params = baseParams();
 		const result = await carveExactUtxo(params);
 		expect(result.output.amount).toEqual([{ unit: 'lovelace', quantity: '50000000' }]);
-		expect(params.submitCarveTx as AnyMock).toHaveBeenCalledWith(params.wallet, ADDR, 'lovelace', 50_000_000n);
+		expect(params.submitCarveTx as AnyMock).toHaveBeenCalledWith(
+			params.wallet,
+			ADDR,
+			'lovelace',
+			50_000_000n,
+			// The submitter reports the hash itself, before broadcasting, so a
+			// submit that throws still tells the caller a carve may be in flight.
+			expect.any(Function),
+		);
+	});
+
+	// The submit is where the carve leaves this process, and a throw from it does
+	// not mean the node refused: a timeout or a dropped response leaves a signed
+	// transaction that may well be in the mempool. The caller decides whether to
+	// keep holding the wallet on exactly this signal — hand it back with a carve
+	// still in flight and the next batch tick builds over the same inputs.
+	it('reports the carve hash even when the submit itself throws', async () => {
+		const intended = 'b'.repeat(64);
+		const recorded: string[] = [];
+		const params = baseParams({
+			submitCarveTx: jest.fn(async (_wallet: any, _addr: any, _unit: any, _amount: any, report: any) => {
+				await report(intended);
+				throw new Error('socket hang up');
+			}) as AnyMock,
+			onCarveSubmitted: async (hash: string) => {
+				recorded.push(hash);
+			},
+		});
+
+		await expect(carveExactUtxo(params)).rejects.toThrow(HydraPreSplitError);
+		expect(recorded).toEqual([intended]);
+	});
+
+	it('records the carve hash once when the submit reports it and returns the same one', async () => {
+		const recorded: string[] = [];
+		const params = baseParams({
+			submitCarveTx: jest.fn(async (_wallet: any, _addr: any, _unit: any, _amount: any, report: any) => {
+				await report(TX);
+				return TX;
+			}) as AnyMock,
+			onCarveSubmitted: async (hash: string) => {
+				recorded.push(hash);
+			},
+		});
+
+		await carveExactUtxo(params);
+		expect(recorded).toEqual([TX]);
 	});
 
 	it('rejects a non-positive amount', async () => {

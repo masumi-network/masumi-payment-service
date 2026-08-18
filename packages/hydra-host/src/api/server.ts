@@ -19,6 +19,7 @@ import type { NodeRegistryStore } from '../registry/store.js';
 import type { ExchangeStore } from '../registry/exchange-store.js';
 import { isUsable, restartCountOf, type PeerRecord } from '../registry/types.js';
 import { getOwnString, getOwnValue, isPlainObject } from '../registry/json.js';
+import { isVerificationKeyCborHex } from '../keys.js';
 import type { Supervisor, SupervisorLogger } from '../supervisor/supervisor.js';
 import { authenticate } from './auth.js';
 import { isHostApiError, HostApiError } from './http-error.js';
@@ -117,6 +118,18 @@ function readPeers(body: unknown): PeerRecord[] {
 		const cardanoVerificationKey = getOwnString(entry, 'cardanoVerificationKey');
 		if (advertise === undefined || hydraVerificationKey === undefined || cardanoVerificationKey === undefined) {
 			throw new ProvisionError(`peers[${index}] needs advertise, hydraVerificationKey and cardanoVerificationKey`, 400);
+		}
+		// Checked here rather than at the file write: these go straight into the
+		// `.vk` envelopes hydra-node parses at startup, so a malformed one is a
+		// node that never comes up, reported as a start failure rather than as the
+		// bad request it is.
+		for (const [field, key] of [
+			['hydraVerificationKey', hydraVerificationKey],
+			['cardanoVerificationKey', cardanoVerificationKey],
+		] as const) {
+			if (!isVerificationKeyCborHex(key)) {
+				throw new ProvisionError(`peers[${index}].${field} must be a 5820-prefixed 32-byte key cborHex`, 400);
+			}
 		}
 		return { advertise, hydraVerificationKey, cardanoVerificationKey };
 	});

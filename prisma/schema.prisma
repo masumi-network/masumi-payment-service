@@ -96,6 +96,21 @@ model HotWallet {
   pendingSwapTransactionId                String?                         @unique
   paymentSourceId                         String
   lockedAt                                DateTime?
+  /// Why this wallet is locked, when it was not locked by an L1 batcher.
+  ///
+  /// The batchers claim a wallet, build, submit and attach a PendingTransaction
+  /// within seconds, so `unlockStaleOrphanWalletLocks` can safely treat any
+  /// lock with no pending transaction and older than WALLET_LOCK_TIMEOUT_INTERVAL
+  /// (300s) as leaked. The Hydra L1 deposits hold the same lock across an L1
+  /// CONFIRMATION and never attach a PendingTransaction, which is exactly that
+  /// shape — so without this marker the safety net hands the wallet to a batcher
+  /// while a carve or a commit is still in flight, and one of the two spends is
+  /// rejected on chain as BadInputsUTxO.
+  ///
+  /// Null for an ordinary batcher lock. Set on claim and cleared on release by
+  /// `@/utils/db/hot-wallet-lock`, whose own staleness threshold takes over for
+  /// these.
+  lockPurpose                             String?
   note                                    String?
   deletedAt                               DateTime?
   PaymentSource                           PaymentSource                   @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)

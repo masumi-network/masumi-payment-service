@@ -109,6 +109,9 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 	// Hoisted so the outer catch can resolve the row it created: a Preparing row
 	// is invisible to reconciliation, which has no deposit hash to look for.
 	let preparingTopupId: string | null = null;
+	// Set the moment the carve is signed, before it is submitted — see the
+	// release guard in this function's `finally`.
+	let carveTxHash: string | null = null;
 
 	// The `Preparing` claim below serializes top-ups against each other. It says
 	// nothing to the payment batchers, which build from this same hot wallet and
@@ -234,6 +237,7 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 					// took their funds, rather than saying only that something is
 					// happening.
 					onCarveSubmitted: async (splitTxHash) => {
+						carveTxHash = splitTxHash;
 						await prisma.hydraTopup.update({ where: { id: claim.id }, data: { splitTxHash } });
 					},
 				});
@@ -368,7 +372,15 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 			},
 			select: { id: true },
 		});
-		if (pending === null) {
+		// A carve that was signed is a transaction that may be in the mempool, and
+		// a failure here says nothing about that: the carve is submitted first and
+		// everything after it — waiting for its confirmation, building the deposit
+		// — can fail with the carve still on its way. Until it settles, the inputs
+		// it spends read as unspent, so handing the wallet back here let the next
+		// batch tick build over them and lose one of the two to `BadInputsUTxO`.
+		// Nothing tracks a carve after this returns, so the lock is left for the
+		// stale-lock sweep, which frees it half an hour later.
+		if (pending === null && carveTxHash === null) {
 			await releaseHotWalletAfterL1(localParticipant.walletId);
 		}
 	}

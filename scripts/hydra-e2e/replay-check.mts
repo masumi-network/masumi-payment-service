@@ -82,15 +82,20 @@ function toVerified(raw: Raw): VerifiedHydraSnapshot {
 		}
 	}
 	const partition = (source: Record<string, unknown> | null) =>
-		multiset(Object.values(source ?? {}).map((output) => serializeHydraSnapshotOutput(output as never)));
+		new Map(
+			Object.entries(source ?? {}).map(([reference, output]) => [
+				reference.toLowerCase(),
+				serializeHydraSnapshotOutput(output as never),
+			]),
+		);
 	return {
 		headId: 'head',
 		number: raw.number,
 		version: raw.version,
 		outputs,
 		outputMultiset: multiset(outputs.values()),
-		committedMultiset: partition(raw.utxoToCommit),
-		decommitMultiset: partition(raw.utxoToDecommit),
+		committedOutputs: partition(raw.utxoToCommit),
+		decommitOutputs: partition(raw.utxoToDecommit),
 	} as VerifiedHydraSnapshot;
 }
 

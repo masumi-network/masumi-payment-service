@@ -2,6 +2,7 @@ import { Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { CONFIG } from '@masumi/payment-core/config';
+import { HOT_WALLET_LOCK_STALE_AFTER_MS, HYDRA_L1_LOCK_PURPOSE } from '@/utils/db/hot-wallet-lock';
 
 /**
  * Safety-net reaper for LEAKED wallet locks.
@@ -22,8 +23,20 @@ import { CONFIG } from '@masumi/payment-core/config';
  * An equivalent branch already lives inline in `updateWalletTransactionHash`;
  * this runs as its own lightweight job so the safety net can't be starved by
  * that heavier, mutex-guarded reconciliation sweep.
+ *
+ * A lock carrying a `lockPurpose` is not a batcher's and is exempt from that
+ * timeout. The Hydra L1 deposits hold their wallet across a full L1
+ * confirmation and never attach a PendingTransaction, so they match the orphan
+ * shape exactly while being entirely healthy — clearing one at 300s handed the
+ * wallet to a batcher mid-carve, and one of the two spends then died on chain
+ * as `BadInputsUTxO`. They get their own, much longer pass below.
  */
 export async function unlockStaleOrphanWalletLocks(): Promise<void> {
+	await unlockStaleBatcherWalletLocks();
+	await unlockStalePurposeWalletLocks();
+}
+
+async function unlockStaleBatcherWalletLocks(): Promise<void> {
 	const cutoff = new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL);
 	// Same predicate for the diagnostic read and the write. `updateMany`
 	// re-evaluates it atomically, so a wallet that acquires a pending tx between
@@ -31,6 +44,7 @@ export async function unlockStaleOrphanWalletLocks(): Promise<void> {
 	const staleLockFilter: Prisma.HotWalletWhereInput = {
 		deletedAt: null,
 		pendingTransactionId: null,
+		lockPurpose: null,
 		lockedAt: { lt: cutoff },
 	};
 	try {
@@ -54,6 +68,49 @@ export async function unlockStaleOrphanWalletLocks(): Promise<void> {
 		}
 	} catch (error) {
 		logger.error('unlockStaleOrphanWalletLocks failed', {
+			error: error instanceof Error ? { message: error.message, name: error.name } : error,
+		});
+	}
+}
+
+/**
+ * The same safety net for locks that name a purpose, on their own clock.
+ *
+ * `claimHotWalletForL1` already takes over a lock older than
+ * HOT_WALLET_LOCK_STALE_AFTER_MS, so a leaked one never blocks another Hydra
+ * deposit. It does block every L1 batcher on that wallet, though, because they
+ * only ever select `lockedAt: null` — so a crash between claim and release
+ * would stop the wallet collecting or paying anything until an operator noticed.
+ * This clears it on the same threshold the claim uses.
+ */
+async function unstickPurposeLocks(purpose: string, staleAfterMs: number): Promise<void> {
+	const staleLockFilter: Prisma.HotWalletWhereInput = {
+		deletedAt: null,
+		pendingTransactionId: null,
+		lockPurpose: purpose,
+		lockedAt: { lt: new Date(Date.now() - staleAfterMs) },
+	};
+	const candidates = await prisma.hotWallet.findMany({ where: staleLockFilter, select: { id: true } });
+	if (candidates.length === 0) return;
+	const { count } = await prisma.hotWallet.updateMany({
+		where: staleLockFilter,
+		data: { lockedAt: null, lockPurpose: null },
+	});
+	if (count > 0) {
+		logger.warn('Cleared stale purpose-marked wallet locks (locked past their own timeout, no pending tx)', {
+			cleared: count,
+			purpose,
+			walletIds: candidates.map((wallet) => wallet.id),
+			timeoutMs: staleAfterMs,
+		});
+	}
+}
+
+async function unlockStalePurposeWalletLocks(): Promise<void> {
+	try {
+		await unstickPurposeLocks(HYDRA_L1_LOCK_PURPOSE, HOT_WALLET_LOCK_STALE_AFTER_MS);
+	} catch (error) {
+		logger.error('unlockStalePurposeWalletLocks failed', {
 			error: error instanceof Error ? { message: error.message, name: error.name } : error,
 		});
 	}

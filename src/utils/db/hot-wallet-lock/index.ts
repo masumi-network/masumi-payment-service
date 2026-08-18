@@ -36,6 +36,21 @@ import { logger } from '@masumi/payment-core/logger';
 export const HOT_WALLET_LOCK_STALE_AFTER_MS = 30 * 60 * 1000;
 
 /**
+ * What `HotWallet.lockPurpose` says while a Hydra L1 deposit holds the wallet.
+ *
+ * The generic safety net, `unlockStaleOrphanWalletLocks`, frees any lock with
+ * no pending transaction after CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL — 300s by
+ * default. That is right for the batchers, which attach a PendingTransaction
+ * within seconds of claiming, and wrong for these, which hold the lock across a
+ * full L1 confirmation and never attach one: a carve waits up to five minutes
+ * for its own confirmation, so the reaper handed the wallet to a batcher while
+ * the carve was still in flight and one of the two spends died on chain as
+ * BadInputsUTxO. The marker takes these locks out of that pass and puts them
+ * under `HOT_WALLET_LOCK_STALE_AFTER_MS` instead.
+ */
+export const HYDRA_L1_LOCK_PURPOSE = 'hydra-l1';
+
+/**
  * Claim a hot wallet, or refuse.
  *
  * The claim is one statement, so two callers cannot both pass the test: the
@@ -50,7 +65,7 @@ export async function claimHotWalletForL1(walletId: string, purpose: string): Pr
 			pendingTransactionId: null,
 			OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore } }],
 		},
-		data: { lockedAt: new Date() },
+		data: { lockedAt: new Date(), lockPurpose: HYDRA_L1_LOCK_PURPOSE },
 	});
 	if (claimed.count !== 1) {
 		throw createHttpError(
@@ -78,8 +93,13 @@ export async function claimHotWalletForL1(walletId: string, purpose: string): Pr
 export async function releaseHotWalletAfterL1(walletId: string): Promise<void> {
 	try {
 		await prisma.hotWallet.updateMany({
-			where: { id: walletId, pendingTransactionId: null },
-			data: { lockedAt: null },
+			// Scoped to this operation's own marker as well as to there being no
+			// pending transaction. Without it a late release — a reconciler landing
+			// after the generic reaper had already freed the wallet and a batcher had
+			// claimed it — would clear a lock this operation does not hold, during
+			// the batcher's build window before its PendingTransaction exists.
+			where: { id: walletId, pendingTransactionId: null, lockPurpose: HYDRA_L1_LOCK_PURPOSE },
+			data: { lockedAt: null, lockPurpose: null },
 		});
 	} catch (error) {
 		// Never allowed to replace the operation's own outcome: a failed release

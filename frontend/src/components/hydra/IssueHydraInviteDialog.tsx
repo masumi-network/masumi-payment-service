@@ -64,9 +64,13 @@ const MAX_TTL_HOURS = 720;
  * clock reaches it, and every deposit expires unseen.
  */
 const MIN_SETTLE_MINUTES = 5;
+/** A day, the API's ceiling: a top-up unusable for longer than that is not a top-up. */
+const MAX_SETTLE_SECONDS = 86_400;
 
 /** The API's own floor for the dispute window. */
 const MIN_CONTESTATION_SECONDS = 300;
+/** Two weeks, the API's ceiling. Long windows are the safe direction, but not unbounded. */
+const MAX_CONTESTATION_SECONDS = 1_209_600;
 
 /**
  * Defaults per network, matching what the service would pick on its own.
@@ -94,6 +98,8 @@ const MIN_CONTESTATION_SECONDS = 300;
  */
 const UNSYNCED_CAP_SECONDS = 1800;
 const MIN_UNSYNCED_SECONDS = 120;
+/** A week, the API's ceiling. Half the dispute window is usually the tighter one. */
+const MAX_UNSYNCED_SECONDS = 604_800;
 
 function defaultsFor(network: string) {
   const isMainnet = network === 'Mainnet';
@@ -209,14 +215,23 @@ export function IssueHydraInviteDialog({
     }
     if (settleSeconds < MIN_SETTLE_MINUTES * 60) {
       problems.settle = `Funds need at least ${MIN_SETTLE_MINUTES} minutes to settle.`;
+    } else if (settleSeconds > MAX_SETTLE_SECONDS) {
+      problems.settle = `At most ${formatDuration(MAX_SETTLE_SECONDS)}.`;
     }
-    // These floors are the API's, not this form's. They were a minute here and
-    // five on the server, so a value the form accepted came back a 400.
+    // These bounds are the API's, not this form's. The floors were a minute here
+    // and five on the server, so a value the form accepted came back a 400; the
+    // ceilings were missing altogether, and the duration pickers have no upper
+    // stop of their own, so a plausible-looking 30-day dispute window did the
+    // same.
     if (contestationSeconds < MIN_CONTESTATION_SECONDS) {
       problems.contestation = `The dispute window must be at least ${formatDuration(MIN_CONTESTATION_SECONDS)}.`;
+    } else if (contestationSeconds > MAX_CONTESTATION_SECONDS) {
+      problems.contestation = `The dispute window can be at most ${formatDuration(MAX_CONTESTATION_SECONDS)}.`;
     }
     if (unsyncedSeconds < MIN_UNSYNCED_SECONDS) {
       problems.unsynced = `The out-of-sync limit must be at least ${formatDuration(MIN_UNSYNCED_SECONDS)}, or ordinary block gaps trip it.`;
+    } else if (unsyncedSeconds > MAX_UNSYNCED_SECONDS) {
+      problems.unsynced = `The out-of-sync limit can be at most ${formatDuration(MAX_UNSYNCED_SECONDS)}.`;
     } else if (unsyncedSeconds > Math.floor(contestationSeconds / 2)) {
       problems.unsynced = `Cannot exceed half the dispute window (${formatDuration(Math.floor(contestationSeconds / 2))}).`;
     }
@@ -401,6 +416,7 @@ export function IssueHydraInviteDialog({
                   id="hydra-invite-ttl"
                   label="Invite valid for"
                   seconds={ttlSeconds}
+                  maxSeconds={MAX_TTL_HOURS * HOUR_SECONDS}
                   onChange={(next) => {
                     setTtlSeconds(next);
                     setErrors({});
@@ -418,6 +434,7 @@ export function IssueHydraInviteDialog({
                   id="hydra-invite-settle"
                   label="Added funds settle after"
                   seconds={settleSeconds}
+                  maxSeconds={MAX_SETTLE_SECONDS}
                   onChange={(next) => {
                     setSettleSeconds(next);
                     setErrors({});
@@ -446,6 +463,7 @@ export function IssueHydraInviteDialog({
                   id="hydra-invite-contestation"
                   label="Dispute window"
                   seconds={contestationSeconds}
+                  maxSeconds={MAX_CONTESTATION_SECONDS}
                   onChange={(next) => {
                     setErrors({});
                     setContestationSeconds(next);
@@ -479,6 +497,7 @@ export function IssueHydraInviteDialog({
                   id="hydra-invite-unsynced"
                   label="Out-of-sync limit"
                   seconds={unsyncedSeconds}
+                  maxSeconds={MAX_UNSYNCED_SECONDS}
                   onChange={(next) => {
                     setUnsyncedSeconds(next);
                     setErrors({});

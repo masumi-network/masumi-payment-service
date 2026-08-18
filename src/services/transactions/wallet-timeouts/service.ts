@@ -682,6 +682,12 @@ export async function updateWalletTransactionHash() {
 					},
 					{
 						pendingTransactionId: null,
+						// A lock that names a purpose is not a batcher's and does not
+						// leak on this clock: the Hydra L1 deposits hold their wallet
+						// across a full L1 confirmation with no PendingTransaction, so
+						// this branch would free one mid-carve. `unlockStaleOrphanWalletLocks`
+						// sweeps those on their own, much longer threshold.
+						lockPurpose: null,
 						lockedAt: {
 							lt: new Date(Date.now() - CONFIG.WALLET_LOCK_TIMEOUT_INTERVAL),
 						},

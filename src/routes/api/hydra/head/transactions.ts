@@ -166,12 +166,20 @@ export const listHeadTransactionsGet = adminAuthenticatedEndpointFactory.build({
 				// already moved the funds.
 				txHash: deposit.depositTxHash ?? deposit.splitTxHash,
 				intendedTxHash: null,
-				// A deposit's three states map onto the ledger vocabulary directly.
-				// Failed has to carry across as a failure rather than collapsing into
-				// Pending, or a deposit that expired unclaimed would show as still on
-				// its way for ever.
+				// A deposit's states map onto the ledger vocabulary directly. Both
+				// terminal successes land on Confirmed: `Absorbed` is the head taking
+				// the deposit in and `Recovered` is it coming home, and either way the
+				// L1 transaction this row names is on chain and finished with.
+				//
+				// They used to fall through to Pending, which put a grey "Pending"
+				// badge beside the deposits panel's own green "In the head" for the
+				// same deposit, and kept the transactions list polling every eight
+				// seconds for the life of the dialog, for ever, on any head that had
+				// ever absorbed one. Failed carries across as a failure rather than
+				// collapsing into Pending, or a deposit that expired unclaimed would
+				// show as still on its way.
 				status:
-					deposit.status === 'Confirmed'
+					deposit.status === 'Confirmed' || deposit.status === 'Absorbed' || deposit.status === 'Recovered'
 						? TransactionStatus.Confirmed
 						: deposit.status === 'Failed'
 							? TransactionStatus.FailedViaTimeout

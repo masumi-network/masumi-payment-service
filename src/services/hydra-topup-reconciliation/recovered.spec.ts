@@ -143,24 +143,38 @@ describe('reconcileRecoveredHydraTopups', () => {
 		});
 	});
 
-	it('leaves an unspent deposit alone', async () => {
+	// Both reads are ordered by `updatedAt` and take a fixed budget, so a row that
+	// never resolves would be re-read on every tick and nothing behind it would
+	// ever be reached. The status is untouched — only the row's place in the
+	// queue moves.
+	it('leaves an unspent deposit alone, but rotates it to the back of the queue', async () => {
 		stageRows([topupRow(HydraTopupStatus.Pending)]);
 		chain(null, []);
 
 		await reconcileRecoveredHydraTopups();
 
-		expect(mockUpdateMany).not.toHaveBeenCalled();
+		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
+			data: { updatedAt: expect.any(Date) },
+		});
 	});
 
 	it('leaves the row alone when the chain cannot be read', async () => {
 		// A lookup failure is not evidence of anything, and guessing here would
-		// declare funds home or absorbed on a network blip.
+		// declare funds home or absorbed on a network blip. The rotation still
+		// happens: a row whose lookup keeps failing is exactly the one that would
+		// otherwise hold the front of the queue forever.
 		stageRows([topupRow(HydraTopupStatus.Pending)]);
 		mockTxsUtxos.mockRejectedValue(new Error('blockfrost unavailable'));
 
 		await reconcileRecoveredHydraTopups();
 
-		expect(mockUpdateMany).not.toHaveBeenCalled();
+		expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+		expect(mockUpdateMany).toHaveBeenCalledWith({
+			where: { id: 'topup-1', status: HydraTopupStatus.Pending },
+			data: { updatedAt: expect.any(Date) },
+		});
 	});
 
 	it('guards the write on the status it read, so a concurrent promotion cannot be clobbered', async () => {

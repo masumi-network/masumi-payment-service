@@ -257,9 +257,15 @@ Set once per head, in the invite, and fixed for its life.
 |                         | Preprod  | Mainnet  | What it does                                                                                                                                                                                                   |
 | ----------------------- | -------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Dispute window**      | 12 hours | 5 days   | After a head closes, how long either side may challenge the final balances. Nothing settles until it passes, so it is also how long after closing before you have your funds back. Long is the safe direction. |
-| **Out-of-sync limit**   | 6 hours  | 2.5 days | How long a node may fall behind before it refuses to keep transacting. Capped at half the dispute window: a node returning later than that has too little time left to defend the head.                        |
+| **Out-of-sync limit**   | 30 min   | 30 min   | How long a node may fall behind before it refuses to keep transacting. Capped at half the dispute window, so a head with a short window gets a shorter limit, and never under 2 minutes.                       |
 | **Deposit settle time** | 10 min   | 20 min   | The deposit period above.                                                                                                                                                                                      |
 | **Invite lifetime**     | 7 days   | 7 days   | How long the node and peer port stay reserved for an unredeemed invite.                                                                                                                                        |
+
+The out-of-sync limit used to be half the dispute window outright — 6 hours on
+preprod, 2.5 days on mainnet — which meant a node could keep signing for days on
+a view of the chain it had stopped updating. It is the same 30 minutes on both
+networks now, on the reasoning that a stall past half an hour is an outage
+worth failing closed on, and that preprod exists to exercise what mainnet runs.
 
 The dispute window is the one to think about. It protects you from a
 counterparty closing on a stale state while your node is down — but you cannot

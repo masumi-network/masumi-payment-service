@@ -4,6 +4,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { withSerializableSlotRetry } from '@masumi/payment-core/serializable-semaphore';
 import {
 	HydraHeadStatus,
+	HydraTopupStatus,
 	type Network,
 	OnChainState,
 	Prisma,
@@ -286,10 +287,31 @@ export async function quiesceHydraHeadsForDeletion(headIds: readonly string[]): 
 	}
 }
 
+/**
+ * A top-up whose L1 deposit may still be sitting at the deposit script.
+ *
+ * A deposit the head never absorbed does not come back in the fanout — the
+ * fanout returns the head's own UTxO set, and a deposit that was refused was
+ * never part of it. It comes back through `recoverHydraDeposit`, which needs
+ * this row's `depositTxHash`, and the row is cascade-deleted with the head. So
+ * deleting a head that still has one of these takes the only record of where
+ * the money is with it.
+ *
+ * Absorbed and Recovered are the two endings that mean the deposit is
+ * accounted for. Everything else with a hash — including Failed, which says
+ * only that this service gave up on it — leaves an output that may still be
+ * there.
+ */
+export const unrecoveredHydraTopupWhere = {
+	depositTxHash: { not: null },
+	status: { notIn: [HydraTopupStatus.Absorbed, HydraTopupStatus.Recovered] },
+} satisfies Prisma.HydraTopupWhereInput;
+
 export const reconciledFinalHeadFilter = {
 	status: HydraHeadStatus.Final,
 	isEnabled: false,
 	fanoutTxHash: { not: null },
 	reconciliationCompletedAt: { not: null },
 	Transactions: { none: unsettledL2TransactionWhere },
+	Topups: { none: unrecoveredHydraTopupWhere },
 } as const;

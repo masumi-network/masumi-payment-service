@@ -163,6 +163,32 @@ export async function deleteHydraLocalParticipant(id: string): Promise<void> {
 	}
 	if (deletionPlan.hydraHeadId) await quiesceHydraHeadsForDeletion([deletionPlan.hydraHeadId]);
 
+	// Sweep the node's own fuel back before the key that spends it is destroyed.
+	//
+	// A participant owns a `HydraSecretKey` whose `cardanoSK` is the only signer
+	// for the node's L1 address, the Host discloses it exactly once at
+	// provisioning, and the funding cycle has been topping that address up since
+	// the moment the node was reserved — so by now it usually holds about 30 ADA.
+	// Deleting the row took the key with it and left the ADA at an address
+	// nothing can sign for.
+	//
+	// Outside the transaction on purpose: this reads the chain and may submit a
+	// transaction, neither of which belongs inside a serializable block. The
+	// deletion below re-checks everything it depends on anyway.
+	//
+	// `swept` is not good enough, for the same reason it is not good enough in
+	// `releaseReservedParticipants`: a submitted sweep can still be evicted or
+	// rolled back. Only an address the chain reports as empty — `dust` — or a
+	// participant with no key at all settles this.
+	const sweep = await withdrawNodeFunds(id);
+	if (sweep.code !== 'dust' && sweep.code !== 'no-key') {
+		throw createHttpError(
+			409,
+			`Cannot delete: this participant's node still holds ${sweep.balanceLovelace} lovelace at ${sweep.address}` +
+				`${sweep.txHash ? ` (sweep ${sweep.txHash} submitted; try again once it has confirmed)` : ` — ${sweep.reason}`}`,
+		);
+	}
+
 	await withSerializableSlotRetry(
 		() =>
 			prisma.$transaction(

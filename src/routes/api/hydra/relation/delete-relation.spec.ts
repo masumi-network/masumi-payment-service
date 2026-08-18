@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
-import { HydraHeadStatus, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
+import { HydraHeadStatus, HydraTopupStatus, TransactionLayer, TransactionStatus } from '@/generated/prisma/client';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -12,6 +12,11 @@ const mockDeleteRelation = jest.fn() as AnyMock;
 const mockDeleteSecrets = jest.fn() as AnyMock;
 const mockDeleteVerificationKeys = jest.fn() as AnyMock;
 const mockQuiesceHydraHeadsForDeletion = jest.fn() as AnyMock;
+
+const unrecoveredHydraTopupWhere = {
+	depositTxHash: { not: null },
+	status: { notIn: [HydraTopupStatus.Absorbed, HydraTopupStatus.Recovered] },
+} as const;
 
 const reconciledFinalHeadFilter = {
 	status: HydraHeadStatus.Final,
@@ -28,6 +33,7 @@ const reconciledFinalHeadFilter = {
 			],
 		},
 	},
+	Topups: { none: unrecoveredHydraTopupWhere },
 } as const;
 
 const transactionClient = {
@@ -60,6 +66,7 @@ jest.unstable_mockModule('../deletion-guard', () => ({
 	quiesceHydraHeadsForDeletion: mockQuiesceHydraHeadsForDeletion,
 	reconciledFinalHeadFilter,
 	unsettledL2TransactionWhere: reconciledFinalHeadFilter.Transactions.none,
+	unrecoveredHydraTopupWhere,
 }));
 
 let deleteHydraRelation: typeof import('./index').deleteHydraRelation;

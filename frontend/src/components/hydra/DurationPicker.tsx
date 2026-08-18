@@ -78,6 +78,7 @@ export function DurationPicker({
   warning,
   error,
   showDays = true,
+  maxSeconds,
 }: {
   id: string;
   label: string;
@@ -97,6 +98,15 @@ export function DurationPicker({
   error?: string | null;
   /** Off for durations that are never more than a few hours, to keep the row short. */
   showDays?: boolean;
+  /**
+   * The largest value this field accepts, in seconds.
+   *
+   * The segments have no stop of their own beyond the hours and minutes wrapping
+   * at 23 and 59, so a days field takes any number typed into it. Clamping here
+   * means an operator who types 30 into a field whose ceiling is two weeks sees
+   * it settle at two weeks rather than sending a value the API refuses.
+   */
+  maxSeconds?: number;
 }) {
   const safe = Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
   const days = showDays ? Math.floor(safe / DAY) : 0;
@@ -107,13 +117,14 @@ export function DurationPicker({
   // and saved again would become 240.
   const subMinute = safe - days * DAY - hours * HOUR - minutes * MINUTE;
 
-  const emit = (next: { days?: number; hours?: number; minutes?: number }) =>
-    onChange(
+  const emit = (next: { days?: number; hours?: number; minutes?: number }) => {
+    const total =
       (next.days ?? days) * DAY +
-        (next.hours ?? hours) * HOUR +
-        (next.minutes ?? minutes) * MINUTE +
-        subMinute,
-    );
+      (next.hours ?? hours) * HOUR +
+      (next.minutes ?? minutes) * MINUTE +
+      subMinute;
+    onChange(maxSeconds === undefined ? total : Math.min(total, maxSeconds));
+  };
 
   return (
     <div className="space-y-2">
