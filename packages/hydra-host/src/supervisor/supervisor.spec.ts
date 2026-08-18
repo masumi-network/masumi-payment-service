@@ -295,10 +295,17 @@ describe('Supervisor shutdown', () => {
 
 	let servers: Server[] = [];
 
-	async function serveNodeApi(): Promise<number> {
+	async function serveNodeApi(delayMs = 0): Promise<number> {
 		const server = createServer((_request, response) => {
-			response.writeHead(200, { 'Content-Type': 'application/json' });
-			response.end(JSON.stringify({ tag: 'SeenSnapshot' }));
+			const answer = (): void => {
+				response.writeHead(200, { 'Content-Type': 'application/json' });
+				response.end(JSON.stringify({ tag: 'SeenSnapshot' }));
+			};
+			if (delayMs === 0) {
+				answer();
+				return;
+			}
+			setTimeout(answer, delayMs).unref?.();
 		});
 		servers.push(server);
 		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -363,4 +370,86 @@ describe('Supervisor shutdown', () => {
 		// And they overlapped. Serialised, this is two full drains.
 		expect(elapsedMs).toBeLessThan(DRAIN_COST_MS * 1.6);
 	}, 30_000);
+
+	// The shape the first attempt at this fix still got wrong. Pass 1 SKIPPED any
+	// node the tick held and left it to the pass after `await pendingTick`, which
+	// made the two passes additive whenever the tick's action was not itself a
+	// stop — an observe, an unwedge, or a worker that returned early on `stopped`
+	// while a sibling kept the tick alive. Waiting the hold out instead costs only
+	// the hold, and every other node drains through its own worker meanwhile.
+	it('waits out a tick that is merely observing a node rather than deferring it', async () => {
+		const config = {
+			...loadHostConfig(env),
+			dataDir,
+			hydraNodeBin: process.execPath,
+			drainTimeoutMs: DRAIN_TIMEOUT_MS,
+		};
+		const draining = new Supervisor(
+			config,
+			store,
+			new PortAllocator(config.ports),
+			resolveSlotConfig('preprod'),
+			silentLogger,
+		);
+
+		// Answers slowly, so the tick is still inside `observe` when shutdown lands.
+		// Its plan is Idle — no peers — so the tick never stops it itself.
+		const observed = makeRecord({
+			nodeId: 'node-observed',
+			apiPort: await serveNodeApi(120),
+			pid: spawnNodeLike(store.nodeDir('node-observed')).pid,
+		});
+		// Answers at once, so its reconcile is long finished and shutdown owns it.
+		const quick = makeRecord({
+			nodeId: 'node-quick',
+			apiPort: await serveNodeApi(),
+			pid: spawnNodeLike(store.nodeDir('node-quick')).pid,
+		});
+		await store.write(observed);
+		await store.write(quick);
+		await draining.boot();
+
+		const tick = draining.tick();
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		const startedAt = Date.now();
+		await draining.shutdown();
+		const elapsedMs = Date.now() - startedAt;
+		await tick;
+
+		expect((await store.read(observed.nodeId))?.state).toBe('Stopped');
+		expect((await store.read(quick.nodeId))?.state).toBe('Stopped');
+		expect(elapsedMs).toBeGreaterThan(DRAIN_COST_MS / 2);
+		// Deferring the observed node to a second pass costs two full drains.
+		expect(elapsedMs).toBeLessThan(DRAIN_COST_MS * 1.6);
+	}, 30_000);
+});
+
+describe('Supervisor restart requests', () => {
+	// `restartRequested` on a STOPPED node is answered by the start itself. Left
+	// set, it survived into the boot: the next tick sees a running-but-not-yet-
+	// answering node — the normal way up — reads the stale flag and SIGTERMs a
+	// node seconds into a multi-minute startup, which then comes back
+	// `lastStopUndrained` having never been wedged.
+	it('clears an operator restart request once the start has been made', async () => {
+		const record = makeRecord({
+			state: 'Stopped',
+			desired: 'Running',
+			restartRequested: true,
+			peers: [
+				{
+					advertise: 'hydra2.example.com:5001',
+					hydraVerificationKey: `5820${'ef'.repeat(32)}`,
+					cardanoVerificationKey: `5820${'12'.repeat(32)}`,
+				},
+			],
+		});
+		await store.write(record);
+
+		await supervisor.tick();
+
+		const after = await store.read(record.nodeId);
+		expect(after?.startAttempts).toBe(1);
+		expect(after?.restartRequested).toBe(false);
+	});
 });

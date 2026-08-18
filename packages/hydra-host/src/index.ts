@@ -42,13 +42,16 @@ async function main(): Promise<void> {
 	// Held on an object rather than in a `let`, so the read after the handlers are
 	// swapped is not narrowed to `never` by flow analysis that cannot see the
 	// closures below run.
-	const startup: { signal: string | null } = { signal: null };
-	const deferSigterm = (): void => {
-		startup.signal ??= 'SIGTERM';
+	// `supervisor` is filled in as soon as it exists, so a signal arriving during
+	// the long part of startup stops the boot where it is rather than being merely
+	// recorded and waited out.
+	const startup: { signal: string | null; supervisor: Supervisor | null } = { signal: null, supervisor: null };
+	const recordSignal = (signal: string): void => {
+		startup.signal ??= signal;
+		startup.supervisor?.beginShutdown();
 	};
-	const deferSigint = (): void => {
-		startup.signal ??= 'SIGINT';
-	};
+	const deferSigterm = (): void => recordSignal('SIGTERM');
+	const deferSigint = (): void => recordSignal('SIGINT');
 	process.on('SIGTERM', deferSigterm);
 	process.on('SIGINT', deferSigint);
 
@@ -106,6 +109,11 @@ async function main(): Promise<void> {
 	logger.info(`[host] ${allocator.used} of ${config.ports.capacity} node slots in use`);
 
 	const supervisor = new Supervisor(config, store, allocator, resolveSlotConfig(config.network), logger);
+	startup.supervisor = supervisor;
+	// A signal that landed before the supervisor existed still has to reach it.
+	if (startup.signal !== null) {
+		supervisor.beginShutdown();
+	}
 	await supervisor.boot();
 	const tickSupervisor = (source: string): void => {
 		void supervisor.tick().catch((error: unknown) => {
@@ -211,7 +219,15 @@ async function main(): Promise<void> {
 		// Assigned so the intent is readable, then deliberately left alone.
 		const _guard = setTimeout(() => {
 			logger.error('[host] shutdown exceeded its grace period; exiting');
-			process.exit(1);
+			// The lease goes back first, as it does on both listen-error paths.
+			// Without it the restarted container cannot acquire the data volume
+			// until HEARTBEAT_STALE_AFTER_MS, so it crash-loops through
+			// `main().catch -> exit(1)` for the whole of that window — a minute of
+			// no supervisor on top of a shutdown that already failed to drain.
+			void lock
+				.release()
+				.catch(() => undefined)
+				.finally(() => process.exit(1));
 		}, SHUTDOWN_GRACE_MS);
 		// Deliberately NOT unref'd. This timer's only job is to force a non-zero
 		// exit, and an unref'd one lets an otherwise-idle loop exit 0 first — which
@@ -234,10 +250,16 @@ async function main(): Promise<void> {
 		shutdown('LOCK_LOST');
 	};
 
-	process.off('SIGTERM', deferSigterm);
-	process.off('SIGINT', deferSigint);
+	// Added before the deferred ones are removed, not after. `process.off` of the
+	// last listener for a signal restores the OS default disposition, so the two
+	// statements in the other order leave a window — however short — in which
+	// SIGTERM kills the host outright with every node undrained. A transient
+	// double registration is harmless: `shuttingDown` makes the second call a
+	// no-op, and the deferred recorder only writes to `startup`.
 	process.on('SIGTERM', () => shutdown('SIGTERM'));
 	process.on('SIGINT', () => shutdown('SIGINT'));
+	process.off('SIGTERM', deferSigterm);
+	process.off('SIGINT', deferSigint);
 	if (startup.signal !== null) {
 		logger.info(`[host] ${startup.signal} arrived during startup; draining now`);
 		shutdown(startup.signal);

@@ -99,10 +99,29 @@ export class Supervisor {
 	 * Rebuild in-memory state from the volume and start everything that should be
 	 * running. This is what makes a container restart recover on its own.
 	 */
+	/**
+	 * Stop taking on new work, without draining.
+	 *
+	 * `shutdown` sets the same flag, but it can only run once the host has finished
+	 * starting — and `boot` is the slowest thing here: it probes every record in
+	 * turn at 5s each and then runs a full tick, which at the default capacity of
+	 * 32 nodes is minutes. A signal arriving in that window used to do nothing at
+	 * all, so the platform sat through its whole stop grace and then SIGKILLed
+	 * every node undrained. Calling this makes `boot` stop where it is, and
+	 * `tick`/`reconcile`/`start` already refuse on the same flag.
+	 */
+	beginShutdown(): void {
+		this.stopped = true;
+	}
+
 	async boot(): Promise<void> {
 		const records = await this.store.list();
 		this.logger.info(`[supervisor] loaded ${records.length} node record(s) from ${this.config.dataDir}`);
 		for (const record of records) {
+			if (this.stopped) {
+				this.logger.info('[supervisor] shutdown began during boot; leaving the remaining records to the next one');
+				return;
+			}
 			if (record.state === 'Running' || record.state === 'Starting' || record.state === 'Draining') {
 				// A node outlives the host that supervises it: the host is an ordinary
 				// process and restarting it — a deploy, a crash, a developer — does not
@@ -522,6 +541,14 @@ export class Supervisor {
 			...current,
 			state: 'Starting',
 			startAttempts: current.startAttempts + 1,
+			// A start IS the restart an operator asked for on a node that was down,
+			// so the request is answered here. Left set, it survived into the boot:
+			// the next tick sees a running-but-not-yet-answering node — the normal
+			// way up, since hydra-node opens its API only once etcd has quorum and
+			// the follower has synced — reads the stale flag, and SIGTERMs a node
+			// 15s into a multi-minute startup, which then comes back
+			// `lastStopUndrained` having never been wedged.
+			restartRequested: false,
 		}));
 		if (claimed === null) {
 			this.logger.warn(`[supervisor] ${record.nodeId} disappeared before it could be started`);
@@ -825,14 +852,15 @@ export class Supervisor {
 		// finishing work already begun, and that work drains on the same clock this
 		// does.
 		const pendingTick = this.currentTick;
-		await this.drainRunningNodes();
-		// Then the tick, and a second pass for whatever it was holding when the
-		// flag went up — the node the first pass skipped rather than stopped
-		// underneath it. That is the case the original wait existed for. Nodes
-		// already drained are `isRunning === false` here, so this is a cheap
-		// re-list on every normal shutdown.
+		const attempted = new Set<string>();
+		await this.drainRunningNodes(attempted);
+		// Then the tick, and a second pass for anything that appeared after the
+		// first list — a provision that was already in flight when the control
+		// plane closed. Nodes the first pass drained are `isRunning === false`
+		// here and nodes it tried and failed to stop are in `attempted`, so this is
+		// a cheap re-list on every normal shutdown.
 		await pendingTick;
-		await this.drainRunningNodes();
+		await this.drainRunningNodes(attempted);
 	}
 
 	/**
@@ -851,17 +879,50 @@ export class Supervisor {
 	 * so the fan-out is what has to change. The reconcile path keeps its limit:
 	 * that one really is work, and it runs every 15s.
 	 */
-	private async drainRunningNodes(): Promise<void> {
-		const records = await this.store.list();
+	private async drainRunningNodes(attempted: Set<string>): Promise<void> {
+		let records: NodeRecord[];
+		try {
+			records = await this.store.list();
+		} catch (error) {
+			// `list` throws on a damaged record, and letting that out of here turned
+			// SIGTERM into a hard kill of the whole fleet: `shutdown` rejected,
+			// index.ts logged and exited 1, and not one node was drained. `runTick`
+			// already swallows the same failure.
+			this.logger.error(`[supervisor] could not list nodes to drain: ${(error as Error).message}`);
+			return;
+		}
 		await mapWithConcurrency(records, Math.max(1, records.length), async (record) => {
+			if (attempted.has(record.nodeId)) {
+				// Already stopped, or tried and failed — a second SIGTERM would
+				// overwrite the Failed reason `stop` just recorded with `Draining`.
+				return;
+			}
+			// Waited out, not skipped. Skipping deferred the node to the pass after
+			// `await pendingTick`, which made the two passes ADDITIVE: a tick
+			// holding one node in an observe or an unwedge cost a full drain round
+			// before that node's own drain even started — measured at two rounds,
+			// which at the real budget is 310s against the 240s SHUTDOWN_GRACE_MS.
+			// Waiting here costs only the tick's own hold, and every other node
+			// drains through its own worker meanwhile.
+			//
+			// Deliberately unbounded: the tick's work is bounded by the same
+			// timeouts this is, and the grace period is the backstop. A bound would
+			// only reintroduce the deferral it exists to remove.
+			while (this.inFlight.has(record.nodeId)) {
+				await sleep(100);
+			}
+			if (!this.processes.isRunning(record.nodeId)) {
+				return;
+			}
 			// Same claim the tick makes, and taken the same way — checked and set
 			// with no await in between, so exactly one of the two owns the node.
 			// Without it a node could be sent SIGTERM twice and have two drains
 			// racing on its record.
-			if (this.inFlight.has(record.nodeId) || !this.processes.isRunning(record.nodeId)) {
+			if (this.inFlight.has(record.nodeId)) {
 				return;
 			}
 			this.inFlight.add(record.nodeId);
+			attempted.add(record.nodeId);
 			try {
 				await this.stop(record, 'host shutting down');
 			} catch (error) {

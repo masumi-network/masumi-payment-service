@@ -67,8 +67,17 @@ const MIN_SETTLE_MINUTES = 5;
 /** A day, the API's ceiling: a top-up unusable for longer than that is not a top-up. */
 const MAX_SETTLE_SECONDS = 86_400;
 
-/** The API's own floor for the dispute window. */
+/** The API's own floor for the dispute window, on preprod. */
 const MIN_CONTESTATION_SECONDS = 300;
+/**
+ * Mainnet's floor, twelve hours, matching `MAINNET_MIN_CONTESTATION_PERIOD_SECONDS`.
+ *
+ * Checked here as well as at the API because the invite is where the cost is:
+ * by the time the head-creation endpoint refuses, both sides have provisioned a
+ * node, generated keys, reserved a peer port and sent it real ADA, and `--peer`
+ * is startup configuration so neither node can be reused.
+ */
+const MAINNET_MIN_CONTESTATION_SECONDS = 43_200;
 /** Two weeks, the API's ceiling. Long windows are the safe direction, but not unbounded. */
 const MAX_CONTESTATION_SECONDS = 1_209_600;
 
@@ -223,8 +232,10 @@ export function IssueHydraInviteDialog({
     // ceilings were missing altogether, and the duration pickers have no upper
     // stop of their own, so a plausible-looking 30-day dispute window did the
     // same.
-    if (contestationSeconds < MIN_CONTESTATION_SECONDS) {
-      problems.contestation = `The dispute window must be at least ${formatDuration(MIN_CONTESTATION_SECONDS)}.`;
+    const minContestation =
+      network === 'Mainnet' ? MAINNET_MIN_CONTESTATION_SECONDS : MIN_CONTESTATION_SECONDS;
+    if (contestationSeconds < minContestation) {
+      problems.contestation = `The dispute window must be at least ${formatDuration(minContestation)}.`;
     } else if (contestationSeconds > MAX_CONTESTATION_SECONDS) {
       problems.contestation = `The dispute window can be at most ${formatDuration(MAX_CONTESTATION_SECONDS)}.`;
     }

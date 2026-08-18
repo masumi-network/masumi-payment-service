@@ -45,7 +45,7 @@ export const lifecycleActions: Array<Omit<HydraLifecycleButtonConfig, 'disabledR
   // "Init" and "Fanout" are hydra-node vocabulary; an operator deciding whether
   // to press one is thinking about opening, funding and settling.
   { action: 'init', label: 'Open head' },
-  { action: 'commit', label: 'Fund at open' },
+  { action: 'commit', label: 'Fund head' },
   { action: 'close', label: 'Close head' },
   { action: 'fanout', label: 'Settle on chain' },
 ];
@@ -99,13 +99,14 @@ export function getStageDisabledReason(head: HydraHead, action: HydraLifecycleAc
 
   if (action === 'commit') {
     if (!head.LocalParticipant) return 'This head has no node on your side';
-    if (head.LocalParticipant.hasCommitted) return 'You have already funded this head at open';
-    // The API accepts Initializing OR Open, an open head takes the same
-    // deposit, which is what Add funds does. Refusing Open here forbade
-    // something the service allows, and told an operator who had not yet
-    // funded a head that the one control for it was gone.
-    if (head.status !== 'Initializing' && head.status !== 'Open')
-      return 'Only while the head is opening or open';
+    if (head.LocalParticipant.hasCommitted)
+      return 'You have already funded this head; use Add funds for more';
+    // Open only, matching the API. An Initializing head takes no commit from
+    // this service: hydra-node would draft an initial commit, which pays the
+    // head script under a Plutus redeemer, and the draft validation refuses it.
+    // Offering the button there spent an L1 carve on a request that then always
+    // failed, and held the participant's wallet for the stale-lock window.
+    if (head.status !== 'Open') return 'Only an open head can be funded';
     return undefined;
   }
 

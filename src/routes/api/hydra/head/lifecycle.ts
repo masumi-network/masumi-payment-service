@@ -257,8 +257,25 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			throw createHttpError(409, 'Cannot commit to a disabled Hydra head');
 		}
 
-		if (head.status !== HydraHeadStatus.Initializing && head.status !== HydraHeadStatus.Open) {
-			throw createHttpError(409, `Cannot commit: head status is ${head.status}, expected Initializing or Open`);
+		// Open only. hydra-node accepts a commit while a head is Initializing too,
+		// but that draft spends the vInitial output with a Plutus redeemer, so it
+		// carries a script_data_hash and pays into the head script rather than the
+		// deposit script — and `validateHydraCommitDraft` refuses both. The request
+		// could therefore never succeed, yet it got that far only AFTER
+		// `carveExactUtxo` had submitted a real L1 transaction: the operator paid a
+		// fee for nothing, and the `finally` below deliberately holds the hot
+		// wallet for the full stale-lock window because a carve is unsettled,
+		// locking the batchers out of that participant's wallet for half an hour.
+		//
+		// Refused here instead, before anything is spent. Every head this service
+		// opens opens empty and is funded by deposit; see docs/hydra-architecture.md.
+		if (head.status !== HydraHeadStatus.Open) {
+			throw createHttpError(
+				409,
+				head.status === HydraHeadStatus.Initializing
+					? 'Cannot commit while the head is still Initializing: funds enter an open head as a deposit, so wait for both parties to open it and then top up'
+					: `Cannot commit: head status is ${head.status}, expected Open`,
+			);
 		}
 
 		const localParticipant = head.LocalParticipant;

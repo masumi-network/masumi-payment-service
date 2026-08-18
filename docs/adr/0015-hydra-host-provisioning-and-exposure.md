@@ -57,8 +57,8 @@ absorbed by DNS rather than forcing a restart.
 escrow-ack, delete, reconfigure, read capabilities. The user token covers
 operating an existing node, including the whole proxied API and WebSocket. WS
 frames are deliberately _not_ tag-gated: `Init`, `Close` and `Fanout` share the
-single long-lived socket with the event stream (`node.ts:1246`, `:1524`,
-`:1534`), so gating them would force that socket to admin and leave the user
+single long-lived socket with the event stream (`node.ts`, `init` / `close` /
+`fanout`), so gating them would force that socket to admin and leave the user
 tier unused. The residual risk is bounded — a leaked user token can close a
 head, which settles funds on L1 per the last snapshot; it cannot exfiltrate
 keys or provision nodes.
@@ -71,8 +71,9 @@ encrypted; `POST /v1/nodes/{id}/escrow-ack` then starts the node and
 permanently seals the disclosure path. Retrying with the same idempotency key
 re-returns the material only while un-acked, and un-acked nodes are reaped.
 
-This **revises the stance recorded at `prisma/schema.prisma:1671-1677`**, which
-kept the node's Cardano key out of the service entirely. That rationale — a
+This **revises the stance recorded on `HydraLocalParticipant` in
+`prisma/schema.prisma`**, which kept the node's Cardano key out of the service
+entirely. That rationale — a
 node-host compromise must not reach escrowed funds — still holds and is
 unchanged in direction: the key now lives in both places rather than only on
 the host, accepted because host and payment service are one security domain and
@@ -104,7 +105,8 @@ side-loads to un-wedge it. This work moves it from the harness into the
 supervisor. It is self-contained — the snapshot comes from the node's own last
 confirmed state, so no counterparty action is required. Safety is preserved
 because the service refuses to treat `SnapshotSideLoaded` as a replay
-authentication anchor (`docs/hydra-architecture.md:201`), so side-loading can
+authentication anchor (see "Snapshot verification" in
+`docs/hydra-architecture.md`), so side-loading can
 restore a node without becoming a channel for injecting unverified state.
 
 The supervisor also owns a **drift watchdog**: on Blockfrost the chain follower
@@ -177,8 +179,8 @@ on the host IP under a firewall allowlist.
 ## Consequences
 
 - The payment service must learn to authenticate to a node. `HydraNodeConfig`
-  (`src/lib/hydra/hydra/types.ts:128-137`) has no credential field, the WS is
-  built with no headers (`connection.ts:45-48`), and `node-url.ts:85-87`
+  (`src/lib/hydra/hydra/types.ts`) has no credential field, the WS is
+  built with no headers (`connection.ts`), and `node-url.ts`
   actively rejects URLs containing userinfo. Threading a bearer token through
   config → connection → client is a typed change, not configuration.
 - `HydraLocalParticipant.nodeUrl` / `nodeHttpUrl` become **derived** from the

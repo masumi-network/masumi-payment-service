@@ -202,7 +202,11 @@ nodes have to see each other.
 
 ### 4. Put money in
 
-Opening commits the funds. Later, add more with **Add funds** on the head.
+A head opens **empty** — this service never signs an initial commit, only
+incremental deposits — so every ADA in it arrives through **Add funds** on the
+head. Do that once it is Open; the button is refused while it is still
+Initializing, because hydra-node would draft an initial commit there and the
+draft validation rejects it.
 
 A deposit is not instant, and the delay is not a queue — it is protocol:
 
@@ -221,9 +225,12 @@ recover it back to the wallet
 
 So money added to a head is **confirmed on chain but unspendable for the
 deposit period**, and if the head never takes it, it is recovered rather than
-lost. The deposit row shows _Submitted_ in yellow the whole time; it never goes
-green, because nothing available proves the head absorbed that particular
-deposit.
+lost. The deposit row stays amber through that whole wait, then turns green as
+_In the head_ once the deposit's own output is seen spent on chain — which is
+what proves the head took that particular deposit.
+
+A row still amber past the end of its absorption window is the failure case, not
+the normal one: the head never took it, and it needs **Recover**.
 
 ### 5. Take money out
 

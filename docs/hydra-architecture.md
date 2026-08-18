@@ -133,9 +133,8 @@ stateDiagram-v2
     Connected --> Open: Greetings(headStatus=Open) — reconnected to a live head
     Connected --> Disconnected: WS drops (auto-reconnect)
     Idle --> Initializing: Admin POST /hydra/head/init\nhydra-node posts InitTx on L1 (HeadIsInitializing)
-    Initializing --> Initializing: Admin POST /hydra/head/commit\nlocal wallet UTxOs committed; remote party commits
-    Initializing --> Open: hydra-node observes all commits (HeadIsOpen)
-    Open --> Open: L2 escrow txs (lock / submit / refund / collect)\nand incremental commits (deposit) add funds
+    Initializing --> Open: both parties open with empty commits (HeadIsOpen)
+    Open --> Open: Admin POST /hydra/head/commit\nfunds enter as a deposit; L2 escrow txs move them
     Open --> Closed: Admin POST /hydra/head/close (HeadIsClosed)
     Closed --> FanoutPossible: contestation period passes (ReadyToFanout)
     FanoutPossible --> Final: Admin POST /hydra/head/fanout (HeadIsFinalized)\nfinal in-head UTxOs settle to L1

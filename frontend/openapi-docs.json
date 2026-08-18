@@ -33859,7 +33859,8 @@
                                     "lovelace"
                                 ],
                                 "example": {
-                                    "headId": "cuid_v2_auto_generated"
+                                    "headId": "cuid_v2_auto_generated",
+                                    "lovelace": "10000000"
                                 }
                             }
                         }
@@ -34483,7 +34484,11 @@
                                                     "status": "Approved",
                                                     "splitTxId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                                                     "decommitTxId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                                    "l1TxId": null,
                                                     "requestedLovelace": "10000000",
+                                                    "requestedAssets": {},
+                                                    "settledLovelace": null,
+                                                    "settledAssets": null,
                                                     "destinationAddress": "addr_test1...",
                                                     "failureReason": null,
                                                     "approvedAt": "1970-01-01T00:00:00.000Z",
@@ -34614,6 +34619,8 @@
                                             "address": "addr_test1...",
                                             "connected": true,
                                             "utxoCount": 1,
+                                            "unbackedLovelace": "0",
+                                            "hasUnbackedUtxos": false,
                                             "balance": [
                                                 {
                                                     "unit": "",

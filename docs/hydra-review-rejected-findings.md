@@ -322,3 +322,53 @@ Once a decommit is approved its outputs leave the `utxo` partition that
 `snapshotUTxO()` returns, so a second withdrawal cannot select them; while it is
 still pending the node refuses a second decommit and the settle path marks the
 new row Failed. Round 7's `PENDING_STALE_AFTER_MS` stands.
+
+## Round 9
+
+**"`remove()` can delete a live wedged node's persistence directory"** — not
+changed. The path is real: `stop()` returns true from its "genuinely down"
+branch, and `remove()`'s guard is `!stopped || isResponsive()`, so a node that
+is alive but invisible to both the pid check and its own API would pass. But
+that is the definition of having no evidence the node exists — the process scan
+cannot see it and it does not answer — and the alternative is refusing removals
+for nodes that really are gone, which is the case an operator actually hits.
+In-container the children die with PID 1, so this is a native-mode-only corner.
+Recorded rather than fixed.
+
+**"SIGTERM during `boot()` is deferred with no bound"** — half accepted. The
+deferral itself is right: dying instantly there orphans whatever `boot` has
+already adopted or spawned, holding peer ports past the only process that could
+drain them. What was wrong was that nothing acted on the signal until boot had
+finished, which at 32 records is minutes of a platform waiting out its stop
+grace. `Supervisor.beginShutdown()` now exists and `boot` returns at the next
+record when it is set. The servers still bind if a signal arrives late in
+startup; the replay closes them within milliseconds of the handlers going in,
+which is not worth restructuring the startup order for.
+
+**Corrections to round 8's own fixes.** Two of the three hydra-host fixes were
+incomplete, and a fresh reviewer measured both:
+
+- `shutdown()` was un-serialised from the in-flight tick but still SKIPPED any
+  node the tick held, deferring it to the pass after `await pendingTick`. That
+  kept the two passes additive for every tick action that is not itself a stop —
+  an observe, an unwedge, or a worker that returned early on `stopped` while a
+  sibling kept the tick alive. Measured at 4985 ms against a 2000 ms per-node
+  drain budget, which at the real budget is 310s against a 240s guard. It now
+  waits the hold out instead, which costs only the hold.
+- Honouring `restartRequested` for a not-responsive node was right, but `start()`
+  never cleared the flag, so a restart requested on a STOPPED node fired again
+  15s into the boot it had just caused: SIGTERM to a node that was still bringing
+  etcd to quorum, returned as `lastStopUndrained` having never been wedged. The
+  start now answers the request, which also removes the pre-existing redundant
+  restart of a healthy node.
+
+**The commit endpoint accepted `Initializing`, and the UI offered it.** Not a
+doc bug — `carveExactUtxo` submits a real L1 transaction before
+`buildValidatedHydraCommit` is ever called, and an initial commit fails that
+validation twice over (it pays the head script, not the deposit script, and
+carries a `script_data_hash` from the vInitial redeemer). So the operator paid a
+fee for a request that could not succeed, and the handler then held their hot
+wallet for the full stale-lock window because the carve was unsettled. The
+endpoint is Open-only now, the button is gated to match, and the lifecycle
+diagram — which still showed a commit self-loop on Initializing, contradicting
+the prose fifteen lines below it — was corrected with it.
