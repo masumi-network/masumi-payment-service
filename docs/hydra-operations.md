@@ -225,8 +225,9 @@ recover it back to the wallet
 ```
 
 So money added to a head is **confirmed on chain but unspendable for the
-deposit period**, and if the head never takes it, it is recovered rather than
-lost. The deposit row stays amber through that whole wait, then turns green as
+deposit period**, and if the head never takes it, it is not lost — but nothing
+sends it back on its own either. It waits at the deposit script until you press
+**Recover**. The deposit row stays amber through that whole wait, then turns green as
 _In the head_ once the deposit's own output is seen spent on chain — which is
 what proves the head took that particular deposit.
 
@@ -318,8 +319,16 @@ will show them exactly once before sealing them. Without them you cannot
 recover funds from a head whose service database is gone. The head details
 dialog warns until you do it.
 
-**Closing.** Close from the head's action menu. The funds return to L1 after
-the dispute window, then fan out. Nothing needs watching in between.
+**Closing.** Close from the head's action menu. What is inside the head returns
+to L1 after the dispute window, then fans out, and nothing needs watching in
+between.
+
+One thing does not come back that way: a deposit the head never absorbed is not
+part of the fanout. It returns only through **Recover**, which needs this
+service's live session with the head — so closing while one is outstanding
+strands it. The close is refused for that reason and names the deposit; if you
+acknowledge past it anyway, recover the deposit first, or keep the head enabled
+and its node running until Recover is offered.
 
 **Closing is not how you get funds out.** It costs you the dispute window — five
 days on mainnet — and ends the head. Use **Take funds out** for anything you

@@ -97,7 +97,7 @@ export function HydraHeadInHeadBalance({ headId, isOpen, network }: HydraHeadInH
           {hasSettlingDeposit
             ? 'A deposit is on chain and waiting for the head to take it. It becomes spendable at the time shown on the deposit below.'
             : hasExpiredDeposit
-              ? 'A deposit confirmed on chain but the head never absorbed it before its deadline, so the funds stayed on L1. Adding them again is the way forward.'
+              ? 'A deposit confirmed on chain but the head never absorbed it before its deadline. The funds are not back in the wallet — they are held at the deposit script until you press Recover on it below, which the node will accept once its deadline passes.'
               : 'Nothing in the head yet. Add funds below.'}
         </div>
       ) : (

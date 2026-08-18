@@ -495,3 +495,26 @@ is live, so the stated consequence cannot occur. Both are recorded because the
 failure mode is the same and is easy to reintroduce: copy that describes what the
 code used to do, or what someone assumed it did, reads as authoritative to the
 operator making the decision.
+
+## Round 12
+
+**The round-11 close guard was defeated by its own reader.** Recorded because
+the shape is worth remembering: the guard was added to the close endpoint AND to
+`hasActiveWork`, but `describeCloseWithActiveWork` took three positional counts
+with a default for the new one — and the reader behind the pre-close dialog
+passed only two. So the dialog appeared (because `hasActiveWork` counted the
+deposit), described a head holding nothing ("This head has ."), and offered the
+acknowledgement that pre-authorises the close, at which point the server's
+refusal could never fire. A defaulted parameter is how a new invariant gets
+added everywhere except the one caller that matters. It now takes the whole
+`HydraHeadActiveWork`, so a caller cannot omit a field, and an empty description
+returns `''` rather than a sentence with nothing in it.
+
+**A third instance of the same misleading copy.** Rounds 11 and 12 each found
+one: the deposit-period hint, the drain warning, and now the in-head balance
+panel, which told an operator whose deposit had missed its window that "the
+funds stayed on L1. Adding them again is the way forward" — inviting a second
+deposit while the first sat recoverable at the deposit script. All three said
+what someone assumed the code did. Worth a standing check whenever a money path
+changes: search the UI for prose describing the old behaviour, not just the
+call sites.

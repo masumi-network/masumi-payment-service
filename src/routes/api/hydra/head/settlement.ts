@@ -72,15 +72,7 @@ export async function beginHydraHeadClose(headId: string, acknowledgedActiveEscr
 					// be closed at all, which is the worse failure: the escrows keep
 					// their deadlines whether or not the head can be shut down.
 					if (!acknowledgedActiveEscrows && hasActiveWork(activeWork)) {
-						throw createHttpError(
-							409,
-							describeCloseWithActiveWork(
-								head.contestationPeriod,
-								activeWork.pendingL2Transactions,
-								activeWork.activeEscrows,
-								activeWork.unrecoveredDeposits,
-							),
-						);
+						throw createHttpError(409, describeCloseWithActiveWork(head.contestationPeriod, activeWork));
 					}
 
 					const claimed = await tx.hydraHead.updateMany({

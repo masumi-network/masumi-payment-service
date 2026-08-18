@@ -16,6 +16,8 @@
  * Pure, so the wording can be tested without a head.
  */
 
+import type { HydraHeadActiveWork } from '@/utils/hydra/active-work';
+
 /** Seconds as something an operator reads, not arithmetic they perform. */
 function describeDuration(seconds: number): string {
 	// The column is non-nullable with a default, so this should be unreachable —
@@ -47,16 +49,22 @@ function countPhrase(count: number, singular: string): string {
 /**
  * The prompt shown when closing a head that still holds work.
  *
- * Both counts are reported, but only the ones that are non-zero: a head with
+ * Every count is reported, but only the ones that are non-zero: a head with
  * escrows and no in-flight transactions should not be told about zero
  * transactions, which reads like a second problem.
+ *
+ * Takes the whole `HydraHeadActiveWork`, not loose numbers. As three positional
+ * counts with a default, the reader behind the pre-close DIALOG passed only two
+ * and silently described a head with an outstanding deposit as holding nothing —
+ * while `hasActiveWork` still counted it, so the dialog appeared, said "This head
+ * has ." and offered the acknowledgement that pre-authorises the close. The
+ * server's refusal never fired, because the UI had already answered it.
  */
 export function describeCloseWithActiveWork(
 	contestationPeriodSeconds: bigint | number,
-	pendingL2Transactions: number,
-	activeEscrows: number,
-	unrecoveredDeposits = 0,
+	work: HydraHeadActiveWork,
 ): string {
+	const { pendingL2Transactions, activeEscrows, unrecoveredDeposits } = work;
 	const held: string[] = [];
 	if (activeEscrows > 0) held.push(`${countPhrase(activeEscrows, 'escrow')} still holding funds`);
 	if (pendingL2Transactions > 0) held.push(`${countPhrase(pendingL2Transactions, 'transaction')} still in flight`);
@@ -70,13 +78,21 @@ export function describeCloseWithActiveWork(
 	// An unabsorbed deposit is not part of the fanout: it returns only through
 	// Recover, which needs a live session for this head, so a close leaves the
 	// money at the deposit script with nothing left able to ask for it back.
+	const it = unrecoveredDeposits === 1 ? 'it' : 'them';
 	const deposits =
 		unrecoveredDeposits > 0
 			? `\n\nThe ${unrecoveredDeposits === 1 ? 'deposit' : 'deposits'} will NOT come back in the fanout. ` +
-				`An unabsorbed deposit returns only through Recover, which needs this head's node session — so ` +
-				`recover ${unrecoveredDeposits === 1 ? 'it' : 'them'} before closing, or the funds stay at the ` +
-				`deposit script.`
+				`An unabsorbed deposit returns only through Recover, which needs this head's node session. ` +
+				`Recover ${it} first — and if Recover is not offered yet, that is the protocol rather than a ` +
+				`fault: it opens one deposit period after the absorption window closes. Leave the head enabled ` +
+				`and its node running until then, or the funds stay at the deposit script with nothing able to ` +
+				`ask for ${it} back.`
 			: '';
+
+	// Never rendered from an empty list: a head with nothing in it is not asked
+	// about at all, and printing "This head has ." is how the missing count
+	// showed up to the operator.
+	if (held.length === 0) return '';
 
 	return (
 		`This head has ${held.join(' and ')}.\n\n` +

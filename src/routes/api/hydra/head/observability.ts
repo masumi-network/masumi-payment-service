@@ -171,7 +171,7 @@ async function readCloseWithActiveWork(
 	if (status !== HydraHeadStatus.Open) return null;
 	const activeWork = await countHydraHeadActiveWork(prisma, headId);
 	if (!hasActiveWork(activeWork)) return null;
-	return describeCloseWithActiveWork(contestationPeriod, activeWork.pendingL2Transactions, activeWork.activeEscrows);
+	return describeCloseWithActiveWork(contestationPeriod, activeWork);
 }
 
 /**
