@@ -19,7 +19,7 @@ import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import { HydraInviteRole, HydraInviteStatus, Network } from '@/generated/prisma/client';
 import { decrypt } from '@/utils/security/encryption';
-import { forgetHostInvite, removeHostNode } from '@/services/hydra-host/client';
+import { fetchHostRedemptions, forgetHostInvite, removeHostNode } from '@/services/hydra-host/client';
 import { MIN_UNSYNCED_PERIOD_SECONDS } from '@/services/hydra-invite/provisioning';
 import { decodeInviteCode } from '@/services/hydra-invite/invite-code';
 import { INVITE_TTL_MS } from '@/services/hydra-invite/invite-payload';
@@ -437,9 +437,26 @@ export const deleteInviteDelete = adminAuthenticatedEndpointFactory.build({
 		}
 
 		const adminToken = decrypt(invite.HydraHost.encryptedAdminToken);
+		const transport = { allowInsecureHttp: invite.HydraHost.allowInsecureHttp };
+
+		// Asked before anything is destroyed, the same question the expiry sweep
+		// asks. The Host accepts a redemption up to the deadline and the poller
+		// that adopts it runs on its own schedule, so an invite that still reads
+		// `Issued` here may already have been taken. `forgetHostInvite` destroys
+		// the only copy of the counterparty's signed redemption there is: the
+		// revoke would then fail anyway at `removeHostNode` — the Host refuses to
+		// remove a node it has set peers on — and leave them with a live head
+		// whose peer can never join and us with nothing to reconstruct it from.
+		const held = await fetchHostRedemptions(invite.HydraHost.baseUrl, adminToken, 0, transport);
+		if (held.invites.some((record) => record.nonce === invite.nonce && record.redeemedAt !== null)) {
+			throw createHttpError(
+				409,
+				'this invite has already been redeemed by the counterparty; it becomes a head within seconds and can be closed from there, but it can no longer be revoked',
+			);
+		}
+
 		// Host first: while it still honours the nonce, a redemption in flight
 		// could start the node we are about to delete.
-		const transport = { allowInsecureHttp: invite.HydraHost.allowInsecureHttp };
 		await forgetHostInvite(invite.HydraHost.baseUrl, adminToken, invite.nonce, transport);
 		await removeHostNode(invite.HydraHost.baseUrl, adminToken, invite.hostNodeId, {
 			force: false,

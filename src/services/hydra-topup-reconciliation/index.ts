@@ -6,6 +6,7 @@ import { isUniqueConstraintError } from '@masumi/payment-core/db-retry';
 import { CONFIG } from '@masumi/payment-core/config';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 
 /**
  * Wait beyond invalid-hereafter before declaring an absent deposit impossible.
@@ -201,6 +202,11 @@ export async function reconcilePendingHydraTopups(): Promise<void> {
 						topupId: candidate.id,
 						depositTxHash: candidate.depositTxHash,
 					});
+					// The top-up holds this wallet from its claim until the deposit it
+					// submitted stops being outstanding, which is here. Releasing when
+					// the request returned handed the wallet to a batcher that could
+					// still see the deposit's inputs as unspent.
+					await releaseHotWalletAfterL1(candidate.LocalParticipant.walletId);
 				}
 			} catch (error) {
 				logger.error('hydra-topup-reconciliation: candidate failed', {

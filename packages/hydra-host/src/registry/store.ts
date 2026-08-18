@@ -184,9 +184,22 @@ export class NodeRegistryStore {
 	 * Remove a node's whole directory, including its persistence. Callers must
 	 * have confirmed the head is finalised — this destroys the only copy of the
 	 * head state held on this host.
+	 *
+	 * Queued like every other mutation, and it was not. A directory removal takes
+	 * real time, and `write` recreates the directory it writes into, so an
+	 * `update` that had already read the record could land its write after the
+	 * `rm` and leave a node.json describing a node with no keys, no peers and no
+	 * persistence — one that can never start, while the peer port it names has
+	 * already been handed to somebody else. Queued, an update either runs first
+	 * or reads nothing and returns null.
 	 */
 	async remove(nodeId: string): Promise<void> {
-		await fs.rm(this.nodeDir(nodeId), { recursive: true, force: true });
-		await fsyncDir(this.nodesDir);
+		await this.enqueue(nodeId, async () => {
+			await fs.rm(this.nodeDir(nodeId), { recursive: true, force: true });
+			await fsyncDir(this.nodesDir);
+		});
+		// Nothing is left to serialise against, and the map would otherwise keep an
+		// entry per node this host has ever removed.
+		this.writeQueues.delete(nodeId);
 	}
 }

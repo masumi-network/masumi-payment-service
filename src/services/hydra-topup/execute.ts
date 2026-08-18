@@ -356,6 +356,20 @@ export async function executeHydraTopup(params: ExecuteHydraTopupParams): Promis
 		await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Topup');
 		throw error;
 	} finally {
-		await releaseHotWalletAfterL1(localParticipant.walletId);
+		// Held while a deposit of ours is still unconfirmed on L1: the call returns
+		// on submission, and the inputs it spends read as unspent from Blockfrost
+		// until it lands, so a batcher that took the wallet here would build a
+		// second transaction over the same input. `reconcilePendingHydraTopups`
+		// releases it once the deposit confirms or fails.
+		const pending = await prisma.hydraTopup.findFirst({
+			where: {
+				hydraLocalParticipantId: localParticipant.id,
+				status: { in: [HydraTopupStatus.Pending, HydraTopupStatus.Preparing] },
+			},
+			select: { id: true },
+		});
+		if (pending === null) {
+			await releaseHotWalletAfterL1(localParticipant.walletId);
+		}
 	}
 }

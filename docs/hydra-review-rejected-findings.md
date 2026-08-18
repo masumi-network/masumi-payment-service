@@ -15,6 +15,47 @@ Confirmed findings are not recorded here. Those became commits.
 
 <!-- Entries: newest first. Keep the shape: claim, where, why it is not a defect. -->
 
+## Round 5
+
+Every finding this round survived checking and became a commit, including one
+that reproduced as a production deploy failure. Two entries below are not
+rejected findings but corrections that will read like defects to the next
+reviewer.
+
+### `mergeMultisets` should take the larger of the two removal allowances
+
+**Claim.** A pending decommit and a pending deposit can be the same output, so
+summing `previous.decommitMultiset` and `recoverableCommits` would authorise
+twice the value actually pending.
+
+**Why the maximum was wrong.** `canonicalSnapshotOutputs`
+([snapshot-verification.ts](../src/lib/hydra/hydra/snapshot-verification.ts))
+throws when one output *reference* appears in two partitions, so the partitions
+are disjoint by construction. The multisets are keyed by serialized value, not
+reference, so a shared key means two different outputs whose bytes match — the
+ordinary shape of a pure-ADA withdrawal and a pure-ADA top-up of the same size
+to the same wallet. The allowance really is two. The maximum under-counted the
+transition where both left at once, the conservation walk failed, and because
+history replays from the beginning on every reconnect that frame rejected
+forever: no verified session, and every L2 escrow operation on that head failing
+closed. It is a sum now, pinned by "lets a decommit and a recovered deposit of
+the same value leave together".
+
+### `carveExactUtxo` should reuse a matching UTxO for token top-ups too
+
+**Claim.** The reuse that stops a retry carving a second UTxO is applied only to
+lovelace; a token top-up should get it as well.
+
+**Why it is not a defect.** For ADA the match is total: a pure-lovelace UTxO of
+exactly the amount holds that and nothing else, so committing it is exactly what
+was asked for. A token UTxO also carries lovelace, and how much is the wallet's
+history rather than this call's choice — a UTxO holding exactly 750 USDM may sit
+on 200 ADA, and Hydra commits whole UTxOs, so reusing it would lock that ADA in
+the head until it closes. A carve pays the ledger minimum, so for a token the
+second carve is the cheaper mistake. `isCarveOf` additionally refuses any UTxO
+carrying a third asset, which is what keeps an agent's registry NFT out of a
+head.
+
 ## Round 4
 
 ### The L2 stand-down should write the cooldown columns

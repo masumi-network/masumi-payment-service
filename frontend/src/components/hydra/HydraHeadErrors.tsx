@@ -42,7 +42,7 @@ export function HydraHeadErrors({
   count: number;
   showHeading?: boolean;
 }) {
-  const { errors, isLoading, refetch } = useHydraHeadErrors(headId);
+  const { errors, isLoading, isError, refetch } = useHydraHeadErrors(headId);
   const { apiClient } = useAppContext();
   const resync = useResync();
   const [isClearing, setIsClearing] = useState(false);
@@ -97,6 +97,15 @@ export function HydraHeadErrors({
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading…
         </p>
+      ) : isError && errors.length === 0 ? (
+        /* A failed read is not an empty list. Saying the entries are gone is a
+           claim about the data, when the truth is that the request failed. */
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">Could not read these errors.</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void refetch()}>
+            Try again
+          </Button>
+        </div>
       ) : errors.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           The count is recorded but the entries are no longer available.

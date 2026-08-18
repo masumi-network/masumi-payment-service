@@ -1148,7 +1148,12 @@ async function processL2RequestRefund(
 		submitTx: async (transaction) => await hydraProvider.submitTx(transaction),
 	});
 
-	return outcome.status !== 'definitively-rejected';
+	// False for both outcomes that rolled the request back: the head judged this
+	// exact body and refused it, or the command never reached the socket. Either
+	// way the request is unchanged and immediately eligible again, and rebuilding
+	// the identical body next tick produces the identical answer. The caller
+	// stands it down so the rest of this wallet's queue can move.
+	return outcome.status !== 'definitively-rejected' && outcome.status !== 'not-dispatched';
 }
 
 /** The L2 portion of the RequestRefund cycle, shared by the timer and the on-demand run. */
@@ -1177,7 +1182,14 @@ async function runRequestRefundL2Pass(): Promise<void> {
 			await Promise.allSettled(
 				paymentContract.PurchaseRequests.map(async (request) => {
 					try {
-						await processL2RequestRefund(request, paymentContract, network);
+						const progressed = await processL2RequestRefund(request, paymentContract, network);
+						if (!progressed) {
+							// Rolled back rather than thrown, so the deferral in the catch
+							// arm below never saw it. Without this the same request is the
+							// oldest eligible row on this wallet every tick, is refused
+							// again, and every escrow behind it runs out its deadlines.
+							markL2RequestDeferred(request.id);
+						}
 					} catch (error) {
 						if (isLookupDeferred(error)) {
 							logger.info('L2 request-refund deferred to next tick', { requestId: request.id, error });

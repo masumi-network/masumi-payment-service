@@ -35,6 +35,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { TxLink } from '@/components/hydra/TxLink';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { adaToLovelace } from '@/components/hydra/ada-amount';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { DepositPeriodHint } from '@/components/hydra/hydra-hints';
@@ -79,24 +80,6 @@ const PRESET_ASSETS: Record<'Preprod' | 'Mainnet', Array<{ label: string; unit: 
 
 /** `ada` covers the common case; the rest name a native asset. */
 type AssetChoice = 'ada' | 'custom' | string;
-
-/**
- * Parse an ADA amount into a lovelace string.
- *
- * Built by concatenation rather than arithmetic: the API takes a decimal string
- * anyway, and multiplying by a million in floating point is how 0.1 ADA becomes
- * 99999.99999999999 lovelace. Nothing finer than one lovelace is accepted,
- * because nothing finer exists.
- */
-function adaToLovelace(value: string): string | null {
-  const trimmed = value.trim();
-  if (!/^\d+(\.\d{1,6})?$/.test(trimmed)) {
-    return null;
-  }
-  const [whole, fraction = ''] = trimmed.split('.');
-  const lovelace = `${whole}${fraction.padEnd(6, '0')}`.replace(/^0+(?=\d)/, '');
-  return lovelace === '0' ? null : lovelace;
-}
 
 /**
  * What has been deposited, and what is still on its way.

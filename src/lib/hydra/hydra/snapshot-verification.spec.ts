@@ -156,6 +156,53 @@ describe('Hydra 2.3 snapshot verification', () => {
 		).toBe('5820f760bf7abf2a44f175500c235faca2ac4fc98a9844f121c1e513731d3e745ade');
 	});
 
+	// A pending decommit and a pending deposit are different outputs, and their
+	// serialized values are identical whenever a withdrawal and a top-up of the
+	// same size go to the same wallet — the ordinary shape here. Allowing only
+	// the larger of the two counted one of them as an unexplained disappearance
+	// on the transition where both left, which fails the conservation walk. That
+	// frame then rejects on every replay of the history, so the head never gets a
+	// verified session again and every L2 escrow operation on it fails closed.
+	it('lets a decommit and a recovered deposit of the same value leave together', () => {
+		const decommitReference = `${'33'.repeat(32)}#0`;
+		const depositReference = `${'44'.repeat(32)}#0`;
+		// Identical bytes, two different outputs: same address, same amount, no
+		// datum and no reference script.
+		const sharedOutput = serializeHydraSnapshotOutput(output({ lovelace: 10_000_000 }));
+		const keptOutput = serializeHydraSnapshotOutput(output({ lovelace: 4_000_000 }));
+		const keptReference = `${'55'.repeat(32)}#0`;
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 4,
+			version: 2,
+			outputs: new Map([
+				[keptReference, keptOutput],
+				[decommitReference, sharedOutput],
+				[depositReference, sharedOutput],
+			]),
+			outputMultiset: new Map([
+				[keptOutput, 1],
+				[sharedOutput, 2],
+			]),
+			committedMultiset: new Map([[sharedOutput, 1]]),
+			decommitMultiset: new Map([[sharedOutput, 1]]),
+		};
+		// The decommit settles on L1 and the deposit passes its deadline and is
+		// recovered, both without a transaction inside the head.
+		const current = {
+			headId: HEAD_ID,
+			number: 5,
+			version: 3,
+			outputs: new Map([[keptReference, keptOutput]]),
+			outputMultiset: new Map([[keptOutput, 1]]),
+			committedMultiset: new Map<string, number>(),
+			decommitMultiset: new Map<string, number>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(true);
+	});
+
 	it('checks signed multiset deltas without trusting adversarial reference mappings', () => {
 		const priorReference = `${'11'.repeat(32)}#0`;
 		const otherReference = `${'22'.repeat(32)}#0`;

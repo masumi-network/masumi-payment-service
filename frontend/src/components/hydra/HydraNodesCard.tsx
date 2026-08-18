@@ -65,23 +65,31 @@ export function HydraNodesCard({
   onConnectedCountChange,
   variant = 'card',
 }: {
-  onConnectedCountChange?: (count: number) => void;
+  /**
+   * How many nodes are connected, or null when that could not be read.
+   *
+   * Null rather than 0: a failed read is not an empty fleet, and reporting zero
+   * disabled every control that needs a node with a tooltip telling the
+   * operator to connect one they already have.
+   */
+  onConnectedCountChange?: (count: number | null) => void;
   /** 'embedded' drops the outer chrome, for a dialog that already has a header. */
   variant?: 'card' | 'embedded';
 }) {
   const { apiClient, network } = useAppContext();
   const resync = useResync();
   const cardanoNetwork = network === 'Preprod' || network === 'Mainnet' ? network : undefined;
-  const { hosts, isLoading, isFetching, refetch } = useHydraHosts(cardanoNetwork);
+  const { hosts, isLoading, isFetching, error, refetch } = useHydraHosts(cardanoNetwork);
 
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editing, setEditing] = useState<HydraHost | null>(null);
   const [pendingDisconnect, setPendingDisconnect] = useState<HydraHost | null>(null);
   const [detailsHost, setDetailsHost] = useState<HydraHost | null>(null);
 
+  const hasFailed = error != null && hosts.length === 0;
   useEffect(() => {
-    onConnectedCountChange?.(hosts.length);
-  }, [hosts.length, onConnectedCountChange]);
+    onConnectedCountChange?.(hasFailed ? null : hosts.length);
+  }, [hasFailed, hosts.length, onConnectedCountChange]);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   async function run(id: string, action: () => Promise<unknown>) {
@@ -169,6 +177,23 @@ export function HydraNodesCard({
         <div className="space-y-2 p-4">
           <div className="h-14 animate-pulse rounded-md bg-muted" />
           <div className="h-14 animate-pulse rounded-md bg-muted" />
+        </div>
+      ) : hasFailed ? (
+        /* Not the empty state: the fleet is unknown here, not empty, and saying
+           "no nodes connected" about a running node sends the operator to
+           connect one they already have. */
+        <div className="rounded-md border border-dashed border-destructive/40 px-4 py-8 text-center">
+          <p className="text-sm text-muted-foreground">Could not read your nodes.</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+          >
+            Try again
+          </Button>
         </div>
       ) : hosts.length === 0 ? (
         <div className="rounded-md border border-dashed px-4 py-8 text-center">

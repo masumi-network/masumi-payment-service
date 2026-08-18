@@ -134,6 +134,33 @@ describe('NodeProcessManager adoption', () => {
 	it('reports a stop for a node it holds no process for', async () => {
 		const manager = new NodeProcessManager();
 		const result = await manager.stop('node-unknown', 1_000);
-		expect(result).toEqual({ graceful: true, exitCode: null, signal: null });
+		// Nothing to stop is a stop that succeeded: the caller may free the node's
+		// files and its peer port on the strength of it.
+		expect(result).toEqual({ graceful: true, stopped: true, exitCode: null, signal: null });
+	});
+});
+
+describe('NodeProcessManager stop safety', () => {
+	// An adopted node has no exit event, so nothing reports its death and the
+	// entry outlives it. Once the pid is reused — on this host, most likely by a
+	// sibling hydra-node — signalling it would SIGKILL the neighbour mid-round.
+	it('refuses to signal an adopted pid that now belongs to something else', async () => {
+		const manager = new NodeProcessManager();
+		const child = spawnIdleProcess();
+		const pid = child.pid as number;
+		await manager.adopt('node-1', pid, process.execPath, NODE_DIR);
+
+		// The same live pid, now failing the identity check: exactly what pid reuse
+		// looks like from here.
+		const entry = manager.get('node-1');
+		if (entry !== undefined) entry.identity = { binary: process.execPath, nodeDir: SIBLING_DIR };
+
+		const result = await manager.stop('node-1', 1_000);
+
+		expect(result.stopped).toBe(true);
+		expect(manager.isRunning('node-1')).toBe(false);
+		// The process it refused to signal is untouched, which is the whole point.
+		expect(isProcessAlive(pid)).toBe(true);
+		expect(child.killed).toBe(false);
 	});
 });

@@ -7,6 +7,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { RefreshButton } from '@/components/RefreshButton';
 import { HydraNotice } from '@/components/hydra/HydraNotice';
 import { HydraInitDialog } from '@/components/hydra/HydraInitDialog';
+import { HydraCommitDialog } from '@/components/hydra/HydraCommitDialog';
 import { HydraInvitesDialog } from '@/components/hydra/HydraManageDialog';
 import { HydraNodeStrip } from '@/components/hydra/HydraNodeStrip';
 import { HydraNodeDetailsDialog } from '@/components/hydra/HydraNodeDetailsDialog';
@@ -181,7 +182,10 @@ export default function HydraHeadsPage() {
     }
     return counts;
   }, [heads]);
-  const hasConnectedNode = connectedNodeCount > 0;
+  // A failed read is not an empty fleet. Treating it as one disabled every
+  // control that needs a node and told the operator to connect one they already
+  // have; the API's own refusal is the better answer if there really is none.
+  const hasConnectedNode = connectedNodeCount > 0 || hostsError != null;
   const hostNames = useMemo(
     () => Object.fromEntries(hosts.map((host) => [host.id, host.name])),
     [hosts],
@@ -231,7 +235,12 @@ export default function HydraHeadsPage() {
       ? (closingHeadConnection?.closeWithActiveWork ?? null)
       : null;
 
-  const handleRunLifecycleAction = async (head: HydraHead, action: HydraLifecycleAction) => {
+  const handleRunLifecycleAction = async (
+    head: HydraHead,
+    action: HydraLifecycleAction,
+    /** Only a commit carries one; the amount the operator typed, in lovelace. */
+    commitLovelace?: string,
+  ) => {
     setRunningLifecycleHeadId(head.id);
     // A refused close leaves the dialog up: the reason is usually work that
     // appeared since it opened, and the answer to it is the acknowledgement in
@@ -243,7 +252,12 @@ export default function HydraHeadsPage() {
         await initHydraHead(apiClient, { headId: head.id });
         toast.success('Hydra head init started');
       } else if (action === 'commit') {
-        await commitHydraHead(apiClient, { headId: head.id });
+        // Guarded rather than defaulted: a commit with a made-up amount moves
+        // real funds into a head that only a close gets them back out of.
+        if (commitLovelace === undefined) {
+          throw new Error('No amount was given for this commit');
+        }
+        await commitHydraHead(apiClient, { headId: head.id, lovelace: commitLovelace });
         toast.success('Local Hydra commit submitted');
       } else if (action === 'close') {
         try {
@@ -287,12 +301,16 @@ export default function HydraHeadsPage() {
     }
   };
 
-  const handleConfirmLifecycleAction = () => {
+  const handleConfirmLifecycleAction = (commitLovelace?: string) => {
     if (!pendingLifecycleAction) {
       return;
     }
 
-    void handleRunLifecycleAction(pendingLifecycleAction.head, pendingLifecycleAction.action);
+    void handleRunLifecycleAction(
+      pendingLifecycleAction.head,
+      pendingLifecycleAction.action,
+      commitLovelace,
+    );
   };
 
   return (
@@ -428,7 +446,21 @@ export default function HydraHeadsPage() {
         }}
         localParticipantId={pendingLifecycleAction?.head.LocalParticipant?.id ?? null}
         network={selectedNetwork}
-        onConfirm={handleConfirmLifecycleAction}
+        onConfirm={() => handleConfirmLifecycleAction()}
+        isRunning={
+          pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false
+        }
+      />
+      {/* Commit is the one lifecycle action that needs a number from the
+          operator: the amount is carved into its own L1 UTxO and only that goes
+          into the head. */}
+      <HydraCommitDialog
+        open={pendingLifecycleAction?.action === 'commit'}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setPendingLifecycleAction(null);
+        }}
+        network={selectedNetwork}
+        onConfirm={(lovelace) => handleConfirmLifecycleAction(lovelace)}
         isRunning={
           pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false
         }
@@ -440,7 +472,11 @@ export default function HydraHeadsPage() {
           contestation period plus an L1 settlement each. So it is the same
           question with one more thing to agree to, not a second dialog. */}
       <ConfirmDialog
-        open={Boolean(pendingLifecycleAction) && pendingLifecycleAction?.action !== 'init'}
+        open={
+          Boolean(pendingLifecycleAction) &&
+          pendingLifecycleAction?.action !== 'init' &&
+          pendingLifecycleAction?.action !== 'commit'
+        }
         onClose={() => setPendingLifecycleAction(null)}
         title={
           closeWithActiveWork !== null
@@ -460,7 +496,7 @@ export default function HydraHeadsPage() {
             : undefined
         }
         confirmLabel={closeWithActiveWork !== null ? 'Close anyway' : 'Confirm'}
-        onConfirm={handleConfirmLifecycleAction}
+        onConfirm={() => handleConfirmLifecycleAction()}
         isLoading={
           pendingLifecycleAction ? runningLifecycleHeadId === pendingLifecycleAction.head.id : false
         }

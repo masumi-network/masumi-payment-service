@@ -656,6 +656,23 @@ export class Supervisor {
 			this.logger.warn(`[supervisor] ${record.nodeId} required SIGKILL`);
 		}
 
+		// A process that outlived SIGKILL is still holding this node's persistence
+		// directory, its api port and its peer port. Reporting it stopped is what
+		// let `remove` delete those files and hand the port to the next provision
+		// while the orphan kept writing to both. The pid is kept for the same
+		// reason: it is the only handle anything has on it.
+		if (!stopResult.stopped) {
+			const failureReason = `the process (pid ${String(record.pid ?? 'unknown')}) did not exit on SIGKILL, so its files and ports are still in use`;
+			this.logger.error(`[supervisor] ${record.nodeId} could not be stopped: ${failureReason}`);
+			await this.store.update(record.nodeId, (current) => ({
+				...current,
+				state: 'Failed',
+				lastStopUndrained: true,
+				failureReason,
+			}));
+			return false;
+		}
+
 		const undrained = !outcome.drained || wedged || !stopResult.graceful;
 		await this.store.update(record.nodeId, (current) => ({
 			...current,
@@ -707,16 +724,23 @@ export class Supervisor {
 		// Unconditionally, because "not a child of this host" is not the same as
 		// "not running": `stop` takes the process back by pid when it can, and says
 		// so when it cannot.
-		await this.stop(record, reason);
+		const stopped = await this.stop(record, reason);
 
 		// A node that still answers is one the stop could not reach. Deleting its
 		// persistence directory out from under it and handing its peer port to the
 		// next node turns one stuck node into two: the orphan keeps writing and
 		// keeps the port bound, and the node that inherits the port cannot start.
-		if (await this.client(record).isResponsive()) {
-			const failureReason =
-				'the node is still answering after a stop attempt, so its files and peer port are still in use; ' +
-				'stop the process on the machine, then remove the node again';
+		//
+		// The stop's own answer is checked alongside the probe, because the case
+		// this guard exists for is precisely a node that has stopped answering
+		// while its process runs on: a wedged node fails `isResponsive` and would
+		// have passed straight through.
+		if (!stopped || (await this.client(record).isResponsive())) {
+			const failureReason = stopped
+				? 'the node is still answering after a stop attempt, so its files and peer port are still in use; ' +
+					'stop the process on the machine, then remove the node again'
+				: 'the process did not exit on SIGKILL, so its files and peer port are still in use; ' +
+					'stop the process on the machine, then remove the node again';
 			this.logger.error(`[supervisor] refusing to remove ${record.nodeId}: ${failureReason}`);
 			// The intent is cleared with the failure. Left set, the plan asks for the
 			// same removal on every tick, it is refused for the same reason every

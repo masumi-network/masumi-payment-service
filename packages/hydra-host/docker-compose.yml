@@ -9,7 +9,7 @@
 #
 #   8443        control plane      published, bearer-token gated
 #   8444        exchange plane     published, invite redemption
-#   5001-5032   peer plane         published, raft traffic, no auth possible
+#   5001-5032   peer plane         published only via the public-peer override
 #   4001-4032   hydra-node API     NEVER — unauthenticated, can close a head
 #   6001-6032   Prometheus         NEVER — no --monitoring-host exists
 #
@@ -39,9 +39,15 @@ services:
       # port on the issuer's Host, so a Host that does not publish it can issue
       # invites nobody can accept.
       - '8444:8444'
-      # Must match HYDRA_HOST_PEER_PORT_START and _COUNT below. Every head needs
-      # its own port; a head whose port is unpublished cannot reach its peer.
-      - '5001-5032:5001-5032'
+      # The peer plane is deliberately NOT published here. Every head needs its
+      # own port and a head whose port is unpublished cannot reach its peer, so
+      # publishing it is required — but it is unauthenticated etcd raft, and the
+      # order matters: apply the generated nftables ruleset first, then start
+      # with `-f docker-compose.public-peer.yml`, which adds the same range
+      # behind HYDRA_HOST_PEER_FIREWALL_ACK. Publishing it from this file put 32
+      # unauthenticated ports on the internet for anyone following the base file
+      # as a worked example, and made the override's acknowledgement a formality
+      # over a range that was already open.
 
     environment:
       # Bare hostname or IP, no scheme or port. Counterparties dial this, and it

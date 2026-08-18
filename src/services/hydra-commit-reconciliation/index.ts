@@ -4,6 +4,7 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { CONFIG } from '@masumi/payment-core/config';
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
+import { releaseHotWalletAfterL1 } from '@/utils/db/hot-wallet-lock';
 
 /**
  * Wait beyond invalid-hereafter before declaring an absent commit impossible.
@@ -184,6 +185,11 @@ export async function reconcilePendingHydraCommits(): Promise<void> {
 						participantId: candidate.id,
 						commitTxHash: candidate.commitTxHash,
 					});
+					// The commit request holds this wallet from its claim until the
+					// transaction it submitted stops being outstanding, which is here.
+					// Releasing at the end of the request instead handed the wallet to
+					// a batcher that could still see the commit's inputs as unspent.
+					await releaseHotWalletAfterL1(candidate.walletId);
 				}
 			} catch (error) {
 				logger.error('hydra-commit-reconciliation: candidate failed', {

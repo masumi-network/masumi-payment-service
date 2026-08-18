@@ -65,6 +65,15 @@ export async function claimHotWalletForL1(walletId: string, purpose: string): Pr
  *
  * Guarded on there being no pending transaction, so a release arriving after
  * some other holder has attached one cannot free a wallet that is mid-flight.
+ *
+ * Call it only once this operation has no L1 transaction of its own left
+ * outstanding. A Hydra commit or deposit is submitted, not confirmed, when the
+ * request returns: releasing there let a batcher pick the wallet up, read its
+ * UTxOs from Blockfrost — which still reports the inputs the unconfirmed
+ * transaction spends — and build a second transaction over the same input. One
+ * of the two is then rejected on chain as `BadInputsUTxO`, and which one is a
+ * coin toss. The commit and top-up paths therefore hold the lock while their
+ * transaction is pending, and their reconcilers release it.
  */
 export async function releaseHotWalletAfterL1(walletId: string): Promise<void> {
 	try {

@@ -28,6 +28,16 @@ export type SpawnRequest = {
 export type StopResult = {
 	/** True when the process exited on SIGTERM; false when it had to be killed. */
 	graceful: boolean;
+	/**
+	 * Whether the process is actually gone.
+	 *
+	 * Distinct from `graceful`: a SIGKILL that lands is ungraceful but stopped,
+	 * and one that does not land — a process blocked in uninterruptible I/O, say
+	 * — is neither. The caller acts on this bit by deleting the node's
+	 * persistence directory and handing its peer port to the next provision, so
+	 * conflating the two removes the files of a node that is still writing them.
+	 */
+	stopped: boolean;
 	exitCode: number | null;
 	signal: NodeJS.Signals | null;
 };
@@ -37,6 +47,14 @@ export type RunningNode = {
 	pid: number | undefined;
 	/** Absent for an adopted node: it is not a child of this process. */
 	child?: ChildProcess;
+	/**
+	 * How to re-identify an adopted process, kept from the adoption that
+	 * accepted it. An adopted node has no exit event, so nothing reports its
+	 * death: the entry survives it, and after pid reuse it names whatever now
+	 * holds that number — including a sibling hydra-node on this same host.
+	 * Checked again before any signal, so a stop cannot land on the neighbour.
+	 */
+	identity?: { binary: string; nodeDir: string };
 	startedAtMs: number;
 };
 
@@ -216,7 +234,7 @@ export class NodeProcessManager {
 		if (!isProcessAlive(pid) || !(await isProcessRunningNode(pid, binary, nodeDir))) {
 			return false;
 		}
-		this.running.set(nodeId, { nodeId, pid, startedAtMs: Date.now() });
+		this.running.set(nodeId, { nodeId, pid, startedAtMs: Date.now(), identity: { binary, nodeDir } });
 		return true;
 	}
 
@@ -273,7 +291,7 @@ export class NodeProcessManager {
 	async stop(nodeId: string, graceMs: number): Promise<StopResult> {
 		const entry = this.running.get(nodeId);
 		if (entry === undefined) {
-			return { graceful: true, exitCode: null, signal: null };
+			return { graceful: true, stopped: true, exitCode: null, signal: null };
 		}
 		if (entry.child === undefined) {
 			return this.stopAdopted(entry, graceMs);
@@ -282,7 +300,7 @@ export class NodeProcessManager {
 		const child = entry.child;
 		const exited = new Promise<StopResult>((resolve) => {
 			const settle = (code: number | null, signal: NodeJS.Signals | null): void =>
-				resolve({ graceful: signal !== 'SIGKILL', exitCode: code, signal });
+				resolve({ graceful: signal !== 'SIGKILL', stopped: true, exitCode: code, signal });
 			child.once('exit', settle);
 			child.once('error', () => settle(null, null));
 		});
@@ -315,7 +333,18 @@ export class NodeProcessManager {
 		const pid = entry.pid;
 		if (pid === undefined || !isProcessAlive(pid)) {
 			this.running.delete(entry.nodeId);
-			return { graceful: true, exitCode: null, signal: null };
+			return { graceful: true, stopped: true, exitCode: null, signal: null };
+		}
+		// Re-checked here, not only at adoption. An adopted node is not a child, so
+		// its death goes unobserved and this entry outlives it; once the pid is
+		// reused the signal below would land on whatever inherited the number,
+		// which on this host is most likely a sibling node mid-round.
+		if (
+			entry.identity !== undefined &&
+			!(await isProcessRunningNode(pid, entry.identity.binary, entry.identity.nodeDir))
+		) {
+			this.running.delete(entry.nodeId);
+			return { graceful: true, stopped: true, exitCode: null, signal: null };
 		}
 
 		const waitForExit = async (budgetMs: number): Promise<boolean> => {
@@ -334,26 +363,30 @@ export class NodeProcessManager {
 		} catch {
 			// Already gone between the liveness check and the signal.
 			this.running.delete(entry.nodeId);
-			return { graceful: true, exitCode: null, signal: null };
+			return { graceful: true, stopped: true, exitCode: null, signal: null };
 		}
 
 		if (await waitForExit(graceMs)) {
 			this.running.delete(entry.nodeId);
-			return { graceful: true, exitCode: null, signal: 'SIGTERM' };
+			return { graceful: true, stopped: true, exitCode: null, signal: 'SIGTERM' };
 		}
 
 		try {
 			process.kill(pid, 'SIGKILL');
 		} catch {
+			// The pid went between the wait and the signal, which is the process
+			// exiting on the SIGTERM it was already sent.
 			this.running.delete(entry.nodeId);
-			return { graceful: false, exitCode: null, signal: 'SIGKILL' };
+			return { graceful: false, stopped: true, exitCode: null, signal: 'SIGKILL' };
 		}
 
 		const dead = await waitForExit(ADOPTED_SIGKILL_WAIT_MS);
 		if (dead) {
 			this.running.delete(entry.nodeId);
 		}
-		return { graceful: false, exitCode: null, signal: 'SIGKILL' };
+		// `dead` is the whole point of the wait and it used to be discarded here,
+		// so a SIGKILL that never landed reported the same result as one that did.
+		return { graceful: false, stopped: dead, exitCode: null, signal: 'SIGKILL' };
 	}
 
 	async stopAll(graceMs: number): Promise<void> {

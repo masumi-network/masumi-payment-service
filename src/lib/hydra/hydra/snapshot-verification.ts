@@ -551,15 +551,27 @@ export function verifyHydraSnapshot(
 }
 
 /**
- * The larger count per output across two partitions.
+ * How many outputs of each value may leave without a transaction input.
  *
- * Not a sum: the same output can sit in both, and adding them would authorise
- * twice the value actually pending.
+ * The sum of the two partitions, because they are disjoint by construction:
+ * `canonicalSnapshotOutputs` rejects a snapshot that repeats one *reference*
+ * across partitions, so a pending decommit and a pending deposit that share a
+ * key here are two different outputs whose serialized values happen to be
+ * identical — the ordinary shape of a pure-ADA withdrawal and a pure-ADA
+ * top-up of the same size to the same wallet.
+ *
+ * This took the larger of the two, on the theory that one output could sit in
+ * both and be counted twice. It cannot. What the maximum actually did was
+ * under-count a transition where both genuinely left at once — the decommit
+ * settling while the deposit passed its deadline and was recovered — and a
+ * conservation walk that fails rejects that frame on every replay, which is
+ * permanent: no verified session, and every L2 escrow operation on that head
+ * fails closed.
  */
 function mergeMultisets(left: Map<string, number>, right: Map<string, number>): Map<string, number> {
 	const merged = new Map(left);
 	for (const [output, count] of right) {
-		merged.set(output, Math.max(merged.get(output) ?? 0, count));
+		merged.set(output, (merged.get(output) ?? 0) + count);
 	}
 	return merged;
 }

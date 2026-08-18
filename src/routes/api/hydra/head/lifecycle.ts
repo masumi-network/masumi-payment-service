@@ -557,7 +557,20 @@ export const commitHeadPost = adminAuthenticatedEndpointFactory.build({
 			await recordHeadError(head.id, head.status, HydraErrorType.CommandFailed, error, 'Commit');
 			throw error;
 		} finally {
-			await releaseHotWalletAfterL1(localParticipant.walletId);
+			// Held while a commit of ours is still unconfirmed on L1. The handler
+			// returns as soon as the transaction is submitted, and the inputs it
+			// spends still read as unspent from Blockfrost until it lands, so a
+			// batcher that took the wallet here would build a second transaction
+			// over the same input. `reconcilePendingHydraCommits` releases it when
+			// the commit confirms or is cleared; the stale-lock window covers the
+			// case where nothing ever settles it.
+			const pending = await prisma.hydraLocalParticipant.findUnique({
+				where: { id: localParticipant.id },
+				select: { commitTxHash: true, hasCommitted: true },
+			});
+			if (pending?.commitTxHash == null || pending.hasCommitted) {
+				await releaseHotWalletAfterL1(localParticipant.walletId);
+			}
 		}
 	},
 });

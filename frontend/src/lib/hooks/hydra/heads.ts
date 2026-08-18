@@ -210,7 +210,13 @@ export async function initHydraHead(apiClient: Client, payload: { headId: string
   return ensureData(response?.data?.data, 'Hydra head init response was not returned by the API');
 }
 
-export async function commitHydraHead(apiClient: Client, payload: { headId: string }) {
+export async function commitHydraHead(
+  apiClient: Client,
+  // `lovelace` is required by the endpoint: the service carves a dedicated UTxO
+  // of exactly this amount and commits only that. Omitting it — which this
+  // helper used to do — is a 400 before the handler runs.
+  payload: { headId: string; lovelace: string },
+) {
   const response = await handleApiCall(
     () =>
       apiClient.post<HydraHeadCommitResponse>({

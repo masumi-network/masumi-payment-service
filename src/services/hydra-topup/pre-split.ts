@@ -29,13 +29,21 @@ function isPureLovelace(utxo: UTxO): boolean {
 	return utxo.output.amount.every((asset) => asset.unit === 'lovelace');
 }
 
-/** Whether this UTxO is exactly what a carve of `amount` `unit` would produce. */
+/**
+ * Whether this UTxO is exactly what a carve of `amount` `unit` would produce.
+ *
+ * The purity half matters as much as the amount: Hydra commits WHOLE UTxOs, so
+ * anything else riding along goes into the head too and only a decommit or a
+ * close gets it back. A lovelace carve pays a pure-ADA output; a token carve
+ * pays the token and its min-ADA and nothing else, while the change output
+ * beside it carries every other asset the wallet held — including an agent's
+ * registry NFT.
+ */
 function isCarveOf(utxo: UTxO, walletAddress: string, unit: string, amount: bigint): boolean {
-	return (
-		utxo.output.address === walletAddress &&
-		unitAmount(utxo, unit) === amount &&
-		(unit !== 'lovelace' || isPureLovelace(utxo))
-	);
+	if (utxo.output.address !== walletAddress) return false;
+	if (unitAmount(utxo, unit) !== amount) return false;
+	if (unit === 'lovelace') return isPureLovelace(utxo);
+	return utxo.output.amount.every((asset) => asset.unit === 'lovelace' || asset.unit === unit);
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -99,12 +107,19 @@ export async function carveExactUtxo(params: {
 }): Promise<UTxO> {
 	if (params.amount <= 0n) throw new HydraPreSplitError('exact top-up amount must be positive');
 
-	// Reuse before carving. An exact, pure UTxO of this amount is indistinguishable
-	// from one this wallet carved a moment ago and could not commit, and committing
-	// it means the same thing either way: exactly `amount` goes into the head.
-	const reusable = params.existingUtxos?.find((utxo) =>
-		isCarveOf(utxo, params.walletAddress, params.unit, params.amount),
-	);
+	// Reuse before carving, for ADA only. A pure-lovelace UTxO of exactly this
+	// amount is indistinguishable from one this wallet carved a moment ago and
+	// could not commit, and committing it means the same thing either way:
+	// exactly `amount` goes into the head and nothing else.
+	//
+	// A token UTxO carries lovelace as well, and how much is not ours to choose:
+	// a wallet UTxO holding exactly 750 USDM may sit on 200 ADA, and committing
+	// it would lock that ADA in the head until the head closes. A carve pays the
+	// ledger minimum, so for a token a second carve is the cheaper mistake.
+	const reusable =
+		params.unit === 'lovelace'
+			? params.existingUtxos?.find((utxo) => isCarveOf(utxo, params.walletAddress, params.unit, params.amount))
+			: undefined;
 	if (reusable) {
 		logger.info('hydra-pre-split: reusing an exact UTxO the wallet already holds', {
 			txHash: reusable.input.txHash,

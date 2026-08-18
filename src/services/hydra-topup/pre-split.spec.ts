@@ -149,6 +149,62 @@ describe('carveExactUtxo', () => {
 		expect(params.submitCarveTx as AnyMock).toHaveBeenCalledTimes(1);
 	});
 
+	// A token UTxO carries lovelace too, and how much is the wallet's history,
+	// not this call's choice. Reusing one would commit whatever ADA happens to
+	// sit on it, so a token top-up always carves.
+	it('does not reuse an existing UTxO for a token amount', async () => {
+		const unit = 'dd'.repeat(28) + '0014df10';
+		const already = {
+			input: { txHash: TX, outputIndex: 5 },
+			output: {
+				address: ADDR,
+				amount: [
+					{ unit: 'lovelace', quantity: '200000000' },
+					{ unit, quantity: '750' },
+				],
+			},
+		};
+		const params = baseParams({
+			unit,
+			amount: 750n,
+			existingUtxos: [already],
+			blockchainProvider: { fetchUTxOs: jest.fn(async () => [carvedUtxo(unit, '750')]) } as any,
+		});
+
+		const result = await carveExactUtxo(params);
+
+		expect(result).not.toBe(already);
+		expect(params.submitCarveTx as AnyMock).toHaveBeenCalledTimes(1);
+	});
+
+	// The change output beside a token carve holds the same token quantity when
+	// the wallet held exactly twice the amount — and every other asset it owned.
+	it('does not mistake a change output carrying other assets for the token carve', async () => {
+		const unit = 'dd'.repeat(28) + '0014df10';
+		const change = {
+			input: { txHash: TX, outputIndex: 1 },
+			output: {
+				address: ADDR,
+				amount: [
+					{ unit: 'lovelace', quantity: '5000000' },
+					{ unit, quantity: '750' },
+					{ unit: 'ff'.repeat(28) + '4e4654', quantity: '1' },
+				],
+			},
+		};
+		const params = baseParams({
+			unit,
+			amount: 750n,
+			blockchainProvider: {
+				fetchUTxOs: jest.fn(async () => [change, carvedUtxo(unit, '750', 0)]),
+			} as any,
+		});
+
+		const result = await carveExactUtxo(params);
+
+		expect(result.input.outputIndex).toBe(0);
+	});
+
 	it('throws when no output matches the exact amount', async () => {
 		const params = baseParams({
 			blockchainProvider: { fetchUTxOs: jest.fn(async () => [carvedUtxo('lovelace', '49999999')]) } as any,
