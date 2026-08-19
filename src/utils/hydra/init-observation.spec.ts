@@ -25,7 +25,7 @@ describe('classifyInitObservation', () => {
 		const verdict = classifyInitObservation({ headStatus: HydraHeadStatus.Idle, ...BEHIND });
 
 		expect(verdict.kind).toBe('awaiting-node');
-		expect(verdict.kind === 'awaiting-node' && verdict.message).toContain('4 hours behind the chain');
+		expect(verdict.kind === 'awaiting-node' && verdict.message).toContain('4.0 hours behind the chain');
 	});
 
 	it('tells the operator not to re-post, which is the actual hazard', () => {
@@ -54,7 +54,7 @@ describe('classifyInitObservation', () => {
 
 		expect(at(45)).toContain('45 seconds behind');
 		expect(at(600)).toContain('10 minutes behind');
-		expect(at(10_800)).toContain('3 hours behind');
+		expect(at(10_800)).toContain('3.0 hours behind');
 		expect(at(null)).toContain('still catching up');
 	});
 });

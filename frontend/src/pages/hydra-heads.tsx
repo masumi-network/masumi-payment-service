@@ -250,7 +250,10 @@ export default function HydraHeadsPage() {
     try {
       if (action === 'init') {
         await initHydraHead(apiClient, { headId: head.id });
-        toast.success('Hydra head init started');
+        toast.success(
+          'Opening the head. It settles on chain and then both sides commit, which usually takes ' +
+            'about ten minutes. The head updates itself; nothing else is needed from you.',
+        );
       } else if (action === 'commit') {
         // Guarded rather than defaulted: a commit with a made-up amount moves
         // real funds into a head that only a close gets them back out of.
@@ -282,6 +285,14 @@ export default function HydraHeadsPage() {
         await fanoutHydraHead(apiClient, { headId: head.id });
         toast.success('Hydra head fanout started');
       }
+
+      // Closed here rather than in the `finally`, which runs only after the
+      // resync and refetch below. Those take seconds against a live chain, and
+      // for that whole time the dialog sat over the page with a spinner and a
+      // line telling the operator they were allowed to close it — after the
+      // work it describes had already been accepted. The toast above is the
+      // report; once the call has returned the dialog has nothing left to ask.
+      setPendingLifecycleAction(null);
 
       // Everything about this head just changed: its status, its participants,
       // its transactions and its balance. Refetching only the list left the

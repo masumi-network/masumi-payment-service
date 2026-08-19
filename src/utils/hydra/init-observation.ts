@@ -19,6 +19,7 @@
  */
 
 import { HydraHeadStatus } from '@/generated/prisma/client';
+import { formatDriftBehind, hasNoChainPoint } from '@/utils/hydra/drift-wording';
 
 /** Statuses that mean the Init was observed after all, timeout notwithstanding. */
 const OBSERVED_STATUSES: ReadonlySet<HydraHeadStatus> = new Set([HydraHeadStatus.Initializing, HydraHeadStatus.Open]);
@@ -31,14 +32,18 @@ export type InitObservationVerdict =
 	/** Nothing accounts for the silence; treat it as the failure it may well be. */
 	| { kind: 'failed' };
 
-/** Seconds as something an operator can weigh, matching the node-state wording. */
+/**
+ * Seconds as something an operator can weigh, matching the node-state wording.
+ *
+ * A node with no chain point yet reports slot 0, which converts to a gap of
+ * years; saying so here would put "is about 36514 hours behind the chain" in
+ * the middle of a sentence explaining that nothing is wrong.
+ */
 function describeDrift(driftSeconds: number | null): string {
-	if (driftSeconds === null || !Number.isFinite(driftSeconds) || driftSeconds < 0) {
-		return 'is still catching up with the chain';
-	}
-	if (driftSeconds < 120) return `is about ${Math.round(driftSeconds)} seconds behind the chain`;
-	if (driftSeconds < 7200) return `is about ${Math.round(driftSeconds / 60)} minutes behind the chain`;
-	return `is about ${Math.round(driftSeconds / 3600)} hours behind the chain`;
+	if (hasNoChainPoint(driftSeconds)) return 'has not started following the chain yet';
+	const behind = driftSeconds === null ? null : formatDriftBehind(driftSeconds);
+	if (behind === null) return 'is still catching up with the chain';
+	return `is about ${behind} behind the chain`;
 }
 
 /**

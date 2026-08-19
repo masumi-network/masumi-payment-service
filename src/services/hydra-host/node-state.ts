@@ -12,6 +12,7 @@
  */
 
 import { prisma } from '@masumi/payment-core/db';
+import { formatDriftBehind, hasNoChainPoint } from '@/utils/hydra/drift-wording';
 import { decrypt } from '@/utils/security/encryption';
 import { fetchHostNodeHealth } from './client';
 
@@ -90,19 +91,23 @@ export async function readParticipantNodeState(localParticipantId: string): Prom
  * A head whose node has been offline longer than its unsynced period refuses
  * everything — L2 included — until it catches up, so the size of the gap is the
  * whole decision.
+ *
+ * A node that has not reached a chain point at all is the third case, and it
+ * used to be reported as the second: its slot 0 converts to the moment before
+ * the network existed, so a node that had merely just started was described as
+ * "1521.4 days behind". That is not a number anyone can act on, and it reads as
+ * broken software rather than as a node that needs another few seconds.
  */
 function describeCatchingUp(driftSeconds: number | null): string {
-	const base = 'The node is running but still catching up on chain, and will reject commands until it has.';
-	if (driftSeconds == null || driftSeconds <= 0) return base;
-	return `${base} It is ${formatBehind(driftSeconds)} behind.`;
-}
-
-/** Rounded to the unit that answers "wait, or intervene?" rather than to the second. */
-function formatBehind(seconds: number): string {
-	if (seconds < 90) return `${Math.round(seconds)} seconds`;
-	const minutes = seconds / 60;
-	if (minutes < 90) return `${Math.round(minutes)} minutes`;
-	const hours = minutes / 60;
-	if (hours < 48) return `${hours.toFixed(1)} hours`;
-	return `${(hours / 24).toFixed(1)} days`;
+	if (hasNoChainPoint(driftSeconds)) {
+		return (
+			'This node has not started following the chain yet, so it refuses every command. ' +
+			'That is normal for the first few minutes after a start. If it lasts longer, restart the node.'
+		);
+	}
+	const behind = driftSeconds === null ? null : formatDriftBehind(driftSeconds);
+	if (behind === null) {
+		return 'This node is still catching up with the chain, and refuses every command until it has.';
+	}
+	return `This node is about ${behind} behind the chain, and refuses every command until it catches up.`;
 }

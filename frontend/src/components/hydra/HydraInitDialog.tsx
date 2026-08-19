@@ -163,15 +163,12 @@ export function HydraInitDialog({
           </p>
         ) : null}
 
-        {/* Only once the transaction is being posted. Said up front it is
-            noise about a wait that has not started; said now it answers the
-            question the spinner just raised, and stops a second click. */}
-        {isRunning && (
-          <p className="text-xs text-muted-foreground">
-            Waiting for the transaction to land, usually a block or two. You can close this window.
-            The node carries on and the head updates itself.
-          </p>
-        )}
+        {/* Only once the transaction is being posted, and only about this
+            moment. It used to invite the operator to close the window and
+            describe the wait that follows — but the dialog now closes itself
+            the instant the call returns, and the wait is reported in the toast
+            that replaces it. All this has to do is stop a second click. */}
+        {isRunning && <p className="text-xs text-muted-foreground">Posting the transaction…</p>}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
