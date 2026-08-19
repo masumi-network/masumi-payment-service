@@ -83,10 +83,12 @@ services:
       # starts and each node it spawns dies on a missing --blockfrost file.
       - ${BLOCKFROST_PROJECT_FILE:?path to a file containing the Blockfrost project id}:/run/secrets/blockfrost.txt:ro
 
-    # etcd's raft WAL is intolerant of an abrupt stop mid-round. The supervisor
-    # drains before stopping, so give it room to finish — more room than the
-    # drain itself can take, or the container is killed mid-round and every head
-    # on it comes back marked as an undrained stop.
+    # etcd's raft WAL is intolerant of an abrupt stop mid-round. Before stopping
+    # a node the supervisor waits out its in-flight snapshot round, which this
+    # codebase calls a drain. It is not the API drain that removes a node: heads
+    # stay open and a restart brings every node back. Give it room to finish,
+    # more room than the wait itself can take, or the container is killed
+    # mid-round and every head on it comes back marked as an undrained stop.
     #
     # The arithmetic, with the defaults: HYDRA_HOST_DRAIN_TIMEOUT_MS is 120s, a
     # node that ignores its SIGTERM gets another 30s before SIGKILL, and the

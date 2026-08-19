@@ -9,8 +9,10 @@
 #   - TLS / ACME. Termination happens at a load balancer or ingress; keeping
 #     certificate state out means the container has exactly one thing needing
 #     durable storage.
-#   - A restart policy. Restarts belong to the supervisor, which drains a
-#     snapshot round before stopping; Docker's would not.
+#   - A restart policy. The supervisor restarts individual hydra-node processes
+#     itself, waiting out an in-flight snapshot round first, which a container
+#     restart policy cannot do. Whether the CONTAINER restarts is the
+#     orchestrator's call: see docs/hydra-host-deploy-droplet.md.
 
 ARG HYDRA_VERSION=2.3.0
 ARG HYDRA_SHA256=89e84b5005154a6275ee171e432db38084777a5d3d02aa72d3562d827f76a456
@@ -122,9 +124,12 @@ RUN groupadd --system --gid 10001 hydra \
 VOLUME ["/data"]
 EXPOSE 8443 8444
 
-# SIGTERM reaches the supervisor directly, which drains every node before
-# exiting. Run with a generous --stop-timeout (Docker's 10s default would
-# SIGKILL mid-drain).
+# SIGTERM reaches the supervisor directly. It waits out each node's in-flight
+# snapshot round, then stops the node process. That wait is what this codebase
+# calls a drain, and it is NOT the API drain that removes a node: heads stay
+# open, the desired state is untouched, and a restart brings every node back.
+# Run with a generous --stop-timeout (Docker's 10s default would SIGKILL
+# mid-round).
 STOPSIGNAL SIGTERM
 WORKDIR /app
 USER hydra
