@@ -90,7 +90,7 @@ export default function WalletsPage() {
   const routerSearched = typeof router.query.searched === 'string' ? router.query.searched : '';
   const [prevRouterSearched, setPrevRouterSearched] = useState(routerSearched);
 
-  const { network, selectedPaymentSource } = useAppContext();
+  const { network, selectedPaymentSource, capabilities } = useAppContext();
   const { rate } = useRate();
   const [selectedWalletForTopup, setSelectedWalletForTopup] = useState<WalletWithBalance | null>(
     null,
@@ -144,10 +144,12 @@ export default function WalletsPage() {
   // already on this page.
   useEffect(() => {
     if (router.isReady && router.query.action === 'add_wallet') {
-      queueMicrotask(() => setIsAddDialogOpen(true));
+      if (capabilities.canAdmin) {
+        queueMicrotask(() => setIsAddDialogOpen(true));
+      }
       void router.replace('/wallets', undefined, { shallow: true });
     }
-  }, [router.isReady, router.query.action, router]);
+  }, [router.isReady, router.query.action, router, capabilities.canAdmin]);
 
   const filteredWallets = useMemo(() => {
     let filtered = [...allWallets];
@@ -173,6 +175,8 @@ export default function WalletsPage() {
     return filtered;
   }, [allWallets, searchQuery]);
 
+  // Open for every session: the dialog renders the read-visible fields and
+  // omits the admin-only sections rather than erroring.
   const handleWalletClick = (wallet: WalletWithBalance) => {
     setSelectedWalletForDetails(wallet);
   };
@@ -205,7 +209,9 @@ export default function WalletsPage() {
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={refetchWallets} isRefreshing={isFetchingWallets} />
-              {activeTab === 'Funding' && (
+              {/* Creating and funding wallets are admin-only endpoints; pay keys
+                  get this page for the listing alone. */}
+              {capabilities.canAdmin && activeTab === 'Funding' && (
                 <Button
                   variant="outline"
                   className="flex items-center gap-2"
@@ -215,13 +221,15 @@ export default function WalletsPage() {
                   Manage funding
                 </Button>
               )}
-              <Button
-                className="flex items-center gap-2 btn-hover-lift"
-                onClick={() => setIsAddDialogOpen(true)}
-              >
-                <Plus className="h-4 w-4" />
-                {addWalletLabel}
-              </Button>
+              {capabilities.canAdmin && (
+                <Button
+                  className="flex items-center gap-2 btn-hover-lift"
+                  onClick={() => setIsAddDialogOpen(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                  {addWalletLabel}
+                </Button>
+              )}
             </div>
           </div>
 
@@ -373,53 +381,60 @@ export default function WalletsPage() {
                         </td>
                         <td className="p-4 pr-8">
                           <div className="flex justify-end">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label="Wallet actions"
-                                  className="h-8 w-8"
+                            {/* Every action here (fund, top up, transfer, swap) is an
+                                admin-only endpoint, so the whole menu is admin-gated. */}
+                            {capabilities.canAdmin && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label="Wallet actions"
+                                    className="h-8 w-8"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                  align="end"
                                   onClick={(e) => e.stopPropagation()}
                                 >
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                                {wallet.type === 'Funding' && (
+                                  {wallet.type === 'Funding' && (
+                                    <DropdownMenuItem
+                                      className="cursor-pointer gap-2"
+                                      onSelect={() => setIsFundWalletDialogOpen(true)}
+                                    >
+                                      <Settings2 className="h-4 w-4" />
+                                      Manage funding
+                                    </DropdownMenuItem>
+                                  )}
                                   <DropdownMenuItem
                                     className="cursor-pointer gap-2"
-                                    onSelect={() => setIsFundWalletDialogOpen(true)}
+                                    onSelect={() => setSelectedWalletForTopup(wallet)}
                                   >
-                                    <Settings2 className="h-4 w-4" />
-                                    Manage funding
+                                    <PlusCircle className="h-4 w-4" />
+                                    Top up
                                   </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem
-                                  className="cursor-pointer gap-2"
-                                  onSelect={() => setSelectedWalletForTopup(wallet)}
-                                >
-                                  <PlusCircle className="h-4 w-4" />
-                                  Top up
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="cursor-pointer gap-2"
-                                  onSelect={() => setSelectedWalletForTransfer(wallet)}
-                                >
-                                  <Send className="h-4 w-4" />
-                                  Transfer funds
-                                </DropdownMenuItem>
-                                {wallet.network === 'Mainnet' && (
                                   <DropdownMenuItem
                                     className="cursor-pointer gap-2"
-                                    onSelect={() => setSelectedWalletForSwap(wallet)}
+                                    onSelect={() => setSelectedWalletForTransfer(wallet)}
                                   >
-                                    <ArrowLeftRight className="h-4 w-4" />
-                                    Swap tokens
+                                    <Send className="h-4 w-4" />
+                                    Transfer funds
                                   </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                                  {wallet.network === 'Mainnet' && (
+                                    <DropdownMenuItem
+                                      className="cursor-pointer gap-2"
+                                      onSelect={() => setSelectedWalletForSwap(wallet)}
+                                    >
+                                      <ArrowLeftRight className="h-4 w-4" />
+                                      Swap tokens
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
                           </div>
                         </td>
                       </tr>

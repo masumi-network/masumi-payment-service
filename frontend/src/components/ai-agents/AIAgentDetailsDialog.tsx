@@ -55,7 +55,7 @@ export function AIAgentDetailsDialog({
   onSuccess,
   initialTab = 'Details',
 }: AIAgentDetailsDialogProps) {
-  const { apiClient, selectedPaymentSourceId, network } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, network, capabilities } = useAppContext();
   const resync = useResync();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
@@ -112,6 +112,12 @@ export function AIAgentDetailsDialog({
   // here ('payment' relation) are managed from their home source — mirrors the
   // row-action gating on pages/ai-agents.tsx.
   const isManagedOnActiveSource = agent?.relation !== 'payment';
+  // Deregistering is pay-authenticated; hard-deleting the DB row is admin-only.
+  const canDeleteOrDeregister = isDbDeletableAgentState(agent?.state)
+    ? capabilities.canAdmin
+    : isDeregisterableAgentState(agent?.state)
+      ? capabilities.canPay
+      : false;
 
   // Reset the tab whenever the dialog opens (or opens for a different agent):
   // without keying on the agent id, the previous agent's tab (e.g. Earnings,
@@ -684,13 +690,14 @@ export function AIAgentDetailsDialog({
               </div>
 
               <div className="py-4 px-4 border-t flex justify-end gap-2 bg-background shrink-0">
-                {canReRegister && (
+                {canReRegister && capabilities.canPay && (
                   <Button variant="outline" onClick={() => setIsReRegisterConfirmOpen(true)}>
                     <RotateCcw className="h-4 w-4" />
                     Re-register
                   </Button>
                 )}
                 {isManagedOnActiveSource &&
+                  capabilities.canPay &&
                   (agent.state === 'RegistrationConfirmed' ||
                     agent.state === 'UpdateConfirmed' ||
                     agent.state === 'UpdateFailed') &&
@@ -700,7 +707,10 @@ export function AIAgentDetailsDialog({
                       Verify & Publish
                     </Button>
                   )}
-                {isManagedOnActiveSource && (
+                {/* The same control deregisters on-chain (POST /registry/deregister,
+                    pay) or hard-deletes the row (DELETE /registry, admin) depending on
+                    the agent's state, so it needs whichever permission that branch uses. */}
+                {isManagedOnActiveSource && canDeleteOrDeregister && (
                   <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>

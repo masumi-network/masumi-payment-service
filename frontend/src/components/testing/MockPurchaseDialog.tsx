@@ -165,8 +165,11 @@ function tryExtractPaymentFields(json: string): ExtractedPaymentFields | null {
 export function MockPurchaseDialog({ open, onClose }: MockPurchaseDialogProps) {
   const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
   const resync = useResync();
-  const { wallets } = useWallets();
-  const { agents } = useAllAgents();
+  // Both deferred until the dialog is open. `useAllAgents` walks every
+  // inclusive-cursor page before it publishes anything, so running it on a
+  // closed dialog is the same eager fan-out the wallet gate exists to stop.
+  const { wallets } = useWallets({ enabled: open });
+  const { agents } = useAllAgents({ enabled: open });
 
   /**
    * The index the seller would have signed, resolved from our own registry copy

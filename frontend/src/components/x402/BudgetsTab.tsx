@@ -28,7 +28,12 @@ import {
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useApiKey } from '@/lib/hooks/useApiKey';
-import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
+import {
+  useX402Budgets,
+  useX402Networks,
+  useX402NetworksForSession,
+  useX402Wallets,
+} from '@/lib/hooks/useX402';
 import { CopyButton } from '@/components/ui/copy-button';
 import { groupDigits, shortenAddress } from '@/lib/utils';
 import { walletsForNetworks } from '@/lib/x402-rail';
@@ -46,8 +51,16 @@ const budgetFormSchema = z.object({
 type BudgetFormValues = z.infer<typeof budgetFormSchema>;
 
 export function BudgetsTab() {
+  const { capabilities } = useAppContext();
+  // Reading a budget is pay-level, writing one is admin. A pay key sees its own
+  // allowances and nothing else (the API pins the filter to the calling key); only
+  // an admin gets the create/edit controls.
+  const canManageBudgets = capabilities.canAdmin;
   const { budgets, isLoading, isRefetching, refetch } = useX402Budgets();
-  const { networks, isLoading: networksLoading } = useX402Networks();
+  // Session-scoped, not the admin-only network list: this drives the env filter
+  // below, and an admin-gated hook would leave a pay key with no chains and so an
+  // empty budget table even when it has budgets.
+  const { networks, isLoading: networksLoading } = useX402NetworksForSession();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<X402Budget | null>(null);
 
@@ -81,10 +94,12 @@ export function BudgetsTab() {
         </p>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
-          <Button onClick={openCreate} className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            Set budget
-          </Button>
+          {canManageBudgets && (
+            <Button onClick={openCreate} className="flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              Set budget
+            </Button>
+          )}
         </div>
       </div>
 
@@ -168,14 +183,18 @@ export function BudgetsTab() {
                     {groupDigits(budget.spentAmount)}
                   </td>
                   <td className="p-4 text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label="Edit budget"
-                      onClick={() => openEdit(budget)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
+                    {canManageBudgets ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label="Edit budget"
+                        onClick={() => openEdit(budget)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <span className="text-xs italic opacity-60">Admin only</span>
+                    )}
                   </td>
                 </tr>
               ))

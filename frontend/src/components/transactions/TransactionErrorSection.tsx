@@ -8,6 +8,8 @@ interface TransactionErrorSectionProps {
   /** Which recovery is currently running, so the button can say so. */
   errorRecoveryMode: 'clear' | 'retry' | null;
   onRecover: (retryPreviousAction: boolean) => void;
+  /** Pay-or-admin keys can clear/retry NextAction errors. */
+  canRecover?: boolean;
 }
 
 /**
@@ -21,6 +23,7 @@ export function TransactionErrorSection({
   isLoading,
   errorRecoveryMode,
   onRecover,
+  canRecover = true,
 }: TransactionErrorSectionProps) {
   if (!transaction.NextAction?.errorType) return null;
 
@@ -41,19 +44,21 @@ export function TransactionErrorSection({
             Retry queues the failed blockchain action again with its original data. Clear only
             removes the error and waits for the next external action.
           </p>
-          <div className="flex flex-wrap gap-2 mt-4">
-            <Button size="sm" disabled={isLoading} onClick={() => onRecover(true)}>
-              {errorRecoveryMode === 'retry' ? 'Queueing retry...' : 'Retry Failed Action'}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={isLoading}
-              onClick={() => onRecover(false)}
-            >
-              {errorRecoveryMode === 'clear' ? 'Clearing error state...' : 'Clear Error State'}
-            </Button>
-          </div>
+          {canRecover && (
+            <div className="flex flex-wrap gap-2 mt-4">
+              <Button size="sm" disabled={isLoading} onClick={() => onRecover(true)}>
+                {errorRecoveryMode === 'retry' ? 'Queueing retry...' : 'Retry Failed Action'}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={isLoading}
+                onClick={() => onRecover(false)}
+              >
+                {errorRecoveryMode === 'clear' ? 'Clearing error state...' : 'Clear Error State'}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </div>

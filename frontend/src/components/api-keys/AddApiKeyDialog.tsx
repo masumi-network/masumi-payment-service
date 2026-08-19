@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postApiKey } from '@/lib/api/generated';
 import { useX402Networks } from '@/lib/hooks/useX402';
@@ -28,6 +28,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Badge } from '@/components/ui/badge';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useAllWallets } from '@/lib/queries/useWallets';
+import { X402WalletScopeField } from '@/components/api-keys/X402WalletScopeField';
 import { shortenAddress } from '@/lib/utils';
 import { CopyButton } from '@/components/ui/copy-button';
 import { extractApiPayload } from '@/lib/api-response';
@@ -64,6 +65,8 @@ const apiKeySchema = z
     }),
     walletScopeEnabled: z.boolean(),
     walletScopeIds: z.array(z.string()),
+    x402WalletScopeEnabled: z.boolean(),
+    x402WalletScopeIds: z.array(z.string()),
   })
   .superRefine((val, ctx) => {
     if (
@@ -172,15 +175,29 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
       credits: { lovelace: '', usdcx: '' },
       walletScopeEnabled: false,
       walletScopeIds: [],
+      x402WalletScopeEnabled: false,
+      x402WalletScopeIds: [],
     },
   });
 
   const permissionPreset = useWatch({ control, name: 'permissionPreset', defaultValue: 'Read' });
   const canAdmin = useWatch({ control, name: 'canAdmin', defaultValue: false });
   const canPay = useWatch({ control, name: 'canPay', defaultValue: false });
+  const selectedNetworks = useWatch({
+    control,
+    name: 'networks',
+    defaultValue: ['Preprod', 'Mainnet'],
+  });
+  const currentEvmChains = useWatch({ control, name: 'evmChains', defaultValue: [] });
   const usageLimited = useWatch({ control, name: 'usageLimited', defaultValue: true });
   const walletScopeEnabled = useWatch({ control, name: 'walletScopeEnabled', defaultValue: false });
   const walletScopeIds = useWatch({ control, name: 'walletScopeIds', defaultValue: [] });
+  const x402WalletScopeEnabled = useWatch({
+    control,
+    name: 'x402WalletScopeEnabled',
+    defaultValue: false,
+  });
+  const x402WalletScopeIds = useWatch({ control, name: 'x402WalletScopeIds', defaultValue: [] });
 
   // Update flags when preset changes
   useEffect(() => {
@@ -196,12 +213,65 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
       setValue('evmChains', []);
       setValue('walletScopeEnabled', false);
       setValue('walletScopeIds', []);
+      setValue('x402WalletScopeEnabled', false);
+      setValue('x402WalletScopeIds', []);
     } else if (!flags.canPay) {
-      // Read-only: always usage limited
+      // Read-only: always usage limited. EVM chains are deliberately KEPT — the
+      // x402 read surfaces (chains, wallets, payment history) are chain-limited
+      // too, so clearing them here shipped read keys whose x402 pages were
+      // permanently empty, with no way to repair it from the update dialog.
       setValue('usageLimited', true);
-      setValue('evmChains', []);
     }
   }, [permissionPreset, setValue]);
+
+  // Start every non-admin key with the configured EVM chains of its selected
+  // Cardano environments ticked (Preprod selects testnet chains, Mainnet selects
+  // mainnet chains) — the twin of `networks` defaulting to both Cardano networks,
+  // and the same environment coupling the backend applies when ChainIdLimit is
+  // omitted. The grant is visible and can be narrowed, instead of the key silently
+  // getting no EVM access at all. Seeded once per session so unticking a chain is
+  // not undone on the next render.
+  const seededEvmChains = useRef(false);
+  useEffect(() => {
+    if (!open || canAdmin) {
+      seededEvmChains.current = false;
+      return;
+    }
+    if (evmChainOptions.length === 0) return;
+    const allowedChainIds = new Set(
+      evmChainOptions
+        .filter((chain) =>
+          chain.isTestnet
+            ? selectedNetworks.includes('Preprod')
+            : selectedNetworks.includes('Mainnet'),
+        )
+        .map((chain) => chain.caip2Id),
+    );
+    if (seededEvmChains.current) {
+      // Already seeded: never re-add (that would undo the admin's unticks), but DO
+      // prune chains whose environment has since been deselected. The seed runs
+      // while `networks` still holds its default of both environments, so without
+      // this pruning the coupling was dead on arrival — narrowing to Preprod after
+      // the list loaded still submitted the mainnet chains, which is exactly the
+      // case the backend's environment-coupled default exists to prevent.
+      const pruned = currentEvmChains.filter((chainId) => allowedChainIds.has(chainId));
+      if (pruned.length !== currentEvmChains.length) {
+        setValue('evmChains', pruned);
+      }
+      return;
+    }
+    seededEvmChains.current = true;
+    setValue(
+      'evmChains',
+      evmChainOptions
+        .filter((chain) =>
+          chain.isTestnet
+            ? selectedNetworks.includes('Preprod')
+            : selectedNetworks.includes('Mainnet'),
+        )
+        .map((chain) => chain.caip2Id),
+    );
+  }, [open, canAdmin, evmChainOptions, selectedNetworks, currentEvmChains, setValue]);
 
   const onSubmit = async (data: ApiKeyFormValues) => {
     const isReadOnly = !data.canPay && !data.canAdmin;
@@ -220,7 +290,21 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
         canAdmin: data.canAdmin,
         usageLimited: isReadOnly ? 'true' : data.usageLimited.toString(),
         NetworkLimit: data.networks,
-        ChainIdLimit: data.canPay && !data.canAdmin ? data.evmChains : [],
+        // Every non-admin key carries its EVM chain grant — read keys need it for
+        // the x402 read surfaces, not just pay keys for settling. Admins are
+        // unrestricted by canAdmin, so their explicit list is irrelevant.
+        //
+        // When the chain list could not be loaded (the query errors silently, or
+        // has not settled) the EVM section is hidden and evmChains is empty. Send
+        // UNDEFINED rather than [] in that case: [] means "grant none" and would
+        // mint a key permanently barred from every x402 surface without the admin
+        // ever seeing the choice, whereas omitting it lets the server apply its
+        // environment-coupled default.
+        ChainIdLimit: data.canAdmin
+          ? []
+          : evmChainOptions.length === 0
+            ? undefined
+            : data.evmChains,
         UsageCredits: isReadOnly
           ? defaultCredits
           : data.usageLimited
@@ -243,8 +327,10 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                   : []),
               ]
             : [],
-        walletScopeEnabled: data.walletScopeEnabled.toString(),
+        walletScopeEnabled: data.walletScopeEnabled,
         WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
+        x402WalletScopeEnabled: data.x402WalletScopeEnabled,
+        X402WalletScopeEvmWalletIds: data.x402WalletScopeEnabled ? data.x402WalletScopeIds : [],
       })
       .catch(() => null);
     if (!response) return;
@@ -398,11 +484,12 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                 )}
               </div>
 
-              {canPay && !canAdmin && evmChainOptions.length > 0 && (
+              {!canAdmin && evmChainOptions.length > 0 && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium">EVM chains (x402)</label>
                   <p className="text-xs text-muted-foreground">
-                    Grant this key access to settle and fetch x402 payments on these chains.
+                    Grant this key access to x402 chains: read keys can view wallets and payment
+                    activity there; pay keys can also settle and pay.
                   </p>
                   <Controller
                     control={control}
@@ -585,6 +672,14 @@ export function AddApiKeyDialog({ open, onClose, onSuccess }: AddApiKeyDialogPro
                       )}
                     </div>
                   )}
+
+                  <X402WalletScopeField
+                    active={open}
+                    enabled={x402WalletScopeEnabled}
+                    onEnabledChange={(next) => setValue('x402WalletScopeEnabled', next)}
+                    selectedIds={x402WalletScopeIds}
+                    onSelectedIdsChange={(ids) => setValue('x402WalletScopeIds', ids)}
+                  />
                 </>
               )}
             </div>

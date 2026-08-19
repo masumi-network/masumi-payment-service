@@ -18,7 +18,8 @@ import {
 	getX402NetworkOrThrow,
 	safeHttpTransport,
 	type PrivateKey,
-	type X402OwnerScope,
+	X402_UNRESTRICTED,
+	type X402OwnerScopeInput,
 } from './internal';
 import { RemoteHTTPFacilitatorClient } from './remote-facilitator';
 
@@ -28,7 +29,11 @@ import { RemoteHTTPFacilitatorClient } from './remote-facilitator';
 // ownerScope enforces tenant isolation: a scoped (non-admin) caller may only sign with a wallet
 // it created. The built publicClient is returned so callers can reuse it (e.g. an on-chain
 // balance pre-check) without re-running the chain-id assertion.
-export async function getClientForWallet(walletId: string, caip2Network: string, ownerScope: X402OwnerScope = null) {
+export async function getClientForWallet(
+	walletId: string,
+	caip2Network: string,
+	ownerScope: X402OwnerScopeInput = X402_UNRESTRICTED,
+) {
 	const [wallet, network] = await Promise.all([
 		getManagedWalletWithSecretOrThrow(walletId, X402EvmWalletType.Purchasing, ownerScope),
 		getX402NetworkOrThrow(caip2Network),

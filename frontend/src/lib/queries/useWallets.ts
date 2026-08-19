@@ -39,6 +39,8 @@ export function useWallets(options?: { enabled?: boolean }) {
   const network = selectedPaymentSource?.network;
   // Callers can defer this (e.g. the dashboard, until after first paint) so the
   // eager all-wallet balance fan-out doesn't fire during the initial render.
+  // No capability gate: GET /wallet/list is read-level, so every signed-in
+  // session may list wallets. Mutations stay gated at their own call sites.
   const callerEnabled = options?.enabled ?? true;
 
   const query = useQuery<WalletsResponse>({

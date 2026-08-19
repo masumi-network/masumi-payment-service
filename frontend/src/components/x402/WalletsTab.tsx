@@ -87,7 +87,7 @@ const WALLET_TYPE_OPTIONS: Array<{
 ];
 
 export function WalletsTab() {
-  const { apiClient } = useAppContext();
+  const { apiClient, capabilities } = useAppContext();
   const queryClient = useQueryClient();
   const { wallets, isLoading, isRefetching, refetch, hasMore, isFetchingNextPage, loadMore } =
     useX402WalletsPaginated();
@@ -101,6 +101,8 @@ export function WalletsTab() {
   const [balanceWallet, setBalanceWallet] = useState<X402Wallet | null>(null);
   const [editWallet, setEditWallet] = useState<X402Wallet | null>(null);
   const [walletToRetire, setWalletToRetire] = useState<X402Wallet | null>(null);
+  // Wallet lifecycle is admin-only (it is the one path that returns EVM key material).
+  const canMutateWallets = capabilities.canAdmin;
 
   const retireWallet = useApiMutation({
     mutationFn: (body: { id: string }) => postX402WalletsDelete({ client: apiClient, body }),
@@ -134,10 +136,12 @@ export function WalletsTab() {
         </p>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
-          <Button onClick={() => setDialogOpen(true)} className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            Create wallet
-          </Button>
+          {canMutateWallets && (
+            <Button onClick={() => setDialogOpen(true)} className="flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              Create wallet
+            </Button>
+          )}
         </div>
       </div>
 
@@ -179,7 +183,14 @@ export function WalletsTab() {
                 <td colSpan={6}>
                   <EmptyState
                     title="No managed wallets"
-                    description="Create a wallet to fund and settle x402 payments."
+                    description={
+                      // An unscoped key sees every wallet, so an empty list really is
+                      // empty. A scoped one only sees what it was assigned or created,
+                      // where the same empty list means something quite different.
+                      capabilities.canAdmin || !capabilities.x402WalletScopeEnabled
+                        ? 'Create a wallet to fund and settle x402 payments.'
+                        : 'No managed wallets are assigned to this API key. A scoped key only sees wallets an admin assigned to it. Ask an admin to assign one.'
+                    }
                   />
                 </td>
               </tr>
@@ -208,24 +219,28 @@ export function WalletsTab() {
                         <WalletIcon className="h-4 w-4" />
                         Balances
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label="Rename wallet"
-                        onClick={() => setEditWallet(wallet)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        disabled={retiringId === wallet.id}
-                        onClick={() => setWalletToRetire(wallet)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        {retiringId === wallet.id ? 'Retiring…' : 'Retire'}
-                      </Button>
+                      {canMutateWallets && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Rename wallet"
+                            onClick={() => setEditWallet(wallet)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            disabled={retiringId === wallet.id}
+                            onClick={() => setWalletToRetire(wallet)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            {retiringId === wallet.id ? 'Retiring…' : 'Retire'}
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>

@@ -44,9 +44,13 @@ import MasumiIconFlat from '@/components/MasumiIconFlat';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { NetworkSourceCard } from '@/components/layout/PaymentSourceSelector';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
-import { DEFAULT_PAYMENT_SOURCE_TYPE, isV2PaymentSource } from '@/lib/payment-source-type';
+import {
+  DEFAULT_PAYMENT_SOURCE_TYPE,
+  hasLegacyOnlyPaymentSources as networkHasLegacyOnlyPaymentSources,
+  isV2PaymentSource,
+} from '@/lib/payment-source-type';
 import { X402SetupBanner } from '@/components/x402/X402SetupBanner';
-import { useX402Networks } from '@/lib/hooks/useX402';
+import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -88,7 +92,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     isSetupMode,
     setupWizardStep,
     activeRail,
-    selectedPaymentSource,
+    capabilities,
   } = useAppContext();
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
@@ -164,8 +168,10 @@ export function MainLayout({ children }: MainLayoutProps) {
   // link flickers off during load / when another source is selected, hiding the
   // very page users go to in order to set up a head.
   const canShowHydraNav = hasV2PaymentSource;
-  const hasLegacyOnlyPaymentSources = hasPaymentSources && !hasV2PaymentSource;
-  const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
+  const hasLegacyOnlyPaymentSources = networkHasLegacyOnlyPaymentSources(
+    currentNetworkPaymentSources,
+  );
+  const { networks: x402Networks, isLoading: x402Loading } = useX402NetworksForSession({
     silentErrors: true,
   });
   // The x402 rail stands on its own: an operator working the EVM rail shouldn't be forced
@@ -192,39 +198,45 @@ export function MainLayout({ children }: MainLayoutProps) {
   const notificationCount = newTransactionsCount + unacknowledgedWalletAlertCount;
 
   const navItems = useMemo<NavItem[]>(() => {
+    const { canAdmin, canPay } = capabilities;
+
     // Show the setup-only sidebar while in Cardano setup, or when there are no payment
     // sources at all — unless a configured x402 rail is active, which has its own nav.
     if (isSetupMode || (!hasPaymentSources && !isX402Standalone)) {
-      return [
-        {
+      const setupNav: NavItem[] = [];
+      if (canAdmin) {
+        setupNav.push({
           href: '/setup',
           name: 'Setup',
           icon: <Wand2 className="h-4 w-4" />,
           badge: null,
           group: 0,
-        },
-        {
+        });
+        setupNav.push({
           href: '/api-keys',
           name: 'API keys',
           icon: <Key className="h-4 w-4" />,
           badge: null,
           group: 1,
-        },
-        {
+        });
+      }
+      if (canPay) {
+        setupNav.push({
           href: '/webhooks',
           name: 'Webhooks',
           icon: <Bell className="h-4 w-4" />,
           badge: null,
           group: 1,
-        },
-        {
-          href: '/developers',
-          name: 'Developers',
-          icon: <Code className="h-4 w-4 text-violet-500" />,
-          badge: null,
-          group: 1,
-        },
-      ];
+        });
+      }
+      setupNav.push({
+        href: '/developers',
+        name: 'Developers',
+        icon: <Code className="h-4 w-4 text-violet-500" />,
+        badge: null,
+        group: 1,
+      });
+      return setupNav;
     }
 
     // Shared items appear on both rails. The rest are gated by the active rail so the
@@ -238,21 +250,27 @@ export function MainLayout({ children }: MainLayoutProps) {
     };
     // Webhooks are scoped to the selected payment source / network, so they belong with the
     // context-aware items (group 0), not the account-level cluster (API keys, Developers).
-    const sharedWebhooks: NavItem = {
-      href: '/webhooks',
-      name: 'Webhooks',
-      icon: <Bell className="h-4 w-4" />,
-      badge: null,
-      group: 0,
-    };
+    const sharedWebhooks: NavItem | null = canPay
+      ? {
+          href: '/webhooks',
+          name: 'Webhooks',
+          icon: <Bell className="h-4 w-4" />,
+          badge: null,
+          group: 0,
+        }
+      : null;
     const sharedGroup1: NavItem[] = [
-      {
-        href: '/api-keys',
-        name: 'API keys',
-        icon: <Key className="h-4 w-4" />,
-        badge: null,
-        group: 1,
-      },
+      ...(canAdmin
+        ? [
+            {
+              href: '/api-keys',
+              name: 'API keys',
+              icon: <Key className="h-4 w-4" />,
+              badge: null,
+              group: 1,
+            } satisfies NavItem,
+          ]
+        : []),
       {
         href: '/developers',
         name: 'Developers',
@@ -264,6 +282,9 @@ export function MainLayout({ children }: MainLayoutProps) {
 
     if (activeRail === 'x402') {
       return [
+        // The chain projection and payment history are read-level, so the rail
+        // is navigable by every session; its wallet/chain/budget/alert tabs stay
+        // gated inside the page.
         {
           href: '/x402',
           name: 'x402',
@@ -272,7 +293,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           group: 0,
         },
         sharedAgents,
-        sharedWebhooks,
+        ...(sharedWebhooks ? [sharedWebhooks] : []),
         ...sharedGroup1,
       ];
     }
@@ -293,6 +314,8 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
         group: 0,
       },
+      // Listing wallets is read-level, so every session gets the page; the
+      // mutating controls inside it stay gated on canAdmin.
       {
         href: '/wallets',
         name: 'Wallets',
@@ -309,7 +332,10 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: formatCount(newTransactionsCount),
         group: 0,
       },
-      ...(canShowHydraNav
+      // Admin as well as V2: every route under /api/v1/hydra is registered with
+      // the admin factory, so a read or pay key that follows this link lands on
+      // a page whose every request is refused.
+      ...(canAdmin && canShowHydraNav
         ? [
             {
               href: '/hydra-heads',
@@ -318,18 +344,22 @@ export function MainLayout({ children }: MainLayoutProps) {
               badge: null,
               beta: true,
               group: 0,
-            },
+            } satisfies NavItem,
           ]
         : []),
-      {
-        // Chain sync failures the reconciler parked. Sits with Transactions
-        // because that is what a pending entry is holding back.
-        href: '/tx-sync-quarantine',
-        name: 'Sync Quarantine',
-        icon: <AlertTriangle className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-      },
+      // Chain sync failures the reconciler parked. Sits with Transactions
+      // because that is what a pending entry is holding back.
+      ...(canAdmin
+        ? [
+            {
+              href: '/tx-sync-quarantine',
+              name: 'Sync Quarantine',
+              icon: <AlertTriangle className="h-4 w-4" />,
+              badge: null,
+              group: 0,
+            } satisfies NavItem,
+          ]
+        : []),
       {
         href: '/invoices',
         name: 'Invoices',
@@ -337,7 +367,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         badge: null,
         group: 0,
       },
-      sharedWebhooks,
+      ...(sharedWebhooks ? [sharedWebhooks] : []),
       ...sharedGroup1,
     ];
   }, [
@@ -349,6 +379,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     newTransactionsCount,
     activeWalletAlertCount,
     walletAlertLabel,
+    capabilities,
   ]);
 
   const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
@@ -702,12 +733,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         <main className="flex-1 relative z-10 w-full animate-content-fade-in">
-          {activeRail === 'x402' && !isSetupMode && (
+          {capabilities.canAdmin && activeRail === 'x402' && !isSetupMode && (
             <div className="mx-auto w-full max-w-[1400px] px-4 pt-4">
               <X402SetupBanner />
             </div>
           )}
-          {activeRail !== 'x402' &&
+          {capabilities.canAdmin &&
+            activeRail !== 'x402' &&
             hasLegacyOnlyPaymentSources &&
             !isSetupMode &&
             // The payment-sources page renders its own richer V2 setup banner, so
@@ -726,7 +758,8 @@ export function MainLayout({ children }: MainLayoutProps) {
                         />
                       </div>
                       <p className="opacity-85">
-                        Run the one-time V2 setup, then migrate your agents on the dashboard.
+                        Your V1 payment source stays active. Run the one-time V2 setup when you are
+                        ready to migrate agents.
                       </p>
                     </div>
                   </div>

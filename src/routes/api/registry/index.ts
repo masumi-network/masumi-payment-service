@@ -110,7 +110,7 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 				metricPath: '/api/v1/registry',
 				operation: 'register_agent',
 			});
-			const recipientWallet = await resolveScopedRecipientWalletOrThrow({
+			const recipient = await resolveScopedRecipientWalletOrThrow({
 				network: input.network,
 				recipientWalletAddress: input.recipientWalletAddress,
 				sellingWallet,
@@ -253,13 +253,14 @@ export const registerAgentPost = payAuthenticatedEndpointFactory.build({
 						},
 					},
 					RecipientWallet:
-						recipientWallet != null
+						recipient.hotWallet != null
 							? {
 									connect: {
-										id: recipientWallet.id,
+										id: recipient.hotWallet.id,
 									},
 								}
 							: undefined,
+					...(recipient.externalAddress ? { recipientWalletAddress: recipient.externalAddress } : {}),
 					PaymentSource: {
 						connect: {
 							id: sellingWallet.paymentSourceId,

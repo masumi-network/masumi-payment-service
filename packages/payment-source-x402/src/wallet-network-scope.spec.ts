@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { X402_UNRESTRICTED } from './internal';
 
 const mockNetworkFindUnique = jest.fn() as jest.Mock<any>;
 const mockNetworkFindMany = jest.fn() as jest.Mock<any>;
@@ -207,20 +208,27 @@ describe('managed wallet network limits', () => {
 	});
 
 	it('combines owner and network scopes for wallet lists and counts', async () => {
-		await listX402ManagedWallets({ ownerScope: 'api-key-1', caip2NetworkLimit: ['eip155:8453'] });
-		await countX402ManagedWallets({ ownerScope: 'api-key-1', caip2NetworkLimit: ['eip155:8453'] });
+		await listX402ManagedWallets({
+			ownerScope: { scope: 'api-key-1', walletScopeIds: [] },
+			caip2NetworkLimit: ['eip155:8453'],
+		});
+		await countX402ManagedWallets({
+			ownerScope: { scope: 'api-key-1', walletScopeIds: [] },
+			caip2NetworkLimit: ['eip155:8453'],
+		});
 
 		expect(mockWalletFindMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: expect.objectContaining({
-					createdById: 'api-key-1',
+					// scoped key with no assignments: own wallets only, expressed as a union
+					OR: [{ createdById: 'api-key-1' }, { id: { in: [] } }],
 					Network: { caip2Id: { in: ['eip155:8453'] } },
 				}),
 			}),
 		);
 		expect(mockWalletCount).toHaveBeenCalledWith({
 			where: expect.objectContaining({
-				createdById: 'api-key-1',
+				OR: [{ createdById: 'api-key-1' }, { id: { in: [] } }],
 				Network: { caip2Id: { in: ['eip155:8453'] } },
 			}),
 		});
@@ -229,23 +237,27 @@ describe('managed wallet network limits', () => {
 	it('keeps detail, update, and delete denials indistinguishable from a missing wallet', async () => {
 		const limit = ['eip155:84532'];
 
-		await expect(getX402ManagedWallet('wallet-1', 'api-key-1', limit)).rejects.toMatchObject({ status: 404 });
+		await expect(
+			getX402ManagedWallet('wallet-1', { scope: 'api-key-1', walletScopeIds: [] }, limit),
+		).rejects.toMatchObject({ status: 404 });
 		await expect(
 			updateX402ManagedWallet({
 				id: 'wallet-1',
 				note: 'blocked',
-				ownerScope: 'api-key-1',
+				ownerScope: { scope: 'api-key-1', walletScopeIds: [] },
 				caip2NetworkLimit: limit,
 			}),
 		).rejects.toMatchObject({ status: 404 });
-		await expect(deleteX402ManagedWallet('wallet-1', 'api-key-1', limit)).rejects.toMatchObject({ status: 404 });
+		await expect(
+			deleteX402ManagedWallet('wallet-1', { scope: 'api-key-1', walletScopeIds: [] }, limit),
+		).rejects.toMatchObject({ status: 404 });
 
 		expect(mockWalletUpdate).not.toHaveBeenCalled();
 		expect(mockTransaction).not.toHaveBeenCalled();
 	});
 
 	it('keeps admin access unlimited', async () => {
-		await expect(getX402ManagedWallet('wallet-1', null, null)).resolves.toMatchObject({
+		await expect(getX402ManagedWallet('wallet-1', X402_UNRESTRICTED, null)).resolves.toMatchObject({
 			id: 'wallet-1',
 			caip2Network: 'eip155:8453',
 		});

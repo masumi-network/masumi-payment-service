@@ -115,7 +115,7 @@ const formatPrice = (amount: string) => {
 };
 
 export default function Invoices() {
-  const { network } = useAppContext();
+  const { network, capabilities } = useAppContext();
 
   const [activeTab, setActiveTab] = useState('Generated Invoices');
   const [selectedMonth, setSelectedMonth] = useState(getPreviousMonth);
@@ -533,22 +533,24 @@ export default function Invoices() {
                                   </div>
                                 ))}
                               </div>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={isCurrentMonth}
-                                title={
-                                  isCurrentMonth
-                                    ? 'Cannot generate invoices for the current month'
-                                    : undefined
-                                }
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openGenerateFromGroup(group);
-                                }}
-                              >
-                                Generate Invoice
-                              </Button>
+                              {capabilities.canPay && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={isCurrentMonth}
+                                  title={
+                                    isCurrentMonth
+                                      ? 'Cannot generate invoices for the current month'
+                                      : undefined
+                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openGenerateFromGroup(group);
+                                  }}
+                                >
+                                  Generate Invoice
+                                </Button>
+                              )}
                             </div>
                           </div>
 

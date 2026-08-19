@@ -71,6 +71,19 @@ export type ApiKey = {
          */
         hotWalletId: string;
     }>;
+    /**
+     * Whether managed EVM wallet scope filtering is enabled for this API key
+     */
+    x402WalletScopeEnabled: boolean;
+    /**
+     * Managed EVM wallets this API key is scoped to. The key additionally always reaches wallets it created itself.
+     */
+    X402WalletScopes: Array<{
+        /**
+         * ID of the managed EVM wallet in scope
+         */
+        evmWalletId: string;
+    }>;
 };
 
 export type Wallet = {
@@ -2266,9 +2279,9 @@ export type PaymentSourceExtended = {
      */
     PaymentSourceConfig: {
         /**
-         * The RPC provider API key (e.g., Blockfrost project ID)
+         * The RPC provider API key (e.g., Blockfrost project ID). Operator secret: only returned to keys with admin access, omitted for Read/ReadAndPay keys.
          */
-        rpcProviderApiKey: string;
+        rpcProviderApiKey?: string;
         /**
          * The RPC provider type (e.g., Blockfrost)
          */
@@ -2789,7 +2802,7 @@ export type X402Wallet = {
      */
     note: string | null;
     /**
-     * Id of the API key that created this wallet
+     * Id of the API key that created this wallet. Only returned to admins and for the caller’s own wallets; null otherwise, so a read key cannot enumerate other tenants’ key ids.
      */
     createdById: string | null;
     createdAt: Date;
@@ -4189,7 +4202,7 @@ export type PatchApiKeyData = {
          */
         UsageCreditsToAddOrRemove?: Array<{
             /**
-             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA). For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", or "<caip2Network>:native" for the gas token.
              */
             unit: string;
             /**
@@ -4217,6 +4230,14 @@ export type PatchApiKeyData = {
          * Whether to enable wallet scope filtering for this API key
          */
         walletScopeEnabled?: boolean;
+        /**
+         * Whether to enable managed EVM wallet scope filtering for this API key
+         */
+        x402WalletScopeEnabled?: boolean;
+        /**
+         * Replaces the managed EVM wallets this API key is scoped to
+         */
+        X402WalletScopeEvmWalletIds?: Array<string>;
         /**
          * List of hot wallet IDs to scope this API key to. Replaces existing scopes when provided
          */
@@ -4277,7 +4298,7 @@ export type PostApiKeyData = {
          */
         UsageCredits: Array<{
             /**
-             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA)
+             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA). For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", or "<caip2Network>:native" for the gas token.
              */
             unit: string;
             /**
@@ -4290,7 +4311,7 @@ export type PostApiKeyData = {
          */
         NetworkLimit?: Array<'Preprod' | 'Mainnet'>;
         /**
-         * Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use
+         * Additional non-Cardano CAIP-2 chain identifiers the API key is allowed to use. Omit to grant every configured EVM chain, mirroring NetworkLimit defaulting to all Cardano networks; pass an empty array to grant none.
          */
         ChainIdLimit?: Array<string>;
         /**
@@ -4312,11 +4333,19 @@ export type PostApiKeyData = {
         /**
          * Whether to enable wallet scope filtering for this API key
          */
-        walletScopeEnabled?: string;
+        walletScopeEnabled?: boolean | 'true' | 'false';
         /**
          * List of hot wallet IDs to scope this API key to
          */
         WalletScopeHotWalletIds?: Array<string>;
+        /**
+         * Whether to enable managed EVM wallet scope filtering. False leaves the key unrestricted, matching walletScopeEnabled.
+         */
+        x402WalletScopeEnabled?: boolean | 'true' | 'false';
+        /**
+         * Managed EVM wallet IDs to scope this API key to. Only applied when x402WalletScopeEnabled is true; the key also always reaches wallets it created itself.
+         */
+        X402WalletScopeEvmWalletIds?: Array<string>;
     };
     path?: never;
     query?: never;

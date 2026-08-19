@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
+import { X402WalletScopeField } from '@/components/api-keys/X402WalletScopeField';
 import { useAllWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
 import {
@@ -51,6 +52,8 @@ interface UpdateApiKeyDialogProps {
     status: 'Active' | 'Revoked';
     walletScopeEnabled: boolean;
     WalletScopes: Array<{ hotWalletId: string }>;
+    x402WalletScopeEnabled: boolean;
+    X402WalletScopes: Array<{ evmWalletId: string }>;
   };
 }
 
@@ -68,6 +71,8 @@ const updateApiKeySchema = z
     }),
     walletScopeEnabled: z.boolean(),
     walletScopeIds: z.array(z.string()),
+    x402WalletScopeEnabled: z.boolean(),
+    x402WalletScopeIds: z.array(z.string()),
     evmChains: z.array(z.string()),
   })
   .superRefine((val, ctx) => {
@@ -149,6 +154,8 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
       credits: { lovelace: '', usdcx: '' },
       walletScopeEnabled: apiKey.walletScopeEnabled,
       walletScopeIds: apiKey.WalletScopes.map((ws) => ws.hotWalletId),
+      x402WalletScopeEnabled: apiKey.x402WalletScopeEnabled,
+      x402WalletScopeIds: apiKey.X402WalletScopes.map((ws) => ws.evmWalletId),
       evmChains: apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:')),
     },
   });
@@ -162,6 +169,16 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     control,
     name: 'walletScopeIds',
     defaultValue: apiKey.WalletScopes.map((ws) => ws.hotWalletId),
+  });
+  const x402WalletScopeEnabled = useWatch({
+    control,
+    name: 'x402WalletScopeEnabled',
+    defaultValue: apiKey.x402WalletScopeEnabled,
+  });
+  const x402WalletScopeIds = useWatch({
+    control,
+    name: 'x402WalletScopeIds',
+    defaultValue: apiKey.X402WalletScopes.map((ws) => ws.evmWalletId),
   });
 
   const onSubmit = async (data: UpdateApiKeyFormValues) => {
@@ -184,6 +201,11 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
       JSON.stringify([...data.walletScopeIds].sort()) !==
         JSON.stringify([...apiKey.WalletScopes.map((ws) => ws.hotWalletId)].sort());
 
+    const x402WalletScopeChanged =
+      data.x402WalletScopeEnabled !== apiKey.x402WalletScopeEnabled ||
+      JSON.stringify([...data.x402WalletScopeIds].sort()) !==
+        JSON.stringify([...apiKey.X402WalletScopes.map((ws) => ws.evmWalletId)].sort());
+
     const initialEvmChains = apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:'));
     const evmChainsChanged =
       JSON.stringify([...data.evmChains].sort()) !== JSON.stringify([...initialEvmChains].sort());
@@ -200,15 +222,23 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
           walletScopeEnabled: data.walletScopeEnabled,
           WalletScopeHotWalletIds: data.walletScopeEnabled ? data.walletScopeIds : [],
         }),
-        ...(apiKey.canPay &&
-          !apiKey.canAdmin &&
+        ...(x402WalletScopeChanged && {
+          x402WalletScopeEnabled: data.x402WalletScopeEnabled,
+          X402WalletScopeEvmWalletIds: data.x402WalletScopeEnabled ? data.x402WalletScopeIds : [],
+        }),
+        ...(!apiKey.canAdmin &&
           evmChainsChanged && {
-            // ChainIdLimit replaces the whole networkLimit on update; preserve
-            // the existing Cardano grants and only rewrite the EVM ones.
-            ChainIdLimit: [
-              ...apiKey.ChainIdLimit.filter((chainId) => !chainId.startsWith('eip155:')),
-              ...data.evmChains,
-            ],
+            // Any non-admin key may have its EVM grant edited — read keys need it
+            // for the x402 read surfaces too; gating this on canPay left read keys
+            // created with an empty grant permanently unrepairable from the UI.
+            //
+            // Send ONLY the EVM half. apiKey.ChainIdLimit is the whole networkLimit
+            // column, Cardano entries included, but the endpoint rejects any
+            // `cardano:` id here ("Use NetworkLimit for Cardano networks") — so
+            // echoing them back 400'd every attempt and no chain grant could ever
+            // be changed from this dialog. The server merges this half with the
+            // untouched Cardano half itself.
+            ChainIdLimit: data.evmChains,
           }),
       })
       .catch(() => null);
@@ -296,7 +326,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
             </p>
           </div>
 
-          {apiKey.canPay && !apiKey.canAdmin && evmChainOptions.length > 0 && (
+          {!apiKey.canAdmin && evmChainOptions.length > 0 && (
             <div className="space-y-2">
               <label className="text-sm font-medium">EVM chains (x402)</label>
               <p className="text-xs text-muted-foreground">
@@ -477,6 +507,14 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                   )}
                 </div>
               )}
+
+              <X402WalletScopeField
+                active={open}
+                enabled={x402WalletScopeEnabled}
+                onEnabledChange={(next) => setValue('x402WalletScopeEnabled', next)}
+                selectedIds={x402WalletScopeIds}
+                onSelectedIdsChange={(ids) => setValue('x402WalletScopeIds', ids)}
+              />
             </>
           )}
         </div>

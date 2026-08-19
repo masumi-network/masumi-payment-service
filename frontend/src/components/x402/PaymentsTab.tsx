@@ -80,7 +80,7 @@ const DIRECTION_LABEL: Record<X402PaymentAttempt['direction'], string> = {
 
 export function PaymentsTab() {
   const { networks } = useAvailableX402Networks();
-  const { activeRail, selectedX402ChainId } = useAppContext();
+  const { activeRail, selectedX402ChainId, capabilities } = useAppContext();
   const [filters, setFilters] = useState<X402PaymentFilters>({});
   const [selected, setSelected] = useState<X402PaymentAttempt | null>(null);
   // Captured when the details dialog opens (event time, render stays pure); the reconcile
@@ -124,6 +124,10 @@ export function PaymentsTab() {
     networks.find((n) => n.caip2Id === caip2)?.displayName ?? caip2;
 
   // The switcher is the primary control; it maps to the coarse side/needs-action filters.
+  // Needs-action / reconcile is admin-only — hide that view for pay keys.
+  const viewOptions = capabilities.canAdmin
+    ? VIEW_OPTIONS
+    : VIEW_OPTIONS.filter((v) => v.key !== 'needs');
   const activeView: PaymentView = filters.needsManualAction ? 'needs' : (filters.side ?? 'all');
   const setView = (view: PaymentView) =>
     setFilters((prev) => ({
@@ -134,12 +138,18 @@ export function PaymentsTab() {
       status: view === 'needs' ? undefined : prev.status,
     }));
 
+  useEffect(() => {
+    if (!capabilities.canAdmin && filters.needsManualAction) {
+      setFilters((prev) => ({ ...prev, needsManualAction: undefined }));
+    }
+  }, [capabilities.canAdmin, filters.needsManualAction]);
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         Every x402 payment this service signed (Pay / outbound) or verified and settled (Receive /
-        inbound), newest first. Use the switcher for the buy vs sell side or the reconciliation
-        backlog.
+        inbound), newest first. Use the switcher for the buy vs sell side
+        {capabilities.canAdmin ? ' or the reconciliation backlog' : ''}.
       </p>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -148,7 +158,7 @@ export function PaymentsTab() {
             role="group"
             aria-label="Payment view"
           >
-            {VIEW_OPTIONS.map((v) => (
+            {viewOptions.map((v) => (
               <button
                 key={v.key}
                 type="button"
@@ -494,7 +504,7 @@ function ReconcileSection({
   openedAtMs: number;
   onReconciled: () => void;
 }) {
-  const { apiClient } = useAppContext();
+  const { apiClient, capabilities } = useAppContext();
   const [txHash, setTxHash] = useState('');
   const [pendingResolution, setPendingResolution] = useState<'settled' | 'failed' | null>(null);
   const reconcile = useApiMutation({
@@ -511,7 +521,8 @@ function ReconcileSection({
   const ambiguousVerified = attempt.status === 'Verified' && isStale;
   const isReconcilable =
     attempt.direction === 'InboundSettle' && (ambiguousVerified || settledMissingRecord);
-  if (!isReconcilable) return null;
+  // Reconcile is admin-only — pay keys can view payments but must not see this UI.
+  if (!capabilities.canAdmin || !isReconcilable) return null;
 
   const txHashValid = TX_HASH_REGEX.test(txHash);
   const submit = async (resolution: 'settled' | 'failed') => {

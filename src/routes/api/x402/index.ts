@@ -1,10 +1,12 @@
 import {
 	adminAuthenticatedEndpointFactory,
 	payAuthenticatedEndpointFactory,
+	readAuthenticatedEndpointFactory,
 	type AuthContext,
 } from '@masumi/payment-core/auth';
 import { z } from '@masumi/payment-core/zod';
 import { webhookEventsService } from '@/services/webhooks/events.service';
+import { budgetScopeFor } from './budget-scope';
 import {
 	countX402ManagedWallets,
 	countX402PaymentAttempts,
@@ -84,8 +86,13 @@ import {
 // `x402OwnerScope` is the wallet-ownership scope (null = admin) enforced on wallet CRUD and the buy
 // path; `x402TenantApiKeyId` is the same tenant scope for attempt/settlement history (undefined =
 // admin), where isolation is by the initiating apiKeyId rather than wallet ownership.
-function x402OwnerScope(ctx: AuthContext): string | null {
-	return ctx.canAdmin ? null : ctx.id;
+function x402OwnerScope(ctx: AuthContext): { scope: string | null; walletScopeIds: string[] | null } {
+	// Admins are unrestricted. A non-admin reaches the wallets it created plus any an
+	// admin assigned to it via ApiKeyX402WalletScope; walletScopeIds is null when the
+	// key is unscoped, which is the Cardano `walletScopeEnabled=false` semantic.
+	return ctx.canAdmin
+		? { scope: null, walletScopeIds: null }
+		: { scope: ctx.id, walletScopeIds: ctx.x402WalletScopeIds };
 }
 
 function x402NetworkLimit(ctx: AuthContext): string[] | null {
@@ -199,26 +206,48 @@ export const createX402PaymentPost = payAuthenticatedEndpointFactory.build({
 			preferredAsset: input.preferredAsset,
 			paymentIdentifier: input.paymentIdentifier,
 			ownerScope: x402OwnerScope(ctx),
+			// Admins are never usage limited (the auth layer forces the flag false).
+			usageLimited: ctx.usageLimited,
 		}),
 });
 
-export const listX402WalletsGet = payAuthenticatedEndpointFactory.build({
+// createdById names another tenant's internal ApiKey id. An unscoped read key can
+// list every wallet (Cardano-parity default), so for non-admins the field is kept
+// only on the caller's own wallets and nulled on everyone else's — otherwise the
+// read-level list doubles as a directory of the node's other key ids, which the
+// pre-parity owner-scoping made impossible. The Cardano twin exposes no creator
+// field at all.
+function maskWalletCreator<T extends { createdById: string | null }>(ctx: AuthContext, wallet: T): T {
+	if (ctx.canAdmin || wallet.createdById === ctx.id) return wallet;
+	return { ...wallet, createdById: null };
+}
+
+// Read access, mirroring GET /wallet/list on the Cardano side: the projection is
+// public wallet metadata (address, type, note, binding) with no key material. The
+// private key is only ever returned by the admin-only create endpoint.
+export const listX402WalletsGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listWalletsSchemaInput,
 	output: listWalletsSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof listWalletsSchemaInput>; ctx: AuthContext }) => ({
-		Wallets: await listX402ManagedWallets({
-			take: input.take,
-			cursorId: input.cursorId,
-			type: input.type,
-			networkId: input.networkId,
-			ownerScope: x402OwnerScope(ctx),
-			caip2NetworkLimit: x402NetworkLimit(ctx),
-		}),
+		Wallets: (
+			await listX402ManagedWallets({
+				take: input.take,
+				cursorId: input.cursorId,
+				type: input.type,
+				networkId: input.networkId,
+				ownerScope: x402OwnerScope(ctx),
+				caip2NetworkLimit: x402NetworkLimit(ctx),
+			})
+		).map((wallet) => maskWalletCreator(ctx, wallet)),
 	}),
 });
 
-export const createX402WalletPost = payAuthenticatedEndpointFactory.build({
+// Admin-only, matching the Cardano wallet lifecycle (POST/PATCH /wallet and wallet
+// removal are all admin). This is also the only endpoint that ever returns EVM key
+// material — a generated wallet's private key, once, for backup — so keeping it here
+// means no read or pay key can obtain a private key at all.
+export const createX402WalletPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: createWalletSchemaInput,
 	output: createWalletSchemaOutput,
@@ -233,15 +262,18 @@ export const createX402WalletPost = payAuthenticatedEndpointFactory.build({
 		}),
 });
 
-export const getX402WalletGet = payAuthenticatedEndpointFactory.build({
+// Read access — same projection as the list, still owner/network scoped, with the
+// same creator-id masking for non-admins.
+export const getX402WalletGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: walletDetailSchemaInput,
 	output: walletSchemaOutput,
 	handler: async ({ input, ctx }: { input: z.infer<typeof walletDetailSchemaInput>; ctx: AuthContext }) =>
-		getX402ManagedWallet(input.id, x402OwnerScope(ctx), x402NetworkLimit(ctx)),
+		maskWalletCreator(ctx, await getX402ManagedWallet(input.id, x402OwnerScope(ctx), x402NetworkLimit(ctx))),
 });
 
-export const updateX402WalletPost = payAuthenticatedEndpointFactory.build({
+// Admin-only: wallet lifecycle, as on the Cardano side (PATCH /wallet).
+export const updateX402WalletPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: updateWalletSchemaInput,
 	output: walletSchemaOutput,
@@ -254,7 +286,9 @@ export const updateX402WalletPost = payAuthenticatedEndpointFactory.build({
 		}),
 });
 
-export const x402WalletBalanceGet = payAuthenticatedEndpointFactory.build({
+// Read access, matching GET /balance on the Cardano side — on-chain balances are
+// public data for an address the caller can already see.
+export const x402WalletBalanceGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: walletBalanceSchemaInput,
 	output: walletBalanceSchemaOutput,
@@ -267,7 +301,7 @@ export const x402WalletBalanceGet = payAuthenticatedEndpointFactory.build({
 		}),
 });
 
-export const x402WalletsCountGet = payAuthenticatedEndpointFactory.build({
+export const x402WalletsCountGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: walletsCountSchemaInput,
 	output: countSchemaOutput,
@@ -280,7 +314,9 @@ export const x402WalletsCountGet = payAuthenticatedEndpointFactory.build({
 	}),
 });
 
-export const deleteX402WalletPost = payAuthenticatedEndpointFactory.build({
+// Admin-only: retiring a custodial wallet is destructive and mirrors Cardano, where
+// wallet removal runs through the admin payment-source endpoints.
+export const deleteX402WalletPost = adminAuthenticatedEndpointFactory.build({
 	method: 'post',
 	input: deleteWalletSchemaInput,
 	output: deleteWalletSchemaOutput,
@@ -288,7 +324,11 @@ export const deleteX402WalletPost = payAuthenticatedEndpointFactory.build({
 		deleteX402ManagedWallet(input.id, x402OwnerScope(ctx), x402NetworkLimit(ctx)),
 });
 
-export const listAvailableX402NetworksGet = payAuthenticatedEndpointFactory.build({
+// Read access: the sanitized chain projection (no rpcUrl, no facilitator wallet
+// or URL — settlement readiness is summarised as canSettle), so a read-only
+// session can see which EVM chains the rail offers. The full config stays on
+// the admin GET /x402/networks below.
+export const listAvailableX402NetworksGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listNetworksSchemaInput,
 	output: listAvailableNetworksSchemaOutput,
@@ -317,13 +357,34 @@ export const upsertX402NetworkPost = adminAuthenticatedEndpointFactory.build({
 		upsertX402Network({ ...input, createdById: ctx.id }),
 });
 
-export const listX402BudgetsGet = adminAuthenticatedEndpointFactory.build({
+// Pay access: a key that can spend from a delegated wallet may read the allowance
+// governing that spend, without being made admin — which would also hand it wallet
+// creation, update and deletion. Writing a budget stays admin (setX402BudgetPost
+// below), so a key can see its allowance but never raise it.
+//
+// The filter is pinned to the caller for non-admins. `input.apiKeyId` is
+// caller-supplied and optional, and an unscoped list returns every tenant's
+// budgets, so honouring it here would let any pay key read another tenant's
+// allowances — and the response carries apiKeyId/createdById, leaking key ids
+// alongside the amounts. Only an admin may pass a filter, or omit it to see all.
+export const listX402BudgetsGet = payAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listBudgetSchemaInput,
 	output: listBudgetSchemaOutput,
-	handler: async ({ input }: { input: z.infer<typeof listBudgetSchemaInput> }) => ({
-		Budgets: (await listX402WalletBudgets(input.apiKeyId)).map(serializeBudget),
-	}),
+	handler: async ({ input, ctx }: { input: z.infer<typeof listBudgetSchemaInput>; ctx: AuthContext }) => {
+		const budgets = (await listX402WalletBudgets(budgetScopeFor(ctx, input.apiKeyId))).map(serializeBudget);
+		if (ctx.canAdmin) return { Budgets: budgets };
+		// Apply the caller's chain limit here too. Every sibling wallet endpoint
+		// 404s a wallet outside the limit precisely so a scoped key cannot discover
+		// that it exists; a stale grant on a now-forbidden chain would otherwise
+		// disclose that wallet's id, address and network through this projection.
+		const allowedChains = x402NetworkLimit(ctx);
+		const visible =
+			allowedChains == null ? budgets : budgets.filter((budget) => allowedChains.includes(budget.caip2Network));
+		// createdById names the ADMIN key that granted the budget. Same reasoning as
+		// maskWalletCreator: a non-admin must not learn other keys' internal ids.
+		return { Budgets: visible.map((budget) => ({ ...budget, createdById: null })) };
+	},
 });
 
 export const setX402BudgetPost = adminAuthenticatedEndpointFactory.build({
@@ -334,7 +395,10 @@ export const setX402BudgetPost = adminAuthenticatedEndpointFactory.build({
 		serializeBudget(await setX402WalletBudget({ ...input, createdById: ctx.id })),
 });
 
-export const listX402PaymentAttemptsGet = payAuthenticatedEndpointFactory.build({
+// Read access, mirroring the Cardano rail where GET /payment and /purchase are
+// read-level. Non-admins are scoped to their own attempts by x402TenantApiKeyId,
+// so a read key sees the history it initiated and nothing of other tenants'.
+export const listX402PaymentAttemptsGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listPaymentAttemptsSchemaInput,
 	output: listPaymentAttemptsSchemaOutput,
@@ -363,7 +427,9 @@ export const reconcileX402PaymentPost = adminAuthenticatedEndpointFactory.build(
 	},
 });
 
-export const listX402SettlementsGet = payAuthenticatedEndpointFactory.build({
+// Read access — settlement history for the caller's own attempts; same tenant
+// scoping as the attempt list above.
+export const listX402SettlementsGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: listSettlementsSchemaInput,
 	output: listSettlementsSchemaOutput,
@@ -405,7 +471,7 @@ export const deleteX402LowBalanceRuleDelete = adminAuthenticatedEndpointFactory.
 		deleteX402LowBalanceRule(input.ruleId),
 });
 
-export const x402PaymentAttemptsCountGet = payAuthenticatedEndpointFactory.build({
+export const x402PaymentAttemptsCountGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: paymentAttemptsCountSchemaInput,
 	output: countSchemaOutput,
@@ -414,7 +480,7 @@ export const x402PaymentAttemptsCountGet = payAuthenticatedEndpointFactory.build
 	}),
 });
 
-export const x402SettlementsCountGet = payAuthenticatedEndpointFactory.build({
+export const x402SettlementsCountGet = readAuthenticatedEndpointFactory.build({
 	method: 'get',
 	input: settlementsCountSchemaInput,
 	output: countSchemaOutput,

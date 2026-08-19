@@ -22,7 +22,10 @@ export function isTestnetEnv(network: NetworkType): boolean {
 }
 
 /** Enabled EVM chains that belong to the given Cardano environment. */
-export function chainsForEnv(chains: X402Network[], network: NetworkType): X402Network[] {
+export function chainsForEnv<T extends { isEnabled: boolean; isTestnet: boolean }>(
+  chains: T[],
+  network: NetworkType,
+): T[] {
   const wantTestnet = isTestnetEnv(network);
   return chains.filter((chain) => chain.isEnabled && chain.isTestnet === wantTestnet);
 }
@@ -49,8 +52,31 @@ export function hasBudgetOnEnabledNetworks(
  * URL set), and with either a self-hosted wallet or remote facilitator assigned. An enabled-but-
  * unconfigured chain (no facilitator / blank RPC) is not selectable as an active rail —
  * picking it should route to setup instead of pretending the rail works.
+ *
+ * Two projections reach this predicate. The admin one carries the raw config; the
+ * pay-authenticated `/x402/networks/available` one withholds it and sends `canSettle`,
+ * the server's own settlement verdict, instead.
+ *
+ * Dispatch on `canSettle` being present, NOT on config fields being absent: sniffing
+ * `rpcUrl === undefined` means the day the admin projection starts sending `canSettle`
+ * (or the available one starts sending `rpcUrl`) this predicate silently flips branch.
+ * Preferring the server's verdict whenever it is present degrades safely instead.
+ *
+ * Caveat: `canSettle` only reports "facilitator wallet or URL present" — it does not
+ * carry the RPC-reachability half of the admin check, so a facilitator-but-no-RPC chain
+ * reads usable to a pay key and unusable to an admin. Widen `canSettle` server-side if
+ * that divergence ever matters.
  */
-export function isX402ChainUsable(chain: X402Network): boolean {
+export function isX402ChainUsable(chain: {
+  isEnabled: boolean;
+  canSettle?: boolean;
+  facilitatorWalletId?: string | null;
+  facilitatorUrl?: string | null;
+  rpcUrl?: string | null;
+}): boolean {
+  if (typeof chain.canSettle === 'boolean') {
+    return chain.isEnabled && chain.canSettle;
+  }
   return (
     chain.isEnabled && (!!chain.facilitatorWalletId || !!chain.facilitatorUrl) && !!chain.rpcUrl
   );
@@ -62,6 +88,16 @@ export function isX402ChainUsable(chain: X402Network): boolean {
  * Uses the same bar as chain selection so a facilitator-but-no-RPC chain doesn't hide the
  * setup prompt while the rail still can't actually run payments.
  */
-export function isX402SetUpForEnv(chains: X402Network[], network: NetworkType): boolean {
+export function isX402SetUpForEnv(
+  chains: Array<{
+    isEnabled: boolean;
+    isTestnet: boolean;
+    canSettle?: boolean;
+    facilitatorWalletId?: string | null;
+    facilitatorUrl?: string | null;
+    rpcUrl?: string | null;
+  }>,
+  network: NetworkType,
+): boolean {
   return chainsForEnv(chains, network).some(isX402ChainUsable);
 }

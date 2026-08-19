@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import { getRegistry, RegistryEntry } from '@/lib/api/generated';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { useX402Networks } from '@/lib/hooks/useX402';
+import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 import { handleApiCall } from '@/lib/utils';
 import { appendInclusiveCursorPage } from '@/lib/pagination/cursor-pagination';
@@ -91,7 +91,13 @@ export function useContextAgents(params?: {
     selectedPaymentSource,
     selectedPaymentSourceId,
   } = useAppContext();
-  const { networks, isLoading: isX402NetworksLoading } = useX402Networks({ silentErrors: true });
+  // Session-scoped, NOT the admin-only network list: this hook drives which x402
+  // agents the page shows, and the admin-gated hook resolves to an empty chain set
+  // (with isLoading=false) for read/pay keys — rendering the agents page as a
+  // permanent empty state for every non-admin session on the x402 rail.
+  const { networks, isLoading: isX402NetworksLoading } = useX402NetworksForSession({
+    silentErrors: true,
+  });
 
   const envChainIds = useMemo(
     () => new Set(chainsForEnv(networks, network).map((chain) => chain.caip2Id)),
