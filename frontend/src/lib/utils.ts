@@ -271,8 +271,11 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
     return unit;
   }
 
-  if (!unit) {
-    return 'ADA';
+  if (!unit || unit === 'lovelace') {
+    // An empty unit means lovelace, and lovelace on a testnet is tADA. Returning
+    // 'ADA' here regardless of network put "450.00 ADA" under a "tADA" heading
+    // in the same panel, which reads as two different assets.
+    return network.toLowerCase() === 'mainnet' ? 'ADA' : 'tADA';
   }
 
   const isUsdcx =
@@ -302,7 +305,17 @@ export function formatFundUnit(unit: string | undefined, network: string | undef
     return 'ADA';
   }
 
-  return unit ?? '—';
+  // An unrecognised asset falls back to its own identifier, which is a policy id
+  // and asset name concatenated: 100+ characters that wrap across the panel and
+  // tell an operator nothing they can read. Shortened to the ends, which is what
+  // identifies it at a glance, with the full value still available wherever the
+  // caller offers copy.
+  return unit ? shortenAssetUnit(unit) : '—';
+}
+
+/** First and last characters of a long asset identifier, elided in the middle. */
+export function shortenAssetUnit(unit: string): string {
+  return unit.length <= 20 ? unit : `${unit.slice(0, 10)}…${unit.slice(-6)}`;
 }
 
 /**
@@ -347,7 +360,10 @@ export function groupDigits(value: string | null | undefined): string {
   return negative ? `-${digits}` : digits;
 }
 
-const SIX_DECIMAL_DISPLAY_UNITS = new Set(['ADA', 'USDM', 'tUSDM', 'USDCx']);
+// tADA belongs here for the same reason ADA does — it is lovelace, six
+// decimals. Left out, the formatter fell through to the raw-integer branch and
+// printed "450,000,000 tADA" for 450 ADA.
+const SIX_DECIMAL_DISPLAY_UNITS = new Set(['ADA', 'tADA', 'USDM', 'tUSDM', 'USDCx']);
 const SIX_DECIMAL_BASE = BigInt(10) ** BigInt(6);
 
 /**

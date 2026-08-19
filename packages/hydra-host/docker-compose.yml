@@ -1,0 +1,120 @@
+# Hydra Host — local testing, and a worked example of the settings that matter.
+#
+# Not a production deployment: one unmanaged container with a local volume. In
+# production run the image under whatever you already operate, carrying over the
+# volume, the stop grace period and the healthcheck below.
+#
+# The port mapping is the security boundary. The secure default binds only the
+# authenticated control plane and single-purpose exchange plane to loopback:
+#
+#   8443        control plane      published, bearer-token gated
+#   8444        exchange plane     published, invite redemption
+#   5001-5032   peer plane         published only via the public-peer override
+#   4001-4032   hydra-node API     NEVER — unauthenticated, can close a head
+#   6001-6032   Prometheus         NEVER — no --monitoring-host exists
+#
+# The API range is additionally bound to 127.0.0.1 inside the container, so it
+# stays shut even if someone adds `network_mode: host`. The monitoring range has
+# no such protection, which is why HYDRA_HOST_MONITORING_ENABLED defaults off.
+#
+# To expose the peer range, first apply the generated nftables ruleset, then add
+# `-f docker-compose.public-peer.yml`. That override requires an explicit
+# firewall acknowledgement. Re-apply the rules whenever membership or DNS
+# changes. Never publish this range from this base file.
+
+services:
+  hydra-host:
+    # Use an immutable digest in production, for example
+    # ghcr.io/example/hydra-host@sha256:.... A floating `latest` deployment can
+    # replace reviewed code at the next pull or restart.
+    image: ${HYDRA_HOST_IMAGE:?set an immutable Hydra Host image reference}
+    build:
+      context: ../..
+      dockerfile: packages/hydra-host/Dockerfile
+    restart: unless-stopped
+
+    ports:
+      - '8443:8443'
+      # The exchange plane. A counterparty redeems an invite by posting to this
+      # port on the issuer's Host, so a Host that does not publish it can issue
+      # invites nobody can accept.
+      - '8444:8444'
+      # The peer plane is deliberately NOT published here. Every head needs its
+      # own port and a head whose port is unpublished cannot reach its peer, so
+      # publishing it is required — but it is unauthenticated etcd raft, and the
+      # order matters: apply the generated nftables ruleset first, then start
+      # with `-f docker-compose.public-peer.yml`, which adds the same range
+      # behind HYDRA_HOST_PEER_FIREWALL_ACK. Publishing it from this file put 32
+      # unauthenticated ports on the internet for anyone following the base file
+      # as a worked example, and made the override's acknowledgement a formality
+      # over a range that was already open.
+
+    environment:
+      # Bare hostname or IP, no scheme or port. Counterparties dial this, and it
+      # becomes each node's advertise identity, so it must be resolvable from
+      # outside and must not change for a head's lifetime.
+      HYDRA_HOST_PUBLIC_HOST: ${HYDRA_HOST_PUBLIC_HOST:?set to this host's public name}
+      HYDRA_HOST_NETWORK: ${HYDRA_HOST_NETWORK:-preprod}
+
+      # Two tiers, both at least 32 characters. Admin covers fleet operations;
+      # user covers driving a node that already exists. Never share either with
+      # a counterparty — a user token can close a head.
+      HYDRA_HOST_ADMIN_TOKEN: ${HYDRA_HOST_ADMIN_TOKEN:?required}
+      HYDRA_HOST_USER_TOKEN: ${HYDRA_HOST_USER_TOKEN:?required}
+
+      # A path inside the container, not the project id. It is handed to
+      # hydra-node as --blockfrost, which reads the file itself.
+      BLOCKFROST_PROJECT_FILE: /run/secrets/blockfrost.txt
+
+      HYDRA_HOST_PEER_PORT_START: '5001'
+      HYDRA_HOST_PEER_PORT_COUNT: '32'
+
+      # Off unless the monitoring range is firewalled. hydra-node offers no way
+      # to bind the Prometheus server to loopback, so enabling it publishes head
+      # status, snapshot numbers and peer liveness with no authentication.
+      HYDRA_HOST_MONITORING_ENABLED: ${HYDRA_HOST_MONITORING_ENABLED:-false}
+
+    volumes:
+      # Real block storage, not a network filesystem: this holds a SQLite event
+      # store and an etcd raft WAL, both of which need POSIX fsync durability.
+      # Losing it loses the heads. ADR 0015 §7.
+      - hydra-data:/data
+      # Every node follows the chain through this. Without it the supervisor
+      # starts and each node it spawns dies on a missing --blockfrost file.
+      - ${BLOCKFROST_PROJECT_FILE:?path to a file containing the Blockfrost project id}:/run/secrets/blockfrost.txt:ro
+
+    # etcd's raft WAL is intolerant of an abrupt stop mid-round. Before stopping
+    # a node the supervisor waits out its in-flight snapshot round, which this
+    # codebase calls a drain. It is not the API drain that removes a node: heads
+    # stay open and a restart brings every node back. Give it room to finish,
+    # more room than the wait itself can take, or the container is killed
+    # mid-round and every head on it comes back marked as an undrained stop.
+    #
+    # The arithmetic, with the defaults: HYDRA_HOST_DRAIN_TIMEOUT_MS is 120s, a
+    # node that ignores its SIGTERM gets another 30s before SIGKILL, and the
+    # SIGKILL itself is waited on for 5s, so a worst-case node takes 155s.
+    # `shutdown()` fans out over every node at once, so that is the whole
+    # shutdown rather than per node. The Host's own guard gives up at 240s and
+    # exits, and this has to sit past that — at 120s Docker was killing the
+    # container before a single stuck node had finished draining. Raise both
+    # together if the drain timeout is raised.
+    stop_grace_period: 250s
+
+    # Deliberately an unauthenticated request to an authenticated route: a 401
+    # proves the server is serving AND that auth is wired, without adding a
+    # health route that would be one more thing reachable without a token.
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8443/v1/capabilities').then(r=>process.exit(r.status===401?0:1),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  hydra-data:

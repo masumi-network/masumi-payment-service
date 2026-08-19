@@ -285,7 +285,7 @@ export default function Invoices() {
             <span className="font-medium text-yellow-600 dark:text-yellow-400">Beta</span>
             <span className="text-muted-foreground">
               {' '}
-              — This invoice feature is in beta. Generated invoices should be reviewed manually or
+              This invoice feature is in beta. Generated invoices should be reviewed manually or
               verified with a tax advisor before use. Use at your own discretion.
             </span>
           </div>

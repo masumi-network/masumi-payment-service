@@ -6,10 +6,12 @@ import {
 	PaymentErrorType,
 	PaymentSourceType,
 	PricingType,
+	TransactionLayer,
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import { isCardanoAddressForNetwork } from '@/types/payment-source';
+import { FORCE_LAYER_API_VALUES } from '@/utils/logic/force-layer';
 
 const paymentTimeSchema = ez.dateIn();
 
@@ -141,6 +143,12 @@ export const paymentResponseSchema = z
 			.nativeEnum(OnChainState)
 			.nullable()
 			.describe('Current state of the payment on the blockchain. Null if not yet on-chain'),
+		forceLayer: z
+			.enum(FORCE_LAYER_API_VALUES)
+			.nullable()
+			.describe(
+				'Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).',
+			),
 		NextAction: z
 			.object({
 				requestedAction: z.nativeEnum(PaymentAction).describe('Next action required for this payment'),
@@ -181,6 +189,12 @@ export const paymentResponseSchema = z
 				blockHeight: z.number().nullable().describe('Block height of the transaction'),
 				blockTime: z.number().nullable().describe('Block time of the transaction'),
 				txHash: z.string().nullable().describe('Cardano transaction hash'),
+				layer: z.nativeEnum(TransactionLayer).optional().describe('Blockchain layer this transaction was submitted to'),
+				hydraHeadId: z
+					.string()
+					.nullable()
+					.optional()
+					.describe('Hydra head ID when this transaction was submitted to L2. Null for L1 transactions'),
 				status: z.nativeEnum(TransactionStatus).describe('Current status of the transaction'),
 				previousOnChainState: z
 					.nativeEnum(OnChainState)
@@ -198,6 +212,15 @@ export const paymentResponseSchema = z
 					createdAt: z.date().describe('Timestamp when the transaction was created'),
 					updatedAt: z.date().describe('Timestamp when the transaction was last updated'),
 					txHash: z.string().nullable().describe('Cardano transaction hash'),
+					layer: z
+						.nativeEnum(TransactionLayer)
+						.optional()
+						.describe('Blockchain layer this transaction was submitted to'),
+					hydraHeadId: z
+						.string()
+						.nullable()
+						.optional()
+						.describe('Hydra head ID when this transaction was submitted to L2. Null for L1 transactions'),
 					status: z.nativeEnum(TransactionStatus).describe('Current status of the transaction'),
 					fees: z.string().nullable().describe('Fees of the transaction'),
 					blockHeight: z.number().nullable().describe('Block height of the transaction'),
@@ -339,6 +362,12 @@ export const createPaymentsSchemaInput = z
 			.min(14)
 			.max(26)
 			.describe('A unique nonce from the purchaser. It must be in hex format'),
+		forceLayer: z
+			.enum(FORCE_LAYER_API_VALUES)
+			.optional()
+			.describe(
+				'Optional seller layer override. For V2 this choice is signed into the purchase terms: "Hydra" requires an open head, "L1" forces L1, and a conflict with the buyer\'s forceLayer is rejected. Hydra is not supported for V1. Omit for automatic routing.',
+			),
 	})
 	.refine(
 		(value) =>

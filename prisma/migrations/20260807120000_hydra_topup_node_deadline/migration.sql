@@ -1,0 +1,15 @@
+-- The deposit deadline the head itself enforces.
+--
+-- The listing derived a "deadline" from the deposit transaction's own
+-- invalid-hereafter slot, which is its submission TTL and stops meaning
+-- anything the moment the transaction is in a block. The real deadline is
+-- written into the deposit datum by whichever node drafted it, from that
+-- node's chain time, and read roughly half an hour later than the derived one
+-- -- so healthy deposits were reported as expired while they were still on
+-- track to be absorbed, and two of them were.
+--
+-- Nullable and not backfilled: the value cannot be reconstructed from anything
+-- already stored, which is the whole reason it needs its own column. Rows from
+-- before this migration report no deadline rather than a wrong one, and the
+-- node restates it for any deposit still pending on the next connection.
+ALTER TABLE "HydraTopup" ADD COLUMN "nodeDeadline" TIMESTAMP(3);

@@ -68,9 +68,9 @@ export function RegisterAgentDetailsSection({
           disabled={typeLocked}
           className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <option value="Standard">Masumi — single API base URL</option>
-          <option value="OpenApi">OpenAPI — link to a spec document</option>
-          <option value="X402">x402 — link to a resource manifest</option>
+          <option value="Standard">Masumi: single API base URL</option>
+          <option value="OpenApi">OpenAPI: link to a spec document</option>
+          <option value="X402">x402: link to a resource manifest</option>
         </select>
         <p className="text-xs text-muted-foreground">
           How this agent&apos;s API is described. Payment is configured separately below.

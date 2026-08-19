@@ -126,6 +126,21 @@ model HotWallet {
   pendingSwapTransactionId                String?                         @unique
   paymentSourceId                         String
   lockedAt                                DateTime?
+  /// Why this wallet is locked, when it was not locked by an L1 batcher.
+  ///
+  /// The batchers claim a wallet, build, submit and attach a PendingTransaction
+  /// within seconds, so `unlockStaleOrphanWalletLocks` can safely treat any
+  /// lock with no pending transaction and older than WALLET_LOCK_TIMEOUT_INTERVAL
+  /// (300s) as leaked. The Hydra L1 deposits hold the same lock across an L1
+  /// CONFIRMATION and never attach a PendingTransaction, which is exactly that
+  /// shape — so without this marker the safety net hands the wallet to a batcher
+  /// while a carve or a commit is still in flight, and one of the two spends is
+  /// rejected on chain as BadInputsUTxO.
+  ///
+  /// Null for an ordinary batcher lock. Set on claim and cleared on release by
+  /// `@/utils/db/hot-wallet-lock`, whose own staleness threshold takes over for
+  /// these.
+  lockPurpose                             String?
   note                                    String?
   deletedAt                               DateTime?
   PaymentSource                           PaymentSource                   @relation(fields: [paymentSourceId], references: [id], onDelete: Cascade)
@@ -148,6 +163,9 @@ model HotWallet {
   FundDistributionConfig                  FundDistributionConfig?
   FundDistributionsSent                   FundDistributionRequest[]       @relation("FundDistributionSource")
   FundDistributionsReceived               FundDistributionRequest[]       @relation("FundDistributionTarget")
+  hydraRelations                          HydraRelation[]
+  hydraLocalParticipants                  HydraLocalParticipant[]
+  hydraHeadInvites                        HydraHeadInvite[]
 }
 
 model HotWalletLowBalanceRule {
@@ -177,48 +195,80 @@ model HotWalletLowBalanceRule {
 }
 
 model Transaction {
-  id                            String                          @id @default(cuid())
-  createdAt                     DateTime                        @default(now())
-  updatedAt                     DateTime                        @updatedAt
-  txHash                        String?
-  status                        TransactionStatus
-  confirmations                 Int?
-  lastCheckedAt                 DateTime?
-  fees                          BigInt?
-  blockHeight                   Int?
-  blockTime                     Int?
-  outputAmount                  String?                         @db.Text
-  utxoCount                     Int?
-  withdrawalCount               Int?
-  assetMintOrBurnCount          Int?
-  redeemerCount                 Int?
-  validContract                 Boolean?
-  previousOnChainState          OnChainState?
-  newOnChainState               OnChainState?
+  id                                         String                          @id @default(cuid())
+  createdAt                                  DateTime                        @default(now())
+  updatedAt                                  DateTime                        @updatedAt
+  txHash                                     String?
+  status                                     TransactionStatus
+  confirmations                              Int?
+  lastCheckedAt                              DateTime?
+  fees                                       BigInt?
+  blockHeight                                Int?
+  blockTime                                  Int?
+  outputAmount                               String?                         @db.Text
+  utxoCount                                  Int?
+  withdrawalCount                            Int?
+  assetMintOrBurnCount                       Int?
+  redeemerCount                              Int?
+  validContract                              Boolean?
+  previousOnChainState                       OnChainState?
+  newOnChainState                            OnChainState?
   /// Deterministic txHash (blake2b_256 of the signed tx body) computed BEFORE
   /// broadcast. Set during pre-submit alongside invalidHereafterSlot so the
   /// reconciliation worker can resolve an ambiguous submit (e.g. submit threw
   /// after the node accepted the tx) by querying the chain for this hash. After
   /// successful broadcast txHash and intendedTxHash MUST match.
-  intendedTxHash                String?
+  intendedTxHash                             String?
   /// The tx's `invalid_hereafter` slot. Once the current slot passes this
   /// (with a small grace), the ledger can never accept the txBody — reconciliation
   /// uses this as the safe boundary to mark an ambiguous Pending tx as
   /// RolledBack and free the wallet without risking double-spend.
-  invalidHereafterSlot          BigInt?
-  BlocksWallet                  HotWallet?
+  invalidHereafterSlot                       BigInt?
+  /// Durable pre-submit context for an L2 reservation. Expiry plus replay
+  /// absence is not proof that Hydra rejected the body, so automated recovery
+  /// must keep this reservation fail-closed. These fields are retained for an
+  /// explicit recovery protocol that can resolve competing outcomes atomically.
+  l2ReservationPreviousActionId              String?
+  l2ReservationPreviousTransactionId         String?
+  l2ReservationPreviousLayer                 TransactionLayer?
+  l2ReservationPeerPreviousLayer             TransactionLayer?
+  l2ReservationPreviousSmartContractWalletId String?
+  l2ReservationPreviousBuyerReturnAddress    String?
+  l2ReservationPreviousCollateralReturn      BigInt?
+  /// When the head itself refused this transaction body, naming its hash.
+  ///
+  /// The one signal that separates "we do not know what happened" from "this
+  /// can never confirm". Everything else about an unconfirmed L2 reservation is
+  /// ambiguous -- absence from replay does not prove absence from the ledger --
+  /// which is why a reservation without this stays held. With it, and once the
+  /// validity window has closed, the body is provably dead and the request can
+  /// be handed back for a fresh attempt.
+  l2RejectedByHeadAt                         DateTime?
+  /// The head's own words for that refusal, kept for the operator.
+  l2RejectedByHeadReason                     String?
+  BlocksWallet                               HotWallet?
   // V2 batch txs: one Transaction row referenced from N PaymentRequests / PurchaseRequests.
   // For V1 single-item txs each list still holds at most one entry, so existing code paths are unchanged.
-  PaymentRequestCurrent         PaymentRequest[]                @relation("CurrentPaymentTransaction")
-  PurchaseRequestCurrent        PurchaseRequest[]               @relation("CurrentPurchaseTransaction")
-  RegistryRequest               RegistryRequest[]
-  InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
-  FundDistributionRequests      FundDistributionRequest[]       @relation("FundDistributionTransaction")
-  FundTransfer                  WalletFundTransfer?             @relation("FundTransferTransaction")
+  PaymentRequestCurrent                      PaymentRequest[]                @relation("CurrentPaymentTransaction")
+  PurchaseRequestCurrent                     PurchaseRequest[]               @relation("CurrentPurchaseTransaction")
+  RegistryRequest                            RegistryRequest[]
+  InboxAgentRegistrationRequest              InboxAgentRegistrationRequest[]
+  FundDistributionRequests                   FundDistributionRequest[]       @relation("FundDistributionTransaction")
+  FundTransfer                               WalletFundTransfer?             @relation("FundTransferTransaction")
   // History is many-to-many because a V2 batch can move one shared Transaction
   // row through multiple request histories after it leaves CurrentTransaction.
-  PaymentRequestHistory         PaymentRequest[]                @relation("PaymentTransactionHistory")
-  PurchaseRequestHistory        PurchaseRequest[]               @relation("PurchaseTransactionHistory")
+  PaymentRequestHistory                      PaymentRequest[]                @relation("PaymentTransactionHistory")
+  PurchaseRequestHistory                     PurchaseRequest[]               @relation("PurchaseTransactionHistory")
+
+  /// Which blockchain layer this transaction was submitted to
+  layer TransactionLayer @default(L1)
+
+  /// Hydra head provenance. L2 submissions point at their processing head; the
+  /// independently confirmed L1 fanout transaction also retains this link so a
+  /// migrated forced-L2 request can continue from its exact L1 handoff without
+  /// making fresh forced-L2 requests generically eligible for L1 observation.
+  hydraHeadId String?
+  HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id])
 
   // Schema-declared full index on intendedTxHash. Migration
   // 20260526002000_add_transaction_intended_tx_hash creates an additional
@@ -233,6 +283,8 @@ model Transaction {
   // co-exist; write cost is acceptable since only ambiguous-funding rows
   // populate this column.
   @@index([intendedTxHash])
+  @@index([layer])
+  @@index([hydraHeadId])
 }
 
 model SwapTransaction {
@@ -291,6 +343,12 @@ model WalletFundTransfer {
 
   @@index([hotWalletId])
   @@index([status, txHash])
+  /// The Hydra node-funding claim reads by destination address inside a
+  /// Serializable transaction, and the head's transaction history reads the
+  /// same way per page load. Without this the claim scans the table, which
+  /// takes a relation-wide predicate lock and turns every concurrent insert
+  /// into a serialization conflict.
+  @@index([toAddress, createdAt])
 }
 
 model WalletSecret {
@@ -302,17 +360,19 @@ model WalletSecret {
 }
 
 model WalletBase {
-  id              String            @id @default(cuid())
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  walletVkey      String
-  note            String?
-  type            WalletType
-  paymentSourceId String
-  walletAddress   String            @default("")
-  PaymentRequest  PaymentRequest[]
-  PurchaseRequest PurchaseRequest[]
-  PaymentSource   PaymentSource     @relation(fields: [paymentSourceId], references: [id])
+  id                      String                   @id @default(cuid())
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  walletVkey              String
+  note                    String?
+  type                    WalletType
+  paymentSourceId         String
+  walletAddress           String                   @default("")
+  PaymentRequest          PaymentRequest[]
+  PurchaseRequest         PurchaseRequest[]
+  PaymentSource           PaymentSource            @relation(fields: [paymentSourceId], references: [id])
+  HydraRelations          HydraRelation[]
+  HydraRemoteParticipants HydraRemoteParticipant[]
 
   @@unique([paymentSourceId, walletVkey, walletAddress, type])
 }
@@ -802,6 +862,23 @@ model PaymentRequest {
   // Uniqueness was a leftover from the V1 single-item flow; dropping it allows
   // a multi-redeemer batch tx to be referenced once from each participating request.
   currentTransactionId                          String?
+  /// Exact live Hydra escrow output currently accepted for this request.
+  /// Kept separately because an L2 action replaces CurrentTransaction with its
+  /// pending tx before that tx spends this prior output.
+  currentHydraUtxoTxHash                        String?
+  currentHydraUtxoOutputIndex                   Int?
+  /// Canonical one-row-per-unit value of the exact accepted Hydra output.
+  currentHydraUtxoValue                         Json?
+  /// A confirmed terminal spend whose CIP-8 admin payload could not be
+  /// independently authenticated from snapshot-bound evidence.
+  unresolvedHydraTerminalTxHash                 String?
+  unresolvedHydraTerminalReason                 String?
+  /// Exact L1 output created by the authenticated Hydra fanout for this
+  /// surviving escrow. Reconciliation uses all three as an atomic CAS marker
+  /// while moving ownership to L1, then clears them in the same transaction.
+  hydraFanoutHandoffHeadId                      String?
+  hydraFanoutHandoffTxHash                      String?
+  hydraFanoutHandoffOutputIndex                 Int?
   collateralReturnLovelace                      BigInt?
   payByTime                                     BigInt?
   buyerReturnAddress                            String?
@@ -823,6 +900,14 @@ model PaymentRequest {
   invoiceBase                                   InvoiceBase?        @relation(fields: [invoiceBaseId], references: [id])
   invoiceBaseId                                 String?
 
+  /// Which blockchain layer this request targets
+  layer TransactionLayer @default(L1)
+
+  /// Optional caller override for L1 vs Hydra (L2) routing. L1 = always lock on
+  /// L1 even if a Hydra head is open; L2 = require an open head or fail (never
+  /// silently fall back to L1). Null = auto (L2 if a head is available, else L1).
+  forceLayer TransactionLayer?
+
   @@index([nextActionLastChangedAt])
   @@index([nextActionLastChangedAt, id])
   @@index([onChainStateOrResultLastChangedAt])
@@ -836,6 +921,10 @@ model PaymentRequest {
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
   @@index([currentTransactionId])
+  @@index([currentHydraUtxoTxHash])
+  @@index([unresolvedHydraTerminalTxHash])
+  @@index([hydraFanoutHandoffHeadId])
+  @@index([layer])
 }
 
 model PaymentActionData {
@@ -890,6 +979,23 @@ model PurchaseRequest {
   // Uniqueness was a leftover from the V1 single-item flow; dropping it allows
   // a multi-redeemer batch tx to be referenced once from each participating request.
   currentTransactionId                          String?
+  /// Exact live Hydra escrow output currently accepted for this request.
+  /// Kept separately because an L2 action replaces CurrentTransaction with its
+  /// pending tx before that tx spends this prior output.
+  currentHydraUtxoTxHash                        String?
+  currentHydraUtxoOutputIndex                   Int?
+  /// Canonical one-row-per-unit value of the exact accepted Hydra output.
+  currentHydraUtxoValue                         Json?
+  /// A confirmed terminal spend whose CIP-8 admin payload could not be
+  /// independently authenticated from snapshot-bound evidence.
+  unresolvedHydraTerminalTxHash                 String?
+  unresolvedHydraTerminalReason                 String?
+  /// Exact L1 output created by the authenticated Hydra fanout for this
+  /// surviving escrow. Reconciliation uses all three as an atomic CAS marker
+  /// while moving ownership to L1, then clears them in the same transaction.
+  hydraFanoutHandoffHeadId                      String?
+  hydraFanoutHandoffTxHash                      String?
+  hydraFanoutHandoffOutputIndex                 Int?
   collateralReturnLovelace                      BigInt?
   payByTime                                     BigInt?
   buyerReturnAddress                            String?
@@ -908,6 +1014,19 @@ model PurchaseRequest {
   PaidFunds                                     UnitValue[]
   WithdrawnForSeller                            UnitValue[]          @relation("SellerWithdrawnPurchaseRequest")
 
+  /// Which blockchain layer this request targets
+  layer TransactionLayer @default(L1)
+
+  /// Optional caller override for L1 vs Hydra (L2) routing. L1 = always lock on
+  /// L1 even if a Hydra head is open; L2 = require an open head or fail (never
+  /// silently fall back to L1). Null = auto (L2 if a head is available, else L1).
+  forceLayer TransactionLayer?
+
+  /// Seller-selected routing override copied from the V2 signed payment terms.
+  /// Kept separate from forceLayer, which belongs to the buyer creating this
+  /// purchase. Null means the seller selected automatic routing.
+  paymentForceLayer TransactionLayer?
+
   @@index([nextActionLastChangedAt])
   @@index([nextActionLastChangedAt, id])
   @@index([onChainStateOrResultLastChangedAt])
@@ -921,6 +1040,10 @@ model PurchaseRequest {
   @@index([paymentSourceId, onChainState])
   @@index([paymentSourceId, payByTime])
   @@index([currentTransactionId])
+  @@index([currentHydraUtxoTxHash])
+  @@index([unresolvedHydraTerminalTxHash])
+  @@index([hydraFanoutHandoffHeadId])
+  @@index([layer])
 }
 
 model PurchaseActionData {
@@ -1163,6 +1286,11 @@ enum TransactionStatus {
   FailedViaTimeout
   FailedViaManualReset
   RolledBack
+}
+
+enum TransactionLayer {
+  L1
+  L2
 }
 
 enum SwapStatus {
@@ -1456,6 +1584,7 @@ enum WebhookEventType {
   X402_PAYMENT_SETTLED
   X402_PAYMENT_FAILED
   X402_WALLET_LOW_BALANCE
+  HYDRA_HEAD_LOW_BALANCE
 }
 
 // Critical is retained for historical rows only: the dispatcher creates
@@ -1485,6 +1614,839 @@ enum WebhookDeliveryStatus {
   Failed
   Retrying
   Cancelled
+}
+
+// ============================================================
+// HYDRA L2 MODELS
+// ============================================================
+
+enum HydraHeadStatus {
+  Disconnected
+  Connected
+  Connecting
+  Idle
+  Initializing
+  Open
+  Closed
+  FanoutPossible
+  Final
+}
+
+enum HydraErrorType {
+  /// When well-formed client input was not processable.
+  CommandFailed
+  /// Something went wrong while posting Hydra Layer1 transaction.
+  PostTxOnChainFailed
+  /// Transaction is invalid inside the Hydra Head.
+  TxInvalid
+  /// Client input was invalid.
+  InvalidInput
+}
+
+/// Lifecycle of a single incremental-commit (top-up) deposit into an Open head.
+enum HydraTopupStatus {
+  /// Accepted and being built: an exact amount is carved into its own L1 UTxO
+  /// and has to confirm before the deposit can even be signed. Minutes, with no
+  /// deposit hash yet.
+  Preparing
+  /// Deposit submitted to L1; awaiting independent confirmation + head finalization.
+  Pending
+  /// Deposit confirmed on L1 by the independent observer.
+  Confirmed
+  /// Deposit was rejected/absent past its validity window; retry is safe.
+  Failed
+  /// The head took the deposit in, so the funds are on L2 and spendable there.
+  ///
+  /// The status used to stop at Confirmed, which describes the deposit reaching
+  /// the chain and says nothing about the head. A deposit the head had already
+  /// absorbed therefore still read as "Submitted" and still offered Recover, an
+  /// action that cannot work once the deposit is spent - while the in-head
+  /// balance showed the same funds. The two screens disagreed and the row was
+  /// the wrong one.
+  Absorbed
+  /// The deposit was spent back to the wallet and the funds have arrived.
+  ///
+  /// Distinct from asking for a recovery: `recoveryRequestedAt` records the
+  /// request, and this records the outcome. Without it a recovered deposit read
+  /// as "Submitted" forever, because the status describes what the head did
+  /// with the deposit and the head never did anything — leaving an operator no
+  /// way to tell posted-and-pending from home-and-safe.
+  Recovered
+}
+
+/// Lifecycle of a withdrawal out of an open head.
+///
+/// Read it as three questions in order: has the amount been separated out, have
+/// both parties agreed to give it up, and has L1 received it. The middle one is
+/// the point of no return — after Approved the funds have left the head whether
+/// or not the L1 half has been observed yet.
+enum HydraDecommitStatus {
+  /// Splitting the exact amount into its own in-head UTxO. Seconds, not minutes:
+  /// the split is an ordinary in-head transaction.
+  Preparing
+  /// Submitted to the head; awaiting the snapshot both parties sign.
+  Pending
+  /// The head has signed the removal. The value is out of the head, and the node
+  /// is posting the L1 decrement that pays it out.
+  Approved
+  /// The L1 decrement has been observed. The funds are spendable on L1.
+  Finalized
+  /// The head refused it, or the split never confirmed. Nothing left the head
+  /// and a retry is safe.
+  Failed
+}
+
+/// Persistent relation between a local wallet and a remote counterparty for Hydra L2.
+/// Each agent runs their own server, so this is stored from the local agent's perspective.
+/// The local side is a HotWallet (we have the secret), the remote side is a WalletBase (public info only).
+/// Each relation can have multiple HydraHead records over time (one closes, a new one opens).
+model HydraRelation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Cardano network this relation operates on
+  network Network
+
+  /// The local wallet we control (HotWallet with secret key)
+  localHotWalletId String
+  LocalHotWallet   HotWallet @relation(fields: [localHotWalletId], references: [id], onDelete: Restrict)
+
+  /// The remote counterparty's wallet (public info only)
+  remoteWalletId String
+  RemoteWallet   WalletBase @relation(fields: [remoteWalletId], references: [id], onDelete: Restrict)
+
+  /// Individual head sessions within this relation (1:N)
+  Heads HydraHead[]
+
+  /// The counterparty's Hydra Host Exchange Plane, where this side redeems an
+  /// invite. Long-lived: a relation outlives the individual heads opened under
+  /// it. Null until the two operators have exchanged endpoints. It is not a
+  /// payment-service address and nothing is delivered to it — the offer-delivery
+  /// handlers this used to name were removed with ADR 0011.
+  counterpartyBaseUrl String?
+
+  /// One relation per wallet pair per network
+  @@unique([network, localHotWalletId, remoteWalletId])
+  @@index([network])
+  @@index([localHotWalletId])
+}
+
+/// A single Hydra head instance within a participant relation.
+/// Each head is one "session" — it goes through Idle → Open → Closed → Final.
+/// A relation can have many heads over its lifetime, but typically only one is Open.
+model HydraHead {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The participant relation this head belongs to
+  hydraRelationId String
+  HydraRelation   HydraRelation @relation(fields: [hydraRelationId], references: [id], onDelete: Cascade)
+
+  /// Hydra head identifier (assigned after Init)
+  headIdentifier String? @unique
+
+  /// Current status of the Hydra head
+  status HydraHeadStatus @default(Idle)
+
+  /// Contestation period in seconds (configured on the Hydra node)
+  contestationPeriod BigInt @default(86400)
+
+  /// Lifecycle timestamps
+  openedAt    DateTime?
+  closedAt    DateTime?
+  finalizedAt DateTime?
+
+  /// Deadline after which fanout is possible (set when head is closed)
+  contestationDeadline DateTime?
+
+  /// Latest activity timestamp for idle detection / auto-close
+  latestActivityAt DateTime?
+
+  /// Latest confirmed snapshot number (monotonically increasing while head is open)
+  latestSnapshotNumber BigInt @default(0)
+
+  /// Durable ordered history high-water mark. Both fields are null or both set.
+  lastReconciledSnapshotSequence         BigInt?
+  lastReconciledSnapshotTransactionIndex Int?
+
+  /// Set only after a Final head has completed authenticated history replay,
+  /// live-tip reconciliation, and has no pending L2 work left. Destructive
+  /// cleanup must require this marker rather than treating Final as sufficient.
+  reconciliationCompletedAt DateTime?
+
+  /// Operator surface for fail-closed replay halts: when the ordered replay is
+  /// stuck on one confirmed transaction (unparseable evidence, or an apply that
+  /// keeps returning retry), the stall is persisted here so it is visible in the
+  /// API/UI instead of only in logs. Cleared automatically when replay drains.
+  reconciliationStalledTxId   String?
+  reconciliationStalledReason String?
+  reconciliationStalledSince  DateTime?
+
+  /// Durable admission gate set before Close is sent. Reservation writers lock
+  /// the head row and refuse new L2 work once closing has begun.
+  isClosing Boolean @default(false)
+
+  /// When the admission gate above was taken.
+  ///
+  /// Written once, because the stalled-close reaper has to age off something the
+  /// rest of the service does not touch: `updatedAt` is refreshed by every write
+  /// to the row, including the ownerEpoch increment the connection manager makes
+  /// on every attach, so a flapping session hid a stuck latch from it forever.
+  closingSince DateTime?
+
+  /// L1 transaction hashes for head lifecycle events
+  initTxHash   String?
+  closeTxHash  String?
+  fanoutTxHash String?
+
+  /// Monotonic ownership fence (fencing token): incremented once per
+  /// head-session acquisition. Lifecycle writes carry it, so a stale session's
+  /// late write misses its guarded UPDATE and self-demotes instead of
+  /// clobbering (or durably disabling) a head a newer session owns.
+  ownerEpoch BigInt @default(0)
+
+  /// Errors that have occurred during the head's lifecycle
+  Errors HydraHeadError[]
+
+  /// Incremental-commit top-ups into this head
+  Topups HydraTopup[]
+
+  /// Incremental-decommit withdrawals out of this head
+  Withdrawals HydraDecommit[]
+
+  /// The local participant in this head (this server's wallet + node)
+  LocalParticipant HydraLocalParticipant?
+
+  /// Remote participants in this head (counterparties, public info only)
+  RemoteParticipants HydraRemoteParticipant[]
+
+  /// Transactions submitted through this head (L2)
+  Transactions Transaction[]
+
+  /// The redeemed invite that produced this head.
+  Invite HydraHeadInvite?
+
+  /// Is enabled
+  isEnabled Boolean @default(true)
+  // One non-Final head per relation is enforced by the partial unique index
+  // HydraHead_one_non_final_per_relation_key in the head-binding migration.
+
+  @@index([status])
+  @@index([hydraRelationId, status])
+  @@index([hydraRelationId, status, isEnabled])
+}
+
+/// The local participant — this server's wallet and Hydra node config.
+/// Can exist before any head (hydraHeadId is nullable).
+/// Once assigned to a head, the @unique constraint ensures one local participant per head.
+/// Has full key material for signing transactions.
+model HydraLocalParticipant {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Which head this participant belongs to (nullable — can be created before a head exists)
+  hydraHeadId String?    @unique
+  HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// The HotWallet this participant operates with (has secret mnemonic). This is
+  /// the FUNDING wallet — the source of the buyer's committed escrow funds — NOT
+  /// the head's on-chain identity (see cardanoVkey).
+  walletId String
+  Wallet   HotWallet @relation(fields: [walletId], references: [id], onDelete: Restrict)
+
+  /// The Hydra NODE's own Cardano verification-key HASH (28-byte hex). This is the
+  /// on-chain participant identity: Hydra mints the InitTx participant token for
+  /// this key and head verification checks the token against it. It is
+  /// deliberately SEPARATE from the funding HotWallet (walletId) so the node's
+  /// infrastructure key is never the custodial fund wallet — a node-host
+  /// compromise cannot reach escrowed funds, and node keys rotate independently.
+  /// (Set to the funding wallet's vkey only for legacy coupled heads.)
+  cardanoVkey String
+
+  /// Whether this service keeps the node's L1 fuel topped up from `walletId`.
+  /// False when the operator said they would fund the node key themselves: the
+  /// scheduled funding cycle then leaves it alone, and so does redemption.
+  /// Without this the documented opt-out did nothing — the cycle funds any node
+  /// held by a live invite or a non-final head, so 30 ADA left the wallet within
+  /// one tick of an invite that had asked us not to.
+  autoFund Boolean @default(true)
+
+  /// The Hydra Host this participant's node runs on. Required: every node is
+  /// provisioned through a Host, which generates its keys and supervises its
+  /// process — a node configured by hand is not representable. Restrict: a Host
+  /// with live participants must not be deleted.
+  hydraHostId String
+  HydraHost   HydraHost @relation(fields: [hydraHostId], references: [id], onDelete: Restrict)
+
+  /// Node id assigned by that Host. Together with hydraHostId this identifies
+  /// the supervised process; nodeUrl/nodeHttpUrl below are derived from the two.
+  /// Unique per Host: two participants pointing at one supervised node would
+  /// have them fighting over the same head state.
+  hostNodeId String
+
+  /// WebSocket URL for this participant's Hydra node, through its Host's proxy
+  /// (wss://host/v1/nodes/<hostNodeId>/api). Derived from hydraHostId and
+  /// hostNodeId, and stored so the connection manager does not have to resolve
+  /// the Host on every reconnect.
+  nodeUrl String
+
+  /// HTTP URL for the same node, through the same proxy.
+  nodeHttpUrl String
+
+  /// Whether this participant has committed funds to the head
+  hasCommitted Boolean @default(false)
+
+  /// L1 commit transaction hash (set after this participant commits to the head)
+  commitTxHash String?
+
+  /// Signed invalid-hereafter slot retained with the L1 commit hash. A retry is
+  /// safe only after this slot plus the rollback/indexer grace window has passed
+  /// with the hash absent. Legacy already-confirmed rows are migrated with 0.
+  commitInvalidHereafterSlot BigInt?
+
+  /// When this participant's signing keys were handed to an operator to back
+  /// up. Set by the one-time reveal and never cleared: the disclosure path
+  /// seals after the first use, mirroring the Host's own escrow so key material
+  /// cannot be pulled repeatedly out of the database through the API.
+  keysDisclosedAt DateTime?
+
+  /// Encrypted Hydra signing key (1:1)
+  hydraSecretKeyId String         @unique
+  HydraSecretKey   HydraSecretKey @relation(fields: [hydraSecretKeyId], references: [id], onDelete: Restrict)
+
+  /// Incremental-commit top-ups performed by this participant
+  Topups HydraTopup[]
+
+  /// Incremental-decommit withdrawals performed by this participant
+  Withdrawals HydraDecommit[]
+
+  /// Low in-head-balance monitoring rules for this participant
+  LowBalanceRules HydraLowBalanceRule[]
+
+  @@unique([hydraHostId, hostNodeId])
+  @@index([walletId])
+  @@index([hasCommitted, updatedAt])
+}
+
+/// Low-balance monitoring for a local participant's OWN funds inside its head.
+/// Mirrors HotWalletLowBalanceRule but the monitored balance is the L2 in-head
+/// balance (read from the live head snapshot) rather than an L1 address balance.
+/// When the in-head balance for `assetUnit` falls below `thresholdAmount` the
+/// rule fires a low-balance alert; if `topupEnabled` is set it additionally
+/// performs an incremental-commit top-up from the participant's OWN assigned
+/// funding wallet (never a third-party wallet — a top-up from another wallet
+/// would not be creditable to this participant in the head).
+model HydraLowBalanceRule {
+  id                      String                @id @default(cuid())
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  hydraLocalParticipantId String
+  assetUnit               String
+  thresholdAmount         BigInt
+  enabled                 Boolean               @default(true)
+  topupEnabled            Boolean               @default(false)
+  /// Target amount the auto top-up tries to reach by committing the minimal set
+  /// of whole matching wallet UTxOs (Hydra commits whole UTxOs; the committed
+  /// amount is therefore >= this target, not exact).
+  topupAmount             BigInt?
+  status                  LowBalanceStatus      @default(Unknown)
+  lastKnownAmount         BigInt?
+  lastCheckedAt           DateTime?
+  lastAlertedAt           DateTime?
+  LocalParticipant        HydraLocalParticipant @relation(fields: [hydraLocalParticipantId], references: [id], onDelete: Cascade)
+
+  @@unique([hydraLocalParticipantId, assetUnit])
+  @@index([hydraLocalParticipantId, enabled])
+  @@index([enabled, status])
+}
+
+/// A remote participant — a counterparty whose public info we know.
+/// Can exist before any head (hydraHeadId is nullable).
+/// No secret key material — we only observe their actions via the Hydra protocol.
+model HydraRemoteParticipant {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Which head this participant belongs to (nullable — can be created before a head exists)
+  hydraHeadId String?
+  HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// The counterparty's wallet (public info only — vkey, address). Funding
+  /// identity of the remote escrow party, NOT the remote head participant token
+  /// identity (see cardanoVkey).
+  walletId String
+  Wallet   WalletBase @relation(fields: [walletId], references: [id], onDelete: Restrict)
+
+  /// The remote Hydra NODE's Cardano verification-key HASH (28-byte hex) — the
+  /// on-chain participant identity the InitTx mints the remote participant token
+  /// for. Separate from the counterparty funding wallet (walletId); see the local
+  /// participant's cardanoVkey for the rationale.
+  cardanoVkey String
+
+  /// The counterparty node's publicly reachable peer-plane endpoint
+  /// (`host:port`), exactly as they advertised it in the handshake.
+  ///
+  /// Not an API URL, and deliberately so: their node's API sits behind their
+  /// own Host's proxy and we hold no token for it. What we need from them is
+  /// the address etcd dials to form the cluster, and etcd validates a member's
+  /// advertised URL against the cluster entry — so this must be stored verbatim
+  /// rather than reconstructed.
+  advertise String
+
+  /// Whether this participant has committed funds (observed from Hydra protocol)
+  hasCommitted Boolean @default(false)
+
+  /// Commit transaction hash (observed from Hydra protocol)
+  commitTxHash String?
+
+  /// Hydra verification key (1:1)
+  hydraVerificationKeyId String               @unique
+  HydraVerificationKey   HydraVerificationKey @relation(fields: [hydraVerificationKeyId], references: [id], onDelete: Restrict)
+  // One remote participant per non-Final head is enforced by assignment and
+  // status-transition triggers; Final legacy heads may retain historical rows.
+
+  /// Same wallet cannot join the same head twice
+  @@unique([hydraHeadId, walletId])
+  @@index([walletId])
+}
+
+/// An error that has occurred during a Hydra head's lifecycle.
+model HydraHeadError {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  /// Which head this error belongs to
+  hydraHeadId String
+  HydraHead   HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// The type of error
+  errorType    HydraErrorType
+  errorMessage String
+
+  /// The status of the head when the error occurred
+  headStatus HydraHeadStatus
+
+  /// The client input that caused the error
+  clientInput String?
+
+  /// The transaction hash that caused the error
+  txHash  String?
+  errorAt DateTime
+
+  @@index([hydraHeadId])
+  @@index([hydraHeadId, errorAt])
+}
+
+/// A single repeatable incremental-commit (top-up) of additional funds by the
+/// local participant into an already-Open head. Distinct from the one-shot
+/// initial commit tracked on HydraLocalParticipant: each top-up is its own L1
+/// deposit with its own validity window, so a fresh row keeps double-submit
+/// reconciliation per-deposit. At most one Pending row per participant is
+/// allowed at a time (enforced by the endpoint under serializable isolation).
+model HydraTopup {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The head the funds are being topped up into.
+  hydraHeadId String
+  HydraHead   HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// The local participant performing the top-up.
+  hydraLocalParticipantId String
+  LocalParticipant        HydraLocalParticipant @relation(fields: [hydraLocalParticipantId], references: [id], onDelete: Cascade)
+
+  /// The L1 self-payment that carves the exact amount into its own UTxO, when an
+  /// exact amount was asked for. Recorded as soon as it is submitted: waiting for
+  /// it to confirm is the longest part of a top-up, and without this there is no
+  /// transaction an operator can look up during that wait.
+  splitTxHash String?
+
+  /// The incremental-commit deposit L1 transaction hash (64 hex).
+  ///
+  /// Null while the top-up is still being prepared. An exact-amount top-up first
+  /// carves a dedicated UTxO on L1 and waits for it to confirm, which is minutes
+  /// during which no deposit exists yet. The row is created up front regardless,
+  /// because an operator who has just moved funds needs to see that something is
+  /// happening far more than the record needs to be complete.
+  depositTxHash String?
+
+  /// Signed invalid-hereafter slot retained with the deposit hash. A retry is
+  /// safe only after this slot plus the rollback/indexer grace window has passed
+  /// with the hash absent from the trusted L1 observer. Null until the deposit
+  /// itself is built.
+  invalidHereafterSlot BigInt?
+
+  /// The deposit deadline the head itself enforces, as the node reported it on
+  /// CommitRecorded. This is the value written into the deposit datum by the
+  /// node that drafted it, and the only authoritative one: it is set from that
+  /// node's chain time, so it cannot be derived from anything this service
+  /// knows. Null until the node has observed the deposit on chain.
+  ///
+  /// Emphatically NOT invalidHereafterSlot above, which is the deposit
+  /// transaction's own submission TTL and stops meaning anything once the
+  /// transaction is in a block.
+  nodeDeadline DateTime?
+
+  /// True when this row is the head's initial commit rather than a later top-up.
+  ///
+  /// The commit handler records its commit as a deposit so an operator can see
+  /// and recover it, and both reconcilers must then leave the participant's
+  /// wallet alone for this row: the commit reconciler owns that lock, and a
+  /// second releaser frees whatever operation holds the wallet when it runs.
+  ///
+  /// Written down rather than derived from LocalParticipant.commitTxHash, which
+  /// is mutable — a cleared commit can be retried under a new hash, and the
+  /// previous commit's row then stopped being recognised.
+  isInitialCommit Boolean @default(false)
+
+  /// Lovelace committed by this top-up (sum of the committed UTxOs), for display.
+  committedLovelace BigInt
+
+  /// Committed native-asset amounts as { unit: quantityString }, for display.
+  committedAssets Json
+
+  status HydraTopupStatus @default(Pending)
+
+  /// When the node was asked to spend this deposit back to the wallet.
+  ///
+  /// Recovery leaves no other trace: the deposit keeps its status, because what
+  /// it records is what the head did with it, and the head did nothing. Without
+  /// this the row looks untouched after a recovery and the button invites a
+  /// second press — which is why it is recorded rather than left to the client
+  /// to remember for as long as the page is open.
+  ///
+  /// Requested, not completed: the node builds and posts the transaction after
+  /// answering, so the funds arrive later and this only says it was asked.
+  recoveryRequestedAt DateTime?
+
+  @@index([hydraLocalParticipantId, status])
+  @@index([status, updatedAt])
+  @@index([hydraHeadId])
+}
+
+/// A withdrawal of funds from an open head back to L1 (Hydra "decommit").
+///
+/// The mirror of HydraTopup, and deliberately a separate model rather than a
+/// signed amount on that one: the two run opposite ways round. A top-up starts
+/// on L1 and waits for the head to absorb it; a withdrawal starts in the head
+/// and waits for L1 to receive it. Their failure modes, their recovery, and the
+/// question an operator asks while one is in flight share no fields beyond the
+/// amount.
+model HydraDecommit {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The head the funds are being withdrawn from.
+  hydraHeadId String
+  HydraHead   HydraHead @relation(fields: [hydraHeadId], references: [id], onDelete: Cascade)
+
+  /// The local participant performing the withdrawal.
+  hydraLocalParticipantId String
+  LocalParticipant        HydraLocalParticipant @relation(fields: [hydraLocalParticipantId], references: [id], onDelete: Cascade)
+
+  /// The in-head transaction that carved the exact amount into its own UTxO,
+  /// when an exact amount was asked for.
+  ///
+  /// A decommit takes ALL of its transaction's outputs out of the head, so an
+  /// exact amount has to be split off first — the same reason a top-up carves a
+  /// UTxO on L1, arrived at from the opposite direction. In-head, that split is
+  /// free and confirms in a second, which is why there is no Preparing wait
+  /// here worth the name.
+  splitTxId String?
+
+  /// The decommit transaction's id. Null only while the split is still being
+  /// confirmed. This is the id the head reports back in its Decommit events, so
+  /// it is what every later status transition is matched on.
+  decommitTxId String?
+
+  /// Lovelace this withdrawal set out to remove from the head.
+  ///
+  /// What was asked for, and never overwritten: it is the record of intent, and
+  /// comparing it against what actually settled is how a surprise gets noticed.
+  requestedLovelace BigInt
+
+  /// Native-asset amounts it set out to remove, as { unit: quantityString }.
+  requestedAssets Json
+
+  /// Lovelace that actually reached L1, as the head reported it. Null until the
+  /// withdrawal finalizes.
+  ///
+  /// Rarely equal to the requested amount, and the difference is not a bug: a
+  /// decommit removes whole outputs, so a token withdrawal carries the ADA that
+  /// output held, and the L1 decrement's fee comes out of the value that travels.
+  settledLovelace BigInt?
+
+  /// Native assets that actually reached L1, as { unit: quantityString }. Null
+  /// until the withdrawal finalizes.
+  settledAssets Json?
+
+  /// Where the funds land on L1. The participant's own wallet address, recorded
+  /// so an operator can check the arrival against something concrete rather than
+  /// being told to trust that it went somewhere sensible.
+  destinationAddress String
+
+  status HydraDecommitStatus @default(Preparing)
+
+  /// Why the head refused it, verbatim from DecommitInvalid. The node's own
+  /// wording is more use than any summary of it: it names the ledger rule.
+  failureReason String?
+
+  /// When the head signed the snapshot that removed the funds. From this moment
+  /// the value is gone from the head whatever happens next on L1.
+  approvedAt DateTime?
+
+  /// When the node observed its own L1 decrement transaction, i.e. when the
+  /// funds actually became spendable on L1.
+  finalizedAt DateTime?
+
+  /// The L1 transaction that paid the withdrawal out.
+  ///
+  /// Not the same thing as decommitTxId, and this is the distinction the admin
+  /// UI got wrong: decommitTxId names a transaction that only ever existed
+  /// inside the head, so linking it to a chain explorer 404s. The head does not
+  /// report this id at all, so it is observed on chain after finalization and
+  /// stays null when the search does not find it.
+  l1TxId String?
+
+  @@index([hydraLocalParticipantId, status])
+  @@index([status, updatedAt])
+  @@index([hydraHeadId])
+  @@index([decommitTxId])
+}
+
+/// Status of a Hydra Host deployment.
+enum HydraHostStatus {
+  /// Accepting new node placements.
+  Active
+  /// Reachable and serving existing heads, but no new placements.
+  Draining
+  /// Health checks are failing; existing heads keep their placement because a
+  /// head cannot be moved (its persistence directory is not relocatable).
+  Unreachable
+  /// Administratively disabled.
+  Disabled
+}
+
+/// A deployment that supervises hydra-node processes and exposes a token-gated
+/// control plane. Several Hosts may serve one payment service; a head is placed
+/// on exactly one Host at provisioning time and stays there for its whole life,
+/// because its persistence directory holds the only copy of the head state on
+/// that machine and cannot be moved.
+model HydraHost {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Operator-facing label.
+  name    String
+  network Network
+
+  /// Base URL of the Host control plane, e.g. https://hydra1.example.com.
+  /// Prefer TLS terminated in front of the Host. Plain HTTP requires the
+  /// explicit allowInsecureHttp opt-in below.
+  baseUrl String
+
+  /// Explicit operator opt-in for sending bearer tokens to an HTTP Host URL.
+  /// Intended for loopback or a separately secured private network only.
+  allowInsecureHttp Boolean @default(false)
+
+  /// Hostname the Host advertises for per-head peer ports. Recorded so the
+  /// counterparty handshake can be checked against what the Host actually
+  /// returns — etcd rejects a mismatch between advertised and cluster URLs.
+  publicPeerHost String
+
+  /// Encrypted admin token. Fleet operations only: provision, escrow-ack,
+  /// reconfigure, delete. Nullable so a Host may be registered for runtime use
+  /// without handing this service the ability to provision on it.
+  encryptedAdminToken String?
+
+  /// Encrypted user token. Runtime access to the proxied node API.
+  encryptedUserToken String
+
+  /// Last values reported by GET /v1/capabilities. Provisioning is refused when
+  /// these do not match what this service expects, so a version skew fails at
+  /// placement rather than at first commit.
+  hydraVersion        String?
+  scriptCatalogueHash String?
+  ledgerParamsHash    String?
+
+  /// Port this Host serves its Exchange Plane on, as the Host itself reports it.
+  ///
+  /// A property of the Host, not of this service: an invite's redemption URL is
+  /// built from it, so assuming one fleet-wide value sends counterparties to a
+  /// Host that never issued the nonce — which they see as a 404 and cannot act
+  /// on. Null until the first capabilities probe fills it in.
+  exchangePort Int?
+
+  status          HydraHostStatus @default(Active)
+  lastHealthAt    DateTime?
+  lastHealthError String?
+
+  Participants     HydraLocalParticipant[]
+  HydraHeadInvites HydraHeadInvite[]
+
+  @@unique([network, baseUrl])
+  /// Placement scans for an Active Host on a given network.
+  @@index([network, status])
+}
+
+/// Which side of a head offer this row represents.
+enum HydraInviteRole {
+  /// We minted this invite and handed it out.
+  Issuer
+  /// We received this invite and redeemed it.
+  Redeemer
+}
+
+/// Lifecycle of a head invite.
+enum HydraInviteStatus {
+  /// Minted and signed; the node and peer port are reserved but idle.
+  Issued
+  /// Both sides' material is known; our node can be told its peers.
+  Redeemed
+  /// Our node is running; the head record can now be created.
+  Started
+  /// The head record exists and owns this invite's participants. Terminal.
+  Completed
+  /// Expired unredeemed; the reservation has been released.
+  Expired
+  /// Withdrawn by the operator before anyone redeemed it.
+  Revoked
+}
+
+/// A signed proposal to open the next [[Hydra Head]] on a relation.
+///
+/// A hydra-node serves exactly one head, so every head needs fresh keys, a
+/// fresh peer port and a fresh etcd cluster configuration. Because --peer,
+/// --hydra-verification-key and --initial-cluster are all startup
+/// configuration, both participants must agree the whole cluster before either
+/// node boots — which makes this exchange a precondition for every head rather
+/// than a one-off setup step.
+///
+/// Only public material is exchanged: verification keys and an advertise
+/// address. No signing key leaves its host.
+model HydraHeadInvite {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  network Network
+
+  /// Which side of this exchange we are. Both sides keep a row: the issuer
+  /// learns of the redemption by polling its Host, the redeemer records what it
+  /// accepted. `issuer*` and `redeemer*` below always mean the same parties
+  /// regardless of role, so neither side has to reinterpret the columns.
+  role   HydraInviteRole
+  status HydraInviteStatus @default(Issued)
+
+  /// Single-use value covered by the signature. Redeeming it is what lets the
+  /// pre-allocated node boot, so a replay would open an unwanted head.
+  nonce String @unique
+
+  /// Far longer than a wire timeout: an invite is read by a human, out of band.
+  /// Until it passes, the node and peer port it reserved stay reserved.
+  expiresAt DateTime
+
+  /// The local wallet that identifies us on this exchange and signs for us.
+  localHotWalletId String
+  LocalHotWallet   HotWallet @relation(fields: [localHotWalletId], references: [id], onDelete: Restrict)
+
+  /// Where our pre-allocated node lives. Restrict: a Host holding reservations
+  /// must not be deleted out from under them.
+  hydraHostId String
+  HydraHost   HydraHost @relation(fields: [hydraHostId], references: [id], onDelete: Restrict)
+
+  /// The node reserved for this invite. It cannot start until the exchange
+  /// completes, because --peer and --initial-cluster are fixed at boot.
+  hostNodeId String
+
+  /// The issuing side's public material and where its invite is redeemed.
+  /// Ours when role is Issuer, theirs when role is Redeemer.
+  issuerWalletAddress          String
+  issuerHydraVerificationKey   String
+  issuerCardanoVerificationKey String
+  issuerAdvertise              String
+  issuerExchangeUrl            String
+  issuerSignature              String
+  issuerSignerKey              String
+
+  /// The redeeming side's material, present once the exchange completes.
+  redeemedAt                     DateTime?
+  redeemerWalletAddress          String?
+  redeemerHydraVerificationKey   String?
+  redeemerCardanoVerificationKey String?
+  redeemerAdvertise              String?
+  redeemerExchangeUrl            String?
+  redeemerSignature              String?
+  redeemerSignerKey              String?
+
+  /// Agreed head parameters, covered by the issuer signature.
+  contestationPeriodSeconds Int
+  depositPeriodSeconds      Int
+  unsyncedPeriodSeconds     Int
+
+  /// Ledger parameter fingerprint, so a mismatch is caught here rather than as
+  /// PPViewHashesDontMatch on the first in-head script spend.
+  ledgerParamsHash String?
+
+  /// The head this invite produced. Set in the same transaction that creates
+  /// the head, which is what makes adoption idempotent: a replayed poll finds
+  /// the link and stops rather than creating a second head.
+  hydraHeadId String?    @unique
+  HydraHead   HydraHead? @relation(fields: [hydraHeadId], references: [id], onDelete: SetNull)
+
+  /// One live reservation per node is enforced by the partial unique index
+  /// HydraHeadInvite_one_live_per_node_key (see the migration): two exchanges
+  /// racing to configure one process could only have one winner, and the loser
+  /// would already have told a counterparty it was ready.
+  ///
+  /// Reaping unredeemed reservations, and finding what a poll should adopt.
+  @@index([status, expiresAt])
+  @@index([hydraHostId, status])
+}
+
+/// The signing keys one hydra-node was provisioned with, encrypted.
+///
+/// 1:1 with [[HydraLocalParticipant]]. Both the Hydra key and the node's own
+/// Cardano key live here: the Host discloses them exactly once, at
+/// provisioning, and this is the only copy afterwards — which is why deleting
+/// a participant sweeps the node's funds first.
+model HydraSecretKey {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Encrypted Hydra signing key (cborHex of the signing key)
+  hydraSK String
+
+  /// Encrypted node Cardano signing key (cborHex).
+  ///
+  /// Held for the same reason as the Hydra key: the Host discloses both exactly
+  /// once at provisioning, and if this service does not keep a copy the only
+  /// one lives on the Host's disk. Nullable for participants provisioned before
+  /// it was captured.
+  cardanoSK String?
+
+  HydraLocalParticipant HydraLocalParticipant?
+}
+
+/// Hydra verification key for a remote participant (1:1 with HydraRemoteParticipant).
+/// Public key material only — used to verify the remote counterparty's identity.
+model HydraVerificationKey {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Hydra verification key (cborHex of the verification key)
+  hydraVK String
+
+  HydraRemoteParticipant HydraRemoteParticipant?
 }
 
 /// A transaction the sync scanner saw at a payment source's contract address

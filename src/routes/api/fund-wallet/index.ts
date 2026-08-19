@@ -383,7 +383,7 @@ export const deleteFundWalletEndpointDelete = adminAuthenticatedEndpointFactory.
 			if (hasPositiveWalletBalance(balanceMap)) {
 				throw createHttpError(
 					409,
-					'Fund wallet still holds ADA or native assets. Withdraw every asset first — after deletion the ' +
+					'Fund wallet still holds ADA or native assets. Withdraw every asset first. After deletion the ' +
 						'mnemonic can no longer be exported through the API. Pass force=true to delete anyway.',
 				);
 			}

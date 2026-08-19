@@ -1,0 +1,245 @@
+/**
+ * The Exchange Plane: the one Host surface a counterparty may reach.
+ *
+ * A separate listener rather than a path on the control plane, because the two
+ * have opposite security models and mixing them means one routing mistake
+ * exposes fleet management. Nothing here can provision, delete, reconfigure or
+ * proxy a node; its entire vocabulary is "redeem an invite I issued".
+ *
+ * It is unauthenticated by design — the invite is the credential and its
+ * authority is a signature. But it is not an open door:
+ *
+ *  - redemption requires a nonce this Host issued, unspent and unexpired;
+ *  - bodies are capped and connection timeouts are short.
+ *
+ * No signature is checked here. That is the payment service's job when it
+ * polls, and the division is deliberate: everything this plane can do without
+ * cryptography is reversible — a node can be deleted — while everything
+ * irreversible waits for a service that holds keys.
+ */
+
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import type { ExchangeStore } from '../registry/exchange-store.js';
+import { isExchangeMaterial, isExchangeSignature } from '../registry/exchange-types.js';
+import type { SupervisorLogger } from '../supervisor/supervisor.js';
+
+/** Smaller than the control plane's: an invite is a few hundred bytes. */
+const MAX_BODY_BYTES = 64 * 1024;
+const DEFAULT_MAX_IN_FLIGHT = 16;
+const DEFAULT_REQUESTS_PER_MINUTE = 120;
+
+/**
+ * How many distinct sources the per-source counter tracks within one window.
+ *
+ * The counter exists so one abusive caller cannot spend the whole minute's
+ * budget, but keying on the source address means the caller chooses the key.
+ * This plane is unauthenticated and reachable from anywhere, and an attacker
+ * holding an IPv6 /64 can present a fresh address per connection, so an
+ * uncapped map grows with the flood rather than bounding it.
+ *
+ * Past the cap, further sources share one bucket. A flood stays limited, and a
+ * genuine counterparty arriving during one is throttled rather than refused:
+ * redemption is a single POST, and the shared bucket still allows the same
+ * per-minute budget.
+ */
+const MAX_TRACKED_SOURCES = 10_000;
+
+/**
+ * How many failed redemptions a source is told the reason for.
+ *
+ * `no such invite`, `already redeemed` and `expired` are three different
+ * answers, and the difference tells a caller whether a nonce they guessed
+ * exists. Nonces are `cuid2`, so guessing one is hopeless, but the distinction
+ * costs nothing to remove for anyone who is not guessing: a real counterparty
+ * redeems once, and knowing WHY it failed is the difference between them
+ * retrying and them calling the issuer. So the reason is disclosed for the
+ * first few failures and withheld after that, which leaves the legitimate case
+ * untouched and gives an enumerator a handful of answers per source rather than
+ * a working oracle.
+ *
+ * It composes with the source cap above: past that cap every further source
+ * shares one bucket, so rotating addresses converges on a shared budget instead
+ * of resetting it.
+ */
+const MAX_DISCLOSED_REDEEM_FAILURES = 3;
+
+/** Not a possible `remoteAddress`, so it cannot collide with a real source. */
+export const OVERFLOW_SOURCE = '\u0000overflow';
+
+/**
+ * Which counter this request spends from.
+ *
+ * Exported so the cap is testable without a second source address: proving it
+ * over the live server would need extra loopback IPs, which is exactly the kind
+ * of environment assumption that makes a test fail somewhere else.
+ */
+export function rateLimitKey(remote: string, tracked: ReadonlySet<string> | Map<string, number>, cap: number): string {
+	return tracked.has(remote) || tracked.size < cap ? remote : OVERFLOW_SOURCE;
+}
+
+export type ExchangeDeps = {
+	store: ExchangeStore;
+	logger: SupervisorLogger;
+	/**
+	 * Configure and start the node reserved for this invite.
+	 *
+	 * Separated from the transport so the plane can be tested without a
+	 * supervisor, and so a start failure is recorded rather than thrown at a
+	 * counterparty who can do nothing about it.
+	 */
+	onRedeemed: (nonce: string, hostNodeId: string) => Promise<void>;
+	/** Test/deployment tuning. Defaults protect a small single-host process. */
+	limits?: { maxInFlight?: number; requestsPerMinute?: number; maxTrackedSources?: number };
+};
+
+function send(response: ServerResponse, status: number, body: unknown): void {
+	response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+	response.end(JSON.stringify(body ?? null));
+}
+
+async function readBody(request: IncomingMessage): Promise<unknown> {
+	const chunks: Buffer[] = [];
+	let size = 0;
+	for await (const chunk of request) {
+		const buffer = chunk as Buffer;
+		size += buffer.length;
+		if (size > MAX_BODY_BYTES) {
+			throw new Error('request body is too large');
+		}
+		chunks.push(buffer);
+	}
+	if (size === 0) {
+		return null;
+	}
+	try {
+		return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+	} catch {
+		throw new Error('request body is not valid JSON');
+	}
+}
+
+const NONCE_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+
+type RedeemBody = { nonce: string; redeemer: unknown; signature: unknown };
+
+function readRedeemBody(body: unknown): RedeemBody | null {
+	if (typeof body !== 'object' || body === null) {
+		return null;
+	}
+	const candidate = body as Partial<RedeemBody>;
+	if (typeof candidate.nonce !== 'string' || !NONCE_PATTERN.test(candidate.nonce)) {
+		return null;
+	}
+	return { nonce: candidate.nonce, redeemer: candidate.redeemer, signature: candidate.signature };
+}
+
+export function createExchangePlane(deps: ExchangeDeps): Server {
+	const { store, logger, onRedeemed } = deps;
+	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
+	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
+	const maxTrackedSources = deps.limits?.maxTrackedSources ?? MAX_TRACKED_SOURCES;
+	let inFlight = 0;
+	// Per source rather than one shared counter: a single abusive caller must not
+	// be able to spend the whole minute's budget and 429 the one counterparty
+	// this plane exists to serve. Keyed on the socket address, which is what the
+	// peer allow-list already gates on.
+	let requestWindowStartedAt = Date.now();
+	const requestsInWindow = new Map<string, number>();
+	const failuresInWindow = new Map<string, number>();
+
+	const server = createServer((request, response) => {
+		const now = Date.now();
+		if (now - requestWindowStartedAt >= 60_000) {
+			requestWindowStartedAt = now;
+			requestsInWindow.clear();
+			failuresInWindow.clear();
+		}
+		const remote = request.socket.remoteAddress ?? 'unknown';
+		const source = rateLimitKey(remote, requestsInWindow, maxTrackedSources);
+		const seen = (requestsInWindow.get(source) ?? 0) + 1;
+		requestsInWindow.set(source, seen);
+		if (seen > requestsPerMinute) {
+			response.setHeader('Retry-After', '60');
+			send(response, 429, { error: 'too many requests' });
+			return;
+		}
+		if (inFlight >= maxInFlight) {
+			response.setHeader('Retry-After', '1');
+			send(response, 503, { error: 'exchange is busy' });
+			return;
+		}
+
+		inFlight += 1;
+		void handle(request, response, source)
+			.catch((error: unknown) => {
+				// Never echo the message: this is an unauthenticated surface and the
+				// error text can describe internal state.
+				logger.error(`[exchange] ${(error as Error).message}`);
+				if (!response.headersSent) {
+					send(response, 400, { error: 'bad request' });
+				}
+			})
+			.finally(() => {
+				inFlight -= 1;
+			});
+	});
+	server.headersTimeout = 15_000;
+	server.requestTimeout = 30_000;
+	server.keepAliveTimeout = 10_000;
+	return server;
+
+	async function handle(request: IncomingMessage, response: ServerResponse, source: string): Promise<void> {
+		const pathname = new URL(request.url ?? '/', 'http://exchange.invalid').pathname.replace(/\/+$/, '');
+
+		if (request.method !== 'POST') {
+			send(response, 405, { error: 'method not allowed' });
+			return;
+		}
+
+		if (pathname === '/exchange/redeem') {
+			await handleRedeem(request, response, source);
+			return;
+		}
+		// Anything else, including every control-plane path, is simply absent
+		// here. There is no proxy and no node route to reach.
+		send(response, 404, { error: 'not found' });
+	}
+
+	async function handleRedeem(request: IncomingMessage, response: ServerResponse, source: string): Promise<void> {
+		const body = readRedeemBody(await readBody(request));
+		if (body === null || !isExchangeMaterial(body.redeemer) || !isExchangeSignature(body.signature)) {
+			send(response, 400, { error: 'malformed redemption' });
+			return;
+		}
+
+		const result = await store.redeem(body.nonce, body.redeemer, body.signature);
+		if (!result.ok) {
+			const failures = (failuresInWindow.get(source) ?? 0) + 1;
+			failuresInWindow.set(source, failures);
+			// The operator sees the real reason either way: it is logged here and
+			// the invite's own state is on the control plane.
+			logger.warn(`[exchange] redemption refused (${result.status} ${result.reason})`);
+			if (failures > MAX_DISCLOSED_REDEEM_FAILURES) {
+				send(response, 404, { error: 'no such invite' });
+				return;
+			}
+			send(response, result.status, { error: result.reason });
+			return;
+		}
+
+		// The reply carries nothing the counterparty must trust — everything they
+		// need was signed inside the invite — so this is an acknowledgement, and
+		// the Host never has to speak for its operator's wallet.
+		send(response, 200, { redeemed: true });
+
+		// After answering: the counterparty can neither help nor wait if this
+		// fails, and the failure belongs in the operator's poll.
+		try {
+			await onRedeemed(body.nonce, result.invite.hostNodeId);
+		} catch (error) {
+			const message = (error as Error).message;
+			logger.error(`[exchange] node ${result.invite.hostNodeId} failed to start after redemption: ${message}`);
+			await store.recordStartError(body.nonce, message).catch(() => undefined);
+		}
+	}
+}

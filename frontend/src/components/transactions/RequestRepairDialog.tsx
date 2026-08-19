@@ -175,7 +175,7 @@ export function RequestRepairDialog({
       // operator reasonably assumes the repair finished the job.
       toast.success(
         data
-          ? `Request repaired — on-chain state is now ${formatOnChainState(data.newOnChainState)}${
+          ? `Request repaired. On-chain state is now ${formatOnChainState(data.newOnChainState)}${
               data.forced ? ' (forced)' : ''
             }. If the request is in an error state, use Retry or Clear to resume it.`
           : 'Request repaired. If the request is in an error state, use Retry or Clear to resume it.',
@@ -307,7 +307,7 @@ export function RequestRepairDialog({
                 <div className="space-y-1">
                   <h5 className="text-sm font-medium">Force without chain validation</h5>
                   <p className="text-sm">
-                    Forcing skips every check — the transaction is not fetched, its datum is not
+                    Forcing skips every check. The transaction is not fetched, its datum is not
                     decoded, and it is not matched against this request. The state you pick below is
                     written verbatim. A wrong hash here points the request at another escrow, and
                     the automatic refund and withdraw logic will act on it.

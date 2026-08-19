@@ -1,0 +1,355 @@
+/**
+ * Two-phase node provisioning.
+ *
+ * The Host generates a node's keys and discloses them exactly once, in the
+ * `POST /v1/nodes` response, while holding the node in `PendingEscrow` and
+ * NOT starting it. The payment service persists them encrypted and then calls
+ * escrow-ack, which starts the node and permanently seals the disclosure path.
+ *
+ * The idempotency key closes the window that would otherwise exist: if the
+ * provision response is lost in transit, the caller retries with the same key
+ * and gets the same material back, because the node is still un-acked. Without
+ * that, a lost response would leave a node whose keys exist only on the Host —
+ * precisely the orphan the escrow design is meant to prevent.
+ *
+ * After escrow-ack, no endpoint returns key material again, and a retry with
+ * the original idempotency key gets the record without secrets.
+ */
+
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { generateCardanoKeyPair, generateHydraKeyPair, serializeEnvelope } from '../keys.js';
+import { parsePeerAdvertise } from '../peer-address.js';
+import type { PortAllocator } from '../registry/ports.js';
+import type { SupervisorLogger } from '../supervisor/supervisor.js';
+import type { NodeRegistryStore } from '../registry/store.js';
+import type { NodeRecord, PeerRecord } from '../registry/types.js';
+import { HostApiError, type HttpErrorStatus } from './http-error.js';
+import { assertQuiescentForPeerChange } from './transitions.js';
+
+export class ProvisionError extends HostApiError {
+	constructor(message: string, status: HttpErrorStatus) {
+		super(message, status);
+		this.name = 'ProvisionError';
+	}
+}
+
+export type ProvisionRequest = {
+	idempotencyKey: string;
+	network: 'preprod' | 'mainnet';
+	contestationPeriodSeconds: number;
+	depositPeriodSeconds: number;
+	unsyncedPeriodSeconds: number;
+};
+
+export type ProvisionSecrets = {
+	hydraSigningKey: string;
+	cardanoSigningKey: string;
+};
+
+export type ProvisionResult = {
+	record: NodeRecord;
+	/** Present only while the node is un-acked. */
+	secrets: ProvisionSecrets | null;
+	/** True when an existing un-acked node was returned instead of a new one. */
+	replayed: boolean;
+};
+
+export type ProvisionDeps = {
+	store: NodeRegistryStore;
+	ports: PortAllocator;
+	advertiseFor: (peerPort: number) => string;
+	newNodeId: () => string;
+	now: () => Date;
+	/**
+	 * Optional, and used only to report a rollback that could not finish.
+	 * Optional so existing callers and tests are unaffected; a silent failure
+	 * here is the one below that leaves key material on disk.
+	 */
+	logger?: Pick<SupervisorLogger, 'error'>;
+};
+
+/** Key material is readable only before escrow-ack, and only then. */
+export function mayDiscloseSecrets(record: NodeRecord): boolean {
+	return record.state === 'PendingEscrow' && record.escrowAckedAt === null;
+}
+
+async function readSecrets(store: NodeRegistryStore, nodeId: string): Promise<ProvisionSecrets> {
+	const keysDir = path.join(store.nodeDir(nodeId), 'keys');
+	const [hydraSigningKey, cardanoSigningKey] = await Promise.all([
+		fs.readFile(path.join(keysDir, 'hydra.sk'), 'utf8'),
+		fs.readFile(path.join(keysDir, 'cardano.sk'), 'utf8'),
+	]);
+	return { hydraSigningKey, cardanoSigningKey };
+}
+
+/**
+ * In-flight provisions, keyed by idempotency key.
+ *
+ * The key check is a read-modify-write across the whole registry: scan every
+ * record for the key, then write a new one. Two requests carrying the same key —
+ * which is exactly what a caller does when the first response is lost, and it
+ * does not wait for a response that may still be in flight — both scanned before
+ * either wrote, both found nothing, and both provisioned. That leaves two nodes,
+ * two ports and two key pairs under one key, of which the caller stores one; the
+ * other holds key material on disk for a node nobody will ever acknowledge.
+ *
+ * Chained rather than rejected, because a retry is a legitimate request: the
+ * second call waits for the first, then takes the normal replay path and returns
+ * the same node and the same keys.
+ */
+const inFlightProvisions = new Map<string, Promise<unknown>>();
+
+export function provisionNode(request: ProvisionRequest, deps: ProvisionDeps): Promise<ProvisionResult> {
+	const key = request.idempotencyKey.trim();
+	if (key.length === 0) {
+		return Promise.reject(
+			new ProvisionError('an Idempotency-Key header is required so a lost response can be retried safely', 400),
+		);
+	}
+
+	const previous = inFlightProvisions.get(key) ?? Promise.resolve();
+	// Both arms run the provision: a predecessor that failed must not prevent the
+	// retry it is being retried by.
+	const result = previous.then(
+		() => runProvision(request, deps),
+		() => runProvision(request, deps),
+	);
+	const settled = result.then(
+		() => undefined,
+		() => undefined,
+	);
+	inFlightProvisions.set(key, settled);
+	void settled.then(() => {
+		// Only the tail clears the entry, so a key that is being retried again
+		// keeps its chain.
+		if (inFlightProvisions.get(key) === settled) {
+			inFlightProvisions.delete(key);
+		}
+	});
+	return result;
+}
+
+async function runProvision(request: ProvisionRequest, deps: ProvisionDeps): Promise<ProvisionResult> {
+	// The scan below deliberately uses the strict listing, which throws on a
+	// damaged record. Failing closed is correct here: if we cannot read every
+	// record we cannot prove this idempotency key is unused, and guessing would
+	// double-allocate a node and its port.
+	const existing = (await deps.store.list()).find((record) => record.idempotencyKey === request.idempotencyKey);
+	if (existing !== undefined) {
+		// A replay must be a replay of the *same* request. Silently returning a
+		// node provisioned with different periods would leave the caller believing
+		// it configured something it did not.
+		const mismatched = (
+			[
+				['network', existing.network, request.network],
+				['contestationPeriodSeconds', existing.contestationPeriodSeconds, request.contestationPeriodSeconds],
+				['depositPeriodSeconds', existing.depositPeriodSeconds, request.depositPeriodSeconds],
+				['unsyncedPeriodSeconds', existing.unsyncedPeriodSeconds, request.unsyncedPeriodSeconds],
+			] as const
+		).filter(([, stored, requested]) => stored !== requested);
+
+		if (mismatched.length > 0) {
+			const fields = mismatched.map(([field]) => field).join(', ');
+			throw new ProvisionError(
+				`idempotency key ${request.idempotencyKey} was already used with different parameters (${fields}); ` +
+					'use a fresh key for a different request',
+				409,
+			);
+		}
+
+		if (!mayDiscloseSecrets(existing)) {
+			// Already acknowledged. The node is real, but its keys are sealed.
+			return { record: existing, secrets: null, replayed: true };
+		}
+		return { record: existing, secrets: await readSecrets(deps.store, existing.nodeId), replayed: true };
+	}
+
+	const nodeId = deps.newNodeId();
+	const triple = deps.ports.allocate();
+
+	try {
+		const nodeDir = await deps.store.ensureLayout(nodeId);
+		const keysDir = path.join(nodeDir, 'keys');
+
+		const hydra = generateHydraKeyPair();
+		const cardano = generateCardanoKeyPair();
+
+		await Promise.all([
+			fs.writeFile(path.join(keysDir, 'hydra.sk'), serializeEnvelope(hydra.signingKey), { mode: 0o600 }),
+			fs.writeFile(path.join(keysDir, 'hydra.vk'), serializeEnvelope(hydra.verificationKey), { mode: 0o600 }),
+			fs.writeFile(path.join(keysDir, 'cardano.sk'), serializeEnvelope(cardano.signingKey), { mode: 0o600 }),
+			fs.writeFile(path.join(keysDir, 'cardano.vk'), serializeEnvelope(cardano.verificationKey), { mode: 0o600 }),
+		]);
+
+		const createdAt = deps.now().toISOString();
+		const record: NodeRecord = {
+			nodeId,
+			state: 'PendingEscrow',
+			desired: 'Stopped',
+			network: request.network,
+			apiPort: triple.apiPort,
+			peerPort: triple.peerPort,
+			monitoringPort: triple.monitoringPort,
+			advertise: deps.advertiseFor(triple.peerPort),
+			peers: [],
+			contestationPeriodSeconds: request.contestationPeriodSeconds,
+			depositPeriodSeconds: request.depositPeriodSeconds,
+			unsyncedPeriodSeconds: request.unsyncedPeriodSeconds,
+			hydraVerificationKey: hydra.verificationKey.cborHex,
+			cardanoVerificationKey: cardano.verificationKey.cborHex,
+			escrowAckedAt: null,
+			idempotencyKey: request.idempotencyKey,
+			createdAt,
+			updatedAt: createdAt,
+			startAttempts: 0,
+			lastStopUndrained: false,
+		};
+		await deps.store.write(record);
+
+		return {
+			record,
+			secrets: {
+				hydraSigningKey: serializeEnvelope(hydra.signingKey),
+				cardanoSigningKey: serializeEnvelope(cardano.signingKey),
+			},
+			replayed: false,
+		};
+	} catch (error) {
+		// Never leave key material behind for a node that does not exist, and
+		// never leak the port. Cleanup order matters: remove the directory (which
+		// holds hydra.sk / cardano.sk) before releasing the slot.
+		// A failed cleanup is exactly the case the comment above promises cannot
+		// happen, so it must not be silent: hydra.sk and cardano.sk would survive
+		// for a node that does not exist. Reported and then dropped, because the
+		// original failure is the one the caller needs to see.
+		await deps.store.remove(nodeId).catch((cleanupError: unknown) => {
+			deps.logger?.error(
+				`[provision] could not remove node ${nodeId} after a failed provision; key material may remain on disk: ${
+					cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+				}`,
+			);
+		});
+		deps.ports.release(triple.peerPort);
+		throw error;
+	}
+}
+
+/**
+ * Seal the disclosure path and hand the node to the supervisor.
+ *
+ * The node still does not start until its peers are configured, because
+ * `--initial-cluster` is fixed at boot and a node started before the handshake
+ * would bootstrap a cluster the counterparty cannot join.
+ */
+export async function acknowledgeEscrow(nodeId: string, deps: ProvisionDeps): Promise<NodeRecord> {
+	const record = await deps.store.read(nodeId);
+	if (record === null) {
+		throw new ProvisionError(`no such node: ${nodeId}`, 404);
+	}
+	if (record.escrowAckedAt !== null) {
+		// Idempotent: acknowledging twice is not an error, it just does nothing.
+		return record;
+	}
+
+	const updated = await deps.store.update(nodeId, (current) => ({
+		...current,
+		state: 'Stopped',
+		desired: 'Running',
+		escrowAckedAt: deps.now().toISOString(),
+	}));
+	if (updated === null) {
+		throw new ProvisionError(`no such node: ${nodeId}`, 404);
+	}
+	return updated;
+}
+
+/**
+ * Set the counterparty's peers. Only permitted while the node is stopped: the
+ * peer set becomes etcd's `--initial-cluster`, which is fixed at process start.
+ */
+export async function setPeers(nodeId: string, peers: PeerRecord[], deps: ProvisionDeps): Promise<NodeRecord> {
+	if (peers.length === 0) {
+		throw new ProvisionError('at least one peer is required', 400);
+	}
+	if (peers.some((peer) => parsePeerAdvertise(peer.advertise) === null)) {
+		throw new ProvisionError('every peer advertise address must be a valid host:port', 400);
+	}
+	if (new Set(peers.map((peer) => peer.advertise)).size !== peers.length) {
+		throw new ProvisionError('duplicate peer advertise addresses', 400);
+	}
+
+	const nodeDir = deps.store.nodeDir(nodeId);
+	const peersDir = path.join(nodeDir, 'peers');
+
+	// Every write below happens with this node's write queue held, and the checks
+	// that authorise them are made inside it too. Taken outside, they answered
+	// about a node that could be claimed and launched before the first key file
+	// landed: the launcher fixes `--initial-cluster` at process start, so a start
+	// reading the OLD peer list against the NEW key files boots a cluster naming
+	// one peer's address with another's key. It never reaches quorum, never opens
+	// its API, and an unresponsive node is precisely what the plan idles on — so
+	// it is never restarted and never failed, while the record shows the peer set
+	// the operator asked for the whole time.
+	//
+	// Two `setPeers` in flight were the other half: A writes indices 0 and 1, B
+	// writes 0 and prunes 1, and whichever record write lands last leaves the
+	// directory disagreeing with it.
+	const updated = await deps.store.updateAsync(nodeId, async (current) => {
+		// Enforced, not merely documented: the peer set becomes --initial-cluster,
+		// which is fixed at process start and determines the content-addressed etcd
+		// data directory.
+		assertQuiescentForPeerChange(current);
+		if (peers.some((peer) => peer.advertise === current.advertise)) {
+			throw new ProvisionError('a node cannot list its own advertise address as a peer', 400);
+		}
+		await fs.mkdir(peersDir, { recursive: true });
+		// Written first, pruned second. Emptying the directory before refilling it
+		// left a window in which the files the launcher names in argv did not exist:
+		// a start landing inside it passed `--hydra-verification-key <peers>/0-hydra.vk`
+		// for a file that was not there, and the node died on it. Overwriting in
+		// place has no such window — every index a peer set uses is written before
+		// anything is removed.
+		const written = new Set<string>();
+		await Promise.all(
+			peers.flatMap((peer, index) => {
+				const hydraKeyFile = `${index}-hydra.vk`;
+				const cardanoKeyFile = `${index}-cardano.vk`;
+				written.add(hydraKeyFile);
+				written.add(cardanoKeyFile);
+				return [
+					fs.writeFile(
+						path.join(peersDir, hydraKeyFile),
+						serializeEnvelope({
+							type: 'HydraVerificationKey_ed25519',
+							description: '',
+							cborHex: peer.hydraVerificationKey,
+						}),
+					),
+					fs.writeFile(
+						path.join(peersDir, cardanoKeyFile),
+						serializeEnvelope({
+							type: 'PaymentVerificationKeyShelley_ed25519',
+							description: 'Payment Verification Key',
+							cborHex: peer.cardanoVerificationKey,
+						}),
+					),
+				];
+			}),
+		);
+
+		// Whatever a previous, larger peer set left behind. Unreferenced — the
+		// launcher only reads indices below the peer count — but stale verification
+		// keys on disk are misleading during an incident.
+		for (const entry of await fs.readdir(peersDir).catch(() => [])) {
+			if (written.has(entry)) continue;
+			await fs.rm(path.join(peersDir, entry), { force: true });
+		}
+
+		return { ...current, peers };
+	});
+	if (updated === null) {
+		throw new ProvisionError(`no such node: ${nodeId}`, 404);
+	}
+	return updated;
+}

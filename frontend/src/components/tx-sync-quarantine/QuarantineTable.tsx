@@ -186,7 +186,7 @@ export function QuarantineTable({
                         disabled={isResolved || retryingId === entry.id}
                         title={
                           isResolved
-                            ? 'Already resolved — nothing left to apply'
+                            ? 'Already resolved, nothing left to apply'
                             : 'Queue this transaction for an immediate retry'
                         }
                         onClick={() => onRetry(entry)}

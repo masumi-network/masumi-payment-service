@@ -139,7 +139,7 @@ export function WalletDetailsDialog({
     onTimeout: () => {
       setPollingTxId(null);
       pollingTxIdRef.current = null;
-      toast.warning('Polling timed out — use refresh to check again.', { theme: 'dark' });
+      toast.warning('Polling timed out. Use refresh to check again.', { theme: 'dark' });
     },
     onUpdate: (data) => {
       const currentTxId = pollingTxIdRef.current;
@@ -199,7 +199,7 @@ export function WalletDetailsDialog({
             swapStatus: 'CancelPending',
             cancelTxHash: cancelTxHash || null,
           });
-          toast.info('Cancel submitted — polling for confirmation…', { theme: 'dark' });
+          toast.info('Cancel submitted, polling for confirmation…', { theme: 'dark' });
           if (cancelTxHash) {
             startPollingConfirm(tx.id, cancelTxHash);
           }
@@ -208,7 +208,7 @@ export function WalletDetailsDialog({
           const msg = extractApiErrorMessage(error, 'Cancel failed.');
           if (msg.includes('already executed') || msg.includes('swap completed')) {
             updateSwapTxStatus(tx.id, { swapStatus: 'Completed' });
-            toast.success('Order was already executed by the DEX — swap completed!', {
+            toast.success('Order was already executed by the DEX, so the swap completed.', {
               theme: 'dark',
             });
             void balances.fetchTokenBalances();

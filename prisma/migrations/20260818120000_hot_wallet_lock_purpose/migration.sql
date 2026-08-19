@@ -1,0 +1,11 @@
+-- Mark a hot-wallet lock that is not an L1 batcher's.
+--
+-- `unlockStaleOrphanWalletLocks` frees any lock with no pending transaction
+-- after WALLET_LOCK_TIMEOUT_INTERVAL (300s by default), which is correct for
+-- the batchers: they attach a PendingTransaction within seconds. The Hydra L1
+-- deposits hold the same lock across a full L1 confirmation and never attach
+-- one, so the safety net was releasing them mid-flight.
+--
+-- Nullable with no default: an existing lock is a batcher lock, and the reaper
+-- must keep treating it as one.
+ALTER TABLE "HotWallet" ADD COLUMN "lockPurpose" TEXT;

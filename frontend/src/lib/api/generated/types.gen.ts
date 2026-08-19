@@ -427,6 +427,10 @@ export type Payment = {
      */
     onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
     /**
+     * Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).
+     */
+    forceLayer: 'L1' | 'Hydra' | null;
+    /**
      * Next action required for this payment
      */
     NextAction: {
@@ -514,6 +518,14 @@ export type Payment = {
          */
         txHash: string | null;
         /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
+        /**
          * Current status of the transaction
          */
         status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -550,6 +562,14 @@ export type Payment = {
          * Cardano transaction hash
          */
         txHash: string | null;
+        /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
         /**
          * Current status of the transaction
          */
@@ -754,6 +774,14 @@ export type Purchase = {
      */
     onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
     /**
+     * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+     */
+    forceLayer: 'L1' | 'Hydra' | null;
+    /**
+     * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+     */
+    paymentForceLayer: 'L1' | 'Hydra' | null;
+    /**
      * Amount of collateral to return in lovelace. Null if no collateral
      */
     collateralReturnLovelace: string | null;
@@ -848,6 +876,14 @@ export type Purchase = {
          */
         txHash: string | null;
         /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
+        /**
          * Current status of the transaction
          */
         status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
@@ -896,6 +932,14 @@ export type Purchase = {
          * Cardano transaction hash
          */
         txHash: string | null;
+        /**
+         * Blockchain layer this transaction was submitted to
+         */
+        layer?: 'L1' | 'L2';
+        /**
+         * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+         */
+        hydraHeadId?: string | null;
         /**
          * Current status of the transaction
          */
@@ -3095,6 +3139,200 @@ export type FundDistributionTriggered = {
     alreadyRunning: boolean;
 };
 
+export type HydraHost = {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    name: string;
+    network: 'Preprod' | 'Mainnet';
+    baseUrl: string;
+    allowInsecureHttp: boolean;
+    publicPeerHost: string;
+    hasAdminToken: boolean;
+    hydraVersion: string | null;
+    scriptCatalogueHash: string | null;
+    ledgerParamsHash: string | null;
+    status: 'Active' | 'Draining' | 'Unreachable' | 'Disabled';
+    lastHealthAt: string | null;
+    lastHealthError: string | null;
+    participantCount: number;
+};
+
+export type HydraRelationDetail = HydraRelation & {
+    Heads?: Array<{
+        id: string;
+        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        headIdentifier: string | null;
+        isEnabled: boolean;
+        createdAt: Date;
+        openedAt: Date | null;
+        closedAt: Date | null;
+        finalizedAt: Date | null;
+        _count: {
+            RemoteParticipants: number;
+        };
+    }>;
+};
+
+export type HydraRelation = {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    network: 'Preprod' | 'Mainnet';
+    localHotWalletId: string;
+    remoteWalletId: string;
+    counterpartyBaseUrl: string | null;
+    LocalHotWallet?: {
+        id: string;
+        walletVkey: string;
+        walletAddress: string;
+        type: string;
+        note: string | null;
+    };
+    RemoteWallet?: {
+        id: string;
+        walletVkey: string;
+        walletAddress: string;
+        type: string;
+        note: string | null;
+    };
+    _count?: {
+        Heads: number;
+    };
+};
+
+export type HydraHead = {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    hydraRelationId: string;
+    headIdentifier: string | null;
+    status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+    contestationPeriod: string;
+    isEnabled: boolean;
+    openedAt: string | null;
+    closedAt: string | null;
+    finalizedAt: string | null;
+    contestationDeadline: string | null;
+    latestActivityAt: string | null;
+    latestSnapshotNumber: string;
+    /**
+     * Confirmed in-head tx the ordered replay is stuck on (fail-closed stall); null when replay is healthy
+     */
+    reconciliationStalledTxId: string | null;
+    /**
+     * Why replay is stalled: evidence-parse-failed | replay-apply-retry
+     */
+    reconciliationStalledReason: string | null;
+    /**
+     * When the current stall was first observed
+     */
+    reconciliationStalledSince: string | null;
+    initTxHash: string | null;
+    closeTxHash: string | null;
+    fanoutTxHash: string | null;
+    /**
+     * Which side of the invite exchange this head came from; absent for heads not created from one
+     */
+    Invite?: {
+        role: 'Issuer' | 'Redeemer';
+        contestationPeriodSeconds: number;
+        depositPeriodSeconds: number;
+        unsyncedPeriodSeconds: number;
+    } | null;
+    LocalParticipant?: {
+        id: string;
+        createdAt: string;
+        walletId: string;
+        Wallet: {
+            walletVkey: string;
+            walletAddress: string;
+            collectionAddress: string | null;
+            note: string | null;
+            type: 'Selling' | 'Purchasing' | 'Funding';
+        };
+        nodeUrl: string;
+        nodeHttpUrl: string;
+        hasCommitted: boolean;
+        commitTxHash: string | null;
+        hydraHostId: string;
+        hostNodeId: string;
+        cardanoVkey: string;
+        keysDisclosedAt: string | null;
+    } | null;
+    RemoteParticipants?: Array<{
+        id: string;
+        createdAt: string;
+        walletId: string;
+        Wallet: {
+            walletVkey: string;
+            walletAddress: string;
+        };
+        advertise: string;
+        hasCommitted: boolean;
+        commitTxHash: string | null;
+        HydraVerificationKey: {
+            hydraVK: string;
+        };
+        cardanoVkey: string;
+    }>;
+    _count?: {
+        Errors: number;
+        Transactions: number;
+    };
+};
+
+export type HydraLowBalanceRule = {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    hydraLocalParticipantId: string;
+    assetUnit: string;
+    thresholdAmount: string;
+    enabled: boolean;
+    topupEnabled: boolean;
+    topupAmount: string | null;
+    status: 'Unknown' | 'Healthy' | 'Low';
+    lastKnownAmount: string | null;
+    lastCheckedAt: string | null;
+    lastAlertedAt: string | null;
+};
+
+export type HydraLocalParticipant = {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    hydraHeadId: string | null;
+    walletId: string;
+    cardanoVkey: string;
+    nodeUrl: string;
+    nodeHttpUrl: string;
+    hasCommitted: boolean;
+    commitTxHash: string | null;
+    hydraHostId: string;
+    hostNodeId: string;
+    Wallet?: {
+        walletAddress: string;
+    };
+    HydraHead?: {
+        status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+    } | null;
+    keysDisclosedAt: Date | null;
+};
+
+export type HydraRemoteParticipant = {
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    hydraHeadId: string | null;
+    walletId: string;
+    cardanoVkey: string;
+    advertise: string;
+    hasCommitted: boolean;
+    commitTxHash: string | null;
+    hydraVerificationKeyId: string;
+};
+
 export type RailReadiness = {
     /**
      * The environment these results describe
@@ -4809,6 +5047,10 @@ export type PostPaymentData = {
          * A unique nonce from the purchaser. It must be in hex format
          */
         identifierFromPurchaser: string;
+        /**
+         * Optional seller layer override. For V2 this choice is signed into the purchase terms: "Hydra" requires an open head, "L1" forces L1, and a conflict with the buyer's forceLayer is rejected. Hydra is not supported for V1. Omit for automatic routing.
+         */
+        forceLayer?: 'L1' | 'Hydra';
     };
     path?: never;
     query?: never;
@@ -4941,6 +5183,10 @@ export type PostPaymentResponses = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Next action required for this payment
              */
             NextAction: {
@@ -4990,6 +5236,14 @@ export type PostPaymentResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -5540,6 +5794,10 @@ export type PostPaymentSubmitResultResponses = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Next action required for this payment
              */
             NextAction: {
@@ -5589,6 +5847,14 @@ export type PostPaymentSubmitResultResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -5858,6 +6124,10 @@ export type PostPaymentAuthorizeRefundResponses = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Next action required for this payment
              */
             NextAction: {
@@ -5907,6 +6177,14 @@ export type PostPaymentAuthorizeRefundResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -6196,6 +6474,10 @@ export type PostPaymentErrorStateRecoveryResponses = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Next action required for this payment
              */
             NextAction: {
@@ -6245,6 +6527,14 @@ export type PostPaymentErrorStateRecoveryResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -6505,6 +6795,14 @@ export type PostPurchaseErrorStateRecoveryResponses = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
+             * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+             */
+            paymentForceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
             collateralReturnLovelace: string | null;
@@ -6569,6 +6867,14 @@ export type PostPurchaseErrorStateRecoveryResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -7540,6 +7846,14 @@ export type PostPurchaseData = {
          * The nonce of the purchaser. It must be in hex format
          */
         identifierFromPurchaser: string;
+        /**
+         * Optional buyer layer override. "L1" forces L1; "Hydra" requires an open head and is supported only for V2. It must not conflict with the signed paymentForceLayer. Omit for automatic routing.
+         */
+        forceLayer?: 'L1' | 'Hydra';
+        /**
+         * Seller layer override copied from the payment response. For V2, a non-null value is part of the signed payment terms and cannot be changed or omitted without invalidating the identifier. V1 accepts only the redundant "L1" value for response round-tripping. Omit or pass null when the seller selected automatic routing.
+         */
+        paymentForceLayer?: 'L1' | 'Hydra' | null;
     };
     path?: never;
     query?: never;
@@ -7642,6 +7956,14 @@ export type PostPurchaseErrors = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
+             * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+             */
+            paymentForceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
             collateralReturnLovelace: string | null;
@@ -7706,6 +8028,14 @@ export type PostPurchaseErrors = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -7881,6 +8211,14 @@ export type PostPurchaseResponses = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
+             * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+             */
+            paymentForceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
             collateralReturnLovelace: string | null;
@@ -7945,6 +8283,14 @@ export type PostPurchaseResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -8399,6 +8745,14 @@ export type PostPurchaseRequestRefundResponses = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
+             * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+             */
+            paymentForceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
             collateralReturnLovelace: string | null;
@@ -8463,6 +8817,14 @@ export type PostPurchaseRequestRefundResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -8674,6 +9036,14 @@ export type PostPurchaseCancelRefundRequestResponses = {
              */
             onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
             /**
+             * Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.
+             */
+            forceLayer: 'L1' | 'Hydra' | null;
+            /**
+             * Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.
+             */
+            paymentForceLayer: 'L1' | 'Hydra' | null;
+            /**
              * Amount of collateral to return in lovelace. Null if no collateral
              */
             collateralReturnLovelace: string | null;
@@ -8738,6 +9108,14 @@ export type PostPurchaseCancelRefundRequestResponses = {
                  * Cardano transaction hash
                  */
                 txHash: string | null;
+                /**
+                 * Blockchain layer this transaction was submitted to
+                 */
+                layer?: 'L1' | 'L2';
+                /**
+                 * Hydra head ID when this transaction was submitted to L2. Null for L1 transactions
+                 */
+                hydraHeadId?: string | null;
                 /**
                  * Current status of the transaction
                  */
@@ -10883,7 +11261,7 @@ export type GetWebhooksResponses = {
                 id: string;
                 url: string;
                 format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+                Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
                 name: string | null;
                 isActive: boolean;
                 createdAt: Date;
@@ -10927,7 +11305,7 @@ export type PatchWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -10975,7 +11353,7 @@ export type PatchWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -11007,7 +11385,7 @@ export type PostWebhooksData = {
         /**
          * Array of event types to subscribe to
          */
-        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+        Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
         /**
          * Human-readable name for the webhook
          */
@@ -11055,7 +11433,7 @@ export type PostWebhooksResponses = {
             id: string;
             url: string;
             format: 'EXTENDED' | 'SLACK' | 'GOOGLE_CHAT' | 'DISCORD';
-            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE'>;
+            Events: Array<'PURCHASE_ON_CHAIN_STATUS_CHANGED' | 'PAYMENT_ON_CHAIN_STATUS_CHANGED' | 'PURCHASE_ON_ERROR' | 'PAYMENT_ON_ERROR' | 'WALLET_LOW_BALANCE' | 'FUND_DISTRIBUTION_SENT' | 'FUND_DISTRIBUTION_CONFIRMED' | 'FUND_DISTRIBUTION_FAILED' | 'X402_PAYMENT_SETTLED' | 'X402_PAYMENT_FAILED' | 'X402_WALLET_LOW_BALANCE' | 'HYDRA_HEAD_LOW_BALANCE'>;
             name: string | null;
             isActive: boolean;
             createdAt: Date;
@@ -12939,6 +13317,2043 @@ export type PostFundDistributionTriggerResponses = {
 };
 
 export type PostFundDistributionTriggerResponse = PostFundDistributionTriggerResponses[keyof PostFundDistributionTriggerResponses];
+
+export type DeleteHydraInviteData = {
+    body?: {
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/invite';
+};
+
+export type DeleteHydraInviteErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Already redeemed, or not an invite we issued
+     */
+    409: unknown;
+};
+
+export type DeleteHydraInviteResponses = {
+    /**
+     * Invite revoked
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+        };
+    };
+};
+
+export type DeleteHydraInviteResponse = DeleteHydraInviteResponses[keyof DeleteHydraInviteResponses];
+
+export type GetHydraInviteData = {
+    body?: never;
+    path?: never;
+    query?: {
+        limit?: number;
+        status?: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+        /**
+         * Filter by Cardano network
+         */
+        network?: 'Preprod' | 'Mainnet';
+    };
+    url: '/hydra/invite';
+};
+
+export type GetHydraInviteErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetHydraInviteResponses = {
+    /**
+     * Head invites
+     */
+    200: {
+        status: 'success';
+        data: {
+            invites: Array<{
+                id: string;
+                nonce: string;
+                network: 'Preprod' | 'Mainnet';
+                role: 'Issuer' | 'Redeemer';
+                status: 'Issued' | 'Redeemed' | 'Started' | 'Completed' | 'Expired' | 'Revoked';
+                createdAt: string;
+                expiresAt: string;
+                hydraHostId: string;
+                hostNodeId: string;
+                issuerWalletAddress: string;
+                issuerExchangeUrl: string;
+                redeemedAt: string | null;
+                redeemerWalletAddress: string | null;
+                hydraHeadId: string | null;
+            }>;
+        };
+    };
+};
+
+export type GetHydraInviteResponse = GetHydraInviteResponses[keyof GetHydraInviteResponses];
+
+export type PostHydraInviteData = {
+    body?: {
+        /**
+         * Wallet that will identify us on the resulting head
+         */
+        hotWalletId: string;
+        /**
+         * How long the invite may sit before its reservation is released. Defaults to 168 (7 days).
+         */
+        ttlHours?: number;
+        /**
+         * Send the node's L1 fuel from the chosen wallet straight away. On unless set false, since a node cannot post Init, Commit, Close or Fanout without it. Opt out only if you fund that key yourself.
+         */
+        autoFund?: boolean;
+        /**
+         * How long a deposit must settle before this head will take it. Both nodes run the value signed here. A top-up is unusable for one period and cannot be recovered for three. Defaults to 600 on preprod and 1200 on mainnet: on mainnet the funds are real, so the wait is what rules out a rollback before they count on L2.
+         */
+        depositPeriodSeconds?: number;
+        /**
+         * How long after closing the head anyone may dispute the final state. Nobody can settle on chain until it elapses, so it is also the wait between closing a head and getting the funds back. Longer is the safe direction: it is the only protection against a counterparty closing on a stale state while your node is down, and settling can take several transactions. Defaults to 5 days on mainnet and 12 hours on preprod.
+         */
+        contestationPeriodSeconds?: number;
+        /**
+         * How long a node may see no new block before it declares itself out of sync and refuses commands, rather than acting on a stale view of the chain. Defaults to 30 minutes on both networks, or half the dispute window where that is tighter. Half the window is the ceiling and may not be exceeded, which is checked against the resolved pair when the invite is minted rather than here, since either field may be defaulted. Raising it buys availability with the time a node needs to contest a close.
+         */
+        unsyncedPeriodSeconds?: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/invite';
+};
+
+export type PostHydraInviteErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * No usable Hydra Host, or the host has no admin token
+     */
+    409: unknown;
+};
+
+export type PostHydraInviteResponses = {
+    /**
+     * Invite minted
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            nonce: string;
+            expiresAt: string;
+            /**
+             * The invite itself. Hand this to the counterparty out of band.
+             */
+            code: string;
+        };
+    };
+};
+
+export type PostHydraInviteResponse = PostHydraInviteResponses[keyof PostHydraInviteResponses];
+
+export type PostHydraInvitePreviewData = {
+    body?: {
+        /**
+         * An invite code received from a counterparty
+         */
+        code: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/invite/preview';
+};
+
+export type PostHydraInvitePreviewErrors = {
+    /**
+     * Not a well-formed invite code
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostHydraInvitePreviewResponses = {
+    /**
+     * Invite contents
+     */
+    200: {
+        status: 'success';
+        data: {
+            nonce: string;
+            network: 'Preprod' | 'Mainnet';
+            issuerWalletAddress: string;
+            issuerWalletRole?: 'Buyer' | 'Seller';
+            advertise: string;
+            exchangeUrl: string;
+            expiresAt: string;
+            contestationPeriodSeconds: number;
+            depositPeriodSeconds: number;
+            unsyncedPeriodSeconds: number;
+            exchangeUsesPrivateNetwork: boolean | null;
+            exchangeNetworkWarning: string | null;
+            signatureValid: boolean;
+            alreadyKnown: boolean;
+            /**
+             * Registry entries held by the issuing wallet, so an operator can recognise who this is
+             */
+            identity: {
+                policyId: string;
+                entries: Array<{
+                    unit: string;
+                    assetName: string;
+                    name: string | null;
+                }>;
+                lookupError: string | null;
+            };
+        };
+    };
+};
+
+export type PostHydraInvitePreviewResponse = PostHydraInvitePreviewResponses[keyof PostHydraInvitePreviewResponses];
+
+export type PostHydraInviteRedeemData = {
+    body?: {
+        code: string;
+        /**
+         * Wallet that will identify us on the resulting head
+         */
+        hotWalletId: string;
+        /**
+         * Send the node's L1 fuel from the chosen wallet straight away. On unless set false.
+         */
+        autoFund?: boolean;
+        /**
+         * Explicitly allow redemption over HTTP when a separately secured network protects the exchange
+         */
+        allowInsecureExchangeHttp?: boolean;
+        /**
+         * Explicitly allow redemption to private, loopback, link-local, or other special-use IP space
+         */
+        allowPrivateExchangeNetwork?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/invite/redeem';
+};
+
+export type PostHydraInviteRedeemErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Wrong network, already redeemed, expired, or our own invite
+     */
+    409: unknown;
+    /**
+     * The counterparty's exchange plane refused or could not be reached
+     */
+    502: unknown;
+};
+
+export type PostHydraInviteRedeemResponses = {
+    /**
+     * Invite redeemed
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            hydraHeadId: string;
+            counterpartyWalletAddress: string;
+        };
+    };
+};
+
+export type PostHydraInviteRedeemResponse = PostHydraInviteRedeemResponses[keyof PostHydraInviteRedeemResponses];
+
+export type DeleteHydraHostData = {
+    body?: {
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host';
+};
+
+export type DeleteHydraHostErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+    /**
+     * Host still runs nodes
+     */
+    409: unknown;
+};
+
+export type DeleteHydraHostResponses = {
+    /**
+     * Removed host
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+        };
+    };
+};
+
+export type DeleteHydraHostResponse = DeleteHydraHostResponses[keyof DeleteHydraHostResponses];
+
+export type GetHydraHostData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Restrict to one network
+         */
+        network?: 'Preprod' | 'Mainnet';
+    };
+    url: '/hydra/host';
+};
+
+export type GetHydraHostErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetHydraHostResponses = {
+    /**
+     * Registered hosts
+     */
+    200: {
+        status: 'success';
+        data: {
+            hosts: Array<HydraHost>;
+        };
+    };
+};
+
+export type GetHydraHostResponse = GetHydraHostResponses[keyof GetHydraHostResponses];
+
+export type PatchHydraHostData = {
+    body?: {
+        id: string;
+        name?: string;
+        /**
+         * Draining keeps serving existing heads (they cannot be moved) but takes no new placements
+         */
+        status?: 'Active' | 'Draining' | 'Unreachable' | 'Disabled';
+        /**
+         * Opaque bearer token issued by the Hydra Host. Stored encrypted and never returned.
+         */
+        userToken?: string;
+        /**
+         * Null clears the admin token, disabling provisioning
+         */
+        adminToken?: string | null;
+        /**
+         * Explicitly allow bearer tokens over this Host HTTP connection
+         */
+        allowInsecureHttp?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host';
+};
+
+export type PatchHydraHostErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+};
+
+export type PatchHydraHostResponses = {
+    /**
+     * Updated host
+     */
+    200: {
+        status: 'success';
+        data: HydraHost;
+    };
+};
+
+export type PatchHydraHostResponse = PatchHydraHostResponses[keyof PatchHydraHostResponses];
+
+export type PostHydraHostData = {
+    body?: {
+        /**
+         * Operator-facing label
+         */
+        name: string;
+        network: 'Preprod' | 'Mainnet';
+        /**
+         * Control-plane URL, e.g. https://hydra1.example.com. HTTPS is recommended.
+         */
+        baseUrl: string;
+        /**
+         * Explicitly allow bearer tokens over HTTP. Use only on a separately secured network.
+         */
+        allowInsecureHttp?: boolean;
+        /**
+         * Hostname the counterparty dials for this head’s peer port. Defaults to the host in baseUrl, which is right unless peers reach the Host by a different name than this service does.
+         */
+        publicPeerHost?: string;
+        /**
+         * Runtime token for proxied node API access. Optional: the admin token also satisfies runtime calls, so supply this only to keep a lower-privilege token for day-to-day use.
+         */
+        userToken?: string;
+        /**
+         * Provision, escrow-ack, reconfigure, delete. Required: without it no head can be opened here.
+         */
+        adminToken: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host';
+};
+
+export type PostHydraHostErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * A host for this network and base URL is already registered
+     */
+    409: unknown;
+};
+
+export type PostHydraHostResponses = {
+    /**
+     * Registered host
+     */
+    200: {
+        status: 'success';
+        data: HydraHost;
+    };
+};
+
+export type PostHydraHostResponse = PostHydraHostResponses[keyof PostHydraHostResponses];
+
+export type PostHydraHostCheckData = {
+    body?: {
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/host/check';
+};
+
+export type PostHydraHostCheckErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra host not found
+     */
+    404: unknown;
+    /**
+     * Host has no admin token
+     */
+    409: unknown;
+};
+
+export type PostHydraHostCheckResponses = {
+    /**
+     * Host capabilities
+     */
+    200: {
+        status: 'success';
+        data: HydraHost;
+    };
+};
+
+export type PostHydraHostCheckResponse = PostHydraHostCheckResponses[keyof PostHydraHostCheckResponses];
+
+export type GetHydraWalletBaseData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter wallet bases by Cardano network
+         */
+        network?: 'Preprod' | 'Mainnet';
+        /**
+         * Filter wallet bases by payment source
+         */
+        paymentSourceId?: string;
+        /**
+         * Filter wallet bases by payment key hash
+         */
+        walletVkey?: string;
+        /**
+         * Cursor ID for pagination
+         */
+        cursorId?: string;
+        /**
+         * Number of results
+         */
+        limit?: number;
+    };
+    url: '/hydra/wallet-base';
+};
+
+export type GetHydraWalletBaseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetHydraWalletBaseResponses = {
+    /**
+     * Candidate wallets
+     */
+    200: {
+        status: 'success';
+        data: {
+            wallets: Array<{
+                id: string;
+                createdAt: string;
+                updatedAt: string;
+                paymentSourceId: string;
+                type: 'Buyer' | 'Seller';
+                walletVkey: string;
+                walletAddress: string;
+                note: string | null;
+                PaymentSource: {
+                    id: string;
+                    network: 'Preprod' | 'Mainnet';
+                    paymentSourceType: string;
+                };
+            }>;
+        };
+    };
+};
+
+export type GetHydraWalletBaseResponse = GetHydraWalletBaseResponses[keyof GetHydraWalletBaseResponses];
+
+export type PostHydraWalletBaseData = {
+    body?: {
+        /**
+         * HotWallet to expose as a public WalletBase option
+         */
+        hotWalletId: string;
+    } | {
+        /**
+         * Payment source this counterparty belongs to
+         */
+        paymentSourceId: string;
+        /**
+         * The counterparty's Cardano address, as they gave it to you
+         */
+        walletAddress: string;
+        /**
+         * Their role in the trade. Defaults to Seller.
+         */
+        type?: 'Buyer' | 'Seller';
+        /**
+         * Label, so the picker shows more than a bare type
+         */
+        note?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/wallet-base';
+};
+
+export type PostHydraWalletBaseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type PostHydraWalletBaseResponses = {
+    /**
+     * WalletBase ensured
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            createdAt: string;
+            updatedAt: string;
+            paymentSourceId: string;
+            type: 'Buyer' | 'Seller';
+            walletVkey: string;
+            walletAddress: string;
+            note: string | null;
+            PaymentSource: {
+                id: string;
+                network: 'Preprod' | 'Mainnet';
+                paymentSourceType: string;
+            };
+        };
+    };
+};
+
+export type PostHydraWalletBaseResponse = PostHydraWalletBaseResponses[keyof PostHydraWalletBaseResponses];
+
+export type DeleteHydraRelationData = {
+    body?: {
+        /**
+         * ID of the HydraRelation to delete
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/relation';
+};
+
+export type DeleteHydraRelationErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Relation still has an active head
+     */
+    409: unknown;
+};
+
+export type DeleteHydraRelationResponses = {
+    /**
+     * Hydra relation deleted
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            deleted: boolean;
+        };
+    };
+};
+
+export type DeleteHydraRelationResponse = DeleteHydraRelationResponses[keyof DeleteHydraRelationResponses];
+
+export type GetHydraRelationData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Get a single relation by ID
+         */
+        id?: string;
+        /**
+         * Filter by Cardano network
+         */
+        network?: 'Preprod' | 'Mainnet';
+        /**
+         * Cursor ID for pagination
+         */
+        cursorId?: string;
+        /**
+         * Number of results
+         */
+        limit?: number;
+    };
+    url: '/hydra/relation';
+};
+
+export type GetHydraRelationErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetHydraRelationResponses = {
+    /**
+     * Hydra relations
+     */
+    200: {
+        status: 'success';
+        data: {
+            relations: Array<HydraRelationDetail>;
+        };
+    };
+};
+
+export type GetHydraRelationResponse = GetHydraRelationResponses[keyof GetHydraRelationResponses];
+
+export type GetHydraHeadData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Get a single head by ID
+         */
+        id?: string;
+        /**
+         * Filter by HydraRelation ID
+         */
+        relationId?: string;
+        /**
+         * Filter by Cardano network
+         */
+        network?: 'Preprod' | 'Mainnet';
+        /**
+         * Filter by head status
+         */
+        status?: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        /**
+         * Filter by isEnabled
+         */
+        isEnabled?: string;
+        /**
+         * Cursor ID for pagination
+         */
+        cursorId?: string;
+        /**
+         * Number of results
+         */
+        limit?: number;
+    };
+    url: '/hydra/head';
+};
+
+export type GetHydraHeadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetHydraHeadResponses = {
+    /**
+     * Hydra heads
+     */
+    200: {
+        status: 'success';
+        data: {
+            heads: Array<HydraHead>;
+        };
+    };
+};
+
+export type GetHydraHeadResponse = GetHydraHeadResponses[keyof GetHydraHeadResponses];
+
+export type PatchHydraHeadData = {
+    body?: {
+        /**
+         * ID of the HydraHead to update
+         */
+        id: string;
+        /**
+         * Whether the head should be enabled
+         */
+        isEnabled: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head';
+};
+
+export type PatchHydraHeadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * On-chain verification failed
+     */
+    502: unknown;
+    /**
+     * Independent L1 evidence not yet available
+     */
+    503: unknown;
+};
+
+export type PatchHydraHeadResponses = {
+    /**
+     * Hydra head updated
+     */
+    200: {
+        status: 'success';
+        data: HydraHead;
+    };
+};
+
+export type PatchHydraHeadResponse = PatchHydraHeadResponses[keyof PatchHydraHeadResponses];
+
+export type PostHydraHeadInitData = {
+    body?: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/init';
+};
+
+export type PostHydraHeadInitErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head is not in a state that permits init
+     */
+    409: unknown;
+};
+
+export type PostHydraHeadInitResponses = {
+    /**
+     * Head init result
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        };
+    };
+};
+
+export type PostHydraHeadInitResponse = PostHydraHeadInitResponses[keyof PostHydraHeadInitResponses];
+
+export type PostHydraHeadFanoutData = {
+    body?: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/fanout';
+};
+
+export type PostHydraHeadFanoutErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head is not in a state that permits fanout
+     */
+    409: unknown;
+};
+
+export type PostHydraHeadFanoutResponses = {
+    /**
+     * Head fanout result
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        };
+    };
+};
+
+export type PostHydraHeadFanoutResponse = PostHydraHeadFanoutResponses[keyof PostHydraHeadFanoutResponses];
+
+export type PostHydraHeadCloseData = {
+    body?: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+        acknowledgeActiveEscrows?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/close';
+};
+
+export type PostHydraHeadCloseErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head is not in a state that permits close, or still holds active escrows
+     */
+    409: unknown;
+};
+
+export type PostHydraHeadCloseResponses = {
+    /**
+     * Head close result
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            status: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+        };
+    };
+};
+
+export type PostHydraHeadCloseResponse = PostHydraHeadCloseResponses[keyof PostHydraHeadCloseResponses];
+
+export type PostHydraHeadCommitData = {
+    body?: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+        /**
+         * How much to put into the head. A dedicated UTxO of exactly this amount is carved on L1 first and only that is committed, so the rest of the wallet — its other ADA, its stablecoins, an agent's registry NFT — stays on L1 and spendable. Costs one L1 confirmation before the deposit is built.
+         */
+        lovelace: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/commit';
+};
+
+export type PostHydraHeadCommitErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head not committable, or the local participant already committed
+     */
+    409: unknown;
+    /**
+     * The node returned an unsafe or invalid commit draft
+     */
+    502: unknown;
+};
+
+export type PostHydraHeadCommitResponses = {
+    /**
+     * Commit result
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            committed: boolean;
+            commitTxHash: string | null;
+        };
+    };
+};
+
+export type PostHydraHeadCommitResponse = PostHydraHeadCommitResponses[keyof PostHydraHeadCommitResponses];
+
+export type GetHydraHeadTopupData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Hydra head whose top-ups to list
+         */
+        headId: string;
+        limit?: number;
+    };
+    url: '/hydra/head/topup';
+};
+
+export type GetHydraHeadTopupErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadTopupResponses = {
+    /**
+     * Head top-ups
+     */
+    200: {
+        status: 'success';
+        data: {
+            topups: Array<{
+                id: string;
+                createdAt: string;
+                updatedAt: string;
+                status: 'Preparing' | 'Pending' | 'Confirmed' | 'Failed' | 'Absorbed' | 'Recovered';
+                depositTxHash: string | null;
+                /**
+                 * The L1 transaction that carved the exact amount, while a top-up is still preparing
+                 */
+                splitTxHash: string | null;
+                committedLovelace: string;
+                committedAssets: {
+                    [key: string]: string;
+                };
+                deadline: string | null;
+                usableFrom: string | null;
+                absorbBy: string | null;
+                recoveryRequestedAt: string | null;
+            }>;
+        };
+    };
+};
+
+export type GetHydraHeadTopupResponse = GetHydraHeadTopupResponses[keyof GetHydraHeadTopupResponses];
+
+export type PostHydraHeadTopupData = {
+    body?: {
+        /**
+         * The Hydra head to top up
+         */
+        headId: string;
+        /**
+         * Which plain wallet UTxOs to commit: all, or ADA-only (ignored when assetUnit is set)
+         */
+        assetFilter?: 'all' | 'ada-only';
+        /**
+         * Commit only UTxOs containing this native-asset unit (policyId + assetName hex)
+         */
+        assetUnit?: string;
+        /**
+         * Exact top-up amount (base unit) of assetUnit (or lovelace). Pre-splits a dedicated L1 UTxO first, then commits it — adds an L1 confirmation wait.
+         */
+        exactAmount?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/topup';
+};
+
+export type PostHydraHeadTopupErrors = {
+    /**
+     * Head has no local participant, or `exactAmount` is below the minimum a UTxO can hold
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head not open, disabled, not yet identified on chain, or its node is still catching up
+     */
+    409: unknown;
+    /**
+     * No live connection to the head
+     */
+    502: unknown;
+};
+
+export type PostHydraHeadTopupResponses = {
+    /**
+     * Top-up accepted
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            accepted: true;
+        };
+    };
+};
+
+export type PostHydraHeadTopupResponse = PostHydraHeadTopupResponses[keyof PostHydraHeadTopupResponses];
+
+export type GetHydraHeadWithdrawData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Hydra head whose withdrawals to list
+         */
+        headId: string;
+        limit?: number;
+    };
+    url: '/hydra/head/withdraw';
+};
+
+export type GetHydraHeadWithdrawErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadWithdrawResponses = {
+    /**
+     * Withdrawals
+     */
+    200: {
+        status: 'success';
+        data: {
+            withdrawals: Array<{
+                id: string;
+                createdAt: string;
+                updatedAt: string;
+                status: 'Preparing' | 'Pending' | 'Approved' | 'Finalized' | 'Failed';
+                splitTxId: string | null;
+                decommitTxId: string | null;
+                l1TxId: string | null;
+                requestedLovelace: string;
+                /**
+                 * Native assets this withdrawal set out to remove, as { unit: quantity }.
+                 */
+                requestedAssets: {
+                    [key: string]: string;
+                };
+                settledLovelace: string | null;
+                settledAssets: {
+                    [key: string]: string;
+                } | null;
+                destinationAddress: string;
+                failureReason: string | null;
+                approvedAt: string | null;
+                finalizedAt: string | null;
+            }>;
+        };
+    };
+};
+
+export type GetHydraHeadWithdrawResponse = GetHydraHeadWithdrawResponses[keyof GetHydraHeadWithdrawResponses];
+
+export type PostHydraHeadWithdrawData = {
+    body?: {
+        /**
+         * The Hydra head to withdraw from
+         */
+        headId: string;
+        /**
+         * Exact lovelace to withdraw. Omit to withdraw every eligible in-head UTxO whole. An exact amount is split off inside the head first, which costs nothing and takes about a second.
+         */
+        lovelace?: string;
+        /**
+         * Withdraw a native asset instead of ADA: policy id and asset name concatenated. Exactly the amount asked for is split off inside the head first, the same as an ADA withdrawal, so the rest stays where it is.
+         */
+        assetUnit?: string;
+        /**
+         * How much of assetUnit to withdraw, in that asset's own smallest unit.
+         */
+        assetAmount?: string;
+        /**
+         * Also withdraw the UTxO held back as collateral. Without collateral this wallet can no longer spend escrows inside the head, so this is for winding a head down.
+         */
+        drain?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/withdraw';
+};
+
+export type PostHydraHeadWithdrawErrors = {
+    /**
+     * Asked for lovelace and a native asset in one request, gave only one half of the asset pair, or the head has no local participant
+     */
+    400: unknown;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * Head not open, disabled, not yet identified on chain, or its node is still catching up
+     */
+    409: unknown;
+    /**
+     * No live connection to the head
+     */
+    502: unknown;
+};
+
+export type PostHydraHeadWithdrawResponses = {
+    /**
+     * Withdrawal accepted
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            accepted: true;
+        };
+    };
+};
+
+export type PostHydraHeadWithdrawResponse = PostHydraHeadWithdrawResponses[keyof PostHydraHeadWithdrawResponses];
+
+export type GetHydraHeadBalanceData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+    };
+    url: '/hydra/head/balance';
+};
+
+export type GetHydraHeadBalanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head or its local participant wallet not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadBalanceResponses = {
+    /**
+     * Own in-head balance
+     */
+    200: {
+        status: 'success';
+        data: {
+            hydraHeadId: string;
+            /**
+             * The local participant wallet address whose in-head funds are reported
+             */
+            address: string;
+            /**
+             * True when a live head snapshot was read; false when the head has no active connection
+             */
+            connected: boolean;
+            /**
+             * Number of in-head UTxOs held by the local address
+             */
+            utxoCount: number;
+            /**
+             * Lovelace the head reports holding whose L1 deposit was recovered to the wallet. hydra-node can keep a deposit in its L2 ledger that was never really absorbed, so the balance above reads high by this much and a close would fail on the overhead it implies.
+             */
+            unbackedLovelace: string;
+            /**
+             * True when any reported UTxO is unbacked, so the balance is optimistic
+             */
+            hasUnbackedUtxos: boolean;
+            /**
+             * This node's own funds currently inside the head (ADA + native tokens). Excludes the counterparty.
+             */
+            balance: Array<{
+                /**
+                 * Empty string for ADA/lovelace; otherwise policyId+assetName hex
+                 */
+                unit: string;
+                /**
+                 * Aggregate quantity across the local address in-head UTxOs
+                 */
+                quantity: string;
+            }>;
+        };
+    };
+};
+
+export type GetHydraHeadBalanceResponse = GetHydraHeadBalanceResponses[keyof GetHydraHeadBalanceResponses];
+
+export type GetHydraHeadTransactionsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * The Hydra head whose transactions to list
+         */
+        headId: string;
+        /**
+         * Number of results
+         */
+        limit?: number;
+    };
+    url: '/hydra/head/transactions';
+};
+
+export type GetHydraHeadTransactionsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadTransactionsResponses = {
+    /**
+     * Hydra head transactions
+     */
+    200: {
+        status: 'success';
+        data: {
+            transactions: Array<{
+                id: string;
+                /**
+                 * Ledger is a payment this head carried. Deposit is money being moved into the head. NodeFunding is ADA sent to the node key that pays this head’s on-chain fees.
+                 */
+                kind: 'Ledger' | 'Deposit' | 'NodeFunding';
+                createdAt: Date;
+                /**
+                 * Null while a transaction is built but not yet broadcast; intendedTxHash names it in the meantime
+                 */
+                txHash: string | null;
+                intendedTxHash: string | null;
+                status: 'Pending' | 'Confirmed' | 'FailedViaTimeout' | 'FailedViaManualReset' | 'RolledBack';
+                /**
+                 * L1 for on-chain, L2 for inside the head
+                 */
+                layer: 'L1' | 'L2';
+                confirmations: number | null;
+                fees: string | null;
+                /**
+                 * The amount moved, for deposits and node funding. Null for ledger rows.
+                 */
+                lovelace: string | null;
+                blockTime: number | null;
+                lastCheckedAt: Date | null;
+            }>;
+        };
+    };
+};
+
+export type GetHydraHeadTransactionsResponse = GetHydraHeadTransactionsResponses[keyof GetHydraHeadTransactionsResponses];
+
+export type PostHydraHeadTopupRecoverData = {
+    body?: {
+        /**
+         * The deposit to recover
+         */
+        topupId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/topup/recover';
+};
+
+export type PostHydraHeadTopupRecoverErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * The deposit is not recoverable yet, or has already been absorbed or recovered
+     */
+    409: unknown;
+};
+
+export type PostHydraHeadTopupRecoverResponses = {
+    /**
+     * Recovery request
+     */
+    200: {
+        status: 'success';
+        data: {
+            depositTxHash: string | null;
+            requested: boolean;
+            reason: string | null;
+        };
+    };
+};
+
+export type PostHydraHeadTopupRecoverResponse = PostHydraHeadTopupRecoverResponses[keyof PostHydraHeadTopupRecoverResponses];
+
+export type GetHydraHeadConnectionData = {
+    body?: never;
+    path?: never;
+    query: {
+        headId: string;
+    };
+    url: '/hydra/head/connection';
+};
+
+export type GetHydraHeadConnectionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadConnectionResponses = {
+    /**
+     * Head connection
+     */
+    200: {
+        status: 'success';
+        data: {
+            headId: string;
+            connected: boolean;
+            nodeState: string;
+            isReady: boolean;
+            /**
+             * Whether this node is in its Hydra cluster, which for a two-party head means the counterparty's node is up and reachable. Null until the node reports either way. Not a statement about their chain sync.
+             */
+            peerConnected: boolean | null;
+            reason: string | null;
+            /**
+             * Empty when the head ledger matches the chain.
+             */
+            paramDrift: Array<{
+                parameter: string;
+                head: number;
+                chain: number;
+                blocksFanout: boolean;
+            }>;
+            l2Blocked: string | null;
+            /**
+             * Null when closing costs nothing beyond the close itself.
+             */
+            closeWithActiveWork: string | null;
+            checkedAt: string;
+        };
+    };
+};
+
+export type GetHydraHeadConnectionResponse = GetHydraHeadConnectionResponses[keyof GetHydraHeadConnectionResponses];
+
+export type DeleteHydraHeadErrorsData = {
+    body?: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/head/errors';
+};
+
+export type DeleteHydraHeadErrorsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type DeleteHydraHeadErrorsResponses = {
+    /**
+     * Cleared head errors
+     */
+    200: {
+        status: 'success';
+        data: {
+            cleared: number;
+        };
+    };
+};
+
+export type DeleteHydraHeadErrorsResponse = DeleteHydraHeadErrorsResponses[keyof DeleteHydraHeadErrorsResponses];
+
+export type GetHydraHeadErrorsData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * ID of the HydraHead
+         */
+        headId: string;
+        /**
+         * Cursor ID for pagination
+         */
+        cursorId?: string;
+        /**
+         * Number of results
+         */
+        limit?: number;
+    };
+    url: '/hydra/head/errors';
+};
+
+export type GetHydraHeadErrorsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraHeadErrorsResponses = {
+    /**
+     * Hydra head errors
+     */
+    200: {
+        status: 'success';
+        data: {
+            errors: Array<{
+                id: string;
+                createdAt: Date;
+                errorType: 'CommandFailed' | 'PostTxOnChainFailed' | 'TxInvalid' | 'InvalidInput';
+                errorMessage: string;
+                headStatus: 'Disconnected' | 'Connected' | 'Connecting' | 'Idle' | 'Initializing' | 'Open' | 'Closed' | 'FanoutPossible' | 'Final';
+                clientInput: string | null;
+                txHash: string | null;
+                errorAt: Date;
+            }>;
+        };
+    };
+};
+
+export type GetHydraHeadErrorsResponse = GetHydraHeadErrorsResponses[keyof GetHydraHeadErrorsResponses];
+
+export type GetHydraParticipantLocalFundData = {
+    body?: never;
+    path?: never;
+    query: {
+        id: string;
+    };
+    url: '/hydra/participant/local/fund';
+};
+
+export type GetHydraParticipantLocalFundErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type GetHydraParticipantLocalFundResponses = {
+    /**
+     * Node funding
+     */
+    200: {
+        status: 'success';
+        data: {
+            address: string;
+            balanceLovelace: string;
+            isUnderfunded: boolean;
+            shortfallLovelace: string;
+            /**
+             * False when the chain could not be consulted — unknown, not zero
+             */
+            checked: boolean;
+            node: {
+                state: string;
+                isReady: boolean;
+                /**
+                 * Why it is not ready, when it is not
+                 */
+                reason: string | null;
+            };
+        };
+    };
+};
+
+export type GetHydraParticipantLocalFundResponse = GetHydraParticipantLocalFundResponses[keyof GetHydraParticipantLocalFundResponses];
+
+export type PostHydraParticipantLocalFundData = {
+    body?: {
+        /**
+         * Local participant whose node should be funded
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/participant/local/fund';
+};
+
+export type PostHydraParticipantLocalFundErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+};
+
+export type PostHydraParticipantLocalFundResponses = {
+    /**
+     * Node funding result
+     */
+    200: {
+        status: 'success';
+        data: {
+            /**
+             * The node's own Cardano address, derived from its key hash
+             */
+            address: string;
+            balanceLovelace: string;
+            /**
+             * Null unless this request started a transfer; read `outcome` for why
+             */
+            transferredLovelace: string | null;
+            /**
+             * `sent`: a transfer was started. `sufficient`: the node already holds enough. `in-flight`: an earlier transfer to this node has not confirmed yet, so nothing was sent — the balance below is still the pre-transfer one.
+             */
+            outcome: 'sent' | 'sufficient' | 'in-flight';
+        };
+    };
+};
+
+export type PostHydraParticipantLocalFundResponse = PostHydraParticipantLocalFundResponses[keyof PostHydraParticipantLocalFundResponses];
+
+export type PostHydraParticipantLocalWithdrawData = {
+    body?: {
+        /**
+         * Local participant whose node should be swept
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/participant/local/withdraw';
+};
+
+export type PostHydraParticipantLocalWithdrawErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra head not found
+     */
+    404: unknown;
+    /**
+     * The node is still needed, so its funds are kept
+     */
+    409: unknown;
+};
+
+export type PostHydraParticipantLocalWithdrawResponses = {
+    /**
+     * Node sweep result
+     */
+    200: {
+        status: 'success';
+        data: {
+            address: string;
+            balanceLovelace: string;
+            txHash: string | null;
+            /**
+             * Why nothing was swept, when nothing was
+             */
+            reason: string | null;
+        };
+    };
+};
+
+export type PostHydraParticipantLocalWithdrawResponse = PostHydraParticipantLocalWithdrawResponses[keyof PostHydraParticipantLocalWithdrawResponses];
+
+export type DeleteHydraLowBalanceData = {
+    body?: {
+        /**
+         * Low-balance rule id
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/low-balance';
+};
+
+export type DeleteHydraLowBalanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra low-balance rule not found
+     */
+    404: unknown;
+};
+
+export type DeleteHydraLowBalanceResponses = {
+    /**
+     * Deleted rule
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+        };
+    };
+};
+
+export type DeleteHydraLowBalanceResponse = DeleteHydraLowBalanceResponses[keyof DeleteHydraLowBalanceResponses];
+
+export type GetHydraLowBalanceData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Filter rules by local participant
+         */
+        hydraLocalParticipantId?: string;
+    };
+    url: '/hydra/low-balance';
+};
+
+export type GetHydraLowBalanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetHydraLowBalanceResponses = {
+    /**
+     * Hydra low-balance rules
+     */
+    200: {
+        status: 'success';
+        data: {
+            rules: Array<HydraLowBalanceRule>;
+        };
+    };
+};
+
+export type GetHydraLowBalanceResponse = GetHydraLowBalanceResponses[keyof GetHydraLowBalanceResponses];
+
+export type PostHydraLowBalanceData = {
+    body?: {
+        /**
+         * Local participant whose in-head balance to monitor
+         */
+        hydraLocalParticipantId: string;
+        /**
+         * "lovelace" or a policyId+assetName hex unit
+         */
+        assetUnit: string;
+        /**
+         * Alert when the in-head balance falls below this
+         */
+        thresholdAmount: string;
+        enabled?: boolean;
+        /**
+         * Auto top-up from the assigned funding wallet when low
+         */
+        topupEnabled?: boolean;
+        /**
+         * Exact amount deposited by each auto top-up (carved into its own L1 UTxO first)
+         */
+        topupAmount?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/low-balance';
+};
+
+export type PostHydraLowBalanceErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Hydra local participant not found
+     */
+    404: unknown;
+};
+
+export type PostHydraLowBalanceResponses = {
+    /**
+     * Upserted rule
+     */
+    200: {
+        status: 'success';
+        data: {
+            rule: HydraLowBalanceRule;
+        };
+    };
+};
+
+export type PostHydraLowBalanceResponse = PostHydraLowBalanceResponses[keyof PostHydraLowBalanceResponses];
+
+export type DeleteHydraParticipantLocalData = {
+    body?: {
+        /**
+         * ID of the local participant to delete
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/participant/local';
+};
+
+export type DeleteHydraParticipantLocalErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Local participant not found
+     */
+    404: unknown;
+};
+
+export type DeleteHydraParticipantLocalResponses = {
+    /**
+     * Local participant deleted
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            deleted: boolean;
+        };
+    };
+};
+
+export type DeleteHydraParticipantLocalResponse = DeleteHydraParticipantLocalResponses[keyof DeleteHydraParticipantLocalResponses];
+
+export type GetHydraParticipantLocalData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Get a single participant by ID
+         */
+        id?: string;
+        /**
+         * Filter by HotWallet ID
+         */
+        walletId?: string;
+        /**
+         * Filter by the connected node running them
+         */
+        hydraHostId?: string;
+        /**
+         * Filter to only unassigned participants (no head)
+         */
+        unassigned?: string;
+        /**
+         * Cursor ID for pagination
+         */
+        cursorId?: string;
+        /**
+         * Number of results
+         */
+        limit?: number;
+    };
+    url: '/hydra/participant/local';
+};
+
+export type GetHydraParticipantLocalErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetHydraParticipantLocalResponses = {
+    /**
+     * Local participants
+     */
+    200: {
+        status: 'success';
+        data: {
+            participants: Array<HydraLocalParticipant>;
+        };
+    };
+};
+
+export type GetHydraParticipantLocalResponse = GetHydraParticipantLocalResponses[keyof GetHydraParticipantLocalResponses];
+
+export type PostHydraParticipantLocalKeysData = {
+    body?: {
+        /**
+         * ID of the local participant whose node keys to back up
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/participant/local/keys';
+};
+
+export type PostHydraParticipantLocalKeysErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Local participant not found
+     */
+    404: unknown;
+    /**
+     * The keys have already been handed out once
+     */
+    409: unknown;
+};
+
+export type PostHydraParticipantLocalKeysResponses = {
+    /**
+     * Node signing keys
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            disclosedAt: string;
+            /**
+             * Text-envelope cborHex of the node Hydra signing key
+             */
+            hydraSigningKey: string;
+            /**
+             * Text-envelope cborHex of the node Cardano signing key. Null for nodes provisioned before it was captured.
+             */
+            cardanoSigningKey: string | null;
+        };
+    };
+};
+
+export type PostHydraParticipantLocalKeysResponse = PostHydraParticipantLocalKeysResponses[keyof PostHydraParticipantLocalKeysResponses];
+
+export type DeleteHydraParticipantRemoteData = {
+    body?: {
+        /**
+         * ID of the remote participant to delete
+         */
+        id: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/hydra/participant/remote';
+};
+
+export type DeleteHydraParticipantRemoteErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Remote participant not found
+     */
+    404: unknown;
+};
+
+export type DeleteHydraParticipantRemoteResponses = {
+    /**
+     * Remote participant deleted
+     */
+    200: {
+        status: 'success';
+        data: {
+            id: string;
+            deleted: boolean;
+        };
+    };
+};
+
+export type DeleteHydraParticipantRemoteResponse = DeleteHydraParticipantRemoteResponses[keyof DeleteHydraParticipantRemoteResponses];
+
+export type GetHydraParticipantRemoteData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Get a single participant by ID
+         */
+        id?: string;
+        /**
+         * Filter by WalletBase ID
+         */
+        walletId?: string;
+        /**
+         * Filter to only unassigned participants (no head)
+         */
+        unassigned?: string;
+        /**
+         * Cursor ID for pagination
+         */
+        cursorId?: string;
+        /**
+         * Number of results
+         */
+        limit?: number;
+    };
+    url: '/hydra/participant/remote';
+};
+
+export type GetHydraParticipantRemoteErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+};
+
+export type GetHydraParticipantRemoteResponses = {
+    /**
+     * Remote participants
+     */
+    200: {
+        status: 'success';
+        data: {
+            participants: Array<HydraRemoteParticipant>;
+        };
+    };
+};
+
+export type GetHydraParticipantRemoteResponse = GetHydraParticipantRemoteResponses[keyof GetHydraParticipantRemoteResponses];
 
 export type GetRailReadinessData = {
     body?: never;

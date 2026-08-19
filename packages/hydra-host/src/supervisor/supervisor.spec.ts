@@ -1,0 +1,539 @@
+/**
+ * The executor, driven over a real registry on a temp volume.
+ *
+ * Everything here turns on one question the supervisor has to answer without a
+ * child-process handle: is this node still running? A host restart loses the
+ * handles but not the nodes, so the answer comes from a recorded pid and an API
+ * probe — and getting it wrong is not a missed observation, it is a SIGKILL
+ * sent to whatever else now holds that number.
+ *
+ * The nodes here are ordinary sleeping processes carrying a `--persistence-dir`
+ * argument, which is exactly what distinguishes one real hydra-node from
+ * another on the same host. Nothing listens on the API ports, so every probe
+ * fails fast with a connection refusal — which is the "the node is gone" case
+ * these tests are about.
+ */
+
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { loadHostConfig, type EnvSource } from '../config.js';
+import { PortAllocator } from '../registry/ports.js';
+import { NodeRegistryStore } from '../registry/store.js';
+import type { NodeRecord } from '../registry/types.js';
+import { resolveSlotConfig } from '../slot-config.js';
+import { Supervisor } from './supervisor.js';
+
+const env: EnvSource = {
+	get: (key) =>
+		({
+			HYDRA_HOST_PUBLIC_HOST: 'hydra1.example.com',
+			HYDRA_HOST_ADMIN_TOKEN: 'a'.repeat(40),
+			HYDRA_HOST_USER_TOKEN: 'u'.repeat(40),
+			HYDRA_HOST_PEER_PORT_COUNT: '4',
+		})[key],
+};
+
+const spawned: ChildProcess[] = [];
+let dataDir: string;
+let store: NodeRegistryStore;
+let supervisor: Supervisor;
+
+/**
+ * A process that looks like a node serving `nodeDir`.
+ *
+ * `process.execPath` stands in for the hydra-node binary, and the directory is
+ * carried the same way the real argv carries it.
+ */
+function spawnNodeLike(nodeDir: string): ChildProcess {
+	const child = spawn(
+		process.execPath,
+		['-e', 'setInterval(() => {}, 1000)', '--', '--persistence-dir', path.join(nodeDir, 'persistence')],
+		{ stdio: 'ignore' },
+	);
+	spawned.push(child);
+	return child;
+}
+
+function makeRecord(overrides: Partial<NodeRecord> = {}): NodeRecord {
+	const now = new Date().toISOString();
+	return {
+		nodeId: 'node-1',
+		state: 'Running',
+		desired: 'Running',
+		network: 'preprod',
+		// Nothing listens here, so every probe fails immediately.
+		apiPort: 4599,
+		peerPort: 5599,
+		monitoringPort: 6599,
+		advertise: 'hydra1.example.com:5599',
+		// Empty on purpose unless a test says otherwise: a node with no peers is
+		// never started, which keeps a spawn out of tests that are not about one.
+		peers: [],
+		contestationPeriodSeconds: 120,
+		depositPeriodSeconds: 600,
+		unsyncedPeriodSeconds: 300,
+		hydraVerificationKey: `5820${'ab'.repeat(32)}`,
+		cardanoVerificationKey: `5820${'cd'.repeat(32)}`,
+		escrowAckedAt: now,
+		idempotencyKey: 'idem-1',
+		createdAt: now,
+		updatedAt: now,
+		startAttempts: 0,
+		lastStopUndrained: false,
+		...overrides,
+	};
+}
+
+const silentLogger = {
+	info: () => undefined,
+	warn: () => undefined,
+	error: () => undefined,
+};
+
+beforeEach(async () => {
+	dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hydra-host-supervisor-'));
+	// The binary a fake node is spawned from, so the pid check can be exercised
+	// for real rather than mocked. Everything it does — read the command line,
+	// match the binary and the node's own directory — is the operating system's
+	// behaviour, and a mock would assert our idea of it instead.
+	const config = { ...loadHostConfig(env), dataDir, hydraNodeBin: process.execPath };
+	store = new NodeRegistryStore(dataDir);
+	supervisor = new Supervisor(
+		config,
+		store,
+		new PortAllocator(config.ports),
+		resolveSlotConfig('preprod'),
+		silentLogger,
+	);
+});
+
+afterEach(async () => {
+	for (const child of spawned.splice(0)) {
+		child.kill('SIGKILL');
+	}
+	await fs.rm(dataDir, { recursive: true, force: true });
+});
+
+describe('Supervisor boot', () => {
+	// A node opens its API only once etcd has quorum and its chain follower has
+	// synced, which with two participants takes minutes. Reading that silence as
+	// death erased the pid, and the pid is the only evidence a host restart
+	// leaves behind that the process survived it.
+	it('keeps a node that is not answering yet but whose own process is still running', async () => {
+		const record = makeRecord({ state: 'Starting' });
+		await store.write(record);
+		const child = spawnNodeLike(store.nodeDir(record.nodeId));
+		await store.update(record.nodeId, (current) => ({ ...current, pid: child.pid }));
+
+		await supervisor.boot();
+
+		const after = await store.read(record.nodeId);
+		expect(after?.pid).toBe(child.pid);
+		expect(after?.state).toBe('Starting');
+		// Nothing stopped it, so nothing to unwedge on the way up.
+		expect(after?.lastStopUndrained).toBe(false);
+		// And no second hydra-node was launched over its directory and ports.
+		expect(after?.startAttempts).toBe(0);
+	});
+
+	// The pid can only be written once the spawn returns, so a host that died in
+	// that window left a live node with nothing naming it. Reading the missing
+	// pid as "it never came up" started a second hydra-node over the first one's
+	// persistence directory, api port and etcd data dir.
+	it('takes back a running node that no record names', async () => {
+		const record = makeRecord({ state: 'Starting' });
+		await store.write(record);
+		const child = spawnNodeLike(store.nodeDir(record.nodeId));
+
+		await supervisor.boot();
+
+		const after = await store.read(record.nodeId);
+		expect(after?.pid).toBe(child.pid);
+		expect(after?.state).toBe('Starting');
+		expect(after?.startAttempts).toBe(0);
+	});
+
+	// The case the pid check is there to still allow: the host died and took the
+	// node with it. Nothing drained that stop.
+	it('records a node whose process is really gone as an undrained stop', async () => {
+		const record = makeRecord({ pid: 999_999 });
+		await store.write(record);
+
+		await supervisor.boot();
+
+		const after = await store.read(record.nodeId);
+		expect(after?.state).toBe('Stopped');
+		expect(after?.lastStopUndrained).toBe(true);
+		expect(after?.pid).toBeUndefined();
+	});
+
+	// Removal begins with a stop, and the stop overwrites `Removing` with
+	// `Draining` and then `Stopped` — a window that lasts the whole drain
+	// timeout. A host restart inside it used to resume a node the operator had
+	// been told (202) was going away, keeping its directory and peer port for
+	// good.
+	it('finishes a removal that a restart interrupted', async () => {
+		const record = makeRecord({ state: 'Stopped', removalRequested: true });
+		await store.write(record);
+
+		await supervisor.boot();
+
+		expect(await store.read(record.nodeId)).toBeNull();
+	});
+});
+
+describe('Supervisor observation', () => {
+	// One slow probe is not evidence that a node is gone, and the action taken on
+	// that evidence is a spawn — a second hydra-node over the first one's
+	// persistence directory, api port and etcd data dir. A live pid running this
+	// node settles it.
+	it('keeps a node whose own process is still running but is not yet answering', async () => {
+		const record = makeRecord();
+		await store.write(record);
+		const child = spawnNodeLike(store.nodeDir(record.nodeId));
+		await store.update(record.nodeId, (current) => ({ ...current, pid: child.pid }));
+
+		await supervisor.tick();
+
+		const after = await store.read(record.nodeId);
+		expect(after?.state).toBe('Running');
+		expect(after?.pid).toBe(child.pid);
+		expect(after?.lastStopUndrained).toBe(false);
+	});
+
+	// One host runs a hydra-node per head, so a stale pid matches a sibling's
+	// live process just as easily as its own. Believing it would report this node
+	// as up because its neighbour is — and later send the neighbour a SIGKILL in
+	// this node's name.
+	it('refuses a pid that belongs to a different node, and forgets it', async () => {
+		const record = makeRecord();
+		await store.write(record);
+		// Alive, same binary, wrong directory: the neighbour.
+		const sibling = spawnNodeLike(path.join(dataDir, 'nodes', 'node-2'));
+		await store.update(record.nodeId, (current) => ({ ...current, pid: sibling.pid }));
+
+		await supervisor.tick();
+
+		const after = await store.read(record.nodeId);
+		expect(after?.state).toBe('Stopped');
+		// Nothing drained it, so the unwedge check must look at it on the way up.
+		expect(after?.lastStopUndrained).toBe(true);
+		// And the pid is gone, so no later stop can reach for the neighbour again.
+		expect(after?.pid).toBeUndefined();
+		// The sibling is untouched — the assertion the SIGKILL risk comes down to.
+		expect(sibling.killed).toBe(false);
+		expect(sibling.exitCode).toBeNull();
+	});
+
+	// An adopted node has no exit handler, so nothing reports its death. Left
+	// unrecorded, the next start skips the unwedge check for exactly the nodes
+	// most likely to be carrying a stranded round.
+	it('records an unobserved death as an undrained stop', async () => {
+		const record = makeRecord({ pid: 999_999 });
+		await store.write(record);
+
+		await supervisor.tick();
+
+		const after = await store.read(record.nodeId);
+		expect(after?.state).toBe('Stopped');
+		expect(after?.lastStopUndrained).toBe(true);
+		expect(after?.pid).toBeUndefined();
+	});
+
+	// A node that is up but behind and closing the gap is the catch-up loop
+	// working. Refusing the refund there left a node that had been serving for
+	// hours one crash away from Failed with no retry left.
+	it('leaves a stopped node alone once a shutdown has begun', async () => {
+		const record = makeRecord({
+			state: 'Stopped',
+			lastStopUndrained: false,
+			// Peers present, so the plan would otherwise ask for a start.
+			peers: [
+				{
+					advertise: 'hydra2.example.com:5001',
+					hydraVerificationKey: `5820${'ef'.repeat(32)}`,
+					cardanoVerificationKey: `5820${'12'.repeat(32)}`,
+				},
+			],
+		});
+		await store.write(record);
+
+		await supervisor.shutdown();
+		await supervisor.tick();
+
+		const after = await store.read(record.nodeId);
+		// `start` counts the attempt before it spawns, so an untouched counter is
+		// proof no spawn was attempted.
+		expect(after?.startAttempts).toBe(0);
+		expect(after?.state).toBe('Stopped');
+	});
+});
+
+/**
+ * Shutdown is one round of waiting, not two.
+ *
+ * `shutdown` used to `await this.currentTick` before taking the node list, so a
+ * tick that was already draining one node held the whole fan-out behind it: the
+ * rest only began draining once that one had finished. At the real budget that
+ * is 155s + 155s = 310s against the 240s `SHUTDOWN_GRACE_MS` in index.ts, and
+ * past it the runtime kills every remaining hydra-node mid-round — the exact
+ * outcome the fan-out exists to avoid.
+ *
+ * The nodes here answer `{"tag":"SeenSnapshot"}`, which is never safe to stop,
+ * so each drain runs to its timeout instead of returning early.
+ */
+describe('Supervisor shutdown', () => {
+	// Two poll cycles, not one. `waitForDrain`'s interval is a fixed 2s, so a
+	// budget under it makes a drain cost ~2s and the whole margin between one
+	// round and two is 2s — which a loaded jest worker can eat. At 3s the drain
+	// takes two cycles, so one round is ~4s against two rounds at ~8s and the
+	// assertion has seconds of headroom on both sides.
+	const DRAIN_TIMEOUT_MS = 3_000;
+	const DRAIN_COST_MS = 4_000;
+
+	let servers: Server[] = [];
+
+	async function serveNodeApi(delayMs = 0): Promise<number> {
+		const server = createServer((_request, response) => {
+			const answer = (): void => {
+				response.writeHead(200, { 'Content-Type': 'application/json' });
+				response.end(JSON.stringify({ tag: 'SeenSnapshot' }));
+			};
+			if (delayMs === 0) {
+				answer();
+				return;
+			}
+			setTimeout(answer, delayMs).unref?.();
+		});
+		servers.push(server);
+		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+		return (server.address() as AddressInfo).port;
+	}
+
+	afterEach(async () => {
+		await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+	});
+
+	it('drains the rest of the fleet alongside the node the tick already holds', async () => {
+		const config = {
+			...loadHostConfig(env),
+			dataDir,
+			hydraNodeBin: process.execPath,
+			drainTimeoutMs: DRAIN_TIMEOUT_MS,
+		};
+		const draining = new Supervisor(
+			config,
+			store,
+			new PortAllocator(config.ports),
+			resolveSlotConfig('preprod'),
+			silentLogger,
+		);
+
+		// No peers on either, so `boot`'s own tick adopts both and plans Idle.
+		const held = makeRecord({
+			nodeId: 'node-held',
+			apiPort: await serveNodeApi(),
+			pid: spawnNodeLike(store.nodeDir('node-held')).pid,
+		});
+		const spare = makeRecord({
+			nodeId: 'node-spare',
+			apiPort: await serveNodeApi(),
+			pid: spawnNodeLike(store.nodeDir('node-spare')).pid,
+		});
+		await store.write(held);
+		await store.write(spare);
+		await draining.boot();
+		expect((await store.read(held.nodeId))?.state).toBe('Running');
+
+		// Asked for only now, so it is the NEXT tick that takes this node: it plans
+		// a Stop and blocks on the drain, which is the hold shutdown used to queue
+		// behind. `spare` stays Idle and is left to shutdown.
+		await store.update(held.nodeId, (current) => ({ ...current, desired: 'Stopped' }));
+
+		const tick = draining.tick();
+		// Long enough for the tick to reach the drain, short enough that it is
+		// still inside it.
+		await new Promise((resolve) => setTimeout(resolve, 300));
+		expect((await store.read(held.nodeId))?.state).toBe('Draining');
+
+		const startedAt = Date.now();
+		await draining.shutdown();
+		const elapsedMs = Date.now() - startedAt;
+		await tick;
+
+		expect((await store.read(held.nodeId))?.state).toBe('Stopped');
+		expect((await store.read(spare.nodeId))?.state).toBe('Stopped');
+		// Both drains really ran — a fan-out that skipped one would come back fast.
+		expect(elapsedMs).toBeGreaterThan(DRAIN_COST_MS / 2);
+		// And they overlapped. Serialised, this is two full drains.
+		expect(elapsedMs).toBeLessThan(DRAIN_COST_MS * 1.6);
+	}, 45_000);
+
+	// `list()` fails wholesale — one unparseable `node.json`, one I/O error off the
+	// volume — and the catch that stopped SIGTERM from rejecting drained nothing
+	// instead, on both passes, after which index.ts logged "all nodes drained" and
+	// exited 0 while the runtime SIGKILLed the fleet mid-round.
+	it('still drains the nodes it is holding when the store cannot list them', async () => {
+		const config = {
+			...loadHostConfig(env),
+			dataDir,
+			hydraNodeBin: process.execPath,
+			drainTimeoutMs: DRAIN_TIMEOUT_MS,
+		};
+		const draining = new Supervisor(
+			config,
+			store,
+			new PortAllocator(config.ports),
+			resolveSlotConfig('preprod'),
+			silentLogger,
+		);
+
+		const damaged = makeRecord({
+			nodeId: 'node-damaged',
+			apiPort: await serveNodeApi(),
+			pid: spawnNodeLike(store.nodeDir('node-damaged')).pid,
+		});
+		await store.write(damaged);
+		await draining.boot();
+
+		// Every per-node read still works; only the listing is broken, which is
+		// exactly how one damaged record presents.
+		const listing = store.list.bind(store);
+		store.list = async () => {
+			throw new Error('EIO: i/o error, scandir');
+		};
+		try {
+			await draining.shutdown();
+		} finally {
+			store.list = listing;
+		}
+
+		expect((await store.read(damaged.nodeId))?.state).toBe('Stopped');
+	}, 45_000);
+
+	// `isRunning` answers "do I hold a handle?", not "is a process running?". A
+	// SIGTERM that lands before boot has adopted the fleet, and an entry
+	// `revalidateAdopted` drops, both leave a live node with no handle — and the
+	// drain skipped it, so `stop`, which re-adopts by pid, was never reached. The
+	// host then logged "all nodes drained" and exited 0 while the runtime
+	// SIGKILLed a node mid-round.
+	it('drains a running node this host never adopted a handle for', async () => {
+		const config = {
+			...loadHostConfig(env),
+			dataDir,
+			hydraNodeBin: process.execPath,
+			drainTimeoutMs: DRAIN_TIMEOUT_MS,
+		};
+		const draining = new Supervisor(
+			config,
+			store,
+			new PortAllocator(config.ports),
+			resolveSlotConfig('preprod'),
+			silentLogger,
+		);
+
+		// Written, alive, and never booted: the supervisor holds no handle for it.
+		const orphaned = makeRecord({
+			nodeId: 'node-orphaned',
+			apiPort: await serveNodeApi(),
+			pid: spawnNodeLike(store.nodeDir('node-orphaned')).pid,
+		});
+		await store.write(orphaned);
+
+		await draining.shutdown();
+
+		expect((await store.read(orphaned.nodeId))?.state).toBe('Stopped');
+	}, 45_000);
+
+	// The shape the first attempt at this fix still got wrong. Pass 1 SKIPPED any
+	// node the tick held and left it to the pass after `await pendingTick`, which
+	// made the two passes additive whenever the tick's action was not itself a
+	// stop — an observe, an unwedge, or a worker that returned early on `stopped`
+	// while a sibling kept the tick alive. Waiting the hold out instead costs only
+	// the hold, and every other node drains through its own worker meanwhile.
+	it('waits out a tick that is merely observing a node rather than deferring it', async () => {
+		const config = {
+			...loadHostConfig(env),
+			dataDir,
+			hydraNodeBin: process.execPath,
+			drainTimeoutMs: DRAIN_TIMEOUT_MS,
+		};
+		const draining = new Supervisor(
+			config,
+			store,
+			new PortAllocator(config.ports),
+			resolveSlotConfig('preprod'),
+			silentLogger,
+		);
+
+		// Answers slowly, so the tick is still inside `observe` when shutdown lands.
+		// Its plan is Idle — no peers — so the tick never stops it itself.
+		const observed = makeRecord({
+			nodeId: 'node-observed',
+			apiPort: await serveNodeApi(120),
+			pid: spawnNodeLike(store.nodeDir('node-observed')).pid,
+		});
+		// Answers at once, so its reconcile is long finished and shutdown owns it.
+		const quick = makeRecord({
+			nodeId: 'node-quick',
+			apiPort: await serveNodeApi(),
+			pid: spawnNodeLike(store.nodeDir('node-quick')).pid,
+		});
+		await store.write(observed);
+		await store.write(quick);
+		await draining.boot();
+
+		const tick = draining.tick();
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		const startedAt = Date.now();
+		await draining.shutdown();
+		const elapsedMs = Date.now() - startedAt;
+		await tick;
+
+		expect((await store.read(observed.nodeId))?.state).toBe('Stopped');
+		expect((await store.read(quick.nodeId))?.state).toBe('Stopped');
+		expect(elapsedMs).toBeGreaterThan(DRAIN_COST_MS / 2);
+		// Deferring the observed node to a second pass costs two full drains.
+		expect(elapsedMs).toBeLessThan(DRAIN_COST_MS * 1.6);
+	}, 45_000);
+});
+
+describe('Supervisor restart requests', () => {
+	// `restartRequested` on a STOPPED node is answered by the start itself. Left
+	// set, it survived into the boot: the next tick sees a running-but-not-yet-
+	// answering node — the normal way up — reads the stale flag and SIGTERMs a
+	// node seconds into a multi-minute startup, which then comes back
+	// `lastStopUndrained` having never been wedged.
+	it('clears an operator restart request once the start has been made', async () => {
+		const record = makeRecord({
+			state: 'Stopped',
+			desired: 'Running',
+			restartRequested: true,
+			peers: [
+				{
+					advertise: 'hydra2.example.com:5001',
+					hydraVerificationKey: `5820${'ef'.repeat(32)}`,
+					cardanoVerificationKey: `5820${'12'.repeat(32)}`,
+				},
+			],
+		});
+		await store.write(record);
+
+		await supervisor.tick();
+
+		const after = await store.read(record.nodeId);
+		expect(after?.startAttempts).toBe(1);
+		expect(after?.restartRequested).toBe(false);
+
+		// This is the one test that really starts a node, so it owns the reaping.
+		// Left running, the child keeps writing its log files into the node's
+		// directory while the teardown removes it, and the rm fails ENOTEMPTY.
+		await supervisor.shutdown();
+	});
+});

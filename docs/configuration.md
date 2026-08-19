@@ -49,6 +49,7 @@ If you run the service with Docker:
   - **WEBHOOK_DELIVERY_INTERVAL**: interval in seconds for processing queued webhook deliveries
   - **WEBHOOK_CLEANUP_INTERVAL**: interval in seconds for deleting old webhook deliveries
   - **LOW_BALANCE_CHECK_INTERVAL**: interval in seconds for monitored wallet low-balance checks
+  - **CHECK_HYDRA_TX_INTERVAL**: interval in seconds for the Hydra L2 passes and deposit reconciliation (minimum 5, default 10)
 
 1. If you're setting up the database for the first time (or want to provide some initial data) you also need the
    following variables:

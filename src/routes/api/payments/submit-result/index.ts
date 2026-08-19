@@ -3,6 +3,7 @@ import { z } from '@masumi/payment-core/zod';
 import { Network, OnChainState, PaymentAction, Prisma } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { nudgeHydraCycle } from '@/services/hydra-nudge';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { paymentResponseSchema } from '@/routes/api/payments';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
@@ -148,6 +149,9 @@ export const submitPaymentResultEndpointPost = payAuthenticatedEndpointFactory.b
 		if (result.inputHash == null) {
 			throw createHttpError(500, 'Internal server error: Payment has no input hash');
 		}
+
+		// A result inside an open head is a signature exchange, not a chain wait, so start the pass now rather than at the next tick.
+		nudgeHydraCycle('submitResult');
 
 		const decoded = decodeBlockchainIdentifier(result.blockchainIdentifier);
 

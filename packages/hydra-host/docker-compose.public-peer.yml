@@ -1,0 +1,25 @@
+# Explicit peer-plane exposure for the compose rig. Use only after applying the
+# complete ruleset returned by authenticated GET /v1/peer-allowlist on the
+# Docker host.
+#
+# Start/reload sequence:
+#   1. Save the `nftables` response field to a root-owned file.
+#   2. Run `nft -c -f FILE`, then `nft -f FILE`.
+#   3. Set HYDRA_HOST_PEER_FIREWALL_ACK and start with this override.
+#   4. Repeat steps 1-2 whenever peer membership or DNS changes.
+#
+# This file, and the acknowledgement it requires, exist only for compose.
+# HYDRA_HOST_PEER_FIREWALL_ACK is read by nothing in the Host, so a plain
+# `docker run`, a systemd unit or native mode gets no such gate: steps 1-2 and
+# the machine's own firewall are the whole of the protection there. See
+# docs/hydra-host-deploy-droplet.md for that path.
+
+services:
+  hydra-host:
+    environment:
+      # Required acknowledgement. The value is not a secret; its purpose is to
+      # make unauthenticated exposure an explicit deployment choice.
+      HYDRA_HOST_PEER_FIREWALL_ACK: ${HYDRA_HOST_PEER_FIREWALL_ACK:?apply the peer nftables rules first}
+    ports:
+      # Must match HYDRA_HOST_PEER_PORT_START and _COUNT in the base file.
+      - '${HYDRA_HOST_PEER_BIND_IP:-0.0.0.0}:5001-5032:5001-5032'

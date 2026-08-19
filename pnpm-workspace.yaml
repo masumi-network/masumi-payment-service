@@ -17,8 +17,34 @@ onlyBuiltDependencies:
   - sharp
 
 overrides:
+  '@hono/node-server': 2.0.10
+  '@opentelemetry/core': 2.8.0
+  '@opentelemetry/propagator-jaeger': 2.9.0
+  'ajv@>=8 <9': 8.18.0
+  bn.js: 5.2.3
+  body-parser: 2.3.0
+  'brace-expansion@>=2 <3': 2.1.3
+  'brace-expansion@>=5 <6': 5.0.8
+  dompurify: 3.4.12
+  fast-uri: 3.1.4
+  form-data: 4.0.6
+  hono: 4.12.27
+  immutable: 5.1.8
+  ip-address: 10.1.1
+  js-yaml: 4.3.0
   libsodium-sumo: 0.7.15
   libsodium-wrappers-sumo: 0.7.15
+  lodash: 4.18.1
+  path-to-regexp: 8.4.2
+  postcss: 8.5.18
+  protobufjs: 7.6.5
+  qs: 6.15.3
+  sharp: 0.35.3
+  undici: 6.27.0
+  valibot: 1.4.2
+  'ws@>=7 <8': 7.5.11
+  'ws@>=8 <9': 8.21.1
+  yaml: 2.8.3
   # Hold the transitive react-hooks lint plugin at the version main uses; 7.1.x
   # enables stricter React-Compiler rules that flag pre-existing valid code.
   eslint-plugin-react-hooks: 7.0.1

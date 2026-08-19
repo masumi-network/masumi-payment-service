@@ -162,3 +162,145 @@ standard x402 rail. Managed EVM wallets are separate from Cardano
 wallets, network configuration, and budgets; API keys with `canPay` can
 spend through a managed wallet only when their CAIP-2 chain limit and
 wallet budget allow it.
+
+### Hydra Head
+
+One instance of the Hydra Head protocol: an L2 ledger opened, funded, closed
+and finalised through L1 transactions. Belongs to exactly one
+[[Hydra Relation]], and only one non-`Final` Head may exist per Relation at a
+time, so Heads within a Relation are strictly sequential.
+
+Avoid: channel, hydra channel (that is the Relation), L2 (that is the layer,
+not the instance).
+
+### Hydra Relation
+
+The singular two-party channel between one local hot wallet and one remote
+wallet, per network. A Relation is long-lived and outlives the individual
+[[Hydra Head]]s opened under it.
+
+Avoid: head, pair, counterparty (the counterparty is a participant, not the
+relation).
+
+### Head Session
+
+One process's relationship with one [[Hydra Head]]: the per-head slot in the
+connection manager that owns the serialization queues, reconnect policy, the
+transport generation and the fences, plus the current *attachment* — the live
+socket, provider, and the durable owner epoch it was acquired under. The slot
+spans transports; the attachment comes and goes with each connect. Nothing in
+a Session is a cache of the database: `initialize()` rebuilds every slot from
+the durable rows on restart, and the fences have durable twins.
+
+Avoid: connection (that is the attachment's socket), managed head (the old
+implementation term).
+
+### Local Participant
+
+The party to a [[Hydra Head]] whose Hydra signing key this service holds.
+"Local" denotes **custody of the secret**, not network locality.
+
+Avoid: our node, nearby node, localhost node.
+
+### Remote Participant
+
+The counterparty to a [[Hydra Head]], known only by public material — Hydra
+verification key, [[Node Cardano Key]] hash and advertised node URLs. The
+service never dials a Remote Participant's node; its URLs are recorded but
+unused, because peer traffic is exclusively the hydra-node's own business.
+
+Avoid: peer node (ambiguous with the etcd peer link), external node.
+
+### Node Cardano Key
+
+The Cardano key pair a hydra-node uses to authorise Hydra protocol
+transactions and to pay its own fees, collateral and change. Deliberately
+distinct from the funding hot wallet: only its 28-byte verification-key hash
+is stored by the service, so that compromise of a node host cannot reach
+escrowed funds or wallet balances.
+
+Avoid: wallet key, walletVkey, fuel wallet — `cardanoVkey` and `walletVkey`
+are different keys and are equal only in the explicitly-named legacy coupled
+mode.
+
+### Hydra Host
+
+A deployment that supervises hydra-node processes and exposes a token-gated
+API for provisioning and operating them. Several Hosts may serve one payment
+service; each [[Hydra Head]] is placed on exactly one Host at provisioning
+time and stays there for its whole life, because its persistence directory is
+not relocatable.
+
+Avoid: hydra server, node pool, cluster (a Host is not a cluster; the etcd
+cluster belongs to a single Head).
+
+### Control Plane
+
+The authenticated surface of a [[Hydra Host]]: fleet management plus the
+proxied hydra-node client API. Reached only by the owning payment service,
+never by a counterparty.
+
+Avoid: admin api (only one of its two token tiers is administrative).
+
+### Peer Plane
+
+The direct node-to-node link between the two participants of a [[Hydra Head]],
+carrying etcd raft traffic on a per-Head port. Public by necessity, bypasses
+the [[Control Plane]] proxy, and is the only Hydra channel a counterparty ever
+touches.
+
+Avoid: peer websocket, p2p api — it is neither a WebSocket nor an HTTP API.
+
+### Exchange Plane
+
+The counterparty-facing surface of a [[Hydra Host]], where a [[Head Invite]] is
+redeemed. Unauthenticated by design — the invite is the credential, and its
+authority is a signature rather than a shared secret. It is the only Host
+surface a counterparty may reach, and it is disjoint from the
+[[Control Plane]]: no fleet operation, no proxied node API, no token tier.
+
+Avoid: public api, handshake api (it terminates one exchange, not a protocol),
+webhook — the counterparty calls it directly and synchronously.
+
+### Head Offer
+
+The signed proposal by which one operator asks the counterparty of a
+[[Hydra Relation]] to open the next [[Hydra Head]], carrying the public
+material both sides need before either node may boot: Hydra verification key,
+[[Node Cardano Key]] hash, advertise address and the agreed periods. Signed by
+the offering side's Relation wallet and verified against the wallet already
+recorded on that Relation, so no shared credential is needed and a stranger
+cannot open a Head.
+
+Avoid: request, negotiation — an Offer is bound to one Relation and one Head
+slot, and expires. Not to be confused with a [[Head Invite]], which precedes
+the Relation rather than presupposing it.
+
+### Head Invite
+
+A signed, single-use capability by which an operator offers to open a
+[[Hydra Head]] with a counterparty it has no [[Hydra Relation]] with yet. It
+carries the issuer's full public head material — Hydra verification key,
+[[Node Cardano Key]] hash, [[Advertise Address]], network and periods — signed
+by the issuer's Relation wallet, plus the [[Exchange Plane]] URL at which it is
+redeemed. Delivered out of band rather than over the wire, so it long outlives
+a [[Head Offer]]'s minutes.
+
+Issuing one pre-allocates the node and peer port whose material it carries;
+redeeming it supplies the counterparty's material, which is what lets that node
+finally boot. Because everything the recipient must trust is signed inside the
+invite, redemption needs no authenticated reply.
+
+Avoid: offer (an Offer travels between parties who already know each other),
+link, token — the URL and the credential are one signed object, not two.
+
+### Advertise Address
+
+The externally reachable `host:port` a node publishes to its counterparty, set
+by `--advertise` independently of the bind address. It is a participant
+identity rather than merely a location — it names the node's etcd member and
+its broadcast key — so it is fixed for a [[Hydra Head]]'s life and both sides
+must configure the identical string.
+
+Avoid: peer url, public url, listen address (the bind address is separate and
+may differ).

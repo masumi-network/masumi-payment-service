@@ -563,7 +563,7 @@ function ReconcileSection({
         />
         <p id="reconcile-txhash-hint" className="text-xs text-muted-foreground">
           {txHash !== '' && !txHashValid
-            ? 'Not a valid transaction hash — expected 0x followed by 64 hex characters.'
+            ? 'Not a valid transaction hash. Expected 0x followed by 64 hex characters.'
             : 'Required to mark the attempt settled.'}
         </p>
       </div>

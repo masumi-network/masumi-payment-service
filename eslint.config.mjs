@@ -133,6 +133,10 @@ export default [
 			'**/node_modules/**',
 			'src/generated/**',
 			'dist/*',
+			// Package build output. Already gitignored, but eslint walks it and
+			// then fails on every emitted .js for not being in the tsconfig
+			// project — which happens to anyone who builds the Hydra Host locally.
+			'packages/*/dist/**',
 			'smart-contracts/*',
 			'frontend/*',
 			'eslint.config.mjs',
@@ -140,6 +144,11 @@ export default [
 			'jest.config.ts',
 			'jest.preload.cjs',
 			'prisma/*',
+			// Standalone Hydra L2 devnet E2E driver scripts — run ad hoc via
+			// `pnpm exec tsx`, not part of the build/tsconfig project.
+			'hydra-l2-flow/**',
+			// Local agent/tooling scratch dir (not source).
+			'.remember/**',
 		],
 	},
 ];

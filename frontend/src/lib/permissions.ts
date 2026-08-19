@@ -42,6 +42,9 @@ export const ADMIN_ONLY_PATHS = [
   '/setup',
   '/x402-setup',
   '/payment-sources',
+  // Every route under /api/v1/hydra is registered with the admin factory, so
+  // this page has nothing a read or pay key can load.
+  '/hydra-heads',
 ] as const;
 
 export function isAdminOnlyPath(pathname: string): boolean {
