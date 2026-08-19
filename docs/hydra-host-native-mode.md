@@ -104,6 +104,16 @@ Everything else — ports, tokens, the peer allow-list — behaves exactly as it
 does in the container. See the
 [Hydra Operations Guide](hydra-operations.md) for those.
 
+One difference is worth stating, because it is easy to read as "already handled".
+There is no container here, so there is no port publication and no
+`docker-compose.public-peer.yml` to gate the peer range behind. The peer ports
+are simply open on the machine as soon as a node starts. The nftables ruleset
+from `GET /v1/peer-allowlist`, plus whatever firewall sits in front of the
+machine, is the entire protection for an unauthenticated etcd raft plane. Apply
+it before provisioning the first node, and re-apply whenever peer membership or
+DNS changes. The generated ruleset covers this case: it emits an `input` chain
+alongside the `forward` chain that Docker bridge traffic needs.
+
 ### 3. Keep it running
 
 There is no supervisor around the supervisor here. Use whatever the machine

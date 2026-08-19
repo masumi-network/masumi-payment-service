@@ -50,11 +50,15 @@ not open.
 ### 1. Start the Host
 
 The image is built from `packages/hydra-host/Dockerfile` and is not published to
-a registry. **In production, run that image under whatever you already use** —
+a registry. **In production, run that image under whatever you already use**:
 Kubernetes, Nomad, systemd, your own `docker run`. The compose file next to it
 is for local testing and as a worked example of the settings that matter; it is
 a single unmanaged container with a local volume, which is not what you want
 holding a mainnet head.
+
+For a droplet, which is the target this Host was designed for, follow
+[hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md). It covers the
+block-storage volume, the systemd unit, the firewall, and backups end to end.
 
 ```bash
 # Local testing.
@@ -111,13 +115,25 @@ The API range is additionally bound to `127.0.0.1` inside the container, so it
 stays shut even if someone switches to host networking.
 
 **The peer plane cannot authenticate its callers**, which is why the base
-compose file does not publish it. It has to be reachable — a head whose peer
-port is closed cannot reach its counterparty — so the order matters. Fetch the
-per-head allow-list from `GET /v1/peer-allowlist` — it renders an nftables
-ruleset — apply it, and only then bring the range up with
-`-f docker-compose.public-peer.yml`. Re-apply the ruleset whenever a head is
-added or removed. Skipping it leaves 32 unauthenticated etcd raft ports open to
-the internet.
+compose file does not publish it. It still has to be reachable, because a head
+whose peer port is closed cannot reach its counterparty, so the order matters.
+Fetch the per-head allow-list from `GET /v1/peer-allowlist`, which renders an
+nftables ruleset. Check it with `nft -c -f FILE`, apply it with `nft -f FILE`,
+and only then open the range. Re-apply whenever peer membership or DNS changes.
+Skipping it leaves 32 unauthenticated etcd raft ports open to the internet.
+
+How you open the range depends on how you run the Host:
+
+| Deployment                               | How the range opens                                                                                                                                                               |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A droplet, or any plain `docker run`** | Host networking exposes it already, so the cloud firewall and this ruleset are the only things holding it shut. See [hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md). |
+| **Local testing with compose**           | Add `-f docker-compose.public-peer.yml`, which publishes the range behind `HYDRA_HOST_PEER_FIREWALL_ACK`.                                                                         |
+| **Native mode**                          | There is no override file and no port publication. The ruleset is the whole of it. See [hydra-host-native-mode.md](hydra-host-native-mode.md).                                    |
+
+`HYDRA_HOST_PEER_FIREWALL_ACK` is a compose convention, not a code gate. Nothing
+in the Host reads it, so it guards only deployments that go through that
+override file. Under `docker run` or systemd the ruleset and the cloud firewall
+are the only protection.
 
 `BLOCKFROST_PROJECT_FILE` is a **path to a file** containing the project id,
 not the id itself: it is handed to `hydra-node` as `--blockfrost` and the node
@@ -446,6 +462,7 @@ phase asserts and the opt-in phase that opens a real head on preprod.
 ## Related
 
 - [hydra-architecture.md](hydra-architecture.md) — how the pieces fit together
+- [hydra-host-deploy-droplet.md](hydra-host-deploy-droplet.md) — deploying on a droplet, without compose
 - [hydra-host-native-mode.md](hydra-host-native-mode.md) — running without a container
 - [hydra-l2-reservation-recovery.md](hydra-l2-reservation-recovery.md) — why L2 reservations are held
 - [adr/0011-head-invites-on-a-host-exchange-plane.md](adr/0011-head-invites-on-a-host-exchange-plane.md) — why invites work the way they do
