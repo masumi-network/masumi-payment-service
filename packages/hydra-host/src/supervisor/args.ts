@@ -26,6 +26,9 @@ import { parsePeerAdvertise } from '../peer-address.js';
 /** Never configurable. See the module note. */
 export const API_BIND_HOST = '127.0.0.1';
 
+/** `SLOT.HEADER_HASH`, the chain point `--start-chain-from` accepts. */
+const CHAIN_POINT_PATTERN = /^\d{1,20}\.[0-9a-fA-F]{64}$/;
+
 export type HydraNodeLaunchSpec = {
 	nodeId: string;
 	nodeDir: string;
@@ -132,7 +135,14 @@ export function buildHydraNodeArgs(spec: HydraNodeLaunchSpec): string[] {
 	// It skips observation of the window it jumps, so it is an operator decision
 	// and never a default: safe when nothing involving this head happened in
 	// that window, and not otherwise.
+	//
+	// Checked against the grammar for the same reason `advertise` and the peers
+	// are: it becomes one argv element, and every other value that does is
+	// validated before it gets there.
 	if (spec.startChainFrom != null && spec.startChainFrom !== '') {
+		if (!CHAIN_POINT_PATTERN.test(spec.startChainFrom)) {
+			throw new LaunchSpecError('startChainFrom must be SLOT.HEADER_HASH with a 64-character hex header hash');
+		}
 		args.push('--start-chain-from', spec.startChainFrom);
 	}
 

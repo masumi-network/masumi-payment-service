@@ -77,7 +77,11 @@ for (const [network, prefix] of [
 	['::ffff:0:0', 96],
 	['64:ff9b::', 96],
 	['100::', 64],
+	// Teredo and 6to4 both embed an IPv4 address, so an unfiltered one is a
+	// route back to a blocked range by another name.
+	['2001::', 32],
 	['2001:db8::', 32],
+	['2002::', 16],
 	['fc00::', 7],
 	['fe80::', 10],
 	['ff00::', 8],

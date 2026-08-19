@@ -4,7 +4,7 @@ import type { Server } from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createExchangePlane } from './exchange-server.js';
+import { createExchangePlane, OVERFLOW_SOURCE, rateLimitKey } from './exchange-server.js';
 import { ExchangeStore } from '../registry/exchange-store.js';
 
 // The keys are the real shape a `.vk` envelope carries — `5820` and 32 bytes —
@@ -247,5 +247,30 @@ describe('what the exchange plane does not expose', () => {
 		// Settle the write this triggered before the fixture removes the data
 		// directory out from under it.
 		await eventually(async () => (await store.listInvites())[0].startError);
+	});
+});
+
+/**
+ * The per-source counter keeps one abusive caller from spending the whole
+ * minute's budget, but the caller chooses the key. This plane is
+ * unauthenticated and reachable from anywhere, so an attacker holding an IPv6
+ * /64 can present a fresh address per connection and the map grows with the
+ * flood instead of bounding it.
+ */
+describe('rateLimitKey', () => {
+	it('keys on the source while there is room', () => {
+		const tracked = new Map<string, number>([['198.51.100.1', 1]]);
+		expect(rateLimitKey('198.51.100.2', tracked, 10)).toBe('198.51.100.2');
+	});
+
+	it('keeps counting a source it already tracks, even at the cap', () => {
+		const tracked = new Map<string, number>([['198.51.100.1', 4]]);
+		expect(rateLimitKey('198.51.100.1', tracked, 1)).toBe('198.51.100.1');
+	});
+
+	it('folds every further source into one bucket at the cap', () => {
+		const tracked = new Map<string, number>([['198.51.100.1', 1]]);
+		expect(rateLimitKey('198.51.100.2', tracked, 1)).toBe(OVERFLOW_SOURCE);
+		expect(rateLimitKey('2001:db8::99', tracked, 1)).toBe(OVERFLOW_SOURCE);
 	});
 });

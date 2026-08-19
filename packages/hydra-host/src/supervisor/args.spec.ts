@@ -153,3 +153,28 @@ describe('start-chain-from', () => {
 		expect(buildHydraNodeArgs({ ...SPEC, startChainFrom: '' }).join(' ')).not.toContain('--start-chain-from');
 	});
 });
+
+/**
+ * `startChainFrom` becomes one argv element, like `advertise` and every peer,
+ * and those are all checked against a grammar before they get there.
+ */
+describe('buildHydraNodeArgs — startChainFrom', () => {
+	const point = `12345678.${'ab'.repeat(32)}`;
+
+	it('passes a well-formed chain point through', () => {
+		expect(buildHydraNodeArgs({ ...SPEC, startChainFrom: point })).toEqual(
+			expect.arrayContaining(['--start-chain-from', point]),
+		);
+	});
+
+	it('omits the flag when it is absent or empty', () => {
+		expect(buildHydraNodeArgs(SPEC)).not.toContain('--start-chain-from');
+		expect(buildHydraNodeArgs({ ...SPEC, startChainFrom: '' })).not.toContain('--start-chain-from');
+	});
+
+	it('refuses anything that is not SLOT.HEADER_HASH', () => {
+		for (const bad of ['12345678', `12345678.${'ab'.repeat(31)}`, '--hydra-signing-key', `x.${'ab'.repeat(32)}`]) {
+			expect(() => buildHydraNodeArgs({ ...SPEC, startChainFrom: bad })).toThrow(LaunchSpecError);
+		}
+	});
+});

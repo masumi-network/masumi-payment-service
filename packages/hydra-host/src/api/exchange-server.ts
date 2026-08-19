@@ -28,6 +28,36 @@ const MAX_BODY_BYTES = 64 * 1024;
 const DEFAULT_MAX_IN_FLIGHT = 16;
 const DEFAULT_REQUESTS_PER_MINUTE = 120;
 
+/**
+ * How many distinct sources the per-source counter tracks within one window.
+ *
+ * The counter exists so one abusive caller cannot spend the whole minute's
+ * budget, but keying on the source address means the caller chooses the key.
+ * This plane is unauthenticated and reachable from anywhere, and an attacker
+ * holding an IPv6 /64 can present a fresh address per connection, so an
+ * uncapped map grows with the flood rather than bounding it.
+ *
+ * Past the cap, further sources share one bucket. A flood stays limited, and a
+ * genuine counterparty arriving during one is throttled rather than refused:
+ * redemption is a single POST, and the shared bucket still allows the same
+ * per-minute budget.
+ */
+const MAX_TRACKED_SOURCES = 10_000;
+
+/** Not a possible `remoteAddress`, so it cannot collide with a real source. */
+export const OVERFLOW_SOURCE = '\u0000overflow';
+
+/**
+ * Which counter this request spends from.
+ *
+ * Exported so the cap is testable without a second source address: proving it
+ * over the live server would need extra loopback IPs, which is exactly the kind
+ * of environment assumption that makes a test fail somewhere else.
+ */
+export function rateLimitKey(remote: string, tracked: ReadonlySet<string> | Map<string, number>, cap: number): string {
+	return tracked.has(remote) || tracked.size < cap ? remote : OVERFLOW_SOURCE;
+}
+
 export type ExchangeDeps = {
 	store: ExchangeStore;
 	logger: SupervisorLogger;
@@ -40,7 +70,7 @@ export type ExchangeDeps = {
 	 */
 	onRedeemed: (nonce: string, hostNodeId: string) => Promise<void>;
 	/** Test/deployment tuning. Defaults protect a small single-host process. */
-	limits?: { maxInFlight?: number; requestsPerMinute?: number };
+	limits?: { maxInFlight?: number; requestsPerMinute?: number; maxTrackedSources?: number };
 };
 
 function send(response: ServerResponse, status: number, body: unknown): void {
@@ -88,6 +118,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	const { store, logger, onRedeemed } = deps;
 	const maxInFlight = deps.limits?.maxInFlight ?? DEFAULT_MAX_IN_FLIGHT;
 	const requestsPerMinute = deps.limits?.requestsPerMinute ?? DEFAULT_REQUESTS_PER_MINUTE;
+	const maxTrackedSources = deps.limits?.maxTrackedSources ?? MAX_TRACKED_SOURCES;
 	let inFlight = 0;
 	// Per source rather than one shared counter: a single abusive caller must not
 	// be able to spend the whole minute's budget and 429 the one counterparty
@@ -102,7 +133,8 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 			requestWindowStartedAt = now;
 			requestsInWindow.clear();
 		}
-		const source = request.socket.remoteAddress ?? 'unknown';
+		const remote = request.socket.remoteAddress ?? 'unknown';
+		const source = rateLimitKey(remote, requestsInWindow, maxTrackedSources);
 		const seen = (requestsInWindow.get(source) ?? 0) + 1;
 		requestsInWindow.set(source, seen);
 		if (seen > requestsPerMinute) {

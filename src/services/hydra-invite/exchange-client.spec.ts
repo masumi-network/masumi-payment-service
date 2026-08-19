@@ -118,3 +118,23 @@ describe('Hydra invite exchange transport security', () => {
 		expect(send.mock.calls[0][1]).toEqual({ address: '93.184.216.34', family: 4, isPrivate: false });
 	});
 });
+
+// Teredo and 6to4 addresses embed an IPv4 address, so an unfiltered one reaches
+// a blocked range under a different family.
+describe('isPrivateOrSpecialAddress — IPv4-in-IPv6 transition ranges', () => {
+	it('rejects 6to4 and Teredo', () => {
+		expect(isPrivateOrSpecialAddress('2002:7f00:1::1')).toBe(true);
+		expect(isPrivateOrSpecialAddress('2001:0:4136:e378:8000:63bf:3fff:fdd2')).toBe(true);
+	});
+
+	it('still rejects the mapped and loopback forms', () => {
+		expect(isPrivateOrSpecialAddress('::ffff:127.0.0.1')).toBe(true);
+		expect(isPrivateOrSpecialAddress('::1')).toBe(true);
+		expect(isPrivateOrSpecialAddress('169.254.169.254')).toBe(true);
+	});
+
+	it('still allows an ordinary public address', () => {
+		expect(isPrivateOrSpecialAddress('2606:4700:4700::1111')).toBe(false);
+		expect(isPrivateOrSpecialAddress('1.1.1.1')).toBe(false);
+	});
+});
