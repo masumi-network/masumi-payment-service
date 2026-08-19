@@ -77,24 +77,23 @@ jobs:
       # means it is found before a head is opened across the gap. Skips cleanly
       # when the secret is unavailable, so forks are not blocked by it.
       #
-      # This is the only step in the job that holds a secret. It therefore runs
-      # the BASE branch's copy of the checker rather than the pull request's:
-      # a branch in this repository must not be able to rewrite the one script
-      # that reads a key, and restoring it costs a single checkout. Everything
-      # it compares — the params files — still comes from the pull request,
-      # which is the thing being checked.
+      # This is the only step in the job that holds a secret, and it runs the
+      # pull request's own code. A branch in this repository can therefore read
+      # BLOCKFROST_API_KEY_PREPROD, and no arrangement inside this workflow
+      # changes that: the checker imports src/utils/hydra/params-drift, runs
+      # under tsx, and installs from the branch's lockfile, so restoring any one
+      # file from the base branch would protect nothing while looking as though
+      # it did. Fork pull requests are unaffected, because they are issued no
+      # secrets at all.
       #
-      # This does not cover a poisoned dependency, because the job installs from
-      # the pull request's lockfile. Closing that needs a GitHub Environment
-      # holding the secret with required reviewers, which is a repository
-      # setting rather than a workflow change.
+      # To close it, move this secret into a GitHub Environment with required
+      # reviewers (Settings > Environments) and add `environment: <name>` to
+      # this job. Left as a setting rather than a workflow change so the
+      # approval friction is an explicit decision.
       - name: Check Hydra head ledger against the chain
         env:
           BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
-        run: |
-          git checkout "origin/${{ github.base_ref }}" -- scripts/check-hydra-params-drift.mts
-          pnpm exec tsx scripts/check-hydra-params-drift.mts
-          git checkout HEAD -- scripts/check-hydra-params-drift.mts
+        run: pnpm exec tsx scripts/check-hydra-params-drift.mts
 
       - name: Run Backend ESLint
         run: pnpm run lint:backend
