@@ -15,6 +15,16 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # This job runs the pull request's own code with real preprod credentials in
+    # scope, which is inherent to an end-to-end suite and cannot be fixed in the
+    # workflow. A branch in this repository can therefore read
+    # BLOCKFROST_API_KEY_PREPROD and the wallet mnemonics below.
+    #
+    # To close it, move those secrets into a GitHub Environment with required
+    # reviewers (Settings > Environments) and add `environment: <name>` here.
+    # Every e2e run then waits for an approval before the secrets are issued.
+    # Left as a setting rather than a workflow change so the friction is an
+    # explicit decision.
 
     steps:
       - name: Checkout code

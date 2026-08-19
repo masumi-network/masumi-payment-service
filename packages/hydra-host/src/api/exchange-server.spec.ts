@@ -274,3 +274,45 @@ describe('rateLimitKey', () => {
 		expect(rateLimitKey('2001:db8::99', tracked, 1)).toBe(OVERFLOW_SOURCE);
 	});
 });
+
+/**
+ * `no such invite`, `already redeemed` and `expired` are three answers, and the
+ * difference tells a caller whether a nonce they guessed exists. A real
+ * counterparty redeems once and wants the reason; an enumerator asks
+ * repeatedly, so the reason is disclosed for the first few failures per source
+ * and withheld after that.
+ */
+describe('redemption failure disclosure', () => {
+	async function redeem(nonce: string) {
+		return await post('/exchange/redeem', { nonce, redeemer: MATERIAL, signature: SIGNATURE });
+	}
+
+	it('still tells a genuine caller why their redemption failed', async () => {
+		await issue('nonce-disclose1', -1_000);
+		await issue('nonce-disclose2');
+		await redeem('nonce-disclose2');
+
+		expect((await redeem('nonce-disclose1')).body.error).toBe('invite expired');
+		expect((await redeem('nonce-disclose2')).body.error).toBe('invite already redeemed');
+	});
+
+	it('stops distinguishing a spent nonce from an unknown one after a few tries', async () => {
+		await issue('nonce-probe0001');
+		await redeem('nonce-probe0001');
+
+		const answers: Array<{ status: number; error: unknown }> = [];
+		for (let attempt = 0; attempt < 6; attempt++) {
+			const spent = await redeem('nonce-probe0001');
+			answers.push({ status: spent.status, error: spent.body.error });
+		}
+
+		// The first few are still 409, then every answer matches what an unknown
+		// nonce returns, so the two are no longer distinguishable.
+		const unknown = await redeem('nonce-neverissued');
+		const last = answers[answers.length - 1];
+		expect(last.status).toBe(unknown.status);
+		expect(last.error).toBe(unknown.body.error);
+		expect(last.status).toBe(404);
+		expect(answers[0].status).toBe(409);
+	});
+});

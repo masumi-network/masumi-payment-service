@@ -44,6 +44,25 @@ const DEFAULT_REQUESTS_PER_MINUTE = 120;
  */
 const MAX_TRACKED_SOURCES = 10_000;
 
+/**
+ * How many failed redemptions a source is told the reason for.
+ *
+ * `no such invite`, `already redeemed` and `expired` are three different
+ * answers, and the difference tells a caller whether a nonce they guessed
+ * exists. Nonces are `cuid2`, so guessing one is hopeless, but the distinction
+ * costs nothing to remove for anyone who is not guessing: a real counterparty
+ * redeems once, and knowing WHY it failed is the difference between them
+ * retrying and them calling the issuer. So the reason is disclosed for the
+ * first few failures and withheld after that, which leaves the legitimate case
+ * untouched and gives an enumerator a handful of answers per source rather than
+ * a working oracle.
+ *
+ * It composes with the source cap above: past that cap every further source
+ * shares one bucket, so rotating addresses converges on a shared budget instead
+ * of resetting it.
+ */
+const MAX_DISCLOSED_REDEEM_FAILURES = 3;
+
 /** Not a possible `remoteAddress`, so it cannot collide with a real source. */
 export const OVERFLOW_SOURCE = '\u0000overflow';
 
@@ -126,12 +145,14 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	// peer allow-list already gates on.
 	let requestWindowStartedAt = Date.now();
 	const requestsInWindow = new Map<string, number>();
+	const failuresInWindow = new Map<string, number>();
 
 	const server = createServer((request, response) => {
 		const now = Date.now();
 		if (now - requestWindowStartedAt >= 60_000) {
 			requestWindowStartedAt = now;
 			requestsInWindow.clear();
+			failuresInWindow.clear();
 		}
 		const remote = request.socket.remoteAddress ?? 'unknown';
 		const source = rateLimitKey(remote, requestsInWindow, maxTrackedSources);
@@ -149,7 +170,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		}
 
 		inFlight += 1;
-		void handle(request, response)
+		void handle(request, response, source)
 			.catch((error: unknown) => {
 				// Never echo the message: this is an unauthenticated surface and the
 				// error text can describe internal state.
@@ -167,7 +188,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	server.keepAliveTimeout = 10_000;
 	return server;
 
-	async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+	async function handle(request: IncomingMessage, response: ServerResponse, source: string): Promise<void> {
 		const pathname = new URL(request.url ?? '/', 'http://exchange.invalid').pathname.replace(/\/+$/, '');
 
 		if (request.method !== 'POST') {
@@ -176,7 +197,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		}
 
 		if (pathname === '/exchange/redeem') {
-			await handleRedeem(request, response);
+			await handleRedeem(request, response, source);
 			return;
 		}
 		// Anything else, including every control-plane path, is simply absent
@@ -184,7 +205,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		send(response, 404, { error: 'not found' });
 	}
 
-	async function handleRedeem(request: IncomingMessage, response: ServerResponse): Promise<void> {
+	async function handleRedeem(request: IncomingMessage, response: ServerResponse, source: string): Promise<void> {
 		const body = readRedeemBody(await readBody(request));
 		if (body === null || !isExchangeMaterial(body.redeemer) || !isExchangeSignature(body.signature)) {
 			send(response, 400, { error: 'malformed redemption' });
@@ -193,6 +214,15 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 
 		const result = await store.redeem(body.nonce, body.redeemer, body.signature);
 		if (!result.ok) {
+			const failures = (failuresInWindow.get(source) ?? 0) + 1;
+			failuresInWindow.set(source, failures);
+			// The operator sees the real reason either way: it is logged here and
+			// the invite's own state is on the control plane.
+			logger.warn(`[exchange] redemption refused (${result.status} ${result.reason})`);
+			if (failures > MAX_DISCLOSED_REDEEM_FAILURES) {
+				send(response, 404, { error: 'no such invite' });
+				return;
+			}
 			send(response, result.status, { error: result.reason });
 			return;
 		}

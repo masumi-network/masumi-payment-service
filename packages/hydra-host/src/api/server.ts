@@ -28,7 +28,7 @@ import { renderSwaggerDocsPage, resolveDocsAsset } from './docs-page.js';
 import { buildOpenApiDocument } from './openapi.js';
 import { ProvisionError, acknowledgeEscrow, provisionNode, setPeers, type ProvisionDeps } from './provision.js';
 import { requestRemoval, requestRestart, requestStart, requestStop } from './transitions.js';
-import { isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
+import { buildProxyQuery, isProxyableHttpPath, isProxyableWebSocketPath, matchNodeApiProxy } from './proxy-path.js';
 import { buildPeerAllowlist, renderNftables, resolvePeerAllowlist } from './peer-allowlist.js';
 import { registerInvite } from './exchange-admin.js';
 import { proxyHttp, proxyWebSocket } from './proxy.js';
@@ -46,6 +46,18 @@ export type ServerDeps = {
 	provision: ProvisionDeps;
 	logger: SupervisorLogger;
 };
+
+/**
+ * The raw query of a request target, `?` included, or empty.
+ *
+ * Taken by index rather than through `URL`, because `URL` would percent-decode
+ * and re-encode on the way, and the value here is handed to an allow-list that
+ * must see exactly what the caller sent.
+ */
+function queryOf(url: string | undefined): string {
+	const index = (url ?? '').indexOf('?');
+	return index === -1 ? '' : (url ?? '').slice(index);
+}
 
 function send(response: ServerResponse, status: number, body: unknown): void {
 	const payload = JSON.stringify(body ?? null);
@@ -280,7 +292,13 @@ export function createControlPlane(deps: ServerDeps): Server {
 				return;
 			}
 
-			proxyWebSocket(request, socket, head, record.apiPort, target.subPath, (message) =>
+			const query = buildProxyQuery(queryOf(request.url));
+			if (query === null) {
+				rejectUpgrade(400, 'Bad Request');
+				return;
+			}
+
+			proxyWebSocket(request, socket, head, record.apiPort, target.subPath, query, (message) =>
 				logger.error(`[api] ${message}`),
 			);
 		})().catch((error: unknown) => {
@@ -500,7 +518,15 @@ export function createControlPlane(deps: ServerDeps): Server {
 			return;
 		}
 
-		proxyHttp(request, response, record.apiPort, target.subPath, (message) => logger.error(`[api] ${message}`));
+		// After auth, so an unauthenticated caller learns nothing from the shape of
+		// the refusal, and before the node is contacted.
+		const query = buildProxyQuery(queryOf(request.url));
+		if (query === null) {
+			send(response, 400, { error: 'unsupported query parameter for this node API path' });
+			return;
+		}
+
+		proxyHttp(request, response, record.apiPort, target.subPath, query, (message) => logger.error(`[api] ${message}`));
 	}
 
 	return server;

@@ -57,10 +57,15 @@ function forwardableHeaders(source: IncomingMessage['headers']): Record<string, 
 	return headers;
 }
 
-/** Preserve the query string: `?history=no`, `?snapshot-utxo=no`, `?address=`. */
-function upstreamPath(originalUrl: string, subPath: string): string {
-	const queryIndex = originalUrl.indexOf('?');
-	return queryIndex === -1 ? subPath : `${subPath}${originalUrl.slice(queryIndex)}`;
+/**
+ * The upstream request target.
+ *
+ * The query arrives already rebuilt from `buildProxyQuery`'s allow-list, so
+ * this only joins it. Taking it from `request.url` here instead is what let the
+ * caller's whole query through to an unauthenticated API.
+ */
+function upstreamPath(subPath: string, query: string): string {
+	return `${subPath}${query}`;
 }
 
 export function proxyHttp(
@@ -68,6 +73,7 @@ export function proxyHttp(
 	response: ServerResponse,
 	apiPort: number,
 	subPath: string,
+	query: string,
 	onError: (message: string) => void,
 ): void {
 	const upstream = httpRequest(
@@ -75,7 +81,7 @@ export function proxyHttp(
 			host: LOOPBACK,
 			port: apiPort,
 			method: request.method,
-			path: upstreamPath(request.url ?? subPath, subPath),
+			path: upstreamPath(subPath, query),
 			headers: forwardableHeaders(request.headers),
 		},
 		(upstreamResponse) => {
@@ -110,13 +116,14 @@ export function proxyWebSocket(
 	head: Buffer,
 	apiPort: number,
 	subPath: string,
+	query: string,
 	onError: (message: string) => void,
 ): void {
 	const upstream = httpRequest({
 		host: LOOPBACK,
 		port: apiPort,
 		method: 'GET',
-		path: upstreamPath(request.url ?? subPath, subPath),
+		path: upstreamPath(subPath, query),
 		headers: {
 			...forwardableHeaders(request.headers),
 			Connection: 'Upgrade',

@@ -60,3 +60,49 @@ export function isProxyableHttpPath(method: string, subPath: string): boolean {
 export function isProxyableWebSocketPath(subPath: string): boolean {
 	return subPath === '/';
 }
+
+/**
+ * Query parameters permitted on a proxied path, and the values each accepts.
+ *
+ * An allow-list for the same reason the path set is one. Whatever crosses this
+ * boundary reaches an API with no authentication of its own, and forwarding the
+ * caller's query verbatim made every parameter a future hydra version adds
+ * reachable the day it shipped, on a path already vouched for.
+ *
+ * The set is the two settings a session pins: whether the socket replays
+ * history, and that snapshots carry their UTxO map either way. They are allowed
+ * on every proxyable path rather than only the socket, because that is what the
+ * client already sends and narrowing it further would be a behaviour change
+ * dressed up as hardening.
+ */
+const ALLOWED_QUERY: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+	['history', new Set(['yes', 'no'])],
+	['snapshot-utxo', new Set(['yes', 'no'])],
+]);
+
+/**
+ * The query string to forward, rebuilt from the allow-list rather than filtered.
+ *
+ * Rebuilding is what makes this closed: a filter forwards whatever it fails to
+ * recognise as bad, and this forwards only what it recognises as good. Returns
+ * null when the caller asked for a parameter or a value the node API is not
+ * offered here, which the caller reports as a refusal rather than quietly
+ * dropping. A silently ignored `history=yes` would replay nothing and read as
+ * an empty head.
+ */
+export function buildProxyQuery(search: string): string | null {
+	const trimmed = search.startsWith('?') ? search.slice(1) : search;
+	if (trimmed.length === 0) {
+		return '';
+	}
+
+	const forwarded: string[] = [];
+	for (const [key, value] of new URLSearchParams(trimmed)) {
+		const values = ALLOWED_QUERY.get(key);
+		if (values === undefined || !values.has(value)) {
+			return null;
+		}
+		forwarded.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+	}
+	return forwarded.length === 0 ? '' : `?${forwarded.join('&')}`;
+}
