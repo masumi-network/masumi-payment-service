@@ -35,7 +35,15 @@ interface NetworkSourceCardProps {
 // new rail's home so the page content matches the picked context immediately, rather than
 // waiting on the async redirect in _app (which is skipped while the chain query refetches).
 const CARDANO_ONLY_PAGES = ['/', '/inbox-agents', '/wallets', '/transactions', '/invoices'];
-const X402_ONLY_PAGES = ['/x402', '/x402-setup'];
+const X402_ONLY_PAGES = [
+  '/x402',
+  '/x402/wallets',
+  '/x402/payments',
+  '/x402/budgets',
+  '/x402/chains',
+  '/x402/alerts',
+  '/x402-setup',
+];
 
 /** Small pill that tells the two rails apart inside the selector. */
 function RailBadge({ rail, className }: { rail: 'cardano' | 'x402'; className?: string }) {
@@ -145,7 +153,7 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     setSelectedX402ChainId(id);
     // Leave Cardano-only routes so the page matches the x402 context we just switched to.
     if (CARDANO_ONLY_PAGES.includes(router.pathname)) {
-      router.push('/x402');
+      router.push('/x402/wallets');
     }
   };
 

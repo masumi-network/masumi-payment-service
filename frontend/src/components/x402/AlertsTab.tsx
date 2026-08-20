@@ -192,9 +192,7 @@ export function AlertsTab() {
                     description="Add a low-balance alert so a wallet running out of gas or tokens does not silently break settlement. You need a managed wallet first."
                     action={
                       <Button asChild variant="outline" size="sm">
-                        <Link href={{ pathname: '/x402', query: { tab: 'Wallets' } }}>
-                          Go to Wallets
-                        </Link>
+                        <Link href="/x402/wallets">Go to Wallets</Link>
                       </Button>
                     }
                   />

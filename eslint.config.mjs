@@ -147,6 +147,7 @@ export default [
 			// Standalone Hydra L2 devnet E2E driver scripts — run ad hoc via
 			// `pnpm exec tsx`, not part of the build/tsconfig project.
 			'hydra-l2-flow/**',
+			'.hydra-two/**',
 			// Local agent/tooling scratch dir (not source).
 			'.remember/**',
 		],

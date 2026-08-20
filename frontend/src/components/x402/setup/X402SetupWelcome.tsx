@@ -122,7 +122,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
     setActiveRail('x402');
     setIsSetupMode(false);
     invalidate();
-    router.push('/x402');
+    router.push('/x402/wallets');
   };
 
   // Chips for the wallets the operator already has of a direction, so each step reflects state

@@ -196,7 +196,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     if (apiKey && isHealthy && !isSetupMode && x402Confirmed) {
       const cardanoOnlyPages = ['/', '/inbox-agents', '/wallets', '/transactions', '/invoices'];
       if (cardanoOnlyPages.includes(router.pathname)) {
-        router.replace('/x402');
+        router.replace('/x402/wallets');
       }
     }
   }, [

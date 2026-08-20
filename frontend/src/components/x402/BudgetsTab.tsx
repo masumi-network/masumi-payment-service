@@ -147,9 +147,7 @@ export function BudgetsTab() {
                     description="Grant an API key a spend budget against a Purchasing wallet. You need a Purchasing wallet first."
                     action={
                       <Button asChild variant="outline" size="sm">
-                        <Link href={{ pathname: '/x402', query: { tab: 'Wallets' } }}>
-                          Go to Wallets
-                        </Link>
+                        <Link href="/x402/wallets">Go to Wallets</Link>
                       </Button>
                     }
                   />

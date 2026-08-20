@@ -49,10 +49,10 @@ export function X402SourcesSection({
     );
   }, [usableChains, searchQuery]);
 
-  const setActive = (chainId: string) => {
+  const activateChain = (chainId: string, destination: string) => {
     setActiveRail('x402');
     setSelectedX402ChainId(chainId);
-    router.push('/x402');
+    router.push(destination);
   };
 
   return (
@@ -157,10 +157,14 @@ export function X402SourcesSection({
                     </td>
                     <td className="p-4 pr-8">
                       <div className="flex justify-end gap-2">
-                        {/* Scope the rail to this row's chain before navigating, so /x402
-                            opens under the chain the user chose to manage, not whichever
-                            chain happened to be selected. */}
-                        <Button variant="ghost" size="sm" onClick={() => setActive(chain.id)}>
+                        {/* Scope the rail to this row's chain before navigating, so the
+                            destination page opens under the chain the user chose, not
+                            whichever chain happened to be selected. */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => activateChain(chain.id, '/x402/chains')}
+                        >
                           Manage
                         </Button>
                         {isActive ? (
@@ -181,7 +185,11 @@ export function X402SourcesSection({
                             </TooltipContent>
                           </Tooltip>
                         ) : (
-                          <Button variant="outline" size="sm" onClick={() => setActive(chain.id)}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => activateChain(chain.id, '/x402/wallets')}
+                          >
                             Set as Active
                           </Button>
                         )}

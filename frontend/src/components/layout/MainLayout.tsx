@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   Coins,
   GitBranch,
+  Link2,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -282,16 +283,52 @@ export function MainLayout({ children }: MainLayoutProps) {
 
     if (activeRail === 'x402') {
       return [
-        // The chain projection and payment history are read-level, so the rail
-        // is navigable by every session; its wallet/chain/budget/alert tabs stay
-        // gated inside the page.
+        // Wallets and Payments are read-level, so every session gets them, same
+        // as Cardano's Wallets/Transactions. Budgets/Chains/Alerts stay gated to
+        // the sessions that could do anything on them (enforced in lib/permissions.ts).
         {
-          href: '/x402',
-          name: 'x402',
-          icon: <Coins className="h-4 w-4" />,
+          href: '/x402/wallets',
+          name: 'Wallets',
+          icon: <Wallet className="h-4 w-4" />,
           badge: null,
           group: 0,
         },
+        {
+          href: '/x402/payments',
+          name: 'Payments',
+          icon: <FileText className="h-4 w-4" />,
+          badge: null,
+          group: 0,
+        },
+        ...(canPay
+          ? [
+              {
+                href: '/x402/budgets',
+                name: 'Budgets',
+                icon: <Coins className="h-4 w-4" />,
+                badge: null,
+                group: 0,
+              } satisfies NavItem,
+            ]
+          : []),
+        ...(canAdmin
+          ? [
+              {
+                href: '/x402/chains',
+                name: 'Chains',
+                icon: <Link2 className="h-4 w-4" />,
+                badge: null,
+                group: 0,
+              } satisfies NavItem,
+              {
+                href: '/x402/alerts',
+                name: 'Alerts',
+                icon: <AlertTriangle className="h-4 w-4" />,
+                badge: null,
+                group: 0,
+              } satisfies NavItem,
+            ]
+          : []),
         sharedAgents,
         ...(sharedWebhooks ? [sharedWebhooks] : []),
         ...sharedGroup1,
