@@ -284,17 +284,13 @@ async function processSingleDeregistration(
 		newTxHash = await wallet.submitTx(signedTx);
 	} catch (error) {
 		logger.error('Error submitting V2 deregister single-item tx', { error, requestId: request.id });
-		await prisma.registryRequest.update({
-			where: { id: request.id },
-			data: {
-				state: RegistrationState.DeregistrationRequested,
-				DeregistrationHotWallet: {
-					update: {
-						lockedAt: null,
-					},
-				},
-			},
-		});
+		// Terminal, not a silent re-queue. See the matching comment in
+		// `update/service.ts`: reverting to DeregistrationRequested retried a
+		// deterministic rejection every tick with `error` left NULL. The batch half
+		// of this file already fails the whole set on a submit rejection, and a
+		// DeregistrationFailed row records the reason and can be retried in place
+		// via the deregister route.
+		await markRequestFailed(request, error);
 		return;
 	}
 

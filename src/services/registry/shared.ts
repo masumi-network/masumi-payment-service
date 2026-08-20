@@ -17,6 +17,25 @@ export type RegistryMetadata = {
 
 const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
 
+/**
+ * Total collateral these registry transactions declare.
+ *
+ * Must stay BELOW what the collateral input holds. `pickCollateralUtxo` only
+ * accepts a UTxO of at least `DEFAULT_MIN_COLLATERAL_LOVELACE` (5 ADA) and
+ * prefers the smallest qualifying one, so it reliably picks the 5 ADA UTxO
+ * that `ensureCollateralReady` mints. Declaring the same 5 ADA collapses
+ * mesh's `collateral_return` to `Coin 0`, which mesh still emits and the
+ * ledger rejects with `BabbageOutputTooSmallUTxO` — a phase-1 failure, so
+ * `evaluateTx` never sees it and the tx only dies at submit.
+ *
+ * 3 ADA covers the requirement with room to spare: at preprod prices the
+ * inflated default budgets (mem 7e6, steps 3e9) come to ~620k lovelace of
+ * script fee, and Conway asks for `collateralPercentage` (150%) of that, so
+ * ~930k. It also matches every sibling call site in this V1 tree and the
+ * `MIN_TOTAL_COLLATERAL_LOVELACE` floor the V2 builders derive from.
+ */
+const REGISTRY_TOTAL_COLLATERAL_LOVELACE = '3000000';
+
 // V2 mint contract Action enum: MintAction=0, UpdateAction=1, BurnAction=2.
 // V1 mint contract Action enum: MintAction=0, BurnAction=1.
 // Map by PaymentSourceType so the same shared helper drives both.
@@ -163,7 +182,7 @@ export async function generateRegistryMintTransaction(
 		})
 		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount)
+		.setTotalCollateral(REGISTRY_TOTAL_COLLATERAL_LOVELACE)
 		.txOut(recipientWalletAddress, [
 			{
 				unit: policyId + assetName,
@@ -418,7 +437,7 @@ async function generateRegistryUpdateTransaction(
 		})
 		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount)
+		.setTotalCollateral(REGISTRY_TOTAL_COLLATERAL_LOVELACE)
 		.txOut(recipientWalletAddress, [
 			{
 				unit: policyId + newAssetName,
@@ -494,7 +513,7 @@ async function generateRegistryDeregisterTransaction(
 		.mintRedeemerValue({ alternative: burnRedeemerAlternative, fields: [] }, 'Mesh', exUnits)
 		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral('3000000');
+		.setTotalCollateral(REGISTRY_TOTAL_COLLATERAL_LOVELACE);
 	for (const utxo of utxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
 	}
