@@ -290,15 +290,15 @@ async function processUpdate(
 		newTxHash = await wallet.submitTx(signedTx);
 	} catch (error) {
 		logger.error('Error submitting V2 update tx', { error, requestId: request.id });
-		await prisma.registryRequest.update({
-			where: { id: request.id },
-			data: {
-				state: RegistrationState.UpdateRequested,
-				DeregistrationHotWallet: {
-					update: { lockedAt: null },
-				},
-			},
-		});
+		// Terminal, not a silent re-queue. This used to revert to UpdateRequested,
+		// which retries every tick forever with `error` left NULL: a deterministic
+		// rejection (collateral, phase-1, script-data-hash) then loops invisibly and
+		// an operator sees a queued row with nothing to read. Both batch paths
+		// already treat a submit rejection as terminal (`register/service.ts` and
+		// the batch half of this file), so match them. UpdateFailed records the
+		// reason, frees the wallet, and stays re-queueable: the update route accepts
+		// UpdateFailed and resets the row in place.
+		await markRequestFailed(request, error);
 		return;
 	}
 

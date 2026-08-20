@@ -168,6 +168,11 @@ export const unregisterAgentPost = payAuthenticatedEndpointFactory.build({
 							},
 							data: {
 								state: RegistrationState.DeregistrationRequested,
+								// Drop the reason from a previous failed attempt. Without this a
+								// re-queued row carries a stale error for as long as it is
+								// Requested/Initiated, which reads as "failing again". The update
+								// route already clears it on the same transition.
+								error: null,
 								deregistrationHotWalletId: managedHolderWallet.id,
 							},
 							include: {
