@@ -8,7 +8,7 @@
  *
  * Run: pnpm exec tsx hydra-l2-flow/02-fund-in-head.mts <masumi_addr> <amount_lovelace>
  */
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import { writeFileSync, unlinkSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,11 +20,29 @@ const MASUMI_ADDR = process.argv[2];
 const AMOUNT = process.argv[3] ?? '60000000';
 const NETWORK = process.env.HYDRA_FLOW_NETWORK ?? 'devnet';
 const ALICE_FUNDS_SK = NETWORK === 'preprod' ? '/keys/purchasing-cardano.sk' : '/devnet/credentials/alice-funds.sk';
+const CARDANO_NODE_IMAGE = 'ghcr.io/intersectmbo/cardano-node:10.6.2';
 
 function derivePurchasingAddr(): string {
 	const preprodDir = join(process.cwd(), 'hydra-l2-flow', 'preprod');
-	return execSync(
-		`docker run --rm -v ${JSON.stringify(preprodDir)}:/keys --entrypoint cardano-cli ghcr.io/intersectmbo/cardano-node:10.6.2 address build --payment-verification-key-file /keys/purchasing-cardano.vk --testnet-magic 1`,
+	// argv, not a shell string: the mount path comes from process.cwd() and must
+	// never be word-split or expanded by a shell.
+	return execFileSync(
+		'docker',
+		[
+			'run',
+			'--rm',
+			'-v',
+			`${preprodDir}:/keys`,
+			'--entrypoint',
+			'cardano-cli',
+			CARDANO_NODE_IMAGE,
+			'address',
+			'build',
+			'--payment-verification-key-file',
+			'/keys/purchasing-cardano.vk',
+			'--testnet-magic',
+			'1',
+		],
 		{ encoding: 'utf-8' },
 	).trim();
 }
@@ -40,9 +58,20 @@ function signWithCardanoCli(cborHex: string, credKeyPath: string): string {
 	try {
 		if (NETWORK === 'preprod') {
 			const preprodDir = join(process.cwd(), 'hydra-l2-flow', 'preprod');
-			const signedJson = execSync(
-				`docker run --rm -i -v ${JSON.stringify(preprodDir)}:/keys --entrypoint sh ghcr.io/intersectmbo/cardano-node:10.6.2 -c ` +
-					JSON.stringify(`cat > /tmp/d.tx && cardano-cli conway transaction sign --tx-file /tmp/d.tx --signing-key-file ${credKeyPath} --testnet-magic 1 --out-file /tmp/s.tx && cat /tmp/s.tx`),
+			const signedJson = execFileSync(
+				'docker',
+				[
+					'run',
+					'--rm',
+					'-i',
+					'-v',
+					`${preprodDir}:/keys`,
+					'--entrypoint',
+					'sh',
+					CARDANO_NODE_IMAGE,
+					'-c',
+					`cat > /tmp/d.tx && cardano-cli conway transaction sign --tx-file /tmp/d.tx --signing-key-file ${credKeyPath} --testnet-magic 1 --out-file /tmp/s.tx && cat /tmp/s.tx`,
+				],
 				{ input: readFileSync(tmpIn, 'utf-8'), encoding: 'utf-8' },
 			);
 			return (JSON.parse(signedJson) as { cborHex: string }).cborHex;
@@ -133,7 +162,8 @@ async function main() {
 	const provider = new HydraProvider({ node });
 	await new Promise((r) => setTimeout(r, 600));
 
-	const ALICE_FUNDS_ADDR = NETWORK === 'preprod' ? derivePurchasingAddr() : 'addr_test1vp5cxztpc6hep9ds7fjgmle3l225tk8ske3rmwr9adu0m6qchmx5z';
+	const ALICE_FUNDS_ADDR =
+		NETWORK === 'preprod' ? derivePurchasingAddr() : 'addr_test1vp5cxztpc6hep9ds7fjgmle3l225tk8ske3rmwr9adu0m6qchmx5z';
 
 	const start = Date.now();
 	let confirmed = false;
@@ -144,7 +174,9 @@ async function main() {
 		// Already-landed check first: a prior attempt's tx may confirm after its own
 		// 15s wait timed out, or a retry can catch up on an earlier partial success.
 		const already = (await node.snapshotUTxO()).filter(
-			(u) => u.output.address === MASUMI_ADDR && u.output.amount.some((a) => a.unit === 'lovelace' && BigInt(a.quantity) >= BigInt(AMOUNT)),
+			(u) =>
+				u.output.address === MASUMI_ADDR &&
+				u.output.amount.some((a) => a.unit === 'lovelace' && BigInt(a.quantity) >= BigInt(AMOUNT)),
 		);
 		if (already.length > 0) {
 			confirmed = true;
