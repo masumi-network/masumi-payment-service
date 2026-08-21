@@ -7,12 +7,61 @@ jobs:
   docker_publish:
     runs-on: 'ubuntu-22.04'
 
-    steps:
-      - uses: actions/checkout@v2
+    # `packages` pushes the image and its attestation, `id-token` mints the OIDC
+    # token Sigstore needs to issue a signing certificate, and `attestations`
+    # persists the signed provenance.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
 
-      # https://github.com/marketplace/actions/push-to-ghcr
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to a commit rather than `master`: this action builds the image
+      # that ships, so a moving ref would change the release without review.
+      # de5b1f4 is `master` as of 2026-06-19.
       - name: Build and publish a Docker image for ${{ github.repository }}
-        uses: macbre/push-to-ghcr@master
+        uses: macbre/push-to-ghcr@de5b1f400829a79007e48b901ef7e92a82b6486e
         with:
           image_name: ${{ github.repository }} # it will be lowercased internally
           github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # push-to-ghcr declares no outputs, so read the digest back from the
+      # registry. On a release it pushes exactly one tag, and it strips every
+      # `v` from the tag name; both are mirrored here so the reference resolves
+      # to the image that was actually pushed.
+      - name: Resolve the published image digest
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          NAME="ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          TAG="${RELEASE_TAG//v/}"
+          DIGEST="$(docker buildx imagetools inspect "${NAME}:${TAG}" --format '{{.Manifest.Digest}}')"
+          case "$DIGEST" in
+          sha256:*) ;;
+          *)
+            echo "::error::expected a sha256 digest for ${NAME}:${TAG}, got '${DIGEST}'"
+            exit 1
+            ;;
+          esac
+          echo "name=${NAME}" >>"$GITHUB_OUTPUT"
+          echo "digest=${DIGEST}" >>"$GITHUB_OUTPUT"
+          echo "Attesting ${NAME}@${DIGEST}"
+
+      # Signs a SLSA build provenance statement for the digest above and pushes
+      # it to GHCR alongside the image. Verify a release with:
+      #   gh attestation verify oci://ghcr.io/<owner>/<repo>:<tag> --repo <owner>/<repo>
+      - name: Attest and sign the published image
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+          # The storage record is optional enrichment and needs a separate
+          # `artifact-metadata` permission. The signature does not depend on it.
+          create-storage-record: false
