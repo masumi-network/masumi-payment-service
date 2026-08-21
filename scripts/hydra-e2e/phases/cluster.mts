@@ -238,6 +238,11 @@ export function collectEvents(
  * `host:port` — which makes the evidence mutual and specific rather than just
  * "something connected".
  */
+/** Escapes every character that carries meaning inside a regular expression. */
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function loggedPeerConnection(node: NodeHandle, peerAdvertise: string): boolean {
 	const logPath = path.join(node.host.spec.dataDir, 'nodes', node.nodeId, 'logs', 'node.log');
 	if (!fs.existsSync(logPath)) {
@@ -245,8 +250,10 @@ function loggedPeerConnection(node: NodeHandle, peerAdvertise: string): boolean 
 	}
 	const [host, port] = peerAdvertise.split(':');
 	// hydra-node emits compact JSON, but tolerate whitespace rather than depend
-	// on its serialiser's formatting.
-	const peer = new RegExp(`"hostname":\\s*"${host.replace(/\./g, '\\.')}",\\s*"port":\\s*${port}\\b`);
+	// on its serialiser's formatting. Both halves are escaped: escaping only `.`
+	// leaves a backslash in the input free to pair with the next character and
+	// change what the pattern means.
+	const peer = new RegExp(`"hostname":\\s*"${escapeRegExp(host)}",\\s*"port":\\s*${escapeRegExp(port ?? '')}\\b`);
 	return fs
 		.readFileSync(logPath, 'utf8')
 		.split('\n')
