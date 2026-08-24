@@ -167,6 +167,9 @@ importers:
       express-zod-api:
         specifier: 26.3.1
         version: 26.3.1(@types/express@5.0.6)(@types/http-errors@2.0.5)(@types/node@25.9.2)(express@5.2.1)(http-errors@2.0.1)(typescript@5.8.3)(zod@4.3.5)
+      fflate:
+        specifier: 0.8.2
+        version: 0.8.2
       helmet:
         specifier: ^8.2.0
         version: 8.2.0

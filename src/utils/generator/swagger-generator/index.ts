@@ -17,6 +17,7 @@ import { registerHydraPaths } from '@/routes/api/hydra/docs';
 import { registerRailReadinessPaths } from '@/routes/api/rail-readiness/docs';
 import { registerTxSyncQuarantinePaths } from '@/routes/api/tx-sync-quarantine/docs';
 import { registerRequestRepairPaths } from '@/routes/api/request-repair/docs';
+import { registerReportPaths } from '@/routes/api/reports/docs';
 
 extendZodWithOpenApi(z);
 
@@ -44,6 +45,7 @@ export function generateOpenAPI() {
 	registerRailReadinessPaths({ registry, apiKeyAuth });
 	registerTxSyncQuarantinePaths({ registry, apiKeyAuth });
 	registerRequestRepairPaths({ registry, apiKeyAuth });
+	registerReportPaths({ registry, apiKeyAuth });
 
 	return new OpenApiGeneratorV3(registry.definitions).generateDocument({
 		openapi: '3.0.0',
