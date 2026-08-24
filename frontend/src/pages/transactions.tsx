@@ -15,7 +15,6 @@ import { CopyButton } from '@/components/ui/copy-button';
 import TransactionDetailsDialog from '@/components/transactions/TransactionDetailsDialog';
 import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { Download } from 'lucide-react';
-import { dateRangeUtils } from '@/lib/utils';
 import { useTransactions, OnChainStateFilter, ON_CHAIN_STATES } from '@/lib/hooks/useTransactions';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
@@ -25,7 +24,6 @@ import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
-import { getPaymentSourceTypeLabel } from '@/lib/payment-source-type';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
 import { getLatestTxHash } from '@/components/transactions/transaction-format.helpers';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -34,6 +32,7 @@ import {
   EMPTY_FILTERS,
   type TransactionFilterState,
 } from '@/components/transactions/TransactionFilters';
+import { buildTransactionReportViewDefaults } from '@/components/transactions/download-details.helpers';
 import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransactionErrors';
 import { toast } from 'react-toastify';
 import { useResync } from '@/lib/hooks/useResync';
@@ -60,23 +59,17 @@ const getTransactionLayerLabel = (transaction: Transaction): 'Hydra L2' | 'L1' |
 const getHydraHeadId = (transaction: Transaction) =>
   transaction.CurrentTransaction?.hydraHeadId ?? null;
 
-const toCsvValue = (value: unknown): string => {
-  if (value == null) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint')
-    return String(value);
-  if (value instanceof Date) return value.toISOString();
-  return JSON.stringify(value) ?? '';
-};
-
 export default function Transactions() {
-  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource, capabilities } =
-    useAppContext();
+  const { apiClient, selectedPaymentSourceId, network, capabilities } = useAppContext();
   const resync = useResync();
 
   const [activeTab, setActiveTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<TransactionFilterState>(EMPTY_FILTERS);
+  const reportViewDefaults = useMemo(
+    () => buildTransactionReportViewDefaults(activeTab, filters, searchQuery.trim().length > 0),
+    [activeTab, filters, searchQuery],
+  );
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
   const isNeedsActionTab = activeTab === 'Needs Action';
   // Error recovery posts to /payment|purchase/error-state-recovery, both
@@ -361,99 +354,6 @@ export default function Transactions() {
     }
   };
 
-  // Generate CSV data for transactions
-  const generateCSVData = useCallback(
-    (transactions: Transaction[]): string => {
-      const headers = [
-        'Transaction Type',
-        'Transaction Hash',
-        'Agent Name',
-        'Agent Identifier',
-        'Payment Amounts',
-        'Network',
-        'Payment Source Type',
-        'Layer',
-        'Hydra Head ID',
-        'Status',
-        'Date',
-        'Fee rate (%)',
-      ];
-      const rows = transactions.map((transaction) => {
-        // The list is filtered by network + source type only, so rows can
-        // belong to OTHER sources than the selected one. Only stamp the
-        // selected source's fee rate onto rows that actually belong to it.
-        const feeRatePermille =
-          transaction.PaymentSource?.id === selectedPaymentSource?.id
-            ? selectedPaymentSource?.feeRatePermille
-            : undefined;
-        const feeRateDisplay =
-          typeof feeRatePermille === 'number' ? (feeRatePermille / 10).toFixed(1) + '%' : 'Unknown';
-        const paymentAmounts: string[] = [];
-        if (transaction.type === 'payment' && transaction.RequestedFunds) {
-          paymentAmounts.push(
-            ...transaction.RequestedFunds.map((fund) =>
-              formatAssetAmount(fund.amount, fund.unit, network),
-            ),
-          );
-        } else if (transaction.type === 'purchase' && transaction.PaidFunds) {
-          paymentAmounts.push(
-            ...transaction.PaidFunds.map((fund) =>
-              formatAssetAmount(fund.amount, fund.unit, network),
-            ),
-          );
-        }
-        const amount = paymentAmounts.join(', ');
-
-        const hash = getLatestTxHash(transaction) || '—';
-        const agentName = transaction.agentName?.trim() || '—';
-        const agentIdentifier = transaction.agentIdentifier?.trim() || '—';
-        const status = formatStatus(transaction.onChainState);
-        const date = formatDateTime(transaction.createdAt);
-
-        return [
-          transaction.type,
-          hash,
-          agentName,
-          agentIdentifier,
-          amount,
-          transaction.PaymentSource.network,
-          getPaymentSourceTypeLabel(transaction.PaymentSource.paymentSourceType),
-          getTransactionLayerLabel(transaction) ?? '',
-          getHydraHeadId(transaction) ?? '',
-          status,
-          date,
-          feeRateDisplay,
-        ];
-      });
-
-      // RFC 4180: embed a literal `"` by doubling it, and wrap any field
-      // containing `,`, `"`, `\r`, or `\n` in surrounding quotes. We wrap
-      // every field unconditionally for consistency, so only the `"`
-      // doubling is strictly required here — without it, an agent name
-      // or note containing a quote breaks the CSV (parsers see it as a
-      // field terminator and split that row into extra columns).
-      const escapeCsvField = (value: unknown): string =>
-        `"${toCsvValue(value).replace(/"/g, '""')}"`;
-      return [headers, ...rows].map((row) => row.map(escapeCsvField).join(',')).join('\n');
-    },
-    [selectedPaymentSource?.id, selectedPaymentSource?.feeRatePermille, network],
-  );
-
-  // Download CSV file
-  const downloadCSV = (transactions: Transaction[], filename: string = 'transactions.csv') => {
-    const csvData = generateCSVData(transactions);
-    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <MainLayout>
       <Head>
@@ -483,12 +383,11 @@ export default function Transactions() {
               />
               <Button
                 onClick={() => setShowDownloadDialog(true)}
-                disabled={visibleTransactions.length === 0}
                 variant="outline"
                 className="flex items-center gap-2 btn-hover-lift"
               >
                 <Download className="h-4 w-4" />
-                Download CSV
+                Export report
               </Button>
               {/* Developers > Testing creates real payments/purchases via
                   pay-authenticated endpoints, and the tab is hidden for
@@ -799,16 +698,13 @@ export default function Transactions() {
           onRefresh={refreshTransactions}
         />
 
-        <DownloadDetailsDialog
-          open={showDownloadDialog}
-          onClose={() => setShowDownloadDialog(false)}
-          onDownload={(startDate, endDate, filteredTransactions) => {
-            downloadCSV(
-              filteredTransactions,
-              `transactions-${activeTab.toLowerCase()}-${dateRangeUtils.formatDateRange(startDate, endDate).replace(/\s+/g, '-')}.csv`,
-            );
-          }}
-        />
+        {showDownloadDialog && (
+          <DownloadDetailsDialog
+            open
+            onClose={() => setShowDownloadDialog(false)}
+            viewDefaults={reportViewDefaults}
+          />
+        )}
       </AnimatedPage>
     </MainLayout>
   );
