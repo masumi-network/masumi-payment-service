@@ -56,3 +56,15 @@ test('opens the status screen for a fully configured rail', () => {
     4,
   );
 });
+
+test('add-source flow starts at chain selection even when x402 is ready', () => {
+  assert.equal(
+    initialX402SetupStep({
+      isReadinessKnown: true,
+      isReceivingReady: true,
+      isPayingReady: true,
+      startAtChainSelection: true,
+    }),
+    1,
+  );
+});

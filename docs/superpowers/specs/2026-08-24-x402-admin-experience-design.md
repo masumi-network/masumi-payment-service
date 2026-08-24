@@ -24,6 +24,9 @@ The x402 sidebar order is:
 
 `/x402/payments` remains the stable route. The UI labels it Transactions.
 
+Transactions follow the active x402 payment source. The page has no second chain filter, but keeps
+the chain column and detail field for audit context.
+
 Compatibility routes remain available:
 
 - `/x402/chains` redirects to `/payment-sources`.
@@ -62,7 +65,7 @@ Active low-balance rules also appear as wallet status and dashboard attention st
 
 ## Payment Sources
 
-Payment Sources is the only persistent chain-management surface. Its x402 Manage action opens chain configuration in place. The setup wizard can reuse the same chain dialog because setup is a guided task, not a persistent navigation page.
+Payment Sources is the only persistent chain-management surface. Its x402 Manage action opens chain configuration without leaving the page. The setup wizard reuses the same chain form inline.
 
 ## Setup
 
@@ -74,6 +77,10 @@ The x402 setup uses a focused Cardano-style shell.
 4. Show Ready only when backend readiness confirms receiving.
 
 The wizard preselects the active chain. A network change asks for confirmation and resets the wizard. Reopening setup resumes from current backend readiness. Completion selects the x402 rail and opens the dashboard.
+
+Add Source opens normal x402 setup when no EVM source works. When the rail already works, it starts
+at chain selection and skips outbound setup. The chain selector lists configured chains and an
+inline custom-chain form. Setup locks new and edited chains to the active environment.
 
 ## Verification
 

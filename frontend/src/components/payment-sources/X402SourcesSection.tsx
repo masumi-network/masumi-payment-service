@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
-import { Coins, Plus, Wand2 } from 'lucide-react';
+import { Coins, Wand2 } from 'lucide-react';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
 import { useX402Networks } from '@/lib/hooks/useX402';
 import { filterX402PaymentSourceChains, isX402ChainUsable, X402_ACCENT } from '@/lib/x402-rail';
@@ -48,27 +48,14 @@ export function X402SourcesSection({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold">x402 (EVM) chains</h2>
-          <Badge
-            variant="outline"
-            className={cn('px-1.5 py-0 text-[10px] font-medium', X402_ACCENT.badge)}
-          >
-            EVM
-          </Badge>
-        </div>
-        <Button
-          size="sm"
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-semibold">x402 (EVM) chains</h2>
+        <Badge
           variant="outline"
-          onClick={() => {
-            setEditingChain(null);
-            setIsChainDialogOpen(true);
-          }}
+          className={cn('px-1.5 py-0 text-[10px] font-medium', X402_ACCENT.badge)}
         >
-          <Plus className="mr-2 h-4 w-4" />
-          Add chain
-        </Button>
+          EVM
+        </Badge>
       </div>
 
       <div className="rounded-lg border overflow-x-auto">

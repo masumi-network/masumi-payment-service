@@ -354,7 +354,7 @@ export type X402PaymentFilters = {
   needsManualAction?: boolean;
 };
 
-export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
+export function useX402PaymentAttempts(filters: X402PaymentFilters = {}, isEnabled = true) {
   const { apiClient, authorized } = useAppContext();
 
   const query = useInfiniteQuery({
@@ -390,7 +390,7 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>
       lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
-    enabled: !!apiClient && authorized,
+    enabled: !!apiClient && authorized && isEnabled,
     staleTime: 15000,
   });
 
@@ -415,6 +415,7 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
     isFetchingNextPage: query.isFetchingNextPage,
     loadMore,
     refetch: async () => {
+      if (!isEnabled) return;
       await query.refetch();
     },
     isRefetching: query.isRefetching,

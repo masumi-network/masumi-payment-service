@@ -6,14 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
@@ -22,41 +14,38 @@ import { useRailReadiness } from '@/lib/hooks/useRailReadiness';
 import { areChecksComplete, checkDetail } from '@/lib/rail-readiness';
 import { X402Network, X402Wallet } from '@/lib/api/generated';
 import { CreateWalletDialog } from '@/components/x402/WalletsTab';
-import { ChainDialog } from '@/components/x402/ChainsTab';
+import { ChainForm } from '@/components/x402/ChainsTab';
 import { BudgetDialog } from '@/components/x402/BudgetsTab';
 import {
   hasSpendableBudgetForChain,
   initialX402SetupStep,
   type X402SetupStep,
 } from '@/lib/x402-setup';
+import {
+  X402ChainSelectionStep,
+  X402SetupStepHeaderIcon,
+} from '@/components/x402/setup/X402ChainSelectionStep';
 
 // Stage labels for the wizard. As in the Cardano /setup wizard, the first (Welcome) and last
 // (Ready) stages are not shown in the numbered stepper; only the middle steps are.
 const STEP_LABELS = ['Welcome', 'Chain', 'Receiving', 'Paying', 'Ready'];
+const ADD_SOURCE_STEP_LABELS = ['Welcome', 'Chain', 'Receiving', 'Ready'];
 
-type DialogKind = 'wallet' | 'chain' | 'budget' | null;
+type DialogKind = 'wallet' | 'budget' | null;
 type ReceivingMode = 'managed' | 'remote';
-type LucideIcon = typeof Link2;
-
-// The header icon shared by the step screens: the same glow + ring treatment as the Cardano
-// wizard, tinted with the x402 rail's indigo accent for rail identity.
-function StepHeaderIcon({ icon: Icon }: { icon: LucideIcon }) {
-  return (
-    <div className="relative mx-auto mb-5 h-14 w-14 animate-fade-in-up">
-      <div className="absolute inset-0 rounded-2xl bg-indigo-500/20 blur-xl" />
-      <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/20 to-indigo-500/5 ring-1 ring-indigo-500/30">
-        <Icon className={cn('h-7 w-7', X402_ACCENT.icon)} />
-      </div>
-    </div>
-  );
-}
 
 /**
  * Guided first-run setup for the x402 (EVM) rail. Mirrors the Cardano `/setup` wizard's
  * multi-screen shape (welcome card → one screen per step with a top "Step X of N" stepper →
  * success card) and reuses the existing x402 dialogs so there is no second source of truth.
  */
-export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) {
+export function X402SetupWelcome({
+  networkType,
+  isAddingPaymentSource = false,
+}: {
+  networkType: NetworkType;
+  isAddingPaymentSource?: boolean;
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const {
@@ -85,6 +74,10 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   const [openDialog, setOpenDialog] = useState<DialogKind>(null);
   const [walletType, setWalletType] = useState<X402Wallet['type']>('Selling');
   const [receivingMode, setReceivingMode] = useState<ReceivingMode>('managed');
+  const [isCreatingChain, setIsCreatingChain] = useState(false);
+  const [isChainEditorOpen, setIsChainEditorOpen] = useState(false);
+  const [savedChain, setSavedChain] = useState<X402Network | null>(null);
+  const [isAddSourceMode, setIsAddSourceMode] = useState(false);
   const hasInitializedStep = useRef(false);
 
   // The x402 hooks are disabled (and return []) until authorized, which would otherwise read
@@ -95,8 +88,12 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
 
   const envChains = useMemo(() => {
     const wantTestnet = isTestnetEnv(networkType);
-    return networks.filter((chain) => chain.isTestnet === wantTestnet);
-  }, [networks, networkType]);
+    const matching = networks.filter((chain) => chain.isTestnet === wantTestnet);
+    if (savedChain?.isTestnet === wantTestnet) {
+      return [savedChain, ...matching.filter((chain) => chain.id !== savedChain.id)];
+    }
+    return matching;
+  }, [networks, networkType, savedChain]);
   const envWallets = useMemo(() => walletsForNetworks(wallets, envChains), [wallets, envChains]);
   // Wallets are split by direction: a Selling wallet settles inbound payments (facilitator),
   // a Purchasing wallet funds outbound ones (budget). Each step owns its type.
@@ -134,10 +131,15 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
 
   useEffect(() => {
     hasInitializedStep.current = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- A confirmed environment change starts a fresh wizard for that environment.
-    setCurrentStep(0);
-    setReceivingMode('managed');
-  }, [networkType]);
+    queueMicrotask(() => {
+      setCurrentStep(0);
+      setReceivingMode('managed');
+      setIsCreatingChain(false);
+      setIsChainEditorOpen(false);
+      setSavedChain(null);
+      setIsAddSourceMode(false);
+    });
+  }, [networkType, isAddingPaymentSource]);
 
   useEffect(() => {
     setSetupWizardStep(currentStep);
@@ -146,20 +148,25 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   useEffect(() => {
     if (loading || hasInitializedStep.current) return;
     hasInitializedStep.current = true;
+    const shouldAddToReadyRail = isAddingPaymentSource && hasFacilitator;
     const nextStep = initialX402SetupStep({
       isReadinessKnown: !readinessUnavailable,
       isReceivingReady: hasFacilitator,
       isPayingReady: hasBudget,
+      startAtChainSelection: shouldAddToReadyRail,
     });
     if (nextStep > 0 && configuredChain) {
       setSelectedX402ChainId(configuredChain.id);
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Resume once from backend-owned readiness after initial data load.
-    setCurrentStep(nextStep);
+    queueMicrotask(() => {
+      setIsAddSourceMode(shouldAddToReadyRail);
+      setCurrentStep(nextStep);
+    });
   }, [
     configuredChain,
     hasBudget,
     hasFacilitator,
+    isAddingPaymentSource,
     loading,
     readinessUnavailable,
     setSelectedX402ChainId,
@@ -216,7 +223,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   const welcomeScreen = (
     <Card className="mx-auto w-full max-w-lg animate-scale-in-bounce border bg-gradient-to-b from-card to-card/80 shadow-xl">
       <CardHeader className="pb-4 pt-8 text-center">
-        <StepHeaderIcon icon={Coins} />
+        <X402SetupStepHeaderIcon icon={Coins} />
         <CardTitle className="flex animate-fade-in-up items-center justify-center gap-2 text-3xl font-bold">
           Set up the x402 rail
         </CardTitle>
@@ -265,85 +272,61 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   );
 
   const chainScreen = (
-    <div className="mx-auto w-full max-w-lg">
-      <div className="text-center">
-        <StepHeaderIcon icon={Link2} />
-        <h1 className="text-2xl font-bold tracking-tight">Choose your EVM chain</h1>
-        <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-          Select the x402 payment source for this {networkType} setup. Wallets and budgets stay
-          bound to this chain.
-        </p>
-      </div>
-
-      <Card className="mt-6 space-y-4 p-5">
-        {envChains.length > 0 ? (
-          <>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Payment source</label>
-              <Select value={selectedChain?.id ?? ''} onValueChange={setSelectedX402ChainId}>
-                <SelectTrigger aria-label="EVM payment source">
-                  <SelectValue placeholder="Select a chain" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {envChains.map((chain) => (
-                      <SelectItem key={chain.id} value={chain.id}>
-                        {chain.displayName} · {chain.caip2Id}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {selectedChain && (
-              <div className="flex items-center justify-between rounded-lg border bg-muted/20 p-3">
-                <div>
-                  <p className="text-sm font-medium">{selectedChain.displayName}</p>
-                  <p className="font-mono text-xs text-muted-foreground">{selectedChain.caip2Id}</p>
-                </div>
-                <Badge variant={selectedChain.isEnabled ? 'success' : 'secondary'}>
-                  {selectedChain.isEnabled ? 'Enabled' : 'Draft'}
-                </Badge>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="rounded-lg border border-dashed p-5 text-center">
-            <p className="text-sm font-medium">No {networkType} EVM chain exists yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Add the chain first. A self-hosted chain can start as a disabled draft.
-            </p>
-          </div>
-        )}
-
-        <Button variant="outline" className="w-full" onClick={() => setOpenDialog('chain')}>
-          {selectedChain ? 'Configure selected chain' : 'Add EVM chain'}
-        </Button>
-      </Card>
-
-      <div className="flex items-center justify-between pt-6">
-        <Button variant="ghost" onClick={() => setCurrentStep(0)}>
-          Back
-        </Button>
-        <Button
-          className="btn-hover-lift group gap-2"
-          disabled={!selectedChain}
-          onClick={() => {
-            if (selectedChain) setSelectedX402ChainId(selectedChain.id);
-            setCurrentStep(2);
-          }}
-        >
-          Continue <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-        </Button>
-      </div>
-    </div>
+    <X402ChainSelectionStep
+      networkType={networkType}
+      chains={envChains}
+      selectedChain={selectedChain}
+      isAddSourceMode={isAddSourceMode}
+      isSelectedChainReady={selectedChainIsReady}
+      isCreatingChain={isCreatingChain}
+      isEditorOpen={isChainEditorOpen}
+      chainEditor={
+        isCreatingChain || isChainEditorOpen ? (
+          <ChainForm
+            key={isCreatingChain ? 'new' : (chainToConfigure?.id ?? 'none')}
+            editing={isCreatingChain ? null : chainToConfigure}
+            defaultFacilitatorMode={receivingMode}
+            lockEnvironment
+            onClose={() => {
+              setIsCreatingChain(false);
+              setIsChainEditorOpen(false);
+            }}
+            onSaved={(chain) => {
+              setSavedChain(chain);
+              setSelectedX402ChainId(chain.id);
+              setIsCreatingChain(false);
+              setIsChainEditorOpen(false);
+              invalidate();
+            }}
+          />
+        ) : null
+      }
+      onSelectChain={(chainId) => {
+        setSelectedX402ChainId(chainId);
+        setIsCreatingChain(false);
+        setIsChainEditorOpen(false);
+      }}
+      onAddCustom={() => {
+        setIsCreatingChain(true);
+        setIsChainEditorOpen(true);
+      }}
+      onEditorOpenChange={setIsChainEditorOpen}
+      onBack={() => (isAddSourceMode ? router.push('/payment-sources') : setCurrentStep(0))}
+      onContinue={() => {
+        if (selectedChain) setSelectedX402ChainId(selectedChain.id);
+        if (isAddSourceMode && selectedChainIsReady) {
+          finish();
+          return;
+        }
+        setCurrentStep(2);
+      }}
+    />
   );
 
   const receivingScreen = (
     <div className="mx-auto w-full max-w-lg">
       <div className="text-center">
-        <StepHeaderIcon icon={Link2} />
+        <X402SetupStepHeaderIcon icon={Link2} />
         <h1 className="text-2xl font-bold tracking-tight">Enable receiving payments</h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
           Choose local settlement with a managed Selling wallet, or use a remote facilitator.
@@ -414,7 +397,9 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
               openWalletDialog('Selling');
               return;
             }
-            setOpenDialog('chain');
+            setIsCreatingChain(false);
+            setIsChainEditorOpen(true);
+            setCurrentStep(1);
           }}
         >
           {isReceivingReadyConfirmed
@@ -446,9 +431,10 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
               ? undefined
               : (facilitatorDetail ?? 'Assign a chain facilitator to continue')
           }
-          onClick={() => setCurrentStep(3)}
+          onClick={() => (isAddSourceMode ? finish() : setCurrentStep(3))}
         >
-          Continue <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+          {isAddSourceMode ? 'Finish' : 'Continue'}{' '}
+          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
         </Button>
       </div>
     </div>
@@ -457,7 +443,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   const payingScreen = (
     <div className="mx-auto w-full max-w-lg">
       <div className="text-center">
-        <StepHeaderIcon icon={Coins} />
+        <X402SetupStepHeaderIcon icon={Coins} />
         <h1 className="flex items-center justify-center gap-2 text-2xl font-bold tracking-tight">
           Enable outbound payments
           <Badge variant="secondary" className="font-medium">
@@ -609,9 +595,10 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
 
   // ---- Shell -----------------------------------------------------------------------------
 
-  const totalSteps = STEP_LABELS.length;
+  const activeStepLabels = isAddSourceMode ? ADD_SOURCE_STEP_LABELS : STEP_LABELS;
+  const totalSteps = activeStepLabels.length;
   const showStepper = currentStep > 0 && currentStep < totalSteps - 1;
-  const stepperSteps = STEP_LABELS.slice(1, -1);
+  const stepperSteps = activeStepLabels.slice(1, -1);
 
   return (
     <div className="mx-auto w-full max-w-2xl px-4">
@@ -619,7 +606,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
         <div className="mb-8 animate-fade-in">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">{STEP_LABELS[currentStep]}</p>
+              <p className="text-sm font-medium">{activeStepLabels[currentStep]}</p>
               <p className="text-xs text-muted-foreground">
                 Step {currentStep} of {stepperSteps.length}
               </p>
@@ -680,17 +667,6 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
         open={openDialog === 'wallet'}
         defaultType={walletType}
         defaultNetworkId={selectedChain?.id}
-        onClose={() => setOpenDialog(null)}
-        onSaved={() => {
-          setOpenDialog(null);
-          invalidate();
-        }}
-      />
-      <ChainDialog
-        key={openDialog === 'chain' ? `chain-${chainToConfigure?.id ?? 'new'}` : 'chain-closed'}
-        open={openDialog === 'chain'}
-        editing={chainToConfigure}
-        defaultFacilitatorMode={currentStep === 2 ? receivingMode : undefined}
         onClose={() => setOpenDialog(null)}
         onSaved={() => {
           setOpenDialog(null);

@@ -21,6 +21,14 @@ export function isTestnetEnv(network: NetworkType): boolean {
   return network === 'Preprod';
 }
 
+export function resolveX402ChainEnvironment(
+  network: NetworkType,
+  submittedIsTestnet: boolean,
+  isEnvironmentLocked: boolean,
+): boolean {
+  return isEnvironmentLocked ? isTestnetEnv(network) : submittedIsTestnet;
+}
+
 /** Enabled EVM chains that belong to the given Cardano environment. */
 export function chainsForEnv<T extends { isEnabled: boolean; isTestnet: boolean }>(
   chains: T[],

@@ -49,7 +49,10 @@ export default function X402SetupPage() {
       </Head>
       <MainLayout>
         <AnimatedPage>
-          <X402SetupWelcome networkType={network} />
+          <X402SetupWelcome
+            networkType={network}
+            isAddingPaymentSource={router.query.action === 'add_payment_source'}
+          />
         </AnimatedPage>
       </MainLayout>
     </>

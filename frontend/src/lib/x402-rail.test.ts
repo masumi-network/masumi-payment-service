@@ -6,6 +6,7 @@ import {
   hasBudgetOnEnabledNetworks,
   isX402ChainUsable,
   isX402SetUpForEnv,
+  resolveX402ChainEnvironment,
   walletsForNetworks,
 } from './x402-rail';
 
@@ -100,4 +101,10 @@ test('budget readiness ignores disabled networks', () => {
     hasBudgetOnEnabledNetworks([{ caip2Network: enabledNetwork.caip2Id }], [enabledNetwork]),
     true,
   );
+});
+
+test('setup locks a chain to the active environment', () => {
+  assert.equal(resolveX402ChainEnvironment('Preprod', false, true), true);
+  assert.equal(resolveX402ChainEnvironment('Mainnet', true, true), false);
+  assert.equal(resolveX402ChainEnvironment('Preprod', false, false), false);
 });
