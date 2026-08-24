@@ -17,6 +17,21 @@ validating L2 changes — not on every push. The committed Jest suites
 > its step drivers (one per escrow operation) and are invoked by the script — you
 > don't run them directly.
 
+> **These files are not type-checked.** `hydra-l2-flow/**` is absent from the
+> `include` list in `tsconfig.json`, so `tsc` never reads them. A type error, or
+> an import you deleted while a call site still uses it, will not fail CI. Several
+> step drivers fail `tsc` today against a stale `LocalParticipant` shape, which is
+> why the directory is excluded. Check a file you edited on its own: add
+> `tsconfig.l2flow.json` at the repo root with
+>
+> ```json
+> { "extends": "./tsconfig.json", "include": ["src/ws.d.ts", "hydra-l2-flow/00-open-head.mts"] }
+> ```
+>
+> run `pnpm exec tsc --noEmit -p tsconfig.l2flow.json`, then delete it.
+> `src/ws.d.ts` is required: without it the `ws` import in the Hydra client
+> reports TS7016.
+
 ## What it validates
 
 The seven escrow operations, across three flows:

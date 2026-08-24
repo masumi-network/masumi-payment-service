@@ -6,7 +6,7 @@
  * Run: pnpm exec tsx hydra-l2-flow/00-open-head.mts
  * Preprod: HYDRA_FLOW_NETWORK=preprod pnpm exec tsx hydra-l2-flow/00-open-head.mts
  */
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { HydraNode } from '@/lib/hydra/hydra/node';
@@ -14,32 +14,51 @@ import { HydraHeadStatus } from '@/generated/prisma/client';
 
 const NETWORK = process.env.HYDRA_FLOW_NETWORK ?? 'devnet';
 const PREPROD_DIR = join(process.cwd(), 'hydra-l2-flow', 'preprod');
+const CARDANO_NODE_IMAGE = 'ghcr.io/intersectmbo/cardano-node:10.6.2';
 
 function log(m: string) {
 	console.log(`[open] ${new Date().toISOString().slice(11, 19)} ${m}`);
 }
 
 function cli(cmd: string): string {
+	// argv, not a shell string: PREPROD_DIR comes from process.cwd() and must
+	// never be word-split or expanded by a shell. `cmd` is still a shell snippet,
+	// so it is handed to `sh -c` as one argument rather than spliced into the
+	// docker invocation.
 	if (NETWORK === 'preprod') {
 		// --entrypoint cardano-cli: strip the leading 'cardano-cli ' to avoid doubling it
 		const args = cmd.startsWith('cardano-cli ') ? cmd.slice('cardano-cli '.length) : cmd;
-		return execSync(
-			`docker run --rm -v ${JSON.stringify(PREPROD_DIR)}:/keys --entrypoint cardano-cli ghcr.io/intersectmbo/cardano-node:10.6.2 ${args}`,
+		return execFileSync(
+			'docker',
+			[
+				'run',
+				'--rm',
+				'-v',
+				`${PREPROD_DIR}:/keys`,
+				'--entrypoint',
+				'sh',
+				CARDANO_NODE_IMAGE,
+				'-c',
+				`cardano-cli ${args}`,
+			],
 			{ encoding: 'utf-8' },
 		);
 	}
-	return execSync(`docker exec demo-cardano-node-1 bash -c ${JSON.stringify(`export CARDANO_NODE_SOCKET_PATH=/devnet/node.socket; ${cmd}`)}`, {
-		encoding: 'utf-8',
-	});
+	return execFileSync(
+		'docker',
+		['exec', 'demo-cardano-node-1', 'bash', '-c', `export CARDANO_NODE_SOCKET_PATH=/devnet/node.socket; ${cmd}`],
+		{ encoding: 'utf-8' },
+	);
 }
 
-async function fetchUtxoJson(address: string): Promise<Record<string, { value: { lovelace: number }; address: string }>> {
+async function fetchUtxoJson(
+	address: string,
+): Promise<Record<string, { value: { lovelace: number }; address: string }>> {
 	if (NETWORK === 'preprod') {
 		const projectId = readFileSync(join(PREPROD_DIR, 'blockfrost.txt'), 'utf-8').trim();
-		const res = await fetch(
-			`https://cardano-preprod.blockfrost.io/api/v0/addresses/${address}/utxos`,
-			{ headers: { project_id: projectId } },
-		);
+		const res = await fetch(`https://cardano-preprod.blockfrost.io/api/v0/addresses/${address}/utxos`, {
+			headers: { project_id: projectId },
+		});
 		const utxos = (await res.json()) as Array<{
 			tx_hash: string;
 			output_index: number;
@@ -77,9 +96,17 @@ async function bfSubmit(cborHex: string): Promise<{ ok: boolean; body: string }>
 }
 
 async function httpPost(url: string, body: unknown): Promise<unknown> {
-	const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+	const res = await fetch(url, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	});
 	const t = await res.text();
-	try { return JSON.parse(t); } catch { return t; }
+	try {
+		return JSON.parse(t);
+	} catch {
+		return t;
+	}
 }
 
 async function main() {
@@ -94,7 +121,9 @@ async function main() {
 	// Derive the funds address and query its UTxOs (network-aware).
 	const fundsVk = NETWORK === 'preprod' ? '/keys/purchasing-cardano.vk' : '/devnet/credentials/alice-funds.vk';
 	const magic = NETWORK === 'preprod' ? 1 : 42;
-	const fundsAddr = cli(`cardano-cli conway address build --payment-verification-key-file ${fundsVk} --testnet-magic ${magic}`).trim();
+	const fundsAddr = cli(
+		`cardano-cli conway address build --payment-verification-key-file ${fundsVk} --testnet-magic ${magic}`,
+	).trim();
 	const fundsSk = NETWORK === 'preprod' ? '/keys/purchasing-cardano.sk' : '/devnet/credentials/alice-funds.sk';
 
 	// Minimum lovelace the committed UTxO must carry: enough for buyer (40 ADA) +
@@ -123,7 +152,8 @@ async function main() {
 			.filter((k) => utxos[k].value.lovelace >= MIN_COMMIT_LOVELACE)
 			.sort((a, b) => utxos[a].value.lovelace - utxos[b].value.lovelace);
 		const utxoKey = candidates[0];
-		if (!utxoKey) throw new Error(`no UTxO ≥ ${MIN_COMMIT_LOVELACE} lovelace found at ${fundsAddr} — fund it via faucet first`);
+		if (!utxoKey)
+			throw new Error(`no UTxO ≥ ${MIN_COMMIT_LOVELACE} lovelace found at ${fundsAddr} — fund it via faucet first`);
 		const lovelace = utxos[utxoKey].value.lovelace;
 		const hasLargerFuelUtxo = Object.keys(utxos).some((k) => k !== utxoKey && utxos[k].value.lovelace > lovelace);
 		if (!hasLargerFuelUtxo) {
@@ -135,7 +165,11 @@ async function main() {
 		const commitBody = {
 			[utxoKey]: {
 				address: fundsAddr,
-				datum: null, datumhash: null, inlineDatum: null, inlineDatumRaw: null, referenceScript: null,
+				datum: null,
+				datumhash: null,
+				inlineDatum: null,
+				inlineDatumRaw: null,
+				referenceScript: null,
 				value: { lovelace },
 			},
 		};
@@ -151,21 +185,40 @@ async function main() {
 		const envelope = JSON.stringify({ type: 'Tx ConwayEra', description: '', cborHex: draft.cborHex });
 		const signedJson =
 			NETWORK === 'preprod'
-				? execSync(
-						`docker run --rm -i -v ${JSON.stringify(PREPROD_DIR)}:/keys --entrypoint sh ghcr.io/intersectmbo/cardano-node:10.6.2 -c ` +
-							JSON.stringify(
-								`cat > /tmp/commit.tx && cardano-cli conway transaction sign --tx-file /tmp/commit.tx --signing-key-file ${fundsSk} --testnet-magic ${magic} --out-file /tmp/commit.signed && cat /tmp/commit.signed`,
-							),
+				? execFileSync(
+						'docker',
+						[
+							'run',
+							'--rm',
+							'-i',
+							'-v',
+							`${PREPROD_DIR}:/keys`,
+							'--entrypoint',
+							'sh',
+							CARDANO_NODE_IMAGE,
+							'-c',
+							`cat > /tmp/commit.tx && cardano-cli conway transaction sign --tx-file /tmp/commit.tx --signing-key-file ${fundsSk} --testnet-magic ${magic} --out-file /tmp/commit.signed && cat /tmp/commit.signed`,
+						],
 						{ input: envelope, encoding: 'utf-8' },
 					)
-				: execSync(
-						`docker exec -i demo-cardano-node-1 bash -c ${JSON.stringify(
+				: execFileSync(
+						'docker',
+						[
+							'exec',
+							'-i',
+							'demo-cardano-node-1',
+							'bash',
+							'-c',
 							'cat > /tmp/commit.tx && CARDANO_NODE_SOCKET_PATH=/devnet/node.socket cardano-cli conway transaction sign --tx-file /tmp/commit.tx --signing-key-file /devnet/credentials/alice-funds.sk --signing-key-file /devnet/credentials/alice.sk --testnet-magic 42 --out-file /tmp/commit.signed && cat /tmp/commit.signed',
-						)}`,
+						],
 						{ input: envelope, encoding: 'utf-8' },
 					);
 		const signed = JSON.parse(signedJson) as { cborHex: string };
-		const submit = await httpPost('http://127.0.0.1:4001/cardano-transaction', { type: 'Tx ConwayEra', description: '', cborHex: signed.cborHex });
+		const submit = await httpPost('http://127.0.0.1:4001/cardano-transaction', {
+			type: 'Tx ConwayEra',
+			description: '',
+			cborHex: signed.cborHex,
+		});
 		log(`commit submit: ${JSON.stringify(submit).slice(0, 80)}`);
 		if (NETWORK !== 'preprod') {
 			submitted = true;
@@ -178,9 +231,18 @@ async function main() {
 		// Confirm the tx actually lands; resubmit the SAME signed tx (same txid) if
 		// it goes missing; if it never appears (validity expired), loop back and
 		// re-draft a fresh deposit.
-		const txId = execSync(
-			`docker run --rm -i --entrypoint sh ghcr.io/intersectmbo/cardano-node:10.6.2 -c ` +
-				JSON.stringify('cat > /tmp/commit.signed && cardano-cli conway transaction txid --tx-file /tmp/commit.signed'),
+		const txId = execFileSync(
+			'docker',
+			[
+				'run',
+				'--rm',
+				'-i',
+				'--entrypoint',
+				'sh',
+				CARDANO_NODE_IMAGE,
+				'-c',
+				'cat > /tmp/commit.signed && cardano-cli conway transaction txid --tx-file /tmp/commit.signed',
+			],
 			{ input: signedJson, encoding: 'utf-8' },
 		).trim();
 		log(`deposit tx ${txId} — waiting for it to appear on L1…`);
@@ -191,7 +253,9 @@ async function main() {
 		}
 		if (!known) {
 			const re = await bfSubmit(signed.cborHex);
-			log(`deposit tx not visible after 120s — resubmitted via Blockfrost: ${re.ok ? 'accepted' : re.body.slice(0, 140)}`);
+			log(
+				`deposit tx not visible after 120s — resubmitted via Blockfrost: ${re.ok ? 'accepted' : re.body.slice(0, 140)}`,
+			);
 			for (let i = 0; i < 9 && !known; i++) {
 				await new Promise((r) => setTimeout(r, 10000));
 				known = await bfTxKnown(txId);
@@ -214,7 +278,13 @@ async function main() {
 	}
 	const snap = await node.snapshotUTxO();
 	log(`=== HEAD OPEN === snapshot UTxOs: ${snap.length}`);
-	for (const u of snap) log(`  ${u.input.txHash.slice(0, 12)}…#${u.input.outputIndex} ${u.output.amount.find((a) => a.unit === 'lovelace')?.quantity}`);
+	for (const u of snap)
+		log(
+			`  ${u.input.txHash.slice(0, 12)}…#${u.input.outputIndex} ${u.output.amount.find((a) => a.unit === 'lovelace')?.quantity}`,
+		);
 	process.exit(0);
 }
-main().catch((e) => { console.error('[open] FATAL', e); process.exit(1); });
+main().catch((e) => {
+	console.error('[open] FATAL', e);
+	process.exit(1);
+});

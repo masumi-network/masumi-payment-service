@@ -22,7 +22,7 @@
  *                      (headLovelace − storedHeadAdaOverhead). Required.
  *   MIN_CHANGE       — min lovelace kept as change (default 2_000_000).
  */
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { writeFileSync, unlinkSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,6 +34,7 @@ const NETWORK = process.env.HYDRA_FLOW_NETWORK ?? 'devnet';
 const TARGET = BigInt(process.env.TARGET_L2_TOTAL ?? '0');
 const MIN_CHANGE = BigInt(process.env.MIN_CHANGE ?? '2000000');
 const FUNDS_SK = NETWORK === 'preprod' ? '/keys/purchasing-cardano.sk' : '/devnet/credentials/alice-funds.sk';
+const CARDANO_NODE_IMAGE = 'ghcr.io/intersectmbo/cardano-node:10.6.2';
 
 function log(m: string) {
 	console.log(`[burn-phantom] ${new Date().toISOString().slice(11, 19)} ${m}`);
@@ -41,8 +42,25 @@ function log(m: string) {
 
 function derivePurchasingAddr(): string {
 	const preprodDir = join(process.cwd(), 'hydra-l2-flow', 'preprod');
-	return execSync(
-		`docker run --rm -v ${JSON.stringify(preprodDir)}:/keys --entrypoint cardano-cli ghcr.io/intersectmbo/cardano-node:10.6.2 address build --payment-verification-key-file /keys/purchasing-cardano.vk --testnet-magic 1`,
+	// argv, not a shell string: the mount path comes from process.cwd() and must
+	// never be word-split or expanded by a shell.
+	return execFileSync(
+		'docker',
+		[
+			'run',
+			'--rm',
+			'-v',
+			`${preprodDir}:/keys`,
+			'--entrypoint',
+			'cardano-cli',
+			CARDANO_NODE_IMAGE,
+			'address',
+			'build',
+			'--payment-verification-key-file',
+			'/keys/purchasing-cardano.vk',
+			'--testnet-magic',
+			'1',
+		],
 		{ encoding: 'utf-8' },
 	).trim();
 }
@@ -53,9 +71,20 @@ function signWithCardanoCli(cborHex: string, credKeyPath: string): string {
 	try {
 		if (NETWORK === 'preprod') {
 			const preprodDir = join(process.cwd(), 'hydra-l2-flow', 'preprod');
-			const signedJson = execSync(
-				`docker run --rm -i -v ${JSON.stringify(preprodDir)}:/keys --entrypoint sh ghcr.io/intersectmbo/cardano-node:10.6.2 -c ` +
-					JSON.stringify(`cat > /tmp/d.tx && cardano-cli conway transaction sign --tx-file /tmp/d.tx --signing-key-file ${credKeyPath} --testnet-magic 1 --out-file /tmp/s.tx && cat /tmp/s.tx`),
+			const signedJson = execFileSync(
+				'docker',
+				[
+					'run',
+					'--rm',
+					'-i',
+					'-v',
+					`${preprodDir}:/keys`,
+					'--entrypoint',
+					'sh',
+					CARDANO_NODE_IMAGE,
+					'-c',
+					`cat > /tmp/d.tx && cardano-cli conway transaction sign --tx-file /tmp/d.tx --signing-key-file ${credKeyPath} --testnet-magic 1 --out-file /tmp/s.tx && cat /tmp/s.tx`,
+				],
 				{ input: readFileSync(tmpIn, 'utf-8'), encoding: 'utf-8' },
 			);
 			return (JSON.parse(signedJson) as { cborHex: string }).cborHex;
@@ -80,7 +109,10 @@ async function main() {
 	await new Promise((r) => setTimeout(r, 600));
 
 	const utxos = await node.snapshotUTxO();
-	const total = utxos.reduce((s, u) => s + BigInt(u.output.amount.find((a) => a.unit === 'lovelace')?.quantity ?? '0'), 0n);
+	const total = utxos.reduce(
+		(s, u) => s + BigInt(u.output.amount.find((a) => a.unit === 'lovelace')?.quantity ?? '0'),
+		0n,
+	);
 	const phantom = total - TARGET;
 	log(`L2 total=${total} target=${TARGET} phantom=${phantom}`);
 
@@ -141,7 +173,10 @@ async function main() {
 
 	// Ground truth: the L2 total must now equal the target exactly.
 	const after = await node.snapshotUTxO();
-	const newTotal = after.reduce((s, u) => s + BigInt(u.output.amount.find((a) => a.unit === 'lovelace')?.quantity ?? '0'), 0n);
+	const newTotal = after.reduce(
+		(s, u) => s + BigInt(u.output.amount.find((a) => a.unit === 'lovelace')?.quantity ?? '0'),
+		0n,
+	);
 	log(`post-burn L2 total=${newTotal} (target ${TARGET})`);
 	if (newTotal !== TARGET) {
 		throw new Error(`post-burn total ${newTotal} != target ${TARGET} — do NOT Close yet`);

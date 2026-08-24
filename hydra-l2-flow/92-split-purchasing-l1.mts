@@ -13,22 +13,39 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { BlockfrostProvider, MeshTxBuilder, MeshWallet } from '@meshsdk/core';
 
 const PREPROD_DIR = join(process.cwd(), 'hydra-l2-flow', 'preprod');
 const COMMIT_ADA = BigInt(process.argv[2] ?? '500') * 1_000_000n;
 const FUEL_ADA = BigInt(process.argv[3] ?? '250') * 1_000_000n;
 const TOKEN_HOLDER_LOVELACE = 2_000_000n;
+const CARDANO_NODE_IMAGE = 'ghcr.io/intersectmbo/cardano-node:10.6.2';
 
 function log(m: string) {
 	console.log(`[split-l1] ${new Date().toISOString().slice(11, 19)} ${m}`);
 }
 
 function purchasingAddress(): string {
-	return execSync(
-		`docker run --rm -v ${JSON.stringify(PREPROD_DIR)}:/keys --entrypoint cardano-cli ghcr.io/intersectmbo/cardano-node:10.6.2 ` +
-			`address build --payment-verification-key-file /keys/purchasing-cardano.vk --testnet-magic 1`,
+	// argv, not a shell string: PREPROD_DIR comes from process.cwd() and must
+	// never be word-split or expanded by a shell.
+	return execFileSync(
+		'docker',
+		[
+			'run',
+			'--rm',
+			'-v',
+			`${PREPROD_DIR}:/keys`,
+			'--entrypoint',
+			'cardano-cli',
+			CARDANO_NODE_IMAGE,
+			'address',
+			'build',
+			'--payment-verification-key-file',
+			'/keys/purchasing-cardano.vk',
+			'--testnet-magic',
+			'1',
+		],
 		{ encoding: 'utf-8' },
 	).trim();
 }
@@ -89,12 +106,21 @@ async function main() {
 
 function signWithCli(cborHex: string): string {
 	const body = JSON.stringify({ type: 'Unwitnessed Tx ConwayEra', description: '', cborHex });
-	const signed = execSync(
-		`docker run --rm -i -v ${JSON.stringify(PREPROD_DIR)}:/keys --entrypoint sh ghcr.io/intersectmbo/cardano-node:10.6.2 -c ` +
-			JSON.stringify(
-				'cat > /tmp/d.tx && cardano-cli conway transaction sign --tx-file /tmp/d.tx ' +
-					'--signing-key-file /keys/purchasing-cardano.sk --testnet-magic 1 --out-file /tmp/s.tx && cat /tmp/s.tx',
-			),
+	const signed = execFileSync(
+		'docker',
+		[
+			'run',
+			'--rm',
+			'-i',
+			'-v',
+			`${PREPROD_DIR}:/keys`,
+			'--entrypoint',
+			'sh',
+			CARDANO_NODE_IMAGE,
+			'-c',
+			'cat > /tmp/d.tx && cardano-cli conway transaction sign --tx-file /tmp/d.tx ' +
+				'--signing-key-file /keys/purchasing-cardano.sk --testnet-magic 1 --out-file /tmp/s.tx && cat /tmp/s.tx',
+		],
 		{ input: body, encoding: 'utf-8' },
 	);
 	return (JSON.parse(signed) as { cborHex: string }).cborHex;

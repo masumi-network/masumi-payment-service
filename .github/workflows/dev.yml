@@ -48,6 +48,30 @@ jobs:
           rm aiken.tar.gz
           echo "$HOME/.aiken/bin" >> "$GITHUB_PATH"
 
+          # VERIFIED: Aiken v1.1.23 checks this cache file before its
+          # unauthenticated REST download.
+          # Source: https://github.com/aiken-lang/aiken/blob/v1.1.23/crates/aiken-project/src/deps/downloader.rs#L70-L107
+          AIKEN_STDLIB_VERSION="v2.1.0"
+          AIKEN_STDLIB_COMMIT="0c2851f45cdad0d23a94f0cba149891a358e7637"
+          for manifest in smart-contracts/payment-v2/aiken.toml smart-contracts/registry-v2/aiken.toml; do
+            PROJECT_STDLIB_VERSION="$(sed -nE '/name = "aiken-lang\/stdlib"/{n;s/^version = "([^"]+)".*/\1/p;}' "$manifest")"
+            if [[ "$PROJECT_STDLIB_VERSION" != "$AIKEN_STDLIB_VERSION" ]]; then
+              echo "ERROR: $manifest pins stdlib $PROJECT_STDLIB_VERSION; update the CI cache seed"
+              exit 1
+            fi
+          done
+
+          AIKEN_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}"
+          AIKEN_STDLIB_DOWNLOAD="$RUNNER_TEMP/aiken-lang-stdlib-${AIKEN_STDLIB_VERSION}.zip"
+          AIKEN_STDLIB_CACHE="$AIKEN_CACHE_ROOT/aiken/packages/aiken-lang-stdlib-${AIKEN_STDLIB_VERSION}.zip"
+          curl --fail --silent --show-error --location \
+            --retry 5 --retry-all-errors --retry-max-time 60 \
+            --output "$AIKEN_STDLIB_DOWNLOAD" \
+            "https://codeload.github.com/aiken-lang/stdlib/zip/${AIKEN_STDLIB_COMMIT}"
+          unzip -tq "$AIKEN_STDLIB_DOWNLOAD"
+          mkdir -p "$(dirname "$AIKEN_STDLIB_CACHE")"
+          install -m 0644 "$AIKEN_STDLIB_DOWNLOAD" "$AIKEN_STDLIB_CACHE"
+
       - name: Check V2 smart contracts
         run: bash scripts/check-v2-contracts.sh
 
