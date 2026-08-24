@@ -8,7 +8,7 @@
  *
  * Run: pnpm exec tsx hydra-l2-flow/02-fund-in-head.mts <masumi_addr> <amount_lovelace>
  */
-import { execSync, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { writeFileSync, unlinkSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -77,13 +77,28 @@ function signWithCardanoCli(cborHex: string, credKeyPath: string): string {
 			return (JSON.parse(signedJson) as { cborHex: string }).cborHex;
 		}
 		const id = Date.now();
-		execSync(`docker cp "${tmpIn}" demo-cardano-node-1:/tmp/d-${id}.tx`, { stdio: 'pipe' });
-		execSync(
-			`docker exec demo-cardano-node-1 cardano-cli conway transaction sign ` +
-				`--tx-file /tmp/d-${id}.tx --signing-key-file "${credKeyPath}" --testnet-magic 42 --out-file /tmp/s-${id}.tx`,
+		execFileSync('docker', ['cp', tmpIn, `demo-cardano-node-1:/tmp/d-${id}.tx`], { stdio: 'pipe' });
+		execFileSync(
+			'docker',
+			[
+				'exec',
+				'demo-cardano-node-1',
+				'cardano-cli',
+				'conway',
+				'transaction',
+				'sign',
+				'--tx-file',
+				`/tmp/d-${id}.tx`,
+				'--signing-key-file',
+				credKeyPath,
+				'--testnet-magic',
+				'42',
+				'--out-file',
+				`/tmp/s-${id}.tx`,
+			],
 			{ stdio: 'pipe' },
 		);
-		execSync(`docker cp demo-cardano-node-1:/tmp/s-${id}.tx "${tmpOut}"`, { stdio: 'pipe' });
+		execFileSync('docker', ['cp', `demo-cardano-node-1:/tmp/s-${id}.tx`, tmpOut], { stdio: 'pipe' });
 		return (JSON.parse(readFileSync(tmpOut, 'utf-8')) as { cborHex: string }).cborHex;
 	} finally {
 		try {
