@@ -44,6 +44,7 @@ import { AnimatedPage } from '@/components/ui/animated-page';
 import { StatCard } from '@/components/ui/stat-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { WelcomeBanner } from '@/components/ui/welcome-banner';
+import { isWalletFundStepComplete } from '@/components/ui/welcome-banner-fund-step';
 import { SetupV2Banner } from '@/components/setup/SetupV2Banner';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
@@ -107,6 +108,14 @@ export default function Overview() {
   const totalBalance = useMemo(() => totalBalanceValue || '0', [totalBalanceValue]);
   const totalUsdcxBalance = useMemo(() => totalUsdcxBalanceValue || '0', [totalUsdcxBalanceValue]);
   const isLoadingBalances = isLoadingWallets;
+  const hasFundedWallet = useMemo(
+    () =>
+      isWalletFundStepComplete({
+        isLoading: isLoadingWallets,
+        wallets: walletsList,
+      }),
+    [isLoadingWallets, walletsList],
+  );
   const currentNetworkPaymentSources = useMemo(
     () => paymentSources.filter((source) => source.network === network),
     [paymentSources, network],
@@ -227,7 +236,7 @@ export default function Overview() {
 
             <WelcomeBanner
               agentCount={agents.length}
-              walletCount={walletsList.length}
+              hasFundedWallet={hasFundedWallet}
               transactionCount={transactions.length}
               hasPaymentSource={!!selectedPaymentSource}
             />
