@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { X402Network, X402Wallet } from '@/lib/api/generated';
 import {
+  filterX402PaymentSourceChains,
   hasBudgetOnEnabledNetworks,
   isX402ChainUsable,
   isX402SetUpForEnv,
@@ -37,6 +38,19 @@ test('remote facilitator makes an enabled chain usable without a managed wallet'
 
 test('chain remains unusable without either facilitator mode', () => {
   assert.equal(isX402ChainUsable(network()), false);
+});
+
+test('payment sources keeps draft chains visible for management', () => {
+  const ready = network({ facilitatorUrl: 'https://facilitator.example' });
+  const draft = network({
+    id: 'draft-network',
+    caip2Id: 'eip155:84532',
+    displayName: 'Base Sepolia',
+    isEnabled: false,
+  });
+
+  assert.deepEqual(filterX402PaymentSourceChains([ready, draft], ''), [ready, draft]);
+  assert.deepEqual(filterX402PaymentSourceChains([ready, draft], 'sepolia'), [draft]);
 });
 
 test('wallets are scoped by their structural network binding', () => {

@@ -22,14 +22,14 @@ export default function X402PaymentsPage() {
   return (
     <MainLayout>
       <Head>
-        <title>x402 Payments | Admin Interface</title>
+        <title>x402 Transactions | Admin Interface</title>
       </Head>
       <AnimatedPage>
         <div className="space-y-6">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">x402 Payments</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">x402 Transactions</h1>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Payment activity for the x402 (EVM) rail.{' '}
+              Transaction activity for the x402 (EVM) rail.{' '}
               <a
                 href="https://www.masumi.network/dev/masumi"
                 target="_blank"

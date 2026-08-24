@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useForm, Controller, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -39,6 +39,7 @@ import {
   patchX402LowBalance,
   postX402LowBalance,
   X402LowBalanceRule,
+  X402Wallet,
 } from '@/lib/api/generated';
 
 const NATIVE = 'native';
@@ -73,9 +74,11 @@ type RuleFormValues = z.infer<typeof ruleFormSchema>;
 const assetLabel = (asset: string) =>
   asset === NATIVE ? 'Native (gas)' : shortenAddress(asset, 6);
 
-export function AlertsTab() {
+export function AlertsTab({ wallet }: { wallet?: X402Wallet }) {
   const { rules, isLoading, isRefetching, refetch } = useX402LowBalanceRules();
-  const { networks, isLoading: networksLoading } = useX402Networks();
+  const { networks, isLoading: networksLoading } = useX402Networks({
+    allEnvironments: !!wallet,
+  });
   const { apiClient } = useAppContext();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<X402LowBalanceRule | null>(null);
@@ -89,19 +92,22 @@ export function AlertsTab() {
   // picker) are scoped to the active env. Scope the list to the active env's chains so the
   // Preprod/Mainnet selector governs this tab like every other x402 surface.
   const envChainIds = useMemo(() => new Set(networks.map((n) => n.caip2Id)), [networks]);
-  const envRules = useMemo(
-    () => rules.filter((rule) => envChainIds.has(rule.caip2Network)),
-    [rules, envChainIds],
+  const visibleRules = useMemo(
+    () =>
+      rules.filter(
+        (rule) => envChainIds.has(rule.caip2Network) && (!wallet || rule.evmWalletId === wallet.id),
+      ),
+    [rules, envChainIds, wallet],
   );
 
   const toggleRule = useApiMutation({
     mutationFn: (body: { ruleId: string; enabled: boolean }) =>
       patchX402LowBalance({ client: apiClient, body }),
-    errorMessage: 'Failed to update rule',
+    errorMessage: 'Failed to update low-balance rule',
   });
   const deleteRule = useApiMutation({
     mutationFn: (body: { ruleId: string }) => deleteX402LowBalance({ client: apiClient, body }),
-    errorMessage: 'Failed to delete rule',
+    errorMessage: 'Failed to delete low-balance rule',
   });
 
   const toggleEnabled = async (rule: X402LowBalanceRule) => {
@@ -121,7 +127,7 @@ export function AlertsTab() {
     setBusyId(null);
     setRuleToDelete(null);
     if (response) {
-      toast.success('Alert deleted');
+      toast.success('Low-balance rule deleted');
       refetch();
     }
   };
@@ -130,8 +136,9 @@ export function AlertsTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Get alerted when a managed wallet runs low. Selling wallets need native gas to settle;
-          Purchasing wallets need their payment token plus gas. Alerts fire as webhooks.
+          {wallet
+            ? 'Low-balance rules for this wallet. Alerts fire as webhooks.'
+            : 'Get alerted when a managed wallet runs low. Selling wallets need native gas to settle; Purchasing wallets need their payment token plus gas. Alerts fire as webhooks.'}
         </p>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
@@ -143,7 +150,7 @@ export function AlertsTab() {
             className="flex items-center gap-2"
           >
             <Plus className="h-4 w-4" />
-            Add alert
+            Add rule
           </Button>
         </div>
       </div>
@@ -184,22 +191,28 @@ export function AlertsTab() {
                   </div>
                 </td>
               </tr>
-            ) : envRules.length === 0 ? (
+            ) : visibleRules.length === 0 ? (
               <tr>
                 <td colSpan={7}>
                   <EmptyState
-                    title="No alerts configured"
-                    description="Add a low-balance alert so a wallet running out of gas or tokens does not silently break settlement. You need a managed wallet first."
+                    title="No low-balance rules"
+                    description={
+                      wallet
+                        ? 'Add a rule so low gas or token funds do not stop payments.'
+                        : 'Add a low-balance alert so a wallet running out of gas or tokens does not silently break settlement. You need a managed wallet first.'
+                    }
                     action={
-                      <Button asChild variant="outline" size="sm">
-                        <Link href="/x402/wallets">Go to Wallets</Link>
-                      </Button>
+                      !wallet && (
+                        <Button asChild variant="outline" size="sm">
+                          <Link href="/x402/wallets">Go to Wallets</Link>
+                        </Button>
+                      )
                     }
                   />
                 </td>
               </tr>
             ) : (
-              envRules.map((rule) => (
+              visibleRules.map((rule) => (
                 <tr
                   key={rule.id}
                   className={cn('border-b last:border-0', !rule.enabled && 'opacity-50')}
@@ -269,6 +282,7 @@ export function AlertsTab() {
         key={dialogOpen ? (editing?.id ?? 'new') : 'closed'}
         open={dialogOpen}
         editing={editing}
+        defaultWalletId={wallet?.id}
         onClose={() => setDialogOpen(false)}
         onSaved={() => {
           setDialogOpen(false);
@@ -279,10 +293,11 @@ export function AlertsTab() {
       <ConfirmDialog
         open={ruleToDelete !== null}
         onClose={() => setRuleToDelete(null)}
-        title="Delete low-balance alert"
+        title="Delete low-balance rule"
         description="This removes the alert rule. The wallet will no longer be monitored for this asset on this chain."
         onConfirm={confirmDelete}
         isLoading={busyId !== null && busyId === ruleToDelete?.id}
+        elevatedChildStack={!!wallet}
       />
     </div>
   );
@@ -291,16 +306,18 @@ export function AlertsTab() {
 function AlertDialog({
   open,
   editing,
+  defaultWalletId,
   onClose,
   onSaved,
 }: {
   open: boolean;
   editing: X402LowBalanceRule | null;
+  defaultWalletId?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { apiClient } = useAppContext();
-  const { networks } = useX402Networks();
+  const { networks } = useX402Networks({ allEnvironments: !!defaultWalletId });
   const { wallets } = useX402Wallets(open);
   const availableWallets = useMemo(
     () => walletsForNetworks(wallets, networks),
@@ -317,7 +334,7 @@ function AlertDialog({
       'ruleId' in input
         ? patchX402LowBalance({ client: apiClient, body: input })
         : postX402LowBalance({ client: apiClient, body: input }),
-    errorMessage: 'Failed to save alert',
+    errorMessage: 'Failed to save low-balance rule',
   });
   const isSaving = saveAlert.isPending;
 
@@ -333,7 +350,7 @@ function AlertDialog({
   } = useForm<RuleFormValues>({
     resolver: zodResolver(ruleFormSchema),
     defaultValues: {
-      evmWalletId: editing?.evmWalletId ?? '',
+      evmWalletId: editing?.evmWalletId ?? defaultWalletId ?? '',
       caip2Network: editing?.caip2Network ?? '',
       assetKind: editingAssetKind,
       asset: editing && editing.asset !== NATIVE ? editing.asset : '',
@@ -357,6 +374,18 @@ function AlertDialog({
     }
   };
 
+  useEffect(() => {
+    if (!open || editing || !defaultWalletId) return;
+    const wallet = availableWallets.find((candidate) => candidate.id === defaultWalletId);
+    if (!wallet) return;
+    setValue('evmWalletId', wallet.id, { shouldValidate: true });
+    setValue('caip2Network', wallet.caip2Network, { shouldValidate: true });
+    if (assetKind === 'token') {
+      const chain = networks.find((candidate) => candidate.caip2Id === wallet.caip2Network);
+      setValue('asset', chain?.defaultAsset ?? '', { shouldValidate: false });
+    }
+  }, [open, editing, defaultWalletId, availableWallets, assetKind, networks, setValue]);
+
   const onSubmit = async (data: RuleFormValues) => {
     const asset = data.assetKind === 'native' ? NATIVE : data.asset;
     // An existing rule is keyed by (wallet, chain, asset); only the threshold is editable in
@@ -374,15 +403,15 @@ function AlertDialog({
       )
       .catch(() => null);
     if (!response) return;
-    toast.success(editing ? 'Alert updated' : 'Alert added');
+    toast.success(editing ? 'Low-balance rule updated' : 'Low-balance rule added');
     onSaved();
   };
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent>
+      <DialogContent elevatedChildStack={!!defaultWalletId}>
         <DialogHeader>
-          <DialogTitle>{editing ? 'Update alert' : 'Add low-balance alert'}</DialogTitle>
+          <DialogTitle>{editing ? 'Update low-balance rule' : 'Add low-balance rule'}</DialogTitle>
           <DialogDescription>
             Alert when a wallet&apos;s balance for an asset drops below a threshold. Use the native
             gas token for facilitators, or a token contract for payment funds.
@@ -396,7 +425,11 @@ function AlertDialog({
               control={control}
               name="evmWalletId"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={onSelectWallet} disabled={!!editing}>
+                <Select
+                  value={field.value}
+                  onValueChange={onSelectWallet}
+                  disabled={!!editing || !!defaultWalletId}
+                >
                   <SelectTrigger aria-label="Managed wallet">
                     <SelectValue placeholder="Select a wallet" />
                   </SelectTrigger>
@@ -502,7 +535,7 @@ function AlertDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={isSaving}>
-              {isSaving ? 'Saving…' : editing ? 'Update alert' : 'Add alert'}
+              {isSaving ? 'Saving…' : editing ? 'Update rule' : 'Add rule'}
             </Button>
           </DialogFooter>
         </form>

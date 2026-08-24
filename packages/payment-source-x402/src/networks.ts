@@ -411,7 +411,7 @@ export type X402BudgetScope = { apiKeyId: string } | 'all';
 
 export async function listX402WalletBudgets(scope: X402BudgetScope) {
 	const budgets = await prisma.x402WalletBudget.findMany({
-		where: scope === 'all' ? {} : { apiKeyId: scope.apiKeyId },
+		where: scope === 'all' ? { enabled: true } : { apiKeyId: scope.apiKeyId, enabled: true },
 		orderBy: { createdAt: 'desc' },
 		select: BUDGET_SELECT,
 	});

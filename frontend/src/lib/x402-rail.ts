@@ -36,6 +36,19 @@ export function walletsForNetworks(wallets: X402Wallet[], networks: X402Network[
   return wallets.filter((wallet) => networkIds.has(wallet.networkId));
 }
 
+/** Payment Sources must keep drafts visible so operators can finish or remove their config. */
+export function filterX402PaymentSourceChains<
+  T extends Pick<X402Network, 'displayName' | 'caip2Id'>,
+>(chains: T[], searchQuery: string): T[] {
+  if (!searchQuery) return chains;
+  const query = searchQuery.toLowerCase();
+  return chains.filter(
+    (chain) =>
+      chain.displayName.toLowerCase().includes(query) ||
+      chain.caip2Id.toLowerCase().includes(query),
+  );
+}
+
 /** Whether any budget belongs to an enabled network in the supplied environment scope. */
 export function hasBudgetOnEnabledNetworks(
   budgets: Pick<X402Budget, 'caip2Network'>[],

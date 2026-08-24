@@ -8,7 +8,10 @@ import {
   getX402Networks,
   getX402NetworksAvailable,
   getX402Payments,
+  getX402PaymentsCount,
+  getX402SettlementsCount,
   getX402Wallets,
+  getX402WalletsBalance,
   X402Budget,
   X402LowBalanceRule,
   X402AvailableNetwork,
@@ -16,6 +19,10 @@ import {
   X402PaymentAttempt,
   X402Wallet,
 } from '@/lib/api/generated';
+import {
+  aggregateX402DashboardBalances,
+  type X402DashboardBalanceRead,
+} from '@/lib/x402-dashboard';
 import { handleApiCall } from '@/lib/utils';
 import {
   appendInclusiveCursorPage,
@@ -23,6 +30,7 @@ import {
 } from '@/lib/pagination/cursor-pagination';
 
 const PAGE_SIZE = 20;
+const X402_BALANCE_BATCH_SIZE = 5;
 
 export function useX402Networks(options?: {
   silentErrors?: boolean;
@@ -195,7 +203,9 @@ export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networ
             }),
           { errorMessage: 'Failed to fetch wallets' },
         );
-        const page = (response?.data?.data?.Wallets ?? []) as X402Wallet[];
+        const wallets = response?.data?.data?.Wallets;
+        if (wallets == null) throw new Error('Failed to fetch wallets');
+        const page = wallets as X402Wallet[];
         if (page.length === 0) break;
         items = appendInclusiveCursorPage(items, page, (wallet) => wallet.id);
         if (page.length < PAGE_SIZE) break;
@@ -214,6 +224,7 @@ export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networ
   return {
     wallets: (query.data ?? []) as X402Wallet[],
     isLoading: query.isLoading,
+    isError: query.isError,
     isRefetching: query.isRefetching,
     refetch: async () => {
       await query.refetch();
@@ -407,5 +418,185 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
       await query.refetch();
     },
     isRefetching: query.isRefetching,
+  };
+}
+
+const X402_PAYMENT_STATUSES: X402PaymentAttempt['status'][] = [
+  'PaymentRequired',
+  'Verified',
+  'Settled',
+  'Failed',
+  'Replayed',
+];
+
+async function readX402Count(
+  request: () => Promise<{ data?: { data?: { total?: number } } }>,
+): Promise<number> {
+  const response = await handleApiCall(request, { onError: () => {} });
+  const total = response?.data?.data?.total;
+  if (typeof total !== 'number') throw new Error('Failed to read x402 count');
+  return total;
+}
+
+export function useX402DashboardCounts(caip2Network?: string) {
+  const { apiClient, authorized } = useAppContext();
+
+  const query = useQuery({
+    queryKey: ['x402-dashboard', 'counts', caip2Network ?? null],
+    queryFn: async () => {
+      const [transactions, successfulSettlements, ...statusCounts] = await Promise.all([
+        readX402Count(() => getX402PaymentsCount({ client: apiClient, query: { caip2Network } })),
+        readX402Count(() =>
+          getX402SettlementsCount({
+            client: apiClient,
+            query: { caip2Network, success: 'true' },
+          }),
+        ),
+        ...X402_PAYMENT_STATUSES.map((status) =>
+          readX402Count(() =>
+            getX402PaymentsCount({ client: apiClient, query: { caip2Network, status } }),
+          ),
+        ),
+      ]);
+
+      return {
+        transactions,
+        successfulSettlements,
+        byStatus: Object.fromEntries(
+          X402_PAYMENT_STATUSES.map((status, index) => [status, statusCounts[index] ?? 0]),
+        ) as Record<X402PaymentAttempt['status'], number>,
+      };
+    },
+    enabled: !!apiClient && authorized && !!caip2Network,
+    staleTime: 15000,
+    retry: false,
+  });
+
+  return {
+    counts: query.data ?? null,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+}
+
+export function useX402DashboardRecentPayments(caip2Network?: string) {
+  const { apiClient, authorized } = useAppContext();
+
+  const query = useQuery({
+    queryKey: ['x402-dashboard', 'recent-payments', caip2Network ?? null],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          getX402Payments({
+            client: apiClient,
+            query: { take: 5, caip2Network },
+          }),
+        { onError: () => {} },
+      );
+      const attempts = response?.data?.data?.PaymentAttempts;
+      if (attempts == null) throw new Error('Failed to read recent x402 transactions');
+      return attempts as X402PaymentAttempt[];
+    },
+    enabled: !!apiClient && authorized && !!caip2Network,
+    staleTime: 15000,
+    retry: false,
+  });
+
+  return {
+    attempts: query.data ?? [],
+    isLoading: query.isLoading,
+    isError: query.isError,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+}
+
+export function useX402DashboardLowBalanceCount(caip2Network?: string) {
+  const { apiClient, authorized, capabilities } = useAppContext();
+
+  const query = useQuery({
+    queryKey: ['x402-dashboard', 'low-balance', caip2Network ?? null],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          getX402LowBalance({
+            client: apiClient,
+            query: { includeDisabled: 'false' },
+          }),
+        { onError: () => {} },
+      );
+      const rules = response?.data?.data?.Rules;
+      if (rules == null) throw new Error('Failed to read x402 low-balance rules');
+      return rules.filter(
+        (rule) => rule.caip2Network === caip2Network && rule.enabled && rule.status === 'Low',
+      ).length;
+    },
+    enabled: !!apiClient && authorized && capabilities.canAdmin && !!caip2Network,
+    staleTime: 15000,
+    retry: false,
+  });
+
+  return {
+    count: query.data ?? null,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+}
+
+export function useX402DashboardBalances(wallets: X402Wallet[], caip2Network?: string) {
+  const { apiClient, authorized } = useAppContext();
+  const walletIds = wallets.map((wallet) => wallet.id);
+
+  const query = useQuery({
+    queryKey: ['x402-dashboard', 'balances', caip2Network ?? null, walletIds],
+    queryFn: async () => {
+      const reads: X402DashboardBalanceRead[] = [];
+      for (let index = 0; index < wallets.length; index += X402_BALANCE_BATCH_SIZE) {
+        const batch = wallets.slice(index, index + X402_BALANCE_BATCH_SIZE);
+        const batchReads = await Promise.all(
+          batch.map(async (wallet) => {
+            const response = await handleApiCall(
+              () =>
+                getX402WalletsBalance({
+                  client: apiClient,
+                  query: { id: wallet.id, caip2Network },
+                }),
+              { onError: () => {} },
+            );
+            const data = response?.data?.data;
+            return {
+              walletId: wallet.id,
+              requestFailed: data == null,
+              balances: data?.Balances ?? [],
+            };
+          }),
+        );
+        reads.push(...batchReads);
+      }
+      return aggregateX402DashboardBalances(reads);
+    },
+    enabled: !!apiClient && authorized && !!caip2Network && wallets.length > 0,
+    staleTime: 15000,
+    retry: false,
+  });
+
+  return {
+    balances: query.data?.balances ?? [],
+    failedReadCount: query.data?.failedReadCount ?? 0,
+    isLoading: query.isLoading,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
   };
 }

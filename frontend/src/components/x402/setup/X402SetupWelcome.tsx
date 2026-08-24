@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Check, CheckCircle2, Coins, Link2, Wallet as WalletIcon } from 'lucide-react';
@@ -6,22 +6,36 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
 import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { chainsForEnv, isTestnetEnv, walletsForNetworks, X402_ACCENT } from '@/lib/x402-rail';
+import { isTestnetEnv, isX402ChainUsable, walletsForNetworks, X402_ACCENT } from '@/lib/x402-rail';
 import { useRailReadiness } from '@/lib/hooks/useRailReadiness';
-import { areChecksComplete, checkDetail, isCheckComplete } from '@/lib/rail-readiness';
+import { areChecksComplete, checkDetail } from '@/lib/rail-readiness';
 import { X402Network, X402Wallet } from '@/lib/api/generated';
 import { CreateWalletDialog } from '@/components/x402/WalletsTab';
 import { ChainDialog } from '@/components/x402/ChainsTab';
 import { BudgetDialog } from '@/components/x402/BudgetsTab';
+import {
+  hasSpendableBudgetForChain,
+  initialX402SetupStep,
+  type X402SetupStep,
+} from '@/lib/x402-setup';
 
 // Stage labels for the wizard. As in the Cardano /setup wizard, the first (Welcome) and last
 // (Ready) stages are not shown in the numbered stepper; only the middle steps are.
-const STEP_LABELS = ['Welcome', 'Receiving', 'Paying', 'Ready'];
+const STEP_LABELS = ['Welcome', 'Chain', 'Receiving', 'Paying', 'Ready'];
 
 type DialogKind = 'wallet' | 'chain' | 'budget' | null;
+type ReceivingMode = 'managed' | 'remote';
 type LucideIcon = typeof Link2;
 
 // The header icon shared by the step screens: the same glow + ring treatment as the Cardano
@@ -45,10 +59,17 @@ function StepHeaderIcon({ icon: Icon }: { icon: LucideIcon }) {
 export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { authorized, setActiveRail, setSelectedX402ChainId, setIsSetupMode } = useAppContext();
+  const {
+    authorized,
+    selectedX402ChainId,
+    setActiveRail,
+    setSelectedX402ChainId,
+    setIsSetupMode,
+    setSetupWizardStep,
+  } = useAppContext();
   const { wallets, isLoading: walletsLoading } = useX402Wallets();
   const { networks, isLoading: networksLoading } = useX402Networks({ network: networkType });
-  const { isLoading: budgetsLoading } = useX402Budgets();
+  const { budgets, isLoading: budgetsLoading } = useX402Budgets();
   // Step completion comes from the backend, not from re-deriving it here. The
   // chain/wallet/budget lists are still read for the affordances below (which
   // chain to configure, which wallet addresses to show) — but whether a step
@@ -57,11 +78,14 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
     x402: x402Readiness,
     isLoading: readinessLoading,
     isUnavailable: readinessUnavailable,
+    refetch: refetchReadiness,
   } = useRailReadiness({ network: networkType });
 
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState<X402SetupStep>(0);
   const [openDialog, setOpenDialog] = useState<DialogKind>(null);
   const [walletType, setWalletType] = useState<X402Wallet['type']>('Selling');
+  const [receivingMode, setReceivingMode] = useState<ReceivingMode>('managed');
+  const hasInitializedStep = useRef(false);
 
   // The x402 hooks are disabled (and return []) until authorized, which would otherwise read
   // as "nothing configured". Treat the pre-auth window as loading so step state never acts on
@@ -69,35 +93,77 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   const loading =
     !authorized || walletsLoading || networksLoading || budgetsLoading || readinessLoading;
 
-  const envChains = useMemo(() => chainsForEnv(networks, networkType), [networks, networkType]);
+  const envChains = useMemo(() => {
+    const wantTestnet = isTestnetEnv(networkType);
+    return networks.filter((chain) => chain.isTestnet === wantTestnet);
+  }, [networks, networkType]);
   const envWallets = useMemo(() => walletsForNetworks(wallets, envChains), [wallets, envChains]);
   // Wallets are split by direction: a Selling wallet settles inbound payments (facilitator),
   // a Purchasing wallet funds outbound ones (budget). Each step owns its type.
-  const hasSellingWallet = isCheckComplete(x402Readiness, 'x402.selling_wallet');
-  const hasPurchasingWallet = isCheckComplete(x402Readiness, 'x402.purchasing_wallet');
   // The inbound step is complete only when the rail can actually settle: an
   // enabled chain WITH an RPC URL and exactly one facilitator. Deriving this
   // locally used to pass a facilitator-but-no-RPC chain, marking the step done
   // for a rail that would fail on the first payment.
   const hasFacilitator = x402Readiness?.isReady ?? false;
   const facilitatorDetail = checkDetail(x402Readiness, 'x402.facilitator');
+  const selectedChain =
+    envChains.find((chain) => chain.id === selectedX402ChainId) ??
+    envChains.find(isX402ChainUsable) ??
+    envChains[0] ??
+    null;
   const configuredChain =
-    envChains.find((chain) => !!chain.facilitatorWalletId || !!chain.facilitatorUrl) ?? null;
+    envChains.find((chain) => isX402ChainUsable(chain)) ??
+    envChains.find((chain) => !!chain.facilitatorWalletId || !!chain.facilitatorUrl) ??
+    null;
   // Outbound needs both halves — a purchasing wallet and a funded, enabled budget
   // on it. The backend already scopes budgets to this environment's chains.
   const hasBudget = areChecksComplete(x402Readiness, ['x402.purchasing_wallet', 'x402.budget']);
+  const selectedChainIsReady = selectedChain ? isX402ChainUsable(selectedChain) : false;
+  const isReceivingReadyConfirmed = selectedChainIsReady && hasFacilitator && !readinessUnavailable;
+  const selectedSellingWallets = envWallets.filter(
+    (wallet) => wallet.type === 'Selling' && wallet.networkId === selectedChain?.id,
+  );
+  const selectedPurchasingWallets = envWallets.filter(
+    (wallet) => wallet.type === 'Purchasing' && wallet.networkId === selectedChain?.id,
+  );
+  const selectedChainHasBudget = hasSpendableBudgetForChain(budgets, selectedChain?.caip2Id);
 
   // Prefer attaching a facilitator to an enabled chain in the active env that lacks one (Base
   // ships preconfigured), then any chain in the same env, never crossing environments.
-  const chainToConfigure: X402Network | null = useMemo(() => {
-    const wantTestnet = isTestnetEnv(networkType);
-    const envScoped = networks.filter((n) => n.isTestnet === wantTestnet);
-    return (
-      envScoped.find((n) => n.isEnabled && !n.facilitatorWalletId && !n.facilitatorUrl) ??
-      envScoped[0] ??
-      null
-    );
-  }, [networks, networkType]);
+  const chainToConfigure: X402Network | null = selectedChain ?? envChains[0] ?? null;
+
+  useEffect(() => {
+    hasInitializedStep.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- A confirmed environment change starts a fresh wizard for that environment.
+    setCurrentStep(0);
+    setReceivingMode('managed');
+  }, [networkType]);
+
+  useEffect(() => {
+    setSetupWizardStep(currentStep);
+  }, [currentStep, setSetupWizardStep]);
+
+  useEffect(() => {
+    if (loading || hasInitializedStep.current) return;
+    hasInitializedStep.current = true;
+    const nextStep = initialX402SetupStep({
+      isReadinessKnown: !readinessUnavailable,
+      isReceivingReady: hasFacilitator,
+      isPayingReady: hasBudget,
+    });
+    if (nextStep > 0 && configuredChain) {
+      setSelectedX402ChainId(configuredChain.id);
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Resume once from backend-owned readiness after initial data load.
+    setCurrentStep(nextStep);
+  }, [
+    configuredChain,
+    hasBudget,
+    hasFacilitator,
+    loading,
+    readinessUnavailable,
+    setSelectedX402ChainId,
+  ]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
@@ -115,20 +181,19 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
   };
 
   const finish = () => {
-    // Read the chain from the current render BEFORE invalidating (invalidation is async).
-    const configured =
-      envChains.find((c) => !!c.facilitatorWalletId || !!c.facilitatorUrl) ?? envChains[0] ?? null;
-    if (configured) setSelectedX402ChainId(configured.id);
+    if (selectedChain) setSelectedX402ChainId(selectedChain.id);
     setActiveRail('x402');
     setIsSetupMode(false);
     invalidate();
-    router.push('/x402/wallets');
+    router.push('/x402/dashboard');
   };
 
   // Chips for the wallets the operator already has of a direction, so each step reflects state
   // rather than re-asking them to create one.
   const walletChips = (type: X402Wallet['type']) => {
-    const matching = envWallets.filter((wallet) => wallet.type === type);
+    const matching = envWallets.filter(
+      (wallet) => wallet.type === type && wallet.networkId === selectedChain?.id,
+    );
     if (matching.length === 0) return null;
     return (
       <div className="flex flex-wrap justify-center gap-1.5">
@@ -163,8 +228,8 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
       <CardContent className="space-y-6 pb-8">
         <div className="space-y-3">
           {[
-            { icon: WalletIcon, label: 'Create a managed wallet', delay: 'animate-delay-100' },
-            { icon: Link2, label: 'Assign a chain facilitator', delay: 'animate-delay-125' },
+            { icon: Link2, label: 'Select an EVM chain', delay: 'animate-delay-100' },
+            { icon: WalletIcon, label: 'Configure how you receive', delay: 'animate-delay-125' },
             { icon: Coins, label: 'Fund a spend budget (optional)', delay: 'animate-delay-150' },
           ].map((feature) => (
             <div
@@ -199,49 +264,62 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
     </Card>
   );
 
-  const receivingScreen = (
+  const chainScreen = (
     <div className="mx-auto w-full max-w-lg">
       <div className="text-center">
         <StepHeaderIcon icon={Link2} />
-        <h1 className="text-2xl font-bold tracking-tight">Enable receiving payments</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Choose your EVM chain</h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-          Assign an owned Selling wallet or a remote facilitator on an EVM chain so your agents can
-          be paid over x402.
+          Select the x402 payment source for this {networkType} setup. Wallets and budgets stay
+          bound to this chain.
         </p>
       </div>
 
-      <Card
-        className={cn(
-          'mt-6 space-y-4 p-5 text-center',
-          hasFacilitator && 'border-green-500/20 bg-green-500/[0.04]',
-        )}
-      >
-        {walletChips('Selling')}
-        {hasFacilitator && configuredChain ? (
-          <p className="flex items-center justify-center gap-1.5 text-sm text-green-600 dark:text-green-500">
-            <CheckCircle2 className="h-4 w-4" /> Facilitator set on {configuredChain.displayName}
-          </p>
+      <Card className="mt-6 space-y-4 p-5">
+        {envChains.length > 0 ? (
+          <>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Payment source</label>
+              <Select value={selectedChain?.id ?? ''} onValueChange={setSelectedX402ChainId}>
+                <SelectTrigger aria-label="EVM payment source">
+                  <SelectValue placeholder="Select a chain" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {envChains.map((chain) => (
+                      <SelectItem key={chain.id} value={chain.id}>
+                        {chain.displayName} · {chain.caip2Id}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedChain && (
+              <div className="flex items-center justify-between rounded-lg border bg-muted/20 p-3">
+                <div>
+                  <p className="text-sm font-medium">{selectedChain.displayName}</p>
+                  <p className="font-mono text-xs text-muted-foreground">{selectedChain.caip2Id}</p>
+                </div>
+                <Badge variant={selectedChain.isEnabled ? 'success' : 'secondary'}>
+                  {selectedChain.isEnabled ? 'Enabled' : 'Draft'}
+                </Badge>
+              </div>
+            )}
+          </>
         ) : (
-          <p className="text-xs text-muted-foreground">
-            {hasSellingWallet
-              ? 'Assign your Selling wallet as a chain facilitator to start receiving.'
-              : 'Configure a remote facilitator, or create a Selling wallet for self-hosted settlement.'}
-          </p>
+          <div className="rounded-lg border border-dashed p-5 text-center">
+            <p className="text-sm font-medium">No {networkType} EVM chain exists yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Add the chain first. A self-hosted chain can start as a disabled draft.
+            </p>
+          </div>
         )}
-        <div className="flex flex-wrap justify-center gap-2">
-          <Button
-            variant={hasFacilitator ? 'outline' : 'default'}
-            className="gap-2"
-            onClick={() => setOpenDialog('chain')}
-          >
-            {hasFacilitator ? 'Manage chain' : 'Configure facilitator'}
-          </Button>
-          {!hasFacilitator && !hasSellingWallet && (
-            <Button variant="outline" onClick={() => openWalletDialog('Selling')}>
-              Create selling wallet
-            </Button>
-          )}
-        </div>
+
+        <Button variant="outline" className="w-full" onClick={() => setOpenDialog('chain')}>
+          {selectedChain ? 'Configure selected chain' : 'Add EVM chain'}
+        </Button>
       </Card>
 
       <div className="flex items-center justify-between pt-6">
@@ -250,17 +328,125 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
         </Button>
         <Button
           className="btn-hover-lift group gap-2"
-          // Gate on a KNOWN-incomplete rail only. If readiness could not be
-          // fetched the step still renders as not-done (never claim a green
-          // state we cannot verify), but the user must not be trapped in the
-          // wizard by a transient API failure on an already-working rail.
-          disabled={!hasFacilitator && !readinessUnavailable}
+          disabled={!selectedChain}
+          onClick={() => {
+            if (selectedChain) setSelectedX402ChainId(selectedChain.id);
+            setCurrentStep(2);
+          }}
+        >
+          Continue <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+        </Button>
+      </div>
+    </div>
+  );
+
+  const receivingScreen = (
+    <div className="mx-auto w-full max-w-lg">
+      <div className="text-center">
+        <StepHeaderIcon icon={Link2} />
+        <h1 className="text-2xl font-bold tracking-tight">Enable receiving payments</h1>
+        <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+          Choose local settlement with a managed Selling wallet, or use a remote facilitator.
+        </p>
+      </div>
+
+      <div className="mt-6 grid grid-cols-2 gap-2">
+        {(
+          [
+            {
+              value: 'managed',
+              title: 'Managed wallet',
+              description: 'This service signs settlements with your Selling wallet.',
+            },
+            {
+              value: 'remote',
+              title: 'Remote facilitator',
+              description: 'An external HTTPS service verifies and settles payments.',
+            },
+          ] as const
+        ).map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={receivingMode === option.value}
+            onClick={() => setReceivingMode(option.value)}
+            className={cn(
+              'rounded-lg border p-3 text-left transition-colors',
+              receivingMode === option.value
+                ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+                : 'hover:bg-muted/40',
+            )}
+          >
+            <span className="block text-sm font-medium">{option.title}</span>
+            <span className="mt-1 block text-xs leading-snug text-muted-foreground">
+              {option.description}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <Card
+        className={cn(
+          'mt-6 space-y-4 p-5 text-center',
+          isReceivingReadyConfirmed && 'border-green-500/20 bg-green-500/[0.04]',
+        )}
+      >
+        {receivingMode === 'managed' && walletChips('Selling')}
+        {isReceivingReadyConfirmed && selectedChain ? (
+          <p className="flex items-center justify-center gap-1.5 text-sm text-green-600 dark:text-green-500">
+            <CheckCircle2 className="h-4 w-4" /> Receiving is configured on{' '}
+            {selectedChain.displayName}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {receivingMode === 'managed'
+              ? selectedSellingWallets.length > 0
+                ? 'Assign your Selling wallet and enable the chain.'
+                : 'Create a Selling wallet on this chain, then assign it as facilitator.'
+              : 'Enter the remote facilitator URL and enable the chain.'}
+          </p>
+        )}
+        <Button
+          variant={isReceivingReadyConfirmed ? 'outline' : 'default'}
+          className="gap-2"
+          onClick={() => {
+            if (receivingMode === 'managed' && selectedSellingWallets.length === 0) {
+              openWalletDialog('Selling');
+              return;
+            }
+            setOpenDialog('chain');
+          }}
+        >
+          {isReceivingReadyConfirmed
+            ? 'Manage receiving'
+            : receivingMode === 'managed' && selectedSellingWallets.length === 0
+              ? 'Create selling wallet'
+              : 'Configure facilitator'}
+        </Button>
+      </Card>
+
+      {readinessUnavailable && (
+        <div className="mt-3 flex items-center justify-between rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+          <span>Setup status is unavailable. Ready cannot be confirmed yet.</span>
+          <Button variant="outline" size="sm" onClick={() => refetchReadiness()}>
+            Retry
+          </Button>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between pt-6">
+        <Button variant="ghost" onClick={() => setCurrentStep(1)}>
+          Back
+        </Button>
+        <Button
+          className="btn-hover-lift group gap-2"
+          disabled={!isReceivingReadyConfirmed}
           title={
-            hasFacilitator || readinessUnavailable
+            isReceivingReadyConfirmed
               ? undefined
               : (facilitatorDetail ?? 'Assign a chain facilitator to continue')
           }
-          onClick={() => setCurrentStep(2)}
+          onClick={() => setCurrentStep(3)}
         >
           Continue <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
         </Button>
@@ -287,42 +473,44 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
       <Card
         className={cn(
           'mt-6 space-y-4 p-5 text-center',
-          hasBudget && 'border-green-500/20 bg-green-500/[0.04]',
+          selectedChainHasBudget && 'border-green-500/20 bg-green-500/[0.04]',
         )}
       >
         {walletChips('Purchasing')}
-        {hasBudget ? (
+        {selectedChainHasBudget ? (
           <p className="flex items-center justify-center gap-1.5 text-sm text-green-600 dark:text-green-500">
             <CheckCircle2 className="h-4 w-4" /> Spend budget configured
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">
-            {hasPurchasingWallet
+            {selectedPurchasingWallets.length > 0
               ? 'Grant an API key a spend budget on your Purchasing wallet.'
               : 'Create a Purchasing wallet to fund outbound payments.'}
           </p>
         )}
         <Button
-          variant={hasBudget ? 'outline' : 'default'}
+          variant={selectedChainHasBudget ? 'outline' : 'default'}
           className="gap-2"
           onClick={() =>
-            hasPurchasingWallet ? setOpenDialog('budget') : openWalletDialog('Purchasing')
+            selectedPurchasingWallets.length > 0
+              ? setOpenDialog('budget')
+              : openWalletDialog('Purchasing')
           }
         >
-          {!hasPurchasingWallet
+          {selectedPurchasingWallets.length === 0
             ? 'Create purchasing wallet'
-            : hasBudget
+            : selectedChainHasBudget
               ? 'Manage budgets'
               : 'Set budget'}
         </Button>
       </Card>
 
       <div className="flex items-center justify-between pt-6">
-        <Button variant="ghost" onClick={() => setCurrentStep(1)}>
+        <Button variant="ghost" onClick={() => setCurrentStep(2)}>
           Back
         </Button>
-        <Button className="btn-hover-lift group gap-2" onClick={() => setCurrentStep(3)}>
-          {hasBudget ? 'Continue' : 'Skip for now'}
+        <Button className="btn-hover-lift group gap-2" onClick={() => setCurrentStep(4)}>
+          {selectedChainHasBudget ? 'Continue' : 'Skip for now'}
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
         </Button>
       </div>
@@ -340,18 +528,34 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
           </div>
         </div>
         <CardTitle className="animate-fade-in-up text-3xl font-bold animate-delay-75">
-          x402 is ready
+          {isReceivingReadyConfirmed ? 'x402 is ready' : 'Setup saved'}
         </CardTitle>
         <CardDescription className="mt-2 animate-fade-in-up text-base animate-delay-100">
-          Your <span className="font-medium text-foreground">{networkType}</span> EVM rail is ready
-          to use
+          {isReceivingReadyConfirmed ? (
+            <>
+              Your <span className="font-medium text-foreground">{networkType}</span> EVM rail is
+              ready to use
+            </>
+          ) : (
+            'The setup status is unavailable. Check Payment Sources before receiving payments.'
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 pb-8">
         <div className="space-y-3">
           {[
-            { label: 'Receiving payments enabled', done: hasFacilitator, optional: false },
-            { label: 'Outbound payments enabled', done: hasBudget, optional: true },
+            {
+              label: 'Receiving payments enabled',
+              done: isReceivingReadyConfirmed,
+              optional: false,
+            },
+            {
+              label: selectedChainHasBudget
+                ? 'Outbound payments enabled'
+                : 'Outbound payments skipped',
+              done: selectedChainHasBudget,
+              optional: false,
+            },
           ].map((item, index) => (
             <div
               key={item.label}
@@ -401,7 +605,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
     </Card>
   );
 
-  const steps = [welcomeScreen, receivingScreen, payingScreen, successScreen];
+  const steps = [welcomeScreen, chainScreen, receivingScreen, payingScreen, successScreen];
 
   // ---- Shell -----------------------------------------------------------------------------
 
@@ -475,6 +679,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
         key={openDialog === 'wallet' ? `wallet-open-${walletType}` : 'wallet-closed'}
         open={openDialog === 'wallet'}
         defaultType={walletType}
+        defaultNetworkId={selectedChain?.id}
         onClose={() => setOpenDialog(null)}
         onSaved={() => {
           setOpenDialog(null);
@@ -485,6 +690,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
         key={openDialog === 'chain' ? `chain-${chainToConfigure?.id ?? 'new'}` : 'chain-closed'}
         open={openDialog === 'chain'}
         editing={chainToConfigure}
+        defaultFacilitatorMode={currentStep === 2 ? receivingMode : undefined}
         onClose={() => setOpenDialog(null)}
         onSaved={() => {
           setOpenDialog(null);
@@ -495,6 +701,7 @@ export function X402SetupWelcome({ networkType }: { networkType: NetworkType }) 
         key={openDialog === 'budget' ? 'budget-open' : 'budget-closed'}
         open={openDialog === 'budget'}
         editing={null}
+        defaultWalletId={selectedPurchasingWallets[0]?.id}
         onClose={() => setOpenDialog(null)}
         onSaved={() => {
           setOpenDialog(null);

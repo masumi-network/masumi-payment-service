@@ -1,32 +1,17 @@
-import Head from 'next/head';
-import { MainLayout } from '@/components/layout/MainLayout';
-import { AnimatedPage } from '@/components/ui/animated-page';
-import { ChainsTab } from '@/components/x402/ChainsTab';
-import { X402SetupGuide } from '@/components/x402/X402SetupGuide';
+import { useEffect } from 'react';
+import { useRouter } from 'next/router';
 import { useAppContext } from '@/lib/contexts/AppContext';
+import { compatibilityX402Target } from '@/lib/x402-navigation';
 
 export default function X402ChainsPage() {
-  const { capabilities } = useAppContext();
+  const router = useRouter();
+  const { setActiveRail } = useAppContext();
 
-  return (
-    <MainLayout>
-      <Head>
-        <title>x402 Chains | Admin Interface</title>
-      </Head>
-      <AnimatedPage>
-        <div className="space-y-6">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">x402 Chains</h1>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              EVM chains available to the x402 payment rail.
-            </p>
-          </div>
+  useEffect(() => {
+    if (!router.isReady) return;
+    setActiveRail('x402');
+    void router.replace(compatibilityX402Target('/x402/chains', router.query));
+  }, [router.isReady, router.query, router, setActiveRail]);
 
-          {capabilities.canAdmin && <X402SetupGuide />}
-
-          <ChainsTab />
-        </div>
-      </AnimatedPage>
-    </MainLayout>
-  );
+  return null;
 }

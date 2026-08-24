@@ -45,10 +45,8 @@ export const ADMIN_ONLY_PATHS = [
   // Every route under /api/v1/hydra is registered with the admin factory, so
   // this page has nothing a read or pay key can load.
   '/hydra-heads',
-  // Chain config (RPC/facilitator) and low-balance alert rules are admin-only,
-  // same as the tabs they were split out of.
+  // Chain config (RPC/facilitator) remains admin-only under Payment Sources.
   '/x402/chains',
-  '/x402/alerts',
 ] as const;
 
 export function isAdminOnlyPath(pathname: string): boolean {
@@ -70,10 +68,10 @@ export function isAdminOnlyPath(pathname: string): boolean {
  * so every signed-in session may view them. Their mutating controls and the
  * per-wallet detail dialog stay gated inside those pages.
  *
- * `/x402/budgets` IS listed: reading a budget is pay-level (a pay key sees
- * its own allowances), but a pure read-only key has no budget to read.
+ * The old `/x402/budgets` and `/x402/alerts` routes now redirect to Wallets.
+ * Permission checks for wallet policy happen inside the wallet details UI.
  */
-export const PAY_ONLY_PATHS = ['/webhooks', '/x402/budgets'] as const;
+export const PAY_ONLY_PATHS = ['/webhooks'] as const;
 
 export function isPayOnlyPath(pathname: string): boolean {
   return (PAY_ONLY_PATHS as readonly string[]).includes(pathname);

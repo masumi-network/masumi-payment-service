@@ -38,7 +38,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { groupDigits, shortenAddress } from '@/lib/utils';
 import { walletsForNetworks } from '@/lib/x402-rail';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
-import { postX402Budgets, X402Budget, PostX402BudgetsData } from '@/lib/api/generated';
+import { postX402Budgets, X402Budget, X402Wallet, PostX402BudgetsData } from '@/lib/api/generated';
 
 const budgetFormSchema = z.object({
   apiKeyId: z.string().min(1, 'Required'),
@@ -50,7 +50,7 @@ const budgetFormSchema = z.object({
 
 type BudgetFormValues = z.infer<typeof budgetFormSchema>;
 
-export function BudgetsTab() {
+export function BudgetsTab({ wallet }: { wallet?: X402Wallet }) {
   const { capabilities } = useAppContext();
   // Reading a budget is pay-level, writing one is admin. A pay key sees its own
   // allowances and nothing else (the API pins the filter to the calling key); only
@@ -60,7 +60,9 @@ export function BudgetsTab() {
   // Session-scoped, not the admin-only network list: this drives the env filter
   // below, and an admin-gated hook would leave a pay key with no chains and so an
   // empty budget table even when it has budgets.
-  const { networks, isLoading: networksLoading } = useX402NetworksForSession();
+  const { networks, isLoading: networksLoading } = useX402NetworksForSession({
+    allEnvironments: !!wallet,
+  });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<X402Budget | null>(null);
 
@@ -72,9 +74,13 @@ export function BudgetsTab() {
   // so the Preprod/Mainnet selector governs this tab like every other x402 surface, and an
   // editable budget's chain is always present in the picker.
   const envChainIds = useMemo(() => new Set(networks.map((n) => n.caip2Id)), [networks]);
-  const envBudgets = useMemo(
-    () => budgets.filter((budget) => envChainIds.has(budget.caip2Network)),
-    [budgets, envChainIds],
+  const visibleBudgets = useMemo(
+    () =>
+      budgets.filter(
+        (budget) =>
+          envChainIds.has(budget.caip2Network) && (!wallet || budget.evmWalletId === wallet.id),
+      ),
+    [budgets, envChainIds, wallet],
   );
 
   const openCreate = () => {
@@ -90,7 +96,9 @@ export function BudgetsTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Per-API-key spend limits for managed wallets. Amounts are in the token&apos;s base units.
+          {wallet
+            ? 'Spend limits for this Purchasing wallet. Amounts use token base units.'
+            : 'Per-API-key spend limits for managed wallets. Amounts use token base units.'}
         </p>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
@@ -139,22 +147,28 @@ export function BudgetsTab() {
                   </div>
                 </td>
               </tr>
-            ) : envBudgets.length === 0 ? (
+            ) : visibleBudgets.length === 0 ? (
               <tr>
                 <td colSpan={7}>
                   <EmptyState
                     title="No budgets set"
-                    description="Grant an API key a spend budget against a Purchasing wallet. You need a Purchasing wallet first."
+                    description={
+                      wallet
+                        ? 'Grant an API key a spend budget against this wallet.'
+                        : 'Grant an API key a spend budget against a Purchasing wallet. You need a Purchasing wallet first.'
+                    }
                     action={
-                      <Button asChild variant="outline" size="sm">
-                        <Link href="/x402/wallets">Go to Wallets</Link>
-                      </Button>
+                      !wallet && (
+                        <Button asChild variant="outline" size="sm">
+                          <Link href="/x402/wallets">Go to Wallets</Link>
+                        </Button>
+                      )
                     }
                   />
                 </td>
               </tr>
             ) : (
-              envBudgets.map((budget) => (
+              visibleBudgets.map((budget) => (
                 <tr key={budget.id} className="border-b last:border-0">
                   <td className="p-4 font-mono text-xs">{budget.apiKeyId}</td>
                   <td className="p-4">
@@ -201,16 +215,19 @@ export function BudgetsTab() {
         </table>
       </div>
 
-      <BudgetDialog
-        key={dialogOpen ? (editing?.id ?? 'new') : 'closed'}
-        open={dialogOpen}
-        editing={editing}
-        onClose={() => setDialogOpen(false)}
-        onSaved={() => {
-          setDialogOpen(false);
-          refetch();
-        }}
-      />
+      {canManageBudgets && (
+        <BudgetDialog
+          key={dialogOpen ? (editing?.id ?? 'new') : 'closed'}
+          open={dialogOpen}
+          editing={editing}
+          defaultWalletId={wallet?.id}
+          onClose={() => setDialogOpen(false)}
+          onSaved={() => {
+            setDialogOpen(false);
+            refetch();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -218,17 +235,19 @@ export function BudgetsTab() {
 export function BudgetDialog({
   open,
   editing,
+  defaultWalletId,
   onClose,
   onSaved,
 }: {
   open: boolean;
   editing: X402Budget | null;
+  defaultWalletId?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { apiClient } = useAppContext();
   const { allApiKeys, hasMore, loadMore, isFetchingNextPage } = useApiKey();
-  const { networks } = useX402Networks();
+  const { networks } = useX402Networks({ allEnvironments: !!defaultWalletId });
   // Only load the wallet set while the form is open (it feeds the picker). Budgets fund
   // outbound payments, so only Purchasing wallets in the active environment are selectable.
   const { wallets } = useX402Wallets(open, 'Purchasing');
@@ -262,7 +281,7 @@ export function BudgetDialog({
     resolver: zodResolver(budgetFormSchema),
     defaultValues: {
       apiKeyId: editing?.apiKeyId ?? '',
-      evmWalletId: editing?.evmWalletId ?? '',
+      evmWalletId: editing?.evmWalletId ?? defaultWalletId ?? '',
       caip2Network: editing?.caip2Network ?? '',
       asset: editing?.asset ?? '',
       remainingAmount: editing?.remainingAmount ?? '',
@@ -286,6 +305,16 @@ export function BudgetDialog({
     }
   };
 
+  useEffect(() => {
+    if (!open || editing || !defaultWalletId) return;
+    const wallet = availableWallets.find((candidate) => candidate.id === defaultWalletId);
+    if (!wallet) return;
+    setValue('evmWalletId', wallet.id, { shouldValidate: true });
+    setValue('caip2Network', wallet.caip2Network, { shouldValidate: true });
+    const chain = networks.find((candidate) => candidate.caip2Id === wallet.caip2Network);
+    setValue('asset', chain?.defaultAsset ?? '', { shouldValidate: false });
+  }, [open, editing, defaultWalletId, availableWallets, networks, setValue]);
+
   const onSubmit = async (data: BudgetFormValues) => {
     const response = await saveBudget
       .mutateAsync({
@@ -303,7 +332,7 @@ export function BudgetDialog({
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent>
+      <DialogContent elevatedChildStack={!!defaultWalletId}>
         <DialogHeader>
           <DialogTitle>{editing ? 'Update budget' : 'Set budget'}</DialogTitle>
           <DialogDescription>
@@ -346,7 +375,11 @@ export function BudgetDialog({
               control={control}
               name="evmWalletId"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={onSelectWallet} disabled={!!editing}>
+                <Select
+                  value={field.value}
+                  onValueChange={onSelectWallet}
+                  disabled={!!editing || !!defaultWalletId}
+                >
                   <SelectTrigger aria-label="Managed wallet">
                     <SelectValue placeholder="Select a wallet" />
                   </SelectTrigger>

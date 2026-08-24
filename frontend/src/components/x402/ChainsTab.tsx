@@ -293,11 +293,13 @@ function FacilitatorLabel({ address, walletId }: { address: string | null; walle
 export function ChainDialog({
   open,
   editing,
+  defaultFacilitatorMode = 'wallet',
   onClose,
   onSaved,
 }: {
   open: boolean;
   editing: X402Network | null;
+  defaultFacilitatorMode?: 'wallet' | 'managed' | 'remote';
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -337,7 +339,13 @@ export function ChainDialog({
         editing?.defaultAssetDecimals != null ? String(editing.defaultAssetDecimals) : '',
       // Existing remote-facilitator chains open in remote mode; everything else defaults to
       // the owned-wallet mode. facilitatorAuth is write-only, so it is never prefilled.
-      facilitatorMode: editing?.facilitatorUrl ? 'remote' : 'wallet',
+      facilitatorMode: editing?.facilitatorUrl
+        ? 'remote'
+        : editing?.facilitatorWalletId
+          ? 'wallet'
+          : defaultFacilitatorMode === 'managed'
+            ? 'wallet'
+            : defaultFacilitatorMode,
       facilitatorWalletId: editing?.facilitatorWalletId ?? NO_FACILITATOR,
       facilitatorUrl: editing?.facilitatorUrl ?? '',
       facilitatorAuth: '',

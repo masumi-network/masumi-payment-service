@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { legacyX402Target } from '@/lib/x402-navigation';
 
 // The x402 rail used to live entirely on this one page, tab-switched via
 // `?tab=`. It is now split into real routes under /x402/* (mirroring how
@@ -9,8 +10,9 @@ export default function X402RedirectPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/x402/wallets');
-  }, [router]);
+    if (!router.isReady) return;
+    void router.replace(legacyX402Target(router.query));
+  }, [router.isReady, router.query, router]);
 
   return null;
 }
