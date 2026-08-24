@@ -2,12 +2,12 @@ import { jsPDF } from 'jspdf';
 import autoTable, { type RowInput } from 'jspdf-autotable';
 import {
 	extractInvoiceTexts,
-	formatCryptoUnitConversion,
 	type ResolvedInvoiceConfig,
 	type InvoiceGroup,
 	type InvoiceSeller,
 	type InvoiceBuyer,
 } from './template';
+import { formatCryptoUnitConversion } from '../asset-units';
 
 // ── Colors (slate gray palette) ───────────────────────────────────────────
 const C = {

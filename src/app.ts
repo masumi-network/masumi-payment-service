@@ -20,6 +20,7 @@ import { warnOutOfSyncV2PaymentSources } from '@/utils/startup-migrations/warn-o
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
 import helmet from 'helmet';
+import { CORS_EXPOSED_HEADERS_VALUE } from '@/utils/cors-headers';
 
 const __dirname = path.resolve();
 
@@ -367,7 +368,7 @@ export async function startApp() {
 			'Access-Control-Max-Age': '5000',
 			'Access-Control-Allow-Origin': '*',
 			'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH',
-			'Access-Control-Expose-Headers': 'Content-Range, X-Total-Count',
+			'Access-Control-Expose-Headers': CORS_EXPOSED_HEADERS_VALUE,
 		}),
 		logger: logger,
 	});

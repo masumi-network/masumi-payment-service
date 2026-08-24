@@ -49,6 +49,7 @@ import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog'
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
+import { FinancialReportSection } from '@/components/dashboard/FinancialReportSection';
 
 type AIAgent = RegistryEntry;
 
@@ -306,6 +307,8 @@ export default function Overview() {
                 )}
               </div>
             </div>
+
+            <FinancialReportSection />
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="border rounded-lg p-6 flex flex-col">

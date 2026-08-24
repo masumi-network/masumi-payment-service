@@ -133,6 +133,15 @@ import {
 	x402WalletBalanceGet,
 	x402WalletsCountGet,
 } from './x402';
+import {
+	reportExportZipEndpointPost,
+	reportFacetsEndpointGet,
+	reportSummaryEndpointPost,
+	reportTotalsCsvEndpointPost,
+	reportTransactionsCsvEndpointPost,
+	reportTransactionsEndpointPost,
+	reportWalletSummaryCsvEndpointPost,
+} from './reports';
 
 export const apiRouter: Routing = {
 	v1: {
@@ -466,6 +475,29 @@ export const apiRouter: Routing = {
 		},
 		'rail-readiness': {
 			get: railReadinessEndpointGet,
+		},
+		reports: {
+			facets: {
+				get: reportFacetsEndpointGet,
+			},
+			transactions: {
+				post: reportTransactionsEndpointPost,
+			},
+			summary: {
+				post: reportSummaryEndpointPost,
+			},
+			'transactions.csv': {
+				post: reportTransactionsCsvEndpointPost,
+			},
+			'wallet-summary.csv': {
+				post: reportWalletSummaryCsvEndpointPost,
+			},
+			'totals.csv': {
+				post: reportTotalsCsvEndpointPost,
+			},
+			'export.zip': {
+				post: reportExportZipEndpointPost,
+			},
 		},
 	},
 };

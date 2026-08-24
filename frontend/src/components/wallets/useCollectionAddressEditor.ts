@@ -1,0 +1,116 @@
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-toastify';
+import { patchWallet } from '@/lib/api/generated';
+import { extractApiErrorMessage } from '@/lib/api-error';
+import { useAppContext } from '@/lib/contexts/AppContext';
+import { invalidateTransactionReportFacets } from '@/lib/queries/transaction-report-cache';
+import { handleApiCall, validateCardanoAddress } from '@/lib/utils';
+import { fetchAllUtxos } from '@/lib/wallet-balance';
+import type { WalletWithBalance } from '@/components/wallets/wallet-details-utils';
+
+export function normalizeCollectionAddress(value: string): string | null {
+  return value.trim() || null;
+}
+
+export function resolveCollectionAddress(
+  savedCollectionAddress: string | null | undefined,
+  walletCollectionAddress: string | null | undefined,
+): string | null {
+  return savedCollectionAddress !== undefined
+    ? savedCollectionAddress
+    : (walletCollectionAddress ?? null);
+}
+
+export function useCollectionAddressEditor({
+  wallet,
+  invalidateWalletQueries,
+}: {
+  wallet: WalletWithBalance | null;
+  invalidateWalletQueries: () => Promise<void>;
+}) {
+  const queryClient = useQueryClient();
+  const { apiClient, network } = useAppContext();
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  // `undefined` means no local save yet. Null means the user cleared the address.
+  const [savedCollectionAddress, setSavedCollectionAddress] = useState<string | null | undefined>(
+    undefined,
+  );
+
+  const collectionAddress = resolveCollectionAddress(
+    savedCollectionAddress,
+    wallet?.collectionAddress,
+  );
+
+  const startEdit = () => {
+    setIsEditing(true);
+    setDraft(collectionAddress || '');
+  };
+
+  const save = async () => {
+    if (!wallet) return;
+
+    const normalizedAddress = normalizeCollectionAddress(draft);
+    if (normalizedAddress) {
+      const validation = validateCardanoAddress(normalizedAddress, network);
+      if (!validation.isValid) {
+        toast.error('Invalid collection address: ' + validation.error);
+        return;
+      }
+
+      let isAddressUnused = false;
+      try {
+        const utxos = await fetchAllUtxos(apiClient, network, normalizedAddress);
+        isAddressUnused = utxos.length === 0;
+      } catch {
+        isAddressUnused = true;
+      }
+      if (isAddressUnused) {
+        toast.warning(
+          'Collection address has not been used yet, please check if this is the correct address',
+        );
+      }
+    }
+
+    await handleApiCall(
+      () =>
+        patchWallet({
+          client: apiClient,
+          body: {
+            id: wallet.id,
+            newCollectionAddress: normalizedAddress,
+          },
+        }),
+      {
+        onSuccess: () => {
+          toast.success('Collection address updated successfully');
+          setIsEditing(false);
+          setSavedCollectionAddress(normalizedAddress);
+          void invalidateWalletQueries();
+          void invalidateTransactionReportFacets(queryClient);
+        },
+        onError: (error: unknown) => {
+          toast.error(extractApiErrorMessage(error, 'Failed to update collection address'));
+        },
+        errorMessage: 'Failed to update collection address',
+      },
+    );
+  };
+
+  const cancelEdit = () => {
+    setIsEditing(false);
+    setDraft('');
+  };
+
+  return {
+    cancelEdit,
+    collectionAddress,
+    draft,
+    isEditing,
+    resetSavedCollectionAddress: () => setSavedCollectionAddress(undefined),
+    save,
+    setDraft,
+    startEdit,
+  };
+}

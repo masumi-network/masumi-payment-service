@@ -233,6 +233,7 @@ model Transaction {
   // co-exist; write cost is acceptable since only ambiguous-funding rows
   // populate this column.
   @@index([intendedTxHash])
+  @@index([txHash])
 }
 
 model SwapTransaction {
@@ -813,6 +814,7 @@ model PaymentRequest {
   PaymentSource                                 PaymentSource       @relation("PaymentRequestPaymentSource", fields: [paymentSourceId], references: [id], onDelete: Cascade)
   totalBuyerCardanoFees                         BigInt              @default(0)
   totalSellerCardanoFees                        BigInt              @default(0)
+  cardanoFeeAccountingVersion                   Int                 @default(1)
   requestedBy                                   ApiKey              @relation(fields: [requestedById], references: [id])
   SmartContractWallet                           HotWallet?          @relation(fields: [smartContractWalletId], references: [id])
   TransactionHistory                            Transaction[]       @relation("PaymentTransactionHistory")
@@ -882,6 +884,7 @@ model PurchaseRequest {
   buyerCoolDownTime                             BigInt
   totalBuyerCardanoFees                         BigInt               @default(0)
   totalSellerCardanoFees                        BigInt               @default(0)
+  cardanoFeeAccountingVersion                   Int                  @default(1)
   nextActionId                                  String               @unique
   nextActionLastChangedAt                       DateTime             @default(now())
   nextActionOrOnChainStateOrResultLastChangedAt DateTime             @default(now())
