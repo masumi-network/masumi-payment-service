@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { useQueryClient } from '@tanstack/react-query';
 import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
+import { invalidateTransactionReportFacets } from '@/lib/queries/transaction-report-cache';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { useRailReadiness } from '@/lib/hooks/useRailReadiness';
 import { STEP_LABELS, type SetupWallet } from '@/components/setup/setup-helpers';
@@ -80,6 +81,7 @@ export function SetupWelcome({ networkType }: { networkType: string }) {
     queryClient.invalidateQueries({ queryKey: ['wallets'] });
     invalidateAgentQueries(queryClient);
     queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    void invalidateTransactionReportFacets(queryClient);
     router.push('/');
   };
 
