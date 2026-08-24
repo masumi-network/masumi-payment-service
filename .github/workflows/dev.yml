@@ -143,5 +143,8 @@ jobs:
       - name: Run Frontend TypeScript Check
         run: pnpm run typecheck:frontend
 
+      - name: Run Frontend Tests
+        run: pnpm run test:frontend
+
       - name: Run Next Build
         run: cd frontend && pnpm run build
