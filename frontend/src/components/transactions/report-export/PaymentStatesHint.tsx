@@ -33,6 +33,15 @@ export function PaymentStatesHint() {
         report. A request that is later disputed or refunded moves again, so the same period can
         report a different figure after an escrow resolves.
       </p>
+      <p>
+        A closed dispute window is not a state of its own. Such a request stays{' '}
+        <em>Result submitted</em> until the seller withdraws, so it is not listed under{' '}
+        <em>Withdrawn</em> and cannot be picked apart from one whose window is still open.
+      </p>
+      <p>
+        States marked <em>Final</em> end the escrow. A request reaches at most one of them and
+        nothing moves afterwards, so those figures will not be restated.
+      </p>
     </InfoHint>
   );
 }
