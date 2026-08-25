@@ -18,6 +18,7 @@ import {
 } from '@/lib/transaction-report/report-labels';
 import {
   REPORT_ON_CHAIN_STATES,
+  isFinalReportState,
   type ReportDatePreset,
   type ReportRole,
 } from '../download-details.helpers';
@@ -264,7 +265,12 @@ export function ReportScopeFields({ model }: Readonly<{ model: ReportModel }>) {
                   checked={model.form.states.includes(state)}
                   onCheckedChange={() => model.toggleState(state)}
                 />
-                <span className="min-w-0">{humanizeReportValue(state)}</span>
+                <span className="min-w-0 flex-1">{humanizeReportValue(state)}</span>
+                {isFinalReportState(state) && (
+                  <span className="shrink-0 rounded bg-muted px-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Final
+                  </span>
+                )}
               </label>
             ))}
           </div>

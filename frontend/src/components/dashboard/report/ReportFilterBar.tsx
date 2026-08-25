@@ -35,6 +35,7 @@ import {
   type ReportOnChainState,
   type ReportRevenueMode,
   type ReportRole,
+  isFinalReportState,
   type TransactionReportFormState,
 } from '@/components/transactions/download-details.helpers';
 import { AddressListField } from '@/components/transactions/report-export/AddressListField';
@@ -496,7 +497,12 @@ export function ReportFilterBar({
                     checked={form.states.includes(state)}
                     onCheckedChange={() => onToggleState(state)}
                   />
-                  <span className="min-w-0">{humanizeReportValue(state)}</span>
+                  <span className="min-w-0 flex-1">{humanizeReportValue(state)}</span>
+                  {isFinalReportState(state) && (
+                    <span className="shrink-0 rounded bg-muted px-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      Final
+                    </span>
+                  )}
                 </label>
               ))}
             </div>
