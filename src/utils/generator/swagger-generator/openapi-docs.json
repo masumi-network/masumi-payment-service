@@ -37309,7 +37309,8 @@
                                                                 "type": "string",
                                                                 "enum": [
                                                                     "PeriodAverage",
-                                                                    "AccountingDate"
+                                                                    "AccountingDate",
+                                                                    "TransactionTime"
                                                                 ]
                                                             }
                                                         },
@@ -37765,7 +37766,8 @@
                                                         "type": "string",
                                                         "enum": [
                                                             "PeriodAverage",
-                                                            "AccountingDate"
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
                                                         "default": "PeriodAverage"
                                                     },
@@ -38833,7 +38835,8 @@
                                                                     "type": "string",
                                                                     "enum": [
                                                                         "PeriodAverage",
-                                                                        "AccountingDate"
+                                                                        "AccountingDate",
+                                                                        "TransactionTime"
                                                                     ]
                                                                 },
                                                                 "provider": {
@@ -39428,7 +39431,8 @@
                                                         "type": "string",
                                                         "enum": [
                                                             "PeriodAverage",
-                                                            "AccountingDate"
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
                                                         "default": "PeriodAverage"
                                                     },
@@ -41710,7 +41714,8 @@
                                                                     "type": "string",
                                                                     "enum": [
                                                                         "PeriodAverage",
-                                                                        "AccountingDate"
+                                                                        "AccountingDate",
+                                                                        "TransactionTime"
                                                                     ]
                                                                 },
                                                                 "provider": {
@@ -42441,7 +42446,8 @@
                                                         "type": "string",
                                                         "enum": [
                                                             "PeriodAverage",
-                                                            "AccountingDate"
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
                                                         "default": "PeriodAverage"
                                                     },
@@ -42986,7 +42992,8 @@
                                                         "type": "string",
                                                         "enum": [
                                                             "PeriodAverage",
-                                                            "AccountingDate"
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
                                                         "default": "PeriodAverage"
                                                     },
@@ -43531,7 +43538,8 @@
                                                         "type": "string",
                                                         "enum": [
                                                             "PeriodAverage",
-                                                            "AccountingDate"
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
                                                         "default": "PeriodAverage"
                                                     },
@@ -44076,7 +44084,8 @@
                                                         "type": "string",
                                                         "enum": [
                                                             "PeriodAverage",
-                                                            "AccountingDate"
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
                                                         "default": "PeriodAverage"
                                                     },

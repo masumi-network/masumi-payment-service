@@ -150,3 +150,65 @@ describe('fiat conversion', () => {
 		expect(result.amounts).toContainEqual({ unit: fiatAssetUnit('usd'), amount: 1_000_000n });
 	});
 });
+
+describe('fiat transaction-time rates', () => {
+	const POINTS = [
+		[Date.UTC(2026, 7, 1, 8, 0), 0.4],
+		[Date.UTC(2026, 7, 1, 9, 0), 0.5],
+		[Date.UTC(2026, 7, 1, 10, 0), 0.9],
+	] as const;
+
+	function pointTable(mode: 'AccountingDate' | 'TransactionTime') {
+		return createFiatRateTable({
+			currency: 'usd',
+			mode,
+			daily: new Map([[ADA, new Map([['2026-08-01', '0.600000000000']])]]),
+			points: new Map([[ADA, POINTS]]),
+		});
+	}
+
+	it('takes the price point closest to the transaction, not the day average', () => {
+		const table = pointTable('TransactionTime');
+		expect(table.rateFor(ADA, { at: new Date('2026-08-01T09:40:00Z') })).toEqual({
+			rate: '0.900000000000',
+			source: 'coingecko',
+		});
+		expect(table.rateFor(ADA, { at: new Date('2026-08-01T08:20:00Z') })).toEqual({
+			rate: '0.400000000000',
+			source: 'coingecko',
+		});
+	});
+
+	it('leaves the day average alone in every other mode', () => {
+		const table = pointTable('AccountingDate');
+		expect(table.rateFor(ADA, { at: new Date('2026-08-01T09:40:00Z') })).toEqual({
+			rate: '0.600000000000',
+			source: 'coingecko',
+		});
+	});
+
+	it('falls back to the day average when no price point covers the report', () => {
+		const table = createFiatRateTable({
+			currency: 'usd',
+			mode: 'TransactionTime',
+			daily: new Map([[ADA, new Map([['2026-08-01', '0.600000000000']])]]),
+		});
+		expect(table.rateFor(ADA, { at: new Date('2026-08-01T09:40:00Z') })).toEqual({
+			rate: '0.600000000000',
+			source: 'coingecko',
+		});
+	});
+
+	it('keeps a supplied rate ahead of any price point', () => {
+		const table = createFiatRateTable({
+			currency: 'usd',
+			mode: 'TransactionTime',
+			supplied: [{ unit: ADA, rate: '2.5' }],
+			points: new Map([[ADA, POINTS]]),
+		});
+		expect(table.rateFor(ADA, { at: new Date('2026-08-01T09:40:00Z') })).toEqual({
+			rate: '2.5',
+			source: 'supplied',
+		});
+	});
+});

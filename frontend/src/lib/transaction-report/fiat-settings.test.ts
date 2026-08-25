@@ -17,7 +17,7 @@ const DEMO: ReportFiatCapability = {
   historyDays: 365,
   earliestPriceableDate: new Date('2025-08-25T00:00:00.000Z'),
   currencies: ['usd', 'eur'],
-  modes: ['PeriodAverage', 'AccountingDate'],
+  modes: ['PeriodAverage', 'AccountingDate', 'TransactionTime'],
   attribution: 'Exchange rates by CoinGecko',
   setupHint: 'Set COINGECKO_API_KEY.',
 };
