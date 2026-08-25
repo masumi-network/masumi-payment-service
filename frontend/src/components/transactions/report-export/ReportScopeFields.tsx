@@ -49,6 +49,25 @@ function FieldHeader({
   );
 }
 
+/**
+ * A checked row that stands for "no filter at all".
+ *
+ * A list of empty checkboxes reads as "nothing is included", when an empty
+ * filter in fact includes everything.
+ */
+function IncludeAllRow({
+  label,
+  isActive,
+  onSelect,
+}: Readonly<{ label: string; isActive: boolean; onSelect: () => void }>) {
+  return (
+    <label className="mb-0.5 flex cursor-pointer items-center gap-2 rounded border-b px-2 py-1.5 text-xs hover:bg-muted/50">
+      <Checkbox checked={isActive} onCheckedChange={onSelect} />
+      <span className="font-medium">{label}</span>
+    </label>
+  );
+}
+
 function RoleToggle({
   role,
   isActive,
@@ -173,12 +192,15 @@ export function ReportScopeFields({ model }: Readonly<{ model: ReportModel }>) {
                 >
                   Use all
                 </Button>
-              ) : (
-                <span className="text-[11px] text-muted-foreground">All wallets included</span>
-              )
+              ) : null
             }
           />
           <div className="max-h-40 space-y-0.5 overflow-y-auto rounded-md border p-1.5">
+            <IncludeAllRow
+              label="Every wallet"
+              isActive={model.form.managedWalletIds.length === 0}
+              onSelect={() => model.updateForm({ managedWalletIds: [] })}
+            />
             {model.managedWallets.length === 0 ? (
               <p className="px-2 py-3 text-xs text-muted-foreground">
                 This payment source has no wallets yet.
@@ -224,12 +246,15 @@ export function ReportScopeFields({ model }: Readonly<{ model: ReportModel }>) {
                 >
                   Use all
                 </Button>
-              ) : (
-                <span className="text-[11px] text-muted-foreground">All states included</span>
-              )
+              ) : null
             }
           />
-          <div className="grid max-h-40 grid-cols-2 gap-0.5 overflow-y-auto rounded-md border p-1.5">
+          <div className="max-h-40 space-y-0.5 overflow-y-auto rounded-md border p-1.5">
+            <IncludeAllRow
+              label="Every state"
+              isActive={model.form.states.length === 0}
+              onSelect={() => model.updateForm({ states: [] })}
+            />
             {REPORT_ON_CHAIN_STATES.map((state) => (
               <label
                 key={state}
