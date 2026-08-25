@@ -214,6 +214,9 @@ const reportFiatMetadataSchema = z.object({
 	demoHistoryDays: z.number().int().nullable(),
 	completeness: z.enum(['complete', 'partial']),
 	unpricedUnits: z.array(z.string()),
+	rates: z
+		.array(z.object({ unit: z.string(), rate: z.string(), source: z.enum(['supplied', 'coingecko']) }))
+		.nullable(),
 });
 
 const reportMetadataSchema = z.object({

@@ -16011,6 +16011,11 @@ export type PostReportsTransactionsResponses = {
                     demoHistoryDays: number | null;
                     completeness: 'complete' | 'partial';
                     unpricedUnits: Array<string>;
+                    rates: Array<{
+                        unit: string;
+                        rate: string;
+                        source: 'supplied' | 'coingecko';
+                    }> | null;
                 } | null;
                 warnings: Array<{
                     code: string;
@@ -16530,6 +16535,11 @@ export type PostReportsSummaryResponses = {
                     demoHistoryDays: number | null;
                     completeness: 'complete' | 'partial';
                     unpricedUnits: Array<string>;
+                    rates: Array<{
+                        unit: string;
+                        rate: string;
+                        source: 'supplied' | 'coingecko';
+                    }> | null;
                 } | null;
                 warnings: Array<{
                     code: string;

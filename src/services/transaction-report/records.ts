@@ -1,5 +1,6 @@
 import { serializeReportAmount } from '@/utils/asset-units';
 import { addAmounts, subtractAmounts, type AtomicAmount } from './amounts';
+import type { FiatRowRates } from './fiat/rates';
 import {
 	calculateBuyerMetrics,
 	calculateSellerMetrics,
@@ -332,6 +333,8 @@ export function buildReportRow(
 		feeComponentScope,
 		timestamps,
 		settlement,
+		/** Filled in by the fiat pass when a currency was asked for. */
+		fiatRates: null as FiatRowRates | null,
 		seller,
 		buyer,
 		actorCardanoFeeAllocation,
