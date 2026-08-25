@@ -5,7 +5,7 @@ import {
 	finalizeReportAggregate as finalizeAggregate,
 	readAggregateMetricAmounts as readMetricAmounts,
 } from './aggregate-amounts';
-import { getKnownReportTransactionDates, getReportTransactionCount } from './aggregate-counts';
+import { getReportCountDates, getReportTransactionCount } from './aggregate-counts';
 import { analyzeReportFees, assignCompleteReportFeeReconciliation, type FeeAnalysis } from './aggregate-fees';
 import type { ReportMetricWindow, ReportRow, ReportWarning } from './records';
 import { groupReportRowsByPayment } from './row-groups';
@@ -297,10 +297,28 @@ function getEventBucket(
 	return historyByStart.get(findLocalDateStart(localStart, readLocalDate).getTime()) ?? null;
 }
 
-function recordHistoryRow(bucket: MutableHistoryAggregate, row: ReportRow): void {
-	if (bucket.transactionKeys.has(row.blockchainIdentifier)) return;
-	bucket.transactionKeys.add(row.blockchainIdentifier);
-	bucket.metrics.transactionCount += 1;
+/**
+ * Counts every request once, on the one day `getReportCountDates` picked.
+ *
+ * Counting it on each day it touched would make the daily counts add up to more
+ * than the period total, and anyone footing the column would find the two
+ * disagreeing with no warning that they measure different things.
+ */
+function recordHistoryCounts(
+	rows: readonly ReportRow[],
+	dateBasis: ReportDateBasis,
+	from: Date,
+	to: Date,
+	bucket: ReportBucket,
+	readLocalDate: (date: Date) => LocalDate,
+	historyByStart: ReadonlyMap<number, MutableHistoryAggregate>,
+): void {
+	for (const [paymentKey, date] of getReportCountDates(rows, dateBasis, from, to)) {
+		const entry = getEventBucket(date, from, to, bucket, readLocalDate, historyByStart);
+		if (entry == null || entry.transactionKeys.has(paymentKey)) continue;
+		entry.transactionKeys.add(paymentKey);
+		entry.metrics.transactionCount += 1;
+	}
 }
 
 function markMetricPartial(history: readonly MutableHistoryAggregate[], metricName: AggregateMetricName): void {
@@ -350,7 +368,6 @@ function addCohortHistory(
 		for (const metricName of metricNames) missingTimestampMetrics.add(metricName);
 		return;
 	}
-	recordHistoryRow(entry, row);
 	addRoleMetrics(entry.metrics, row);
 }
 
@@ -377,18 +394,22 @@ function addSellerRevenueHistory(
 	}
 	const entry = getEventBucket(date, from, to, bucket, readLocalDate, historyByStart);
 	if (entry == null) {
-		if (row.actorCardanoFeeAllocation.completeness === 'partial') {
+		if (row.actorCardanoFeeAllocation.historyCompleteness === 'partial') {
 			missingTimestampMetrics.add('sellerCardanoFees');
 			missingTimestampMetrics.add('sellerNetRevenue');
 		}
 		return;
 	}
-	recordHistoryRow(entry, row);
 	const protocolCompleteness = isProtocolMetricComplete(row) ? 'complete' : 'partial';
-	const actorFeeCompleteness = row.actorCardanoFeeAllocation.completeness;
+	// A daily figure carries the history flag: an amount can be exact for the
+	// period and still sit on the wrong day inside it.
+	const actorFeeCompleteness = row.actorCardanoFeeAllocation.historyCompleteness;
 	addMetric(entry.metrics.sellerGrossRevenue, row.seller.grossRevenue);
 	addMetric(entry.metrics.protocolFees, row.seller.protocolFee.amounts ?? [], protocolCompleteness);
 	addMetric(entry.metrics.sellerCardanoFees, row.seller.cardanoFees, actorFeeCompleteness);
+	// The combined actor figure follows the same date as the side it came from,
+	// so the daily fees add back up to the period total.
+	addMetric(entry.metrics.actorCardanoFees, row.seller.cardanoFees, actorFeeCompleteness);
 	addMetric(
 		entry.metrics.sellerNetRevenue,
 		row.seller.netRevenue,
@@ -411,17 +432,25 @@ function addBuyerRevenueHistory(
 		missingTimestampMetrics.add('buyerGrossSpend');
 		missingTimestampMetrics.add('buyerNetSpend');
 	}
-	if (grossEntry == null && row.actorCardanoFeeAllocation.completeness === 'partial') {
+	if (grossEntry == null && row.actorCardanoFeeAllocation.historyCompleteness === 'partial') {
 		missingTimestampMetrics.add('buyerCardanoFees');
 		missingTimestampMetrics.add('buyerNetSpend');
 	} else if (grossEntry != null) {
-		recordHistoryRow(grossEntry, row);
 		addMetric(grossEntry.metrics.buyerGrossSpend, row.buyer.grossSpend);
-		addMetric(grossEntry.metrics.buyerCardanoFees, row.buyer.cardanoFees, row.actorCardanoFeeAllocation.completeness);
+		addMetric(
+			grossEntry.metrics.buyerCardanoFees,
+			row.buyer.cardanoFees,
+			row.actorCardanoFeeAllocation.historyCompleteness,
+		);
+		addMetric(
+			grossEntry.metrics.actorCardanoFees,
+			row.buyer.cardanoFees,
+			row.actorCardanoFeeAllocation.historyCompleteness,
+		);
 		addMetric(
 			grossEntry.metrics.buyerNetSpend,
 			row.buyer.grossSpend == null ? null : addAmounts(row.buyer.grossSpend, row.buyer.cardanoFees),
-			row.actorCardanoFeeAllocation.completeness,
+			row.actorCardanoFeeAllocation.historyCompleteness,
 		);
 	}
 
@@ -431,12 +460,11 @@ function addBuyerRevenueHistory(
 		missingTimestampMetrics.add('returnedFunds');
 		missingTimestampMetrics.add('buyerNetSpend');
 	} else if (returnEntry != null) {
-		recordHistoryRow(returnEntry, row);
 		addMetric(returnEntry.metrics.returnedFunds, row.buyer.returnedFunds);
 		addMetric(
 			returnEntry.metrics.buyerNetSpend,
 			row.buyer.returnedFunds == null ? null : subtractAmounts([], row.buyer.returnedFunds),
-			row.actorCardanoFeeAllocation.completeness,
+			row.actorCardanoFeeAllocation.historyCompleteness,
 		);
 	}
 }
@@ -588,9 +616,25 @@ function addFeeHistory(
 				}
 			}
 			if (component.isAdminComplete && component.actorFees !== 0n && component.admin !== 0n) {
-				hasAdminHistoryGap = true;
+				// The admin share is what is left after the actor counters, and those
+				// counters cover a whole request rather than one transaction. So the
+				// remainder cannot be split per transaction and goes, as an estimate,
+				// on the day the component last moved.
+				const settlement = component.transactions.reduce<Date | null>(
+					(latest, transaction) =>
+						transaction.blockTime != null && (latest == null || transaction.blockTime.getTime() > latest.getTime())
+							? transaction.blockTime
+							: latest,
+					null,
+				);
+				const entry = getEventBucket(settlement, from, to, bucket, readLocalDate, historyByStart);
+				if (entry == null || component.admin == null) hasAdminHistoryGap = true;
+				else addMetric(entry.metrics.adminCardanoFees, [{ unit: 'lovelace', amount: component.admin }], 'partial');
 			}
-			if (component.actorFees !== 0n || !component.isActorComplete) hasActorHistoryGap = true;
+			// Actor fees are placed with the rows above, so only an unresolved
+			// component is a gap here. The historyActor check below catches any
+			// row whose fee found no bucket at all.
+			if (!component.isActorComplete) hasActorHistoryGap = true;
 			continue;
 		}
 		const ownerPaymentKeys = component.paymentKeys.filter((key) =>
@@ -664,10 +708,6 @@ export function aggregateReportRows(
 	for (const [index, row] of rows.entries()) {
 		runReportCheckpoint(index, checkpoint);
 		if (dateBasis === 'RevenueRecognizedAt') {
-			for (const date of getKnownReportTransactionDates(row)) {
-				const entry = getEventBucket(date, from, to, bucket, readLocalDate, historyByStart);
-				if (entry != null) recordHistoryRow(entry, row);
-			}
 			addSellerRevenueHistory(row, from, to, bucket, readLocalDate, historyByStart, missingTimestampMetrics);
 			addBuyerRevenueHistory(row, from, to, bucket, readLocalDate, historyByStart, missingTimestampMetrics);
 		} else {
@@ -675,6 +715,7 @@ export function aggregateReportRows(
 		}
 		addPendingRevenueHistory(row, from, to, bucket, readLocalDate, historyByStart);
 	}
+	recordHistoryCounts(rows, dateBasis, from, to, bucket, readLocalDate, historyByStart);
 	const global = aggregateGlobalRows(rows, dateBasis, from, to, checkpoint);
 	const totals = global.metrics;
 	const isFeeHistoryComplete = addFeeHistory(
