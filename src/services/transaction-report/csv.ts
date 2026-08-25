@@ -10,6 +10,7 @@ import type {
 	RequestedReportBucket,
 } from './aggregate';
 import type { ReportFiatMetadata } from './fiat';
+import type { FiatRowRates } from './fiat/rates';
 import type { ReportRow, ReportWarning } from './records';
 
 type CsvCell = Readonly<{ value: string; isUntrusted: boolean }>;
@@ -59,7 +60,35 @@ export class ReportCsvSizeLimitError extends Error {
 	}
 }
 
-const AMOUNT_SUFFIXES = ['ada', 'usdm', 'usdcx', 'other_assets_json', 'fiat'] as const;
+const AMOUNT_SUFFIXES = ['ada', 'usdm', 'usdcx', 'other_assets_json'] as const;
+
+/** The on-chain assets that get their own rate column, in column order. */
+const RATE_ASSET_KEYS = ['ada', 'usdm', 'usdcx'] as const;
+
+/**
+ * How the money columns are laid out for one export.
+ *
+ * The converted column is named after the currency, the same way the asset
+ * columns are, so a row states its own currency without anyone having to look
+ * up a separate context row.
+ */
+type ReportCsvLayout = Readonly<{ fiatSuffix: string | null }>;
+
+function csvLayout(metadata: ReportCsvMetadata): ReportCsvLayout {
+	return { fiatSuffix: metadata.fiat == null ? null : metadata.fiat.currency.toLowerCase() };
+}
+
+function rateHeaders(layout: ReportCsvLayout): string[] {
+	return layout.fiatSuffix == null ? [] : RATE_ASSET_KEYS.map((key) => `${key}_${layout.fiatSuffix}_rate`);
+}
+
+function rateCells(rates: FiatRowRates | null, layout: ReportCsvLayout): CsvCell[] {
+	if (layout.fiatSuffix == null) return [];
+	return RATE_ASSET_KEYS.map((key) => {
+		const match = (rates ?? []).find((rate) => getReportAssetMetadata(rate.unit)?.key === key);
+		return trusted(match?.rate ?? '');
+	});
+}
 const AGGREGATE_METRICS = [
 	'sellerGrossRevenue',
 	'protocolFees',
@@ -88,34 +117,6 @@ const AGGREGATE_METRIC_NAMES: Record<(typeof AGGREGATE_METRICS)[number], string>
 	totalCardanoFees: 'total_cardano_fees',
 };
 
-const CONTEXT_HEADERS = [
-	'generated_at',
-	'as_of',
-	'payment_source_id',
-	'payment_source_network',
-	'payment_source_type',
-	'payment_source_fee_rate_permille',
-	'payment_source_fee_rate_percent',
-	'payment_source_smart_contract_address',
-	'payment_source_deleted_at',
-	'filter_managed_wallet_ids_json',
-	'filter_external_addresses_json',
-	'filter_roles_json',
-	'filter_states_json',
-	'filter_from',
-	'filter_to',
-	'filter_date_basis',
-	'filter_revenue_mode',
-	'filter_time_zone',
-	'filter_bucket',
-	'report_bucket',
-	'fiat_currency',
-	'fiat_rate_mode',
-	'fiat_rate_provider',
-	'fiat_completeness',
-	'warning_codes_json',
-] as const;
-
 function trusted(value: string | number | boolean | null | undefined): CsvCell {
 	return { value: value == null ? '' : String(value), isUntrusted: false };
 }
@@ -126,10 +127,6 @@ function untrusted(value: string | null | undefined): CsvCell {
 
 function dateCell(value: Date | null): CsvCell {
 	return trusted(value?.toISOString());
-}
-
-function stableStringArrayJson(values: readonly string[] | null): string {
-	return JSON.stringify(values == null ? null : [...new Set(values)].sort((left, right) => left.localeCompare(right)));
 }
 
 const CSV_RECORD_SEPARATOR = '\r\n';
@@ -260,78 +257,42 @@ function splitAmounts(amounts: readonly AtomicAmount[] | null): AmountColumns | 
 	};
 }
 
-function amountHeaders(prefix: string): string[] {
-	return AMOUNT_SUFFIXES.map((suffix) => `${prefix}_${suffix}`);
+function amountHeaders(prefix: string, layout: ReportCsvLayout): string[] {
+	const headers = AMOUNT_SUFFIXES.map((suffix) => `${prefix}_${suffix}`);
+	return layout.fiatSuffix == null ? headers : [...headers, `${prefix}_${layout.fiatSuffix}`];
 }
 
-function amountCells(amounts: readonly AtomicAmount[] | null): CsvCell[] {
+function amountCells(amounts: readonly AtomicAmount[] | null, layout: ReportCsvLayout): CsvCell[] {
 	const columns = splitAmounts(amounts);
-	return columns == null
-		? [trusted(''), trusted(''), trusted(''), trusted(''), trusted('')]
-		: [
-				trusted(columns.ada),
-				trusted(columns.usdm),
-				trusted(columns.usdcx),
-				trusted(columns.otherAssets),
-				trusted(columns.fiat),
-			];
+	const cells =
+		columns == null
+			? [trusted(''), trusted(''), trusted(''), trusted('')]
+			: [trusted(columns.ada), trusted(columns.usdm), trusted(columns.usdcx), trusted(columns.otherAssets)];
+	if (layout.fiatSuffix == null) return cells;
+	return [...cells, trusted(columns == null ? '' : columns.fiat)];
 }
 
-function aggregateMetricHeaders(prefix: string): string[] {
-	return [...amountHeaders(prefix), `${prefix}_completeness`];
+function aggregateMetricHeaders(prefix: string, layout: ReportCsvLayout): string[] {
+	return [...amountHeaders(prefix, layout), `${prefix}_completeness`];
 }
 
-function aggregateMetricCells(metric: ReportAggregateMetric): CsvCell[] {
-	return [...amountCells(metric.amounts), trusted(metric.completeness)];
+function aggregateMetricCells(metric: ReportAggregateMetric, layout: ReportCsvLayout): CsvCell[] {
+	return [...amountCells(metric.amounts, layout), trusted(metric.completeness)];
 }
 
-function aggregateHeaders(): string[] {
+function aggregateHeaders(layout: ReportCsvLayout): string[] {
 	return [
 		'transaction_count',
 		'transaction_count_completeness',
-		...AGGREGATE_METRICS.flatMap((metric) => aggregateMetricHeaders(AGGREGATE_METRIC_NAMES[metric])),
+		...AGGREGATE_METRICS.flatMap((metric) => aggregateMetricHeaders(AGGREGATE_METRIC_NAMES[metric], layout)),
 	];
 }
 
-function aggregateCells(aggregate: ReportAggregate): CsvCell[] {
+function aggregateCells(aggregate: ReportAggregate, layout: ReportCsvLayout): CsvCell[] {
 	return [
 		trusted(aggregate.transactionCount),
 		trusted(aggregate.transactionCountCompleteness),
-		...AGGREGATE_METRICS.flatMap((metric) => aggregateMetricCells(aggregate[metric])),
-	];
-}
-
-function contextCells(metadata: ReportCsvMetadata): CsvCell[] {
-	const filters = metadata.filters;
-	const warningCodes = [...new Set((metadata.warnings ?? []).map((warning) => warning.code))].sort((left, right) =>
-		left.localeCompare(right),
-	);
-	return [
-		dateCell(metadata.generatedAt),
-		dateCell(metadata.asOf),
-		untrusted(metadata.paymentSource.id),
-		trusted(metadata.paymentSource.network),
-		trusted(metadata.paymentSource.paymentSourceType),
-		trusted(metadata.paymentSource.feeRatePermille),
-		trusted(atomicToDecimalString(BigInt(metadata.paymentSource.feeRatePermille), 1)),
-		untrusted(metadata.paymentSource.smartContractAddress),
-		dateCell(metadata.paymentSource.deletedAt),
-		trusted(stableStringArrayJson(filters.managedWalletIds)),
-		trusted(stableStringArrayJson(filters.externalAddresses)),
-		trusted(stableStringArrayJson(filters.roles)),
-		trusted(stableStringArrayJson(filters.states)),
-		dateCell(filters.from),
-		dateCell(filters.to),
-		trusted(filters.dateBasis),
-		trusted(filters.revenueMode),
-		untrusted(filters.timeZone),
-		trusted(metadata.requestedBucket),
-		trusted(metadata.bucket),
-		trusted(metadata.fiat == null ? '' : metadata.fiat.currency.toUpperCase()),
-		trusted(metadata.fiat?.mode ?? ''),
-		trusted(metadata.fiat?.provider ?? ''),
-		trusted(metadata.fiat?.completeness ?? ''),
-		trusted(JSON.stringify(warningCodes)),
+		...AGGREGATE_METRICS.flatMap((metric) => aggregateMetricCells(aggregate[metric], layout)),
 	];
 }
 
@@ -359,55 +320,58 @@ const TRANSACTION_AMOUNT_PREFIXES = [
 	'buyer_net_spend',
 ] as const;
 
-const TRANSACTION_HEADERS = [
-	'id',
-	'blockchain_identifier',
-	'role',
-	'request_type',
-	'on_chain_state',
-	'created_at',
-	'funds_locked_at',
-	'seller_revenue_recognized_at',
-	'buyer_gross_spend_at',
-	'buyer_returned_at',
-	'result_submitted_tx_hash',
-	'settlement_tx_hash',
-	'settlement_tx_type',
-	'managed_wallet_id',
-	'managed_wallet_address',
-	'managed_wallet_vkey',
-	'managed_wallet_collection_address',
-	'managed_wallet_deleted_at',
-	'agent_identifier',
-	'agent_name',
-	'counterparty_address',
-	'buyer_return_address',
-	'seller_return_address',
-	'metadata',
-	...TRANSACTION_AMOUNT_PREFIXES.flatMap(amountHeaders),
-	'protocol_fee_configured_rate_permille',
-	'protocol_fee_configured_rate_percent',
-	'protocol_fee_applied_rate_permille',
-	'protocol_fee_applied_rate_percent',
-	'protocol_fee_provenance',
-	'protocol_fee_basis',
-	'protocol_fee_completeness',
-	'seller_payout_completeness',
-	'buyer_payout_completeness',
-	'seller_cardano_fee_timing',
-	'buyer_cardano_fee_timing',
-	'actor_cardano_fee_allocation_strategy',
-	'actor_cardano_fee_allocation_completeness',
-	'actor_cardano_fee_allocation_attached_at',
-	'fee_allocation_scope',
-	'fee_component_scope',
-	'reconciliation_buyer_cardano_fee_ada',
-	'reconciliation_seller_cardano_fee_ada',
-	'reconciliation_admin_cardano_fee_ada',
-	'reconciliation_total_cardano_fee_ada',
-	'reconciliation_completeness',
-	'reconciliation_is_aggregation_owner',
-] as const;
+function transactionHeaders(layout: ReportCsvLayout): string[] {
+	return [
+		'id',
+		'blockchain_identifier',
+		'role',
+		'request_type',
+		'on_chain_state',
+		'created_at',
+		'funds_locked_at',
+		'seller_revenue_recognized_at',
+		'buyer_gross_spend_at',
+		'buyer_returned_at',
+		'result_submitted_tx_hash',
+		'settlement_tx_hash',
+		'settlement_tx_type',
+		'managed_wallet_id',
+		'managed_wallet_address',
+		'managed_wallet_vkey',
+		'managed_wallet_collection_address',
+		'managed_wallet_deleted_at',
+		'agent_identifier',
+		'agent_name',
+		'counterparty_address',
+		'buyer_return_address',
+		'seller_return_address',
+		'metadata',
+		...TRANSACTION_AMOUNT_PREFIXES.flatMap((prefix) => amountHeaders(prefix, layout)),
+		...rateHeaders(layout),
+		'protocol_fee_configured_rate_permille',
+		'protocol_fee_configured_rate_percent',
+		'protocol_fee_applied_rate_permille',
+		'protocol_fee_applied_rate_percent',
+		'protocol_fee_provenance',
+		'protocol_fee_basis',
+		'protocol_fee_completeness',
+		'seller_payout_completeness',
+		'buyer_payout_completeness',
+		'seller_cardano_fee_timing',
+		'buyer_cardano_fee_timing',
+		'actor_cardano_fee_allocation_strategy',
+		'actor_cardano_fee_allocation_completeness',
+		'actor_cardano_fee_allocation_attached_at',
+		'fee_allocation_scope',
+		'fee_component_scope',
+		'reconciliation_buyer_cardano_fee_ada',
+		'reconciliation_seller_cardano_fee_ada',
+		'reconciliation_admin_cardano_fee_ada',
+		'reconciliation_total_cardano_fee_ada',
+		'reconciliation_completeness',
+		'reconciliation_is_aggregation_owner',
+	];
+}
 
 function optionalPermillePercent(value: number | null): CsvCell {
 	return value == null ? trusted('') : trusted(atomicToDecimalString(BigInt(value), 1));
@@ -417,7 +381,7 @@ function optionalAda(value: bigint | null): CsvCell {
 	return value == null ? trusted('') : trusted(atomicToDecimalString(value, 6));
 }
 
-function transactionCells(row: ReportRow): CsvCell[] {
+function transactionCells(row: ReportRow, layout: ReportCsvLayout): CsvCell[] {
 	const protocolFee = row.seller?.protocolFee;
 	return [
 		untrusted(row.id),
@@ -444,7 +408,8 @@ function transactionCells(row: ReportRow): CsvCell[] {
 		untrusted(row.buyerReturnAddress),
 		untrusted(row.sellerReturnAddress),
 		untrusted(row.metadata),
-		...rowAmountGroups(row).flatMap(amountCells),
+		...rowAmountGroups(row).flatMap((amounts) => amountCells(amounts, layout)),
+		...rateCells(row.fiatRates ?? null, layout),
 		trusted(protocolFee?.configuredRatePermille),
 		optionalPermillePercent(protocolFee?.configuredRatePermille ?? null),
 		trusted(protocolFee?.appliedRatePermille),
@@ -471,21 +436,21 @@ function transactionCells(row: ReportRow): CsvCell[] {
 }
 
 /**
- * The file stays rectangular and standalone. One report_context row holds the filters and snapshot. Transaction rows
- * leave those context cells blank, which keeps large exports bounded without losing audit data.
+ * One row per request and side, and nothing else.
+ *
+ * The filters, snapshot time, and payment source used to sit in 25 columns
+ * repeated on every row. They live in the export's README instead, which can
+ * explain them in words rather than making every reader scroll past them.
  */
 export function createTransactionsCsv(
 	rows: readonly ReportRow[],
 	metadata: ReportCsvMetadata,
 	options: ReportCsvOptions = {},
 ): Buffer {
-	const headers = [...CONTEXT_HEADERS, 'record_type', ...TRANSACTION_HEADERS];
-	const blankContextCells = CONTEXT_HEADERS.map(() => trusted(''));
+	const layout = csvLayout(metadata);
+	const headers = transactionHeaders(layout);
 	function* outputRows(): Iterable<readonly CsvCell[]> {
-		yield [...contextCells(metadata), trusted('report_context'), ...TRANSACTION_HEADERS.map(() => trusted(''))];
-		for (const row of rows) {
-			yield [...blankContextCells, trusted('transaction'), ...transactionCells(row)];
-		}
+		for (const row of rows) yield transactionCells(row, layout);
 	}
 	return createCsv(headers, outputRows, options);
 }
@@ -495,7 +460,8 @@ export function createWalletSummaryCsv(
 	metadata: ReportCsvMetadata,
 	options: ReportCsvOptions = {},
 ): Buffer {
-	const aggregateColumnHeaders = aggregateHeaders();
+	const layout = csvLayout(metadata);
+	const aggregateColumnHeaders = aggregateHeaders(layout);
 	const walletColumnHeaders = [
 		'managed_wallet_id',
 		'managed_wallet_address',
@@ -505,37 +471,27 @@ export function createWalletSummaryCsv(
 		'role',
 	] as const;
 	const headers = [
-		...CONTEXT_HEADERS,
-		'record_type',
 		'history_fee_completeness',
 		...walletColumnHeaders,
 		...aggregateColumnHeaders,
+		...rateHeaders(layout),
 	];
 	const wallets = [...result.wallets].sort((left, right) => {
 		const walletComparison = (left.managedWallet?.id ?? '').localeCompare(right.managedWallet?.id ?? '');
 		return walletComparison || left.role.localeCompare(right.role);
 	});
-	const blankContextCells = CONTEXT_HEADERS.map(() => trusted(''));
 	function* outputRows(): Iterable<readonly CsvCell[]> {
-		yield [
-			...contextCells(metadata),
-			trusted('report_context'),
-			trusted(result.historyFeeCompleteness),
-			...walletColumnHeaders.map(() => trusted('')),
-			...aggregateColumnHeaders.map(() => trusted('')),
-		];
 		for (const wallet of wallets) {
 			yield [
-				...blankContextCells,
-				trusted('wallet_summary'),
-				trusted(''),
+				trusted(result.historyFeeCompleteness),
 				untrusted(wallet.managedWallet?.id),
 				untrusted(wallet.managedWallet?.walletAddress),
 				untrusted(wallet.managedWallet?.walletVkey),
 				untrusted(wallet.managedWallet?.collectionAddress),
 				dateCell(wallet.managedWallet?.deletedAt ?? null),
 				trusted(wallet.role),
-				...aggregateCells(wallet.metrics),
+				...aggregateCells(wallet.metrics, layout),
+				...rateCells(metadata.fiat?.rates ?? null, layout),
 			];
 		}
 	}
@@ -547,8 +503,13 @@ export function createTotalsCsv(
 	metadata: ReportCsvMetadata,
 	options: ReportCsvOptions = {},
 ): Buffer {
-	const headers = [...CONTEXT_HEADERS, 'history_fee_completeness', ...aggregateHeaders()];
-	const row = [...contextCells(metadata), trusted(result.historyFeeCompleteness), ...aggregateCells(result.totals)];
+	const layout = csvLayout(metadata);
+	const headers = ['history_fee_completeness', ...aggregateHeaders(layout), ...rateHeaders(layout)];
+	const row = [
+		trusted(result.historyFeeCompleteness),
+		...aggregateCells(result.totals, layout),
+		...rateCells(metadata.fiat?.rates ?? null, layout),
+	];
 	function* outputRows(): Iterable<readonly CsvCell[]> {
 		yield row;
 	}

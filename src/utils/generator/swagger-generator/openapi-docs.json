@@ -38866,6 +38866,33 @@
                                                                     "items": {
                                                                         "type": "string"
                                                                     }
+                                                                },
+                                                                "rates": {
+                                                                    "type": "array",
+                                                                    "nullable": true,
+                                                                    "items": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "unit": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "rate": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "source": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "supplied",
+                                                                                    "coingecko"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "unit",
+                                                                            "rate",
+                                                                            "source"
+                                                                        ]
+                                                                    }
                                                                 }
                                                             },
                                                             "required": [
@@ -38876,7 +38903,8 @@
                                                                 "isDemoKey",
                                                                 "demoHistoryDays",
                                                                 "completeness",
-                                                                "unpricedUnits"
+                                                                "unpricedUnits",
+                                                                "rates"
                                                             ]
                                                         },
                                                         "warnings": {
@@ -41559,6 +41587,33 @@
                                                                     "items": {
                                                                         "type": "string"
                                                                     }
+                                                                },
+                                                                "rates": {
+                                                                    "type": "array",
+                                                                    "nullable": true,
+                                                                    "items": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "unit": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "rate": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "source": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "supplied",
+                                                                                    "coingecko"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "unit",
+                                                                            "rate",
+                                                                            "source"
+                                                                        ]
+                                                                    }
                                                                 }
                                                             },
                                                             "required": [
@@ -41569,7 +41624,8 @@
                                                                 "isDemoKey",
                                                                 "demoHistoryDays",
                                                                 "completeness",
-                                                                "unpricedUnits"
+                                                                "unpricedUnits",
+                                                                "rates"
                                                             ]
                                                         },
                                                         "warnings": {

@@ -39,6 +39,12 @@ export type ReportFiatMetadata = Readonly<{
 	completeness: 'complete' | 'partial';
 	/** Units the report holds that no rate covers. Their money has no fiat figure. */
 	unpricedUnits: string[];
+	/**
+	 * The rates behind every figure, but only when one set covers the whole
+	 * report. Under AccountingDate each request has its own rate, so a single
+	 * report-wide rate would be a fiction; those rates sit on the rows instead.
+	 */
+	rates: Array<{ unit: string; rate: string; source: 'supplied' | 'coingecko' }> | null;
 }>;
 
 function collectReportUnits(rows: readonly ReportRow[]): string[] {
@@ -91,6 +97,13 @@ export async function applyReportFiat(
 			attribution: needsProvider ? COINGECKO_ATTRIBUTION : null,
 			isDemoKey,
 			demoHistoryDays: isDemoKey ? DEMO_HISTORY_DAYS : null,
+			rates:
+				fiat.mode === 'PeriodAverage'
+					? reportUnits
+							.map((unit) => table.rateFor(unit, window))
+							.map((lookup, index) => (lookup == null ? null : { unit: reportUnits[index], ...lookup }))
+							.filter((rate): rate is NonNullable<typeof rate> => rate != null)
+					: null,
 			completeness: applied.missingUnits.length > 0 ? 'partial' : 'complete',
 			unpricedUnits: [...applied.missingUnits],
 		},

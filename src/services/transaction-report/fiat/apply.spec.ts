@@ -12,6 +12,9 @@ function sellerRow(overrides: Partial<ReportRow> = {}): ReportRow {
 	return {
 		role: 'Seller',
 		createdAt: new Date('2026-08-02T00:00:00Z'),
+		requestedFunds: [{ unit: 'lovelace', amount: 3_000_001n }],
+		withdrawnForBuyer: [],
+		withdrawnForSeller: [],
 		timestamps: {
 			createdAt: new Date('2026-08-02T00:00:00Z'),
 			fundsLockedAt: new Date('2026-08-02T00:00:00Z'),
