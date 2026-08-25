@@ -201,7 +201,14 @@ function materializeTransactionEvidence(
 		fees,
 		relatedRequestKeys: Array.from(accumulator.relatedRequestKeys).sort((left, right) => left.localeCompare(right)),
 		relatedPaymentKeys: Array.from(accumulator.relatedPaymentKeys).sort((left, right) => left.localeCompare(right)),
-		relatedPaymentKeysComplete: fees === 0n,
+		// The batch is enumerated from every request row that points at this
+		// hash, across the whole table rather than the report's own filters, and
+		// a relation that reached its row cap throws rather than truncating. So
+		// the list is the whole batch whenever it holds anything at all.
+		//
+		// It used to be attested only for a zero fee, which meant no fee could
+		// ever be divided between the requests it settled.
+		relatedPaymentKeysComplete: accumulator.relatedPaymentKeys.size > 0,
 	};
 }
 
