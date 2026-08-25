@@ -9,7 +9,10 @@ import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -37,9 +40,11 @@ import {
 import { AddressListField } from '@/components/transactions/report-export/AddressListField';
 import { PaymentStatesHint } from '@/components/transactions/report-export/PaymentStatesHint';
 import { knownAddressesFromWallets } from '@/components/transactions/report-export/address-filter';
-import { FiatSettingsField } from '@/components/transactions/report-export/FiatSettingsField';
+import { FiatRateStrip } from './FiatRateStrip';
 import {
-  NO_FIAT_CURRENCY,
+  availableFiatCurrencies,
+  fiatUnitFor,
+  isFiatUnit,
   type FiatIssue,
   type ReportFiatCapability,
 } from '@/lib/transaction-report/fiat-settings';
@@ -65,7 +70,7 @@ function todayAsDateInput(): string {
   return formatCalendarDate(new Date());
 }
 
-type FilterGroup = 'rules' | 'currency' | 'scope';
+type FilterGroup = 'rules' | 'scope';
 
 /**
  * How many settings each group holds that are not on their default.
@@ -81,7 +86,6 @@ function countGroupChanges(form: TransactionReportFormState, group: FilterGroup)
       (form.bucket === 'Auto' ? 0 : 1)
     );
   }
-  if (group === 'currency') return form.fiatCurrency === NO_FIAT_CURRENCY ? 0 : 1;
   return (
     (form.managedWalletIds.length > 0 ? 1 : 0) +
     (form.states.length > 0 ? 1 : 0) +
@@ -92,7 +96,6 @@ function countGroupChanges(form: TransactionReportFormState, group: FilterGroup)
 const FILTER_GROUPS: ReadonlyArray<Readonly<{ value: FilterGroup; label: string }>> = [
   { value: 'scope', label: 'Include' },
   { value: 'rules', label: 'Rules' },
-  { value: 'currency', label: 'Currency' },
 ];
 
 /** Keeps a group heading and its reset control from colliding in a narrow column. */
@@ -203,6 +206,7 @@ export function ReportFilterBar({
 }: ReportFilterBarProps) {
   const [openGroup, setOpenGroup] = useState<FilterGroup | null>(null);
   const maxDate = todayAsDateInput();
+  const fiatCurrencies = availableFiatCurrencies(fiatCapability);
 
   return (
     <div className="rounded-lg border">
@@ -239,15 +243,33 @@ export function ReportFilterBar({
 
         {assetUnits.length > 0 && selectedUnit && (
           <Select value={selectedUnit} onValueChange={onSelectUnit}>
-            <SelectTrigger aria-label="Currency" className="w-auto min-w-28">
+            <SelectTrigger aria-label="Currency" className="w-auto min-w-36">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {assetUnits.map((unit) => (
-                <SelectItem key={unit} value={unit}>
-                  {assetLabel(unit)}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                <SelectLabel>Assets</SelectLabel>
+                {assetUnits
+                  .filter((unit) => !isFiatUnit(unit))
+                  .map((unit) => (
+                    <SelectItem key={unit} value={unit}>
+                      {assetLabel(unit)}
+                    </SelectItem>
+                  ))}
+              </SelectGroup>
+              {fiatCurrencies.length > 0 && (
+                <>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel>Every asset, converted</SelectLabel>
+                    {fiatCurrencies.map((option) => (
+                      <SelectItem key={option.value} value={fiatUnitFor(option.value)}>
+                        {option.symbol} {option.value.toUpperCase()} total
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </>
+              )}
             </SelectContent>
           </Select>
         )}
@@ -278,6 +300,15 @@ export function ReportFilterBar({
           ))}
         </div>
       </div>
+
+      {isFiatUnit(selectedUnit ?? '') && (
+        <FiatRateStrip
+          mode={form.fiatMode}
+          capability={fiatCapability}
+          issue={fiatIssue}
+          onChange={onUpdate}
+        />
+      )}
 
       {form.datePreset === 'custom' && (
         <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
@@ -390,22 +421,6 @@ export function ReportFilterBar({
                 Days and weeks start and end in this zone.
               </p>
             </div>
-          </div>
-        </div>
-      )}
-
-      {openGroup === 'currency' && (
-        <div className="border-t bg-muted/10 p-4">
-          <div className="max-w-xl">
-            <FiatSettingsField
-              currency={form.fiatCurrency}
-              mode={form.fiatMode}
-              capability={fiatCapability}
-              issue={fiatIssue}
-              onChange={onUpdate}
-              idPrefix="dashboard"
-              isPlain
-            />
           </div>
         </div>
       )}

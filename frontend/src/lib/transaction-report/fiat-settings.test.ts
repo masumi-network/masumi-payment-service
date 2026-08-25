@@ -6,6 +6,9 @@ import {
   getFiatIssue,
   isReportFiatCurrency,
   type ReportFiatCapability,
+  fiatCurrencyFromUnit,
+  fiatUnitFor,
+  isFiatUnit,
 } from './fiat-settings';
 
 const DEMO: ReportFiatCapability = {
@@ -57,5 +60,22 @@ describe('fiat settings', () => {
   it('recognizes only supported currency codes', () => {
     assert.equal(isReportFiatCurrency('usd'), true);
     assert.equal(isReportFiatCurrency(NO_FIAT_CURRENCY), false);
+  });
+});
+
+describe('fiat units', () => {
+  it('round-trips a currency through its unit', () => {
+    assert.equal(fiatUnitFor('eur'), 'fiat:eur');
+    assert.equal(fiatCurrencyFromUnit('fiat:eur'), 'eur');
+  });
+
+  it('treats a real asset unit as no conversion', () => {
+    assert.equal(fiatCurrencyFromUnit('lovelace'), null);
+    assert.equal(isFiatUnit('lovelace'), false);
+  });
+
+  it('rejects a currency this report cannot produce', () => {
+    assert.equal(fiatCurrencyFromUnit('fiat:xyz'), null);
+    assert.equal(isFiatUnit('fiat:xyz'), false);
   });
 });
