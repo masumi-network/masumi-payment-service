@@ -36,6 +36,11 @@ export const REPORT_FIAT_MODE_OPTIONS: ReadonlyArray<
     label: 'The rate on each accounting date',
     hint: 'Every request uses the rate of the day it is booked on. Closer to how an accountant books each transaction.',
   },
+  {
+    value: 'TransactionTime',
+    label: 'The rate at the time of each transaction',
+    hint: 'Every request uses the price closest to the moment its transaction settled. CoinGecko sets how far apart its prices sit: minutes apart on a short report, up to an hour on a longer one.',
+  },
 ];
 
 /**

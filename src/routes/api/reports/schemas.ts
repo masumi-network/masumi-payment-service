@@ -26,7 +26,7 @@ const timeZoneSchema = z
 	}, 'Invalid IANA time zone');
 
 export const REPORT_FIAT_CURRENCIES = ['usd', 'eur', 'gbp', 'jpy', 'chf', 'aed'] as const;
-export const REPORT_FIAT_MODES = ['PeriodAverage', 'AccountingDate'] as const;
+export const REPORT_FIAT_MODES = ['PeriodAverage', 'AccountingDate', 'TransactionTime'] as const;
 
 const suppliedFiatRateSchema = z.object({
 	unit: z.string().max(200),
@@ -207,7 +207,7 @@ const normalizedFiltersSchema = z.object({
 
 const reportFiatMetadataSchema = z.object({
 	currency: z.string(),
-	mode: z.enum(['PeriodAverage', 'AccountingDate']),
+	mode: z.enum(REPORT_FIAT_MODES),
 	provider: z.enum(['coingecko', 'supplied']),
 	attribution: z.string().nullable(),
 	isDemoKey: z.boolean(),

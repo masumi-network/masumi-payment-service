@@ -29,7 +29,7 @@ function rateContext(
 	dateBasis: ReportDateBasis,
 	window: FiatWindow,
 ): FiatRateContext {
-	return table.mode === 'AccountingDate' ? { at: accountingDate(row, dateBasis) } : window;
+	return table.mode === 'PeriodAverage' ? window : { at: accountingDate(row, dateBasis) };
 }
 
 /** Every on-chain asset the row actually holds, so no rate is reported unused. */

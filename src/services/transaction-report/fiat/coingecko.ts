@@ -91,6 +91,11 @@ export type FiatRateFetchInput = Readonly<{
 export type FiatRateFetchResult = Readonly<{
 	/** Daily rates per asset unit, ready for `createFiatRateTable`. */
 	daily: Map<string, Map<string, string>>;
+	/**
+	 * The raw series behind those daily rates, kept so a report can price a
+	 * transaction at its own time instead of its day. It costs no extra request.
+	 */
+	points: Map<string, FiatPricePoint[]>;
 	/** Units with no CoinGecko listing at all. */
 	unsupportedUnits: readonly string[];
 }>;
@@ -149,7 +154,8 @@ export async function fetchDailyFiatRates(input: FiatRateFetchInput): Promise<Fi
 	const unsupportedUnits = units.filter((unit) => getCoinId(unit) == null);
 	const supportedUnits = units.filter((unit) => getCoinId(unit) != null);
 	const daily = new Map<string, Map<string, string>>();
-	if (supportedUnits.length === 0) return { daily, unsupportedUnits };
+	const points = new Map<string, FiatPricePoint[]>();
+	if (supportedUnits.length === 0) return { daily, points, unsupportedUnits };
 
 	assertPriceableRange(input.from);
 	// After the range guard, so a cached answer cannot smuggle a window the
@@ -170,7 +176,9 @@ export async function fetchDailyFiatRates(input: FiatRateFetchInput): Promise<Fi
 				to,
 				vs_currency: input.currency,
 			});
-			daily.set(unit, toDailyAverageRates(toPricePoints(chart.prices)));
+			const series = toPricePoints(chart.prices);
+			points.set(unit, series);
+			daily.set(unit, toDailyAverageRates(series));
 		} catch (error) {
 			logger.error('CoinGecko rate lookup failed', { coinId, currency: input.currency, error });
 			throw createHttpError(
@@ -182,7 +190,7 @@ export async function fetchDailyFiatRates(input: FiatRateFetchInput): Promise<Fi
 		}
 	}
 
-	const result = { daily, unsupportedUnits };
+	const result = { daily, points, unsupportedUnits };
 	writeRateCache(cacheKey, readAt, result);
 	return result;
 }
