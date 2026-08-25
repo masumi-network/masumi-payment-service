@@ -1223,3 +1223,33 @@ describe('aggregateReportRows history', () => {
 		expect(checks).toBe(3);
 	});
 });
+
+describe('aggregateReportRows fiat zero placeholders', () => {
+	it('keeps history complete when an unfinished request carries only a zero fiat amount', () => {
+		const from = new Date('2026-03-01T00:00:00.000Z');
+		const to = new Date('2026-03-05T00:00:00.000Z');
+		const pending = row(
+			{
+				onChainState: 'FundsLocked',
+				transactions: [transaction('lock', 'FundsLocked', '2026-03-02T12:00:00.000Z')],
+			},
+			'Billable',
+			'RevenueRecognizedAt',
+			from,
+			to,
+		);
+		const seller = pending.seller;
+		if (seller == null) throw new Error('the fixture must carry a seller side');
+		// Fiat conversion appends a zero fiat amount to every figure, empty ones included.
+		const converted: ReportRow = {
+			...pending,
+			seller: { ...seller, grossRevenue: [{ unit: 'fiat:eur', amount: 0n }] },
+		};
+
+		const result = aggregateReportRows([converted], 'Day', 'Etc/UTC', from, to, 'RevenueRecognizedAt');
+
+		for (const entry of result.history) {
+			expect(entry.metrics.sellerGrossRevenue.completeness).toBe('complete');
+		}
+	});
+});
