@@ -278,8 +278,20 @@ function aggregateMetricHeaders(prefix: string, layout: ReportCsvLayout): string
 	return [...amountHeaders(prefix, layout), `${prefix}_completeness`];
 }
 
+/**
+ * A partial figure that accumulated nothing is unknown, not zero.
+ *
+ * Writing `0.000000` there would be a claim the report cannot support, and a
+ * reader footing the column would find the zero contradicting the totals it
+ * sits next to. An empty cell says the same thing the dashboard says.
+ */
+function isUnknownMetric(metric: ReportAggregateMetric): boolean {
+	return metric.completeness === 'partial' && metric.amounts.every((amount) => amount.amount === 0n);
+}
+
 function aggregateMetricCells(metric: ReportAggregateMetric, layout: ReportCsvLayout): CsvCell[] {
-	return [...amountCells(metric.amounts, layout), trusted(metric.completeness)];
+	const amounts = isUnknownMetric(metric) ? null : metric.amounts;
+	return [...amountCells(amounts, layout), trusted(metric.completeness)];
 }
 
 function aggregateHeaders(layout: ReportCsvLayout): string[] {
