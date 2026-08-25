@@ -9,7 +9,7 @@
 
 import { normalizeAssetUnit } from '@/utils/asset-units';
 
-export type FiatRateMode = 'PeriodAverage' | 'AccountingDate';
+export type FiatRateMode = 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
 
 export type FiatRateSource = 'supplied' | 'coingecko';
 
@@ -82,6 +82,28 @@ export function toDailyAverageRates(points: readonly FiatPricePoint[]): Map<stri
 	return new Map(Array.from(sums.entries()).map(([day, bucket]) => [day, toRateString(bucket.total / bucket.count)]));
 }
 
+/**
+ * The price point closest in time to one instant.
+ *
+ * CoinGecko decides the spacing of its own series: five minutes for a single
+ * day, an hour up to three months, a day beyond that. So the nearest point is
+ * the most exact answer available, and it is not always the same distance away.
+ */
+export function nearestPointRate(points: readonly FiatPricePoint[], at: Date): string | null {
+	const target = at.getTime();
+	let best: FiatPricePoint | null = null;
+	let bestDistance = Number.POSITIVE_INFINITY;
+	for (const point of points) {
+		const [timestamp, price] = point;
+		if (!isFiniteNumber(timestamp) || !isFiniteNumber(price) || price <= 0) continue;
+		const distance = Math.abs(timestamp - target);
+		if (distance >= bestDistance) continue;
+		best = point;
+		bestDistance = distance;
+	}
+	return best == null ? null : toRateString(best[1]);
+}
+
 function coversDay(rate: SuppliedFiatRate, day: Date): boolean {
 	if (rate.from != null && day.getTime() < rate.from.getTime()) return false;
 	return !(rate.to != null && day.getTime() >= rate.to.getTime());
@@ -110,9 +132,12 @@ export function createFiatRateTable(input: {
 	supplied?: readonly SuppliedFiatRate[];
 	/** Daily rates per asset unit, as produced by `toDailyAverageRates`. */
 	daily?: ReadonlyMap<string, ReadonlyMap<string, string>>;
+	/** Raw price points per asset unit. Only `TransactionTime` reads these. */
+	points?: ReadonlyMap<string, readonly FiatPricePoint[]>;
 }): FiatRateTable {
 	const supplied = (input.supplied ?? []).map((rate) => ({ ...rate, unit: normalizeAssetUnit(rate.unit) }));
 	const daily: ReadonlyMap<string, ReadonlyMap<string, string>> = input.daily ?? new Map();
+	const points: ReadonlyMap<string, readonly FiatPricePoint[]> = input.points ?? new Map();
 
 	function suppliedRate(unit: string, day: Date): FiatRateLookup {
 		const match = supplied.find((rate) => rate.unit === unit && coversDay(rate, day));
@@ -120,6 +145,10 @@ export function createFiatRateTable(input: {
 	}
 
 	function seriesRate(unit: string, context: FiatRateContext): FiatRateLookup {
+		if (input.mode === 'TransactionTime' && 'at' in context) {
+			const rate = nearestPointRate(points.get(unit) ?? [], context.at);
+			if (rate != null) return { rate, source: 'coingecko' };
+		}
 		const series = daily.get(unit);
 		if (series == null) return null;
 		if ('at' in context) {

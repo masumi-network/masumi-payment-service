@@ -15686,7 +15686,7 @@ export type GetReportsFacetsResponses = {
                 historyDays: number | null;
                 earliestPriceableDate: Date | null;
                 currencies: Array<string>;
-                modes: Array<'PeriodAverage' | 'AccountingDate'>;
+                modes: Array<'PeriodAverage' | 'AccountingDate' | 'TransactionTime'>;
                 attribution: string;
                 setupHint: string;
             };
@@ -15731,7 +15731,7 @@ export type PostReportsTransactionsData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'PeriodAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
@@ -16004,7 +16004,7 @@ export type PostReportsTransactionsResponses = {
                 };
                 fiat: {
                     currency: string;
-                    mode: 'PeriodAverage' | 'AccountingDate';
+                    mode: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
                     provider: 'coingecko' | 'supplied';
                     attribution: string | null;
                     isDemoKey: boolean;
@@ -16046,7 +16046,7 @@ export type PostReportsSummaryData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'PeriodAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
@@ -16558,7 +16558,7 @@ export type PostReportsSummaryResponses = {
                 };
                 fiat: {
                     currency: string;
-                    mode: 'PeriodAverage' | 'AccountingDate';
+                    mode: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
                     provider: 'coingecko' | 'supplied';
                     attribution: string | null;
                     isDemoKey: boolean;
@@ -16600,7 +16600,7 @@ export type PostReportsTransactionsCsvData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'PeriodAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
@@ -16719,7 +16719,7 @@ export type PostReportsWalletSummaryCsvData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'PeriodAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
@@ -16838,7 +16838,7 @@ export type PostReportsTotalsCsvData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'PeriodAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
@@ -16957,7 +16957,7 @@ export type PostReportsExportZipData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'PeriodAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
