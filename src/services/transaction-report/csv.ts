@@ -91,6 +91,7 @@ function rateCells(rates: FiatRowRates | null, layout: ReportCsvLayout): CsvCell
 }
 const AGGREGATE_METRICS = [
 	'sellerGrossRevenue',
+	'sellerPendingRevenue',
 	'protocolFees',
 	'sellerCardanoFees',
 	'sellerNetRevenue',
@@ -105,6 +106,7 @@ const AGGREGATE_METRICS = [
 
 const AGGREGATE_METRIC_NAMES: Record<(typeof AGGREGATE_METRICS)[number], string> = {
 	sellerGrossRevenue: 'seller_gross_revenue',
+	sellerPendingRevenue: 'seller_pending_revenue',
 	protocolFees: 'protocol_fees',
 	sellerCardanoFees: 'seller_cardano_fees',
 	sellerNetRevenue: 'seller_net_revenue',

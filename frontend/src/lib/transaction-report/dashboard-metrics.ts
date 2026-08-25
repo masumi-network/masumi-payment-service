@@ -39,6 +39,7 @@ export function getReportTransactionCountDisplay(
 
 export const REPORT_METRICS = [
   { key: 'sellerGrossRevenue', label: 'Seller gross revenue' },
+  { key: 'sellerPendingRevenue', label: 'Seller revenue not yet earned' },
   { key: 'protocolFees', label: 'Protocol fees' },
   { key: 'sellerCardanoFees', label: 'Seller Cardano fees' },
   { key: 'sellerNetRevenue', label: 'Seller net revenue' },
@@ -53,6 +54,7 @@ export const REPORT_METRICS = [
 
 const REPORT_ASSET_METRIC_KEYS = [
   'sellerGrossRevenue',
+  'sellerPendingRevenue',
   'protocolFees',
   'sellerNetRevenue',
   'buyerGrossSpend',

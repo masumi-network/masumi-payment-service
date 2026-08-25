@@ -124,6 +124,74 @@ describe('chooseReportBucket', () => {
 	});
 });
 
+describe('aggregateReportRows pending revenue', () => {
+	/** Locked, and the dispute window closes well after the report's as-of time. */
+	const pending = (overrides: Partial<ReportRequestRecord> = {}) =>
+		row({
+			id: 'pending-1',
+			onChainState: 'FundsLocked',
+			unlockTime: BigInt(new Date('2027-06-01T00:00:00.000Z').getTime()),
+			transactions: [transaction('lock', 'FundsLocked', '2026-01-02T12:00:00.000Z')],
+			...overrides,
+		});
+
+	const aggregate = (rows: ReportRow[], dateBasis: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt') =>
+		aggregateReportRows(
+			rows,
+			'Day',
+			'Etc/UTC',
+			new Date('2026-01-01T00:00:00.000Z'),
+			new Date('2026-01-05T00:00:00.000Z'),
+			dateBasis,
+		);
+
+	it('counts money that is locked but not earned yet', () => {
+		const result = aggregate([pending()], 'CreatedAt');
+		expect(amount(result.totals.sellerPendingRevenue)).toBe(100_000_000n);
+		expect(amount(result.totals.sellerGrossRevenue)).toBe(0n);
+	});
+
+	it('counts nothing once the escrow has ended', () => {
+		expect(amount(aggregate([row()], 'CreatedAt').totals.sellerPendingRevenue)).toBe(0n);
+	});
+
+	it('counts nothing once the dispute window has closed, because it is earned by then', () => {
+		const earned = pending({
+			onChainState: 'ResultSubmitted',
+			unlockTime: BigInt(new Date('2026-01-03T00:00:00.000Z').getTime()),
+			transactions: [
+				transaction('lock', 'FundsLocked', '2026-01-02T12:00:00.000Z'),
+				transaction('result', 'ResultSubmitted', '2026-01-02T18:00:00.000Z'),
+			],
+		});
+		expect(amount(aggregate([earned], 'CreatedAt').totals.sellerPendingRevenue)).toBe(0n);
+	});
+
+	it('counts nothing without a confirmed lock, because the money is not proven to be in escrow', () => {
+		const unproven = pending({ transactions: [] });
+		expect(amount(aggregate([unproven], 'CreatedAt').totals.sellerPendingRevenue)).toBe(0n);
+	});
+
+	it('counts nothing for an invalid datum, which is a dead end rather than a wait', () => {
+		expect(amount(aggregate([pending({ onChainState: 'FundsOrDatumInvalid' })], 'CreatedAt').totals.sellerPendingRevenue)).toBe(
+			0n,
+		);
+	});
+
+	it.each(['CreatedAt', 'FundsLockedAt', 'RevenueRecognizedAt'] as const)(
+		'places it on the day the funds were locked whatever the %s basis is',
+		(dateBasis) => {
+			// The request was created on 1 January and locked on 2 January. The
+			// day it will be earned on has not happened, so the lock day is the
+			// only date it has.
+			const result = aggregate([pending()], dateBasis);
+			const locked = result.history.find((entry) => entry.bucketStart.toISOString().startsWith('2026-01-02'));
+			expect(amount(locked!.metrics.sellerPendingRevenue)).toBe(100_000_000n);
+			expect(historyAmount(result, 'sellerPendingRevenue')).toBe(100_000_000n);
+		},
+	);
+});
+
 describe('aggregateReportRows totals', () => {
 	it('marks an unknown FundsLocked date membership count partial', () => {
 		const uncertain = row(
