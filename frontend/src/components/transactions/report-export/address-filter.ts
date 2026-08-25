@@ -76,3 +76,34 @@ export function addAddresses(current: readonly string[], draft: string): Address
   }
   return { addresses: merged, error: null, invalidAddress: null };
 }
+
+/** An address this service already knows, offered so it need not be pasted. */
+export type KnownAddress = Readonly<{ address: string; label: string; hint: string }>;
+
+type ManagedWalletLike = Readonly<{
+  walletAddress: string;
+  note?: string | null;
+  type: string;
+  deletedAt?: Date | string | null;
+}>;
+
+/**
+ * Offers the payment source's own wallets as ready-made filter entries.
+ *
+ * These are the only addresses the service can name. A counterparty address
+ * belongs to somebody else, so it still has to be pasted.
+ */
+export function knownAddressesFromWallets(wallets: readonly ManagedWalletLike[]): KnownAddress[] {
+  const seen = new Set<string>();
+  const known: KnownAddress[] = [];
+  for (const wallet of wallets) {
+    if (!wallet.walletAddress || seen.has(wallet.walletAddress)) continue;
+    seen.add(wallet.walletAddress);
+    known.push({
+      address: wallet.walletAddress,
+      label: wallet.note?.trim() || wallet.walletAddress,
+      hint: `${wallet.type === 'Selling' ? 'Selling' : 'Buying'}${wallet.deletedAt ? ' · Archived' : ''}`,
+    });
+  }
+  return known;
+}

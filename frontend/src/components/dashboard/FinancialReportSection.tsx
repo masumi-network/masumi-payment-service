@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Download, Loader2, RefreshCw, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { InfoHint } from '@/components/ui/info-hint';
 import { Skeleton } from '@/components/ui/skeleton';
 import { shortenAddress } from '@/lib/utils';
 import {
@@ -125,23 +126,27 @@ export function FinancialReportSection() {
       aria-labelledby="financial-reporting-title"
       aria-busy={isBusy}
     >
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex items-center gap-1.5">
           <h2 id="financial-reporting-title" className="text-lg font-semibold">
             Money and fees
           </h2>
-          <p className="text-sm text-muted-foreground">
-            What this payment source earned, spent, and paid in fees.
-          </p>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <span>{periodLabel}</span>
-            {generatedAt && <span>· Updated {generatedAt}</span>}
-            {summary && (
-              <ReportCompletenessNote warnings={summary.metadata.warnings} className="ml-1" />
-            )}
-          </div>
+          <InfoHint label="money and fees">
+            <p>What this payment source earned, spent, and paid in fees.</p>
+            <p>
+              Every figure comes from one database snapshot, so the cards, the history, and the
+              export agree with each other.
+            </p>
+          </InfoHint>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span>{periodLabel}</span>
+          {generatedAt && <span>· Updated {generatedAt}</span>}
+          {summary && (
+            <ReportCompletenessNote warnings={summary.metadata.warnings} className="ml-1" />
+          )}
+        </div>
+        <div className="ml-auto flex flex-wrap gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={resetReport}>
             <RotateCcw className="h-4 w-4" /> Reset
           </Button>
@@ -169,14 +174,11 @@ export function FinancialReportSection() {
 
       <ReportFilterBar
         form={model.form}
-        isLoading={model.isLoadingFacets}
         managedWallets={model.managedWallets}
-        paymentSources={model.paymentSources}
         assetUnits={assetUnits}
         selectedUnit={selectedUnit}
         assetLabel={assetLabel}
         onSelectUnit={setRequestedUnit}
-        onSetPaymentSource={model.setPaymentSource}
         onToggleRole={model.toggleRole}
         onToggleState={model.toggleState}
         onToggleWallet={model.toggleWallet}
