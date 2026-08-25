@@ -120,6 +120,26 @@ function ResetFieldButton({ onClick }: Readonly<{ onClick: () => void }>) {
   );
 }
 
+/**
+ * A checked row that stands for "no filter at all".
+ *
+ * A list of empty checkboxes reads as "nothing is included", when an empty
+ * filter in fact includes everything. Showing the default as a ticked row says
+ * which of the two it is without the reader having to know the rule.
+ */
+function IncludeAllRow({
+  label,
+  isActive,
+  onSelect,
+}: Readonly<{ label: string; isActive: boolean; onSelect: () => void }>) {
+  return (
+    <label className="mb-0.5 flex cursor-pointer items-center gap-2 rounded border-b px-2 py-1.5 text-xs hover:bg-muted/50">
+      <Checkbox checked={isActive} onCheckedChange={onSelect} />
+      <span className="font-medium">{label}</span>
+    </label>
+  );
+}
+
 function GroupButton({
   label,
   count,
@@ -399,12 +419,15 @@ export function ReportFilterBar({
               action={
                 form.managedWalletIds.length > 0 ? (
                   <ResetFieldButton onClick={() => onUpdate({ managedWalletIds: [] })} />
-                ) : (
-                  <span className="text-[11px] text-muted-foreground">All wallets</span>
-                )
+                ) : null
               }
             />
             <div className="max-h-40 space-y-0.5 overflow-y-auto rounded-md border p-1.5">
+              <IncludeAllRow
+                label="Every wallet"
+                isActive={form.managedWalletIds.length === 0}
+                onSelect={() => onUpdate({ managedWalletIds: [] })}
+              />
               {managedWallets.length === 0 ? (
                 <p className="px-2 py-3 text-xs text-muted-foreground">
                   This payment source has no wallets yet.
@@ -440,12 +463,15 @@ export function ReportFilterBar({
               action={
                 form.states.length > 0 ? (
                   <ResetFieldButton onClick={() => onUpdate({ states: [] })} />
-                ) : (
-                  <span className="text-[11px] text-muted-foreground">All states</span>
-                )
+                ) : null
               }
             />
-            <div className="grid max-h-40 gap-0.5 overflow-y-auto rounded-md border p-1.5">
+            <div className="max-h-40 gap-0.5 overflow-y-auto rounded-md border p-1.5">
+              <IncludeAllRow
+                label="Every state"
+                isActive={form.states.length === 0}
+                onSelect={() => onUpdate({ states: [] })}
+              />
               {REPORT_ON_CHAIN_STATES.map((state) => (
                 <label
                   key={state}
