@@ -330,10 +330,10 @@ export function assignCompleteReportFeeReconciliation(
 			allocations.set(reportRowKey(row), {
 				isFeeReconciliationOwner: isOwner,
 				feeComponentScope: completeness === 'complete' ? 'complete' : 'partial',
-				actorCardanoFeeAllocation: {
-					...row.actorCardanoFeeAllocation,
-					completeness: 'partial',
-				},
+				// The component says nothing about whether this request's own fee
+				// counter is contained by the report window, so the row keeps the
+				// answer it worked out for itself.
+				actorCardanoFeeAllocation: row.actorCardanoFeeAllocation,
 				cardanoFeeReconciliation: componentRowReconciliation(component, isOwner),
 			});
 		}

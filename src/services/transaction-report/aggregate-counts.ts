@@ -22,17 +22,43 @@ export function getKnownReportTransactionDates(row: ReportRow): Date[] {
 	});
 }
 
-function hasKnownDateMembership(row: ReportRow, dateBasis: ReportDateBasis, from: Date, to: Date): boolean {
-	if (dateBasis === 'CreatedAt') return isDateInRange(row.createdAt, from, to);
-	if (dateBasis === 'FundsLockedAt') return isDateInRange(row.timestamps.fundsLockedAt, from, to);
-	if (
-		[row.timestamps.sellerRevenueRecognizedAt, row.timestamps.buyerGrossSpendAt, row.timestamps.buyerReturnedAt].some(
-			(value) => isDateInRange(value, from, to),
-		)
-	) {
-		return true;
+/** Every date that can put a request inside the report, under this date basis. */
+function countableDates(row: ReportRow, dateBasis: ReportDateBasis): Array<Date | null> {
+	if (dateBasis === 'CreatedAt') return [row.createdAt];
+	if (dateBasis === 'FundsLockedAt') return [row.timestamps.fundsLockedAt];
+	return [
+		row.timestamps.sellerRevenueRecognizedAt,
+		row.timestamps.buyerGrossSpendAt,
+		row.timestamps.buyerReturnedAt,
+		...getKnownReportTransactionDates(row),
+	];
+}
+
+/**
+ * The one date each request is counted on, keyed by its chain identifier.
+ *
+ * A request can touch several days: locked on one, settled on another. Counting
+ * it on each of them would make the daily counts add up to more than the period
+ * total, so the earliest day inside the report wins and the rest are ignored.
+ * A `null` marks a request the report holds but cannot date, which is what makes
+ * the count partial.
+ */
+export function getReportCountDates(
+	rows: readonly ReportRow[],
+	dateBasis: ReportDateBasis,
+	from: Date,
+	to: Date,
+): Map<string, Date | null> {
+	const dateByPayment = new Map<string, Date | null>();
+	for (const row of rows) {
+		let earliest = dateByPayment.get(row.blockchainIdentifier) ?? null;
+		for (const candidate of countableDates(row, dateBasis)) {
+			if (!isDateInRange(candidate, from, to)) continue;
+			if (earliest == null || (candidate as Date).getTime() < earliest.getTime()) earliest = candidate as Date;
+		}
+		dateByPayment.set(row.blockchainIdentifier, earliest);
 	}
-	return getKnownReportTransactionDates(row).some((date) => isDateInRange(date, from, to));
+	return dateByPayment;
 }
 
 export function getReportTransactionCount(
@@ -41,16 +67,9 @@ export function getReportTransactionCount(
 	from: Date,
 	to: Date,
 ) {
-	const membershipByPayment = new Map<string, boolean>();
-	for (const row of rows) {
-		membershipByPayment.set(
-			row.blockchainIdentifier,
-			(membershipByPayment.get(row.blockchainIdentifier) ?? false) || hasKnownDateMembership(row, dateBasis, from, to),
-		);
-	}
-	const memberships = Array.from(membershipByPayment.values());
+	const dates = Array.from(getReportCountDates(rows, dateBasis, from, to).values());
 	return {
-		transactionCount: memberships.filter(Boolean).length,
-		transactionCountCompleteness: memberships.every(Boolean) ? ('complete' as const) : ('partial' as const),
+		transactionCount: dates.filter((date) => date != null).length,
+		transactionCountCompleteness: dates.every((date) => date != null) ? ('complete' as const) : ('partial' as const),
 	};
 }

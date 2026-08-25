@@ -359,9 +359,11 @@ describe('aggregateReportRows totals', () => {
 		);
 
 		expect(exact.totals.transactionCount).toBe(1);
-		expect(amount(exact.totals.adminCardanoFees)).toBe(0n);
+		// Both sides settled inside the window, so the actor counters are exact and
+		// the admin share is the remainder: 100 paid, 30 by the two actors.
+		expect(amount(exact.totals.actorCardanoFees)).toBe(30n);
+		expect(amount(exact.totals.adminCardanoFees)).toBe(70n);
 		expect(amount(exact.totals.totalCardanoFees)).toBe(100n);
-		expect(exact.totals.adminCardanoFees.completeness).toBe('partial');
 		expect(exact.wallets.map((wallet) => wallet.metrics.transactionCount)).toEqual([1, 1]);
 		expect(exact.wallets.reduce((total, wallet) => total + amount(wallet.metrics.totalCardanoFees), 0n)).toBe(100n);
 		expect(exact.wallets.filter((wallet) => amount(wallet.metrics.totalCardanoFees) > 0n)).toHaveLength(1);
@@ -904,7 +906,10 @@ describe('aggregateReportRows history', () => {
 		expect(amount(result.history[1].metrics.buyerGrossSpend, 'policyasset')).toBe(0n);
 		expect(amount(result.history[2].metrics.returnedFunds, 'policyasset')).toBe(1_000n);
 		expect(amount(result.history[2].metrics.buyerNetSpend, 'policyasset')).toBe(-1_000n);
-		expect(result.history.map((entry) => entry.metrics.transactionCount)).toEqual([1, 0, 1]);
+		// One request, counted once, on the first day it touched. The money still
+		// splits across both chain events, but the count has to foot to the total.
+		expect(result.history.map((entry) => entry.metrics.transactionCount)).toEqual([1, 0, 0]);
+		expect(result.totals.transactionCount).toBe(1);
 		expect(result.totals.buyerNetSpend.amounts).toEqual([]);
 	});
 
@@ -1349,6 +1354,56 @@ describe('aggregateReportRows fiat zero placeholders', () => {
 
 		for (const entry of result.history) {
 			expect(entry.metrics.sellerGrossRevenue.completeness).toBe('complete');
+		}
+	});
+});
+
+describe('aggregateReportRows footing', () => {
+	it('adds the daily counts and the daily actor fees back up to the period totals', () => {
+		const from = new Date('2026-03-01T00:00:00.000Z');
+		const to = new Date('2026-03-05T00:00:00.000Z');
+		const seller = row(
+			{
+				sellerCardanoFees: 300_000n,
+				transactions: [
+					transaction('lock', 'FundsLocked', '2026-03-01T12:00:00.000Z'),
+					transaction('withdraw', 'Withdrawn', '2026-03-03T12:00:00.000Z'),
+				],
+			},
+			'Billable',
+			'RevenueRecognizedAt',
+			from,
+			to,
+		);
+		const buyer = row(
+			{
+				id: 'request-2',
+				role: 'Buyer',
+				requestType: 'PurchaseRequest',
+				blockchainIdentifier: 'chain-2',
+				buyerCardanoFees: 200_000n,
+				transactions: [transaction('buyer-lock', 'FundsLocked', '2026-03-02T12:00:00.000Z')],
+			},
+			'Billable',
+			'RevenueRecognizedAt',
+			from,
+			to,
+		);
+		const result = aggregateReportRows([seller, buyer], 'Day', 'Etc/UTC', from, to, 'RevenueRecognizedAt');
+
+		const countSum = result.history.reduce((total, entry) => total + entry.metrics.transactionCount, 0);
+		expect(countSum).toBe(result.totals.transactionCount);
+
+		const metricNames = Object.keys(result.totals).filter(
+			(key): key is Exclude<keyof ReportAggregate, 'transactionCount' | 'transactionCountCompleteness'> =>
+				key !== 'transactionCount' && key !== 'transactionCountCompleteness',
+		);
+		expect(metricNames.length).toBeGreaterThan(0);
+		for (const metricName of metricNames) {
+			expect([metricName, historyAmount(result, metricName)]).toEqual([
+				metricName,
+				amount(result.totals[metricName]),
+			]);
 		}
 	});
 });
