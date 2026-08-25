@@ -23,6 +23,16 @@ export function PaymentStatesHint() {
         So picking only <em>Withdrawn</em> does not give you settled revenue. It removes every
         request that has not been withdrawn yet, together with its fees, and the totals drop.
       </p>
+      <p>
+        Unfinished requests are included as rows. A submitted result whose dispute window is still
+        open earns nothing yet, so it sits in no period and is marked as an estimate rather than
+        counted as zero.
+      </p>
+      <p>
+        Once the window closes, that revenue lands on the unlock day, not on the day you ran the
+        report. A request that is later disputed or refunded moves again, so the same period can
+        report a different figure after an escrow resolves.
+      </p>
     </InfoHint>
   );
 }

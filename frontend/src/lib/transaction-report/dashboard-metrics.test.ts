@@ -129,10 +129,11 @@ test('collects and orders business asset units without Cardano fee-only units', 
     ],
   );
 
+  // Stablecoins lead, so the report opens on a figure that reads as money.
   assert.deepEqual(collectReportAssetUnits(report), [
-    'lovelace',
     'zz-usdm-wallet-unit',
     'usdcx-unit',
+    'lovelace',
     'unit-a',
     'unit-z',
   ]);
