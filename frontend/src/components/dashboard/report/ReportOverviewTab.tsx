@@ -185,6 +185,16 @@ export function ReportOverviewTab({
                   buyer paid, less anything refunded. It is larger than gross whenever the buyer
                   paid a network fee, which is normal rather than a mistake.
                 </p>
+                {hasSeller && (
+                  <p>
+                    The dashed <strong>Not yet earned</strong> line is money a buyer has locked for
+                    a request that has not settled. It sits on the day the funds were locked,
+                    because that is the only date this money has yet. Expect it to move: once the
+                    request settles, the amount leaves this line and lands on the day it settled, as
+                    revenue, or as returned funds if the buyer got it back. A request that settles
+                    slowly can therefore shift days or weeks forward.
+                  </p>
+                )}
               </InfoHint>
             </div>
             <p className="text-sm text-muted-foreground">

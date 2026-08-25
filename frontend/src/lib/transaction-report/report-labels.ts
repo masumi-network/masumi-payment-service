@@ -26,7 +26,7 @@ export const REPORT_METRIC_LABELS = {
 /** Short line under a metric, shown where there is room for it. */
 export const REPORT_METRIC_HINTS = {
   sellerGrossRevenue: 'Earned before any fee',
-  sellerPendingRevenue: 'Locked in escrow, still to be earned',
+  sellerPendingRevenue: 'Locked in escrow, dated the day it was locked until it settles',
   protocolFees: 'Kept by the payment source',
   sellerCardanoFees: 'Chain fees paid by selling wallets',
   sellerNetRevenue: 'Gross revenue minus fees',
