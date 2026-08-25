@@ -713,7 +713,9 @@ describe('queryReportPage', () => {
 			feeAllocationScope: 'shared_or_unknown',
 			feeComponentScope: 'partial',
 		});
-		expect(result.records[0].transactions[0].relatedPaymentKeysComplete).toBe(false);
+		// The batch is known, so the fee can be shared. It is still a batch, so
+		// this request cannot claim the whole of it.
+		expect(result.records[0].transactions[0].relatedPaymentKeysComplete).toBe(true);
 	});
 
 	it('preserves request-specific states when indexed mirrors share one transaction hash', async () => {
@@ -734,7 +736,7 @@ describe('queryReportPage', () => {
 		expect(result.records[0].transactions[0]).toMatchObject({
 			newOnChainState: OnChainState.ResultSubmitted,
 			relatedPaymentKeys: ['chain-v2-disputed', 'chain-v2-result'],
-			relatedPaymentKeysComplete: false,
+			relatedPaymentKeysComplete: true,
 		});
 	});
 
@@ -752,10 +754,13 @@ describe('queryReportPage', () => {
 
 		const result = await queryReportPage(filters({ roles: ['Seller'] }), { Buyer: null, Seller: null }, 50);
 
+		// The state stays unknown because one transaction row is linked to two
+		// payments, so which payment reached that state cannot be told. Knowing
+		// the batch is a separate matter, and the fee can still be shared.
 		expect(result.records[0].transactions[0]).toMatchObject({
 			newOnChainState: null,
 			relatedPaymentKeys: ['chain-v2-disputed', 'chain-v2-result'],
-			relatedPaymentKeysComplete: false,
+			relatedPaymentKeysComplete: true,
 		});
 	});
 
@@ -809,7 +814,7 @@ describe('queryReportPage', () => {
 		expect(hydrationCalls.every((call) => call.where.id.in.length <= 50)).toBe(true);
 	});
 
-	it('keeps a nonzero indexed fee partial without attested on-chain batch membership', async () => {
+	it('gives a request the exact fee of a transaction that settled only that request', async () => {
 		mockFindPayments.mockResolvedValue([paymentRecord('v2-mirror', '2026-01-03T00:00:00.000Z')]);
 		mockIndexedTransactions([
 			{
@@ -820,18 +825,20 @@ describe('queryReportPage', () => {
 		const result = await queryReportPage(filters({ roles: ['Seller'] }), { Buyer: null, Seller: null }, 50);
 
 		expect(result.records[0]).toMatchObject({
-			feeAllocationScope: 'shared_or_unknown',
-			feeComponentScope: 'partial',
+			feeAllocationScope: 'single_request',
+			feeComponentScope: 'complete',
 		});
-		expect(result.records[0].transactions[0].relatedPaymentKeysComplete).toBe(false);
+		expect(result.records[0].transactions[0].relatedPaymentKeysComplete).toBe(true);
 		const row = buildReportRow(result.records[0], 'Billable', filters().asOf, {
 			dateBasis: 'CreatedAt',
 			from: filters().from,
 			to: filters().to,
 		});
+		// The fee is now a figure rather than nothing. It stays partial for a
+		// separate reason: the actor fee counters are cumulative, so the admin
+		// share of the fee still cannot be told apart.
 		expect(row.cardanoFeeReconciliation).toMatchObject({
-			adminCardanoFees: null,
-			totalCardanoFees: null,
+			totalCardanoFees: 200_000n,
 			completeness: 'partial',
 		});
 	});
