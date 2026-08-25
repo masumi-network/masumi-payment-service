@@ -331,7 +331,10 @@ describe('transaction report aggregate CSV', () => {
 		expect(values.seller_gross_revenue_completeness).toBe('complete');
 		expect(values.actor_cardano_fees_ada).toBe('0.123456');
 		expect(values.actor_cardano_fees_completeness).toBe('partial');
-		expect(values.admin_cardano_fees_ada).toBe('0.000000');
+		// Unknown, not zero: the admin share cannot be derived from a partial
+		// actor figure, and a zero here would contradict the total beside it.
+		expect(values.admin_cardano_fees_ada).toBe('');
+		expect(values.admin_cardano_fees_completeness).toBe('partial');
 		expect(values.total_cardano_fees_ada).toBe('0.223456');
 		expect(values.total_cardano_fees_completeness).toBe('complete');
 	});
