@@ -86,8 +86,15 @@ function createAggregate(): ReportAggregate {
 	};
 }
 
+/**
+ * Does this figure actually carry money?
+ *
+ * A zero entry is not money. Fiat conversion appends a zero fiat amount to
+ * every figure, including empty ones, so counting entries alone would read an
+ * empty figure as unplaced money and mark the whole history partial.
+ */
 function hasAmounts(amounts: readonly AtomicAmount[] | null): boolean {
-	return amounts != null && amounts.length > 0;
+	return amounts != null && amounts.some((amount) => amount.amount !== 0n);
 }
 
 function isProtocolMetricComplete(row: ReportRow): boolean {
