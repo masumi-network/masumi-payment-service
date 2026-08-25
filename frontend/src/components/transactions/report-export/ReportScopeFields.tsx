@@ -23,6 +23,7 @@ import {
 } from '../download-details.helpers';
 import type { useDownloadDetailsModel } from '../useDownloadDetailsModel';
 import { AddressListField } from './AddressListField';
+import { PaymentStatesHint } from './PaymentStatesHint';
 import { knownAddressesFromWallets } from './address-filter';
 import { reportPurposeShows } from './report-purposes';
 
@@ -32,10 +33,17 @@ function todayAsDateInput(): string {
   return formatCalendarDate(new Date());
 }
 
-function FieldHeader({ title, action }: Readonly<{ title: string; action?: ReactNode }>) {
+function FieldHeader({
+  title,
+  action,
+  hint,
+}: Readonly<{ title: string; action?: ReactNode; hint?: ReactNode }>) {
   return (
     <div className="flex min-h-8 items-center justify-between gap-2">
-      <span className="text-sm font-medium">{title}</span>
+      <span className="flex items-center gap-1 text-sm font-medium">
+        {title}
+        {hint}
+      </span>
       {action}
     </div>
   );
@@ -204,6 +212,7 @@ export function ReportScopeFields({ model }: Readonly<{ model: ReportModel }>) {
           <legend className="sr-only">Payment states</legend>
           <FieldHeader
             title="Payment states"
+            hint={<PaymentStatesHint />}
             action={
               model.form.states.length > 0 ? (
                 <Button
