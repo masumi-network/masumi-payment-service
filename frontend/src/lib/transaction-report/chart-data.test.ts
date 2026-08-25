@@ -36,6 +36,7 @@ function aggregate(rawAmount: string | null, completeness: Completeness = 'compl
     transactionCount: 1,
     transactionCountCompleteness: completeness,
     sellerGrossRevenue: entry,
+    sellerPendingRevenue: entry,
     protocolFees: entry,
     sellerCardanoFees: entry,
     actorCardanoFees: entry,

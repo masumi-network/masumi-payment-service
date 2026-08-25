@@ -10,6 +10,7 @@ import type { ReportMetricKey } from './dashboard-metrics';
  */
 export const REPORT_METRIC_LABELS = {
   sellerGrossRevenue: 'Gross revenue',
+  sellerPendingRevenue: 'Not yet earned',
   protocolFees: 'Protocol fees',
   sellerCardanoFees: 'Seller network fees',
   sellerNetRevenue: 'Net revenue',
@@ -25,6 +26,7 @@ export const REPORT_METRIC_LABELS = {
 /** Short line under a metric, shown where there is room for it. */
 export const REPORT_METRIC_HINTS = {
   sellerGrossRevenue: 'Earned before any fee',
+  sellerPendingRevenue: 'Locked in escrow, still to be earned',
   protocolFees: 'Kept by the payment source',
   sellerCardanoFees: 'Chain fees paid by selling wallets',
   sellerNetRevenue: 'Gross revenue minus fees',
@@ -50,6 +52,8 @@ export const REPORT_SERIES_COLORS = {
   networkFee: 'rgb(168, 85, 247)',
   refund: 'rgb(20, 184, 166)',
   admin: 'rgb(244, 63, 94)',
+  /** Muted on purpose: this money is provisional, not earned. */
+  pending: 'rgb(148, 163, 184)',
 } as const;
 
 export type ReportSeriesColor = (typeof REPORT_SERIES_COLORS)[keyof typeof REPORT_SERIES_COLORS];
