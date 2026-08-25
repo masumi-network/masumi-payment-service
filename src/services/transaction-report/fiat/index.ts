@@ -10,7 +10,7 @@ import {
 	isFiatRateProviderConfigured,
 	isFiatRateProviderDemo,
 } from './coingecko';
-import { createFiatRateTable, type FiatRateMode, type SuppliedFiatRate } from './rates';
+import { createFiatRateTable, type FiatPricePoint, type FiatRateMode, type SuppliedFiatRate } from './rates';
 
 export {
 	assertPriceableRange,
@@ -77,13 +77,18 @@ export async function applyReportFiat(
 
 	const fetched = needsProvider
 		? await fetchDailyFiatRates({ units: fetchUnits, currency: fiat.currency, from: window.from, to: window.to })
-		: { daily: new Map<string, Map<string, string>>(), unsupportedUnits: [] as readonly string[] };
+		: {
+				daily: new Map<string, Map<string, string>>(),
+				points: new Map<string, FiatPricePoint[]>(),
+				unsupportedUnits: [] as readonly string[],
+			};
 
 	const table = createFiatRateTable({
 		currency: fiat.currency,
 		mode: fiat.mode,
 		supplied,
 		daily: fetched.daily,
+		points: fetched.points,
 	});
 	const applied = applyFiatToReportRows(rows, table, dateBasis, window);
 	const isDemoKey = needsProvider && isFiatRateProviderDemo();
