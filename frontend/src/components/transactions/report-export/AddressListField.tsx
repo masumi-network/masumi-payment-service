@@ -3,20 +3,43 @@ import { Plus, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { InfoHint } from '@/components/ui/info-hint';
 import { shortenAddress } from '@/lib/utils';
-import { MAX_ADDRESSES, addAddresses, parseAddressEntries } from './address-filter';
+import {
+  MAX_ADDRESSES,
+  addAddresses,
+  parseAddressEntries,
+  type KnownAddress,
+} from './address-filter';
 
 type AddressListFieldProps = Readonly<{
   value: string;
   onChange: (value: string) => void;
+  /** Addresses offered in the picker. Anything else is still typed by hand. */
+  knownAddresses?: readonly KnownAddress[];
+  /** Keeps the input id unique when the field appears twice on one screen. */
+  idPrefix?: string;
 }>;
 
-/** Builds the address filter one address at a time, or from a pasted list. */
-export function AddressListField({ value, onChange }: AddressListFieldProps) {
+/** Builds the address filter from the known addresses, or from pasted text. */
+export function AddressListField({
+  value,
+  onChange,
+  knownAddresses = [],
+  idPrefix = 'report',
+}: AddressListFieldProps) {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const addresses = parseAddressEntries(value);
+  const inputId = `${idPrefix}-address-input`;
+  const unusedKnown = knownAddresses.filter((known) => !addresses.includes(known.address));
 
   const commitAddresses = (next: readonly string[]) => onChange(next.join('\n'));
 
@@ -39,7 +62,7 @@ export function AddressListField({ value, onChange }: AddressListFieldProps) {
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">
-          <Label htmlFor="report-address-input">Only these addresses</Label>
+          <Label htmlFor={inputId}>Only these addresses</Label>
           <InfoHint label="address filter">
             <p>
               Keeps only requests where one of these addresses is the counterparty, the payout
@@ -91,11 +114,42 @@ export function AddressListField({ value, onChange }: AddressListFieldProps) {
         </ul>
       )}
 
+      {unusedKnown.length > 0 && (
+        <Select
+          value=""
+          onValueChange={(address) => {
+            const result = addAddresses(addresses, address);
+            if (result.addresses == null) {
+              setError(result.error);
+              return;
+            }
+            commitAddresses(result.addresses);
+            setError(null);
+          }}
+        >
+          <SelectTrigger aria-label="Add a known address">
+            <SelectValue placeholder="Add a wallet of this payment source…" />
+          </SelectTrigger>
+          <SelectContent>
+            {unusedKnown.map((known) => (
+              <SelectItem key={known.address} value={known.address}>
+                <span className="truncate">{known.label}</span>
+                <span className="ml-2 text-muted-foreground">{known.hint}</span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+
       <div className="flex gap-2">
         <Input
-          id="report-address-input"
+          id={inputId}
           className="font-mono text-xs"
-          placeholder="addr_test1… or paste several at once"
+          placeholder={
+            unusedKnown.length > 0
+              ? 'Or paste any other address'
+              : 'addr_test1… or paste several at once'
+          }
           value={draft}
           aria-invalid={error != null}
           onChange={(event) => {

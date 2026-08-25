@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { addAddresses, parseAddressEntries } from './address-filter';
+import { addAddresses, knownAddressesFromWallets, parseAddressEntries } from './address-filter';
 
 const FIRST = 'addr_test1qzbuya0000000000000000000000000000000000000000000000000q2wn7cf';
 const SECOND = 'addr_test1qzextbuyer00000000000000000000000000000000000000000000q8fh2we';
@@ -42,5 +42,36 @@ describe('report address filter', () => {
     const result = addAddresses(filled, SECOND);
     assert.equal(result.addresses, null);
     assert.match(result.error ?? '', /at most 100 addresses/);
+  });
+});
+
+describe('knownAddressesFromWallets', () => {
+  const WALLET = {
+    walletAddress: 'addr_test1qqselling',
+    note: '  Payout wallet  ',
+    type: 'Selling',
+    deletedAt: null,
+  };
+
+  it('names a wallet by its note and side', () => {
+    assert.deepEqual(knownAddressesFromWallets([WALLET]), [
+      { address: 'addr_test1qqselling', label: 'Payout wallet', hint: 'Selling' },
+    ]);
+  });
+
+  it('falls back to the address when the wallet has no note', () => {
+    const [known] = knownAddressesFromWallets([{ ...WALLET, note: '   ' }]);
+    assert.equal(known.label, 'addr_test1qqselling');
+  });
+
+  it('marks an archived wallet so an old address is not mistaken for a live one', () => {
+    const [known] = knownAddressesFromWallets([
+      { ...WALLET, type: 'Purchasing', deletedAt: new Date('2026-01-01') },
+    ]);
+    assert.equal(known.hint, 'Buying · Archived');
+  });
+
+  it('keeps one entry per address when two wallets share it', () => {
+    assert.equal(knownAddressesFromWallets([WALLET, { ...WALLET, note: 'Other' }]).length, 1);
   });
 });
