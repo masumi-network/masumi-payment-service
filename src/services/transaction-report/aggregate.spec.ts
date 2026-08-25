@@ -485,7 +485,7 @@ describe('aggregateReportRows totals', () => {
 		expect(result.warnings.map((warning) => warning.code)).toContain('CARDANO_FEE_COVERAGE_PARTIAL');
 	});
 
-	it('excludes a whole shared fee when a related logical payment is filtered out', () => {
+	it('takes an equal share of a shared fee when a related logical payment is filtered out', () => {
 		const seller = row({
 			id: 'seller-logical-filter',
 			transactions: [
@@ -508,7 +508,15 @@ describe('aggregateReportRows totals', () => {
 			'CreatedAt',
 		);
 
-		expect(result.totals.totalCardanoFees).toEqual({ amounts: [], completeness: 'partial' });
+		// The transaction settled two requests and the report holds one of them,
+		// so the report owes half the fee. The other half belongs to a request
+		// the filter left out, which is why the figure is an estimate.
+		expect(result.totals.totalCardanoFees).toEqual({
+			amounts: [{ unit: 'lovelace', amount: 250n }],
+			completeness: 'partial',
+		});
+		// Admin fees stay unknown here for a separate reason: they are the total
+		// less the actor fees, and this row's actor allocation is itself partial.
 		expect(result.totals.adminCardanoFees).toEqual({ amounts: [], completeness: 'partial' });
 	});
 

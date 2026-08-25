@@ -327,6 +327,64 @@ describe('transaction history completeness', () => {
 			),
 		).toEqual({ amount: 0n, completeness: 'complete' });
 	});
+
+	it('takes an equal share of a fee that settled three requests, marked as an estimate', () => {
+		expect(
+			sumPerRequestConfirmedTransactionFees(
+				[event({ fees: 300_000n, relatedPaymentKeys: ['chain-1', 'chain-2', 'chain-3'] })],
+				'shared_or_unknown',
+				undefined,
+				'chain-1',
+			),
+		).toEqual({ amount: 100_000n, completeness: 'partial' });
+	});
+
+	it('keeps a fee that settled one request exact', () => {
+		expect(
+			sumPerRequestConfirmedTransactionFees(
+				[event({ fees: 300_000n, relatedPaymentKeys: ['chain-1'] })],
+				'shared_or_unknown',
+				undefined,
+				'chain-1',
+			),
+		).toEqual({ amount: 300_000n, completeness: 'complete' });
+	});
+
+	it('adds an exact fee and a shared one, and reports the sum as an estimate', () => {
+		expect(
+			sumPerRequestConfirmedTransactionFees(
+				[
+					event({ id: 'own', txHash: 'own', fees: 50_000n, relatedPaymentKeys: ['chain-1'] }),
+					event({ id: 'batch', txHash: 'batch', fees: 100_000n, relatedPaymentKeys: ['chain-1', 'chain-2'] }),
+				],
+				'shared_or_unknown',
+				undefined,
+				'chain-1',
+			),
+		).toEqual({ amount: 100_000n, completeness: 'partial' });
+	});
+
+	it('cannot share a fee when the list of settled requests is incomplete', () => {
+		expect(
+			sumPerRequestConfirmedTransactionFees(
+				[event({ fees: 300_000n, relatedPaymentKeys: ['chain-1'], relatedPaymentKeysComplete: false })],
+				'shared_or_unknown',
+				undefined,
+				'chain-1',
+			),
+		).toEqual({ amount: null, completeness: 'partial' });
+	});
+
+	it('charges nothing to a request the transaction did not settle', () => {
+		expect(
+			sumPerRequestConfirmedTransactionFees(
+				[event({ fees: 300_000n, relatedPaymentKeys: ['chain-2', 'chain-3'] })],
+				'shared_or_unknown',
+				undefined,
+				'chain-1',
+			),
+		).toEqual({ amount: null, completeness: 'partial' });
+	});
 });
 
 describe('report settlement evidence', () => {
