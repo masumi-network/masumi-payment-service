@@ -60,7 +60,12 @@ const REPORT_ASSET_METRIC_KEYS = [
   'buyerNetSpend',
 ] as const satisfies ReadonlyArray<ReportMetricKey>;
 
-const REPORT_ASSET_SYMBOL_ORDER = ['ADA', 'USDM', 'USDCx'] as const;
+/**
+ * Stablecoins come first, so the report opens on a figure an operator can read
+ * as money. An ADA total moves with the ADA price and needs a second step
+ * before it means anything.
+ */
+const REPORT_ASSET_SYMBOL_ORDER = ['USDM', 'USDCx', 'ADA'] as const;
 
 export type ReportAssetDescriptor = Readonly<{
   unit: string;

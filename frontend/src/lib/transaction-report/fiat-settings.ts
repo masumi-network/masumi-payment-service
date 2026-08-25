@@ -38,6 +38,29 @@ export const REPORT_FIAT_MODE_OPTIONS: ReadonlyArray<
   },
 ];
 
+/**
+ * A converted figure travels as its own unit, next to lovelace and the tokens.
+ *
+ * That lets one asset picker offer both "ADA" and "every asset, converted to
+ * EUR", because the conversion is just another unit the report can be read in.
+ */
+export const FIAT_UNIT_PREFIX = 'fiat:';
+
+export function fiatUnitFor(currency: ReportFiatCurrency): string {
+  return `${FIAT_UNIT_PREFIX}${currency}`;
+}
+
+/** The currency a unit converts to, or null when the unit is a real asset. */
+export function fiatCurrencyFromUnit(unit: string): ReportFiatCurrency | null {
+  if (!unit.startsWith(FIAT_UNIT_PREFIX)) return null;
+  const currency = unit.slice(FIAT_UNIT_PREFIX.length);
+  return isReportFiatCurrency(currency) ? currency : null;
+}
+
+export function isFiatUnit(unit: string): boolean {
+  return fiatCurrencyFromUnit(unit) != null;
+}
+
 export function getFiatCurrencyLabel(currency: ReportFiatCurrency): string {
   const option = REPORT_FIAT_CURRENCY_OPTIONS.find((entry) => entry.value === currency);
   return option == null ? currency.toUpperCase() : `${currency.toUpperCase()} · ${option.label}`;
