@@ -233,8 +233,10 @@ export function reconcileCardanoFees(input: {
 		return {
 			buyerCardanoFees: input.buyerCardanoFees,
 			sellerCardanoFees: input.sellerCardanoFees,
-			adminCardanoFees: null,
-			totalCardanoFees: null,
+			// A partial figure can still be an apportioned estimate rather than
+			// nothing at all, so this stays open to an amount.
+			adminCardanoFees: null as bigint | null,
+			totalCardanoFees: null as bigint | null,
 			completeness: 'partial' as const,
 		};
 	}

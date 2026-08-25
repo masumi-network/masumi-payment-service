@@ -1,3 +1,4 @@
+import { feeShareForPaymentKey, isSharedFee } from './fee-split';
 import type { ReportOnChainState, RevenueMode } from './metrics';
 
 export type ReportTransactionEvent = Readonly<{
@@ -196,18 +197,29 @@ export function sumPerRequestConfirmedTransactionFees(
 	) {
 		return { amount: null, completeness: 'partial' };
 	}
-	const hasAmbiguousNonzeroFee = confirmedTransactions.some((transaction) => {
-		if (transaction.fees === 0n) return false;
-		if (transaction.relatedPaymentKeysComplete === false) return true;
-		if (currentPaymentKey == null) return allocationScope === 'shared_or_unknown';
-		const paymentKeys = Array.from(new Set(transaction.relatedPaymentKeys ?? []));
-		return paymentKeys.length !== 1 || paymentKeys[0] !== currentPaymentKey;
-	});
-	if (hasAmbiguousNonzeroFee) return { amount: null, completeness: 'partial' };
-	return {
-		amount: confirmedTransactions.reduce((total, transaction) => total + transaction.fees!, 0n),
-		completeness: 'complete',
-	};
+	// One transaction can settle several requests. The chain records no split,
+	// so this request takes an equal share of such a fee and the figure is
+	// reported as partial to mark it an estimate. See ./fee-split.
+	let isEstimated = false;
+	let total = 0n;
+	for (const transaction of confirmedTransactions) {
+		const fee = transaction.fees!;
+		if (fee === 0n) continue;
+		// Without the full list of requests the transaction settled there is no
+		// denominator, so no share can be worked out at all.
+		if (transaction.relatedPaymentKeysComplete === false) return { amount: null, completeness: 'partial' };
+		if (currentPaymentKey == null) {
+			if (allocationScope === 'shared_or_unknown') return { amount: null, completeness: 'partial' };
+			total += fee;
+			continue;
+		}
+		const paymentKeys = transaction.relatedPaymentKeys ?? [];
+		const share = feeShareForPaymentKey(fee, paymentKeys, currentPaymentKey);
+		if (share == null) return { amount: null, completeness: 'partial' };
+		if (isSharedFee(paymentKeys)) isEstimated = true;
+		total += share;
+	}
+	return { amount: total, completeness: isEstimated ? 'partial' : 'complete' };
 }
 
 export function getReportTimestamps(input: {
