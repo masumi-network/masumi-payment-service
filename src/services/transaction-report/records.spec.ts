@@ -844,3 +844,70 @@ describe('serializeReportRow', () => {
 		expect(JSON.stringify(serialized)).not.toContain('[object Object]');
 	});
 });
+
+describe('buildReportRow actor fee lifetime', () => {
+	function settledTransactions() {
+		return [
+			{
+				id: 'lock',
+				txHash: 'hash-lock',
+				status: 'Confirmed' as const,
+				newOnChainState: 'FundsLocked' as const,
+				blockTime: blockTime('2026-01-01T10:00:00.000Z'),
+				fees: 150_000n,
+				relatedRequestKeys: ['Seller:request-1'],
+				relatedPaymentKeys: ['chain-1'],
+			},
+			{
+				id: 'withdraw',
+				txHash: 'hash-withdraw',
+				status: 'Confirmed' as const,
+				newOnChainState: 'Withdrawn' as const,
+				blockTime: blockTime('2026-01-02T10:00:00.000Z'),
+				fees: 180_000n,
+				relatedRequestKeys: ['Seller:request-1'],
+				relatedPaymentKeys: ['chain-1'],
+			},
+		];
+	}
+
+	it('calls the actor fee exact once a settled request lived entirely inside the window', () => {
+		const row = buildReportRow(
+			record({ transactions: settledTransactions() }),
+			'Billable',
+			new Date('2026-01-03T00:00:00.000Z'),
+			COHORT_WINDOW,
+		);
+
+		expect(row.actorCardanoFeeAllocation.completeness).toBe('complete');
+		// The day it sits on is still a choice, so a bucket stays an estimate.
+		expect(row.actorCardanoFeeAllocation.historyCompleteness).toBe('partial');
+		expect(getReportRowWarnings(row).map((warning) => warning.code)).not.toContain(
+			'ACTOR_CARDANO_FEE_EVENT_ALLOCATION_PARTIAL',
+		);
+	});
+
+	it('keeps the actor fee partial when the request locked before the window', () => {
+		const transactions = settledTransactions();
+		transactions[0].blockTime = blockTime('2025-12-20T10:00:00.000Z');
+		const row = buildReportRow(
+			record({ transactions }),
+			'Billable',
+			new Date('2026-01-03T00:00:00.000Z'),
+			COHORT_WINDOW,
+		);
+
+		expect(row.actorCardanoFeeAllocation.completeness).toBe('partial');
+	});
+
+	it('keeps the actor fee partial while the request is still open', () => {
+		const row = buildReportRow(
+			record({ onChainState: 'ResultSubmitted', transactions: settledTransactions() }),
+			'Billable',
+			new Date('2026-01-03T00:00:00.000Z'),
+			COHORT_WINDOW,
+		);
+
+		expect(row.actorCardanoFeeAllocation.completeness).toBe('partial');
+	});
+});

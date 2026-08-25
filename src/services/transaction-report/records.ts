@@ -269,6 +269,36 @@ function getRowFeeComponentScope(
 	return hasIncompleteTransaction ? 'partial' : 'complete';
 }
 
+/**
+ * Is every fee this request will ever pay inside the report window?
+ *
+ * The stored actor fee counters are lifetime totals for a request, so a report
+ * can only claim them exactly when the whole life of the request falls inside
+ * its own dates. That needs a settled state, so no later transaction can add to
+ * the counter, a confirmed lock so the earliest fee is on record at all, and a
+ * first and last confirmed transaction that both sit in the window, so no
+ * earlier transaction is being dragged in from another period.
+ */
+function isActorFeeLifetimeInWindow(
+	record: ReportRequestRecord,
+	window: ReportMetricWindow,
+	hasConfirmedFundsLockedTransaction: boolean,
+): boolean {
+	if (record.onChainState == null || !SETTLED_STATES.has(record.onChainState)) return false;
+	if (!hasConfirmedFundsLockedTransaction) return false;
+	const times: number[] = [];
+	for (const transaction of record.transactions) {
+		if (transaction.status !== 'Confirmed' || transaction.txHash == null) continue;
+		const blockTime = transaction.blockTime;
+		if (blockTime == null || !Number.isSafeInteger(blockTime) || blockTime < 0) return false;
+		times.push(blockTime * 1000);
+	}
+	if (times.length === 0) return false;
+	return (
+		isInMetricWindow(new Date(Math.min(...times)), window) && isInMetricWindow(new Date(Math.max(...times)), window)
+	);
+}
+
 export function buildReportRow(
 	record: ReportRequestRecord,
 	revenueMode: RevenueMode,
@@ -332,7 +362,16 @@ export function buildReportRow(
 	const actorCardanoFeeAllocation = {
 		strategy:
 			window.dateBasis === 'RevenueRecognizedAt' ? ('accounting_allocation' as const) : ('lifetime_cohort' as const),
-		completeness: 'partial' as const,
+		/** Is the amount exact for the period? */
+		completeness: isActorFeeLifetimeInWindow(record, window, hasConfirmedFundsLockedTransaction)
+			? ('complete' as const)
+			: ('partial' as const),
+		/**
+		 * Is the amount exact for one day of that period? Never. A request pays
+		 * on the day it locks and again on the day it settles, and the counter
+		 * records no split, so the whole amount goes on one accounting date.
+		 */
+		historyCompleteness: 'partial' as const,
 		attachedAt:
 			window.dateBasis !== 'RevenueRecognizedAt'
 				? null
@@ -422,7 +461,13 @@ export function serializeReportRow(row: ReportRow) {
 						netSpend: serializeAmounts(row.buyer.netSpend),
 						payoutCompleteness: row.buyerPayoutCompleteness,
 					},
-		actorCardanoFeeAllocation: row.actorCardanoFeeAllocation,
+		// `historyCompleteness` stays internal: each history bucket already carries
+		// its own completeness, so the wire would only repeat it.
+		actorCardanoFeeAllocation: {
+			strategy: row.actorCardanoFeeAllocation.strategy,
+			completeness: row.actorCardanoFeeAllocation.completeness,
+			attachedAt: row.actorCardanoFeeAllocation.attachedAt,
+		},
 		feeAllocationScope: row.feeAllocationScope,
 		feeComponentScope: row.feeComponentScope,
 		cardanoFeeReconciliation: {
