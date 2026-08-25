@@ -45,6 +45,7 @@ function metrics(overrides: Partial<ReportMetrics> = {}): ReportMetrics {
     transactionCount: 0,
     transactionCountCompleteness: 'complete',
     sellerGrossRevenue: emptyMetric(),
+    sellerPendingRevenue: emptyMetric(),
     protocolFees: emptyMetric(),
     sellerCardanoFees: emptyMetric(),
     sellerNetRevenue: emptyMetric(),
@@ -70,6 +71,7 @@ function summary(
 test('exposes every financial report metric with an operator-facing label', () => {
   assert.deepEqual(REPORT_METRICS, [
     { key: 'sellerGrossRevenue', label: 'Seller gross revenue' },
+    { key: 'sellerPendingRevenue', label: 'Seller revenue not yet earned' },
     { key: 'protocolFees', label: 'Protocol fees' },
     { key: 'sellerCardanoFees', label: 'Seller Cardano fees' },
     { key: 'sellerNetRevenue', label: 'Seller net revenue' },

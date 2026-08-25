@@ -26,6 +26,7 @@ export type ReportAggregate = {
 	transactionCount: number;
 	transactionCountCompleteness: ReportMetricCompleteness;
 	sellerGrossRevenue: ReportAggregateMetric;
+	sellerPendingRevenue: ReportAggregateMetric;
 	protocolFees: ReportAggregateMetric;
 	sellerCardanoFees: ReportAggregateMetric;
 	actorCardanoFees: ReportAggregateMetric;
@@ -73,6 +74,7 @@ function createAggregate(): ReportAggregate {
 		transactionCount: 0,
 		transactionCountCompleteness: 'complete',
 		sellerGrossRevenue: createMetric(),
+		sellerPendingRevenue: createMetric(),
 		protocolFees: createMetric(),
 		sellerCardanoFees: createMetric(),
 		actorCardanoFees: createMetric(),
@@ -103,6 +105,17 @@ function isProtocolMetricComplete(row: ReportRow): boolean {
 
 function combineCompleteness(...values: ReportMetricCompleteness[]): ReportMetricCompleteness {
 	return values.every((value) => value === 'complete') ? 'complete' : 'partial';
+}
+
+/**
+ * Money locked in escrow that the seller has not earned yet.
+ *
+ * It is kept out of the role metrics on purpose: it is not revenue, and a
+ * cohort history must not place it on an accounting date it does not have.
+ */
+function addPendingRevenue(aggregate: ReportAggregate, row: ReportRow): void {
+	if (row.seller == null) return;
+	addMetric(aggregate.sellerPendingRevenue, row.pendingRevenue);
 }
 
 function addRoleMetrics(aggregate: ReportAggregate, row: ReportRow): void {
@@ -156,6 +169,7 @@ function aggregateGlobalRows(
 	for (const [index, row] of rows.entries()) {
 		runReportCheckpoint(index, checkpoint);
 		addRoleMetrics(aggregate, row);
+		addPendingRevenue(aggregate, row);
 	}
 	Object.assign(aggregate, getReportTransactionCount(rows, dateBasis, from, to));
 	const fees = analyzeReportFees(rows, dateBasis, from, to, checkpoint);
@@ -297,6 +311,26 @@ function getCohortDate(row: ReportRow, dateBasis: Exclude<ReportDateBasis, 'Reve
 	return dateBasis === 'CreatedAt' ? row.createdAt : row.timestamps.fundsLockedAt;
 }
 
+/**
+ * Pending revenue is placed on the day the funds were locked.
+ *
+ * That is the only date the money is known to have, and it is the same date on
+ * every date basis, so the pending line never moves when the basis changes.
+ */
+function addPendingRevenueHistory(
+	row: ReportRow,
+	from: Date,
+	to: Date,
+	bucket: ReportBucket,
+	readLocalDate: (date: Date) => LocalDate,
+	historyByStart: ReadonlyMap<number, MutableHistoryAggregate>,
+): void {
+	if (row.seller == null || row.pendingRevenue.length === 0) return;
+	const entry = getEventBucket(row.timestamps.fundsLockedAt, from, to, bucket, readLocalDate, historyByStart);
+	if (entry == null) return;
+	addMetric(entry.metrics.sellerPendingRevenue, row.pendingRevenue);
+}
+
 function addCohortHistory(
 	row: ReportRow,
 	dateBasis: Exclude<ReportDateBasis, 'RevenueRecognizedAt'>,
@@ -436,6 +470,7 @@ function buildWalletAggregates(
 		for (const [index, row] of group.rows.entries()) {
 			runReportCheckpoint(index, checkpoint);
 			addRoleMetrics(metrics, row);
+			addPendingRevenue(metrics, row);
 		}
 		Object.assign(metrics, getReportTransactionCount(group.rows, dateBasis, from, to));
 		metricsByGroup.set(key, metrics);
@@ -638,6 +673,7 @@ export function aggregateReportRows(
 		} else {
 			addCohortHistory(row, dateBasis, from, to, bucket, readLocalDate, historyByStart, missingTimestampMetrics);
 		}
+		addPendingRevenueHistory(row, from, to, bucket, readLocalDate, historyByStart);
 	}
 	const global = aggregateGlobalRows(rows, dateBasis, from, to, checkpoint);
 	const totals = global.metrics;
