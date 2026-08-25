@@ -13,7 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { defaultCustomDateRange, formatCalendarDate } from '@/lib/date-picker-calendar';
 import { cn, shortenAddress } from '@/lib/utils';
 import {
@@ -35,6 +34,8 @@ import {
   type ReportRole,
   type TransactionReportFormState,
 } from '@/components/transactions/download-details.helpers';
+import { AddressListField } from '@/components/transactions/report-export/AddressListField';
+import { knownAddressesFromWallets } from '@/components/transactions/report-export/address-filter';
 import { FiatSettingsField } from '@/components/transactions/report-export/FiatSettingsField';
 import {
   NO_FIAT_CURRENCY,
@@ -46,14 +47,11 @@ type ReportFacets = GetReportsFacetsResponses[200]['data'];
 
 type ReportFilterBarProps = Readonly<{
   form: TransactionReportFormState;
-  isLoading: boolean;
   managedWallets: ReportFacets['managedWallets'];
-  paymentSources: ReportFacets['paymentSources'];
   assetUnits: readonly string[];
   selectedUnit: string | null;
   assetLabel: (unit: string) => string;
   onSelectUnit: (unit: string) => void;
-  onSetPaymentSource: (paymentSourceId: string) => void;
   onToggleRole: (role: ReportRole) => void;
   onToggleState: (state: ReportOnChainState) => void;
   onToggleWallet: (walletId: string) => void;
@@ -62,25 +60,62 @@ type ReportFilterBarProps = Readonly<{
   fiatIssue: FiatIssue | null;
 }>;
 
-function sourceLabel(source: ReportFacets['paymentSources'][number]): string {
-  const version = source.paymentSourceType === 'Web3CardanoV2' ? 'Cardano V2' : 'Cardano V1';
-  return `${version} · ${shortenAddress(source.smartContractAddress, 7)}${source.deletedAt ? ' · Archived' : ''}`;
-}
-
 function todayAsDateInput(): string {
   return formatCalendarDate(new Date());
 }
 
-/** Counts only the filters that are hidden behind "More filters". */
-function countHiddenFilters(form: TransactionReportFormState): number {
+type FilterGroup = 'rules' | 'currency' | 'scope';
+
+/**
+ * How many settings each group holds that are not on their default.
+ *
+ * The count is what makes hiding a group safe: a reader can see that something
+ * is narrowing the report without having to open every panel to find it.
+ */
+function countGroupChanges(form: TransactionReportFormState, group: FilterGroup): number {
+  if (group === 'rules') {
+    return (
+      (form.dateBasis === 'RevenueRecognizedAt' ? 0 : 1) +
+      (form.revenueMode === 'Billable' ? 0 : 1) +
+      (form.bucket === 'Auto' ? 0 : 1)
+    );
+  }
+  if (group === 'currency') return form.fiatCurrency === NO_FIAT_CURRENCY ? 0 : 1;
   return (
     (form.managedWalletIds.length > 0 ? 1 : 0) +
     (form.states.length > 0 ? 1 : 0) +
-    (form.externalAddressesText.trim() ? 1 : 0) +
-    (form.dateBasis === 'RevenueRecognizedAt' ? 0 : 1) +
-    (form.revenueMode === 'Billable' ? 0 : 1) +
-    (form.bucket === 'Auto' ? 0 : 1) +
-    (form.fiatCurrency === NO_FIAT_CURRENCY ? 0 : 1)
+    (form.externalAddressesText.trim() ? 1 : 0)
+  );
+}
+
+const FILTER_GROUPS: ReadonlyArray<Readonly<{ value: FilterGroup; label: string }>> = [
+  { value: 'scope', label: 'Narrow' },
+  { value: 'rules', label: 'Rules' },
+  { value: 'currency', label: 'Currency' },
+];
+
+function GroupButton({
+  label,
+  count,
+  isOpen,
+  onClick,
+}: Readonly<{ label: string; count: number; isOpen: boolean; onClick: () => void }>) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      aria-expanded={isOpen}
+      onClick={onClick}
+      className={isOpen ? 'bg-muted' : undefined}
+    >
+      {label}
+      {count > 0 && (
+        <span className="ml-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/15 px-1.5 text-xs">
+          {count}
+        </span>
+      )}
+    </Button>
   );
 }
 
@@ -108,14 +143,11 @@ function RoleToggle({
 
 export function ReportFilterBar({
   form,
-  isLoading,
   managedWallets,
-  paymentSources,
   assetUnits,
   selectedUnit,
   assetLabel,
   onSelectUnit,
-  onSetPaymentSource,
   onToggleRole,
   onToggleState,
   onToggleWallet,
@@ -123,8 +155,7 @@ export function ReportFilterBar({
   fiatCapability,
   fiatIssue,
 }: ReportFilterBarProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const hiddenFilterCount = countHiddenFilters(form);
+  const [openGroup, setOpenGroup] = useState<FilterGroup | null>(null);
   const maxDate = todayAsDateInput();
 
   return (
@@ -186,22 +217,20 @@ export function ReportFilterBar({
           ))}
         </div>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="ml-auto"
-          aria-expanded={isExpanded}
-          onClick={() => setIsExpanded((current) => !current)}
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-          More filters
-          {hiddenFilterCount > 0 && (
-            <span className="ml-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs">
-              {hiddenFilterCount}
-            </span>
-          )}
-        </Button>
+        <div className="ml-auto flex items-center gap-0.5" role="group" aria-label="Filter groups">
+          <SlidersHorizontal className="mr-1 h-4 w-4 text-muted-foreground" />
+          {FILTER_GROUPS.map((group) => (
+            <GroupButton
+              key={group.value}
+              label={group.label}
+              count={countGroupChanges(form, group.value)}
+              isOpen={openGroup === group.value}
+              onClick={() =>
+                setOpenGroup((current) => (current === group.value ? null : group.value))
+              }
+            />
+          ))}
+        </div>
       </div>
 
       {form.datePreset === 'custom' && (
@@ -232,57 +261,8 @@ export function ReportFilterBar({
         </div>
       )}
 
-      {isExpanded && (
-        <div className="grid gap-5 border-t bg-muted/10 p-4 lg:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="report-source">Payment source</Label>
-            <Select
-              value={form.paymentSourceId || undefined}
-              onValueChange={onSetPaymentSource}
-              disabled={isLoading || paymentSources.length === 0}
-            >
-              <SelectTrigger id="report-source">
-                <SelectValue placeholder={isLoading ? 'Loading…' : 'Select a source'} />
-              </SelectTrigger>
-              <SelectContent>
-                {paymentSources.map((source) => (
-                  <SelectItem key={source.id} value={source.id}>
-                    {sourceLabel(source)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <FiatSettingsField
-            currency={form.fiatCurrency}
-            mode={form.fiatMode}
-            capability={fiatCapability}
-            issue={fiatIssue}
-            onChange={onUpdate}
-            idPrefix="dashboard"
-            isPlain
-          />
-
-          <div className="space-y-1.5">
-            <Label htmlFor="report-bucket">Group the history by</Label>
-            <Select
-              value={form.bucket}
-              onValueChange={(value) => onUpdate({ bucket: value as ReportBucket })}
-            >
-              <SelectTrigger id="report-bucket">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(REPORT_BUCKET_LABELS).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
+      {openGroup === 'rules' && (
+        <div className="grid gap-5 border-t bg-muted/10 p-4 lg:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor="report-date-basis">Count a payment by</Label>
             <Select
@@ -327,6 +307,65 @@ export function ReportFilterBar({
             </p>
           </div>
 
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="report-bucket">Group the history by</Label>
+              <Select
+                value={form.bucket}
+                onValueChange={(value) => onUpdate({ bucket: value as ReportBucket })}
+              >
+                <SelectTrigger id="report-bucket">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(REPORT_BUCKET_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="report-time-zone">Time zone</Label>
+              <Input
+                id="report-time-zone"
+                list="report-time-zones"
+                value={form.timeZone}
+                onChange={(event) => onUpdate({ timeZone: event.target.value })}
+                placeholder="Europe/Prague"
+              />
+              <datalist id="report-time-zones">
+                <option value="Etc/UTC" />
+                <option value={form.timeZone} />
+              </datalist>
+              <p className="text-[11px] text-muted-foreground">
+                Days and weeks start and end in this zone.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {openGroup === 'currency' && (
+        <div className="border-t bg-muted/10 p-4">
+          <div className="max-w-xl">
+            <FiatSettingsField
+              currency={form.fiatCurrency}
+              mode={form.fiatMode}
+              capability={fiatCapability}
+              issue={fiatIssue}
+              onChange={onUpdate}
+              idPrefix="dashboard"
+              isPlain
+            />
+          </div>
+        </div>
+      )}
+
+      {openGroup === 'scope' && (
+        <div className="grid gap-5 border-t bg-muted/10 p-4 lg:grid-cols-3">
           <fieldset className="relative space-y-1.5">
             <legend className="text-sm font-medium">Wallets</legend>
             <Button
@@ -358,7 +397,7 @@ export function ReportFilterBar({
                     </span>
                     <span className="text-muted-foreground">
                       {wallet.type === 'Selling' ? 'Selling' : 'Buying'}
-                      {wallet.deletedAt ? ' · Archived' : ''}
+                      {wallet.deletedAt ? ' \u00b7 Archived' : ''}
                     </span>
                   </label>
                 ))
@@ -393,37 +432,12 @@ export function ReportFilterBar({
             </div>
           </fieldset>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="report-addresses">Only these addresses</Label>
-            <Textarea
-              id="report-addresses"
-              className="min-h-16 font-mono text-xs"
-              placeholder="Optional. One address per line."
-              value={form.externalAddressesText}
-              onChange={(event) => onUpdate({ externalAddressesText: event.target.value })}
-            />
-            <p className="text-[11px] text-muted-foreground">
-              Matches the other side, the payout, and the return address.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="report-time-zone">Time zone</Label>
-            <Input
-              id="report-time-zone"
-              list="report-time-zones"
-              value={form.timeZone}
-              onChange={(event) => onUpdate({ timeZone: event.target.value })}
-              placeholder="Europe/Prague"
-            />
-            <datalist id="report-time-zones">
-              <option value="Etc/UTC" />
-              <option value={form.timeZone} />
-            </datalist>
-            <p className="text-[11px] text-muted-foreground">
-              Days and weeks start and end in this zone.
-            </p>
-          </div>
+          <AddressListField
+            value={form.externalAddressesText}
+            onChange={(externalAddressesText) => onUpdate({ externalAddressesText })}
+            knownAddresses={knownAddressesFromWallets(managedWallets)}
+            idPrefix="dashboard"
+          />
         </div>
       )}
     </div>

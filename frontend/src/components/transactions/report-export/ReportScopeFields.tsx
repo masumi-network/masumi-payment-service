@@ -23,6 +23,7 @@ import {
 } from '../download-details.helpers';
 import type { useDownloadDetailsModel } from '../useDownloadDetailsModel';
 import { AddressListField } from './AddressListField';
+import { knownAddressesFromWallets } from './address-filter';
 import { reportPurposeShows } from './report-purposes';
 
 type ReportModel = ReturnType<typeof useDownloadDetailsModel>;
@@ -240,6 +241,7 @@ export function ReportScopeFields({ model }: Readonly<{ model: ReportModel }>) {
         <AddressListField
           value={model.form.externalAddressesText}
           onChange={(externalAddressesText) => model.updateForm({ externalAddressesText })}
+          knownAddresses={knownAddressesFromWallets(model.managedWallets)}
         />
       )}
     </div>
