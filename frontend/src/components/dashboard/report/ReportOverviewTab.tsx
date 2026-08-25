@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { ArrowUpDown, Fuel, TrendingDown, TrendingUp } from 'lucide-react';
+import { InfoHint } from '@/components/ui/info-hint';
 import { StatCard } from '@/components/ui/stat-card';
 import {
   formatReportCountValue,
@@ -165,9 +166,24 @@ export function ReportOverviewTab({
       <div className="rounded-lg border p-6">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="font-medium">Money in and out</div>
+            <div className="flex items-center gap-1">
+              <div className="font-medium">Money in and out</div>
+              <InfoHint label="gross and net">
+                <p>Gross is the amount the request was for, before anything is taken off.</p>
+                <p>
+                  Net revenue is what the seller keeps: gross less the protocol fee, the network
+                  fees, and anything refunded. It is smaller than gross.
+                </p>
+                <p>
+                  Net spend is what the purchase cost the buyer: gross plus the network fees the
+                  buyer paid, less anything refunded. It is larger than gross whenever the buyer
+                  paid a network fee, which is normal rather than a mistake.
+                </p>
+              </InfoHint>
+            </div>
             <p className="text-sm text-muted-foreground">
-              Gross is the full amount. Net is what is left after fees and refunds.
+              Gross is the amount asked for. Net counts the fees as well: taken off revenue, added
+              to spend.
             </p>
           </div>
           <ReportChartLegend series={series} />
