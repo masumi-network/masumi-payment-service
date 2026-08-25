@@ -1,8 +1,8 @@
-import { fiatAssetUnit } from '@/utils/asset-units';
+import { fiatAssetUnit, normalizeAssetUnit } from '@/utils/asset-units';
 import type { AtomicAmount } from '../amounts';
 import type { ReportMetricWindow, ReportRow } from '../records';
 import { withFiatAmount } from './convert';
-import type { FiatRateContext, FiatRateTable } from './rates';
+import type { FiatRateContext, FiatRateSource, FiatRateTable, FiatRowRates } from './rates';
 
 type ReportDateBasis = ReportMetricWindow['dateBasis'];
 
@@ -30,6 +30,19 @@ function rateContext(
 	window: FiatWindow,
 ): FiatRateContext {
 	return table.mode === 'AccountingDate' ? { at: accountingDate(row, dateBasis) } : window;
+}
+
+/** Every on-chain asset the row actually holds, so no rate is reported unused. */
+function rowAssetUnits(row: ReportRow): string[] {
+	const units = new Set<string>();
+	for (const group of [row.requestedFunds, row.withdrawnForBuyer, row.withdrawnForSeller]) {
+		for (const amount of group) {
+			if (amount.amount !== 0n) units.add(normalizeAssetUnit(amount.unit));
+		}
+	}
+	// Cardano fees are always lovelace, and every row can carry them.
+	units.add('lovelace');
+	return [...units];
 }
 
 function fiatValueOf(amounts: readonly AtomicAmount[] | null, unit: string): bigint | null {
@@ -80,6 +93,11 @@ export function applyFiatToReportRows(
 	const missingUnits = new Set<string>();
 	const converted = rows.map((row) => {
 		const context = rateContext(row, table, dateBasis, window);
+		const usedRates = new Map<string, Readonly<{ unit: string; rate: string; source: FiatRateSource }>>();
+		for (const unit of rowAssetUnits(row)) {
+			const lookup = table.rateFor(unit, context);
+			if (lookup != null) usedRates.set(unit, { unit, rate: lookup.rate, source: lookup.source });
+		}
 		const convert = (amounts: readonly AtomicAmount[] | null): AtomicAmount[] | null => {
 			const result = withFiatAmount(amounts, table, context);
 			for (const unit of result.missingUnits) missingUnits.add(unit);
@@ -120,7 +138,7 @@ export function applyFiatToReportRows(
 				]),
 			};
 		}
-		return { ...row, seller, buyer };
+		return { ...row, seller, buyer, fiatRates: [...usedRates.values()] satisfies FiatRowRates };
 	});
 	return { rows: converted, missingUnits: [...missingUnits] };
 }

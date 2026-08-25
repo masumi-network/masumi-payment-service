@@ -10,6 +10,7 @@ import {
 	ReportCsvSizeLimitError,
 } from './csv';
 import { stageReportCsv, stageReportZip, type StagedReportArtifact } from './export-files';
+import { createReportReadme } from './export-readme';
 import { getCompleteReportData } from './service';
 
 export type ReportExportKind = 'transactions' | 'wallet-summary' | 'totals' | 'zip';
@@ -162,7 +163,7 @@ export async function createReportExport(
 		}
 
 		const stageOperation = stageReportZip(
-			{ transactions, walletSummary, totals },
+			{ readme: createReportReadme(csvMetadata), transactions, walletSummary, totals },
 			`masumi-transaction-report-${timestamp}`,
 		);
 		trackPendingWork?.(stageOperation);
