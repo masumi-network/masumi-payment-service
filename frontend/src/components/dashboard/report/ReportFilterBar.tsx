@@ -35,6 +35,7 @@ import {
   type TransactionReportFormState,
 } from '@/components/transactions/download-details.helpers';
 import { AddressListField } from '@/components/transactions/report-export/AddressListField';
+import { PaymentStatesHint } from '@/components/transactions/report-export/PaymentStatesHint';
 import { knownAddressesFromWallets } from '@/components/transactions/report-export/address-filter';
 import { FiatSettingsField } from '@/components/transactions/report-export/FiatSettingsField';
 import {
@@ -89,10 +90,35 @@ function countGroupChanges(form: TransactionReportFormState, group: FilterGroup)
 }
 
 const FILTER_GROUPS: ReadonlyArray<Readonly<{ value: FilterGroup; label: string }>> = [
-  { value: 'scope', label: 'Narrow' },
+  { value: 'scope', label: 'Include' },
   { value: 'rules', label: 'Rules' },
   { value: 'currency', label: 'Currency' },
 ];
+
+/** Keeps a group heading and its reset control from colliding in a narrow column. */
+function FieldHeader({
+  title,
+  action,
+  hint,
+}: Readonly<{ title: string; action: React.ReactNode; hint?: React.ReactNode }>) {
+  return (
+    <div className="flex min-h-7 items-center justify-between gap-2">
+      <span className="flex items-center gap-1 text-sm font-medium">
+        {title}
+        {hint}
+      </span>
+      {action}
+    </div>
+  );
+}
+
+function ResetFieldButton({ onClick }: Readonly<{ onClick: () => void }>) {
+  return (
+    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onClick}>
+      Use all
+    </Button>
+  );
+}
 
 function GroupButton({
   label,
@@ -366,18 +392,19 @@ export function ReportFilterBar({
 
       {openGroup === 'scope' && (
         <div className="grid gap-5 border-t bg-muted/10 p-4 lg:grid-cols-3">
-          <fieldset className="relative space-y-1.5">
-            <legend className="text-sm font-medium">Wallets</legend>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="absolute right-0 top-0 h-auto px-1 py-0 text-xs"
-              onClick={() => onUpdate({ managedWalletIds: [] })}
-            >
-              Use all
-            </Button>
-            <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+          <fieldset className="space-y-1.5">
+            <legend className="sr-only">Wallets</legend>
+            <FieldHeader
+              title="Wallets"
+              action={
+                form.managedWalletIds.length > 0 ? (
+                  <ResetFieldButton onClick={() => onUpdate({ managedWalletIds: [] })} />
+                ) : (
+                  <span className="text-[11px] text-muted-foreground">All wallets</span>
+                )
+              }
+            />
+            <div className="max-h-40 space-y-0.5 overflow-y-auto rounded-md border p-1.5">
               {managedWallets.length === 0 ? (
                 <p className="px-2 py-3 text-xs text-muted-foreground">
                   This payment source has no wallets yet.
@@ -395,7 +422,7 @@ export function ReportFilterBar({
                     <span className="min-w-0 flex-1 truncate">
                       {wallet.note?.trim() || shortenAddress(wallet.walletAddress, 8)}
                     </span>
-                    <span className="text-muted-foreground">
+                    <span className="shrink-0 text-muted-foreground">
                       {wallet.type === 'Selling' ? 'Selling' : 'Buying'}
                       {wallet.deletedAt ? ' \u00b7 Archived' : ''}
                     </span>
@@ -405,18 +432,20 @@ export function ReportFilterBar({
             </div>
           </fieldset>
 
-          <fieldset className="relative space-y-1.5">
-            <legend className="text-sm font-medium">Payment states</legend>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="absolute right-0 top-0 h-auto px-1 py-0 text-xs"
-              onClick={() => onUpdate({ states: [] })}
-            >
-              Use all
-            </Button>
-            <div className="grid max-h-40 grid-cols-2 gap-1 overflow-y-auto rounded-md border p-2">
+          <fieldset className="space-y-1.5">
+            <legend className="sr-only">Payment states</legend>
+            <FieldHeader
+              title="Payment states"
+              hint={<PaymentStatesHint />}
+              action={
+                form.states.length > 0 ? (
+                  <ResetFieldButton onClick={() => onUpdate({ states: [] })} />
+                ) : (
+                  <span className="text-[11px] text-muted-foreground">All states</span>
+                )
+              }
+            />
+            <div className="grid max-h-40 gap-0.5 overflow-y-auto rounded-md border p-1.5">
               {REPORT_ON_CHAIN_STATES.map((state) => (
                 <label
                   key={state}
@@ -426,7 +455,7 @@ export function ReportFilterBar({
                     checked={form.states.includes(state)}
                     onCheckedChange={() => onToggleState(state)}
                   />
-                  <span>{humanizeReportValue(state)}</span>
+                  <span className="min-w-0">{humanizeReportValue(state)}</span>
                 </label>
               ))}
             </div>
