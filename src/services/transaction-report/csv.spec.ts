@@ -151,7 +151,7 @@ function csvRecord(buffer: Buffer, rowIndex = 1): Record<string, string> {
 describe('transaction report CSV', () => {
 	it('carries the withdraw transaction hash and names the withdraw type', () => {
 		const output = createTransactionsCsv([row()], metadata());
-		const values = csvRecord(output, 2);
+		const values = csvRecord(output);
 
 		expect(values.settlement_tx_hash).toBe('hash-1');
 		expect(values.settlement_tx_type).toBe('Withdrawn');
@@ -179,7 +179,7 @@ describe('transaction report CSV', () => {
 			],
 			metadata(),
 		);
-		const values = csvRecord(output, 2);
+		const values = csvRecord(output);
 
 		expect(values.result_submitted_tx_hash).toBe('hash-submit');
 		expect(values.settlement_tx_hash).toBe('');
@@ -188,9 +188,8 @@ describe('transaction report CSV', () => {
 
 	it('exports normalized asset decimals and exact unknown atomic amounts', () => {
 		const output = createTransactionsCsv([row()], metadata());
-		const values = csvRecord(output, 2);
+		const values = csvRecord(output);
 
-		expect(values.record_type).toBe('transaction');
 		expect(values.seller_gross_revenue_ada).toBe('1.234567');
 		expect(values.seller_gross_revenue_usdm).toBe('3.000000');
 		expect(values.seller_gross_revenue_usdcx).toBe('3.000001');
@@ -222,7 +221,7 @@ describe('transaction report CSV', () => {
 				},
 			],
 		});
-		const values = csvRecord(createTransactionsCsv([buyer], metadata()), 2);
+		const values = csvRecord(createTransactionsCsv([buyer], metadata()));
 
 		expect(values.role).toBe('Buyer');
 		expect(values.seller_gross_revenue_ada).toBe('');
@@ -245,7 +244,7 @@ describe('transaction report CSV', () => {
 			metadata: '\ncommand',
 		});
 		const output = createTransactionsCsv([dangerous], metadata());
-		const values = csvRecord(output, 2);
+		const values = csvRecord(output);
 
 		expect(values.id).toBe("'\tcommand");
 		expect(values.blockchain_identifier).toBe("'\rcommand");
@@ -268,60 +267,32 @@ describe('transaction report CSV', () => {
 		expect(first.equals(second)).toBe(true);
 		expect(first.toString('utf8').endsWith('\r\n')).toBe(true);
 		expect(withoutRecords).not.toMatch(/[\r\n]/u);
-		expect(first.toString('utf8').startsWith('"generated_at","as_of","payment_source_id"')).toBe(true);
+		expect(first.toString('utf8').startsWith('"id","blockchain_identifier","role"')).toBe(true);
 	});
 
-	it('writes context once and leaves all transaction context cells blank', () => {
+	it('carries no report context columns, because the export README holds them', () => {
 		const output = createTransactionsCsv(
 			[row(), row({ id: 'request-2', blockchainIdentifier: 'chain-2' })],
 			metadata(),
 		);
 		const parsedRows = parseCsv(output);
-		const contextValues = csvRecord(output);
-		const firstValues = csvRecord(output, 2);
-		const secondValues = csvRecord(output, 3);
-		const recordTypeIndex = parsedRows[0].indexOf('record_type');
+		const headers = parsedRows[0];
 
-		expect(parsedRows).toHaveLength(4);
-		expect(new Set(parsedRows[0]).size).toBe(parsedRows[0].length);
-		expect(parsedRows.slice(1).filter((values) => values[recordTypeIndex] === 'report_context')).toHaveLength(1);
-		expect(contextValues.generated_at).toBe('2026-02-02T01:02:03.000Z');
-		expect(contextValues.as_of).toBe('2026-02-02T00:00:00.000Z');
-		expect(contextValues.payment_source_id).toBe('source-1');
-		expect(contextValues.payment_source_network).toBe('Preprod');
-		expect(contextValues.payment_source_type).toBe('Web3CardanoV1');
-		expect(contextValues.filter_managed_wallet_ids_json).toBe('["wallet-a","wallet-z"]');
-		expect(contextValues.filter_external_addresses_json).toBe('["addr-a","addr-z"]');
-		expect(contextValues.filter_roles_json).toBe('["Buyer","Seller"]');
-		expect(contextValues.filter_states_json).toBe('["Withdrawn"]');
-		expect(contextValues.filter_from).toBe('2026-01-01T00:00:00.000Z');
-		expect(contextValues.filter_to).toBe('2026-02-01T00:00:00.000Z');
-		expect(contextValues.filter_date_basis).toBe('CreatedAt');
-		expect(contextValues.filter_revenue_mode).toBe('RequestedGross');
-		expect(contextValues.filter_time_zone).toBe('Etc/UTC');
-		expect(contextValues.filter_bucket).toBe('Auto');
-		expect(contextValues.report_bucket).toBe('Day');
-		expect(firstValues.record_type).toBe('transaction');
-		expect(firstValues.payment_source_id).toBe('');
-		expect(firstValues.filter_states_json).toBe('');
-		expect(secondValues.record_type).toBe('transaction');
-		expect(secondValues.payment_source_id).toBe('');
-		expect(secondValues.filter_states_json).toBe('');
+		expect(parsedRows).toHaveLength(3);
+		expect(new Set(headers).size).toBe(headers.length);
+		for (const header of ['record_type', 'generated_at', 'as_of', 'payment_source_id', 'filter_states_json']) {
+			expect(headers).not.toContain(header);
+		}
+		expect(csvRecord(output).id).toBe('request-1');
+		expect(csvRecord(output, 2).id).toBe('request-2');
 	});
 
-	it('keeps an empty direct export auditable with one context record', () => {
+	it('writes only a header row when the period holds no request', () => {
 		const output = createTransactionsCsv([], metadata());
 		const rows = parseCsv(output);
-		const values = csvRecord(output);
 
-		expect(rows).toHaveLength(2);
-		expect(values.record_type).toBe('report_context');
-		expect(values.payment_source_id).toBe('source-1');
-		expect(values.filter_states_json).toBe('["Withdrawn"]');
-		expect(values.filter_bucket).toBe('Auto');
-		expect(values.report_bucket).toBe('Day');
-		expect(values.id).toBe('');
-		expect(values.seller_gross_revenue_ada).toBe('');
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toContain('seller_gross_revenue_ada');
 	});
 
 	it('measures multibyte, quote, and formula escaping before allocating the final buffer', () => {
@@ -330,7 +301,7 @@ describe('transaction report CSV', () => {
 		const exactBytes = unrestricted.byteLength;
 
 		expect(createTransactionsCsv([reportRow], metadata(), { maxBytes: exactBytes })).toEqual(unrestricted);
-		expect(csvRecord(unrestricted, 2).agent_name).toBe('\'  =λ"😀,value');
+		expect(csvRecord(unrestricted).agent_name).toBe('\'  =λ"😀,value');
 
 		const allocationSpy = jest.spyOn(Buffer, 'allocUnsafe');
 		let thrown: unknown;
@@ -349,18 +320,12 @@ describe('transaction report CSV', () => {
 });
 
 describe('transaction report aggregate CSV', () => {
-	it('includes exact source, filter, financial, and completeness context in totals', () => {
+	it('includes exact financial and completeness figures in totals', () => {
 		const reportRow = row();
 		const result = aggregateReportRows([reportRow], 'Day', 'Etc/UTC', FROM, TO, 'CreatedAt');
 		const output = createTotalsCsv(result, metadata());
 		const values = csvRecord(output);
 
-		expect(values.as_of).toBe('2026-02-02T00:00:00.000Z');
-		expect(values.payment_source_id).toBe('source-1');
-		expect(values.payment_source_fee_rate_percent).toBe('5.0');
-		expect(values.filter_managed_wallet_ids_json).toBe('["wallet-a","wallet-z"]');
-		expect(values.filter_roles_json).toBe('["Buyer","Seller"]');
-		expect(values.warning_codes_json).toBe('["A_WARNING","Z_WARNING"]');
 		expect(values.transaction_count).toBe('1');
 		expect(values.seller_gross_revenue_ada).toBe('1.234567');
 		expect(values.seller_gross_revenue_completeness).toBe('complete');
@@ -381,42 +346,26 @@ describe('transaction report aggregate CSV', () => {
 		const result = aggregateReportRows([first, second], 'Day', 'Etc/UTC', FROM, TO, 'CreatedAt');
 		const output = createWalletSummaryCsv(result, metadata());
 		const rows = parseCsv(output);
-		const contextValues = csvRecord(output);
-		const firstValues = csvRecord(output, 2);
-		const secondValues = csvRecord(output, 3);
-		const recordTypeIndex = rows[0].indexOf('record_type');
+		const firstValues = csvRecord(output);
+		const secondValues = csvRecord(output, 2);
 
-		expect(rows).toHaveLength(4);
-		expect(rows.slice(1).filter((values) => values[recordTypeIndex] === 'report_context')).toHaveLength(1);
-		expect(contextValues.payment_source_id).toBe('source-1');
-		expect(contextValues.report_bucket).toBe('Day');
-		expect(firstValues.record_type).toBe('wallet_summary');
-		expect(firstValues.payment_source_id).toBe('');
-		expect(firstValues.report_bucket).toBe('');
+		expect(rows).toHaveLength(3);
+		expect(rows[0]).not.toContain('payment_source_id');
 		expect(firstValues.managed_wallet_id).toBe('wallet-a');
 		expect(firstValues.role).toBe('Seller');
 		expect(firstValues.seller_gross_revenue_usdm).toBe('3.000000');
 		expect(firstValues.protocol_fees_completeness).toBe('partial');
 		expect(firstValues.actor_cardano_fees_ada).toBe('0.123456');
-		expect(secondValues.record_type).toBe('wallet_summary');
-		expect(secondValues.payment_source_id).toBe('');
+		expect(secondValues.managed_wallet_id).toBe('wallet-z');
 	});
 
-	it('keeps an empty wallet summary auditable with blank wallet and metric fields', () => {
+	it('writes only a header row when no wallet moved money', () => {
 		const result = aggregateReportRows([], 'Day', 'Etc/UTC', FROM, TO, 'CreatedAt');
 		const output = createWalletSummaryCsv(result, metadata());
 		const rows = parseCsv(output);
-		const values = csvRecord(output);
 
-		expect(rows).toHaveLength(2);
-		expect(values.record_type).toBe('report_context');
-		expect(values.payment_source_id).toBe('source-1');
-		expect(values.filter_managed_wallet_ids_json).toBe('["wallet-a","wallet-z"]');
-		expect(values.report_bucket).toBe('Day');
-		expect(values.managed_wallet_id).toBe('');
-		expect(values.role).toBe('');
-		expect(values.transaction_count).toBe('');
-		expect(values.total_cardano_fees_ada).toBe('');
-		expect(values.total_cardano_fees_completeness).toBe('');
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toContain('managed_wallet_id');
+		expect(rows[0]).toContain('total_cardano_fees_completeness');
 	});
 });

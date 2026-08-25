@@ -25,6 +25,9 @@ export type FiatPricePoint = readonly [number, number];
 
 export type FiatRateContext = Readonly<{ at: Date }> | Readonly<{ from: Date; to: Date }>;
 
+/** The rate each asset was converted at, so a reader can redo the arithmetic. */
+export type FiatRowRates = ReadonlyArray<Readonly<{ unit: string; rate: string; source: FiatRateSource }>>;
+
 export type FiatRateLookup = Readonly<{ rate: string; source: FiatRateSource }> | null;
 
 /** Rate precision. Prices below a cent still have to survive the round trip. */
