@@ -102,7 +102,7 @@ function FieldHeader({
   hint,
 }: Readonly<{ title: string; action: React.ReactNode; hint?: React.ReactNode }>) {
   return (
-    <div className="flex min-h-7 items-center justify-between gap-2">
+    <div className="flex min-h-8 items-center justify-between gap-2">
       <span className="flex items-center gap-1 text-sm font-medium">
         {title}
         {hint}

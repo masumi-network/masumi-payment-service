@@ -60,9 +60,11 @@ export function AddressListField({
 
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex min-h-8 items-center justify-between gap-2">
         <div className="flex items-center gap-1">
-          <Label htmlFor={inputId}>Only these addresses</Label>
+          <Label htmlFor={inputId} className="leading-normal">
+            Only these addresses
+          </Label>
           <InfoHint label="address filter">
             <p>
               Keeps only requests where one of these addresses is the counterparty, the payout
