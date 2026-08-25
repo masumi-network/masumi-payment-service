@@ -1,5 +1,5 @@
 import { serializeReportAmount } from '@/utils/asset-units';
-import { addAmounts, subtractAmounts, type AtomicAmount } from './amounts';
+import { addAmounts, normalizeAmounts, subtractAmounts, type AtomicAmount } from './amounts';
 import type { FiatRowRates } from './fiat/rates';
 import {
 	calculateBuyerMetrics,
@@ -224,6 +224,37 @@ function reconcileRowCardanoFees(
 	};
 }
 
+/** The states that end an escrow. Nothing is pending once one is reached. */
+const SETTLED_STATES: ReadonlySet<ReportOnChainState> = new Set(['Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn']);
+
+/**
+ * Money locked in escrow that the seller has not earned yet.
+ *
+ * A request whose dispute window is still open earns nothing, so it lands in no
+ * period and its revenue reads as unknown. That hides real money and marks the
+ * whole period an estimate. Reporting it as its own figure lets the earned line
+ * stay clean while the committed money stays visible.
+ *
+ * It is always placed on the day the funds were locked. That is the only date
+ * such a request has, because the date it will be earned on has not happened.
+ */
+function getPendingRevenue(
+	record: ReportRequestRecord,
+	timestamps: ReturnType<typeof getReportTimestamps>,
+	window: ReportMetricWindow,
+): AtomicAmount[] {
+	if (record.role !== 'Seller') return [];
+	if (record.onChainState == null || SETTLED_STATES.has(record.onChainState)) return [];
+	if (record.onChainState === 'FundsOrDatumInvalid') return [];
+	// Without a confirmed lock there is no proof the money reached the escrow,
+	// and without a lock date there is no period to put it in.
+	if (timestamps.fundsLockedAt == null) return [];
+	// Already earned, so it belongs to the revenue line instead.
+	if (timestamps.sellerRevenueRecognizedAt != null) return [];
+	if (!isInMetricWindow(timestamps.fundsLockedAt, window)) return [];
+	return normalizeAmounts(record.requestedFunds);
+}
+
 function getRowFeeComponentScope(
 	record: ReportRequestRecord,
 	window: ReportMetricWindow,
@@ -333,6 +364,7 @@ export function buildReportRow(
 		feeComponentScope,
 		timestamps,
 		settlement,
+		pendingRevenue: getPendingRevenue(record, timestamps, window),
 		/** Filled in by the fiat pass when a currency was asked for. */
 		fiatRates: null as FiatRowRates | null,
 		seller,

@@ -16216,6 +16216,16 @@ export type PostReportsSummaryResponses = {
                     }>;
                     completeness: 'complete' | 'partial';
                 };
+                sellerPendingRevenue: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
                 protocolFees: {
                     amounts: Array<{
                         unit: string;
@@ -16339,6 +16349,16 @@ export type PostReportsSummaryResponses = {
                         }>;
                         completeness: 'complete' | 'partial';
                     };
+                    sellerPendingRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
                     protocolFees: {
                         amounts: Array<{
                             unit: string;
@@ -16448,6 +16468,16 @@ export type PostReportsSummaryResponses = {
                     transactionCount: number;
                     transactionCountCompleteness: 'complete' | 'partial';
                     sellerGrossRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerPendingRevenue: {
                         amounts: Array<{
                             unit: string;
                             rawAmount: string;

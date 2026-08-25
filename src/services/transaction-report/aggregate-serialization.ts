@@ -10,6 +10,7 @@ function serializeAggregate(aggregate: ReportAggregate) {
 		transactionCount: aggregate.transactionCount,
 		transactionCountCompleteness: aggregate.transactionCountCompleteness,
 		sellerGrossRevenue: serializeAggregateMetric(aggregate.sellerGrossRevenue),
+		sellerPendingRevenue: serializeAggregateMetric(aggregate.sellerPendingRevenue),
 		protocolFees: serializeAggregateMetric(aggregate.protocolFees),
 		sellerCardanoFees: serializeAggregateMetric(aggregate.sellerCardanoFees),
 		actorCardanoFees: serializeAggregateMetric(aggregate.actorCardanoFees),

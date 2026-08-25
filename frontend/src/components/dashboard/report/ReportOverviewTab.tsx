@@ -69,6 +69,12 @@ function combinedSeries(hasSeller: boolean, hasBuyer: boolean): ReportChartSerie
             label: 'Net revenue',
             color: REPORT_SERIES_COLORS.revenue,
           },
+          {
+            key: 'sellerPendingRevenue',
+            label: 'Not yet earned',
+            color: REPORT_SERIES_COLORS.pending,
+            dashed: true,
+          },
         ] as const)
       : []),
     ...(hasBuyer

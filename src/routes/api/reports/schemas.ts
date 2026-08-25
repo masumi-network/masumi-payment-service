@@ -246,6 +246,7 @@ const reportAggregateSchema = z.object({
 	transactionCount: z.number().int().min(0),
 	transactionCountCompleteness: z.enum(['complete', 'partial']),
 	sellerGrossRevenue: reportAggregateMetricSchema,
+	sellerPendingRevenue: reportAggregateMetricSchema,
 	protocolFees: reportAggregateMetricSchema,
 	sellerCardanoFees: reportAggregateMetricSchema,
 	actorCardanoFees: reportAggregateMetricSchema,

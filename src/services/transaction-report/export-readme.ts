@@ -176,6 +176,15 @@ export function createReportReadme(metadata: ReportCsvMetadata): Buffer {
 		'A fee can still be unknown rather than shared. That happens when the service cannot list every request a',
 		'transaction settled, because there is then no number to divide by.',
 		'',
+		'## Money not yet earned',
+		'',
+		'`seller_pending_revenue` holds the funds a buyer has locked for a request the seller has not been paid',
+		'for yet. It is not revenue, so it is left out of every revenue and fee figure. It is counted on the day',
+		'the funds were locked, which is the only date this money has.',
+		'',
+		'A request leaves this figure once it settles, whichever way it settles. Its amount then appears in gross',
+		'revenue, or in returned funds if the buyer got the money back.',
+		'',
 	];
 	return Buffer.from(lines.join('\n'), 'utf8');
 }

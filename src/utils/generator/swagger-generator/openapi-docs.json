@@ -39742,6 +39742,57 @@
                                                                 "completeness"
                                                             ]
                                                         },
+                                                        "sellerPendingRevenue": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "amounts": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "unit": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "rawAmount": {
+                                                                                "type": "string",
+                                                                                "pattern": "^-?\\d+$"
+                                                                            },
+                                                                            "decimalAmount": {
+                                                                                "type": "string",
+                                                                                "nullable": true
+                                                                            },
+                                                                            "decimals": {
+                                                                                "type": "integer",
+                                                                                "nullable": true,
+                                                                                "minimum": 0
+                                                                            },
+                                                                            "symbol": {
+                                                                                "type": "string",
+                                                                                "nullable": true
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "unit",
+                                                                            "rawAmount",
+                                                                            "decimalAmount",
+                                                                            "decimals",
+                                                                            "symbol"
+                                                                        ]
+                                                                    }
+                                                                },
+                                                                "completeness": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "complete",
+                                                                        "partial"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "amounts",
+                                                                "completeness"
+                                                            ]
+                                                        },
                                                         "protocolFees": {
                                                             "type": "object",
                                                             "properties": {
@@ -40257,6 +40308,7 @@
                                                         "transactionCount",
                                                         "transactionCountCompleteness",
                                                         "sellerGrossRevenue",
+                                                        "sellerPendingRevenue",
                                                         "protocolFees",
                                                         "sellerCardanoFees",
                                                         "actorCardanoFees",
@@ -40377,6 +40429,57 @@
                                                                             "completeness"
                                                                         ]
                                                                     },
+                                                                    "sellerPendingRevenue": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "amounts": {
+                                                                                "type": "array",
+                                                                                "items": {
+                                                                                    "type": "object",
+                                                                                    "properties": {
+                                                                                        "unit": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "rawAmount": {
+                                                                                            "type": "string",
+                                                                                            "pattern": "^-?\\d+$"
+                                                                                        },
+                                                                                        "decimalAmount": {
+                                                                                            "type": "string",
+                                                                                            "nullable": true
+                                                                                        },
+                                                                                        "decimals": {
+                                                                                            "type": "integer",
+                                                                                            "nullable": true,
+                                                                                            "minimum": 0
+                                                                                        },
+                                                                                        "symbol": {
+                                                                                            "type": "string",
+                                                                                            "nullable": true
+                                                                                        }
+                                                                                    },
+                                                                                    "required": [
+                                                                                        "unit",
+                                                                                        "rawAmount",
+                                                                                        "decimalAmount",
+                                                                                        "decimals",
+                                                                                        "symbol"
+                                                                                    ]
+                                                                                }
+                                                                            },
+                                                                            "completeness": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "complete",
+                                                                                    "partial"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "amounts",
+                                                                            "completeness"
+                                                                        ]
+                                                                    },
                                                                     "protocolFees": {
                                                                         "type": "object",
                                                                         "properties": {
@@ -40892,6 +40995,7 @@
                                                                     "transactionCount",
                                                                     "transactionCountCompleteness",
                                                                     "sellerGrossRevenue",
+                                                                    "sellerPendingRevenue",
                                                                     "protocolFees",
                                                                     "sellerCardanoFees",
                                                                     "actorCardanoFees",
@@ -40990,6 +41094,57 @@
                                                                             "completeness"
                                                                         ]
                                                                     },
+                                                                    "sellerPendingRevenue": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "amounts": {
+                                                                                "type": "array",
+                                                                                "items": {
+                                                                                    "type": "object",
+                                                                                    "properties": {
+                                                                                        "unit": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "rawAmount": {
+                                                                                            "type": "string",
+                                                                                            "pattern": "^-?\\d+$"
+                                                                                        },
+                                                                                        "decimalAmount": {
+                                                                                            "type": "string",
+                                                                                            "nullable": true
+                                                                                        },
+                                                                                        "decimals": {
+                                                                                            "type": "integer",
+                                                                                            "nullable": true,
+                                                                                            "minimum": 0
+                                                                                        },
+                                                                                        "symbol": {
+                                                                                            "type": "string",
+                                                                                            "nullable": true
+                                                                                        }
+                                                                                    },
+                                                                                    "required": [
+                                                                                        "unit",
+                                                                                        "rawAmount",
+                                                                                        "decimalAmount",
+                                                                                        "decimals",
+                                                                                        "symbol"
+                                                                                    ]
+                                                                                }
+                                                                            },
+                                                                            "completeness": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "complete",
+                                                                                    "partial"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "amounts",
+                                                                            "completeness"
+                                                                        ]
+                                                                    },
                                                                     "protocolFees": {
                                                                         "type": "object",
                                                                         "properties": {
@@ -41505,6 +41660,7 @@
                                                                     "transactionCount",
                                                                     "transactionCountCompleteness",
                                                                     "sellerGrossRevenue",
+                                                                    "sellerPendingRevenue",
                                                                     "protocolFees",
                                                                     "sellerCardanoFees",
                                                                     "actorCardanoFees",
