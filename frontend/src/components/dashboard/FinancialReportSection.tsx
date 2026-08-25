@@ -17,7 +17,11 @@ import {
 import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { FinancialWalletTable } from './FinancialWalletTable';
 import { ReportCompletenessNote } from './report/ReportCompleteness';
-import { NO_FIAT_CURRENCY } from '@/lib/transaction-report/fiat-settings';
+import {
+  NO_FIAT_CURRENCY,
+  fiatCurrencyFromUnit,
+  fiatUnitFor,
+} from '@/lib/transaction-report/fiat-settings';
 import { ReportFilterBar } from './report/ReportFilterBar';
 import { ReportOverviewTab } from './report/ReportOverviewTab';
 import { ReportSeriesTab } from './report/ReportSeriesTab';
@@ -61,7 +65,7 @@ export function FinancialReportSection() {
   const summary = model.summary;
   const assetUnits = summary ? collectReportAssetUnits(summary) : [];
   const fiatUnit =
-    model.form.fiatCurrency === NO_FIAT_CURRENCY ? null : `fiat:${model.form.fiatCurrency}`;
+    model.form.fiatCurrency === NO_FIAT_CURRENCY ? null : fiatUnitFor(model.form.fiatCurrency);
   const selectedUnit = resolveReportAssetUnit(assetUnits, requestedUnit, fiatUnit);
   const roleSet = new Set(model.form.roles);
   const hasSeller = roleSet.has('Seller');
@@ -112,6 +116,20 @@ export function FinancialReportSection() {
                 : model.paymentSources.length === 0
                   ? { tone: 'quiet' as const, text: 'This network has no payment source yet.' }
                   : null;
+
+  /**
+   * One control decides what the reader is looking at.
+   *
+   * The dropdown offers the assets and, below them, the same report converted
+   * to a currency. Picking a currency switches the conversion on; picking an
+   * asset switches it off again, so the setting can never disagree with the
+   * figures on screen.
+   */
+  const selectUnit = (unit: string) => {
+    const currency = fiatCurrencyFromUnit(unit);
+    setRequestedUnit(unit);
+    model.updateForm({ fiatCurrency: currency ?? NO_FIAT_CURRENCY });
+  };
 
   const resetReport = () => {
     setRequestedUnit('');
@@ -178,7 +196,7 @@ export function FinancialReportSection() {
         assetUnits={assetUnits}
         selectedUnit={selectedUnit}
         assetLabel={assetLabel}
-        onSelectUnit={setRequestedUnit}
+        onSelectUnit={selectUnit}
         onToggleRole={model.toggleRole}
         onToggleState={model.toggleState}
         onToggleWallet={model.toggleWallet}
