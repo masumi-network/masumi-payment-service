@@ -147,9 +147,9 @@ export function FinancialReportSection() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="flex items-center gap-1.5">
           <h2 id="financial-reporting-title" className="text-lg font-semibold">
-            Money and fees
+            Finances
           </h2>
-          <InfoHint label="money and fees">
+          <InfoHint label="finances">
             <p>What this payment source earned, spent, and paid in fees.</p>
             <p>
               Every figure comes from one database snapshot, so the cards, the history, and the

@@ -71,7 +71,7 @@ function summary(
 test('exposes every financial report metric with an operator-facing label', () => {
   assert.deepEqual(REPORT_METRICS, [
     { key: 'sellerGrossRevenue', label: 'Seller gross revenue' },
-    { key: 'sellerPendingRevenue', label: 'Seller revenue not yet earned' },
+    { key: 'sellerPendingRevenue', label: 'Seller money not yet final' },
     { key: 'protocolFees', label: 'Protocol fees' },
     { key: 'sellerCardanoFees', label: 'Seller Cardano fees' },
     { key: 'sellerNetRevenue', label: 'Seller net revenue' },

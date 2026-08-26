@@ -54,6 +54,31 @@ const HEADLINE_STYLE: Partial<Record<ReportMetricKey, { color: string; icon: Rea
   },
 };
 
+/**
+ * The one series on this chart that is not settled money, so it is the one an
+ * operator is most likely to read as revenue. The explanation travels with the
+ * legend entry rather than sitting in the section note, because that is where
+ * the name is read.
+ */
+const PENDING_REVENUE_HINT = (
+  <>
+    <p>
+      Money a buyer locked in escrow for a request that has not settled. It is not revenue yet, so
+      it is left out of every revenue and fee figure.
+    </p>
+    <p>
+      The request can still end two ways. The seller delivers, and the amount becomes gross revenue.
+      Or the buyer is refunded, and it becomes returned funds.
+    </p>
+    <p>
+      Until then it sits on the day the funds were locked, because that is the only date this money
+      has. When the request settles, the amount leaves this line and moves to the day it settled. A
+      slow request can shift days or weeks forward, so expect this line to change shape.
+    </p>
+    <p>The figure is the full amount asked for, before the protocol fee and network fees.</p>
+  </>
+);
+
 function combinedSeries(hasSeller: boolean, hasBuyer: boolean): ReportChartSeries[] {
   return [
     ...(hasSeller
@@ -71,9 +96,10 @@ function combinedSeries(hasSeller: boolean, hasBuyer: boolean): ReportChartSerie
           },
           {
             key: 'sellerPendingRevenue',
-            label: 'Not yet earned',
+            label: REPORT_METRIC_LABELS.sellerPendingRevenue,
             color: REPORT_SERIES_COLORS.pending,
             dashed: true,
+            hint: PENDING_REVENUE_HINT,
           },
         ] as const)
       : []),
@@ -187,12 +213,9 @@ export function ReportOverviewTab({
                 </p>
                 {hasSeller && (
                   <p>
-                    The dashed <strong>Not yet earned</strong> line is money a buyer has locked for
-                    a request that has not settled. It sits on the day the funds were locked,
-                    because that is the only date this money has yet. Expect it to move: once the
-                    request settles, the amount leaves this line and lands on the day it settled, as
-                    revenue, or as returned funds if the buyer got it back. A request that settles
-                    slowly can therefore shift days or weeks forward.
+                    The dashed <strong>{REPORT_METRIC_LABELS.sellerPendingRevenue}</strong> line is
+                    money still held in escrow. Open the info icon beside it in the legend for what
+                    happens to it.
                   </p>
                 )}
               </InfoHint>
