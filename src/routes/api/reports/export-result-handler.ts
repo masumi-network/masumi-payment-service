@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs';
+import { once } from 'node:events';
 import { pipeline } from 'node:stream/promises';
 import { authMiddleware } from '@masumi/payment-core/auth-middleware';
 import { endpointErrorResponseSchema, sendEndpointError } from '@masumi/payment-core/endpoint-factory';
@@ -116,13 +117,33 @@ export const reportExportResultHandler = new ResultHandler({
 		const artifact = artifactResult.data;
 
 		try {
+			// Open the staged file before staging 200 and the download headers. A
+			// stream that fails to open after them left the client with an aborted
+			// empty 200 whose Content-Length did not match the body, which reads as
+			// a valid but empty export. Once headers are sent there is no way back,
+			// so a mid-stream failure still only destroys the response.
+			const fileStream = createReadStream(artifact.filePath);
+			try {
+				await once(fileStream, 'open');
+			} catch (openError) {
+				fileStream.destroy();
+				logger.error('Report export stream failed', { error: openError });
+				sendEndpointError({
+					error: openError instanceof Error ? openError : new Error('Report export could not be read'),
+					input,
+					request,
+					response,
+					logger,
+				});
+				return;
+			}
 			response.status(200).set({
 				'Content-Type': artifact.contentType,
 				'Content-Disposition': createAttachmentHeader(artifact.filename),
 				'Content-Length': String(artifact.contentLength),
 				'Cache-Control': 'no-store',
 			});
-			await pipeline(createReadStream(artifact.filePath), response);
+			await pipeline(fileStream, response);
 		} catch (streamError) {
 			logger.error('Report export stream failed', { error: streamError });
 		} finally {
