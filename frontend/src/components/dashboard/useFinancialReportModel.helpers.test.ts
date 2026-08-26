@@ -77,16 +77,22 @@ test('report errors preserve server text and add bounded-query guidance', () => 
   );
 });
 
-test('summary data is current only after the exact visible body reaches the debounce', () => {
+test('summary data is current once the visible filters reach the debounce', () => {
   const visibleBody: PostReportsSummaryData['body'] = {
     paymentSourceId: 'source-1',
     from: new Date('2026-07-25T12:00:00.000Z'),
     to: new Date('2026-08-24T12:00:00.000Z'),
   };
 
-  assert.equal(isCurrentFinancialReportBody(visibleBody, { ...visibleBody }), false);
+  // A rebuilt body with the same filters is the same report. Comparing by
+  // identity blanked the dashboard after every facets refetch.
+  assert.equal(isCurrentFinancialReportBody(visibleBody, { ...visibleBody }), true);
   assert.equal(isCurrentFinancialReportBody(visibleBody, visibleBody), true);
   assert.equal(isCurrentFinancialReportBody(null, visibleBody), false);
+  assert.equal(
+    isCurrentFinancialReportBody(visibleBody, { ...visibleBody, paymentSourceId: 'source-2' }),
+    false,
+  );
 });
 
 test('an export error is hidden as soon as the visible report body changes', () => {
@@ -99,7 +105,11 @@ test('an export error is hidden as soon as the visible report body changes', () 
 
   assert.equal(getCurrentFinancialReportExportError(error, attemptedBody, attemptedBody), error);
   assert.equal(
-    getCurrentFinancialReportExportError(error, { ...attemptedBody }, attemptedBody),
+    getCurrentFinancialReportExportError(
+      error,
+      { ...attemptedBody, paymentSourceId: 'source-2' },
+      attemptedBody,
+    ),
     null,
   );
 });
