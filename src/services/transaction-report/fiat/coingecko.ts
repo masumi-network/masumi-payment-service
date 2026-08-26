@@ -96,7 +96,50 @@ export type FiatRateFetchResult = Readonly<{
 }>;
 
 /**
+ * Rates already read, keyed by the exact question they answer.
+ *
+ * A report is read one page at a time, and every page asks for the same window
+ * and the same assets. Without this a report spread over ten pages makes ten
+ * rounds of provider calls for one answer, and a free demo key runs out of
+ * requests before the reader reaches the last page.
+ *
+ * Entries are shared, not copied. Every reader of a fetch result treats it as
+ * read-only, and `createFiatRateTable` stores it behind ReadonlyMap.
+ */
+const RATE_CACHE_TTL_MS = 5 * 60 * 1000;
+const RATE_CACHE_MAX_ENTRIES = 64;
+const rateCache = new Map<string, { readAt: number; result: FiatRateFetchResult }>();
+
+function rateCacheKey(input: FiatRateFetchInput): string {
+	const units = Array.from(new Set(input.units.map(normalizeAssetUnit))).sort();
+	return JSON.stringify([input.currency, units, input.from.toISOString(), input.to.toISOString()]);
+}
+
+function readRateCache(key: string, now: number): FiatRateFetchResult | null {
+	for (const [cachedKey, entry] of rateCache) {
+		if (now - entry.readAt >= RATE_CACHE_TTL_MS) rateCache.delete(cachedKey);
+	}
+	return rateCache.get(key)?.result ?? null;
+}
+
+function writeRateCache(key: string, now: number, result: FiatRateFetchResult): void {
+	rateCache.set(key, { readAt: now, result });
+	// A Map keeps insertion order, so the first key is the oldest entry.
+	while (rateCache.size > RATE_CACHE_MAX_ENTRIES) {
+		const oldest = rateCache.keys().next();
+		if (oldest.done) break;
+		rateCache.delete(oldest.value);
+	}
+}
+
+/** Empties the rate cache, so one test cannot answer another. */
+export function clearFiatRateCache(): void {
+	rateCache.clear();
+}
+
+/**
  * Reads one daily price series per asset from CoinGecko.
+ *
  *
  * The range is padded by a day on each side so a report bucket that starts
  * before the first price point still finds a rate.
@@ -109,6 +152,12 @@ export async function fetchDailyFiatRates(input: FiatRateFetchInput): Promise<Fi
 	if (supportedUnits.length === 0) return { daily, unsupportedUnits };
 
 	assertPriceableRange(input.from);
+	// After the range guard, so a cached answer cannot smuggle a window the
+	// configured key is no longer allowed to read.
+	const cacheKey = rateCacheKey(input);
+	const readAt = Date.now();
+	const cached = readRateCache(cacheKey, readAt);
+	if (cached != null) return cached;
 	const client = createClient();
 	const from = new Date(input.from.getTime() - DAY_MS).toISOString().slice(0, 10);
 	const to = new Date(input.to.getTime() + DAY_MS).toISOString().slice(0, 10);
@@ -133,5 +182,7 @@ export async function fetchDailyFiatRates(input: FiatRateFetchInput): Promise<Fi
 		}
 	}
 
-	return { daily, unsupportedUnits };
+	const result = { daily, unsupportedUnits };
+	writeRateCache(cacheKey, readAt, result);
+	return result;
 }
