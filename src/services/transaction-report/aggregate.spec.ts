@@ -478,7 +478,9 @@ describe('aggregateReportRows totals', () => {
 		expect(amount(buyerWallet.metrics.adminCardanoFees)).toBe(0n);
 		expect(buyerWallet.metrics.totalCardanoFees.completeness).toBe('complete');
 		expect(buyerWallet.metrics.adminCardanoFees.completeness).toBe('partial');
-		expect(result.warnings.map((warning) => warning.code)).toContain('SHARED_CARDANO_FEE_COMPONENT_ALLOCATION');
+		// Sharing a fee between the requests it settled is how the report works,
+		// not a shortfall in it, so it raises no note of its own.
+		expect(result.warnings.map((warning) => warning.code)).not.toContain('SHARED_CARDANO_FEE_COMPONENT_ALLOCATION');
 	});
 
 	it('counts a covered V2 batch fee once when every related request is selected', () => {
@@ -610,11 +612,12 @@ describe('aggregateReportRows totals', () => {
 		);
 
 		// The transaction settled two requests and the report holds one of them,
-		// so the report owes half the fee. The other half belongs to a request
-		// the filter left out, which is why the figure is an estimate.
+		// so the report owes half the fee. Half of 500 is exactly 250, and the
+		// other half belongs to a request outside this report, so the figure is
+		// exact for what the report covers.
 		expect(result.totals.totalCardanoFees).toEqual({
 			amounts: [{ unit: 'lovelace', amount: 250n }],
-			completeness: 'partial',
+			completeness: 'complete',
 		});
 		// Admin fees stay unknown here for a separate reason: they are the total
 		// less the actor fees, and this row's actor allocation is itself partial.
@@ -1101,7 +1104,9 @@ describe('aggregateReportRows history', () => {
 				expectedWallet,
 			);
 			expect(result.historyFeeCompleteness).toBe('partial');
-			expect(result.warnings.map((warning) => warning.code)).toContain('SHARED_CARDANO_FEE_COMPONENT_ALLOCATION');
+			expect(result.warnings.map((warning) => warning.code)).not.toContain(
+				'SHARED_CARDANO_FEE_COMPONENT_ALLOCATION',
+			);
 		},
 	);
 

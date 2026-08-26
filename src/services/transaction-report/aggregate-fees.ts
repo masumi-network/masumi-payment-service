@@ -1,6 +1,6 @@
 import type { ReportMetricWindow, ReportRow } from './records';
 import { groupReportRowsByPayment } from './row-groups';
-import { feeShareForPaymentKeys, isSharedFee } from './fee-split';
+import { feeShareForPaymentKeys } from './fee-split';
 import { mergeReportTransactions } from './timestamps';
 import { NO_REPORT_CHECKPOINT, runReportCheckpoint, type ReportCheckpoint } from './checkpoint';
 
@@ -20,7 +20,6 @@ export type FeeComponent = {
 	isTotalComplete: boolean;
 	isAdminComplete: boolean;
 	/** True when a shared transaction fee had to be divided by an equal share. */
-	isEstimated: boolean;
 	buyerActorFees: bigint;
 	sellerActorFees: bigint;
 	actorFees: bigint;
@@ -100,7 +99,6 @@ export function analyzeReportFees(
 	};
 	let hasUnknownTotalEvidence = false;
 	/** Requests whose fee figures came from an equal share rather than a reading. */
-	const sharedFeeKeys = new Set<string>();
 	const covered: CoveredTransaction[] = [];
 	for (const [index, transaction] of mergedTransactions.entries()) {
 		runReportCheckpoint(index, checkpoint);
@@ -145,17 +143,6 @@ export function analyzeReportFees(
 		// The report owes only the shares of the requests it holds. A batch can
 		// reach outside the filter, and those shares stay outside the report.
 		const share = feeShareForPaymentKeys(transaction.fees, paymentKeys, selectedPaymentKeys);
-		// A batch that sits wholly inside the report still adds up to the fee the
-		// chain charged, so the total stays exact. Only a part of a batch is an
-		// estimate, because the rest of the fee belongs to requests the report
-		// cannot see. See ./fee-split.
-		//
-		// This runs before the zero-share exit. A share can round to zero when a
-		// batch holds more requests than the fee holds lovelace, and that share is
-		// still apportioned, not read. Exiting first would report it as exact.
-		if (isSharedFee(paymentKeys) && selectedRelatedKeys.length !== paymentKeys.length) {
-			for (const key of selectedRelatedKeys) sharedFeeKeys.add(key);
-		}
 		if (share === 0n) continue;
 		if (selectedRelatedKeys.length > 1) union(selectedRelatedKeys);
 		covered.push({ fee: share, blockTime, paymentKeys: selectedRelatedKeys });
@@ -202,9 +189,6 @@ export function analyzeReportFees(
 		}
 		const actorFees = buyerActorFees + sellerActorFees;
 		const total = transactions.reduce((sum, transaction) => sum + transaction.fee, 0n);
-		// An estimated figure is still a figure. It is kept, and reported as
-		// partial, rather than dropped for "not known".
-		const isEstimated = paymentKeys.some((key) => sharedFeeKeys.has(key));
 		const isTotalKnown = paymentKeys.every((key) => totalEvidence.get(key));
 		const canDeriveAdmin = isTotalKnown && isActorComplete && total >= actorFees;
 		return {
@@ -212,9 +196,8 @@ export function analyzeReportFees(
 			transactions,
 			total,
 			admin: canDeriveAdmin ? total - actorFees : null,
-			isTotalComplete: isTotalKnown && !isEstimated,
-			isAdminComplete: canDeriveAdmin && !isEstimated,
-			isEstimated,
+			isTotalComplete: isTotalKnown,
+			isAdminComplete: canDeriveAdmin,
 			buyerActorFees,
 			sellerActorFees,
 			actorFees,

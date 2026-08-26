@@ -2,16 +2,17 @@
  * How a Cardano network fee is shared between the requests one transaction settles.
  *
  * Cardano charges one fee per transaction, whatever number of requests that
- * transaction settles, and the chain records no breakdown. A batched fee can
- * therefore only be divided by a rule, never read.
+ * transaction settles, and the chain records no breakdown. A batched fee is
+ * therefore divided by a rule rather than read.
  *
- * The rule here is an equal share per request in the batch. A transaction fee
- * follows the size of the transaction rather than the amounts being paid, so
- * every request in a batch costs about the same to settle. Sharing by amount
- * would read as precision the chain does not support.
+ * The rule is an equal part per request in the batch. A transaction fee follows
+ * the size of the transaction rather than the amounts being paid, so every
+ * request in a batch costs about the same to settle. Sharing by amount would
+ * read as precision the chain does not support.
  *
- * Every figure produced this way is an estimate. Callers report it as partial
- * so a reader can tell an apportioned figure from an attested one.
+ * The parts add back up to the fee exactly, and the same inputs always give the
+ * same parts, so a part is treated as that request's fee. Callers report it the
+ * same way they report a fee a request paid on its own.
  */
 
 /**
@@ -64,9 +65,4 @@ export function feeShareForPaymentKeys(
 	if (batch.length === 0) return 0n;
 	const shares = splitFeeEvenly(fee, batch.length);
 	return batch.reduce((total, key, index) => (selectedPaymentKeys.has(key) ? total + shares[index] : total), 0n);
-}
-
-/** True when a fee had to be shared, and so the resulting figures are estimates. */
-export function isSharedFee(paymentKeys: readonly string[]): boolean {
-	return sortedBatch(paymentKeys).length > 1;
 }
