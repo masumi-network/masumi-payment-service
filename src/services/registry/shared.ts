@@ -37,22 +37,40 @@ const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.c
 const REGISTRY_TOTAL_COLLATERAL_LOVELACE = '3000000';
 
 /**
+ * Headroom the collateral input must keep above the declared total.
+ *
+ * The remainder becomes a `collateral_return` output, so it has to clear the
+ * ledger min-UTxO floor. 1 ADA is the same round figure the rest of this tree
+ * treats as a safe plain-output minimum (see `calculateMinUtxo` in
+ * `src/utils/min-utxo`), and it avoids threading protocol parameters into a
+ * guard that only needs a floor.
+ */
+const REGISTRY_COLLATERAL_RETURN_MARGIN_LOVELACE = 1_000_000n;
+
+/**
  * Smallest collateral input these builders accept.
  *
- * `assertCollateralCoversDeclaredTotal` enforces it. The floor is the same
- * 5 ADA `pickCollateralUtxo` already requires, which leaves 2 ADA of
- * `collateral_return`: clear of the min-UTxO floor with room to spare.
+ * Derived from the declared total, deliberately NOT from
+ * `SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount`. The two are close today,
+ * but tying the floor to that constant means lowering it to the declared total
+ * would silently re-admit the zero-remainder transaction this guard exists to
+ * stop.
  *
- * The guard is not redundant. Only some callers route their collateral through
- * `pickCollateralUtxo`. The single-item register paths take
+ * The guard is not redundant with `pickCollateralUtxo`. Only some callers route
+ * their collateral through it. The single-item register paths take
  * `sortAndLimitUtxos(...)[0]`, which orders by asset count and not by value, and
  * the single-item update and deregister paths fall back to that same element
  * when nothing clears the floor. Any of those can hand over an input smaller
  * than the declared total. Without this guard such a build dies at submit with a
  * phase-1 rejection that names no cause, because phase-1 failures never reach
  * `evaluateTx`.
+ *
+ * It never rejects an input that used to build: these builders previously
+ * declared the full 5 ADA, which needed more than 5 ADA of input to leave a
+ * returnable remainder, and this floor is 4 ADA.
  */
-const REGISTRY_MIN_COLLATERAL_INPUT_LOVELACE = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
+const REGISTRY_MIN_COLLATERAL_INPUT_LOVELACE =
+	BigInt(REGISTRY_TOTAL_COLLATERAL_LOVELACE) + REGISTRY_COLLATERAL_RETURN_MARGIN_LOVELACE;
 
 function assertCollateralCoversDeclaredTotal(collateralUtxo: UTxO): void {
 	const heldLovelace = getLovelaceFromUtxo(collateralUtxo);
@@ -191,10 +209,10 @@ export async function generateRegistryMintTransaction(
 	// caches the mesh-format Protocol object so we don't repeat
 	// `/epochs/latest/parameters` here. Fall back to a live fetch if the cache
 	// is cold (first tx of the process lifetime).
-	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
-	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	assertCollateralCoversDeclaredTotal(collateralUtxo);
 
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
@@ -435,10 +453,10 @@ async function generateRegistryUpdateTransaction(
 	if (rpcApiKey) {
 		await syncMeshCostModelsFromChain(rpcApiKey);
 	}
-	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
-	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	assertCollateralCoversDeclaredTotal(collateralUtxo);
 
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
@@ -532,10 +550,10 @@ async function generateRegistryDeregisterTransaction(
 	// Reuse the cached mesh-format chain params populated by the cost-model
 	// sync (see generateRegistryMintTransaction). Fall back to a live fetch on
 	// cache miss.
-	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
-	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	assertCollateralCoversDeclaredTotal(collateralUtxo);
 
+	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
+	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});

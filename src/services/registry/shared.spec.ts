@@ -262,4 +262,14 @@ describe('registry collateral declaration', () => {
 	it('refuses a collateral input that cannot cover the declared total', async () => {
 		await expect(buildUpdate(utxo('cccc', 0, '2000000'))).rejects.toThrow(/holds 2000000 lovelace/);
 	});
+
+	/**
+	 * An input worth exactly the declared total leaves a zero `collateral_return`,
+	 * which is the failure this whole change exists to stop. The floor therefore
+	 * has to sit strictly above the declared total and carry min-UTxO headroom. It
+	 * must not be tied to an unrelated constant that merely happens to be larger.
+	 */
+	it('refuses a collateral input worth exactly the declared total', async () => {
+		await expect(buildUpdate(utxo('cccc', 0, '3000000'))).rejects.toThrow(/holds 3000000 lovelace/);
+	});
 });
