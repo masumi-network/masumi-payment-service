@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted.
+Accepted. Decision 2 (per-wallet budgets) is amended by
+[ADR 0016](0016-x402-key-scoped-spend-caps.md): spend caps are per-API-key
+usage credits; `X402WalletBudget` and `/x402/budgets` no longer exist.
 
 ## Context
 

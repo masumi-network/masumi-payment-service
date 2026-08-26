@@ -132,12 +132,13 @@ registry entries may advertise x402 options.
 
 The standard EVM x402 rail implemented by `@masumi/payment-source-x402`.
 It is separate from Cardano `PaymentSourceType` and stores its own
-networks, managed EVM wallets, budgets, attempts, and settlements.
+networks, managed EVM wallets, attempts, and settlements.
 
 The rail has two sides. The buy side signs a payment for a 402 the
-caller forwards, charges a managed wallet budget, and returns the
-`X-PAYMENT` header for the caller's agent to send with its own request;
-the service never fetches the resource itself. The sell side is an x402
+caller forwards, debits the calling key's usage credits when the key is
+usage limited, and returns the `X-PAYMENT` header for the caller's agent
+to send with its own request; the service never fetches the resource
+itself. The sell side is an x402
 facilitator that verifies and settles inbound payments for a registered
 resource, with settlement replay bound to that source.
 
@@ -159,9 +160,14 @@ transactions; it is not the standard EVM x402 HTTP payment protocol.
 An encrypted private-key wallet stored in `X402EvmWallet` and used by the
 standard x402 rail. Managed EVM wallets are separate from Cardano
 `HotWallet` / `WalletSecret` rows. API keys with `canAdmin` can manage
-wallets, network configuration, and budgets; API keys with `canPay` can
-spend through a managed wallet only when their CAIP-2 chain limit and
-wallet budget allow it.
+wallets and network configuration; API keys with `canPay` can spend
+through a managed wallet only when their CAIP-2 chain limit and wallet
+scope allow it, capped by their usage credits when the key is usage
+limited. Spend caps live on the API key (the Cardano model), never on
+the wallet.
+
+Avoid: budget, wallet budget (removed concepts — a cap is Usage
+Credits on the key; wallet access is the key's wallet scope).
 
 ### Hydra Head
 
