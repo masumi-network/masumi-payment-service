@@ -18,6 +18,13 @@ const FALLBACK_FILENAMES: Record<ReportExportKind, string> = {
   zip: 'transaction-report.zip',
 };
 
+/**
+ * How long a finished download keeps its object URL. Some browsers read the
+ * blob after the click returns and cancel the download if the URL is already
+ * gone, so the successful path releases it on a later task instead.
+ */
+export const OBJECT_URL_RELEASE_DELAY_MS = 1_000;
+
 const INVALID_FILENAME_CHARACTER = /[\u0000-\u001f\u007f/\\]/u;
 const MAX_FILENAME_LENGTH = 255;
 
@@ -139,14 +146,21 @@ export function saveTransactionReportExport({
 }): void {
   const objectUrl = URL.createObjectURL(blob);
   let link: HTMLAnchorElement | undefined;
+  let hasStartedDownload = false;
   try {
     link = document.createElement('a');
     link.href = objectUrl;
     link.download = safeFilename(filename) ?? 'transaction-report-download';
     document.body.appendChild(link);
     link.click();
+    hasStartedDownload = true;
   } finally {
     link?.remove();
-    URL.revokeObjectURL(objectUrl);
+    if (hasStartedDownload) {
+      setTimeout(() => URL.revokeObjectURL(objectUrl), OBJECT_URL_RELEASE_DELAY_MS);
+    } else {
+      // Nothing was handed to the browser, so the URL can go immediately.
+      URL.revokeObjectURL(objectUrl);
+    }
   }
 }

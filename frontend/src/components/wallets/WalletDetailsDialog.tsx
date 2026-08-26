@@ -337,11 +337,11 @@ export function WalletDetailsDialog({
 
   useEffect(() => {
     if (isOpen && wallet) {
-      // Reset states when dialog is opened. Token + rule state reset inside
-      // their hooks (fetchTokenBalances resets at call start; resetForNewWallet
-      // clears rule drafts and the add-rule form).
+      // Reset states when the dialog opens or switches wallet. Token, rule and
+      // collection-address state reset inside their hooks (fetchTokenBalances
+      // resets at call start; each resetForNewWallet clears its own drafts).
       setExportedMnemonic(null);
-      collectionAddressEditor.resetSavedCollectionAddress();
+      collectionAddressEditor.resetForNewWallet();
       setSwapTransactions([]);
       setSwapTxCursor(undefined);
       setHasMoreSwapTx(true);
