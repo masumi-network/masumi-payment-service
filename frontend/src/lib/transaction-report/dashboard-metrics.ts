@@ -19,7 +19,10 @@ export function formatReportCountValue(
   count: number,
   completeness: ReportMetrics['transactionCountCompleteness'],
 ): string {
-  return `${count.toLocaleString()}${completeness === 'partial' ? ' observed' : ''}`;
+  // Completeness is shown by the estimate dot next to the value, not by a
+  // word glued onto the number.
+  void completeness;
+  return count.toLocaleString();
 }
 
 export function getReportTransactionCountDisplay(
@@ -99,8 +102,16 @@ export function collectReportAssetUnits(summary: ReportSummary): string[] {
 export function resolveReportAssetUnit(
   assetUnits: readonly string[],
   requestedUnit: string,
+  /**
+   * Where to land when the asked-for unit is gone. Turning a conversion on
+   * should show the converted figures, not leave the reader on ADA wondering
+   * what the setting did.
+   */
+  preferredUnit?: string | null,
 ): string | null {
-  return assetUnits.includes(requestedUnit) ? requestedUnit : (assetUnits[0] ?? null);
+  if (assetUnits.includes(requestedUnit)) return requestedUnit;
+  if (preferredUnit != null && assetUnits.includes(preferredUnit)) return preferredUnit;
+  return assetUnits[0] ?? null;
 }
 
 export function getEmptyReportAssetLabel(
@@ -162,6 +173,40 @@ export type ReportAmountDisplay = Readonly<{
 
 export type ReportAmountFallback = string | ReportAssetDescriptor;
 
+/** Operators read money to the cent. The exports keep the full precision. */
+export const REPORT_DISPLAY_DECIMALS = 2;
+
+/** The smallest amount two decimals can show. */
+const REPORT_SMALLEST_DISPLAYED = '0.01';
+
+/**
+ * Rounds a decimal string half-up. String maths, because a lovelace total can
+ * exceed what a double holds exactly.
+ */
+function roundDecimalString(value: string, decimals: number): string {
+  const parts = /^([+-]?)(\d+)(?:\.(\d*))?$/.exec(value);
+  if (parts == null) return value;
+  const [, sign, integer, fraction = ''] = parts;
+  if (fraction.length <= decimals) {
+    return decimals === 0
+      ? `${sign}${integer}`
+      : `${sign}${integer}.${fraction.padEnd(decimals, '0')}`;
+  }
+  const carries = fraction.charCodeAt(decimals) - 48 >= 5;
+  const kept = `${integer}${fraction.slice(0, decimals)}`;
+  const rounded = (carries ? BigInt(kept) + BigInt(1) : BigInt(kept))
+    .toString()
+    .padStart(decimals + 1, '0');
+  const boundary = rounded.length - decimals;
+  return decimals === 0
+    ? `${sign}${rounded}`
+    : `${sign}${rounded.slice(0, boundary)}.${rounded.slice(boundary)}`;
+}
+
+function isZeroDecimalString(value: string): boolean {
+  return /^[+-]?0*(?:\.0*)?$/.test(value);
+}
+
 function groupReportAmount(value: string): string {
   const parts = /^([+-]?)(\d+)(\.\d+)?$/.exec(value);
   if (parts == null) return value;
@@ -176,15 +221,25 @@ export function formatReportAmount(
 ): ReportAmountDisplay {
   const fallbackDescriptor =
     typeof fallback === 'string' ? getKnownAssetDescriptor(fallback) : fallback;
-  const exactValue =
-    amount?.decimalAmount ??
-    amount?.rawAmount ??
-    (fallbackDescriptor.decimals == null
+  const fallbackValue =
+    fallbackDescriptor.decimals == null || fallbackDescriptor.decimals === 0
       ? '0'
-      : fallbackDescriptor.decimals === 0
-        ? '0'
-        : `0.${'0'.repeat(fallbackDescriptor.decimals)}`);
-  const value = groupReportAmount(exactValue);
+      : `0.${'0'.repeat(fallbackDescriptor.decimals)}`;
+  const exactValue = amount?.decimalAmount ?? amount?.rawAmount ?? fallbackValue;
+  // An atomic amount of an asset whose decimals we do not know is a whole
+  // count of indivisible units. Giving it a fractional part would invent one.
+  const hasFractionalUnits =
+    amount == null
+      ? fallbackDescriptor.decimals != null && fallbackDescriptor.decimals > 0
+      : amount.decimalAmount != null;
+  const roundedValue = hasFractionalUnits
+    ? roundDecimalString(exactValue, REPORT_DISPLAY_DECIMALS)
+    : exactValue;
+  // Rounding a small nonzero amount to 0.00 would state that nothing moved.
+  const value =
+    isZeroDecimalString(roundedValue) && !isZeroDecimalString(exactValue)
+      ? `${exactValue.startsWith('-') ? '> -' : '< '}${REPORT_SMALLEST_DISPLAYED}`
+      : groupReportAmount(roundedValue);
   const unitLabel =
     amount?.symbol?.trim() ||
     amount?.unit ||
@@ -199,7 +254,12 @@ export function formatReportAmount(
 
 export type ReportMetricValueDisplay = Readonly<{
   text: string;
+  /** The grouped number on its own, so a caller can size it apart from its unit. */
+  value: string;
+  unitLabel: string;
   isPartial: boolean;
+  /** The report could not read this figure. `text` says so; `value` is not a total. */
+  isUnknown: boolean;
   isNegative: boolean;
 }>;
 
@@ -211,169 +271,15 @@ export function formatReportMetricValue(
   const amount = metric.amounts.find((candidate) => candidate.unit === unit);
   const display = formatReportAmount(amount, fallback);
   const isPartial = metric.completeness === 'partial';
+  // A partial metric with no amount in this unit is unknown, not zero. Printing
+  // a formatted zero would state a total the report never read.
+  const isUnknown = isPartial && amount == null;
   return {
-    text: isPartial && amount == null ? `${display.text} observed` : display.text,
+    text: isUnknown ? 'Not known' : display.text,
+    value: display.value,
+    unitLabel: display.unitLabel,
     isPartial,
+    isUnknown,
     isNegative: BigInt(amount?.rawAmount ?? '0') < BigInt(0),
   };
-}
-
-export type ReportChartDimensions = Readonly<{
-  width: number;
-  height: number;
-  padding?: number;
-}>;
-
-export type ReportChartDomain = Readonly<{
-  min: bigint;
-  max: bigint;
-}>;
-
-export type ReportChartPoint = Readonly<{
-  x: number;
-  y: number;
-  bucketStart: Date;
-  bucketEnd: Date;
-  rawAmount: string;
-  valueText: string;
-  completeness: ReportMetric['completeness'];
-  isUnknown?: true;
-}>;
-
-export type ReportChartCoordinate = Readonly<{
-  x: number;
-  y: number;
-  isUnknown?: boolean;
-}>;
-
-export const DEFAULT_REPORT_CHART_DIMENSIONS = {
-  width: 640,
-  height: 240,
-  padding: 16,
-} as const satisfies ReportChartDimensions;
-
-const MAX_CHART_DIMENSION = 4_096;
-const CHART_COORDINATE_SCALE = 1_000_000;
-
-function normalizeChartDimension(value: number, fallback: number): number {
-  if (!Number.isFinite(value) || value <= 0) return fallback;
-  return Math.min(value, MAX_CHART_DIMENSION);
-}
-
-function normalizeChartPadding(value: number | undefined, width: number, height: number): number {
-  const maxPadding = Math.min(width, height) / 2;
-  const defaultPadding = DEFAULT_REPORT_CHART_DIMENSIONS.padding;
-  if (value == null) return Math.min(defaultPadding, maxPadding);
-  if (!Number.isFinite(value)) return Math.min(defaultPadding, maxPadding);
-  return Math.min(Math.max(value, 0), maxPadding);
-}
-
-function rawMetricValue(metrics: ReportMetrics, metricKey: ReportMetricKey, unit: string): bigint {
-  return BigInt(getReportMetricAmount(metrics, metricKey, unit)?.rawAmount ?? '0');
-}
-
-function domainIncludingZero(
-  values: readonly bigint[],
-  requestedDomain?: ReportChartDomain,
-): ReportChartDomain {
-  let min = BigInt(0);
-  let max = BigInt(0);
-  const candidates = requestedDomain
-    ? [requestedDomain.min, requestedDomain.max, ...values]
-    : values;
-  for (const value of candidates) {
-    if (value < min) min = value;
-    if (value > max) max = value;
-  }
-  return { min, max };
-}
-
-export function getReportChartDomain(
-  history: ReportHistory,
-  metricKeys: readonly ReportMetricKey[],
-  unit: string,
-): ReportChartDomain {
-  const values = history.flatMap((bucket) =>
-    metricKeys.map((metricKey) => rawMetricValue(bucket.metrics, metricKey, unit)),
-  );
-  return domainIncludingZero(values);
-}
-
-export function scaleReportChartY(
-  value: bigint,
-  domain: ReportChartDomain,
-  dimensions: ReportChartDimensions = DEFAULT_REPORT_CHART_DIMENSIONS,
-): number {
-  const width = normalizeChartDimension(dimensions.width, DEFAULT_REPORT_CHART_DIMENSIONS.width);
-  const height = normalizeChartDimension(dimensions.height, DEFAULT_REPORT_CHART_DIMENSIONS.height);
-  const padding = normalizeChartPadding(dimensions.padding, width, height);
-  const drawableHeight = height - padding * 2;
-  const chartDomain = domainIncludingZero([value], domain);
-  const range = chartDomain.max - chartDomain.min;
-  if (range === BigInt(0)) return height / 2;
-
-  const drawableHeightScaled = BigInt(Math.round(drawableHeight * CHART_COORDINATE_SCALE));
-  return (
-    padding +
-    Number(((chartDomain.max - value) * drawableHeightScaled) / range) / CHART_COORDINATE_SCALE
-  );
-}
-
-export function buildReportChartPoints(
-  history: ReportHistory,
-  metricKey: ReportMetricKey,
-  unit: string,
-  dimensions: ReportChartDimensions = DEFAULT_REPORT_CHART_DIMENSIONS,
-  domain?: ReportChartDomain,
-  descriptor?: ReportAssetDescriptor,
-): ReportChartPoint[] {
-  if (history.length === 0) return [];
-
-  const width = normalizeChartDimension(dimensions.width, DEFAULT_REPORT_CHART_DIMENSIONS.width);
-  const height = normalizeChartDimension(dimensions.height, DEFAULT_REPORT_CHART_DIMENSIONS.height);
-  const padding = normalizeChartPadding(dimensions.padding, width, height);
-  const drawableWidth = width - padding * 2;
-  const amounts = history.map((bucket) => getReportMetricAmount(bucket.metrics, metricKey, unit));
-  const values = amounts.map((amount) => BigInt(amount?.rawAmount ?? '0'));
-  const descriptorAmount =
-    amounts.find((amount) => amount?.symbol != null || amount?.decimals != null) ??
-    amounts.find((amount) => amount != null);
-  const seriesDescriptor =
-    descriptor ??
-    (descriptorAmount == null
-      ? getKnownAssetDescriptor(unit)
-      : descriptorFromAmount(descriptorAmount));
-  const chartDomain = domainIncludingZero(values, domain);
-
-  return history.map((bucket, index) => {
-    const metric = bucket.metrics[metricKey];
-    const amount = amounts[index];
-    const isUnknown = metric.completeness === 'partial' && amount == null;
-    const y = scaleReportChartY(values[index], chartDomain, dimensions);
-    return {
-      x:
-        history.length === 1 ? width / 2 : padding + (drawableWidth * index) / (history.length - 1),
-      y,
-      bucketStart: bucket.bucketStart,
-      bucketEnd: bucket.bucketEnd,
-      rawAmount: amount?.rawAmount ?? '0',
-      valueText: formatReportMetricValue(metric, unit, seriesDescriptor).text,
-      completeness: metric.completeness,
-      ...(isUnknown ? { isUnknown: true as const } : {}),
-    };
-  });
-}
-
-export function buildReportLinePath(points: readonly ReportChartCoordinate[]): string {
-  const commands: string[] = [];
-  let hasOpenLine = false;
-  for (const point of points) {
-    if (point.isUnknown) {
-      hasOpenLine = false;
-      continue;
-    }
-    commands.push(`${hasOpenLine ? 'L' : 'M'} ${point.x} ${point.y}`);
-    hasOpenLine = true;
-  }
-  return commands.join(' ');
 }
