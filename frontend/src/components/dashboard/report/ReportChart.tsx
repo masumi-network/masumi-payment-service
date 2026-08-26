@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import {
   Area,
   CartesianGrid,
@@ -11,6 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import { cn } from '@/lib/utils';
+import { InfoHint } from '@/components/ui/info-hint';
 import type { ReportMetricKey } from '@/lib/transaction-report/dashboard-metrics';
 import {
   decimateReportChartRows,
@@ -26,6 +27,8 @@ export type ReportChartSeries = Readonly<{
   /** `area` fills to the axis and reads as a headline. `line` overlays on top. */
   kind?: 'area' | 'line';
   dashed?: boolean;
+  /** Shown behind an info icon in the legend, for a series that needs one. */
+  hint?: ReactNode;
 }>;
 
 type ReportChartProps = Readonly<{
@@ -93,6 +96,7 @@ export function ReportChartLegend({ series }: Readonly<{ series: readonly Report
             }}
           />
           {entry.label}
+          {entry.hint && <InfoHint label={entry.label.toLowerCase()}>{entry.hint}</InfoHint>}
         </span>
       ))}
     </div>

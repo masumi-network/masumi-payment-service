@@ -56,8 +56,8 @@ import { Tabs } from '@/components/ui/tabs';
 // transactions) and what it earned. Stacking both in one scroll buried the
 // second, so each gets its own tab.
 const OVERVIEW_TAB = 'Overview';
-const MONEY_TAB = 'Money and fees';
-const DASHBOARD_TABS = [{ name: OVERVIEW_TAB }, { name: MONEY_TAB }];
+const FINANCES_TAB = 'Finances';
+const DASHBOARD_TABS = [{ name: OVERVIEW_TAB }, { name: FINANCES_TAB }];
 
 type AIAgent = RegistryEntry;
 
@@ -617,7 +617,7 @@ export default function Overview() {
               </>
             )}
 
-            {activeDashboardTab === MONEY_TAB && <FinancialReportSection />}
+            {activeDashboardTab === FINANCES_TAB && <FinancialReportSection />}
           </div>
         </AnimatedPage>
       </MainLayout>
