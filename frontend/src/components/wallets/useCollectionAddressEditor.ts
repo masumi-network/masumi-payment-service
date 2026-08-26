@@ -13,6 +13,20 @@ export function normalizeCollectionAddress(value: string): string | null {
   return value.trim() || null;
 }
 
+/**
+ * Says what an on-chain lookup proved about a collection address. A lookup that
+ * failed proves nothing, so it must never read as "this address is unused".
+ */
+export function describeCollectionAddressUsage(utxoCount: number | null): string | null {
+  if (utxoCount === null) {
+    return 'Could not check this collection address on chain, please verify it yourself';
+  }
+  if (utxoCount === 0) {
+    return 'Collection address has not been used yet, please check if this is the correct address';
+  }
+  return null;
+}
+
 export function resolveCollectionAddress(
   savedCollectionAddress: string | null | undefined,
   walletCollectionAddress: string | null | undefined,
@@ -59,17 +73,15 @@ export function useCollectionAddressEditor({
         return;
       }
 
-      let isAddressUnused = false;
+      let utxoCount: number | null = null;
       try {
-        const utxos = await fetchAllUtxos(apiClient, network, normalizedAddress);
-        isAddressUnused = utxos.length === 0;
+        utxoCount = (await fetchAllUtxos(apiClient, network, normalizedAddress)).length;
       } catch {
-        isAddressUnused = true;
+        // Leave the count unknown. A failed lookup is not evidence of an unused address.
       }
-      if (isAddressUnused) {
-        toast.warning(
-          'Collection address has not been used yet, please check if this is the correct address',
-        );
+      const usageWarning = describeCollectionAddressUsage(utxoCount);
+      if (usageWarning) {
+        toast.warning(usageWarning);
       }
     }
 
@@ -108,7 +120,14 @@ export function useCollectionAddressEditor({
     collectionAddress,
     draft,
     isEditing,
-    resetSavedCollectionAddress: () => setSavedCollectionAddress(undefined),
+    // A dialog that switches to another wallet must drop the whole editor, not
+    // just the saved value: a draft left over from the previous wallet would be
+    // saved onto the new one.
+    resetForNewWallet: () => {
+      setIsEditing(false);
+      setDraft('');
+      setSavedCollectionAddress(undefined);
+    },
     save,
     setDraft,
     startEdit,
