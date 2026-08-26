@@ -1,5 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { ROBOTS_TXT_ALLOW_ALL, robotsNoindex, serveRobotsTxt } from './index';
+import { robotsNoindex, serveRobotsTxt } from './index';
 
 describe('robotsNoindex', () => {
 	it('sets the noindex header and continues the chain', () => {
@@ -14,18 +14,15 @@ describe('robotsNoindex', () => {
 });
 
 describe('serveRobotsTxt', () => {
-	it('serves the allow-all robots policy as plain text', () => {
+	it('serves exactly the allow-all robots policy as plain text', () => {
 		const res = { type: jest.fn(), send: jest.fn() };
 		res.type.mockReturnValue(res as never);
 
 		serveRobotsTxt({} as never, res as never);
 
 		expect(res.type).toHaveBeenCalledWith('text/plain');
-		expect(res.send).toHaveBeenCalledWith(ROBOTS_TXT_ALLOW_ALL);
-	});
-
-	it('never disallows crawling, because a blocked crawler cannot see noindex', () => {
-		expect(ROBOTS_TXT_ALLOW_ALL).not.toMatch(/disallow/i);
-		expect(ROBOTS_TXT_ALLOW_ALL).toContain('User-agent: *');
+		// The literal is load-bearing: crawling must stay allowed, because a
+		// Disallow would hide the noindex header from crawlers.
+		expect(res.send).toHaveBeenCalledWith('User-agent: *\nAllow: /\n');
 	});
 });

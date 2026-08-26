@@ -5,13 +5,11 @@ import { Request, Response, NextFunction } from 'express';
 // honors noindex on a page it is permitted to fetch. A `Disallow: /` would
 // hide the directive from crawlers, and externally linked URLs could then
 // still appear in search results as URL-only stubs.
-export const ROBOTS_TXT_ALLOW_ALL = 'User-agent: *\nAllow: /\n';
-
 export const robotsNoindex = (_req: Request, res: Response, next: NextFunction) => {
 	res.setHeader('X-Robots-Tag', 'noindex, nofollow');
 	next();
 };
 
 export const serveRobotsTxt = (_req: Request, res: Response) => {
-	res.type('text/plain').send(ROBOTS_TXT_ALLOW_ALL);
+	res.type('text/plain').send('User-agent: *\nAllow: /\n');
 };

@@ -85,7 +85,10 @@ export function proxyHttp(
 			headers: forwardableHeaders(request.headers),
 		},
 		(upstreamResponse) => {
-			response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+			// A same-name upstream header would beat the handler's setHeader in
+			// writeHead's merge, so strip it to keep the noindex stamp authoritative.
+			const { 'x-robots-tag': _upstreamRobots, ...headers } = upstreamResponse.headers;
+			response.writeHead(upstreamResponse.statusCode ?? 502, headers);
 			// Streamed, never collected.
 			upstreamResponse.pipe(response);
 		},

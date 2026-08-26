@@ -148,9 +148,17 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	const failuresInWindow = new Map<string, number>();
 
 	const server = createServer((request, response) => {
-		// Same search-engine exclusion as the control plane: setHeader survives
-		// the later writeHead calls, so one line covers every response.
+		// Same search-engine exclusion as the control plane (see server.ts).
 		response.setHeader('X-Robots-Tag', 'noindex, nofollow');
+		// Answer robots.txt ahead of the limiter: Google treats a 429/5xx
+		// robots.txt as a temporary full crawl block, which would hide the
+		// noindex header from crawlers while the plane is saturated.
+		const pathname = new URL(request.url ?? '/', 'http://exchange.invalid').pathname.replace(/\/+$/, '');
+		if ((request.method === 'GET' || request.method === 'HEAD') && pathname === '/robots.txt') {
+			response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+			response.end(request.method === 'HEAD' ? undefined : 'User-agent: *\nAllow: /\n');
+			return;
+		}
 		const now = Date.now();
 		if (now - requestWindowStartedAt >= 60_000) {
 			requestWindowStartedAt = now;

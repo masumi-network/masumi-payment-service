@@ -77,6 +77,19 @@ async function issue(nonce: string, ttlMs = 60_000) {
 	});
 }
 
+describe('search-engine exclusion', () => {
+	it('stamps noindex on responses and serves an allow-all robots.txt', async () => {
+		const rejected = await fetch(`${base}/exchange/redeem`, { headers: { Connection: 'close' } });
+		expect(rejected.status).toBe(405);
+		expect(rejected.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+
+		const robots = await fetch(`${base}/robots.txt`, { headers: { Connection: 'close' } });
+		expect(robots.status).toBe(200);
+		expect(robots.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+		expect(await robots.text()).toBe('User-agent: *\nAllow: /\n');
+	});
+});
+
 describe('redeeming an invite', () => {
 	it('accepts a redemption for an invite this host issued', async () => {
 		await issue('nonce-aaaaaaaa');

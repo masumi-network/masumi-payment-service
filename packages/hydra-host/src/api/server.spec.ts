@@ -156,8 +156,12 @@ describe('the landing page and browser 404', () => {
 		expect(landing.headers.get('x-content-type-options')).toBe('nosniff');
 		expect(landing.headers.get('x-frame-options')).toBe('DENY');
 		expect(landing.headers.get('referrer-policy')).toBe('no-referrer');
+		expect(landing.headers.get('x-robots-tag')).toBe('noindex, nofollow');
 		const spec = await fetch(`${baseUrl}/openapi.json`);
 		expect(spec.headers.get('x-content-type-options')).toBe('nosniff');
+		expect(spec.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+		const docs = await fetch(`${baseUrl}/docs`);
+		expect(docs.headers.get('x-robots-tag')).toBe('noindex, nofollow');
 	});
 
 	it('does not disclose the network on the unauthenticated surface', async () => {
