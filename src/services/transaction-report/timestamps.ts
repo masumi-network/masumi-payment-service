@@ -1,4 +1,4 @@
-import { feeShareForPaymentKey, isSharedFee } from './fee-split';
+import { feeShareForPaymentKey } from './fee-split';
 import type { ReportOnChainState, RevenueMode } from './metrics';
 
 export type ReportTransactionEvent = Readonly<{
@@ -197,10 +197,10 @@ export function sumPerRequestConfirmedTransactionFees(
 	) {
 		return { amount: null, completeness: 'partial' };
 	}
-	// One transaction can settle several requests. The chain records no split,
-	// so this request takes an equal share of such a fee and the figure is
-	// reported as partial to mark it an estimate. See ./fee-split.
-	let isEstimated = false;
+	// One transaction can settle several requests. Such a fee is divided into
+	// equal parts, one per request, and the parts add back up to the fee
+	// exactly. A part is this request's fee, so it is reported the same way a
+	// fee of its own would be. See ./fee-split.
 	let total = 0n;
 	for (const transaction of confirmedTransactions) {
 		const fee = transaction.fees!;
@@ -216,10 +216,9 @@ export function sumPerRequestConfirmedTransactionFees(
 		const paymentKeys = transaction.relatedPaymentKeys ?? [];
 		const share = feeShareForPaymentKey(fee, paymentKeys, currentPaymentKey);
 		if (share == null) return { amount: null, completeness: 'partial' };
-		if (isSharedFee(paymentKeys)) isEstimated = true;
 		total += share;
 	}
-	return { amount: total, completeness: isEstimated ? 'partial' : 'complete' };
+	return { amount: total, completeness: 'complete' };
 }
 
 export function getReportTimestamps(input: {

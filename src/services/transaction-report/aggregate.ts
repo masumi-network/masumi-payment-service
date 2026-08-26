@@ -736,28 +736,6 @@ export function aggregateReportRows(
 	}
 
 	const warnings: ReportWarning[] = [];
-	const detailRowCountsByPayment = new Map<string, number>();
-	for (const [index, row] of rows.entries()) {
-		runReportCheckpoint(index, checkpoint);
-		detailRowCountsByPayment.set(
-			row.blockchainIdentifier,
-			(detailRowCountsByPayment.get(row.blockchainIdentifier) ?? 0) + 1,
-		);
-	}
-	if (
-		global.fees.components.some(
-			(component) =>
-				component.paymentKeys.length > 1 ||
-				component.paymentKeys.some((key) => (detailRowCountsByPayment.get(key) ?? 0) > 1),
-		)
-	) {
-		warnings.push({
-			code: 'SHARED_CARDANO_FEE_COMPONENT_ALLOCATION',
-			message:
-				'Shared Cardano fee components use one stable request owner for reconciliation. This is not economic wallet attribution.',
-			rowId: null,
-		});
-	}
 	const hasActorFeeAllocation = rows.some((row) => row.actorCardanoFeeAllocation.completeness === 'partial');
 	if (hasActorFeeAllocation) {
 		warnings.push({

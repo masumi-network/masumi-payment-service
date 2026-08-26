@@ -328,7 +328,7 @@ describe('transaction history completeness', () => {
 		).toEqual({ amount: 0n, completeness: 'complete' });
 	});
 
-	it('takes an equal share of a fee that settled three requests, marked as an estimate', () => {
+	it('takes an equal share of a fee that settled three requests, and calls it exact', () => {
 		expect(
 			sumPerRequestConfirmedTransactionFees(
 				[event({ fees: 300_000n, relatedPaymentKeys: ['chain-1', 'chain-2', 'chain-3'] })],
@@ -336,7 +336,7 @@ describe('transaction history completeness', () => {
 				undefined,
 				'chain-1',
 			),
-		).toEqual({ amount: 100_000n, completeness: 'partial' });
+		).toEqual({ amount: 100_000n, completeness: 'complete' });
 	});
 
 	it('keeps a fee that settled one request exact', () => {
@@ -350,7 +350,7 @@ describe('transaction history completeness', () => {
 		).toEqual({ amount: 300_000n, completeness: 'complete' });
 	});
 
-	it('adds an exact fee and a shared one, and reports the sum as an estimate', () => {
+	it('adds a fee of its own and a share of a batched one', () => {
 		expect(
 			sumPerRequestConfirmedTransactionFees(
 				[
@@ -361,7 +361,8 @@ describe('transaction history completeness', () => {
 				undefined,
 				'chain-1',
 			),
-		).toEqual({ amount: 100_000n, completeness: 'partial' });
+			// 50000 of its own plus half of 100000. Both parts are exact.
+		).toEqual({ amount: 100_000n, completeness: 'complete' });
 	});
 
 	it('cannot share a fee when the list of settled requests is incomplete', () => {
