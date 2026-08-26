@@ -30,6 +30,7 @@ import {
 	deriveHydraVerificationKeyCborHex,
 	HydraHeadInitObservationError,
 	normalizeHydraVerificationKeyCborHex,
+	resolveHydraInitChainAnchor,
 	verifyHydraHeadInitOnChain,
 } from '@/lib/hydra';
 import { toPrismaJsonValue } from '@/utils/json-value';
@@ -361,8 +362,9 @@ export async function verifyPersistedHydraHeadOnChain(
 		}
 	}
 
+	const observer = getBlockfrostInstance(head.HydraRelation.network, rpcProviderApiKey);
 	const verified = await verifyHydraHeadInitOnChain({
-		observer: getBlockfrostInstance(head.HydraRelation.network, rpcProviderApiKey),
+		observer,
 		headId: head.headIdentifier,
 		expectedVerificationKeys: [localVerificationKey, remoteVerificationKey],
 		// On-chain participant tokens are minted for each node's OWN Cardano key,
@@ -374,6 +376,10 @@ export async function verifyPersistedHydraHeadOnChain(
 	if (options.persist === false) {
 		return { headIdentifier: head.headIdentifier, initTxHash: verified.initTxHash };
 	}
+	// The anchor rides the same L1 evidence pass as initTxHash: a failure here
+	// throws like any other observation error and the caller (backfill,
+	// lifecycle) retries the whole verification on its next cycle.
+	const anchor = await resolveHydraInitChainAnchor(observer, verified.initTxHash);
 	const persisted = await prisma.hydraHead.updateMany({
 		where: {
 			id: head.id,
@@ -381,7 +387,10 @@ export async function verifyPersistedHydraHeadOnChain(
 			headIdentifier: head.headIdentifier,
 			contestationPeriod: head.contestationPeriod,
 		},
-		data: { initTxHash: verified.initTxHash },
+		data: {
+			initTxHash: verified.initTxHash,
+			...(anchor ? { initChainSlot: anchor.slot, initChainHash: anchor.hash } : {}),
+		},
 	});
 	if (persisted.count !== 1) throw createHttpError(409, 'Hydra head changed during on-chain verification');
 	return { headIdentifier: head.headIdentifier, initTxHash: verified.initTxHash };

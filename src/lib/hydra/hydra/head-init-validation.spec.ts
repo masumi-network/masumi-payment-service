@@ -15,6 +15,7 @@ import {
 	DEFAULT_HYDRA_HEAD_SCRIPT_HASH,
 	HYDRA_HEAD_V2_ASSET_NAME_HEX,
 	HydraHeadInitObservationError,
+	resolveHydraInitChainAnchor,
 	verifyHydraHeadInitOnChain,
 	type HydraHeadChainObserver,
 } from './head-init-validation';
@@ -211,5 +212,62 @@ describe('verifyHydraHeadInitOnChain', () => {
 				contestationPeriodSeconds: CONTESTATION_SECONDS,
 			}),
 		).rejects.toThrow('participant tokens');
+	});
+});
+
+describe('resolveHydraInitChainAnchor', () => {
+	const INIT_BLOCK = 'aa'.repeat(32);
+	const PARENT_BLOCK = 'bb'.repeat(32);
+
+	function anchorObserver(overrides?: {
+		block?: string | null;
+		previousBlock?: string | null;
+		parentSlot?: number | null;
+	}) {
+		return {
+			txs: jest.fn(async (_hash: string) => ({ block: overrides?.block === undefined ? INIT_BLOCK : overrides.block })),
+			blocks: jest.fn(async (hashOrNumber: string) =>
+				hashOrNumber === INIT_BLOCK
+					? {
+							hash: INIT_BLOCK,
+							slot: 500,
+							previous_block: overrides?.previousBlock === undefined ? PARENT_BLOCK : overrides.previousBlock,
+						}
+					: {
+							hash: PARENT_BLOCK,
+							slot: overrides?.parentSlot === undefined ? 499 : overrides.parentSlot,
+							previous_block: 'cc'.repeat(32),
+						},
+			),
+		};
+	}
+
+	it('returns the parent block point of the InitTx block', async () => {
+		const observer = anchorObserver();
+		await expect(resolveHydraInitChainAnchor(observer, INIT_TX_HASH)).resolves.toEqual({
+			slot: 499n,
+			hash: PARENT_BLOCK,
+		});
+		expect(observer.txs).toHaveBeenCalledWith(INIT_TX_HASH);
+		expect(observer.blocks).toHaveBeenNthCalledWith(1, INIT_BLOCK);
+		expect(observer.blocks).toHaveBeenNthCalledWith(2, PARENT_BLOCK);
+	});
+
+	it('returns null when the InitTx has no block yet', async () => {
+		await expect(resolveHydraInitChainAnchor(anchorObserver({ block: null }), INIT_TX_HASH)).resolves.toBeNull();
+	});
+
+	it('returns null when the InitTx block has no previous block', async () => {
+		await expect(
+			resolveHydraInitChainAnchor(anchorObserver({ previousBlock: null }), INIT_TX_HASH),
+		).resolves.toBeNull();
+	});
+
+	it('returns null when the parent block has no slot', async () => {
+		await expect(resolveHydraInitChainAnchor(anchorObserver({ parentSlot: null }), INIT_TX_HASH)).resolves.toBeNull();
+	});
+
+	it('rejects a non-canonical InitTx hash', async () => {
+		await expect(resolveHydraInitChainAnchor(anchorObserver(), 'zz')).rejects.toThrow('not canonical hexadecimal');
 	});
 });
