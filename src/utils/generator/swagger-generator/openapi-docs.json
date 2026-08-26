@@ -39021,6 +39021,10 @@
                                                                             "unit": {
                                                                                 "type": "string"
                                                                             },
+                                                                            "coinId": {
+                                                                                "type": "string",
+                                                                                "nullable": true
+                                                                            },
                                                                             "rate": {
                                                                                 "type": "string"
                                                                             },
@@ -39030,14 +39034,58 @@
                                                                                     "supplied",
                                                                                     "coingecko"
                                                                                 ]
+                                                                            },
+                                                                            "provenance": {
+                                                                                "type": "object",
+                                                                                "nullable": true,
+                                                                                "properties": {
+                                                                                    "cadence": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                            "daily"
+                                                                                        ]
+                                                                                    },
+                                                                                    "sampleCount": {
+                                                                                        "type": "integer",
+                                                                                        "minimum": 0
+                                                                                    },
+                                                                                    "requestedDayCount": {
+                                                                                        "type": "integer",
+                                                                                        "minimum": 0
+                                                                                    },
+                                                                                    "firstSampleAt": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "lastSampleAt": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "currency": {
+                                                                                        "type": "string"
+                                                                                    }
+                                                                                },
+                                                                                "required": [
+                                                                                    "cadence",
+                                                                                    "sampleCount",
+                                                                                    "requestedDayCount",
+                                                                                    "firstSampleAt",
+                                                                                    "lastSampleAt",
+                                                                                    "currency"
+                                                                                ]
                                                                             }
                                                                         },
                                                                         "required": [
                                                                             "unit",
+                                                                            "coinId",
                                                                             "rate",
-                                                                            "source"
+                                                                            "source",
+                                                                            "provenance"
                                                                         ]
                                                                     }
+                                                                },
+                                                                "fetchedAt": {
+                                                                    "type": "string",
+                                                                    "nullable": true,
+                                                                    "format": "date-time"
                                                                 }
                                                             },
                                                             "required": [
@@ -39049,7 +39097,8 @@
                                                                 "demoHistoryDays",
                                                                 "completeness",
                                                                 "unpricedUnits",
-                                                                "rates"
+                                                                "rates",
+                                                                "fetchedAt"
                                                             ]
                                                         },
                                                         "warnings": {
@@ -41900,6 +41949,10 @@
                                                                             "unit": {
                                                                                 "type": "string"
                                                                             },
+                                                                            "coinId": {
+                                                                                "type": "string",
+                                                                                "nullable": true
+                                                                            },
                                                                             "rate": {
                                                                                 "type": "string"
                                                                             },
@@ -41909,14 +41962,58 @@
                                                                                     "supplied",
                                                                                     "coingecko"
                                                                                 ]
+                                                                            },
+                                                                            "provenance": {
+                                                                                "type": "object",
+                                                                                "nullable": true,
+                                                                                "properties": {
+                                                                                    "cadence": {
+                                                                                        "type": "string",
+                                                                                        "enum": [
+                                                                                            "daily"
+                                                                                        ]
+                                                                                    },
+                                                                                    "sampleCount": {
+                                                                                        "type": "integer",
+                                                                                        "minimum": 0
+                                                                                    },
+                                                                                    "requestedDayCount": {
+                                                                                        "type": "integer",
+                                                                                        "minimum": 0
+                                                                                    },
+                                                                                    "firstSampleAt": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "lastSampleAt": {
+                                                                                        "type": "string"
+                                                                                    },
+                                                                                    "currency": {
+                                                                                        "type": "string"
+                                                                                    }
+                                                                                },
+                                                                                "required": [
+                                                                                    "cadence",
+                                                                                    "sampleCount",
+                                                                                    "requestedDayCount",
+                                                                                    "firstSampleAt",
+                                                                                    "lastSampleAt",
+                                                                                    "currency"
+                                                                                ]
                                                                             }
                                                                         },
                                                                         "required": [
                                                                             "unit",
+                                                                            "coinId",
                                                                             "rate",
-                                                                            "source"
+                                                                            "source",
+                                                                            "provenance"
                                                                         ]
                                                                     }
+                                                                },
+                                                                "fetchedAt": {
+                                                                    "type": "string",
+                                                                    "nullable": true,
+                                                                    "format": "date-time"
                                                                 }
                                                             },
                                                             "required": [
@@ -41928,7 +42025,8 @@
                                                                 "demoHistoryDays",
                                                                 "completeness",
                                                                 "unpricedUnits",
-                                                                "rates"
+                                                                "rates",
+                                                                "fetchedAt"
                                                             ]
                                                         },
                                                         "warnings": {
