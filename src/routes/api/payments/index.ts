@@ -30,8 +30,7 @@ import { forceLayerApiToTransactionLayer } from '@/utils/logic/force-layer';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
-import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
-import { buildNeedsManualActionFilter } from '@/utils/shared/queries';
+import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
 	createPaymentSchemaOutput,
 	createPaymentsSchemaInput,
@@ -41,7 +40,7 @@ import {
 	queryPaymentsSchemaInput,
 	queryPaymentsSchemaOutput,
 } from './schemas';
-import { getPaymentsForQuery, resolvePaymentPaymentSourceTypeFilter } from './queries';
+import { buildPaymentListWhere, getPaymentsForQuery } from './queries';
 import { serializePaymentsResponse } from './serializers';
 import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
 
@@ -78,16 +77,7 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const total = await prisma.paymentRequest.count({
-			where: {
-				PaymentSource: {
-					network: input.network,
-					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
-					deletedAt: null,
-				},
-				...buildWalletScopeFilter(ctx.walletScopeIds),
-				...buildNeedsManualActionFilter(input.filterNeedsManualAction),
-			},
+			where: buildPaymentListWhere(input, ctx.walletScopeIds),
 		});
 
 		return {

@@ -11,6 +11,7 @@ import {
 } from '@/generated/prisma/client';
 import { z } from '@masumi/payment-core/zod';
 import { isCardanoAddressForNetwork } from '@/types/payment-source';
+import { agentIdentifierFilterSchema, searchQuerySchema } from '@/routes/api/shared/transaction-query-params';
 import { FORCE_LAYER_API_VALUES } from '@/utils/logic/force-layer';
 
 const paymentTimeSchema = ez.dateIn();
@@ -43,10 +44,8 @@ export const queryPaymentsSchemaInput = z.object({
 		.describe(
 			'When true, only returns payments that require manual resolution: the next action is WaitingForManualAction or an error was recorded on it',
 		),
-	searchQuery: z
-		.string()
-		.optional()
-		.describe('Search query to filter by ID, hash, agent name, state, network, wallet address, or amount'),
+	filterAgentIdentifier: agentIdentifierFilterSchema,
+	searchQuery: searchQuerySchema,
 	includeHistory: z
 		.string()
 		.default('false')
@@ -77,6 +76,9 @@ export const queryPaymentCountSchemaInput = z.object({
 		.describe(
 			'Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility.',
 		),
+	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
+	filterAgentIdentifier: agentIdentifierFilterSchema,
+	searchQuery: searchQuerySchema,
 });
 
 export const queryPaymentCountSchemaOutput = z.object({
