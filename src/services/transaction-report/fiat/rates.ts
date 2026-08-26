@@ -30,6 +30,23 @@ export type FiatRowRates = ReadonlyArray<Readonly<{ unit: string; rate: string; 
 
 export type FiatRateLookup = Readonly<{ rate: string; source: FiatRateSource }> | null;
 
+/**
+ * How a bucket average was produced, so a reader can redo the arithmetic.
+ *
+ * A rate date alone cannot identify the observations behind an average: the
+ * series may have gaps, and CoinGecko changes its own cadence with the length
+ * of the range asked for. Recording the samples that existed against the days
+ * the range asked for is what makes partial coverage visible.
+ */
+export type FiatRateProvenance = Readonly<{
+	cadence: 'daily';
+	sampleCount: number;
+	requestedDayCount: number;
+	firstSampleAt: string;
+	lastSampleAt: string;
+	currency: string;
+}>;
+
 /** Rate precision. Prices below a cent still have to survive the round trip. */
 const RATE_DECIMALS = 12;
 
@@ -123,6 +140,12 @@ export type FiatRateTable = Readonly<{
 	currency: string;
 	mode: FiatRateMode;
 	rateFor: (unit: string, context: FiatRateContext) => FiatRateLookup;
+	/**
+	 * The observations behind a bucket average, or null when the rate did not
+	 * come from an averaged series. A caller-supplied rate carries no provider
+	 * observations, and a single-instant lookup averages nothing.
+	 */
+	provenanceFor: (unit: string, context: FiatRateContext) => FiatRateProvenance | null;
 }>;
 
 export function createFiatRateTable(input: {
@@ -162,6 +185,23 @@ export function createFiatRateTable(input: {
 		return mean == null ? null : { rate: mean, source: 'coingecko' };
 	}
 
+	function seriesProvenance(unit: string, context: FiatRateContext): FiatRateProvenance | null {
+		if ('at' in context) return null;
+		const series = daily.get(unit);
+		if (series == null) return null;
+		const requestedDays = eachUtcDay(context.from, context.to);
+		const sampledDays = requestedDays.filter((day) => series.get(day) != null);
+		if (sampledDays.length === 0) return null;
+		return {
+			cadence: 'daily',
+			sampleCount: sampledDays.length,
+			requestedDayCount: requestedDays.length,
+			firstSampleAt: sampledDays[0],
+			lastSampleAt: sampledDays[sampledDays.length - 1],
+			currency: input.currency,
+		};
+	}
+
 	return {
 		currency: input.currency,
 		mode: input.mode,
@@ -169,6 +209,12 @@ export function createFiatRateTable(input: {
 			const unit = normalizeAssetUnit(rawUnit);
 			const day = 'at' in context ? context.at : context.from;
 			return suppliedRate(unit, day) ?? seriesRate(unit, context);
+		},
+		provenanceFor(rawUnit, context) {
+			const unit = normalizeAssetUnit(rawUnit);
+			const day = 'at' in context ? context.at : context.from;
+			if (suppliedRate(unit, day) != null) return null;
+			return seriesProvenance(unit, context);
 		},
 	};
 }

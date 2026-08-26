@@ -10,7 +10,13 @@ import {
 	isFiatRateProviderConfigured,
 	isFiatRateProviderDemo,
 } from './coingecko';
-import { createFiatRateTable, type FiatPricePoint, type FiatRateMode, type SuppliedFiatRate } from './rates';
+import {
+	createFiatRateTable,
+	type FiatPricePoint,
+	type FiatRateMode,
+	type FiatRateProvenance,
+	type SuppliedFiatRate,
+} from './rates';
 
 export {
 	assertPriceableRange,
@@ -19,7 +25,7 @@ export {
 	isFiatRateProviderConfigured,
 	isFiatRateProviderDemo,
 } from './coingecko';
-export type { FiatRateMode } from './rates';
+export type { FiatRateMode, FiatRateProvenance } from './rates';
 
 export const COINGECKO_ATTRIBUTION = 'Exchange rates by CoinGecko';
 
@@ -27,6 +33,16 @@ export type ReportFiatInput = Readonly<{
 	currency: string;
 	mode: FiatRateMode;
 	suppliedRates?: readonly SuppliedFiatRate[];
+}>;
+
+/** One asset's bucket rate, with everything needed to reproduce it. */
+export type ReportFiatRate = Readonly<{
+	unit: string;
+	/** The CoinGecko coin the rate was read from, or null for a supplied rate. */
+	coinId: string | null;
+	rate: string;
+	source: 'supplied' | 'coingecko';
+	provenance: FiatRateProvenance | null;
 }>;
 
 export type ReportFiatMetadata = Readonly<{
@@ -44,7 +60,9 @@ export type ReportFiatMetadata = Readonly<{
 	 * report. Under AccountingDate each request has its own rate, so a single
 	 * report-wide rate would be a fiction; those rates sit on the rows instead.
 	 */
-	rates: Array<{ unit: string; rate: string; source: 'supplied' | 'coingecko' }> | null;
+	rates: ReportFiatRate[] | null;
+	/** When the provider answered, or null when no provider call was made. */
+	fetchedAt: Date | null;
 }>;
 
 function collectReportUnits(rows: readonly ReportRow[]): string[] {
@@ -81,6 +99,7 @@ export async function applyReportFiat(
 				daily: new Map<string, Map<string, string>>(),
 				points: new Map<string, FiatPricePoint[]>(),
 				unsupportedUnits: [] as readonly string[],
+				fetchedAt: null as Date | null,
 			};
 
 	const table = createFiatRateTable({
@@ -105,10 +124,20 @@ export async function applyReportFiat(
 			rates:
 				fiat.mode === 'PeriodAverage'
 					? reportUnits
-							.map((unit) => table.rateFor(unit, window))
-							.map((lookup, index) => (lookup == null ? null : { unit: reportUnits[index], ...lookup }))
+							.map((unit) => {
+								const lookup = table.rateFor(unit, window);
+								if (lookup == null) return null;
+								return {
+									unit,
+									coinId: lookup.source === 'coingecko' ? getCoinId(unit) : null,
+									rate: lookup.rate,
+									source: lookup.source,
+									provenance: table.provenanceFor(unit, window),
+								};
+							})
 							.filter((rate): rate is NonNullable<typeof rate> => rate != null)
 					: null,
+			fetchedAt: fetched.fetchedAt,
 			completeness: applied.missingUnits.length > 0 ? 'partial' : 'complete',
 			unpricedUnits: [...applied.missingUnits],
 		},

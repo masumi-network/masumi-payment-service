@@ -54,6 +54,48 @@ describe('fiat daily rates', () => {
 		).toEqual({ rate: '0.500000000000', source: 'coingecko' });
 	});
 
+	it('reports the observations behind a bucket average', () => {
+		const table = dailyTable({ '2026-08-01': '0.400000000000', '2026-08-02': '0.600000000000' }, 'PeriodAverage');
+		expect(
+			table.provenanceFor(ADA, { from: new Date('2026-08-01T00:00:00Z'), to: new Date('2026-08-03T00:00:00Z') }),
+		).toEqual({
+			cadence: 'daily',
+			sampleCount: 2,
+			requestedDayCount: 2,
+			firstSampleAt: '2026-08-01',
+			lastSampleAt: '2026-08-02',
+			currency: 'usd',
+		});
+	});
+
+	it('shows partial coverage by counting samples against the days asked for', () => {
+		const table = dailyTable({ '2026-08-01': '0.400000000000', '2026-08-03': '0.600000000000' }, 'PeriodAverage');
+		const provenance = table.provenanceFor(ADA, {
+			from: new Date('2026-08-01T00:00:00Z'),
+			to: new Date('2026-08-04T00:00:00Z'),
+		});
+		expect(provenance?.sampleCount).toBe(2);
+		expect(provenance?.requestedDayCount).toBe(3);
+		expect(provenance?.lastSampleAt).toBe('2026-08-03');
+	});
+
+	it('has no provenance for a single-instant rate, because an instant averages nothing', () => {
+		const table = dailyTable({ '2026-08-01': '0.500000000000' });
+		expect(table.provenanceFor(ADA, { at: new Date('2026-08-01T09:00:00Z') })).toBeNull();
+	});
+
+	it('has no provenance for a caller-supplied rate, because it carries no provider samples', () => {
+		const table = createFiatRateTable({
+			currency: 'usd',
+			mode: 'PeriodAverage',
+			supplied: [{ unit: ADA, rate: '0.900000000000' }],
+			daily: new Map([[ADA, new Map([['2026-08-01', '0.400000000000']])]]),
+		});
+		const window = { from: new Date('2026-08-01T00:00:00Z'), to: new Date('2026-08-02T00:00:00Z') };
+		expect(table.rateFor(ADA, window)).toEqual({ rate: '0.900000000000', source: 'supplied' });
+		expect(table.provenanceFor(ADA, window)).toBeNull();
+	});
+
 	it('prefers a caller-supplied rate over the fetched series', () => {
 		const table = createFiatRateTable({
 			currency: 'usd',
