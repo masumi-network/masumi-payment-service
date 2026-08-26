@@ -31,6 +31,7 @@ import {
 import { aggregateReportRows, serializeReportAggregateResult } from './aggregate';
 import { assignCompleteReportFeeReconciliation } from './aggregate-fees';
 import { createReportLoadBudget, type ReportLoadBudgetLimits } from './load-budget';
+import { applyReportFiat, describeReportFiatCapability, type ReportFiatMetadata } from './fiat';
 
 const REPORT_AGGREGATE_PAGE_SIZE = 100;
 const REPORT_MAX_AGGREGATE_ROWS = 50_000;
@@ -66,10 +67,26 @@ function unique<T>(values: readonly T[]): T[] {
 	return Array.from(new Set(values));
 }
 
-function rejectUnsupportedFiat(input: ReportFilterInput): void {
-	if (input.fiat != null) {
-		throw createHttpError(501, 'Fiat conversion is not available for transaction reports yet');
-	}
+const UNPRICED_ASSET_WARNING_CODE = 'REPORT_FIAT_UNPRICED_ASSET';
+
+/**
+ * Converts a report's money into the requested currency, when one was asked
+ * for. Rows come back untouched, and metadata null, when no currency was set.
+ */
+async function convertReportFiat(rows: ReportRow[], input: ReportFilterInput) {
+	if (input.fiat == null) return { rows, fiat: null, warnings: [] as ReportWarning[] };
+	const converted = await applyReportFiat(rows, input.fiat, { from: input.from, to: input.to }, input.dateBasis);
+	const warnings: ReportWarning[] =
+		converted.metadata.completeness === 'complete'
+			? []
+			: [
+					{
+						code: UNPRICED_ASSET_WARNING_CODE,
+						message: `No ${input.fiat.currency.toUpperCase()} rate was found for ${converted.metadata.unpricedUnits.join(', ')}. Figures holding those assets carry no converted value.`,
+						rowId: null,
+					},
+				];
+	return { rows: converted.rows, fiat: converted.metadata, warnings };
 }
 
 function paymentSourceMetadata(source: ReportSource, snapshot?: ReportCursorSnapshot | null) {
@@ -191,12 +208,14 @@ function reportMetadata(
 	asOf: Date,
 	warnings: ReportWarning[],
 	snapshot?: ReportCursorSnapshot | null,
+	fiat: ReportFiatMetadata | null = null,
 ) {
 	return {
 		generatedAt: new Date(),
 		asOf,
 		paymentSource: paymentSourceMetadata(source, snapshot),
 		filters: normalizedFilterMetadata(input, authorizedManagedWalletIds),
+		fiat,
 		warnings,
 	};
 }
@@ -214,6 +233,7 @@ export async function getReportFacets(ctx: AuthContext, signal?: AbortSignal) {
 	const facets = await listAccessibleReportFacets(ctx);
 	assertReportActive(signal);
 	return {
+		fiat: describeReportFiatCapability(),
 		paymentSources: facets.paymentSources.map((source) => paymentSourceMetadata(source)),
 		managedWallets: facets.managedWallets.map((wallet) => {
 			if (wallet.type !== HotWalletType.Selling && wallet.type !== HotWalletType.Purchasing) {
@@ -236,7 +256,6 @@ export async function getReportFacets(ctx: AuthContext, signal?: AbortSignal) {
 export async function getTransactionsReport(input: ReportTransactionsInput, ctx: AuthContext, signal?: AbortSignal) {
 	const deadline = Date.now() + REPORT_PAGE_DEADLINE_MS;
 	assertReportActive(signal, deadline);
-	rejectUnsupportedFiat(input);
 	const decodedCursor = decodeReportCursor(input.cursor);
 	if (decodedCursor.snapshot != null && decodedCursor.snapshot.paymentSourceId !== input.paymentSourceId) {
 		throw createHttpError(400, 'Report cursor does not match the requested filters');
@@ -279,15 +298,18 @@ export async function getTransactionsReport(input: ReportTransactionsInput, ctx:
 		() => assertReportActive(signal, deadline),
 	);
 	const feeContextRowsByRequest = new Map(feeContextRows.map((row) => [`${row.requestType}:${row.id}`, row] as const));
-	const rows: ReportRow[] = [];
+	const pageRows: ReportRow[] = [];
 	for (const record of page.records) {
 		assertReportActive(signal, deadline);
 		const row = feeContextRowsByRequest.get(`${record.requestType}:${record.id}`);
 		if (row == null) throw createHttpError(500, 'Report fee context omitted a requested row');
-		rows.push(row);
+		pageRows.push(row);
 	}
 	assertReportActive(signal, deadline);
-	const warnings = rows.flatMap(getReportRowWarnings);
+	const converted = await convertReportFiat(pageRows, input);
+	const rows = converted.rows;
+	assertReportActive(signal, deadline);
+	const warnings = [...rows.flatMap(getReportRowWarnings), ...converted.warnings];
 	if (input.cursor != null || page.nextCursor != null) warnings.push(PAGINATED_SNAPSHOT_WARNING);
 	return {
 		rows: rows.map(serializeReportRow),
@@ -295,7 +317,15 @@ export async function getTransactionsReport(input: ReportTransactionsInput, ctx:
 			nextCursor: page.nextCursor == null ? null : encodeReportCursor({ positions: page.nextCursor, snapshot }),
 			hasMore: page.nextCursor != null,
 		},
-		metadata: reportMetadata(input, request.source, request.authorizedManagedWalletIds, asOf, warnings, snapshot),
+		metadata: reportMetadata(
+			input,
+			request.source,
+			request.authorizedManagedWalletIds,
+			asOf,
+			warnings,
+			snapshot,
+			converted.fiat,
+		),
 	};
 }
 
@@ -365,9 +395,8 @@ export async function loadAllReportRows(
 
 async function loadCompleteReportData(input: ReportSummaryInput, ctx: AuthContext, signal?: AbortSignal) {
 	assertReportActive(signal);
-	rejectUnsupportedFiat(input);
 	const deadline = Date.now() + REPORT_AGGREGATE_TIMEOUT_MS;
-	const { request, rows } = await runReportTransaction(async (transaction) => {
+	const { request, rows: loadedRows } = await runReportTransaction(async (transaction) => {
 		assertReportActive(signal, deadline);
 		const transactionAsOf = await getReportSnapshotTime(transaction);
 		const request = await resolveReportRequest(ctx, input, transactionAsOf, null, transaction);
@@ -382,6 +411,9 @@ async function loadCompleteReportData(input: ReportSummaryInput, ctx: AuthContex
 		return { request, rows };
 	}, REPORT_SUMMARY_TRANSACTION_TIMEOUT_MS);
 	assertReportActive(signal, deadline);
+	const converted = await convertReportFiat(loadedRows, input);
+	const rows = converted.rows;
+	assertReportActive(signal, deadline);
 	const aggregate = aggregateReportRows(rows, input.bucket, input.timeZone, input.from, input.to, input.dateBasis, () =>
 		assertReportActive(signal, deadline),
 	);
@@ -391,12 +423,20 @@ async function loadCompleteReportData(input: ReportSummaryInput, ctx: AuthContex
 		assertReportActive(signal, deadline);
 		rowWarnings.push(...getReportRowWarnings(row));
 	}
-	const warnings = summarizeWarnings([...rowWarnings, ...aggregate.warnings]);
+	const warnings = summarizeWarnings([...rowWarnings, ...aggregate.warnings, ...converted.warnings]);
 	assertReportActive(signal, deadline);
 	return {
 		rows,
 		aggregate,
-		metadata: reportMetadata(input, request.source, request.authorizedManagedWalletIds, request.asOf, warnings),
+		metadata: reportMetadata(
+			input,
+			request.source,
+			request.authorizedManagedWalletIds,
+			request.asOf,
+			warnings,
+			null,
+			converted.fiat,
+		),
 		deadline,
 	};
 }
