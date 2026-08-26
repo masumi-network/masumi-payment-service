@@ -31,6 +31,10 @@ const reportEndpointFactory = readAuthenticatedEndpointFactory
 	.addMiddleware(reportAbortMiddleware)
 	.addMiddleware(reportConcurrencyMiddleware);
 const reportExportEndpointFactory = readAuthenticatedReportExportEndpointFactory
+	// Export errors are JSON like the data endpoints and depend on the token, so
+	// they need the same Cache-Control and Vary. The success path sets its own
+	// no-store, but only after this middleware has already covered the failures.
+	.addMiddleware(privateReportResponseMiddleware)
 	.addMiddleware(reportExportRateLimitMiddleware)
 	.addMiddleware(reportAbortMiddleware)
 	.addMiddleware(reportConcurrencyMiddleware);
