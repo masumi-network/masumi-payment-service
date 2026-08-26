@@ -4,7 +4,6 @@ import {
 	MAINNET_USDM_UNIT,
 	PREPROD_USDM_UNIT,
 	atomicToDecimalString,
-	formatCryptoUnitConversion,
 	getReportAssetMetadata,
 	normalizeAssetUnit,
 	serializeReportAmount,
@@ -52,18 +51,6 @@ describe('getReportAssetMetadata', () => {
 
 	it('returns null for another native asset', () => {
 		expect(getReportAssetMetadata('policyasset')).toBeNull();
-	});
-});
-
-describe('formatCryptoUnitConversion', () => {
-	it.each([
-		['', 'ADA'],
-		[MAINNET_USDM_UNIT, 'USDM'],
-		[PREPROD_USDM_UNIT, 'tUSDM'],
-		[MAINNET_USDCX_UNIT, 'USDCx'],
-		['policyasset', 'policyasset'],
-	])('formats %s for invoice conversion text', (unit, symbol) => {
-		expect(formatCryptoUnitConversion(unit, '1.25')).toBe(` 1.25 ${symbol}`);
 	});
 });
 

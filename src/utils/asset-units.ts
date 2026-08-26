@@ -26,15 +26,6 @@ export function getReportAssetMetadata(unit: string): ReportAssetMetadata | null
 	return null;
 }
 
-export function formatCryptoUnitConversion(convertedUnit: string, conversionFactor: string): string {
-	let unitName = convertedUnit;
-	if (convertedUnit === '') unitName = 'ADA';
-	else if (convertedUnit === MAINNET_USDCX_UNIT) unitName = 'USDCx';
-	else if (convertedUnit === MAINNET_USDM_UNIT) unitName = 'USDM';
-	else if (convertedUnit === PREPROD_USDM_UNIT) unitName = 'tUSDM';
-	return ` ${conversionFactor} ${unitName}`;
-}
-
 export function atomicToDecimalString(amount: bigint, decimals: number): string {
 	if (!Number.isInteger(decimals) || decimals < 0) {
 		throw new RangeError('decimals must be a non-negative integer');
