@@ -8,6 +8,7 @@ import {
 	privateReportResponseMiddleware,
 	reportAbortMiddleware,
 	reportConcurrencyMiddleware,
+	REPORT_CONCURRENCY_LIMIT,
 	REPORT_RESPONSE_TIMEOUT_MS,
 } from './request-control';
 
@@ -230,6 +231,56 @@ describe('report request control', () => {
 			admitted.responseMock.emit('finish');
 		} finally {
 			for (const { responseMock } of active) responseMock.emit('finish');
+			jest.useRealTimers();
+		}
+	});
+
+	/**
+	 * A client that disconnects before the handler starts releases the slot, and
+	 * the handler then takes it back. That second acquisition used to inherit no
+	 * timer and no response listeners, because releasing had removed both, so an
+	 * operation that never settled kept the slot for the lifetime of the process.
+	 */
+	it('re-arms the deadline when a released slot is taken back', async () => {
+		jest.useFakeTimers();
+		const stalled = await testMiddleware({
+			middleware: reportConcurrencyMiddleware,
+			ctx: authContext,
+			requestProps: { method: 'POST', body: {} },
+			responseOptions: { eventEmitter: EventEmitter },
+		});
+		try {
+			// The client goes away before the handler runs, which frees the slot.
+			stalled.responseMock.emit('close');
+
+			const runReportOperation = stalled.output.runReportOperation as (
+				operation: () => Promise<string>,
+			) => Promise<string>;
+			// The handler takes the slot back, then never settles.
+			void runReportOperation(() => new Promise<string>(() => {}));
+			await Promise.resolve();
+
+			// Only the re-armed deadline can free this slot now.
+			await jest.advanceTimersByTimeAsync(REPORT_RESPONSE_TIMEOUT_MS);
+
+			// Every slot must be available again. Without the re-armed deadline the
+			// stalled request still holds one and the last of these is refused.
+			const admitted = [];
+			for (let index = 0; index < REPORT_CONCURRENCY_LIMIT; index += 1) {
+				admitted.push(
+					await testMiddleware({
+						middleware: reportConcurrencyMiddleware,
+						ctx: authContext,
+						requestProps: { method: 'POST', body: {} },
+						responseOptions: { eventEmitter: EventEmitter },
+					}),
+				);
+			}
+			expect(admitted.map(({ responseMock }) => responseMock.statusCode)).toEqual(
+				Array.from({ length: REPORT_CONCURRENCY_LIMIT }, () => 200),
+			);
+			for (const { responseMock } of admitted) responseMock.emit('finish');
+		} finally {
 			jest.useRealTimers();
 		}
 	});
