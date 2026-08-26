@@ -873,10 +873,32 @@ describe('queryReportPage', () => {
 		expect(mockFindPurchases).toHaveBeenCalledTimes(2);
 		const pageWhere = mockFindPurchases.mock.calls[0][0].where;
 		const ownershipWhere = mockFindPurchases.mock.calls[1][0].where;
-		expect(pageWhere.OR).toBeDefined();
-		expect(ownershipWhere.OR).toBeUndefined();
-		expect(ownershipWhere.AND).toEqual(pageWhere.AND);
+		// The cursor sits inside AND. A second top-level OR would replace the one
+		// the state filter puts there.
+		expect(pageWhere.OR).toBeUndefined();
+		const pageCursorClause = pageWhere.AND[pageWhere.AND.length - 1];
+		expect(pageCursorClause.OR).toBeDefined();
+		// The ownership lookup must not be cursor-limited, or a counterpart on an
+		// earlier page stays invisible.
+		expect(ownershipWhere.AND[ownershipWhere.AND.length - 1]).toEqual({});
+		expect(ownershipWhere.AND.slice(0, -1)).toEqual(pageWhere.AND.slice(0, -1));
 		expect(ownershipWhere.blockchainIdentifier).toEqual({ in: ['chain-cross-page'] });
+	});
+
+	it('keeps a mixed state filter on every page, not just the first', async () => {
+		mockFindPayments.mockResolvedValue([]);
+
+		await queryReportPage(
+			filters({ roles: ['Seller'], states: ['Pending', OnChainState.Withdrawn] }),
+			{ Buyer: null, Seller: { createdAt: new Date('2026-01-02T00:00:00.000Z'), id: 'seller-page-cursor' } },
+			50,
+		);
+
+		const where = mockFindPayments.mock.calls[0][0].where;
+		// The state filter owns the one top-level OR.
+		expect(where.OR).toEqual([{ onChainState: { in: [OnChainState.Withdrawn] } }, { onChainState: null }]);
+		// The cursor is still applied, from inside AND.
+		expect(where.AND[where.AND.length - 1].OR).toBeDefined();
 	});
 
 	it('keeps fee ownership on a Seller when no Buyer row exists', async () => {
