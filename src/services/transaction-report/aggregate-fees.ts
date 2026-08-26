@@ -145,14 +145,18 @@ export function analyzeReportFees(
 		// The report owes only the shares of the requests it holds. A batch can
 		// reach outside the filter, and those shares stay outside the report.
 		const share = feeShareForPaymentKeys(transaction.fees, paymentKeys, selectedPaymentKeys);
-		if (share === 0n) continue;
 		// A batch that sits wholly inside the report still adds up to the fee the
 		// chain charged, so the total stays exact. Only a part of a batch is an
 		// estimate, because the rest of the fee belongs to requests the report
 		// cannot see. See ./fee-split.
+		//
+		// This runs before the zero-share exit. A share can round to zero when a
+		// batch holds more requests than the fee holds lovelace, and that share is
+		// still apportioned, not read. Exiting first would report it as exact.
 		if (isSharedFee(paymentKeys) && selectedRelatedKeys.length !== paymentKeys.length) {
 			for (const key of selectedRelatedKeys) sharedFeeKeys.add(key);
 		}
+		if (share === 0n) continue;
 		if (selectedRelatedKeys.length > 1) union(selectedRelatedKeys);
 		covered.push({ fee: share, blockTime, paymentKeys: selectedRelatedKeys });
 	}
