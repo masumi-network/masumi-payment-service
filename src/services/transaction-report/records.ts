@@ -456,7 +456,13 @@ export function getReportRowWarnings(row: ReportRow): ReportWarning[] {
 			rowId: row.id,
 		});
 	}
-	if (row.seller?.grossRevenue == null || row.buyer?.grossSpend == null || row.buyer?.returnedFunds == null) {
+	// Only the side this row actually describes can be missing an amount. A
+	// buyer row has no `seller` at all, so reading through it would report every
+	// buyer row as short of evidence and put the note in every export.
+	const hasUnknownAmount =
+		(row.seller != null && row.seller.grossRevenue == null) ||
+		(row.buyer != null && (row.buyer.grossSpend == null || row.buyer.returnedFunds == null));
+	if (hasUnknownAmount) {
 		warnings.push({
 			code: 'ECONOMIC_METRIC_EVIDENCE_PARTIAL',
 			message:
