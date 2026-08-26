@@ -55,6 +55,7 @@ export type ReportRequestRecord = {
 	sellerReturnAddress: string | null;
 	paymentSourceType: ReportPaymentSourceType;
 	configuredFeeRatePermille: number;
+	resultHash: string | null;
 	unlockTime: bigint;
 	collateralReturnLovelace: bigint | null;
 	requestedFunds: readonly AtomicAmount[];
@@ -331,6 +332,7 @@ export function buildReportRow(
 	const timestamps = getReportTimestamps({
 		createdAt: record.createdAt,
 		onChainState: record.onChainState,
+		resultHash: record.resultHash,
 		unlockTime: record.unlockTime,
 		asOfTime: BigInt(asOf.getTime()),
 		revenueMode,

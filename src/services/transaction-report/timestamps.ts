@@ -87,16 +87,68 @@ function dateFromMilliseconds(milliseconds: bigint): Date | null {
 	return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function getConfirmedStateTime(
+function getConfirmedStateTimes(
 	transactions: readonly ReportTransactionEvent[],
 	state: ReportOnChainState,
-): Date | null {
-	const matchingTimes = mergeReportTransactions(transactions)
+): Date[] {
+	return mergeReportTransactions(transactions)
 		.filter((transaction) => isConfirmedStateTransaction(transaction, state))
 		.map((transaction) => dateFromBlockTime(transaction.blockTime))
 		.filter((value): value is Date => value != null)
 		.sort((left, right) => left.getTime() - right.getTime());
-	return matchingTimes[0] ?? null;
+}
+
+function getConfirmedStateTime(
+	transactions: readonly ReportTransactionEvent[],
+	state: ReportOnChainState,
+): Date | null {
+	return getConfirmedStateTimes(transactions, state)[0] ?? null;
+}
+
+/**
+ * States in which the seller cannot withdraw, because the buyer is contesting
+ * the payment or a refund is already on its way.
+ */
+const REPORT_REFUND_SIDE_STATES: ReadonlySet<ReportOnChainState> = new Set([
+	'RefundRequested',
+	'Disputed',
+	'RefundAuthorized',
+]);
+
+/** States in which the seller may withdraw once the unlock time has passed. */
+const REPORT_SELLER_CLEARED_STATES: ReadonlySet<ReportOnChainState> = new Set([
+	'ResultSubmitted',
+	'WithdrawAuthorized',
+]);
+
+/**
+ * The moment a contested request became uncontested again, if it ever was
+ * contested.
+ *
+ * The buyer can request a refund and later cancel it, and `UnSetRefundRequested`
+ * puts the request back where it was. Re-submitting a result does not count,
+ * because the request was never contested in that case.
+ */
+function getRefundClearedTime(transactions: readonly ReportTransactionEvent[]): Date | null {
+	const transitions = mergeReportTransactions(transactions)
+		.filter((transaction) => transaction.status === 'Confirmed' && transaction.txHash != null)
+		.map((transaction) => ({ state: transaction.newOnChainState, at: dateFromBlockTime(transaction.blockTime) }))
+		.filter((transition): transition is { state: ReportOnChainState; at: Date } =>
+			Boolean(transition.state != null && transition.at != null),
+		)
+		.sort((left, right) => left.at.getTime() - right.at.getTime());
+
+	let clearedAt: Date | null = null;
+	let isContested = false;
+	for (const transition of transitions) {
+		if (REPORT_REFUND_SIDE_STATES.has(transition.state)) {
+			isContested = true;
+			clearedAt = null;
+		} else if (isContested && REPORT_SELLER_CLEARED_STATES.has(transition.state) && clearedAt == null) {
+			clearedAt = transition.at;
+		}
+	}
+	return clearedAt;
 }
 
 function isConfirmedStateTransaction(transaction: ReportTransactionEvent, state: ReportOnChainState): boolean {
@@ -221,9 +273,39 @@ export function sumPerRequestConfirmedTransactionFees(
 	return { amount: total, completeness: 'complete' };
 }
 
+/** The datum's result hash, once the seller has submitted one. */
+function hasSubmittedResult(resultHash: string | null): boolean {
+	return resultHash != null && resultHash.length > 0;
+}
+
+/**
+ * The date a seller's work becomes billable.
+ *
+ * That is the unlock time in the ordinary case, because the seller submits the
+ * result before the unlock and the buyer's window to dispute runs out then.
+ *
+ * A refund request that the buyer cancels breaks that order. The cancellation
+ * can land after the unlock time, and the request only becomes billable at the
+ * cancellation, so the later of the two dates is the billable one. Booking the
+ * unlock date instead would put revenue into a period that was already
+ * reported.
+ *
+ * Only a contested request moves its date this way. `SubmitResult` is valid
+ * from every state, so a seller can re-submit a result at any time, and that
+ * re-submission changes nothing about when the payment became billable.
+ */
+function getBillableAt(transactions: readonly ReportTransactionEvent[], unlockTime: bigint): Date | null {
+	const unlockAt = dateFromMilliseconds(unlockTime);
+	const clearedAt = getRefundClearedTime(transactions);
+	if (unlockAt == null) return null;
+	if (clearedAt == null) return unlockAt;
+	return clearedAt.getTime() > unlockAt.getTime() ? clearedAt : unlockAt;
+}
+
 export function getReportTimestamps(input: {
 	createdAt: Date;
 	onChainState: ReportOnChainState | null;
+	resultHash: string | null;
 	unlockTime: bigint;
 	asOfTime: bigint;
 	revenueMode: RevenueMode;
@@ -232,6 +314,7 @@ export function getReportTimestamps(input: {
 	const fundsLockedAt = getConfirmedStateTime(input.transactions, 'FundsLocked');
 	const withdrawnAt =
 		input.onChainState === 'Withdrawn' ? getConfirmedStateTime(input.transactions, 'Withdrawn') : null;
+	const billableAt = getBillableAt(input.transactions, input.unlockTime);
 	let sellerRevenueRecognizedAt: Date | null = null;
 	if (input.revenueMode === 'RequestedGross') {
 		sellerRevenueRecognizedAt = input.createdAt;
@@ -241,16 +324,23 @@ export function getReportTimestamps(input: {
 		input.unlockTime <= input.asOfTime &&
 		hasConfirmedStateTransaction(input.transactions, 'ResultSubmitted')
 	) {
-		sellerRevenueRecognizedAt = dateFromMilliseconds(input.unlockTime);
+		sellerRevenueRecognizedAt = billableAt;
 	} else if (input.onChainState === 'Withdrawn') {
-		const unlockAt = dateFromMilliseconds(input.unlockTime);
+		// A seller withdrawal is only valid from `ResultSubmitted` and only after
+		// the unlock time, so a `Withdrawn` request with a result hash was
+		// already billable before the withdrawal and keeps that earlier date.
+		//
+		// The proof is the stored result hash rather than a surviving
+		// `ResultSubmitted` transaction row. A row can go missing, or sit in a
+		// non-confirmed status after a rollback, and the date would then move to
+		// the withdrawal. That rebooks revenue a closed period already reported.
 		const wasBillableBeforeWithdrawal =
 			input.revenueMode === 'Billable' &&
-			unlockAt != null &&
+			billableAt != null &&
 			withdrawnAt != null &&
-			unlockAt.getTime() <= withdrawnAt.getTime() &&
-			hasConfirmedStateTransaction(input.transactions, 'ResultSubmitted');
-		sellerRevenueRecognizedAt = wasBillableBeforeWithdrawal ? unlockAt : withdrawnAt;
+			billableAt.getTime() <= withdrawnAt.getTime() &&
+			hasSubmittedResult(input.resultHash);
+		sellerRevenueRecognizedAt = wasBillableBeforeWithdrawal ? billableAt : withdrawnAt;
 	} else if (input.onChainState === 'DisputedWithdrawn') {
 		sellerRevenueRecognizedAt = getConfirmedStateTime(input.transactions, input.onChainState);
 	}
