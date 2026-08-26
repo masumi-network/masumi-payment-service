@@ -392,17 +392,18 @@ describe('transaction report service', () => {
 		await expect(getTransactionsReport(transactionInput(), ctx)).rejects.toBe(error);
 	});
 
-	it('rejects fiat settings until report conversion is implemented', async () => {
-		await expect(
-			getTransactionsReport(
-				{
-					...transactionInput(),
-					fiat: { currency: 'usd', mode: 'BucketAverage', suppliedRates: [] },
-				},
-				ctx,
-			),
-		).rejects.toMatchObject({ status: 501 });
-		expect(mockResolveSource).not.toHaveBeenCalled();
+	it('converts with caller-supplied rates and never calls the rate provider', async () => {
+		mockQueryReportPage.mockResolvedValue({ records: [record('seller-1')], nextCursor: null });
+
+		const result = await getTransactionsReport(
+			{
+				...transactionInput(),
+				fiat: { currency: 'usd', mode: 'AccountingDate', suppliedRates: [{ unit: 'lovelace', rate: '0.5' }] },
+			},
+			ctx,
+		);
+
+		expect(result.metadata.fiat).toMatchObject({ currency: 'usd', provider: 'supplied', completeness: 'complete' });
 	});
 
 	it('loads all pages and rejects an aggregate above its row limit', async () => {

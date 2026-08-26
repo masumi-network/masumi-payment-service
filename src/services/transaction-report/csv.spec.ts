@@ -149,6 +149,43 @@ function csvRecord(buffer: Buffer, rowIndex = 1): Record<string, string> {
 }
 
 describe('transaction report CSV', () => {
+	it('carries the withdraw transaction hash and names the withdraw type', () => {
+		const output = createTransactionsCsv([row()], metadata());
+		const values = csvRecord(output, 2);
+
+		expect(values.settlement_tx_hash).toBe('hash-1');
+		expect(values.settlement_tx_type).toBe('Withdrawn');
+		expect(values.result_submitted_tx_hash).toBe('');
+	});
+
+	it('carries the result submission hash while the escrow is still open', () => {
+		const output = createTransactionsCsv(
+			[
+				row({
+					onChainState: 'ResultSubmitted',
+					transactions: [
+						{
+							id: 'transaction-submit',
+							txHash: 'hash-submit',
+							status: 'Confirmed',
+							newOnChainState: 'ResultSubmitted',
+							blockTime: Math.floor(new Date('2026-01-03T00:00:00.000Z').getTime() / 1000),
+							fees: 0n,
+							relatedRequestKeys: ['Seller:request-1'],
+							relatedPaymentKeys: ['chain-1'],
+						},
+					],
+				}),
+			],
+			metadata(),
+		);
+		const values = csvRecord(output, 2);
+
+		expect(values.result_submitted_tx_hash).toBe('hash-submit');
+		expect(values.settlement_tx_hash).toBe('');
+		expect(values.settlement_tx_type).toBe('');
+	});
+
 	it('exports normalized asset decimals and exact unknown atomic amounts', () => {
 		const output = createTransactionsCsv([row()], metadata());
 		const values = csvRecord(output, 2);

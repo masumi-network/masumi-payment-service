@@ -25,6 +25,9 @@ const timeZoneSchema = z
 		}
 	}, 'Invalid IANA time zone');
 
+export const REPORT_FIAT_CURRENCIES = ['usd', 'eur', 'gbp', 'jpy', 'chf', 'aed'] as const;
+export const REPORT_FIAT_MODES = ['PeriodAverage', 'AccountingDate'] as const;
+
 const suppliedFiatRateSchema = z.object({
 	unit: z.string().max(200),
 	rate: z
@@ -49,8 +52,8 @@ export const reportFilterSchema = z
 		timeZone: timeZoneSchema,
 		fiat: z
 			.object({
-				currency: z.enum(['usd', 'eur', 'gbp', 'jpy', 'chf', 'aed']),
-				mode: z.enum(['BucketAverage', 'AccountingDate']).default('BucketAverage'),
+				currency: z.enum(REPORT_FIAT_CURRENCIES),
+				mode: z.enum(REPORT_FIAT_MODES).default('PeriodAverage'),
 				suppliedRates: z.array(suppliedFiatRateSchema).max(100).optional(),
 			})
 			.optional(),
@@ -157,6 +160,11 @@ export const reportTransactionRowSchema = z.object({
 		buyerGrossSpendAt: z.date().nullable(),
 		buyerReturnedAt: z.date().nullable(),
 	}),
+	settlement: z.object({
+		resultSubmittedTxHash: z.string().nullable(),
+		settlementTxHash: z.string().nullable(),
+		settlementTxType: z.enum(['Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn']).nullable(),
+	}),
 	seller: reportSellerMetricsSchema.nullable(),
 	buyer: reportBuyerMetricsSchema.nullable(),
 	actorCardanoFeeAllocation: z.object({
@@ -197,11 +205,23 @@ const normalizedFiltersSchema = z.object({
 	timeZone: z.string(),
 });
 
+const reportFiatMetadataSchema = z.object({
+	currency: z.string(),
+	mode: z.enum(['PeriodAverage', 'AccountingDate']),
+	provider: z.enum(['coingecko', 'supplied']),
+	attribution: z.string().nullable(),
+	isDemoKey: z.boolean(),
+	demoHistoryDays: z.number().int().nullable(),
+	completeness: z.enum(['complete', 'partial']),
+	unpricedUnits: z.array(z.string()),
+});
+
 const reportMetadataSchema = z.object({
 	generatedAt: z.date(),
 	asOf: z.date(),
 	paymentSource: reportPaymentSourceSchema,
 	filters: normalizedFiltersSchema,
+	fiat: reportFiatMetadataSchema.nullable(),
 	warnings: z.array(reportWarningSchema),
 });
 
@@ -255,7 +275,20 @@ export const reportSummaryOutputSchema = z.object({
 	metadata: reportMetadataSchema,
 });
 
+const reportFiatCapabilitySchema = z.object({
+	isConfigured: z.boolean(),
+	isDemoKey: z.boolean(),
+	/** Days of price history the configured key may read. Null when unlimited. */
+	historyDays: z.number().int().nullable(),
+	earliestPriceableDate: z.date().nullable(),
+	currencies: z.array(z.string()),
+	modes: z.array(z.enum(REPORT_FIAT_MODES)),
+	attribution: z.string(),
+	setupHint: z.string(),
+});
+
 export const reportFacetsOutputSchema = z.object({
+	fiat: reportFiatCapabilitySchema,
 	paymentSources: z.array(reportPaymentSourceSchema),
 	managedWallets: z.array(
 		z.object({

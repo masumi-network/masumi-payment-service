@@ -11,6 +11,7 @@ import {
 } from './metrics';
 import {
 	getReportFeeTransactions,
+	getReportSettlementEvidence,
 	getReportTimestamps,
 	hasConfirmedOnChainTransaction,
 	hasConfirmedStateTransaction,
@@ -264,6 +265,7 @@ export function buildReportRow(
 		buyerCardanoFees: record.buyerCardanoFees,
 		sellerCardanoFees: record.sellerCardanoFees,
 	};
+	const settlement = getReportSettlementEvidence(record.transactions);
 	const timestamps = getReportTimestamps({
 		createdAt: record.createdAt,
 		onChainState: record.onChainState,
@@ -329,6 +331,7 @@ export function buildReportRow(
 		...record,
 		feeComponentScope,
 		timestamps,
+		settlement,
 		seller,
 		buyer,
 		actorCardanoFeeAllocation,
@@ -358,6 +361,7 @@ export function serializeReportRow(row: ReportRow) {
 		buyerReturnAddress: row.buyerReturnAddress,
 		sellerReturnAddress: row.sellerReturnAddress,
 		timestamps: row.timestamps,
+		settlement: row.settlement,
 		seller:
 			row.seller == null
 				? null
