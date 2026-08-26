@@ -5,58 +5,61 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
-import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { hasBudgetOnEnabledNetworks, walletsForNetworks, X402_ACCENT } from '@/lib/x402-rail';
+import { useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
+import {
+  hasPurchasingWalletOnEnabledNetworks,
+  walletsForNetworks,
+  X402_ACCENT,
+} from '@/lib/x402-rail';
 import { X402Network, X402Wallet } from '@/lib/api/generated';
 import { CreateWalletDialog } from './WalletsTab';
 import { ChainDialog } from './ChainsTab';
-import { BudgetDialog } from './BudgetsTab';
 
-type DialogKind = 'wallet' | 'chain' | 'budget' | null;
+type DialogKind = 'wallet' | 'chain' | null;
 
 /**
  * First-run onboarding for the x402 EVM rail.
  *
  * Shown above the tabs while the rail is not yet usable. Setup has a strict order
- * (wallet → facilitator/budget), which is easy to get wrong when the tabs are
+ * (wallet → facilitator), which is easy to get wrong when the tabs are
  * presented as peers, so this guide computes each step's state from live data and
  * gates the later actions until a managed wallet exists. It reuses the same dialogs
  * the tabs use, so there is no second source of truth for creating these records.
  *
- * It hides itself once a wallet plus at least one capability (facilitator or budget)
- * exists — i.e. the rail can actually do something — or when collapsed by the user.
+ * It hides itself once at least one capability (facilitator for receiving, or a
+ * Purchasing wallet for paying) exists — i.e. the rail can actually do something —
+ * or when collapsed by the user.
  */
 export function X402SetupGuide() {
   const queryClient = useQueryClient();
   const { apiClient, authorized } = useAppContext();
   const { wallets, isLoading: walletsLoading } = useX402Wallets();
   const { networks, isLoading: networksLoading } = useX402Networks();
-  const { budgets, isLoading: budgetsLoading } = useX402Budgets();
   const [openDialog, setOpenDialog] = useState<DialogKind>(null);
   const [walletType, setWalletType] = useState<X402Wallet['type']>('Selling');
   const [collapsed, setCollapsed] = useState(false);
 
-  const loading = walletsLoading || networksLoading || budgetsLoading;
+  const loading = walletsLoading || networksLoading;
   const envWallets = useMemo(() => walletsForNetworks(wallets, networks), [wallets, networks]);
   // Wallets are split by direction: a Selling wallet settles inbound payments (facilitator),
-  // a Purchasing wallet funds outbound ones (budget). Each capability needs its own type.
+  // a Purchasing wallet funds outbound ones. Each capability needs its own type.
   const hasPurchasingWallet = envWallets.some((wallet) => wallet.type === 'Purchasing');
+  // Only an ENABLED chain can actually send a payment, so a Purchasing wallet on a
+  // disabled chain must not suppress setup.
+  const canPay = useMemo(
+    () => hasPurchasingWalletOnEnabledNetworks(wallets, networks),
+    [wallets, networks],
+  );
   // A chain settles either through an owned Selling wallet or a remote facilitator URL —
   // both count as "receiving works", so a remote-only rail doesn't re-show the guide.
   const hasFacilitator = networks.some(
     (network) => network.isEnabled && (!!network.facilitatorWalletId || !!network.facilitatorUrl),
   );
-  // `networks` is already scoped to the active environment, but budgets span every environment.
-  // Only an enabled chain can make the outbound rail ready; budgets may be preconfigured while
-  // their chain is disabled and must not suppress setup in that state.
-  const hasBudget = useMemo(
-    () => hasBudgetOnEnabledNetworks(budgets, networks),
-    [budgets, networks],
-  );
-  const completedCount = [hasFacilitator, hasBudget].filter(Boolean).length;
-  // "Usable" = at least one side works (facilitator for receiving, budget for paying).
-  // We intentionally don't require both — an operator may only do one side.
-  const usable = hasFacilitator || hasBudget;
+  const completedCount = [hasFacilitator, canPay].filter(Boolean).length;
+  // "Usable" = at least one side works (facilitator for receiving, a Purchasing
+  // wallet for paying). We intentionally don't require both — an operator may only
+  // do one side. Spend caps are per-API-key usage credits, not a rail concern.
+  const usable = hasFacilitator || canPay;
 
   // Wait for auth before deciding anything: the x402 hooks return empty arrays while
   // disabled (unauthenticated), which would otherwise flash the guide on a fully
@@ -128,18 +131,13 @@ export function X402SetupGuide() {
       onAction: () => setOpenDialog('chain'),
     },
     {
-      done: hasBudget,
+      done: canPay,
       icon: Coins,
       title: 'Enable outbound payments',
-      body: 'Create a Purchasing wallet and grant an API key a capped budget so it can pay other x402 resources. Optional if you only receive payments.',
+      body: 'Create a Purchasing wallet so your agents can pay other x402 resources. A usage-limited API key is capped by its usage credits. Optional if you only receive payments.',
       detail: walletChips('Purchasing'),
-      actionLabel: !hasPurchasingWallet
-        ? 'Create purchasing wallet'
-        : hasBudget
-          ? 'Manage budgets'
-          : 'Set budget',
-      onAction: () =>
-        hasPurchasingWallet ? setOpenDialog('budget') : openWalletDialog('Purchasing'),
+      actionLabel: hasPurchasingWallet ? 'Add wallet' : 'Create purchasing wallet',
+      onAction: () => openWalletDialog('Purchasing'),
     },
   ];
 
@@ -156,7 +154,7 @@ export function X402SetupGuide() {
           <p className="max-w-2xl text-sm text-muted-foreground">
             The x402 rail lets your agents pay, and get paid by, other agents over EVM chains using
             stablecoins. Configure a remote or self-hosted facilitator to receive payments, and use
-            a Purchasing wallet with a budget to send them.
+            a Purchasing wallet to send them.
           </p>
         </div>
         <Button
@@ -231,8 +229,9 @@ export function X402SetupGuide() {
         onClose={() => setOpenDialog(null)}
         onSaved={() => {
           setOpenDialog(null);
-          // A new wallet also becomes a selectable budget/facilitator target.
-          invalidate([['x402-wallets'], ['x402-budgets']]);
+          // A new wallet also becomes a selectable facilitator target, and a Purchasing
+          // one flips the x402.purchasing_wallet readiness check that gates this guide.
+          invalidate([['x402-wallets'], ['rail-readiness']]);
         }}
       />
       <ChainDialog
@@ -243,16 +242,6 @@ export function X402SetupGuide() {
         onSaved={() => {
           setOpenDialog(null);
           invalidate([['x402-networks']]);
-        }}
-      />
-      <BudgetDialog
-        key={openDialog === 'budget' ? 'budget-open' : 'budget-closed'}
-        open={openDialog === 'budget'}
-        editing={null}
-        onClose={() => setOpenDialog(null)}
-        onSaved={() => {
-          setOpenDialog(null);
-          invalidate([['x402-budgets']]);
         }}
       />
     </Card>

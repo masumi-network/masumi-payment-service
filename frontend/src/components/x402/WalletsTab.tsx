@@ -80,7 +80,7 @@ const WALLET_TYPE_OPTIONS: Array<{
   {
     value: 'Purchasing',
     label: 'Purchasing',
-    hint: 'Funds outbound payments (budgets). The buy side.',
+    hint: 'Funds outbound payments. The buy side.',
     icon: ShoppingCart,
   },
   {
@@ -108,7 +108,13 @@ export function WalletsTab() {
 
   const retireWallet = useApiMutation({
     mutationFn: (body: { id: string }) => postX402WalletsDelete({ client: apiClient, body }),
-    invalidateKeys: [['x402-wallets'], ['x402-budgets'], ['x402-networks']],
+    // Invalidate the whole 'x402-wallets' key space (paginated list AND the eager,
+    // type-filtered picker queries used by the Chains/Alerts dialogs) so a
+    // retired wallet disappears from every picker immediately, not after staleTime.
+    // Retiring also detaches the wallet as a chain facilitator, and drops the
+    // selling/purchasing counts the readiness contract reads, so refresh those
+    // caches too.
+    invalidateKeys: [['x402-wallets'], ['x402-networks'], ['rail-readiness']],
     errorMessage: 'Failed to retire wallet',
   });
 
@@ -259,8 +265,11 @@ export function WalletsTab() {
         onClose={() => setDialogOpen(false)}
         onSaved={() => {
           setDialogOpen(false);
+          // Invalidate the whole 'x402-wallets' key space so the new wallet appears in the
+          // list and in the type-filtered pickers (Chains facilitator, Alerts). A new
+          // wallet also moves the readiness checks the setup surfaces read.
           queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
-          queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
+          queryClient.invalidateQueries({ queryKey: ['rail-readiness'] });
         }}
       />
 
@@ -287,7 +296,7 @@ export function WalletsTab() {
         open={walletToRetire !== null}
         onClose={() => setWalletToRetire(null)}
         title="Retire managed wallet"
-        description="This disables the wallet's budgets and detaches it from any chain it facilitates, so a compromised key can no longer sign or settle. This cannot be undone."
+        description="This detaches the wallet from any chain it facilitates, so a compromised key can no longer sign or settle. This cannot be undone."
         onConfirm={confirmRetire}
         isLoading={retiringId !== null && retiringId === walletToRetire?.id}
       />

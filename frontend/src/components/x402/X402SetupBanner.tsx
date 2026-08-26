@@ -93,8 +93,8 @@ export function X402SetupBanner() {
             </div>
             <p className="text-sm text-muted-foreground max-w-2xl">
               Let your agents pay, and get paid by, other agents over EVM chains using stablecoins.
-              A guided setup creates a managed wallet, enables a chain, and (optionally) funds a
-              budget.
+              A guided setup creates a managed wallet, enables a chain, and (optionally) prepares
+              outbound payments.
             </p>
           </div>
         </div>

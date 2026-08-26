@@ -131,7 +131,7 @@ export function X402ChainSelectionStep({
           {isAddSourceMode ? 'Add an EVM payment source' : 'Choose your EVM chain'}
         </h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-          Choose a configured chain or add a custom chain for {networkType}. Wallets and budgets
+          Choose a configured chain or add a custom chain for {networkType}. Wallets and payments
           stay bound to the selected chain.
         </p>
       </div>

@@ -1,4 +1,4 @@
-import type { X402Budget, X402Network, X402Wallet } from '@/lib/api/generated';
+import type { X402Network, X402Wallet } from '@/lib/api/generated';
 import type { NetworkType } from '@/lib/contexts/AppContext';
 
 /**
@@ -56,16 +56,18 @@ export function filterX402PaymentSourceChains<
       chain.caip2Id.toLowerCase().includes(query),
   );
 }
-
-/** Whether any budget belongs to an enabled network in the supplied environment scope. */
-export function hasBudgetOnEnabledNetworks(
-  budgets: Pick<X402Budget, 'caip2Network'>[],
+/**
+ * Whether outbound payments are actually possible: a Purchasing wallet bound to a chain
+ * that is ENABLED in the supplied scope. A wallet on a disabled chain cannot pay —
+ * `POST /x402/pay` rejects it with "The wallet network is not enabled" — so it must not
+ * count as a configured paying side and must not suppress the setup guide.
+ */
+export function hasPurchasingWalletOnEnabledNetworks(
+  wallets: X402Wallet[],
   networks: X402Network[],
 ): boolean {
-  const enabledNetworkIds = new Set(
-    networks.filter((network) => network.isEnabled).map((network) => network.caip2Id),
-  );
-  return budgets.some((budget) => enabledNetworkIds.has(budget.caip2Network));
+  const enabled = networks.filter((network) => network.isEnabled);
+  return walletsForNetworks(wallets, enabled).some((wallet) => wallet.type === 'Purchasing');
 }
 
 /**
