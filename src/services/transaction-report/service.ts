@@ -37,6 +37,11 @@ const REPORT_MAX_AGGREGATE_ROWS = 50_000;
 const REPORT_AGGREGATE_TIMEOUT_MS = 30_000;
 const REPORT_SUMMARY_TRANSACTION_TIMEOUT_MS = REPORT_AGGREGATE_TIMEOUT_MS + 5_000;
 const REPORT_PAGE_TRANSACTION_TIMEOUT_MS = 15_000;
+// The request deadline has to outlast the database transaction. With both set
+// to the same value a query that used its whole budget left nothing for row
+// building and fee reconciliation, so the request raised 504 after the database
+// work had already succeeded. The summary path keeps the same kind of slack.
+const REPORT_PAGE_DEADLINE_MS = REPORT_PAGE_TRANSACTION_TIMEOUT_MS + 5_000;
 const REPORT_TRANSACTION_MAX_WAIT_MS = 5_000;
 const REPORT_PAGE_FEE_CONTEXT_MAX_SERIALIZED_BYTES = 32 * 1024 * 1024;
 
@@ -229,7 +234,7 @@ export async function getReportFacets(ctx: AuthContext, signal?: AbortSignal) {
 }
 
 export async function getTransactionsReport(input: ReportTransactionsInput, ctx: AuthContext, signal?: AbortSignal) {
-	const deadline = Date.now() + REPORT_PAGE_TRANSACTION_TIMEOUT_MS;
+	const deadline = Date.now() + REPORT_PAGE_DEADLINE_MS;
 	assertReportActive(signal, deadline);
 	rejectUnsupportedFiat(input);
 	const decodedCursor = decodeReportCursor(input.cursor);
