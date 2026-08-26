@@ -25,9 +25,9 @@ export function AddSourceDialog({ open, onClose }: AddSourceDialogProps) {
   const router = useRouter();
   const { network } = useAppContext();
 
-  const go = (path: string) => {
+  const go = (path: string, action?: string) => {
     onClose();
-    router.push(`${path}?network=${network}`);
+    router.push({ pathname: path, query: { network, ...(action ? { action } : {}) } });
   };
 
   return (
@@ -53,7 +53,7 @@ export function AddSourceDialog({ open, onClose }: AddSourceDialogProps) {
             iconClassName="bg-indigo-500/15 text-indigo-600 ring-indigo-500/30 dark:text-indigo-400"
             title="EVM (x402)"
             description="Stablecoin rail over the x402 standard on a configured EVM chain."
-            onClick={() => go('/x402-setup')}
+            onClick={() => go('/x402-setup', 'add_payment_source')}
           />
         </div>
       </DialogContent>

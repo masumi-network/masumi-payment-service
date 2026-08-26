@@ -115,7 +115,7 @@ const formatPrice = (amount: string) => {
 };
 
 export default function Invoices() {
-  const { network } = useAppContext();
+  const { network, capabilities } = useAppContext();
 
   const [activeTab, setActiveTab] = useState('Generated Invoices');
   const [selectedMonth, setSelectedMonth] = useState(getPreviousMonth);
@@ -285,7 +285,7 @@ export default function Invoices() {
             <span className="font-medium text-yellow-600 dark:text-yellow-400">Beta</span>
             <span className="text-muted-foreground">
               {' '}
-              — This invoice feature is in beta. Generated invoices should be reviewed manually or
+              This invoice feature is in beta. Generated invoices should be reviewed manually or
               verified with a tax advisor before use. Use at your own discretion.
             </span>
           </div>
@@ -533,22 +533,24 @@ export default function Invoices() {
                                   </div>
                                 ))}
                               </div>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={isCurrentMonth}
-                                title={
-                                  isCurrentMonth
-                                    ? 'Cannot generate invoices for the current month'
-                                    : undefined
-                                }
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openGenerateFromGroup(group);
-                                }}
-                              >
-                                Generate Invoice
-                              </Button>
+                              {capabilities.canPay && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={isCurrentMonth}
+                                  title={
+                                    isCurrentMonth
+                                      ? 'Cannot generate invoices for the current month'
+                                      : undefined
+                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openGenerateFromGroup(group);
+                                  }}
+                                >
+                                  Generate Invoice
+                                </Button>
+                              )}
                             </div>
                           </div>
 

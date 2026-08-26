@@ -77,7 +77,8 @@ function formatLovelaceToAda(amount: string | null) {
 export default function InboxAgentsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource } = useAppContext();
+  const { apiClient, network, selectedPaymentSourceId, selectedPaymentSource, capabilities } =
+    useAppContext();
   // The inbox query is gated on a resolved source; while an id is restored from
   // storage but the source object hasn't loaded yet, the query is disabled and
   // reports isLoading=false. Treat that as loading so the table shows a skeleton
@@ -167,13 +168,17 @@ export default function InboxAgentsPage() {
 
   // Open the register dialog when the ?action=register_inbox_agent deep link
   // arrives, then strip the param so the same quick action can fire again
-  // while already on this page.
+  // while already on this page. Registration is pay-authenticated, so the deep
+  // link carries the same canPay gate as the button — otherwise a read-only key
+  // gets the full form and only finds out on submit.
   useEffect(() => {
     if (router.query.action === 'register_inbox_agent') {
-      queueMicrotask(() => setIsRegisterDialogOpen(true));
+      if (capabilities.canPay) {
+        queueMicrotask(() => setIsRegisterDialogOpen(true));
+      }
       void router.replace('/inbox-agents', undefined, { shallow: true });
     }
-  }, [router.query.action, router]);
+  }, [router.query.action, router, capabilities.canPay]);
 
   const handleWalletClick = useCallback(
     async (walletVkey: string) => {
@@ -272,14 +277,16 @@ export default function InboxAgentsPage() {
             </div>
             <div className="flex items-center gap-2">
               <RefreshButton onRefresh={refetchAll} isRefreshing={isFetching} />
-              <Button
-                id="add-inbox-agent-button"
-                className="flex items-center gap-2 btn-hover-lift"
-                onClick={() => setIsRegisterDialogOpen(true)}
-              >
-                <Plus className="h-4 w-4" />
-                Register Inbox Agent
-              </Button>
+              {capabilities.canPay && (
+                <Button
+                  id="add-inbox-agent-button"
+                  className="flex items-center gap-2 btn-hover-lift"
+                  onClick={() => setIsRegisterDialogOpen(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                  Register Inbox Agent
+                </Button>
+              )}
             </div>
           </div>
 
@@ -347,7 +354,9 @@ export default function InboxAgentsPage() {
                           description={
                             searchQuery
                               ? 'Try adjusting your search terms'
-                              : 'Register your first inbox agent to get started'
+                              : capabilities.canPay
+                                ? 'Register your first inbox agent to get started'
+                                : 'Registering an inbox agent needs an API key with pay access'
                           }
                         />
                       </td>
@@ -356,10 +365,16 @@ export default function InboxAgentsPage() {
                     displayInboxAgents.map((agent, index) => {
                       const holdingWallet = getHoldingWallet(agent);
                       const isCombinedWallet = usesCombinedWallet(agent);
-                      const canDelete =
+                      const canDeleteState =
                         agent.state === 'RegistrationConfirmed' ||
                         agent.state === 'RegistrationFailed' ||
                         agent.state === 'DeregistrationConfirmed';
+                      const canDelete =
+                        canDeleteState &&
+                        (agent.state === 'RegistrationFailed' ||
+                        agent.state === 'DeregistrationConfirmed'
+                          ? capabilities.canAdmin
+                          : capabilities.canPay);
 
                       return (
                         <tr
@@ -523,7 +538,7 @@ export default function InboxAgentsPage() {
           </div>
 
           <RegisterInboxAgentDialog
-            open={isRegisterDialogOpen}
+            open={capabilities.canPay && isRegisterDialogOpen}
             onClose={() => {
               setIsRegisterDialogOpen(false);
             }}

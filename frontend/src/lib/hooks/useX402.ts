@@ -8,7 +8,10 @@ import {
   getX402Networks,
   getX402NetworksAvailable,
   getX402Payments,
+  getX402PaymentsCount,
+  getX402SettlementsCount,
   getX402Wallets,
+  getX402WalletsBalance,
   X402Budget,
   X402LowBalanceRule,
   X402AvailableNetwork,
@@ -16,6 +19,10 @@ import {
   X402PaymentAttempt,
   X402Wallet,
 } from '@/lib/api/generated';
+import {
+  aggregateX402DashboardBalances,
+  type X402DashboardBalanceRead,
+} from '@/lib/x402-dashboard';
 import { handleApiCall } from '@/lib/utils';
 import {
   appendInclusiveCursorPage,
@@ -23,13 +30,15 @@ import {
 } from '@/lib/pagination/cursor-pagination';
 
 const PAGE_SIZE = 20;
+const X402_BALANCE_BATCH_SIZE = 5;
 
 export function useX402Networks(options?: {
   silentErrors?: boolean;
   network?: NetworkType;
   allEnvironments?: boolean;
+  enabled?: boolean;
 }) {
-  const { apiClient, authorized, network: activeNetwork } = useAppContext();
+  const { apiClient, authorized, network: activeNetwork, capabilities } = useAppContext();
   const silentErrors = options?.silentErrors ?? false;
   // Always scope chains to an environment, enforced at the query level: testnet chains
   // belong to Preprod, mainnet chains to Mainnet. Defaults to the active top-selector env;
@@ -40,6 +49,7 @@ export function useX402Networks(options?: {
   // include both Cardano networks, so their ChainIdLimit must be choosable from every
   // EVM chain regardless of the active top-selector env. Omitting isTestnet returns all.
   const allEnvironments = options?.allEnvironments ?? false;
+  const enabled = options?.enabled ?? true;
 
   const query = useQuery({
     // Keyed by silentErrors so the silent (selector) and toasting (tab) consumers do
@@ -59,7 +69,10 @@ export function useX402Networks(options?: {
       );
       return response?.data?.data?.Networks ?? [];
     },
-    enabled: !!apiClient && authorized,
+    // GET /x402/networks is admin-authenticated. Gate here rather than at each
+    // call site: this hook is pulled in by shared surfaces (agent lists, pickers)
+    // a non-admin session can reach, where an ungated fetch just 401s.
+    enabled: !!apiClient && authorized && enabled && capabilities.canAdmin,
     staleTime: 30000,
   });
 
@@ -77,12 +90,14 @@ export function useAvailableX402Networks(options?: {
   silentErrors?: boolean;
   network?: NetworkType;
   allEnvironments?: boolean;
+  enabled?: boolean;
 }) {
-  const { apiClient, authorized, network: activeNetwork } = useAppContext();
+  const { apiClient, authorized, network: activeNetwork, capabilities } = useAppContext();
   const silentErrors = options?.silentErrors ?? false;
   const network = options?.network ?? activeNetwork;
   const isTestnet = isTestnetEnv(network);
   const allEnvironments = options?.allEnvironments ?? false;
+  const enabled = options?.enabled ?? true;
 
   const query = useQuery({
     // Keep this under the shared x402-networks prefix so chain mutations invalidate
@@ -99,7 +114,9 @@ export function useAvailableX402Networks(options?: {
       );
       return response?.data?.data?.Networks ?? [];
     },
-    enabled: !!apiClient && authorized,
+    // GET /x402/networks/available is read-level (sanitized projection), so any
+    // signed-in session may load the chain list.
+    enabled: !!apiClient && authorized && enabled,
     staleTime: 30000,
   });
 
@@ -114,6 +131,55 @@ export function useAvailableX402Networks(options?: {
 }
 
 /**
+ * Session bootstrap for rail detection: admins use the full configured-chain list;
+ * non-admins use the pay-authenticated available projection (admin list 401s for them).
+ */
+export type X402SessionNetwork = {
+  id: string;
+  caip2Id?: string;
+  displayName: string;
+  isEnabled: boolean;
+  isTestnet: boolean;
+  canSettle?: boolean;
+  facilitatorWalletId?: string | null;
+  facilitatorUrl?: string | null;
+  rpcUrl?: string | null;
+};
+
+export function useX402NetworksForSession(options?: {
+  silentErrors?: boolean;
+  network?: NetworkType;
+  allEnvironments?: boolean;
+}) {
+  const { capabilities } = useAppContext();
+  const admin = useX402Networks({
+    ...options,
+    enabled: capabilities.canAdmin,
+  });
+  const available = useAvailableX402Networks({
+    ...options,
+    // Read-level, so every non-admin session resolves the rail through it.
+    enabled: !capabilities.canAdmin,
+  });
+
+  if (capabilities.canAdmin) {
+    return {
+      networks: admin.networks as X402SessionNetwork[],
+      isLoading: admin.isLoading,
+      isRefetching: admin.isRefetching,
+      refetch: admin.refetch,
+    };
+  }
+
+  return {
+    networks: available.networks as X402SessionNetwork[],
+    isLoading: available.isLoading,
+    isRefetching: available.isRefetching,
+    refetch: available.refetch,
+  };
+}
+
+/**
  * Eagerly loads every managed EVM wallet (paging through /x402/wallets). Used by
  * the chain/budget pickers and setup flows that need the full set to choose
  * from. `enabled` lets form dialogs defer the load until opened. Pass `type` to
@@ -121,7 +187,7 @@ export function useAvailableX402Networks(options?: {
  * labels should use the denormalized address on the network/budget instead.
  */
 export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networkId?: string) {
-  const { apiClient, authorized } = useAppContext();
+  const { apiClient, authorized, capabilities } = useAppContext();
 
   const query = useQuery({
     queryKey: ['x402-wallets', 'all', type ?? 'any', networkId ?? 'any'],
@@ -137,7 +203,9 @@ export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networ
             }),
           { errorMessage: 'Failed to fetch wallets' },
         );
-        const page = (response?.data?.data?.Wallets ?? []) as X402Wallet[];
+        const wallets = response?.data?.data?.Wallets;
+        if (wallets == null) throw new Error('Failed to fetch wallets');
+        const page = wallets as X402Wallet[];
         if (page.length === 0) break;
         items = appendInclusiveCursorPage(items, page, (wallet) => wallet.id);
         if (page.length < PAGE_SIZE) break;
@@ -147,6 +215,8 @@ export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networ
       }
       return items;
     },
+    // GET /x402/wallets is read-level (public wallet metadata, no key material),
+    // so every signed-in session may list them.
     enabled: !!apiClient && authorized && enabled,
     staleTime: 30000,
   });
@@ -154,6 +224,7 @@ export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networ
   return {
     wallets: (query.data ?? []) as X402Wallet[],
     isLoading: query.isLoading,
+    isError: query.isError,
     isRefetching: query.isRefetching,
     refetch: async () => {
       await query.refetch();
@@ -283,7 +354,7 @@ export type X402PaymentFilters = {
   needsManualAction?: boolean;
 };
 
-export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
+export function useX402PaymentAttempts(filters: X402PaymentFilters = {}, isEnabled = true) {
   const { apiClient, authorized } = useAppContext();
 
   const query = useInfiniteQuery({
@@ -319,7 +390,7 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) =>
       lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
-    enabled: !!apiClient && authorized,
+    enabled: !!apiClient && authorized && isEnabled,
     staleTime: 15000,
   });
 
@@ -344,8 +415,189 @@ export function useX402PaymentAttempts(filters: X402PaymentFilters = {}) {
     isFetchingNextPage: query.isFetchingNextPage,
     loadMore,
     refetch: async () => {
+      if (!isEnabled) return;
       await query.refetch();
     },
     isRefetching: query.isRefetching,
+  };
+}
+
+const X402_PAYMENT_STATUSES: X402PaymentAttempt['status'][] = [
+  'PaymentRequired',
+  'Verified',
+  'Settled',
+  'Failed',
+  'Replayed',
+];
+
+async function readX402Count(
+  request: () => Promise<{ data?: { data?: { total?: number } } }>,
+): Promise<number> {
+  const response = await handleApiCall(request, { onError: () => {} });
+  const total = response?.data?.data?.total;
+  if (typeof total !== 'number') throw new Error('Failed to read x402 count');
+  return total;
+}
+
+export function useX402DashboardCounts(caip2Network?: string) {
+  const { apiClient, authorized } = useAppContext();
+
+  const query = useQuery({
+    queryKey: ['x402-dashboard', 'counts', caip2Network ?? null],
+    queryFn: async () => {
+      const [transactions, successfulSettlements, ...statusCounts] = await Promise.all([
+        readX402Count(() => getX402PaymentsCount({ client: apiClient, query: { caip2Network } })),
+        readX402Count(() =>
+          getX402SettlementsCount({
+            client: apiClient,
+            query: { caip2Network, success: 'true' },
+          }),
+        ),
+        ...X402_PAYMENT_STATUSES.map((status) =>
+          readX402Count(() =>
+            getX402PaymentsCount({ client: apiClient, query: { caip2Network, status } }),
+          ),
+        ),
+      ]);
+
+      return {
+        transactions,
+        successfulSettlements,
+        byStatus: Object.fromEntries(
+          X402_PAYMENT_STATUSES.map((status, index) => [status, statusCounts[index] ?? 0]),
+        ) as Record<X402PaymentAttempt['status'], number>,
+      };
+    },
+    enabled: !!apiClient && authorized && !!caip2Network,
+    staleTime: 15000,
+    retry: false,
+  });
+
+  return {
+    counts: query.data ?? null,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+}
+
+export function useX402DashboardRecentPayments(caip2Network?: string) {
+  const { apiClient, authorized } = useAppContext();
+
+  const query = useQuery({
+    queryKey: ['x402-dashboard', 'recent-payments', caip2Network ?? null],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          getX402Payments({
+            client: apiClient,
+            query: { take: 5, caip2Network },
+          }),
+        { onError: () => {} },
+      );
+      const attempts = response?.data?.data?.PaymentAttempts;
+      if (attempts == null) throw new Error('Failed to read recent x402 transactions');
+      return attempts as X402PaymentAttempt[];
+    },
+    enabled: !!apiClient && authorized && !!caip2Network,
+    staleTime: 15000,
+    retry: false,
+  });
+
+  return {
+    attempts: query.data ?? [],
+    isLoading: query.isLoading,
+    isError: query.isError,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+}
+
+export function useX402DashboardLowBalanceCount(caip2Network?: string) {
+  const { apiClient, authorized, capabilities } = useAppContext();
+
+  const query = useQuery({
+    queryKey: ['x402-dashboard', 'low-balance', caip2Network ?? null],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () =>
+          getX402LowBalance({
+            client: apiClient,
+            query: { includeDisabled: 'false' },
+          }),
+        { onError: () => {} },
+      );
+      const rules = response?.data?.data?.Rules;
+      if (rules == null) throw new Error('Failed to read x402 low-balance rules');
+      return rules.filter(
+        (rule) => rule.caip2Network === caip2Network && rule.enabled && rule.status === 'Low',
+      ).length;
+    },
+    enabled: !!apiClient && authorized && capabilities.canAdmin && !!caip2Network,
+    staleTime: 15000,
+    retry: false,
+  });
+
+  return {
+    count: query.data ?? null,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
+  };
+}
+
+export function useX402DashboardBalances(wallets: X402Wallet[], caip2Network?: string) {
+  const { apiClient, authorized } = useAppContext();
+  const walletIds = wallets.map((wallet) => wallet.id);
+
+  const query = useQuery({
+    queryKey: ['x402-dashboard', 'balances', caip2Network ?? null, walletIds],
+    queryFn: async () => {
+      const reads: X402DashboardBalanceRead[] = [];
+      for (let index = 0; index < wallets.length; index += X402_BALANCE_BATCH_SIZE) {
+        const batch = wallets.slice(index, index + X402_BALANCE_BATCH_SIZE);
+        const batchReads = await Promise.all(
+          batch.map(async (wallet) => {
+            const response = await handleApiCall(
+              () =>
+                getX402WalletsBalance({
+                  client: apiClient,
+                  query: { id: wallet.id, caip2Network },
+                }),
+              { onError: () => {} },
+            );
+            const data = response?.data?.data;
+            return {
+              walletId: wallet.id,
+              requestFailed: data == null,
+              balances: data?.Balances ?? [],
+            };
+          }),
+        );
+        reads.push(...batchReads);
+      }
+      return aggregateX402DashboardBalances(reads);
+    },
+    enabled: !!apiClient && authorized && !!caip2Network && wallets.length > 0,
+    staleTime: 15000,
+    retry: false,
+  });
+
+  return {
+    balances: query.data?.balances ?? [],
+    failedReadCount: query.data?.failedReadCount ?? 0,
+    isLoading: query.isLoading,
+    isRefetching: query.isRefetching,
+    refetch: async () => {
+      await query.refetch();
+    },
   };
 }

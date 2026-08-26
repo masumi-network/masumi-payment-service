@@ -6,7 +6,7 @@ import { FileInput, ChevronsUpDown, Settings, Check, Coins } from 'lucide-react'
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
-import { useX402Networks } from '@/lib/hooks/useX402';
+import { useX402NetworksForSession, type X402SessionNetwork } from '@/lib/hooks/useX402';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -24,7 +24,13 @@ import {
   type PaymentSourceType,
 } from '@/lib/payment-source-type';
 import { chainsForEnv, isX402ChainUsable, isX402SetUpForEnv, X402_ACCENT } from '@/lib/x402-rail';
-import type { X402Network } from '@/lib/api/generated';
+import { hasEvmChainLimit } from '@/lib/permissions';
+import {
+  CARDANO_ONLY_PATHS,
+  isX402RailPath,
+  X402_DASHBOARD_PATH,
+  X402_SETUP_PATH,
+} from '@/lib/x402-navigation';
 
 interface NetworkSourceCardProps {
   collapsed: boolean;
@@ -34,9 +40,6 @@ interface NetworkSourceCardProps {
 // Routes that only make sense on one rail. Switching rails from one of these jumps to the
 // new rail's home so the page content matches the picked context immediately, rather than
 // waiting on the async redirect in _app (which is skipped while the chain query refetches).
-const CARDANO_ONLY_PAGES = ['/', '/inbox-agents', '/wallets', '/transactions', '/invoices'];
-const X402_ONLY_PAGES = ['/x402', '/x402-setup'];
-
 /** Small pill that tells the two rails apart inside the selector. */
 function RailBadge({ rail, className }: { rail: 'cardano' | 'x402'; className?: string }) {
   return (
@@ -66,9 +69,10 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     setActiveRail,
     selectedX402ChainId,
     setSelectedX402ChainId,
+    capabilities,
   } = useAppContext();
   const { paymentSources } = usePaymentSourceExtendedAll();
-  const { networks: x402Networks, isLoading: x402Loading } = useX402Networks({
+  const { networks: x402Networks, isLoading: x402Loading } = useX402NetworksForSession({
     silentErrors: true,
   });
 
@@ -87,7 +91,8 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
   // Only advertise "needs setup" once data has actually loaded — the hook returns an
   // empty array before/while loading, which would otherwise flash the CTA on a
   // configured rail.
-  const showSetupCta = !x402Loading && !isX402SetUpForEnv(x402Networks, network);
+  const showSetupCta =
+    capabilities.canAdmin && !x402Loading && !isX402SetUpForEnv(x402Networks, network);
 
   const selectedChain = evmChains.find((chain) => chain.id === selectedX402ChainId) ?? null;
 
@@ -103,9 +108,12 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     // it isn't selectable in the dropdown, so upgrade to a usable chain when one exists.
     if (selectedChain && isX402ChainUsable(selectedChain)) return;
     if (!hasEvmChains) {
+      // Setup must keep the EVM rail active while the first chain is still a draft or absent.
+      if (router.pathname === X402_SETUP_PATH) return;
       // No EVM chain for this env — fall back to the Cardano rail so the UI stays usable.
       setActiveRail('cardano');
       setSelectedX402ChainId(null);
+      if (isX402RailPath(router.pathname)) void router.replace('/');
       return;
     }
     const usable = evmChains.find(isX402ChainUsable);
@@ -128,13 +136,14 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     evmChains,
     setSelectedX402ChainId,
     setActiveRail,
+    router,
   ]);
 
   const selectCardanoSource = (id: string) => {
     setActiveRail('cardano');
     setSelectedPaymentSourceId(id);
     // Leave x402-only routes so the page matches the Cardano context we just switched to.
-    if (X402_ONLY_PAGES.includes(router.pathname)) {
+    if (isX402RailPath(router.pathname)) {
       router.push('/');
     }
   };
@@ -142,8 +151,8 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     setActiveRail('x402');
     setSelectedX402ChainId(id);
     // Leave Cardano-only routes so the page matches the x402 context we just switched to.
-    if (CARDANO_ONLY_PAGES.includes(router.pathname)) {
-      router.push('/x402');
+    if ((CARDANO_ONLY_PATHS as readonly string[]).includes(router.pathname)) {
+      router.push(X402_DASHBOARD_PATH);
     }
   };
 
@@ -321,7 +330,7 @@ function SourceDropdown({
     PurchasingWalletsCount: number;
     SellingWalletsCount: number;
   }[];
-  evmChains: X402Network[];
+  evmChains: X402SessionNetwork[];
   activeRail: 'cardano' | 'x402';
   selectedPaymentSourceId: string | null;
   selectedX402ChainId: string | null;
@@ -330,6 +339,7 @@ function SourceDropdown({
   isOnPaymentSourcesPage: boolean;
 }) {
   const router = useRouter();
+  const { capabilities } = useAppContext();
   // Only fully configured chains are offered as selectable payment sources; the rest are
   // surfaced as a single setup entry so the picker never lists a half-configured rail.
   const usableEvmChains = evmChains.filter(isX402ChainUsable);
@@ -376,6 +386,24 @@ function SourceDropdown({
         );
       })}
 
+      {/* The chain projection is read-level, so every session that has EVM chains
+          in its key limit sees the rail here. */}
+      {evmChains.length === 0 &&
+        !capabilities.canAdmin &&
+        !hasEvmChainLimit(capabilities.chainIdLimit) && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="flex items-center gap-2">
+              x402
+              <RailBadge rail="x402" />
+            </DropdownMenuLabel>
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              This API key has no EVM chains in its chain limit, so none can be shown. An admin can
+              add them to the key.
+            </div>
+          </>
+        )}
+
       {evmChains.length > 0 && (
         <>
           <DropdownMenuSeparator />
@@ -410,7 +438,7 @@ function SourceDropdown({
               </DropdownMenuItem>
             );
           })}
-          {hasUnconfiguredChains && (
+          {capabilities.canAdmin && hasUnconfiguredChains && (
             <DropdownMenuItem
               className="cursor-pointer flex items-center gap-2"
               onSelect={() => router.push('/x402-setup')}
@@ -424,14 +452,18 @@ function SourceDropdown({
         </>
       )}
 
-      <DropdownMenuSeparator />
-      <DropdownMenuItem
-        className={cn('cursor-pointer', isOnPaymentSourcesPage && 'bg-accent')}
-        onSelect={() => router.push('/payment-sources')}
-      >
-        <Settings className="h-4 w-4 mr-2" />
-        Manage payment sources
-      </DropdownMenuItem>
+      {capabilities.canAdmin && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className={cn('cursor-pointer', isOnPaymentSourcesPage && 'bg-accent')}
+            onSelect={() => router.push('/payment-sources')}
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            Manage payment sources
+          </DropdownMenuItem>
+        </>
+      )}
     </DropdownMenuContent>
   );
 }

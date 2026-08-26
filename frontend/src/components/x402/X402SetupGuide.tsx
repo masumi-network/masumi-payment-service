@@ -154,9 +154,9 @@ export function X402SetupGuide() {
             </span>
           </div>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            The x402 rail lets your agents pay — and get paid by — other agents over EVM chains
-            using stablecoins. Configure a remote or self-hosted facilitator to receive payments,
-            and use a Purchasing wallet with a budget to send them.
+            The x402 rail lets your agents pay, and get paid by, other agents over EVM chains using
+            stablecoins. Configure a remote or self-hosted facilitator to receive payments, and use
+            a Purchasing wallet with a budget to send them.
           </p>
         </div>
         <Button

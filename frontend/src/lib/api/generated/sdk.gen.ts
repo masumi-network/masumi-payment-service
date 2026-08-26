@@ -2,8 +2,8 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import { deleteInboxAgentsResponseTransformer, deletePaymentSourceExtendedResponseTransformer, deleteRegistryResponseTransformer, deleteWalletLowBalanceResponseTransformer, deleteWebhooksResponseTransformer, deleteX402LowBalanceResponseTransformer, getFundDistributionResponseTransformer, getFundWalletResponseTransformer, getInboxAgentsDiffResponseTransformer, getInboxAgentsResponseTransformer, getInvoiceMonthlyMissingResponseTransformer, getInvoiceMonthlyResponseTransformer, getPaymentDiffNextActionResponseTransformer, getPaymentDiffOnchainStateOrResultResponseTransformer, getPaymentDiffResponseTransformer, getPaymentResponseTransformer, getPaymentSourceExtendedResponseTransformer, getPaymentSourceResponseTransformer, getPurchaseDiffNextActionResponseTransformer, getPurchaseDiffOnchainStateOrResultResponseTransformer, getPurchaseDiffResponseTransformer, getPurchaseResponseTransformer, getRegistryDiffResponseTransformer, getRegistryResponseTransformer, getRpcApiKeysResponseTransformer, getTxSyncQuarantineResponseTransformer, getWalletListResponseTransformer, getWalletLowBalanceResponseTransformer, getWalletResponseTransformer, getWalletTransferFundsResponseTransformer, getWebhooksResponseTransformer, getX402BudgetsResponseTransformer, getX402LowBalanceResponseTransformer, getX402NetworksResponseTransformer, getX402PaymentsResponseTransformer, getX402SettlementsResponseTransformer, getX402WalletsDetailResponseTransformer, getX402WalletsResponseTransformer, patchPaymentSourceExtendedResponseTransformer, patchWalletLowBalanceResponseTransformer, patchWalletResponseTransformer, patchWebhooksResponseTransformer, patchX402LowBalanceResponseTransformer, postInboxAgentsDeregisterResponseTransformer, postInboxAgentsResponseTransformer, postPaymentAuthorizeRefundResponseTransformer, postPaymentErrorStateRecoveryResponseTransformer, postPaymentIncomeResponseTransformer, postPaymentResolveBlockchainIdentifierResponseTransformer, postPaymentResponseTransformer, postPaymentSourceExtendedResponseTransformer, postPaymentSubmitResultResponseTransformer, postPurchaseCancelRefundRequestResponseTransformer, postPurchaseErrorStateRecoveryResponseTransformer, postPurchaseRequestRefundResponseTransformer, postPurchaseResolveBlockchainIdentifierResponseTransformer, postPurchaseResponseTransformer, postPurchaseSpendingResponseTransformer, postRegistryDeregisterResponseTransformer, postRegistryResponseTransformer, postRegistryUpdateResponseTransformer, postTxSyncQuarantineRetryResponseTransformer, postWalletLowBalanceResponseTransformer, postWalletTransferFundsResponseTransformer, postWebhooksResponseTransformer, postX402AnalyticsResponseTransformer, postX402BudgetsResponseTransformer, postX402LowBalanceResponseTransformer, postX402NetworksResponseTransformer, postX402WalletsResponseTransformer, postX402WalletsUpdateResponseTransformer } from './transformers.gen';
-import type { DeleteApiKeyData, DeleteApiKeyErrors, DeleteApiKeyResponses, DeleteFundWalletData, DeleteFundWalletErrors, DeleteFundWalletResponses, DeleteInboxAgentsData, DeleteInboxAgentsResponses, DeletePaymentSourceExtendedData, DeletePaymentSourceExtendedResponses, DeleteRegistryData, DeleteRegistryErrors, DeleteRegistryResponses, DeleteTxSyncQuarantineData, DeleteTxSyncQuarantineErrors, DeleteTxSyncQuarantineResponses, DeleteWalletLowBalanceData, DeleteWalletLowBalanceErrors, DeleteWalletLowBalanceResponses, DeleteWebhooksData, DeleteWebhooksErrors, DeleteWebhooksResponses, DeleteX402LowBalanceData, DeleteX402LowBalanceResponses, GetApiKeyData, GetApiKeyErrors, GetApiKeyResponses, GetApiKeyStatusData, GetApiKeyStatusResponses, GetBalanceData, GetBalanceResponses, GetFundDistributionData, GetFundDistributionErrors, GetFundDistributionResponses, GetFundWalletData, GetFundWalletErrors, GetFundWalletResponses, GetHealthData, GetHealthResponses, GetInboxAgentsAgentIdentifierData, GetInboxAgentsAgentIdentifierErrors, GetInboxAgentsAgentIdentifierResponses, GetInboxAgentsCountData, GetInboxAgentsCountResponses, GetInboxAgentsData, GetInboxAgentsDiffData, GetInboxAgentsDiffErrors, GetInboxAgentsDiffResponses, GetInboxAgentsResponses, GetInboxAgentsWalletData, GetInboxAgentsWalletResponses, GetInvoiceMonthlyData, GetInvoiceMonthlyMissingData, GetInvoiceMonthlyMissingResponses, GetInvoiceMonthlyResponses, GetMonitoringData, GetMonitoringErrors, GetMonitoringResponses, GetPaymentCountData, GetPaymentCountResponses, GetPaymentData, GetPaymentDiffData, GetPaymentDiffErrors, GetPaymentDiffNextActionData, GetPaymentDiffNextActionErrors, GetPaymentDiffNextActionResponses, GetPaymentDiffOnchainStateOrResultData, GetPaymentDiffOnchainStateOrResultErrors, GetPaymentDiffOnchainStateOrResultResponses, GetPaymentDiffResponses, GetPaymentErrors, GetPaymentResponses, GetPaymentSourceData, GetPaymentSourceExtendedData, GetPaymentSourceExtendedResponses, GetPaymentSourceResponses, GetPurchaseCountData, GetPurchaseCountResponses, GetPurchaseData, GetPurchaseDiffData, GetPurchaseDiffErrors, GetPurchaseDiffNextActionData, GetPurchaseDiffNextActionErrors, GetPurchaseDiffNextActionResponses, GetPurchaseDiffOnchainStateOrResultData, GetPurchaseDiffOnchainStateOrResultErrors, GetPurchaseDiffOnchainStateOrResultResponses, GetPurchaseDiffResponses, GetPurchaseErrors, GetPurchaseResponses, GetRailReadinessData, GetRailReadinessErrors, GetRailReadinessResponses, GetRegistryAgentIdentifierData, GetRegistryAgentIdentifierErrors, GetRegistryAgentIdentifierResponses, GetRegistryCountData, GetRegistryCountResponses, GetRegistryData, GetRegistryDiffData, GetRegistryDiffErrors, GetRegistryDiffResponses, GetRegistryResponses, GetRegistryWalletData, GetRegistryWalletResponses, GetRpcApiKeysData, GetRpcApiKeysErrors, GetRpcApiKeysResponses, GetSwapConfirmData, GetSwapConfirmErrors, GetSwapConfirmResponses, GetSwapEstimateData, GetSwapEstimateErrors, GetSwapEstimateResponses, GetSwapTransactionsData, GetSwapTransactionsErrors, GetSwapTransactionsResponses, GetTxSyncQuarantineData, GetTxSyncQuarantineErrors, GetTxSyncQuarantineResponses, GetUtxosData, GetUtxosResponses, GetWalletData, GetWalletListData, GetWalletListResponses, GetWalletLowBalanceData, GetWalletLowBalanceResponses, GetWalletResponses, GetWalletTransferFundsData, GetWalletTransferFundsErrors, GetWalletTransferFundsResponses, GetWebhooksData, GetWebhooksErrors, GetWebhooksResponses, GetX402BudgetsData, GetX402BudgetsResponses, GetX402LowBalanceData, GetX402LowBalanceResponses, GetX402NetworksAvailableData, GetX402NetworksAvailableResponses, GetX402NetworksData, GetX402NetworksResponses, GetX402PaymentsCountData, GetX402PaymentsCountResponses, GetX402PaymentsData, GetX402PaymentsResponses, GetX402SettlementsCountData, GetX402SettlementsCountResponses, GetX402SettlementsData, GetX402SettlementsResponses, GetX402WalletsBalanceData, GetX402WalletsBalanceResponses, GetX402WalletsCountData, GetX402WalletsCountResponses, GetX402WalletsData, GetX402WalletsDetailData, GetX402WalletsDetailResponses, GetX402WalletsResponses, PatchApiKeyData, PatchApiKeyErrors, PatchApiKeyResponses, PatchFundWalletData, PatchFundWalletErrors, PatchFundWalletResponses, PatchPaymentSourceExtendedData, PatchPaymentSourceExtendedErrors, PatchPaymentSourceExtendedResponses, PatchWalletData, PatchWalletErrors, PatchWalletLowBalanceData, PatchWalletLowBalanceErrors, PatchWalletLowBalanceResponses, PatchWalletResponses, PatchWebhooksData, PatchWebhooksErrors, PatchWebhooksResponses, PatchX402LowBalanceData, PatchX402LowBalanceResponses, PostApiKeyData, PostApiKeyErrors, PostApiKeyResponses, PostFundDistributionTriggerData, PostFundDistributionTriggerErrors, PostFundDistributionTriggerResponses, PostFundWalletData, PostFundWalletErrors, PostFundWalletResponses, PostInboxAgentsData, PostInboxAgentsDeregisterData, PostInboxAgentsDeregisterResponses, PostInboxAgentsResponses, PostInvoiceMonthlyData, PostInvoiceMonthlyInternalData, PostInvoiceMonthlyInternalResponses, PostInvoiceMonthlyResponses, PostMonitoringStartData, PostMonitoringStartErrors, PostMonitoringStartResponses, PostMonitoringStopData, PostMonitoringStopErrors, PostMonitoringStopResponses, PostMonitoringTriggerCycleData, PostMonitoringTriggerCycleErrors, PostMonitoringTriggerCycleResponses, PostPaymentAuthorizeRefundData, PostPaymentAuthorizeRefundErrors, PostPaymentAuthorizeRefundResponses, PostPaymentData, PostPaymentErrors, PostPaymentErrorStateRecoveryData, PostPaymentErrorStateRecoveryErrors, PostPaymentErrorStateRecoveryResponses, PostPaymentIncomeData, PostPaymentIncomeErrors, PostPaymentIncomeResponses, PostPaymentResolveBlockchainIdentifierData, PostPaymentResolveBlockchainIdentifierErrors, PostPaymentResolveBlockchainIdentifierResponses, PostPaymentResponses, PostPaymentSourceExtendedData, PostPaymentSourceExtendedResponses, PostPaymentSubmitResultData, PostPaymentSubmitResultErrors, PostPaymentSubmitResultResponses, PostPaymentX402Data, PostPaymentX402Errors, PostPaymentX402Responses, PostPurchaseCancelRefundRequestData, PostPurchaseCancelRefundRequestErrors, PostPurchaseCancelRefundRequestResponses, PostPurchaseData, PostPurchaseErrors, PostPurchaseErrorStateRecoveryData, PostPurchaseErrorStateRecoveryErrors, PostPurchaseErrorStateRecoveryResponses, PostPurchaseRequestRefundData, PostPurchaseRequestRefundErrors, PostPurchaseRequestRefundResponses, PostPurchaseResolveBlockchainIdentifierData, PostPurchaseResolveBlockchainIdentifierErrors, PostPurchaseResolveBlockchainIdentifierResponses, PostPurchaseResponses, PostPurchaseSpendingData, PostPurchaseSpendingErrors, PostPurchaseSpendingResponses, PostRegistryData, PostRegistryDeregisterData, PostRegistryDeregisterResponses, PostRegistryResponses, PostRegistryUpdateData, PostRegistryUpdateResponses, PostRequestRepairData, PostRequestRepairErrors, PostRequestRepairPreviewData, PostRequestRepairPreviewErrors, PostRequestRepairPreviewResponses, PostRequestRepairResponses, PostSignatureSignCreateInvoiceMonthlyData, PostSignatureSignCreateInvoiceMonthlyResponses, PostSignatureSignVerifyAndPublishAgentData, PostSignatureSignVerifyAndPublishAgentResponses, PostSignatureVerifyRevealDataData, PostSignatureVerifyRevealDataErrors, PostSignatureVerifyRevealDataResponses, PostSwapAcknowledgeTimeoutData, PostSwapAcknowledgeTimeoutErrors, PostSwapAcknowledgeTimeoutResponses, PostSwapCancelData, PostSwapCancelErrors, PostSwapCancelResponses, PostSwapData, PostSwapErrors, PostSwapResponses, PostTxSyncQuarantineRetryData, PostTxSyncQuarantineRetryErrors, PostTxSyncQuarantineRetryResponses, PostWalletData, PostWalletLowBalanceData, PostWalletLowBalanceErrors, PostWalletLowBalanceResponses, PostWalletResponses, PostWalletTransferFundsData, PostWalletTransferFundsErrors, PostWalletTransferFundsResponses, PostWebhooksData, PostWebhooksErrors, PostWebhooksResponses, PostWebhooksTestData, PostWebhooksTestErrors, PostWebhooksTestResponses, PostX402AnalyticsData, PostX402AnalyticsResponses, PostX402BudgetsData, PostX402BudgetsResponses, PostX402LowBalanceData, PostX402LowBalanceResponses, PostX402NetworksData, PostX402NetworksResponses, PostX402PayData, PostX402PaymentsReconcileData, PostX402PaymentsReconcileResponses, PostX402PayResponses, PostX402SettleData, PostX402SettleResponses, PostX402VerifyData, PostX402VerifyResponses, PostX402WalletsData, PostX402WalletsDeleteData, PostX402WalletsDeleteResponses, PostX402WalletsResponses, PostX402WalletsUpdateData, PostX402WalletsUpdateResponses } from './types.gen';
+import { deleteInboxAgentsResponseTransformer, deletePaymentSourceExtendedResponseTransformer, deleteRegistryResponseTransformer, deleteWalletLowBalanceResponseTransformer, deleteWebhooksResponseTransformer, deleteX402LowBalanceResponseTransformer, getFundDistributionResponseTransformer, getFundWalletResponseTransformer, getHydraHeadErrorsResponseTransformer, getHydraHeadTransactionsResponseTransformer, getHydraParticipantLocalResponseTransformer, getHydraParticipantRemoteResponseTransformer, getHydraRelationResponseTransformer, getInboxAgentsDiffResponseTransformer, getInboxAgentsResponseTransformer, getInvoiceMonthlyMissingResponseTransformer, getInvoiceMonthlyResponseTransformer, getPaymentDiffNextActionResponseTransformer, getPaymentDiffOnchainStateOrResultResponseTransformer, getPaymentDiffResponseTransformer, getPaymentResponseTransformer, getPaymentSourceExtendedResponseTransformer, getPaymentSourceResponseTransformer, getPurchaseDiffNextActionResponseTransformer, getPurchaseDiffOnchainStateOrResultResponseTransformer, getPurchaseDiffResponseTransformer, getPurchaseResponseTransformer, getRegistryDiffResponseTransformer, getRegistryResponseTransformer, getRpcApiKeysResponseTransformer, getTxSyncQuarantineResponseTransformer, getWalletListResponseTransformer, getWalletLowBalanceResponseTransformer, getWalletResponseTransformer, getWalletTransferFundsResponseTransformer, getWebhooksResponseTransformer, getX402BudgetsResponseTransformer, getX402LowBalanceResponseTransformer, getX402NetworksResponseTransformer, getX402PaymentsResponseTransformer, getX402SettlementsResponseTransformer, getX402WalletsDetailResponseTransformer, getX402WalletsResponseTransformer, patchPaymentSourceExtendedResponseTransformer, patchWalletLowBalanceResponseTransformer, patchWalletResponseTransformer, patchWebhooksResponseTransformer, patchX402LowBalanceResponseTransformer, postInboxAgentsDeregisterResponseTransformer, postInboxAgentsResponseTransformer, postPaymentAuthorizeRefundResponseTransformer, postPaymentErrorStateRecoveryResponseTransformer, postPaymentIncomeResponseTransformer, postPaymentResolveBlockchainIdentifierResponseTransformer, postPaymentResponseTransformer, postPaymentSourceExtendedResponseTransformer, postPaymentSubmitResultResponseTransformer, postPurchaseCancelRefundRequestResponseTransformer, postPurchaseErrorStateRecoveryResponseTransformer, postPurchaseRequestRefundResponseTransformer, postPurchaseResolveBlockchainIdentifierResponseTransformer, postPurchaseResponseTransformer, postPurchaseSpendingResponseTransformer, postRegistryDeregisterResponseTransformer, postRegistryResponseTransformer, postRegistryUpdateResponseTransformer, postTxSyncQuarantineRetryResponseTransformer, postWalletLowBalanceResponseTransformer, postWalletTransferFundsResponseTransformer, postWebhooksResponseTransformer, postX402AnalyticsResponseTransformer, postX402BudgetsResponseTransformer, postX402LowBalanceResponseTransformer, postX402NetworksResponseTransformer, postX402WalletsResponseTransformer, postX402WalletsUpdateResponseTransformer } from './transformers.gen';
+import type { DeleteApiKeyData, DeleteApiKeyErrors, DeleteApiKeyResponses, DeleteFundWalletData, DeleteFundWalletErrors, DeleteFundWalletResponses, DeleteHydraHeadErrorsData, DeleteHydraHeadErrorsErrors, DeleteHydraHeadErrorsResponses, DeleteHydraHostData, DeleteHydraHostErrors, DeleteHydraHostResponses, DeleteHydraInviteData, DeleteHydraInviteErrors, DeleteHydraInviteResponses, DeleteHydraLowBalanceData, DeleteHydraLowBalanceErrors, DeleteHydraLowBalanceResponses, DeleteHydraParticipantLocalData, DeleteHydraParticipantLocalErrors, DeleteHydraParticipantLocalResponses, DeleteHydraParticipantRemoteData, DeleteHydraParticipantRemoteErrors, DeleteHydraParticipantRemoteResponses, DeleteHydraRelationData, DeleteHydraRelationErrors, DeleteHydraRelationResponses, DeleteInboxAgentsData, DeleteInboxAgentsResponses, DeletePaymentSourceExtendedData, DeletePaymentSourceExtendedResponses, DeleteRegistryData, DeleteRegistryErrors, DeleteRegistryResponses, DeleteTxSyncQuarantineData, DeleteTxSyncQuarantineErrors, DeleteTxSyncQuarantineResponses, DeleteWalletLowBalanceData, DeleteWalletLowBalanceErrors, DeleteWalletLowBalanceResponses, DeleteWebhooksData, DeleteWebhooksErrors, DeleteWebhooksResponses, DeleteX402LowBalanceData, DeleteX402LowBalanceResponses, GetApiKeyData, GetApiKeyErrors, GetApiKeyResponses, GetApiKeyStatusData, GetApiKeyStatusResponses, GetBalanceData, GetBalanceResponses, GetFundDistributionData, GetFundDistributionErrors, GetFundDistributionResponses, GetFundWalletData, GetFundWalletErrors, GetFundWalletResponses, GetHealthData, GetHealthResponses, GetHydraHeadBalanceData, GetHydraHeadBalanceErrors, GetHydraHeadBalanceResponses, GetHydraHeadConnectionData, GetHydraHeadConnectionErrors, GetHydraHeadConnectionResponses, GetHydraHeadData, GetHydraHeadErrors, GetHydraHeadErrorsData, GetHydraHeadErrorsErrors, GetHydraHeadErrorsResponses, GetHydraHeadResponses, GetHydraHeadTopupData, GetHydraHeadTopupErrors, GetHydraHeadTopupResponses, GetHydraHeadTransactionsData, GetHydraHeadTransactionsErrors, GetHydraHeadTransactionsResponses, GetHydraHeadWithdrawData, GetHydraHeadWithdrawErrors, GetHydraHeadWithdrawResponses, GetHydraHostData, GetHydraHostErrors, GetHydraHostResponses, GetHydraInviteData, GetHydraInviteErrors, GetHydraInviteResponses, GetHydraLowBalanceData, GetHydraLowBalanceErrors, GetHydraLowBalanceResponses, GetHydraParticipantLocalData, GetHydraParticipantLocalErrors, GetHydraParticipantLocalFundData, GetHydraParticipantLocalFundErrors, GetHydraParticipantLocalFundResponses, GetHydraParticipantLocalResponses, GetHydraParticipantRemoteData, GetHydraParticipantRemoteErrors, GetHydraParticipantRemoteResponses, GetHydraRelationData, GetHydraRelationErrors, GetHydraRelationResponses, GetHydraWalletBaseData, GetHydraWalletBaseErrors, GetHydraWalletBaseResponses, GetInboxAgentsAgentIdentifierData, GetInboxAgentsAgentIdentifierErrors, GetInboxAgentsAgentIdentifierResponses, GetInboxAgentsCountData, GetInboxAgentsCountResponses, GetInboxAgentsData, GetInboxAgentsDiffData, GetInboxAgentsDiffErrors, GetInboxAgentsDiffResponses, GetInboxAgentsResponses, GetInboxAgentsWalletData, GetInboxAgentsWalletResponses, GetInvoiceMonthlyData, GetInvoiceMonthlyMissingData, GetInvoiceMonthlyMissingResponses, GetInvoiceMonthlyResponses, GetMonitoringData, GetMonitoringErrors, GetMonitoringResponses, GetPaymentCountData, GetPaymentCountResponses, GetPaymentData, GetPaymentDiffData, GetPaymentDiffErrors, GetPaymentDiffNextActionData, GetPaymentDiffNextActionErrors, GetPaymentDiffNextActionResponses, GetPaymentDiffOnchainStateOrResultData, GetPaymentDiffOnchainStateOrResultErrors, GetPaymentDiffOnchainStateOrResultResponses, GetPaymentDiffResponses, GetPaymentErrors, GetPaymentResponses, GetPaymentSourceData, GetPaymentSourceExtendedData, GetPaymentSourceExtendedResponses, GetPaymentSourceResponses, GetPurchaseCountData, GetPurchaseCountResponses, GetPurchaseData, GetPurchaseDiffData, GetPurchaseDiffErrors, GetPurchaseDiffNextActionData, GetPurchaseDiffNextActionErrors, GetPurchaseDiffNextActionResponses, GetPurchaseDiffOnchainStateOrResultData, GetPurchaseDiffOnchainStateOrResultErrors, GetPurchaseDiffOnchainStateOrResultResponses, GetPurchaseDiffResponses, GetPurchaseErrors, GetPurchaseResponses, GetRailReadinessData, GetRailReadinessErrors, GetRailReadinessResponses, GetRegistryAgentIdentifierData, GetRegistryAgentIdentifierErrors, GetRegistryAgentIdentifierResponses, GetRegistryCountData, GetRegistryCountResponses, GetRegistryData, GetRegistryDiffData, GetRegistryDiffErrors, GetRegistryDiffResponses, GetRegistryResponses, GetRegistryWalletData, GetRegistryWalletResponses, GetRpcApiKeysData, GetRpcApiKeysErrors, GetRpcApiKeysResponses, GetSwapConfirmData, GetSwapConfirmErrors, GetSwapConfirmResponses, GetSwapEstimateData, GetSwapEstimateErrors, GetSwapEstimateResponses, GetSwapTransactionsData, GetSwapTransactionsErrors, GetSwapTransactionsResponses, GetTxSyncQuarantineData, GetTxSyncQuarantineErrors, GetTxSyncQuarantineResponses, GetUtxosData, GetUtxosResponses, GetWalletData, GetWalletListData, GetWalletListResponses, GetWalletLowBalanceData, GetWalletLowBalanceResponses, GetWalletResponses, GetWalletTransferFundsData, GetWalletTransferFundsErrors, GetWalletTransferFundsResponses, GetWebhooksData, GetWebhooksErrors, GetWebhooksResponses, GetX402BudgetsData, GetX402BudgetsResponses, GetX402LowBalanceData, GetX402LowBalanceResponses, GetX402NetworksAvailableData, GetX402NetworksAvailableResponses, GetX402NetworksData, GetX402NetworksResponses, GetX402PaymentsCountData, GetX402PaymentsCountResponses, GetX402PaymentsData, GetX402PaymentsResponses, GetX402SettlementsCountData, GetX402SettlementsCountResponses, GetX402SettlementsData, GetX402SettlementsResponses, GetX402WalletsBalanceData, GetX402WalletsBalanceResponses, GetX402WalletsCountData, GetX402WalletsCountResponses, GetX402WalletsData, GetX402WalletsDetailData, GetX402WalletsDetailResponses, GetX402WalletsResponses, PatchApiKeyData, PatchApiKeyErrors, PatchApiKeyResponses, PatchFundWalletData, PatchFundWalletErrors, PatchFundWalletResponses, PatchHydraHeadData, PatchHydraHeadErrors, PatchHydraHeadResponses, PatchHydraHostData, PatchHydraHostErrors, PatchHydraHostResponses, PatchPaymentSourceExtendedData, PatchPaymentSourceExtendedErrors, PatchPaymentSourceExtendedResponses, PatchWalletData, PatchWalletErrors, PatchWalletLowBalanceData, PatchWalletLowBalanceErrors, PatchWalletLowBalanceResponses, PatchWalletResponses, PatchWebhooksData, PatchWebhooksErrors, PatchWebhooksResponses, PatchX402LowBalanceData, PatchX402LowBalanceResponses, PostApiKeyData, PostApiKeyErrors, PostApiKeyResponses, PostFundDistributionTriggerData, PostFundDistributionTriggerErrors, PostFundDistributionTriggerResponses, PostFundWalletData, PostFundWalletErrors, PostFundWalletResponses, PostHydraHeadCloseData, PostHydraHeadCloseErrors, PostHydraHeadCloseResponses, PostHydraHeadCommitData, PostHydraHeadCommitErrors, PostHydraHeadCommitResponses, PostHydraHeadFanoutData, PostHydraHeadFanoutErrors, PostHydraHeadFanoutResponses, PostHydraHeadInitData, PostHydraHeadInitErrors, PostHydraHeadInitResponses, PostHydraHeadTopupData, PostHydraHeadTopupErrors, PostHydraHeadTopupRecoverData, PostHydraHeadTopupRecoverErrors, PostHydraHeadTopupRecoverResponses, PostHydraHeadTopupResponses, PostHydraHeadWithdrawData, PostHydraHeadWithdrawErrors, PostHydraHeadWithdrawResponses, PostHydraHostCheckData, PostHydraHostCheckErrors, PostHydraHostCheckResponses, PostHydraHostData, PostHydraHostErrors, PostHydraHostResponses, PostHydraInviteData, PostHydraInviteErrors, PostHydraInvitePreviewData, PostHydraInvitePreviewErrors, PostHydraInvitePreviewResponses, PostHydraInviteRedeemData, PostHydraInviteRedeemErrors, PostHydraInviteRedeemResponses, PostHydraInviteResponses, PostHydraLowBalanceData, PostHydraLowBalanceErrors, PostHydraLowBalanceResponses, PostHydraParticipantLocalFundData, PostHydraParticipantLocalFundErrors, PostHydraParticipantLocalFundResponses, PostHydraParticipantLocalKeysData, PostHydraParticipantLocalKeysErrors, PostHydraParticipantLocalKeysResponses, PostHydraParticipantLocalWithdrawData, PostHydraParticipantLocalWithdrawErrors, PostHydraParticipantLocalWithdrawResponses, PostHydraWalletBaseData, PostHydraWalletBaseErrors, PostHydraWalletBaseResponses, PostInboxAgentsData, PostInboxAgentsDeregisterData, PostInboxAgentsDeregisterResponses, PostInboxAgentsResponses, PostInvoiceMonthlyData, PostInvoiceMonthlyInternalData, PostInvoiceMonthlyInternalResponses, PostInvoiceMonthlyResponses, PostMonitoringStartData, PostMonitoringStartErrors, PostMonitoringStartResponses, PostMonitoringStopData, PostMonitoringStopErrors, PostMonitoringStopResponses, PostMonitoringTriggerCycleData, PostMonitoringTriggerCycleErrors, PostMonitoringTriggerCycleResponses, PostPaymentAuthorizeRefundData, PostPaymentAuthorizeRefundErrors, PostPaymentAuthorizeRefundResponses, PostPaymentData, PostPaymentErrors, PostPaymentErrorStateRecoveryData, PostPaymentErrorStateRecoveryErrors, PostPaymentErrorStateRecoveryResponses, PostPaymentIncomeData, PostPaymentIncomeErrors, PostPaymentIncomeResponses, PostPaymentResolveBlockchainIdentifierData, PostPaymentResolveBlockchainIdentifierErrors, PostPaymentResolveBlockchainIdentifierResponses, PostPaymentResponses, PostPaymentSourceExtendedData, PostPaymentSourceExtendedResponses, PostPaymentSubmitResultData, PostPaymentSubmitResultErrors, PostPaymentSubmitResultResponses, PostPaymentX402Data, PostPaymentX402Errors, PostPaymentX402Responses, PostPurchaseCancelRefundRequestData, PostPurchaseCancelRefundRequestErrors, PostPurchaseCancelRefundRequestResponses, PostPurchaseData, PostPurchaseErrors, PostPurchaseErrorStateRecoveryData, PostPurchaseErrorStateRecoveryErrors, PostPurchaseErrorStateRecoveryResponses, PostPurchaseRequestRefundData, PostPurchaseRequestRefundErrors, PostPurchaseRequestRefundResponses, PostPurchaseResolveBlockchainIdentifierData, PostPurchaseResolveBlockchainIdentifierErrors, PostPurchaseResolveBlockchainIdentifierResponses, PostPurchaseResponses, PostPurchaseSpendingData, PostPurchaseSpendingErrors, PostPurchaseSpendingResponses, PostRegistryData, PostRegistryDeregisterData, PostRegistryDeregisterResponses, PostRegistryResponses, PostRegistryUpdateData, PostRegistryUpdateResponses, PostRequestRepairData, PostRequestRepairErrors, PostRequestRepairPreviewData, PostRequestRepairPreviewErrors, PostRequestRepairPreviewResponses, PostRequestRepairResponses, PostSignatureSignCreateInvoiceMonthlyData, PostSignatureSignCreateInvoiceMonthlyResponses, PostSignatureSignVerifyAndPublishAgentData, PostSignatureSignVerifyAndPublishAgentResponses, PostSignatureVerifyRevealDataData, PostSignatureVerifyRevealDataErrors, PostSignatureVerifyRevealDataResponses, PostSwapAcknowledgeTimeoutData, PostSwapAcknowledgeTimeoutErrors, PostSwapAcknowledgeTimeoutResponses, PostSwapCancelData, PostSwapCancelErrors, PostSwapCancelResponses, PostSwapData, PostSwapErrors, PostSwapResponses, PostTxSyncQuarantineRetryData, PostTxSyncQuarantineRetryErrors, PostTxSyncQuarantineRetryResponses, PostWalletData, PostWalletLowBalanceData, PostWalletLowBalanceErrors, PostWalletLowBalanceResponses, PostWalletResponses, PostWalletTransferFundsData, PostWalletTransferFundsErrors, PostWalletTransferFundsResponses, PostWebhooksData, PostWebhooksErrors, PostWebhooksResponses, PostWebhooksTestData, PostWebhooksTestErrors, PostWebhooksTestResponses, PostX402AnalyticsData, PostX402AnalyticsResponses, PostX402BudgetsData, PostX402BudgetsResponses, PostX402LowBalanceData, PostX402LowBalanceResponses, PostX402NetworksData, PostX402NetworksResponses, PostX402PayData, PostX402PaymentsReconcileData, PostX402PaymentsReconcileResponses, PostX402PayResponses, PostX402SettleData, PostX402SettleResponses, PostX402VerifyData, PostX402VerifyResponses, PostX402WalletsData, PostX402WalletsDeleteData, PostX402WalletsDeleteResponses, PostX402WalletsResponses, PostX402WalletsUpdateData, PostX402WalletsUpdateResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -87,7 +87,7 @@ export const postWallet = <ThrowOnError extends boolean = false>(options?: Optio
 });
 
 /**
- * List hot wallets, optionally filtered by payment source and type. (admin access required)
+ * List hot wallets, optionally filtered by payment source and type. (read access required)
  *
  * Lists hot wallets across payment sources with cursor-based pagination
  */
@@ -926,7 +926,7 @@ export const deletePaymentSourceExtended = <ThrowOnError extends boolean = false
 });
 
 /**
- * List payment sources with their public details augmented with internal configuration and sync status information. (admin access required)
+ * List payment sources with their public details augmented with internal configuration and sync status information. (read access required)
  *
  * Gets the payment contracts including the status.
  */
@@ -1289,7 +1289,7 @@ export const postMonitoringStop = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * List accessible x402 EVM chains. (pay access required)
+ * List accessible x402 EVM chains. (read access required)
  *
  * Lists the safe network projection needed to create managed wallets. Non-admin results are restricted to the API key CAIP-2 network limit; RPC and facilitator configuration are never returned.
  */
@@ -1331,9 +1331,9 @@ export const postX402Networks = <ThrowOnError extends boolean = false>(options?:
 });
 
 /**
- * List managed x402 EVM wallets. (pay access required)
+ * List managed x402 EVM wallets. (read access required; no key material)
  *
- * Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Non-admin results are limited by both wallet owner and permitted network.
+ * Lists managed EVM wallets used to fund x402 payments and settle inbound payments. Results are limited by the key's permitted networks; a key with wallet scoping enabled additionally sees only its assigned and self-created wallets (an unscoped key sees all, the Cardano-parity default). createdById is only returned to admins and for the caller's own wallets.
  */
 export const getX402Wallets = <ThrowOnError extends boolean = false>(options?: Options<GetX402WalletsData, ThrowOnError>): RequestResult<GetX402WalletsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetX402WalletsResponses, unknown, ThrowOnError>({
     responseTransformer: getX402WalletsResponseTransformer,
@@ -1344,7 +1344,7 @@ export const getX402Wallets = <ThrowOnError extends boolean = false>(options?: O
 });
 
 /**
- * Create a managed x402 EVM wallet. (pay access required; owned by the creating key)
+ * Create a managed x402 EVM wallet. (admin access required; returns the generated private key once)
  *
  * Creates a managed EVM wallet on a network permitted for the API key. When no key is supplied, the generated private key is returned once for backup and stored only in encrypted form.
  */
@@ -1361,9 +1361,9 @@ export const postX402Wallets = <ThrowOnError extends boolean = false>(options?: 
 });
 
 /**
- * Get a managed x402 EVM wallet by id. (pay access required)
+ * Get a managed x402 EVM wallet by id. (read access required; no key material)
  *
- * Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their owner or network scope.
+ * Fetches a single managed EVM wallet by id, including its bound network. Non-admin keys receive 404 outside their permitted networks, and outside their wallet scope when scoping is enabled (an unscoped key can fetch any wallet, the Cardano-parity default). createdById is only returned to admins and for the caller's own wallets.
  */
 export const getX402WalletsDetail = <ThrowOnError extends boolean = false>(options: Options<GetX402WalletsDetailData, ThrowOnError>): RequestResult<GetX402WalletsDetailResponses, unknown, ThrowOnError> => (options.client ?? client).get<GetX402WalletsDetailResponses, unknown, ThrowOnError>({
     responseTransformer: getX402WalletsDetailResponseTransformer,
@@ -1374,7 +1374,7 @@ export const getX402WalletsDetail = <ThrowOnError extends boolean = false>(optio
 });
 
 /**
- * Retire a managed x402 EVM wallet. (pay access required; owner and network scoped)
+ * Retire a managed x402 EVM wallet. (admin access required; network scoped)
  *
  * Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.
  */
@@ -1390,9 +1390,9 @@ export const postX402WalletsDelete = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
- * List x402 wallet budgets. (admin access required)
+ * List x402 wallet budgets. (pay access required)
  *
- * Lists per-API-key spend budgets for managed x402 wallets, optionally filtered by API key.
+ * Lists per-API-key spend budgets for managed x402 wallets. A non-admin key always sees only its own budgets, and the apiKeyId filter is ignored for it; an admin may filter by API key, or omit it for all.
  */
 export const getX402Budgets = <ThrowOnError extends boolean = false>(options?: Options<GetX402BudgetsData, ThrowOnError>): RequestResult<GetX402BudgetsResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetX402BudgetsResponses, unknown, ThrowOnError>({
     responseTransformer: getX402BudgetsResponseTransformer,
@@ -1468,7 +1468,7 @@ export const postX402Pay = <ThrowOnError extends boolean = false>(options?: Opti
 });
 
 /**
- * List x402 payment attempts. (pay access required; non-admin keys see only their own)
+ * List x402 payment attempts. (read access required; non-admin keys see only their own)
  *
  * Lists x402 payment attempts (inbound verify/settle and outbound payments), newest first, with their settlement result.
  */
@@ -1497,7 +1497,7 @@ export const postX402PaymentsReconcile = <ThrowOnError extends boolean = false>(
 });
 
 /**
- * List x402 settlements. (pay access required; non-admin keys see only their own)
+ * List x402 settlements. (read access required; non-admin keys see only their own)
  *
  * Lists x402 on-chain settlements, newest first.
  */
@@ -1510,7 +1510,7 @@ export const getX402Settlements = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * Update a managed x402 EVM wallet. (pay access required; owner and network scoped)
+ * Update a managed x402 EVM wallet. (admin access required; network scoped)
  *
  * Updates the human-readable note of a managed EVM wallet.
  */
@@ -1527,7 +1527,7 @@ export const postX402WalletsUpdate = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
- * Read managed x402 wallet balances. (pay access required; owner and network scoped)
+ * Read managed x402 wallet balances. (read access required; owner and network scoped)
  *
  * Reads on-chain balances (native gas plus the default token) of a managed EVM wallet on the wallet's bound network.
  */
@@ -1539,7 +1539,7 @@ export const getX402WalletsBalance = <ThrowOnError extends boolean = false>(opti
 });
 
 /**
- * Count managed x402 wallets. (pay access required)
+ * Count managed x402 wallets. (read access required)
  *
  * Counts active managed EVM wallets, optionally filtered by direction. Non-admin counts are limited by owner and permitted network.
  */
@@ -1615,7 +1615,7 @@ export const postX402LowBalance = <ThrowOnError extends boolean = false>(options
 });
 
 /**
- * Count x402 payment attempts. (pay access required; non-admin keys count only their own)
+ * Count x402 payment attempts. (read access required; non-admin keys count only their own)
  *
  * Counts x402 payment attempts, optionally filtered by status, direction and chain.
  */
@@ -1627,7 +1627,7 @@ export const getX402PaymentsCount = <ThrowOnError extends boolean = false>(optio
 });
 
 /**
- * Count x402 settlements. (pay access required; non-admin keys count only their own)
+ * Count x402 settlements. (read access required; non-admin keys count only their own)
  *
  * Counts x402 settlements, optionally filtered by chain and success.
  */
@@ -1746,9 +1746,610 @@ export const postFundDistributionTrigger = <ThrowOnError extends boolean = false
 });
 
 /**
+ * Revoke an unredeemed invite. (admin access required)
+ *
+ * Stops the Host honouring the nonce and releases the node and peer port it reserved. Refused once redeemed: by then the reservation is a running node with a peer, and removing that is closing a head.
+ */
+export const deleteHydraInvite = <ThrowOnError extends boolean = false>(options?: Options<DeleteHydraInviteData, ThrowOnError>): RequestResult<DeleteHydraInviteResponses, DeleteHydraInviteErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteHydraInviteResponses, DeleteHydraInviteErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/invite',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List head invites. (admin access required)
+ *
+ * Invites this service has issued or redeemed. An issued invite holds a provisioned node and a peer port until it is redeemed, revoked or expires.
+ */
+export const getHydraInvite = <ThrowOnError extends boolean = false>(options?: Options<GetHydraInviteData, ThrowOnError>): RequestResult<GetHydraInviteResponses, GetHydraInviteErrors, ThrowOnError> => (options?.client ?? client).get<GetHydraInviteResponses, GetHydraInviteErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/invite',
+    ...options
+});
+
+/**
+ * Mint a head invite. (admin access required)
+ *
+ * Provisions a node on a Hydra Host and signs its full public material with the given wallet, producing a code to hand a counterparty out of band. The node and its peer port are reserved from this moment and cannot be re-pointed, because --peer is fixed at boot — so an invite that is never redeemed must be revoked or left to expire. Redeeming it is what supplies the counterparty's material and lets the node start.
+ */
+export const postHydraInvite = <ThrowOnError extends boolean = false>(options?: Options<PostHydraInviteData, ThrowOnError>): RequestResult<PostHydraInviteResponses, PostHydraInviteErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraInviteResponses, PostHydraInviteErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/invite',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Inspect an invite without acting on it. (admin access required)
+ *
+ * Decodes an invite code and reports whether its signature matches the wallet it claims to be from. Nothing is provisioned and no counterparty is contacted, so this is safe to call on an invite of unknown provenance. A false `signatureValid` is reported rather than thrown, because an operator looking at a forged invite is better served by being told so.
+ */
+export const postHydraInvitePreview = <ThrowOnError extends boolean = false>(options?: Options<PostHydraInvitePreviewData, ThrowOnError>): RequestResult<PostHydraInvitePreviewResponses, PostHydraInvitePreviewErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraInvitePreviewResponses, PostHydraInvitePreviewErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/invite/preview',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Redeem a counterparty invite. (admin access required)
+ *
+ * Verifies the issuer's signature, provisions our own node, sends our material to the issuer's Exchange Plane and records the resulting relation and head. Spends a node and a peer port, and tells the counterparty we are ready, so it is deliberate rather than automatic.
+ */
+export const postHydraInviteRedeem = <ThrowOnError extends boolean = false>(options?: Options<PostHydraInviteRedeemData, ThrowOnError>): RequestResult<PostHydraInviteRedeemResponses, PostHydraInviteRedeemErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraInviteRedeemResponses, PostHydraInviteRedeemErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/invite/redeem',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Remove a Hydra Host. (admin access required)
+ *
+ * Removes a Host registration. Refused while the Host still runs nodes, because their heads cannot be relocated.
+ */
+export const deleteHydraHost = <ThrowOnError extends boolean = false>(options?: Options<DeleteHydraHostData, ThrowOnError>): RequestResult<DeleteHydraHostResponses, DeleteHydraHostErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteHydraHostResponses, DeleteHydraHostErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/host',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List registered Hydra Hosts. (admin access required)
+ *
+ * Lists the Hydra Host deployments that can run hydra-node processes for this service. Tokens are never returned; `hasAdminToken` reports whether a Host can be provisioned on.
+ */
+export const getHydraHost = <ThrowOnError extends boolean = false>(options?: Options<GetHydraHostData, ThrowOnError>): RequestResult<GetHydraHostResponses, GetHydraHostErrors, ThrowOnError> => (options?.client ?? client).get<GetHydraHostResponses, GetHydraHostErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/host',
+    ...options
+});
+
+/**
+ * Update a Hydra Host. (admin access required)
+ *
+ * Updates a Host label, status or tokens. Setting status to Draining keeps existing heads served while accepting no new placements, which matters because a head cannot be moved to another Host.
+ */
+export const patchHydraHost = <ThrowOnError extends boolean = false>(options?: Options<PatchHydraHostData, ThrowOnError>): RequestResult<PatchHydraHostResponses, PatchHydraHostErrors, ThrowOnError> => (options?.client ?? client).patch<PatchHydraHostResponses, PatchHydraHostErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/host',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Register a Hydra Host. (admin access required)
+ *
+ * Registers a Hydra Host control plane. The user token grants runtime access to the proxied node API; the optional admin token additionally allows provisioning nodes on this Host. Both are stored encrypted and never returned.
+ */
+export const postHydraHost = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHostData, ThrowOnError>): RequestResult<PostHydraHostResponses, PostHydraHostErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHostResponses, PostHydraHostErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/host',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Probe a Hydra Host and record its capabilities. (admin access required)
+ *
+ * Asks the Host which hydra-node version, script catalogue and ledger parameters it runs, and records the answer. A failed probe marks the Host Unreachable, which stops new placements without disturbing the heads already on it.
+ */
+export const postHydraHostCheck = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHostCheckData, ThrowOnError>): RequestResult<PostHydraHostCheckResponses, PostHydraHostCheckErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHostCheckResponses, PostHydraHostCheckErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/host/check',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List candidate wallets for Hydra participants. (admin access required)
+ *
+ * Lists the WalletBase entries eligible to back a Hydra participant, optionally filtered by network and payment source.
+ */
+export const getHydraWalletBase = <ThrowOnError extends boolean = false>(options?: Options<GetHydraWalletBaseData, ThrowOnError>): RequestResult<GetHydraWalletBaseResponses, GetHydraWalletBaseErrors, ThrowOnError> => (options?.client ?? client).get<GetHydraWalletBaseResponses, GetHydraWalletBaseErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/wallet-base',
+    ...options
+});
+
+/**
+ * Ensure a WalletBase exists for a Hydra counterparty. (admin access required)
+ *
+ * Idempotently records a counterparty wallet (vkey + address) so it can be referenced as a remote Hydra participant.
+ */
+export const postHydraWalletBase = <ThrowOnError extends boolean = false>(options?: Options<PostHydraWalletBaseData, ThrowOnError>): RequestResult<PostHydraWalletBaseResponses, PostHydraWalletBaseErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraWalletBaseResponses, PostHydraWalletBaseErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/wallet-base',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Delete a Hydra relation. (admin access required)
+ *
+ * Deletes a relation that has no active (non-final) head.
+ */
+export const deleteHydraRelation = <ThrowOnError extends boolean = false>(options?: Options<DeleteHydraRelationData, ThrowOnError>): RequestResult<DeleteHydraRelationResponses, DeleteHydraRelationErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteHydraRelationResponses, DeleteHydraRelationErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/relation',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List Hydra relations. (admin access required)
+ *
+ * Lists the local↔remote wallet pairings that Hydra heads are created from.
+ */
+export const getHydraRelation = <ThrowOnError extends boolean = false>(options?: Options<GetHydraRelationData, ThrowOnError>): RequestResult<GetHydraRelationResponses, GetHydraRelationErrors, ThrowOnError> => (options?.client ?? client).get<GetHydraRelationResponses, GetHydraRelationErrors, ThrowOnError>({
+    responseTransformer: getHydraRelationResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/relation',
+    ...options
+});
+
+/**
+ * List or get Hydra heads. (admin access required)
+ *
+ * Lists Hydra heads with lifecycle status, participants and reconciliation state. Filter by id, relationId, status, or isEnabled.
+ */
+export const getHydraHead = <ThrowOnError extends boolean = false>(options?: Options<GetHydraHeadData, ThrowOnError>): RequestResult<GetHydraHeadResponses, GetHydraHeadErrors, ThrowOnError> => (options?.client ?? client).get<GetHydraHeadResponses, GetHydraHeadErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head',
+    ...options
+});
+
+/**
+ * Enable or disable a Hydra head. (admin access required)
+ *
+ * Enabling re-verifies the head/participants/InitTx on L1 before re-admitting it; disabling quarantines it (drops its InitTx admission).
+ */
+export const patchHydraHead = <ThrowOnError extends boolean = false>(options?: Options<PatchHydraHeadData, ThrowOnError>): RequestResult<PatchHydraHeadResponses, PatchHydraHeadErrors, ThrowOnError> => (options?.client ?? client).patch<PatchHydraHeadResponses, PatchHydraHeadErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Run the Hydra head init lifecycle action. (admin access required)
+ *
+ * Submits the init transaction for the head through the local Hydra node.
+ */
+export const postHydraHeadInit = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadInitData, ThrowOnError>): RequestResult<PostHydraHeadInitResponses, PostHydraHeadInitErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadInitResponses, PostHydraHeadInitErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/init',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Run the Hydra head fanout lifecycle action. (admin access required)
+ *
+ * Submits the fanout transaction for the head through the local Hydra node.
+ */
+export const postHydraHeadFanout = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadFanoutData, ThrowOnError>): RequestResult<PostHydraHeadFanoutResponses, PostHydraHeadFanoutErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadFanoutResponses, PostHydraHeadFanoutErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/fanout',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Run the Hydra head close lifecycle action. (admin access required)
+ *
+ * Submits the close transaction for the head through the local Hydra node. Refused while the head still holds escrows or unconfirmed L2 work unless `acknowledgeActiveEscrows` is set, which accepts that those escrows move to L1 and must be collected there.
+ */
+export const postHydraHeadClose = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadCloseData, ThrowOnError>): RequestResult<PostHydraHeadCloseResponses, PostHydraHeadCloseErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadCloseResponses, PostHydraHeadCloseErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/close',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Commit the local participant funds into the head. (admin access required)
+ *
+ * Funds the head from the local participant's own L1 wallet UTxOs: builds and validates the node's commit draft, signs it, and submits it to L1.
+ */
+export const postHydraHeadCommit = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadCommitData, ThrowOnError>): RequestResult<PostHydraHeadCommitResponses, PostHydraHeadCommitErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadCommitResponses, PostHydraHeadCommitErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/commit',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List the deposits made into a head. (admin access required)
+ *
+ * Every top-up of this head, newest first, with the status of its L1 deposit. This is where a top-up is followed after POST /hydra/head/topup returns.
+ */
+export const getHydraHeadTopup = <ThrowOnError extends boolean = false>(options: Options<GetHydraHeadTopupData, ThrowOnError>): RequestResult<GetHydraHeadTopupResponses, GetHydraHeadTopupErrors, ThrowOnError> => (options.client ?? client).get<GetHydraHeadTopupResponses, GetHydraHeadTopupErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/topup',
+    ...options
+});
+
+/**
+ * Top up additional funds into an open head. (admin access required)
+ *
+ * Repeatable incremental commit into an already-Open head, reusing the same draft/validate/sign safety path as the initial commit. Each top-up is its own L1 deposit. With `exactAmount`, that amount is first carved into its own L1 UTxO and only that UTxO is deposited, so everything else in the wallet — an agent's registry NFT included — stays on L1; this is the way to top up from a mixed wallet. Without it, Hydra commits WHOLE UTxOs, so every wallet UTxO matching `assetFilter`/`assetUnit` goes into the head.
+ */
+export const postHydraHeadTopup = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadTopupData, ThrowOnError>): RequestResult<PostHydraHeadTopupResponses, PostHydraHeadTopupErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadTopupResponses, PostHydraHeadTopupErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/topup',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List withdrawals from a head. (admin access required)
+ *
+ * Withdrawals out of this head, newest first. `approvedAt` is the point of no return: the head has signed the removal and the funds have left it, whether or not L1 has them yet. `finalizedAt` is when they became spendable on L1.
+ */
+export const getHydraHeadWithdraw = <ThrowOnError extends boolean = false>(options: Options<GetHydraHeadWithdrawData, ThrowOnError>): RequestResult<GetHydraHeadWithdrawResponses, GetHydraHeadWithdrawErrors, ThrowOnError> => (options.client ?? client).get<GetHydraHeadWithdrawResponses, GetHydraHeadWithdrawErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/withdraw',
+    ...options
+});
+
+/**
+ * Withdraw funds from an open head back to L1. (admin access required)
+ *
+ * Incremental decommit out of an already-Open head, without closing it. Withdraws the local participant's in-head funds to their own L1 address. A decommit removes every output of its transaction from the head, so an exact `lovelace` amount is first split off inside the head — free, and about a second — while omitting it withdraws whole UTxOs. One whole UTxO is held back as collateral so the wallet can still spend escrows inside the head — the smallest it holds worth at least 5 ADA, so the amount withheld is often more than that; `drain` takes it too, for winding a head down. Returns as soon as the request is accepted: the head must then sign a snapshot removing the funds before its node posts the L1 payout.
+ */
+export const postHydraHeadWithdraw = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadWithdrawData, ThrowOnError>): RequestResult<PostHydraHeadWithdrawResponses, PostHydraHeadWithdrawErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadWithdrawResponses, PostHydraHeadWithdrawErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/withdraw',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Read this node's own in-head balance. (admin access required)
+ *
+ * Reports the local participant's own funds currently inside the head (ADA + native tokens), aggregated per asset. Excludes the counterparty. Requires an open/connected head.
+ */
+export const getHydraHeadBalance = <ThrowOnError extends boolean = false>(options: Options<GetHydraHeadBalanceData, ThrowOnError>): RequestResult<GetHydraHeadBalanceResponses, GetHydraHeadBalanceErrors, ThrowOnError> => (options.client ?? client).get<GetHydraHeadBalanceResponses, GetHydraHeadBalanceErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/balance',
+    ...options
+});
+
+/**
+ * List a Hydra head's transactions. (admin access required)
+ *
+ * Every transaction recorded against this head, newest first: L1 for on-chain and L2 for inside the head. The head record itself carries only the Init, Close and Fanout hashes.
+ */
+export const getHydraHeadTransactions = <ThrowOnError extends boolean = false>(options: Options<GetHydraHeadTransactionsData, ThrowOnError>): RequestResult<GetHydraHeadTransactionsResponses, GetHydraHeadTransactionsErrors, ThrowOnError> => (options.client ?? client).get<GetHydraHeadTransactionsResponses, GetHydraHeadTransactionsErrors, ThrowOnError>({
+    responseTransformer: getHydraHeadTransactionsResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/transactions',
+    ...options
+});
+
+/**
+ * Recover a deposit the head never absorbed. (admin access required)
+ *
+ * A hydra-node only considers a deposit while it is inside its window, so a deposit can confirm on L1 and never reach the head. This asks the node to return it to the wallet it came from; it is refused before the deposit deadline has passed.
+ */
+export const postHydraHeadTopupRecover = <ThrowOnError extends boolean = false>(options?: Options<PostHydraHeadTopupRecoverData, ThrowOnError>): RequestResult<PostHydraHeadTopupRecoverResponses, PostHydraHeadTopupRecoverErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraHeadTopupRecoverResponses, PostHydraHeadTopupRecoverErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/topup/recover',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Read the state of this service's connection to the head's node. (admin access required)
+ *
+ * Whether a verified live session exists for this head, and what the node last reported. The first thing to read when a head is Open but L2 operations are failing.
+ */
+export const getHydraHeadConnection = <ThrowOnError extends boolean = false>(options: Options<GetHydraHeadConnectionData, ThrowOnError>): RequestResult<GetHydraHeadConnectionResponses, GetHydraHeadConnectionErrors, ThrowOnError> => (options.client ?? client).get<GetHydraHeadConnectionResponses, GetHydraHeadConnectionErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/connection',
+    ...options
+});
+
+/**
+ * Clear the recorded errors for a head. (admin access required)
+ *
+ * Acknowledges the errors recorded against a head. It changes nothing about the head itself — it only clears what the operator has already read.
+ */
+export const deleteHydraHeadErrors = <ThrowOnError extends boolean = false>(options?: Options<DeleteHydraHeadErrorsData, ThrowOnError>): RequestResult<DeleteHydraHeadErrorsResponses, DeleteHydraHeadErrorsErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteHydraHeadErrorsResponses, DeleteHydraHeadErrorsErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/errors',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List recorded Hydra head errors. (admin access required)
+ *
+ * Lists the most recent errors recorded for a head (lifecycle command failures, etc.).
+ */
+export const getHydraHeadErrors = <ThrowOnError extends boolean = false>(options: Options<GetHydraHeadErrorsData, ThrowOnError>): RequestResult<GetHydraHeadErrorsResponses, GetHydraHeadErrorsErrors, ThrowOnError> => (options.client ?? client).get<GetHydraHeadErrorsResponses, GetHydraHeadErrorsErrors, ThrowOnError>({
+    responseTransformer: getHydraHeadErrorsResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/head/errors',
+    ...options
+});
+
+/**
+ * Read a node's own balance and funding history. (admin access required)
+ *
+ * A hydra-node posts its head's L1 transactions from a Cardano key of its own, so it needs ADA that is not the head's. This reports what it holds and what has been sent to it.
+ */
+export const getHydraParticipantLocalFund = <ThrowOnError extends boolean = false>(options: Options<GetHydraParticipantLocalFundData, ThrowOnError>): RequestResult<GetHydraParticipantLocalFundResponses, GetHydraParticipantLocalFundErrors, ThrowOnError> => (options.client ?? client).get<GetHydraParticipantLocalFundResponses, GetHydraParticipantLocalFundErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/participant/local/fund',
+    ...options
+});
+
+/**
+ * Send ADA to a node's own Cardano key. (admin access required)
+ *
+ * Tops the node up now rather than waiting for the funding cycle. Without this balance the node cannot post an Init, a Close or a Fanout.
+ */
+export const postHydraParticipantLocalFund = <ThrowOnError extends boolean = false>(options?: Options<PostHydraParticipantLocalFundData, ThrowOnError>): RequestResult<PostHydraParticipantLocalFundResponses, PostHydraParticipantLocalFundErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraParticipantLocalFundResponses, PostHydraParticipantLocalFundErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/participant/local/fund',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Sweep what a node did not spend back to its wallet. (admin access required)
+ *
+ * Returns the node's remaining ADA once its head is final. Refused while the head is still live or an invite still holds the node, because the node would need those funds.
+ */
+export const postHydraParticipantLocalWithdraw = <ThrowOnError extends boolean = false>(options?: Options<PostHydraParticipantLocalWithdrawData, ThrowOnError>): RequestResult<PostHydraParticipantLocalWithdrawResponses, PostHydraParticipantLocalWithdrawErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraParticipantLocalWithdrawResponses, PostHydraParticipantLocalWithdrawErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/participant/local/withdraw',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Delete a Hydra in-head low-balance rule. (admin access required)
+ *
+ * Removes a low-balance rule by id.
+ */
+export const deleteHydraLowBalance = <ThrowOnError extends boolean = false>(options?: Options<DeleteHydraLowBalanceData, ThrowOnError>): RequestResult<DeleteHydraLowBalanceResponses, DeleteHydraLowBalanceErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteHydraLowBalanceResponses, DeleteHydraLowBalanceErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/low-balance',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List Hydra in-head low-balance rules. (admin access required)
+ *
+ * Lists low-balance monitoring rules for local participants' own in-head balances.
+ */
+export const getHydraLowBalance = <ThrowOnError extends boolean = false>(options?: Options<GetHydraLowBalanceData, ThrowOnError>): RequestResult<GetHydraLowBalanceResponses, GetHydraLowBalanceErrors, ThrowOnError> => (options?.client ?? client).get<GetHydraLowBalanceResponses, GetHydraLowBalanceErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/low-balance',
+    ...options
+});
+
+/**
+ * Create or update a Hydra in-head low-balance rule. (admin access required)
+ *
+ * Upserts a rule (keyed by participant + asset) that alerts when the participant's own in-head balance for the asset falls below the threshold, and optionally auto-tops-up from its assigned funding wallet.
+ */
+export const postHydraLowBalance = <ThrowOnError extends boolean = false>(options?: Options<PostHydraLowBalanceData, ThrowOnError>): RequestResult<PostHydraLowBalanceResponses, PostHydraLowBalanceErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraLowBalanceResponses, PostHydraLowBalanceErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/low-balance',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Delete a local Hydra participant. (admin access required)
+ *
+ * Deletes an unassigned local participant, or one whose head is safely finalized/quiesced.
+ */
+export const deleteHydraParticipantLocal = <ThrowOnError extends boolean = false>(options?: Options<DeleteHydraParticipantLocalData, ThrowOnError>): RequestResult<DeleteHydraParticipantLocalResponses, DeleteHydraParticipantLocalErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteHydraParticipantLocalResponses, DeleteHydraParticipantLocalErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/participant/local',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List local Hydra participants. (admin access required)
+ *
+ * Lists this server's Hydra participants, optionally filtered by wallet or assignment state.
+ */
+export const getHydraParticipantLocal = <ThrowOnError extends boolean = false>(options?: Options<GetHydraParticipantLocalData, ThrowOnError>): RequestResult<GetHydraParticipantLocalResponses, GetHydraParticipantLocalErrors, ThrowOnError> => (options?.client ?? client).get<GetHydraParticipantLocalResponses, GetHydraParticipantLocalErrors, ThrowOnError>({
+    responseTransformer: getHydraParticipantLocalResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/participant/local',
+    ...options
+});
+
+/**
+ * Back up a node's signing keys, once. (admin access required)
+ *
+ * Returns the node Hydra and Cardano signing keys a single time, then seals the path: every later call is refused. The keys are generated by the Hydra Host and disclosed by it once at provisioning, so this is the only way to take an off-site copy.
+ */
+export const postHydraParticipantLocalKeys = <ThrowOnError extends boolean = false>(options?: Options<PostHydraParticipantLocalKeysData, ThrowOnError>): RequestResult<PostHydraParticipantLocalKeysResponses, PostHydraParticipantLocalKeysErrors, ThrowOnError> => (options?.client ?? client).post<PostHydraParticipantLocalKeysResponses, PostHydraParticipantLocalKeysErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/participant/local/keys',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * Delete a remote Hydra participant. (admin access required)
+ *
+ * Deletes an unassigned remote participant, or one whose head is safely finalized/quiesced.
+ */
+export const deleteHydraParticipantRemote = <ThrowOnError extends boolean = false>(options?: Options<DeleteHydraParticipantRemoteData, ThrowOnError>): RequestResult<DeleteHydraParticipantRemoteResponses, DeleteHydraParticipantRemoteErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteHydraParticipantRemoteResponses, DeleteHydraParticipantRemoteErrors, ThrowOnError>({
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/participant/remote',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options?.headers
+    }
+});
+
+/**
+ * List remote Hydra participants. (admin access required)
+ *
+ * Lists counterparty participants, optionally filtered by wallet or assignment state.
+ */
+export const getHydraParticipantRemote = <ThrowOnError extends boolean = false>(options?: Options<GetHydraParticipantRemoteData, ThrowOnError>): RequestResult<GetHydraParticipantRemoteResponses, GetHydraParticipantRemoteErrors, ThrowOnError> => (options?.client ?? client).get<GetHydraParticipantRemoteResponses, GetHydraParticipantRemoteErrors, ThrowOnError>({
+    responseTransformer: getHydraParticipantRemoteResponseTransformer,
+    responseType: 'json',
+    security: [{ name: 'token', type: 'apiKey' }],
+    url: '/hydra/participant/remote',
+    ...options
+});
+
+/**
  * Get payment rail readiness. (read access required)
  *
- * Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. isReady covers blocking checks only: for x402 that means an enabled chain with exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while purchasing wallet and budget are reported but optional. Only configuration presence is exposed — no keys, addresses or URLs.
+ * Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. CardanoV2 also returns per-policy/contract PurchaseSources so read-auth consumers can gate outbound purchases against the exact source; these identifiers are public on-chain values. isReady covers blocking checks only: for x402 that means an enabled chain with exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while purchasing wallet and budget are reported but optional. Only configuration presence is exposed — no keys or private wallet data.
  */
 export const getRailReadiness = <ThrowOnError extends boolean = false>(options: Options<GetRailReadinessData, ThrowOnError>): RequestResult<GetRailReadinessResponses, GetRailReadinessErrors, ThrowOnError> => (options.client ?? client).get<GetRailReadinessResponses, GetRailReadinessErrors, ThrowOnError>({
     responseType: 'json',

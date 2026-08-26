@@ -1,5 +1,6 @@
 # node modules
 node_modules
+.pnpm-store/
 # build path
 dist/*
 # environmental variables
@@ -45,10 +46,43 @@ scripts/example-invoice.html
 # Prisma Generated Files
 src/generated/
 
-# Hydra L2 devnet/preprod local state (contains private keys - never commit)
-hydra-l2-flow/
-
 # Local vector-db/agent-memory tool artifacts
+*.rvf
+*.rvf.lock
 ruvector.db
+**/ruvector.db
 agentdb.rvf
 agentdb.rvf.lock
+.remember/
+
+# Hydra L2 E2E harness — generated seller mnemonic (never commit)
+hydra-l2-flow/.seller.json
+
+# Hydra native run (large binaries + runtime state)
+hydra-l2-flow/.bin/
+hydra-l2-flow/.native-state/
+
+# Hydra preprod run (local binaries, secrets, logs + runtime state)
+hydra-l2-flow/preprod/bin/
+hydra-l2-flow/preprod/cardano-data/
+hydra-l2-flow/preprod/credentials/
+hydra-l2-flow/preprod/downloads/
+hydra-l2-flow/preprod/ipc/
+hydra-l2-flow/preprod/logs/
+hydra-l2-flow/preprod/persistence/
+hydra-l2-flow/preprod/*.pid
+hydra-l2-flow/preprod/protocol-parameters*.json
+
+# Hydra L2 E2E — generated evidence reports (regenerate via run-hydra-e2e.sh evidence)
+hydra-l2-flow/evidence/
+
+# Hydra Host build output
+packages/*/dist/
+
+# Local Hydra Host run state: node data dirs, logs, seeded keys and databases
+# written by scripts/hydra-e2e. Never share a machine or a branch.
+#
+# Broad on purpose: a run is pointed at a fresh directory whenever old host
+# state would confuse it, and a new name must not become the first thing an
+# operator accidentally commits.
+.hydra-*/

@@ -7,12 +7,16 @@ import {
   useRef,
   useMemo,
 } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ErrorDialog } from '@/components/ui/error-dialog';
 import { Client, createClient } from '@/lib/api/generated/client';
+import { getRailReadiness } from '@/lib/api/generated';
 import { usePaymentSourceExtendedAllWithParams } from '../hooks/usePaymentSourceExtendedAll';
 import type { PaymentSourceExtended } from '../api/generated';
-import { getPreferredPaymentSource } from '@/lib/payment-source-type';
+import { getOperationalPaymentSource, isV2PaymentSource } from '@/lib/payment-source-type';
+import { railOf } from '@/lib/rail-readiness';
+import { handleApiCall } from '@/lib/utils';
+import { type ApiKeyCapabilities, DEFAULT_CAPABILITIES } from '@/lib/permissions';
 
 export type NetworkType = 'Preprod' | 'Mainnet';
 
@@ -31,6 +35,8 @@ export const AppContext = createContext<
       updateApiKey: (apiKey: string | null) => void;
       authorized: boolean;
       setAuthorized: (authorized: boolean) => void;
+      capabilities: ApiKeyCapabilities;
+      setCapabilities: (capabilities: ApiKeyCapabilities) => void;
       network: NetworkType;
       setNetwork: (network: NetworkType) => void;
       showError: (error: { code?: number; message: string; details?: unknown }) => void;
@@ -61,6 +67,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   const [authorized, setAuthorized] = useState(false);
+  const [capabilities, setCapabilities] = useState<ApiKeyCapabilities>(DEFAULT_CAPABILITIES);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [network, setNetworkState] = useState<NetworkType>(() => {
     if (typeof window !== 'undefined') {
@@ -144,6 +151,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [paymentSources, network],
   );
 
+  const railReadinessQuery = useQuery({
+    queryKey: ['rail-readiness', network, true],
+    queryFn: async () => {
+      const response = await handleApiCall(
+        () => getRailReadiness({ client: apiClient, query: { network } }),
+        { onError: () => {} },
+      );
+      const readiness = response?.data?.data;
+      if (readiness == null) {
+        throw new Error('Failed to fetch payment rail readiness');
+      }
+      return readiness;
+    },
+    enabled: !!apiClient && authorized,
+    staleTime: 30000,
+  });
+  const cardanoReadiness = railOf(railReadinessQuery.data ?? null, 'CardanoV2');
+  const isLoadingReadiness = !authorized || railReadinessQuery.isLoading;
+  const isReadinessUnavailable = railReadinessQuery.isError;
+  const hasV2PaymentSource = currentNetworkPaymentSources.some(isV2PaymentSource);
+  const cardanoV2Ready = isReadinessUnavailable
+    ? hasV2PaymentSource
+    : (cardanoReadiness?.isReady ?? false);
+
   const [selectedPaymentSourceId, setSelectedPaymentSourceId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('selectedPaymentSourceId');
@@ -197,7 +228,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // source once loading finishes. A FAILED fetch also resolves to an empty
     // list, so bail on error too — otherwise a transient network/API error
     // would clear the persisted selection this guard exists to protect.
-    if (!apiKey || isLoadingPaymentSources || paymentSourcesError) {
+    if (!apiKey || isLoadingPaymentSources || paymentSourcesError || isLoadingReadiness) {
       return;
     }
 
@@ -212,8 +243,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const foundPaymentSource = selectedPaymentSourceId
       ? currentNetworkPaymentSources.find((ps) => ps.id === selectedPaymentSourceId)
       : null;
+    const operationalPaymentSource = getOperationalPaymentSource(currentNetworkPaymentSources, {
+      cardanoV2Ready,
+    });
     const nextPaymentSource =
-      foundPaymentSource ?? getPreferredPaymentSource(currentNetworkPaymentSources);
+      foundPaymentSource && (!isV2PaymentSource(foundPaymentSource) || cardanoV2Ready)
+        ? foundPaymentSource
+        : operationalPaymentSource;
 
     if (!nextPaymentSource) {
       return;
@@ -225,9 +261,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [
     apiKey,
     isLoadingPaymentSources,
+    isLoadingReadiness,
     paymentSourcesError,
     selectedPaymentSourceId,
     currentNetworkPaymentSources,
+    cardanoV2Ready,
     network,
     setSelectedPaymentSourceIdAndPersist,
   ]);
@@ -291,6 +329,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setAuthorized(true);
       } else {
         setAuthorized(false);
+        setCapabilities(DEFAULT_CAPABILITIES);
         setApiClient(
           createClient({
             headers: { token: 'invalid-api' },
@@ -307,6 +346,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(() => {
     setApiKey(null);
     setAuthorized(false);
+    setCapabilities(DEFAULT_CAPABILITIES);
     setNetwork('Preprod');
     setSelectedPaymentSourceId(null);
     setIsChangingNetwork(false);
@@ -343,6 +383,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updateApiKey,
       setAuthorized,
       authorized,
+      capabilities,
+      setCapabilities,
       network,
       setNetwork: setNetworkWithReset,
       showError,
@@ -366,6 +408,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       apiKey,
       updateApiKey,
       authorized,
+      capabilities,
       network,
       setNetworkWithReset,
       showError,

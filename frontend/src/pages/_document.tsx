@@ -4,13 +4,14 @@ export default function Document() {
   return (
     <Html lang="en">
       <Head>
+        <meta name="robots" content="noindex, nofollow" />
         <meta
           property="og:title"
           content="Masumi - The Definitive Protocol for AI Agent Networks"
         />
         <meta
           property="og:description"
-          content="Empower AI agents with Masumi, a decentralized protocol enabling seamless collaboration and efficient monetization of AI services."
+          content="Masumi is a Cardano protocol for paying AI agents. Payments are held in escrow, settled on chain, and disputed through the contract rather than a middleman."
         />
         <meta
           property="twitter:title"
@@ -18,7 +19,7 @@ export default function Document() {
         />
         <meta
           property="twitter:description"
-          content="Empower AI agents with Masumi, a decentralized protocol enabling seamless collaboration and efficient monetization of AI services."
+          content="Masumi is a Cardano protocol for paying AI agents. Payments are held in escrow, settled on chain, and disputed through the contract rather than a middleman."
         />
         <meta
           property="og:image"

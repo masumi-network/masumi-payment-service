@@ -1,0 +1,614 @@
+import { describe, expect, it } from '@jest/globals';
+import {
+	Address,
+	BigNum,
+	Transaction,
+	TransactionBody,
+	TransactionHash,
+	TransactionInput,
+	TransactionInputs,
+	TransactionOutput,
+	TransactionOutputs,
+	TransactionWitnessSet,
+	Value,
+} from '@emurgo/cardano-serialization-lib-nodejs';
+import { resolveTxHash } from '@meshsdk/core';
+
+import {
+	deriveHydraVerificationKeyCborHex,
+	computeHydraAccumulatorHash,
+	doesHydraTransactionTransitionReachSnapshot,
+	hydraSnapshotSignableBytes,
+	resolveVerifiedHydraFanoutReference,
+	serializeHydraSnapshotOutput,
+	verifyHydraSnapshot,
+	type HydraSnapshotVerificationFrame,
+} from './snapshot-verification';
+import { HydraTransactionType } from './types';
+
+const ADDRESS =
+	'addr_test1qp6ctf8vcjxzd53et7p0hlqyncn59stnfd4g8mp978v33r6dlzjvt4s2t6wn3v993pu9aea4h3z0jeyn6lsvw6hugtesfx55dd';
+const HEAD_ID = '22cc3e117a6e471dd7a34cfa8d0ae7ba057068ddf01c44a97513ec03';
+const PARTY_KEYS = [
+	'f760bf7abf2a44f175500c235faca2ac4fc98a9844f121c1e513731d3e745ade',
+	'36c8df202f87702c50ed810a32b12401f7e551bdf5eea711aa57fc418748e7fb',
+];
+
+function output(value: Record<string, number | Record<string, number>>) {
+	return {
+		address: ADDRESS,
+		value,
+		referenceScript: null,
+		datumhash: null,
+		inlineDatum: null,
+		inlineDatumRaw: null,
+		datum: null,
+	};
+}
+
+function realHydra230SnapshotOne(): HydraSnapshotVerificationFrame {
+	return {
+		headId: HEAD_ID,
+		signatures: {
+			multiSignature: [
+				'4b1a8963e2f2998d7447a78f9e46778fa5fe62c9c870469631ffefcc1b14727634ab6c02d04b69cea0ff48dfcc26d800dc58643e173f636f3a9eb0da0298a70d',
+				'5275d14ca66c335dadd3448437faca02a00f948b1cab1efd13c5e99e7daa2d093536f52c6f9789af5f855b8ad1833dea4db3146aef74c7d9aa93799343042900',
+			],
+		},
+		snapshot: {
+			headId: HEAD_ID,
+			version: 0,
+			number: 1,
+			accumulator: '8c2e1a3ed6f465e5267989a24310b6d4f31fa805e6bede11d9afd60ca0cf7e42',
+			confirmed: [],
+			utxo: {},
+			utxoToCommit: {
+				'a6fcca277c6ff7595131b6112b1ec6ccbff8a16b8c5db1e1a86b4fa7ccd23ab4#1': output({
+					lovelace: 5_000_000,
+				}),
+				'a6fcca277c6ff7595131b6112b1ec6ccbff8a16b8c5db1e1a86b4fa7ccd23ab4#2': output({
+					lovelace: 968_522_530,
+					'16a55b2a349361ff88c03788f93e1e966e5d689605d044fef722ddde': {
+						'0014df10745553444d': 1_000_000_000,
+					},
+				}),
+				'f82cffc811eceac62b66b6151074369e4eeab0a219796e5ef41191cfe91f0d59#1': output({
+					lovelace: 5_000_000,
+				}),
+			},
+			utxoToDecommit: null,
+		},
+	};
+}
+
+describe('Hydra 2.3 snapshot verification', () => {
+	it('recomputes the real accumulator and verifies ordered party signatures', () => {
+		const frame = realHydra230SnapshotOne();
+		const verified = verifyHydraSnapshot(frame, PARTY_KEYS);
+
+		expect(verified.number).toBe(1);
+		expect(verified.outputs.size).toBe(3);
+		expect(hydraSnapshotSignableBytes(frame).toString('hex')).toContain(
+			'58204675209cc40bd9df9188ed214c4679c5be233f560c57ea93e07e27553bc7de7c',
+		);
+	});
+
+	it('matches Hydra canonical Plutus TxOut serialization', () => {
+		const serialized = serializeHydraSnapshotOutput(output({ lovelace: 5_000_000 }));
+		expect(serialized).toBe(
+			'd8799fd8799fd8799f581c7585a4ecc48c26d2395f82fbfc049e2742c1734b6a83ec25f1d9188fffd8799fd8799fd8799f581c4df8a4c5d60a5e9d38b0a588785ee7b5bc44f96493d7e0c76afc42f3ffffffffa140a1401a004c4b40d87980d87a80ff',
+		);
+	});
+
+	it('matches an independently generated 64-output accumulator vector through the NTT path', () => {
+		const serialized = serializeHydraSnapshotOutput(output({ lovelace: 5_000_000 }));
+		expect(computeHydraAccumulatorHash(Array(64).fill(serialized))).toBe(
+			'400ffaa34dca37f1fa5e6fa7e76b63087d071867c6ccffae8b37f24d75cd0402',
+		);
+	});
+
+	it('fails closed for accumulator, state, signature, and party-order changes', () => {
+		const badAccumulator = realHydra230SnapshotOne();
+		badAccumulator.snapshot.accumulator = '00'.repeat(32);
+		expect(() => verifyHydraSnapshot(badAccumulator, PARTY_KEYS)).toThrow(/signature/);
+
+		const badState = realHydra230SnapshotOne();
+		badState.snapshot.utxoToCommit![
+			'a6fcca277c6ff7595131b6112b1ec6ccbff8a16b8c5db1e1a86b4fa7ccd23ab4#1'
+		]!.value.lovelace = 5_000_001;
+		expect(() => verifyHydraSnapshot(badState, PARTY_KEYS)).toThrow(/signature/);
+
+		const badSettledState = realHydra230SnapshotOne();
+		badSettledState.snapshot.utxo[`${'33'.repeat(32)}#0`] = output({ lovelace: 5_000_000 });
+		expect(() => verifyHydraSnapshot(badSettledState, PARTY_KEYS)).toThrow(/accumulator/);
+
+		const badSignature = realHydra230SnapshotOne();
+		badSignature.signatures.multiSignature[0] = '00'.repeat(64);
+		expect(() => verifyHydraSnapshot(badSignature, PARTY_KEYS)).toThrow(/signature/);
+
+		expect(() => verifyHydraSnapshot(realHydra230SnapshotOne(), [...PARTY_KEYS].reverse())).toThrow(/signature/);
+	});
+
+	it('rejects unauthenticated state before expensive accumulator work', () => {
+		const frame = realHydra230SnapshotOne();
+		frame.signatures.multiSignature[0] = '00'.repeat(64);
+		frame.snapshot.accumulator = '00'.repeat(32);
+
+		expect(() => verifyHydraSnapshot(frame, PARTY_KEYS)).toThrow(/signature/);
+	});
+
+	it('rejects case-variant output references across signed state partitions', () => {
+		const frame = realHydra230SnapshotOne();
+		const reference = 'a6fcca277c6ff7595131b6112b1ec6ccbff8a16b8c5db1e1a86b4fa7ccd23ab4#1';
+		frame.snapshot.utxo[reference.toUpperCase()] = frame.snapshot.utxoToCommit![reference]!;
+
+		expect(() => verifyHydraSnapshot(frame, PARTY_KEYS)).toThrow(/repeated one output reference/);
+	});
+
+	it('derives the verification key from a Hydra text-envelope signing seed', () => {
+		expect(
+			deriveHydraVerificationKeyCborHex(
+				JSON.stringify({
+					type: 'HydraSigningKey_ed25519',
+					cborHex: '5820903bdcddb67107f5c5df25c4a6b0b94f28717fe497157e5a14815e8146c2fbcc',
+				}),
+			),
+		).toBe('5820f760bf7abf2a44f175500c235faca2ac4fc98a9844f121c1e513731d3e745ade');
+	});
+
+	// A pending decommit and a pending deposit are different outputs, and their
+	// serialized values are identical whenever a withdrawal and a top-up of the
+	// same size go to the same wallet — the ordinary shape here. Both left on
+	// this transition, so both are allowed; what makes that safe is that the
+	// allowance is derived per reference, so it is granted only to the exact
+	// entries that are gone from `current`.
+	//
+	// Getting this wrong in the strict direction is the expensive one: history
+	// replays from the beginning on every reconnect, so a frame rejected once is
+	// rejected forever — the head never gets a verified session again and every
+	// L2 escrow operation on it fails closed.
+	it('lets a decommit and a recovered deposit of the same value leave together', () => {
+		const decommitReference = `${'33'.repeat(32)}#0`;
+		const depositReference = `${'44'.repeat(32)}#0`;
+		// Identical bytes, two different outputs: same address, same amount, no
+		// datum and no reference script.
+		const sharedOutput = serializeHydraSnapshotOutput(output({ lovelace: 10_000_000 }));
+		const keptOutput = serializeHydraSnapshotOutput(output({ lovelace: 4_000_000 }));
+		const keptReference = `${'55'.repeat(32)}#0`;
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 4,
+			version: 2,
+			outputs: new Map([
+				[keptReference, keptOutput],
+				[decommitReference, sharedOutput],
+				[depositReference, sharedOutput],
+			]),
+			outputMultiset: new Map([
+				[keptOutput, 1],
+				[sharedOutput, 2],
+			]),
+			committedOutputs: new Map([[depositReference, sharedOutput]]),
+			decommitOutputs: new Map([[decommitReference, sharedOutput]]),
+		};
+		// The decommit settles on L1 and the deposit passes its deadline and is
+		// recovered, both without a transaction inside the head.
+		const current = {
+			headId: HEAD_ID,
+			number: 5,
+			version: 3,
+			outputs: new Map([[keptReference, keptOutput]]),
+			outputMultiset: new Map([[keptOutput, 1]]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(true);
+	});
+
+	// The same collision, seen from the other side. A deposit that a transaction
+	// spent must not also count as recovered, or the removal is paid for twice —
+	// but "a transaction spent it" has to mean that exact output. Matching on
+	// value instead let any ordinary spend of a same-valued in-head UTxO cancel a
+	// real deposit's recovery, and a 10 ADA in-head UTxO alongside a 10 ADA
+	// top-up is exactly what the exact-amount carve produces.
+	it('keeps a deposit recoverable when a transaction spends a different output of the same value', () => {
+		const inHeadReference = `${'11'.repeat(32)}#0`;
+		const depositReference = `${'44'.repeat(32)}#0`;
+		const sharedOutput = serializeHydraSnapshotOutput(output({ lovelace: 10_000_000 }));
+		const spentResult = serializeHydraSnapshotOutput(output({ lovelace: 9_000_000 }));
+
+		// One ordinary in-head transaction: it spends the wallet's own 10 ADA UTxO
+		// and pays 9 ADA back, the 1 ADA difference being the L2 fee.
+		const inputs = TransactionInputs.new();
+		inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from('11'.repeat(32), 'hex')), 0));
+		const outputs = TransactionOutputs.new();
+		outputs.add(TransactionOutput.new(Address.from_bech32(ADDRESS), Value.new(BigNum.from_str('9000000'))));
+		const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('1000000'));
+		const transaction = Transaction.new(body, TransactionWitnessSet.new());
+		const cborHex = Buffer.from(transaction.to_bytes()).toString('hex');
+		const txId = String(resolveTxHash(cborHex)).toLowerCase();
+		const confirmed = [{ type: HydraTransactionType.TxConwayEra, cborHex, description: '', txId }];
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 4,
+			version: 2,
+			outputs: new Map([
+				[inHeadReference, sharedOutput],
+				[depositReference, sharedOutput],
+			]),
+			outputMultiset: new Map([[sharedOutput, 2]]),
+			committedOutputs: new Map([[depositReference, sharedOutput]]),
+			decommitOutputs: new Map<string, string>(),
+		};
+		// The transaction lands and the deposit passes its deadline and is
+		// recovered on L1 in the same transition.
+		const current = {
+			headId: HEAD_ID,
+			number: 5,
+			version: 3,
+			outputs: new Map([[`${txId}#0`, spentResult]]),
+			outputMultiset: new Map([[spentResult, 1]]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, confirmed)).toBe(true);
+	});
+
+	it('checks signed multiset deltas without trusting adversarial reference mappings', () => {
+		const priorReference = `${'11'.repeat(32)}#0`;
+		const otherReference = `${'22'.repeat(32)}#0`;
+		const priorOutput = serializeHydraSnapshotOutput(output({ lovelace: 7_000_000 }));
+		const otherOutput = serializeHydraSnapshotOutput(output({ lovelace: 8_000_000 }));
+		const nextOutput = serializeHydraSnapshotOutput(output({ lovelace: 6_000_000 }));
+
+		const inputs = TransactionInputs.new();
+		inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from('11'.repeat(32), 'hex')), 0));
+		const outputs = TransactionOutputs.new();
+		outputs.add(TransactionOutput.new(Address.from_bech32(ADDRESS), Value.new(BigNum.from_str('6000000'))));
+		const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('1000000'));
+		const transaction = Transaction.new(body, TransactionWitnessSet.new());
+		const cborHex = Buffer.from(transaction.to_bytes()).toString('hex');
+		const txId = String(resolveTxHash(cborHex)).toLowerCase();
+		const confirmed = [{ type: HydraTransactionType.TxConwayEra, cborHex, description: '', txId }];
+		const outputMultiset = (values: string[]) => {
+			const multiset = new Map<string, number>();
+			for (const value of values) multiset.set(value, (multiset.get(value) ?? 0) + 1);
+			return multiset;
+		};
+		const current = {
+			headId: HEAD_ID,
+			number: 2,
+			version: 1,
+			outputs: new Map([
+				[otherReference, otherOutput],
+				[`${txId}#0`, nextOutput],
+			]),
+			outputMultiset: outputMultiset([otherOutput, nextOutput]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+		const honestMapping = {
+			headId: HEAD_ID,
+			number: 1,
+			version: 0,
+			outputs: new Map([
+				[priorReference, priorOutput],
+				[otherReference, otherOutput],
+			]),
+			outputMultiset: outputMultiset([priorOutput, otherOutput]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+		const permutedMapping = {
+			...honestMapping,
+			outputs: new Map([
+				[priorReference, otherOutput],
+				[otherReference, priorOutput],
+			]),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(honestMapping, current, confirmed)).toBe(true);
+		expect(doesHydraTransactionTransitionReachSnapshot(permutedMapping, current, confirmed)).toBe(true);
+	});
+
+	it('accepts an incremental-commit transition (top-up absorbed + new deposit pending)', () => {
+		// Ground truth from a live head: snapshot N has the initial deposit pending
+		// in utxoToCommit; snapshot N+1 absorbs it into utxo AND records a new
+		// top-up deposit pending in utxoToCommit. No confirmed L2 txs.
+		const deposit = serializeHydraSnapshotOutput(output({ lovelace: 5_000_000 }));
+		const newDeposit = serializeHydraSnapshotOutput(output({ lovelace: 40_000_000 }));
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 1,
+			version: 0,
+			outputs: new Map([[`${'aa'.repeat(32)}#0`, deposit]]),
+			outputMultiset: new Map([[deposit, 1]]), // combined = the pending deposit
+			// It is pending in utxoToCommit, and named by the same reference it
+			// carries in `outputs`: that is what tells the next snapshot apart from
+			// one where a second deposit of the same size arrived.
+			committedOutputs: new Map([[`${'aa'.repeat(32)}#0`, deposit]]),
+			decommitOutputs: new Map<string, string>(),
+		};
+		const current = {
+			headId: HEAD_ID,
+			number: 2,
+			version: 1,
+			outputs: new Map([
+				[`${'aa'.repeat(32)}#0`, deposit],
+				[`${'bb'.repeat(32)}#0`, newDeposit],
+			]),
+			outputMultiset: new Map([
+				[deposit, 1], // now absorbed into utxo (still in the combined set)
+				[newDeposit, 1], // new top-up deposit, pending
+			]),
+			committedOutputs: new Map([[`${'bb'.repeat(32)}#0`, newDeposit]]), // the new deposit is what's pending now
+			decommitOutputs: new Map<string, string>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(true);
+	});
+
+	it('rejects an injected output not authenticated by the snapshot commit partition', () => {
+		// Same transition, but the new output is NOT declared in utxoToCommit — i.e.
+		// value that would appear from nowhere. The guard must still fail closed.
+		const deposit = serializeHydraSnapshotOutput(output({ lovelace: 5_000_000 }));
+		const forged = serializeHydraSnapshotOutput(output({ lovelace: 40_000_000 }));
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 1,
+			version: 0,
+			outputs: new Map([[`${'aa'.repeat(32)}#0`, deposit]]),
+			outputMultiset: new Map([[deposit, 1]]),
+			committedOutputs: new Map([[`${'aa'.repeat(32)}#0`, deposit]]),
+			decommitOutputs: new Map<string, string>(),
+		};
+		const current = {
+			headId: HEAD_ID,
+			number: 2,
+			version: 1,
+			outputs: new Map([
+				[`${'aa'.repeat(32)}#0`, deposit],
+				[`${'bb'.repeat(32)}#0`, forged],
+			]),
+			outputMultiset: new Map([
+				[deposit, 1],
+				[forged, 1],
+			]),
+			committedOutputs: new Map<string, string>(), // forged output is NOT authenticated
+			decommitOutputs: new Map<string, string>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(false);
+	});
+
+	it('maps a unique producer-CBOR output to its exact observed L1 fanout reference', () => {
+		const hydraReference = `${'11'.repeat(32)}#3`;
+		const fanoutReference = `${'22'.repeat(32)}#7`;
+		const serializedOutput = serializeHydraSnapshotOutput(output({ lovelace: 7_000_000 }));
+		const snapshot = {
+			headId: HEAD_ID,
+			number: 9,
+			version: 0,
+			outputs: new Map([[hydraReference, serializedOutput]]),
+			outputMultiset: new Map([[serializedOutput, 1]]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+
+		expect(
+			resolveVerifiedHydraFanoutReference(snapshot, new Map([[fanoutReference, serializedOutput]]), serializedOutput),
+		).toEqual({
+			txHash: '22'.repeat(32),
+			outputIndex: 7,
+			snapshotNumber: 9,
+			serializedOutput,
+		});
+	});
+
+	it('ignores an endpoint-permuted unsigned snapshot reference map', () => {
+		const firstHydraReference = `${'11'.repeat(32)}#0`;
+		const secondHydraReference = `${'12'.repeat(32)}#0`;
+		const firstFanoutReference = `${'22'.repeat(32)}#0`;
+		const secondFanoutReference = `${'22'.repeat(32)}#1`;
+		const firstOutput = serializeHydraSnapshotOutput(output({ lovelace: 7_000_000 }));
+		const secondOutput = serializeHydraSnapshotOutput(output({ lovelace: 8_000_000 }));
+		const snapshot = {
+			headId: HEAD_ID,
+			number: 9,
+			version: 0,
+			// References are not signed. Deliberately attach each value to the
+			// other producer while retaining the authentic signed multiset.
+			outputs: new Map([
+				[firstHydraReference, secondOutput],
+				[secondHydraReference, firstOutput],
+			]),
+			outputMultiset: new Map([
+				[firstOutput, 1],
+				[secondOutput, 1],
+			]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+		const fanoutOutputs = new Map([
+			[firstFanoutReference, firstOutput],
+			[secondFanoutReference, secondOutput],
+		]);
+
+		expect(resolveVerifiedHydraFanoutReference(snapshot, fanoutOutputs, firstOutput)).toEqual({
+			txHash: '22'.repeat(32),
+			outputIndex: 0,
+			snapshotNumber: 9,
+			serializedOutput: firstOutput,
+		});
+	});
+
+	it('rejects incomplete, changed, or duplicate fanout output mappings', () => {
+		const hydraReference = `${'11'.repeat(32)}#0`;
+		const serializedOutput = serializeHydraSnapshotOutput(output({ lovelace: 7_000_000 }));
+		const otherOutput = serializeHydraSnapshotOutput(output({ lovelace: 8_000_000 }));
+		const snapshot = {
+			headId: HEAD_ID,
+			number: 9,
+			version: 0,
+			outputs: new Map([
+				[hydraReference, serializedOutput],
+				[`${'12'.repeat(32)}#0`, otherOutput],
+			]),
+			outputMultiset: new Map([
+				[serializedOutput, 1],
+				[otherOutput, 1],
+			]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+
+		expect(
+			resolveVerifiedHydraFanoutReference(
+				snapshot,
+				new Map([[`${'22'.repeat(32)}#0`, serializedOutput]]),
+				serializedOutput,
+			),
+		).toBeNull();
+		expect(
+			resolveVerifiedHydraFanoutReference(
+				{
+					...snapshot,
+					outputs: new Map([
+						[hydraReference, serializedOutput],
+						[`${'12'.repeat(32)}#0`, serializedOutput],
+					]),
+					outputMultiset: new Map([[serializedOutput, 2]]),
+				},
+				new Map([
+					[`${'22'.repeat(32)}#0`, serializedOutput],
+					[`${'22'.repeat(32)}#1`, serializedOutput],
+				]),
+				serializedOutput,
+			),
+		).toBeNull();
+	});
+});
+
+describe('doesHydraTransactionTransitionReachSnapshot conservation solver', () => {
+	/**
+	 * The transition equation has a free variable per value, and picking a point
+	 * on it is not the same as deciding whether the equation has a solution.
+	 *
+	 * Both cases below turn on one serialized value being BOTH injected by a
+	 * newly declared deposit and consumed by a confirmed transaction. Exact
+	 * amounts collide constantly here: a top-up is an exact-amount carve
+	 * committed whole to the participant's own wallet address, so a second
+	 * top-up of the same size is byte-identical to what the first one left
+	 * sitting in the head.
+	 */
+	function payingTransaction(spentReferences: string[], paidLovelace: number) {
+		const inputs = TransactionInputs.new();
+		for (const reference of spentReferences) {
+			const [hash, index] = reference.split('#');
+			inputs.add(TransactionInput.new(TransactionHash.from_bytes(Buffer.from(hash, 'hex')), Number(index)));
+		}
+		const outputs = TransactionOutputs.new();
+		outputs.add(TransactionOutput.new(Address.from_bech32(ADDRESS), Value.new(BigNum.from_str(String(paidLovelace)))));
+		const body = TransactionBody.new_tx_body(inputs, outputs, BigNum.from_str('1000000'));
+		const cborHex = Buffer.from(Transaction.new(body, TransactionWitnessSet.new()).to_bytes()).toString('hex');
+		const txId = String(resolveTxHash(cborHex)).toLowerCase();
+		return { confirmed: [{ type: HydraTransactionType.TxConwayEra, cborHex, description: '', txId }], txId };
+	}
+
+	it('accepts a top-up declared in the same snapshot that spends an output of its size', () => {
+		const spentTen = `${'11'.repeat(32)}#0`;
+		const spentThree = `${'22'.repeat(32)}#0`;
+		const depositReference = `${'44'.repeat(32)}#0`;
+		const ten = serializeHydraSnapshotOutput(output({ lovelace: 10_000_000 }));
+		const three = serializeHydraSnapshotOutput(output({ lovelace: 3_000_000 }));
+		const thirteen = serializeHydraSnapshotOutput(output({ lovelace: 13_000_000 }));
+		const { confirmed, txId } = payingTransaction([spentTen, spentThree], 13_000_000);
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 4,
+			version: 2,
+			outputs: new Map([
+				[spentTen, ten],
+				[spentThree, three],
+			]),
+			outputMultiset: new Map([
+				[ten, 1],
+				[three, 1],
+			]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+		// The 10 ADA output is spent by the transaction and a fresh 10 ADA top-up
+		// is declared in the very same snapshot. Both are legitimate; the value is
+		// simultaneously consumed and injected.
+		const current = {
+			headId: HEAD_ID,
+			number: 5,
+			version: 3,
+			outputs: new Map([
+				[`${txId}#0`, thirteen],
+				[depositReference, ten],
+			]),
+			outputMultiset: new Map([
+				[thirteen, 1],
+				[ten, 1],
+			]),
+			committedOutputs: new Map([[depositReference, ten]]),
+			decommitOutputs: new Map<string, string>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, confirmed)).toBe(true);
+	});
+
+	it('refuses an output that appears in place of a settled decommit', () => {
+		const keptReference = `${'11'.repeat(32)}#0`;
+		const decommitReference = `${'33'.repeat(32)}#0`;
+		const appearedReference = `${'55'.repeat(32)}#0`;
+		const ten = serializeHydraSnapshotOutput(output({ lovelace: 10_000_000 }));
+		const seven = serializeHydraSnapshotOutput(output({ lovelace: 7_000_000 }));
+
+		const previous = {
+			headId: HEAD_ID,
+			number: 4,
+			version: 2,
+			outputs: new Map([
+				[keptReference, ten],
+				[decommitReference, seven],
+			]),
+			outputMultiset: new Map([
+				[ten, 1],
+				[seven, 1],
+			]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map([[decommitReference, seven]]),
+		};
+		// The decommit settled on L1 — that value has definitely left the head —
+		// and an output of exactly its size appears with nothing creating it. The
+		// authenticated removal must not be treated as optional slack that pays
+		// for the arrival.
+		const current = {
+			headId: HEAD_ID,
+			number: 5,
+			version: 3,
+			outputs: new Map([
+				[keptReference, ten],
+				[appearedReference, seven],
+			]),
+			outputMultiset: new Map([
+				[ten, 1],
+				[seven, 1],
+			]),
+			committedOutputs: new Map<string, string>(),
+			decommitOutputs: new Map<string, string>(),
+		};
+
+		expect(doesHydraTransactionTransitionReachSnapshot(previous, current, [])).toBe(false);
+	});
+});

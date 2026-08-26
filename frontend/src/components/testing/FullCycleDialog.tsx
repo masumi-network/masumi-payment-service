@@ -9,6 +9,7 @@ import {
   PostPurchaseResponse,
 } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAllAgents } from '@/lib/queries/useAgents';
@@ -25,6 +26,7 @@ import {
   PaymentFormFields,
   useInputDataHash,
   paymentFormSchema,
+  forceLayerToApi,
   type PaymentFormValues,
 } from './PaymentFormFields';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +41,7 @@ interface FullCycleDialogProps {
 
 export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
   const { apiClient, network, apiKey, selectedPaymentSource } = useAppContext();
+  const resync = useResync();
   const {
     agents,
     isLoading: isLoadingAgents,
@@ -77,6 +80,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
       inputHash: '',
       identifierFromPurchaser: '',
       metadata: '',
+      forceLayer: 'Auto',
     },
   });
 
@@ -142,6 +146,9 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
             ? { supportedPaymentSourceIndex: selectedAgent.supportedPaymentSourceIndex }
             : {}),
           ...(amounts ? { Amounts: amounts } : {}),
+          // The seller's routing choice is signed into the payment terms; the
+          // purchase must round-trip it or the identifier signature check fails.
+          ...(payment.forceLayer != null ? { paymentForceLayer: payment.forceLayer } : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
@@ -160,6 +167,8 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         if (result.data?.data) {
           setPurchaseResponse(result.data.data);
           toast.success('Purchase created successfully - Full cycle complete!');
+          // A full cycle touches both sides, so both lists are now stale.
+          await resync('payments', 'purchases');
         } else {
           throw new Error('Invalid response from server - no data returned');
         }
@@ -172,7 +181,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPurchase(false);
       }
     },
-    [apiClient, apiKey, network, paidAgents],
+    [apiClient, apiKey, network, paidAgents, resync],
   );
 
   const onSubmitPayment = useCallback(
@@ -224,6 +233,13 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
             ? { supportedPaymentSourceIndex: selectedAgent.supportedPaymentSourceIndex }
             : {}),
           ...(requestedFunds ? { RequestedFunds: requestedFunds } : {}),
+          // The form offers this and the field says the choice is signed into
+          // the payment terms; leaving it out of the body meant Force Hydra was
+          // read, acknowledged and then dropped, and the one dialog that
+          // exercises a whole L2 cycle could not route a payment into a head.
+          ...(forceLayerToApi(data.forceLayer)
+            ? { forceLayer: forceLayerToApi(data.forceLayer) }
+            : {}),
         };
 
         const baseUrl = process.env.NEXT_PUBLIC_PAYMENT_API_BASE_URL || '';
@@ -243,6 +259,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
           const payment = result.data.data;
           setPaymentResponse(payment);
           toast.success('Payment created successfully');
+          await resync('payments');
           await createPurchaseAutomatically(payment, data);
         } else {
           throw new Error('Invalid response from server - no data returned');
@@ -256,7 +273,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
         setIsLoadingPayment(false);
       }
     },
-    [apiClient, apiKey, network, paidAgents, createPurchaseAutomatically],
+    [apiClient, apiKey, network, paidAgents, createPurchaseAutomatically, resync],
   );
 
   const handleClose = () => {
@@ -329,6 +346,7 @@ export function FullCycleDialog({ open, onClose }: FullCycleDialogProps) {
                 control={control}
                 errors={errors}
                 paidAgents={paidAgents}
+                totalAgents={agents.length}
                 isLoadingAgents={isLoadingAgents}
                 hasAgentsError={agentsError != null}
                 inputData={inputData}

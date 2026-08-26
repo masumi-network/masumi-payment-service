@@ -20,6 +20,7 @@ import { useTransactions, OnChainStateFilter, ON_CHAIN_STATES } from '@/lib/hook
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Badge } from '@/components/ui/badge';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
 import Link from 'next/link';
@@ -35,6 +36,7 @@ import {
 } from '@/components/transactions/TransactionFilters';
 import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransactionErrors';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -43,14 +45,45 @@ const formatStatus = (status: string | null) => {
   return status.replace(/([A-Z])/g, ' $1').trim();
 };
 
+const isHydraTransaction = (transaction: Transaction) =>
+  transaction.CurrentTransaction?.layer === 'L2';
+
+// The layer (L1 vs Hydra L2) is only known once the request has been picked up
+// and locked (i.e. a CurrentTransaction exists). Before that, show neither.
+const getTransactionLayerLabel = (transaction: Transaction): 'Hydra L2' | 'L1' | null => {
+  const layer = transaction.CurrentTransaction?.layer;
+  if (layer === 'L2') return 'Hydra L2';
+  if (layer === 'L1') return 'L1';
+  return null;
+};
+
+const getHydraHeadId = (transaction: Transaction) =>
+  transaction.CurrentTransaction?.hydraHeadId ?? null;
+
+const toCsvValue = (value: unknown): string => {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint')
+    return String(value);
+  if (value instanceof Date) return value.toISOString();
+  return JSON.stringify(value) ?? '';
+};
+
 export default function Transactions() {
-  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource, capabilities } =
+    useAppContext();
+  const resync = useResync();
 
   const [activeTab, setActiveTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<TransactionFilterState>(EMPTY_FILTERS);
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
   const isNeedsActionTab = activeTab === 'Needs Action';
+  // Error recovery posts to /payment|purchase/error-state-recovery, both
+  // pay-authenticated. Read-only sessions keep the Needs Action tab as a
+  // read-only view but get no selection column and no bulk action bar.
+  const canRecoverErrors = capabilities.canPay;
+  const showSelection = isNeedsActionTab && canRecoverErrors;
 
   const filterParams = useMemo(() => {
     const params: {
@@ -163,9 +196,10 @@ export default function Transactions() {
   // (buildTransactionSearchFilter) to avoid items appearing/disappearing when the
   // server responds. Matching MORE fields here than the backend is the bug this
   // guards against: those rows show during the debounce and vanish on response.
-  // Deliberately absent, matching the backend: network, paymentSourceType and
-  // transaction type — the query is already scoped to one network and source
-  // type, so matching them would make any substring of those return everything.
+  // Deliberately absent, matching the backend: network, paymentSourceType,
+  // transaction type, layer and hydraHeadId — the query is already scoped to
+  // one network and source type, and the backend search matches none of these,
+  // so matching them here would surface rows that vanish on the server response.
   const displayTransactions = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     const rawQuery = searchQuery.trim();
@@ -266,12 +300,13 @@ export default function Transactions() {
 
         // Keep only the failed rows selected so the user can retry them.
         setSelectedIds(new Set(failedIds));
+        await resync('transactions');
         refreshTransactions();
       } finally {
         setBulkRecoveryMode(null);
       }
     },
-    [visibleTransactions, selectedIds, recoverErrors, refreshTransactions],
+    [visibleTransactions, selectedIds, recoverErrors, refreshTransactions, resync],
   );
 
   // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
@@ -322,6 +357,8 @@ export default function Transactions() {
         'Payment Amounts',
         'Network',
         'Payment Source Type',
+        'Layer',
+        'Hydra Head ID',
         'Status',
         'Date',
         'Fee rate (%)',
@@ -366,6 +403,8 @@ export default function Transactions() {
           amount,
           transaction.PaymentSource.network,
           getPaymentSourceTypeLabel(transaction.PaymentSource.paymentSourceType),
+          getTransactionLayerLabel(transaction) ?? '',
+          getHydraHeadId(transaction) ?? '',
           status,
           date,
           feeRateDisplay,
@@ -379,7 +418,7 @@ export default function Transactions() {
       // or note containing a quote breaks the CSV (parsers see it as a
       // field terminator and split that row into extra columns).
       const escapeCsvField = (value: unknown): string =>
-        `"${String(value ?? '').replace(/"/g, '""')}"`;
+        `"${toCsvValue(value).replace(/"/g, '""')}"`;
       return [headers, ...rows].map((row) => row.map(escapeCsvField).join(',')).join('\n');
     },
     [selectedPaymentSource?.id, selectedPaymentSource?.feeRatePermille, network],
@@ -436,12 +475,17 @@ export default function Transactions() {
                 <Download className="h-4 w-4" />
                 Download CSV
               </Button>
-              <Link href="/developers">
-                <Button className="flex items-center gap-2 btn-hover-lift">
-                  <FlaskConical className="h-4 w-4" />
-                  Test transaction
-                </Button>
-              </Link>
+              {/* Developers > Testing creates real payments/purchases via
+                  pay-authenticated endpoints, and the tab is hidden for
+                  read-only keys, so this shortcut would dead-end. */}
+              {capabilities.canPay && (
+                <Link href="/developers">
+                  <Button className="flex items-center gap-2 btn-hover-lift">
+                    <FlaskConical className="h-4 w-4" />
+                    Test transaction
+                  </Button>
+                </Link>
+              )}
             </div>
           </div>
 
@@ -476,7 +520,7 @@ export default function Transactions() {
             />
           </div>
 
-          {isNeedsActionTab && selectedIds.size > 0 && (
+          {showSelection && selectedIds.size > 0 && (
             <div className="flex items-center justify-between gap-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-2 animate-fade-in">
               <span className="text-sm font-medium">{selectedIds.size} selected</span>
               <div className="flex items-center gap-2">
@@ -520,7 +564,7 @@ export default function Transactions() {
             >
               <thead className="bg-muted/30 dark:bg-muted/15">
                 <tr className="border-b">
-                  {isNeedsActionTab && (
+                  {showSelection && (
                     <th className="p-4 pl-6 w-10">
                       <Checkbox
                         checked={allSelected ? true : someSelected ? 'indeterminate' : false}
@@ -533,7 +577,7 @@ export default function Transactions() {
                   <th
                     className={cn(
                       'p-4 text-left text-sm font-medium text-muted-foreground',
-                      !isNeedsActionTab && 'pl-6',
+                      !showSelection && 'pl-6',
                     )}
                   >
                     Type
@@ -563,7 +607,7 @@ export default function Transactions() {
                   <TransactionTableSkeleton rows={5} />
                 ) : visibleTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={isNeedsActionTab ? 10 : 9}>
+                    <td colSpan={showSelection ? 10 : 9}>
                       <EmptyState
                         icon={searchQuery ? 'search' : 'inbox'}
                         title={
@@ -577,7 +621,7 @@ export default function Transactions() {
                             : 'Transactions will appear here once payments are made.'
                         }
                         action={
-                          !searchQuery ? (
+                          !searchQuery && capabilities.canPay ? (
                             <Link
                               href="/developers"
                               className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
@@ -605,7 +649,7 @@ export default function Transactions() {
                       style={{ animationDelay: `${Math.min(index, 9) * 40}ms` }}
                       onClick={() => setSelectedTransaction(transaction)}
                     >
-                      {isNeedsActionTab && (
+                      {showSelection && (
                         <td className="p-4 pl-6 w-10" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             checked={transaction.id ? selectedIds.has(transaction.id) : false}
@@ -615,7 +659,7 @@ export default function Transactions() {
                           />
                         </td>
                       )}
-                      <td className={cn('p-4', !isNeedsActionTab && 'pl-6')}>
+                      <td className={cn('p-4', !showSelection && 'pl-6')}>
                         <span className="capitalize">{transaction.type}</span>
                       </td>
                       <td className="p-4">
@@ -665,6 +709,26 @@ export default function Transactions() {
                             paymentSourceType={transaction.PaymentSource.paymentSourceType}
                             showDefault
                           />
+                          <div className="flex items-center gap-1.5">
+                            {getTransactionLayerLabel(transaction) ? (
+                              <Badge
+                                variant={isHydraTransaction(transaction) ? 'success' : 'outline'}
+                                className="w-fit"
+                              >
+                                {getTransactionLayerLabel(transaction)}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                            {isHydraTransaction(transaction) && getHydraHeadId(transaction) && (
+                              <span
+                                className="max-w-[120px] truncate font-mono text-xs text-muted-foreground"
+                                title={getHydraHeadId(transaction) ?? undefined}
+                              >
+                                {getHydraHeadId(transaction)}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="p-4">

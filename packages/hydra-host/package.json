@@ -1,0 +1,33 @@
+{
+	"name": "@masumi/hydra-host",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./config": "./src/config.ts",
+		"./registry/ports": "./src/registry/ports.ts",
+		"./registry/store": "./src/registry/store.ts",
+		"./registry/types": "./src/registry/types.ts",
+		"./supervisor/args": "./src/supervisor/args.ts",
+		"./supervisor/drain": "./src/supervisor/drain.ts",
+		"./supervisor/drift": "./src/supervisor/drift.ts",
+		".": "./src/index.ts",
+		"./node-client": "./src/node-client.ts",
+		"./slot-config": "./src/slot-config.ts",
+		"./supervisor/plan": "./src/supervisor/plan.ts",
+		"./supervisor/process": "./src/supervisor/process.ts",
+		"./supervisor/supervisor": "./src/supervisor/supervisor.ts",
+		"./supervisor/unwedge": "./src/supervisor/unwedge.ts"
+	},
+	"dependencies": {
+		"swagger-ui-dist": "5.32.13",
+		"ws": "8.21.1"
+	},
+	"devDependencies": {
+		"@jest/globals": "30.4.1",
+		"typescript": "5.8.3"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json"
+	}
+}

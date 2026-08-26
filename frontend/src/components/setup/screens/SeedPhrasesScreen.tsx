@@ -46,7 +46,8 @@ export function SeedPhrasesScreen({
         </div>
         <h1 className="text-2xl font-bold">Save your seed phrases</h1>
         <p className="text-sm text-muted-foreground max-w-md mx-auto">
-          Store these phrases securely. You need them to access your wallets—we cannot recover them.
+          Store these phrases securely. You need them to access your wallets, and we cannot recover
+          them.
         </p>
       </div>
 

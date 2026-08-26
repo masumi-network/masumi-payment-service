@@ -34,7 +34,14 @@ import { retryOnSerializationConflict, type RetryOptions } from './db-retry';
  * touching `DATABASE_URL`. Values below 1 are clamped to 1.
  */
 
-function deriveSerializableLimit(): number {
+/**
+ * Slots granted at the historical default pool of 5, kept as a floor so raising
+ * connection_limit can only ever increase concurrency, never reduce it.
+ */
+const DEFAULT_SERIALIZABLE_SLOTS = 4;
+
+/** Exported for tests: the sizing is the whole point of this module. */
+export function deriveSerializableLimit(): number {
 	const url = process.env.DATABASE_URL;
 
 	// Pull connection_limit from DATABASE_URL — same source the Prisma pool
@@ -65,8 +72,22 @@ function deriveSerializableLimit(): number {
 		logger.warn(`Ignoring invalid DB_SERIALIZABLE_CONCURRENCY="${override}"; falling back to connection_limit-1`);
 	}
 
-	// Leave 1 connection of headroom for non-tx reads. Minimum cap of 1.
-	return Math.max(1, connectionLimit - 1);
+	// Headroom has to grow with the pool, not stay at one connection.
+	//
+	// A serializable transaction holds its connection for its whole life, so
+	// with `connectionLimit - 1` slots a busy service can have every connection
+	// but one tied up in transactions — and then every plain query in the
+	// process, including the ones that establish the Hydra head connection,
+	// queues behind a single spare and times out. Raising connection_limit made
+	// that worse rather than better, because the cap scaled with it.
+	//
+	// Half the pool above the old default, and unchanged at or below it: a
+	// deployment that never set connection_limit keeps exactly the concurrency
+	// it had.
+	return Math.max(
+		1,
+		Math.min(connectionLimit - 1, Math.max(DEFAULT_SERIALIZABLE_SLOTS, Math.floor(connectionLimit / 2))),
+	);
 }
 
 export const SERIALIZABLE_DB_CONCURRENCY = deriveSerializableLimit();

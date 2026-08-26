@@ -147,7 +147,7 @@ export function registerAdminPaths({ registry, apiKeyAuth }: SwaggerRegistrarCon
 		method: 'get',
 		path: '/wallet/list',
 		description: 'Lists hot wallets across payment sources with cursor-based pagination',
-		summary: 'List hot wallets, optionally filtered by payment source and type. (admin access required)',
+		summary: 'List hot wallets, optionally filtered by payment source and type. (read access required)',
 		tags: ['wallet'],
 		security: [{ [apiKeyAuth.name]: [] }],
 		request: {

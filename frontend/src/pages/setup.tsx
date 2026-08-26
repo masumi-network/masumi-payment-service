@@ -7,16 +7,17 @@ import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 
 export default function SetupPage() {
-  const { apiKey, network, setIsSetupMode, setSetupWizardStep } = useAppContext();
+  const { apiKey, network, setActiveRail, setIsSetupMode, setSetupWizardStep } = useAppContext();
   const router = useRouter();
 
   useEffect(() => {
+    setActiveRail('cardano');
     setIsSetupMode(true);
     return () => {
       setIsSetupMode(false);
       setSetupWizardStep(0);
     };
-  }, [setIsSetupMode, setSetupWizardStep]);
+  }, [setActiveRail, setIsSetupMode, setSetupWizardStep]);
 
   useEffect(() => {
     if (!apiKey) {

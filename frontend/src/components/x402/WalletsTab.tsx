@@ -45,7 +45,11 @@ import {
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { useAvailableX402Networks, useX402WalletsPaginated } from '@/lib/hooks/useX402';
+import {
+  useAvailableX402Networks,
+  useX402Networks,
+  useX402WalletsPaginated,
+} from '@/lib/hooks/useX402';
 import { cn, copyToClipboard, shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { extractApiPayload } from '@/lib/api-response';
@@ -55,7 +59,8 @@ import {
   PostX402WalletsData,
   X402Wallet,
 } from '@/lib/api/generated';
-import { EditWalletNoteDialog, WalletBalanceDialog } from '@/components/x402/WalletExtras';
+import { EditWalletNoteDialog } from '@/components/x402/WalletExtras';
+import { WalletDetailsDialog, WalletLowBalanceBadge } from '@/components/x402/WalletDetailsDialog';
 
 const PRIVATE_KEY_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
@@ -75,40 +80,34 @@ const WALLET_TYPE_OPTIONS: Array<{
   {
     value: 'Purchasing',
     label: 'Purchasing',
-    hint: 'Funds outbound payments (budgets) — the buy side.',
+    hint: 'Funds outbound payments (budgets). The buy side.',
     icon: ShoppingCart,
   },
   {
     value: 'Selling',
     label: 'Selling',
-    hint: 'Settles inbound payments as a chain facilitator — the sell side.',
+    hint: 'Settles inbound payments as a chain facilitator. The sell side.',
     icon: Store,
   },
 ];
 
 export function WalletsTab() {
-  const { apiClient } = useAppContext();
+  const { apiClient, capabilities } = useAppContext();
   const queryClient = useQueryClient();
   const { wallets, isLoading, isRefetching, refetch, hasMore, isFetchingNextPage, loadMore } =
     useX402WalletsPaginated();
-  // Label-only network lookup: the wallet list spans both environments, and a label miss
-  // falls back to the raw CAIP-2 id, so load silently across all environments.
   const { networks } = useAvailableX402Networks({ silentErrors: true, allEnvironments: true });
   const chainLabel = (caip2: string) =>
     networks.find((network) => network.caip2Id === caip2)?.displayName ?? caip2;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [retiringId, setRetiringId] = useState<string | null>(null);
-  const [balanceWallet, setBalanceWallet] = useState<X402Wallet | null>(null);
+  const [detailsWallet, setDetailsWallet] = useState<X402Wallet | null>(null);
   const [editWallet, setEditWallet] = useState<X402Wallet | null>(null);
   const [walletToRetire, setWalletToRetire] = useState<X402Wallet | null>(null);
+  const canMutateWallets = capabilities.canAdmin;
 
   const retireWallet = useApiMutation({
     mutationFn: (body: { id: string }) => postX402WalletsDelete({ client: apiClient, body }),
-    // Invalidate the whole 'x402-wallets' key space (paginated list AND the eager,
-    // type-filtered picker queries used by the Chains/Budgets/Alerts dialogs) so a
-    // retired wallet disappears from every picker immediately, not after staleTime.
-    // Retiring also disables this wallet's budgets and detaches it as a chain
-    // facilitator, so refresh those caches too.
     invalidateKeys: [['x402-wallets'], ['x402-budgets'], ['x402-networks']],
     errorMessage: 'Failed to retire wallet',
   });
@@ -134,10 +133,12 @@ export function WalletsTab() {
         </p>
         <div className="flex items-center gap-2">
           <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
-          <Button onClick={() => setDialogOpen(true)} className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            Create wallet
-          </Button>
+          {canMutateWallets && (
+            <Button onClick={() => setDialogOpen(true)} className="flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              Create wallet
+            </Button>
+          )}
         </div>
       </div>
 
@@ -179,7 +180,11 @@ export function WalletsTab() {
                 <td colSpan={6}>
                   <EmptyState
                     title="No managed wallets"
-                    description="Create a wallet to fund and settle x402 payments."
+                    description={
+                      capabilities.canAdmin || !capabilities.x402WalletScopeEnabled
+                        ? 'Create a wallet to fund and settle x402 payments.'
+                        : 'No managed wallets are assigned to this API key. A scoped key only sees wallets an admin assigned to it. Ask an admin to assign one.'
+                    }
                   />
                 </td>
               </tr>
@@ -204,28 +209,33 @@ export function WalletsTab() {
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => setBalanceWallet(wallet)}>
+                      <Button variant="ghost" size="sm" onClick={() => setDetailsWallet(wallet)}>
                         <WalletIcon className="h-4 w-4" />
-                        Balances
+                        Details
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label="Rename wallet"
-                        onClick={() => setEditWallet(wallet)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        disabled={retiringId === wallet.id}
-                        onClick={() => setWalletToRetire(wallet)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        {retiringId === wallet.id ? 'Retiring…' : 'Retire'}
-                      </Button>
+                      {capabilities.canAdmin && <WalletLowBalanceBadge walletId={wallet.id} />}
+                      {canMutateWallets && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-label="Rename wallet"
+                            onClick={() => setEditWallet(wallet)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            disabled={retiringId === wallet.id}
+                            onClick={() => setWalletToRetire(wallet)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            {retiringId === wallet.id ? 'Retiring…' : 'Retire'}
+                          </Button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -249,19 +259,17 @@ export function WalletsTab() {
         onClose={() => setDialogOpen(false)}
         onSaved={() => {
           setDialogOpen(false);
-          // Invalidate the whole 'x402-wallets' key space so the new wallet appears in the
-          // list and in the type-filtered pickers (Chains facilitator, Budgets, Alerts).
           queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
-          // A newly created wallet becomes selectable as a budget target.
           queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
         }}
       />
 
-      <WalletBalanceDialog
-        key={balanceWallet ? `bal-${balanceWallet.id}` : 'bal-closed'}
-        wallet={balanceWallet}
-        open={balanceWallet != null}
-        onClose={() => setBalanceWallet(null)}
+      <WalletDetailsDialog
+        key={detailsWallet ? `details-${detailsWallet.id}` : 'details-closed'}
+        wallet={detailsWallet}
+        open={detailsWallet != null}
+        onClose={() => setDetailsWallet(null)}
+        chainLabel={chainLabel}
       />
 
       <EditWalletNoteDialog
@@ -271,7 +279,6 @@ export function WalletsTab() {
         onClose={() => setEditWallet(null)}
         onSaved={() => {
           setEditWallet(null);
-          // The edited note also shows in the eager picker queries, so invalidate them all.
           queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
         }}
       />
@@ -295,16 +302,18 @@ export function CreateWalletDialog({
   onClose,
   onSaved,
   defaultType = 'Purchasing',
+  defaultNetworkId,
 }: {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
   defaultType?: WalletType;
+  defaultNetworkId?: string;
 }) {
   const { apiClient } = useAppContext();
   // A managed wallet is bound to exactly one x402 network (payment source).
-  const { networks, isLoading: networksLoading } = useAvailableX402Networks();
-  const [networkId, setNetworkId] = useState('');
+  const { networks, isLoading: networksLoading } = useX402Networks();
+  const [networkId, setNetworkId] = useState(defaultNetworkId ?? '');
   const [type, setType] = useState<WalletType>(defaultType);
   const [keySource, setKeySource] = useState<KeySource>('generate');
   const [privateKey, setPrivateKey] = useState('');
@@ -572,7 +581,7 @@ function BackupKeyStep({
   const performDownload = () => {
     setConfirmDownloadOpen(false);
     const contents = [
-      'Masumi x402 managed wallet — PRIVATE KEY BACKUP',
+      'Masumi x402 managed wallet: PRIVATE KEY BACKUP',
       `Direction: ${type}`,
       `Address:   ${address}`,
       `Private key: ${privateKey}`,

@@ -17,6 +17,24 @@ import {
 import { webhookQueueService } from '@/services/webhooks';
 import { runX402LowBalanceMonitoringCycle } from '@/services/x402/low-balance-monitor';
 import type { JobDefinition } from '@/services/shared';
+import { checkHydraTransactions } from '@/services/hydra-tx-handler';
+import { reconcilePendingHydraCommits } from '@/services/hydra-commit-reconciliation';
+import { pollHydraRedemptions, reapExpiredInvites } from '@/services/hydra-invite/adoption';
+import { releaseAbandonedReservations } from '@/services/hydra-invite/release-reservation';
+import { runHydraNodeFundingCycle } from '@/services/hydra-node-funding/service';
+import { backfillHydraInitTxHashes } from '@/services/hydra-init-backfill';
+import { reconcilePendingHydraTopups } from '@/services/hydra-topup-reconciliation';
+import { reconcileRecoveredHydraTopups } from '@/services/hydra-topup-reconciliation/recovered';
+import {
+	PAYOUT_LOOKUP_INTERVAL_MS,
+	reconcileUnidentifiedDecommitPayouts,
+} from '@/services/hydra-decommit/payout-lookup';
+import { runHydraLowBalanceMonitoringCycle } from '@/services/hydra-low-balance/monitor';
+import { runHydraAutoTopupCycle } from '@/services/hydra-low-balance/auto-topup';
+import { getHydraConnectionManager } from '@/services/hydra-connection-manager/hydra-connection-manager.service';
+import { releaseStalledCloseAdmissions } from '@/services/hydra-close-admission';
+import { isHydraInUse } from '@/services/hydra-usage';
+import { logger } from '@masumi/payment-core/logger';
 
 export const scheduledJobs: JobDefinition[] = [
 	{
@@ -51,6 +69,141 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting to check for refunds',
 		finishMessage: 'Finished to check for refunds',
 		run: web3CardanoV1.collectRefund,
+	},
+	{
+		initialDelayMs: 12000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting pending Hydra L1 commit reconciliation',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished pending Hydra L1 commit reconciliation',
+		run: reconcilePendingHydraCommits,
+	},
+	{
+		initialDelayMs: 13000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting pending Hydra L1 top-up reconciliation',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished pending Hydra L1 top-up reconciliation',
+		run: reconcilePendingHydraTopups,
+	},
+	{
+		initialDelayMs: 14000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting recovered Hydra deposit reconciliation',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished recovered Hydra deposit reconciliation',
+		run: reconcileRecoveredHydraTopups,
+	},
+	{
+		initialDelayMs: 15200,
+		// Its own interval, not the shared Hydra one: each row costs a walk of
+		// address history, and nothing is waiting on the answer.
+		intervalMs: PAYOUT_LOOKUP_INTERVAL_MS,
+		startMessage: 'Starting Hydra withdrawal payout identification',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra withdrawal payout identification',
+		// The head never reports which L1 transaction paid a withdrawal out, so it
+		// is observed on chain — and that observation is allowed to fail, because a
+		// settled withdrawal must not depend on a chain lookup succeeding. This is
+		// what makes the failure temporary rather than permanent.
+		run: reconcileUnidentifiedDecommitPayouts,
+	},
+	{
+		initialDelayMs: 16000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra invite reaping',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra invite reaping',
+		// An unredeemed invite holds a provisioned node and a peer port, and
+		// because --peer is startup configuration neither can be reused for a
+		// different counterparty. Sweeping is the only way they come back.
+		run: async () => {
+			await reapExpiredInvites();
+			// Reaping a node sweeps its fuel back first, and a sweep can fail on a
+			// chain query — in which case the reservation is kept, because its key
+			// is the only way to move the ADA the funding cycle already sent it.
+			// This is what retries those.
+			await releaseAbandonedReservations();
+		},
+	},
+	{
+		initialDelayMs: 17000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra init-tx backfill',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra init-tx backfill',
+		// Only the side that ran Init recorded the opening transaction, so the
+		// acceptor's head kept a null hash — which also left its L2 routing
+		// quarantined. The on-chain check is symmetric; it was just never called
+		// from that side.
+		run: async () => {
+			await backfillHydraInitTxHashes();
+		},
+	},
+	{
+		initialDelayMs: 11000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra node funding',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra node funding',
+		// A node's Cardano key is generated empty, and Init consumes a seed UTxO
+		// at that address — so without this every first head fails with
+		// NoSeedInput. The same key later pays for Close and Fanout, so it has to
+		// stay funded rather than merely be funded once.
+		run: async () => {
+			await runHydraNodeFundingCycle();
+		},
+	},
+	{
+		initialDelayMs: 12500,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra session reconciliation',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra session reconciliation',
+		// Heads are created while the service runs — every invite makes one — and
+		// the connection manager only connected what existed at boot. Without
+		// this the issuing side never observes its own head being opened.
+		run: async () => {
+			const reconnected = await getHydraConnectionManager().reconcileMissingSessions();
+			if (reconnected > 0) {
+				logger.info(`[HydraScheduler] Connected ${reconnected} Hydra head(s) that had no session`);
+			}
+			// The close admission latch is set before the command goes out and
+			// cleared only by a status frame that moves the head on. A Close that
+			// fails on chain therefore leaves a healthy head refusing every escrow
+			// operation and every retry of the close itself, with no way back but a
+			// manual UPDATE. This is the way back.
+			await releaseStalledCloseAdmissions();
+		},
+	},
+	{
+		initialDelayMs: 9000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting Hydra redemption poll',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra redemption poll',
+		// The issuing side never hears from its counterparty: the redemption
+		// lands on its Host, which cannot reach back into a payment service that
+		// may not be reachable at all. So the service asks.
+		run: async () => {
+			await pollHydraRedemptions();
+		},
+	},
+	{
+		initialDelayMs: 18000,
+		intervalMs: CONFIG.LOW_BALANCE_CHECK_INTERVAL * 1000,
+		startMessage: 'Starting Hydra in-head low-balance monitoring',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra in-head low-balance monitoring',
+		run: runHydraLowBalanceMonitoringCycle,
+	},
+	{
+		initialDelayMs: 16500,
+		intervalMs: CONSTANTS.FUND_DISTRIBUTION_CHECK_INTERVAL_S * 1000,
+		startMessage: 'Starting Hydra automatic low-balance top-up',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished Hydra automatic low-balance top-up',
+		run: runHydraAutoTopupCycle,
 	},
 	{
 		initialDelayMs: 15000,
@@ -339,5 +492,25 @@ export const scheduledJobs: JobDefinition[] = [
 		startMessage: 'Starting fund transfer confirmation checker',
 		finishMessage: 'Finished fund transfer confirmation checker',
 		run: checkFundTransferConfirmations,
+	},
+	{
+		initialDelayMs: 19000,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting L2 hydra transaction polling',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished L2 hydra transaction polling',
+		run: checkHydraTransactions,
+	},
+	{
+		// L2 mirror of L1 tx-sync: reads each enabled head's in-head escrow UTxOs and
+		// advances this node's own payment/purchase rows to the observed state, so a
+		// counterparty-driven in-head transition is not missed (payment/purchase
+		// onChainState divergence). Idempotent; runs on the hydra cadence.
+		initialDelayMs: 20500,
+		intervalMs: CONFIG.CHECK_HYDRA_TX_INTERVAL * 1000,
+		startMessage: 'Starting L2 hydra escrow-state reconcile',
+		shouldRun: isHydraInUse,
+		finishMessage: 'Finished L2 hydra escrow-state reconcile',
+		run: web3CardanoV2.reconcileHydraHeadEscrowStates,
 	},
 ];

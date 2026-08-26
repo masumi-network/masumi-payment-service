@@ -5,6 +5,7 @@ import {
 	PurchaseErrorType,
 	PurchasingAction,
 	Prisma,
+	TransactionLayer,
 	TransactionStatus,
 } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
@@ -35,6 +36,7 @@ import { isTransientPreSubmitError } from '@masumi/payment-core/pre-submit-error
 import { WALLET_SPLITTER_LOVELACE } from '../../../builders/batch-helpers';
 import { syncMeshCostModelsFromChainV2 } from '../../../utils/mesh-cost-model-sync';
 import { withMeshCostModelLock } from '@/utils/mesh-cost-model-sync';
+import { processL2PurchaseLocks, type L2LockPassResult } from './l2-lock';
 
 /**
  * --- V2 batch-payments: defensive submit invariant ---
@@ -640,6 +642,36 @@ async function executeSpecificBatchPayment(
 	};
 }
 
+/**
+ * The L2 funds-lock pass on its own, for the Hydra nudge.
+ *
+ * The pass is written to run under this module's mutex, serialized with the L1
+ * batch — it selects `FundsLockingRequested` requests that have no
+ * CurrentTransaction yet, and the L1 pass claims them only later, in its own
+ * pre-submit write. The nudge called the pass directly, so a nudge landing
+ * inside an L1 tick could reserve a lock in the head for a request the L1 pass
+ * had already selected and was about to lock on chain: the same funds escrowed
+ * twice, with an L2 reservation left holding the head wallet and no request
+ * pointing at it.
+ *
+ * Skipped rather than queued when the batch is already running: that cycle runs
+ * this very pass first, so the work is not missed.
+ */
+export async function processL2PurchaseLocksExclusively(): Promise<L2LockPassResult> {
+	let release: MutexInterface.Releaser;
+	try {
+		release = await tryAcquire(mutex).acquire();
+	} catch {
+		logger.info('batch_payments_v2 is already running; its own L2 pass covers this nudge');
+		return { deferredRequestIds: [] };
+	}
+	try {
+		return await processL2PurchaseLocks();
+	} finally {
+		release();
+	}
+}
+
 export async function batchLatestPaymentEntriesV2() {
 	const maxBatchSize = 10;
 
@@ -652,6 +684,25 @@ export async function batchLatestPaymentEntriesV2() {
 	}
 
 	try {
+		// L2 (Hydra head) funds-lock pass FIRST: route eligible requests into an
+		// open head and stamp them with an L2 CurrentTransaction, so the L1
+		// lock-and-query below (which filters `CurrentTransaction: { is: null }`)
+		// naturally skips them. Any failure after the L2 pre-submit reservation is
+		// fail-closed by that durable row; only failures before reservation remain
+		// eligible for this tick's L1 pass / a later retry.
+		//
+		// A request the L2 pass wanted but could not take — head open, its wallet
+		// busy with the previous lock — is reported back rather than left
+		// unclaimed, because unclaimed means this L1 pass locks it a moment later
+		// and the head is missed for good. On a failed pass nothing is deferred,
+		// which keeps the old behaviour: L1 takes everything it can.
+		let deferredToL2: string[] = [];
+		try {
+			({ deferredRequestIds: deferredToL2 } = await processL2PurchaseLocks());
+		} catch (l2Error) {
+			logger.error('L2 funds-lock pass failed; unreserved requests may continue to L1', { error: l2Error });
+		}
+
 		// Gate Serializable $transaction through the shared semaphore so the pg
 		// connection pool isn't exhausted under scheduler fan-out.
 		const paymentContractsWithWalletLocked = await withSerializableSlot(() =>
@@ -683,6 +734,18 @@ export async function batchLatestPaymentEntriesV2() {
 											CurrentTransaction: { is: null },
 											onChainState: null,
 											payByTime: { gte: payByTime },
+											// Waiting on a head wallet, not available to L1 this tick.
+											...(deferredToL2.length > 0 ? { id: { notIn: deferredToL2 } } : {}),
+											// Filter forced-Hydra and conflicting requests BEFORE `take`, or a
+											// full first page of L2-owned rows can starve later L1 work forever.
+											// Both nullable terms must independently permit L1: forceLayer is
+											// the buyer override; paymentForceLayer is the seller-signed choice.
+											AND: [
+												{ OR: [{ forceLayer: null }, { forceLayer: TransactionLayer.L1 }] },
+												{
+													OR: [{ paymentForceLayer: null }, { paymentForceLayer: TransactionLayer.L1 }],
+												},
+											],
 										},
 										include: {
 											PaidFunds: true,

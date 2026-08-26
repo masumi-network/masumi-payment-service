@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { postRegistry, postRegistryUpdate, RegistryEntry } from '@/lib/api/generated';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getActiveStablecoinConfig } from '@/lib/constants/defaultWallets';
@@ -99,8 +100,15 @@ export function RegisterAIAgentDialog({
     { wallet: WalletListItem; balance: number }[]
   >([]);
 
-  const { wallets, isLoading: isLoadingWallets, isError: isWalletsError } = useWallets();
+  const {
+    wallets,
+    isLoading: isLoadingWallets,
+    isError: isWalletsError,
+  } = useWallets({
+    enabled: open,
+  });
   const { apiClient, network, selectedPaymentSource } = useAppContext();
+  const resync = useResync();
   // x402 and source-owned pricing are V2-only; update always targets V2.
   const isV2Target = isUpdateMode
     ? true
@@ -489,6 +497,7 @@ export function RegisterAIAgentDialog({
           }
 
           toast.success('AI agent update requested');
+          await resync('agents');
           onSuccess();
           onClose();
           reset();
@@ -575,6 +584,7 @@ export function RegisterAIAgentDialog({
       }
     },
     [
+      resync,
       sellingWallets,
       selectedPaymentSource,
       apiClient,
@@ -612,7 +622,7 @@ export function RegisterAIAgentDialog({
             {isUpdateMode
               ? 'Updating the on-chain metadata issues an UpdateAction on the V2 registry contract: the existing asset is burned and a new asset with the incremented version is minted in a single transaction.'
               : isReRegisterMode
-                ? 'This mints a brand-new registration from the previous agent’s details. It will be issued a new agent identifier — the old, deregistered one is not reused. Review the fields and wallet below, then mint.'
+                ? 'This mints a brand-new registration from the previous agent’s details. It is issued a new agent identifier; the old, deregistered one is not reused. Review the fields and wallet below, then mint.'
                 : 'This registers your agent on the Masumi Network, making it visible to everyone.'}
           </p>
         </DialogHeader>

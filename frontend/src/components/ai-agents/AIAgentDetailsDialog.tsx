@@ -8,6 +8,7 @@ import { CopyButton } from '@/components/ui/copy-button';
 import { postRegistryDeregister } from '@/lib/api/generated';
 import { RegistryEntry, deleteRegistry } from '@/lib/api/generated';
 import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import { getAgentTypeLabel } from '@/lib/agent-type';
 import { formatDateTime } from '@/lib/format-date';
 import { isDbDeletableAgentState, isDeregisterableAgentState } from '@/lib/registry-states';
 import type { AgentRelation } from '@/lib/queries/useContextAgents';
@@ -21,6 +22,7 @@ import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 import { Tabs } from '@/components/ui/tabs';
 import { AgentEarningsOverview } from './AgentEarningsOverview';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
@@ -53,7 +55,8 @@ export function AIAgentDetailsDialog({
   onSuccess,
   initialTab = 'Details',
 }: AIAgentDetailsDialogProps) {
-  const { apiClient, selectedPaymentSourceId, network } = useAppContext();
+  const { apiClient, selectedPaymentSourceId, network, capabilities } = useAppContext();
+  const resync = useResync();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const deleteAgent = useApiMutation({
@@ -109,6 +112,12 @@ export function AIAgentDetailsDialog({
   // here ('payment' relation) are managed from their home source — mirrors the
   // row-action gating on pages/ai-agents.tsx.
   const isManagedOnActiveSource = agent?.relation !== 'payment';
+  // Deregistering is pay-authenticated; hard-deleting the DB row is admin-only.
+  const canDeleteOrDeregister = isDbDeletableAgentState(agent?.state)
+    ? capabilities.canAdmin
+    : isDeregisterableAgentState(agent?.state)
+      ? capabilities.canPay
+      : false;
 
   // Reset the tab whenever the dialog opens (or opens for a different agent):
   // without keying on the agent id, the previous agent's tab (e.g. Earnings,
@@ -148,6 +157,7 @@ export function AIAgentDetailsDialog({
         setIsDeleteDialogOpen(false);
         if (response) {
           toast.success('AI agent deleted from the database successfully');
+          await resync('agents');
           onClose();
           onSuccess?.();
         }
@@ -171,6 +181,7 @@ export function AIAgentDetailsDialog({
         setIsDeleteDialogOpen(false);
         if (response) {
           toast.success('AI agent deregistration initiated successfully');
+          await resync('agents');
           onClose();
           onSuccess?.();
         }
@@ -183,6 +194,7 @@ export function AIAgentDetailsDialog({
       isDeletingRef.current = false;
     }
   }, [
+    resync,
     agent,
     deleteAgentAsync,
     deregisterAgentAsync,
@@ -237,12 +249,17 @@ export function AIAgentDetailsDialog({
                   <DialogTitle className="text-xl leading-tight break-words">
                     {agent.name}
                   </DialogTitle>
-                  <Badge
-                    variant={getAgentStatusBadgeVariant(agent.state)}
-                    className="mt-0.5 shrink-0 whitespace-nowrap"
-                  >
-                    {parseAgentStatus(agent.state)}
-                  </Badge>
+                  <div className="mt-0.5 flex shrink-0 items-center gap-2">
+                    <Badge variant="outline" className="whitespace-nowrap">
+                      {getAgentTypeLabel(agent.type)}
+                    </Badge>
+                    <Badge
+                      variant={getAgentStatusBadgeVariant(agent.state)}
+                      className="whitespace-nowrap"
+                    >
+                      {parseAgentStatus(agent.state)}
+                    </Badge>
+                  </div>
                 </div>
               </DialogHeader>
 
@@ -673,13 +690,14 @@ export function AIAgentDetailsDialog({
               </div>
 
               <div className="py-4 px-4 border-t flex justify-end gap-2 bg-background shrink-0">
-                {canReRegister && (
+                {canReRegister && capabilities.canPay && (
                   <Button variant="outline" onClick={() => setIsReRegisterConfirmOpen(true)}>
                     <RotateCcw className="h-4 w-4" />
                     Re-register
                   </Button>
                 )}
                 {isManagedOnActiveSource &&
+                  capabilities.canPay &&
                   (agent.state === 'RegistrationConfirmed' ||
                     agent.state === 'UpdateConfirmed' ||
                     agent.state === 'UpdateFailed') &&
@@ -689,7 +707,10 @@ export function AIAgentDetailsDialog({
                       Verify & Publish
                     </Button>
                   )}
-                {isManagedOnActiveSource && (
+                {/* The same control deregisters on-chain (POST /registry/deregister,
+                    pay) or hard-deletes the row (DELETE /registry, admin) depending on
+                    the agent's state, so it needs whichever permission that branch uses. */}
+                {isManagedOnActiveSource && canDeleteOrDeregister && (
                   <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>

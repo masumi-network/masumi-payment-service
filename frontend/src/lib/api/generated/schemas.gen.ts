@@ -104,6 +104,26 @@ export const APIKeySchema = {
                 ]
             },
             description: 'List of hot wallets this API key is scoped to'
+        },
+        x402WalletScopeEnabled: {
+            type: 'boolean',
+            description: 'Whether managed EVM wallet scope filtering is enabled for this API key'
+        },
+        X402WalletScopes: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    evmWalletId: {
+                        type: 'string',
+                        description: 'ID of the managed EVM wallet in scope'
+                    }
+                },
+                required: [
+                    'evmWalletId'
+                ]
+            },
+            description: 'Managed EVM wallets this API key is scoped to. The key additionally always reaches wallets it created itself.'
         }
     },
     required: [
@@ -119,7 +139,9 @@ export const APIKeySchema = {
         'RemainingUsageCredits',
         'status',
         'walletScopeEnabled',
-        'WalletScopes'
+        'WalletScopes',
+        'x402WalletScopeEnabled',
+        'X402WalletScopes'
     ]
 } as const;
 
@@ -657,6 +679,16 @@ export const PaymentSchema = {
             ],
             description: 'Current state of the payment on the blockchain. Null if not yet on-chain'
         },
+        forceLayer: {
+            type: 'string',
+            nullable: true,
+            enum: [
+                'L1',
+                'Hydra',
+                null
+            ],
+            description: 'Caller-specified layer override recorded on this payment. "L1" or "Hydra", or null for automatic routing (Hydra if available, else L1).'
+        },
         NextAction: {
             type: 'object',
             properties: {
@@ -818,6 +850,19 @@ export const PaymentSchema = {
                     nullable: true,
                     description: 'Cardano transaction hash'
                 },
+                layer: {
+                    type: 'string',
+                    enum: [
+                        'L1',
+                        'L2'
+                    ],
+                    description: 'Blockchain layer this transaction was submitted to'
+                },
+                hydraHeadId: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Hydra head ID when this transaction was submitted to L2. Null for L1 transactions'
+                },
                 status: {
                     type: 'string',
                     enum: [
@@ -910,6 +955,19 @@ export const PaymentSchema = {
                         type: 'string',
                         nullable: true,
                         description: 'Cardano transaction hash'
+                    },
+                    layer: {
+                        type: 'string',
+                        enum: [
+                            'L1',
+                            'L2'
+                        ],
+                        description: 'Blockchain layer this transaction was submitted to'
+                    },
+                    hydraHeadId: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Hydra head ID when this transaction was submitted to L2. Null for L1 transactions'
                     },
                     status: {
                         type: 'string',
@@ -1175,6 +1233,7 @@ export const PaymentSchema = {
         'cooldownTime',
         'cooldownTimeOtherParty',
         'onChainState',
+        'forceLayer',
         'NextAction',
         'ActionHistory',
         'CurrentTransaction',
@@ -1296,6 +1355,26 @@ export const PurchaseSchema = {
                 null
             ],
             description: 'Current state of the purchase on the blockchain. Null if not yet on-chain'
+        },
+        forceLayer: {
+            type: 'string',
+            nullable: true,
+            enum: [
+                'L1',
+                'Hydra',
+                null
+            ],
+            description: 'Buyer-specified layer override recorded on this purchase. "L1" or "Hydra", or null for automatic routing.'
+        },
+        paymentForceLayer: {
+            type: 'string',
+            nullable: true,
+            enum: [
+                'L1',
+                'Hydra',
+                null
+            ],
+            description: 'Seller-specified layer override. V2 authenticates it with the blockchain identifier signature; V1 can only carry redundant "L1". Null means automatic routing.'
         },
         collateralReturnLovelace: {
             type: 'string',
@@ -1468,6 +1547,19 @@ export const PurchaseSchema = {
                     nullable: true,
                     description: 'Cardano transaction hash'
                 },
+                layer: {
+                    type: 'string',
+                    enum: [
+                        'L1',
+                        'L2'
+                    ],
+                    description: 'Blockchain layer this transaction was submitted to'
+                },
+                hydraHeadId: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Hydra head ID when this transaction was submitted to L2. Null for L1 transactions'
+                },
                 status: {
                     type: 'string',
                     enum: [
@@ -1575,6 +1667,19 @@ export const PurchaseSchema = {
                         type: 'string',
                         nullable: true,
                         description: 'Cardano transaction hash'
+                    },
+                    layer: {
+                        type: 'string',
+                        enum: [
+                            'L1',
+                            'L2'
+                        ],
+                        description: 'Blockchain layer this transaction was submitted to'
+                    },
+                    hydraHeadId: {
+                        type: 'string',
+                        nullable: true,
+                        description: 'Hydra head ID when this transaction was submitted to L2. Null for L1 transactions'
                     },
                     status: {
                         type: 'string',
@@ -1819,6 +1924,8 @@ export const PurchaseSchema = {
         'onChainStateOrResultLastChangedAt',
         'requestedById',
         'onChainState',
+        'forceLayer',
+        'paymentForceLayer',
         'collateralReturnLovelace',
         'buyerReturnAddress',
         'sellerReturnAddress',
@@ -4303,7 +4410,7 @@ export const PaymentSourceExtendedSchema = {
             properties: {
                 rpcProviderApiKey: {
                     type: 'string',
-                    description: 'The RPC provider API key (e.g., Blockfrost project ID)'
+                    description: 'The RPC provider API key (e.g., Blockfrost project ID). Operator secret: only returned to keys with admin access, omitted for Read/ReadAndPay keys.'
                 },
                 rpcProvider: {
                     type: 'string',
@@ -4314,7 +4421,6 @@ export const PaymentSourceExtendedSchema = {
                 }
             },
             required: [
-                'rpcProviderApiKey',
                 'rpcProvider'
             ],
             description: 'RPC provider configuration for blockchain interactions'
@@ -5181,7 +5287,7 @@ export const X402WalletSchema = {
         createdById: {
             type: 'string',
             nullable: true,
-            description: 'Id of the API key that created this wallet'
+            description: 'Id of the API key that created this wallet. Only returned to admins and for the caller’s own wallets; null otherwise, so a read key cannot enumerate other tenants’ key ids.'
         },
         createdAt: {
             type: 'string',
@@ -5912,6 +6018,824 @@ export const FundDistributionTriggeredSchema = {
     ]
 } as const;
 
+export const HydraHostSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string'
+        },
+        updatedAt: {
+            type: 'string'
+        },
+        name: {
+            type: 'string'
+        },
+        network: {
+            type: 'string',
+            enum: [
+                'Preprod',
+                'Mainnet'
+            ]
+        },
+        baseUrl: {
+            type: 'string'
+        },
+        allowInsecureHttp: {
+            type: 'boolean'
+        },
+        publicPeerHost: {
+            type: 'string'
+        },
+        hasAdminToken: {
+            type: 'boolean'
+        },
+        hydraVersion: {
+            type: 'string',
+            nullable: true
+        },
+        scriptCatalogueHash: {
+            type: 'string',
+            nullable: true
+        },
+        ledgerParamsHash: {
+            type: 'string',
+            nullable: true
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'Active',
+                'Draining',
+                'Unreachable',
+                'Disabled'
+            ]
+        },
+        lastHealthAt: {
+            type: 'string',
+            nullable: true
+        },
+        lastHealthError: {
+            type: 'string',
+            nullable: true
+        },
+        participantCount: {
+            type: 'number'
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'name',
+        'network',
+        'baseUrl',
+        'allowInsecureHttp',
+        'publicPeerHost',
+        'hasAdminToken',
+        'hydraVersion',
+        'scriptCatalogueHash',
+        'ledgerParamsHash',
+        'status',
+        'lastHealthAt',
+        'lastHealthError',
+        'participantCount'
+    ]
+} as const;
+
+export const HydraRelationDetailSchema = {
+    allOf: [
+        {
+            $ref: '#/components/schemas/HydraRelation'
+        },
+        {
+            type: 'object',
+            properties: {
+                Heads: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            id: {
+                                type: 'string'
+                            },
+                            status: {
+                                type: 'string',
+                                enum: [
+                                    'Disconnected',
+                                    'Connected',
+                                    'Connecting',
+                                    'Idle',
+                                    'Initializing',
+                                    'Open',
+                                    'Closed',
+                                    'FanoutPossible',
+                                    'Final'
+                                ]
+                            },
+                            headIdentifier: {
+                                type: 'string',
+                                nullable: true
+                            },
+                            isEnabled: {
+                                type: 'boolean'
+                            },
+                            createdAt: {
+                                type: 'string',
+                                format: 'date-time'
+                            },
+                            openedAt: {
+                                type: 'string',
+                                nullable: true,
+                                format: 'date-time'
+                            },
+                            closedAt: {
+                                type: 'string',
+                                nullable: true,
+                                format: 'date-time'
+                            },
+                            finalizedAt: {
+                                type: 'string',
+                                nullable: true,
+                                format: 'date-time'
+                            },
+                            _count: {
+                                type: 'object',
+                                properties: {
+                                    RemoteParticipants: {
+                                        type: 'number'
+                                    }
+                                },
+                                required: [
+                                    'RemoteParticipants'
+                                ]
+                            }
+                        },
+                        required: [
+                            'id',
+                            'status',
+                            'headIdentifier',
+                            'isEnabled',
+                            'createdAt',
+                            'openedAt',
+                            'closedAt',
+                            'finalizedAt',
+                            '_count'
+                        ]
+                    }
+                }
+            }
+        }
+    ]
+} as const;
+
+export const HydraRelationSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        network: {
+            type: 'string',
+            enum: [
+                'Preprod',
+                'Mainnet'
+            ]
+        },
+        localHotWalletId: {
+            type: 'string'
+        },
+        remoteWalletId: {
+            type: 'string'
+        },
+        counterpartyBaseUrl: {
+            type: 'string',
+            nullable: true
+        },
+        LocalHotWallet: {
+            type: 'object',
+            properties: {
+                id: {
+                    type: 'string'
+                },
+                walletVkey: {
+                    type: 'string'
+                },
+                walletAddress: {
+                    type: 'string'
+                },
+                type: {
+                    type: 'string'
+                },
+                note: {
+                    type: 'string',
+                    nullable: true
+                }
+            },
+            required: [
+                'id',
+                'walletVkey',
+                'walletAddress',
+                'type',
+                'note'
+            ]
+        },
+        RemoteWallet: {
+            type: 'object',
+            properties: {
+                id: {
+                    type: 'string'
+                },
+                walletVkey: {
+                    type: 'string'
+                },
+                walletAddress: {
+                    type: 'string'
+                },
+                type: {
+                    type: 'string'
+                },
+                note: {
+                    type: 'string',
+                    nullable: true
+                }
+            },
+            required: [
+                'id',
+                'walletVkey',
+                'walletAddress',
+                'type',
+                'note'
+            ]
+        },
+        _count: {
+            type: 'object',
+            properties: {
+                Heads: {
+                    type: 'number'
+                }
+            },
+            required: [
+                'Heads'
+            ]
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'network',
+        'localHotWalletId',
+        'remoteWalletId',
+        'counterpartyBaseUrl'
+    ]
+} as const;
+
+export const HydraHeadSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string'
+        },
+        updatedAt: {
+            type: 'string'
+        },
+        hydraRelationId: {
+            type: 'string'
+        },
+        headIdentifier: {
+            type: 'string',
+            nullable: true
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'Disconnected',
+                'Connected',
+                'Connecting',
+                'Idle',
+                'Initializing',
+                'Open',
+                'Closed',
+                'FanoutPossible',
+                'Final'
+            ]
+        },
+        contestationPeriod: {
+            type: 'string'
+        },
+        isEnabled: {
+            type: 'boolean'
+        },
+        openedAt: {
+            type: 'string',
+            nullable: true
+        },
+        closedAt: {
+            type: 'string',
+            nullable: true
+        },
+        finalizedAt: {
+            type: 'string',
+            nullable: true
+        },
+        contestationDeadline: {
+            type: 'string',
+            nullable: true
+        },
+        latestActivityAt: {
+            type: 'string',
+            nullable: true
+        },
+        latestSnapshotNumber: {
+            type: 'string'
+        },
+        reconciliationStalledTxId: {
+            type: 'string',
+            nullable: true,
+            description: 'Confirmed in-head tx the ordered replay is stuck on (fail-closed stall); null when replay is healthy'
+        },
+        reconciliationStalledReason: {
+            type: 'string',
+            nullable: true,
+            description: 'Why replay is stalled: evidence-parse-failed | replay-apply-retry'
+        },
+        reconciliationStalledSince: {
+            type: 'string',
+            nullable: true,
+            description: 'When the current stall was first observed'
+        },
+        initTxHash: {
+            type: 'string',
+            nullable: true
+        },
+        closeTxHash: {
+            type: 'string',
+            nullable: true
+        },
+        fanoutTxHash: {
+            type: 'string',
+            nullable: true
+        },
+        Invite: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                role: {
+                    type: 'string',
+                    enum: [
+                        'Issuer',
+                        'Redeemer'
+                    ]
+                },
+                contestationPeriodSeconds: {
+                    type: 'number'
+                },
+                depositPeriodSeconds: {
+                    type: 'number'
+                },
+                unsyncedPeriodSeconds: {
+                    type: 'number'
+                }
+            },
+            required: [
+                'role',
+                'contestationPeriodSeconds',
+                'depositPeriodSeconds',
+                'unsyncedPeriodSeconds'
+            ],
+            description: 'Which side of the invite exchange this head came from; absent for heads not created from one'
+        },
+        LocalParticipant: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                id: {
+                    type: 'string'
+                },
+                createdAt: {
+                    type: 'string'
+                },
+                walletId: {
+                    type: 'string'
+                },
+                Wallet: {
+                    type: 'object',
+                    properties: {
+                        walletVkey: {
+                            type: 'string'
+                        },
+                        walletAddress: {
+                            type: 'string'
+                        },
+                        collectionAddress: {
+                            type: 'string',
+                            nullable: true
+                        },
+                        note: {
+                            type: 'string',
+                            nullable: true
+                        },
+                        type: {
+                            type: 'string',
+                            enum: [
+                                'Selling',
+                                'Purchasing',
+                                'Funding'
+                            ]
+                        }
+                    },
+                    required: [
+                        'walletVkey',
+                        'walletAddress',
+                        'collectionAddress',
+                        'note',
+                        'type'
+                    ]
+                },
+                nodeUrl: {
+                    type: 'string'
+                },
+                nodeHttpUrl: {
+                    type: 'string'
+                },
+                hasCommitted: {
+                    type: 'boolean'
+                },
+                commitTxHash: {
+                    type: 'string',
+                    nullable: true
+                },
+                hydraHostId: {
+                    type: 'string'
+                },
+                hostNodeId: {
+                    type: 'string'
+                },
+                cardanoVkey: {
+                    type: 'string'
+                },
+                keysDisclosedAt: {
+                    type: 'string',
+                    nullable: true
+                }
+            },
+            required: [
+                'id',
+                'createdAt',
+                'walletId',
+                'Wallet',
+                'nodeUrl',
+                'nodeHttpUrl',
+                'hasCommitted',
+                'commitTxHash',
+                'hydraHostId',
+                'hostNodeId',
+                'cardanoVkey',
+                'keysDisclosedAt'
+            ]
+        },
+        RemoteParticipants: {
+            type: 'array',
+            items: {
+                type: 'object',
+                properties: {
+                    id: {
+                        type: 'string'
+                    },
+                    createdAt: {
+                        type: 'string'
+                    },
+                    walletId: {
+                        type: 'string'
+                    },
+                    Wallet: {
+                        type: 'object',
+                        properties: {
+                            walletVkey: {
+                                type: 'string'
+                            },
+                            walletAddress: {
+                                type: 'string'
+                            }
+                        },
+                        required: [
+                            'walletVkey',
+                            'walletAddress'
+                        ]
+                    },
+                    advertise: {
+                        type: 'string'
+                    },
+                    hasCommitted: {
+                        type: 'boolean'
+                    },
+                    commitTxHash: {
+                        type: 'string',
+                        nullable: true
+                    },
+                    HydraVerificationKey: {
+                        type: 'object',
+                        properties: {
+                            hydraVK: {
+                                type: 'string'
+                            }
+                        },
+                        required: [
+                            'hydraVK'
+                        ]
+                    },
+                    cardanoVkey: {
+                        type: 'string'
+                    }
+                },
+                required: [
+                    'id',
+                    'createdAt',
+                    'walletId',
+                    'Wallet',
+                    'advertise',
+                    'hasCommitted',
+                    'commitTxHash',
+                    'HydraVerificationKey',
+                    'cardanoVkey'
+                ]
+            }
+        },
+        _count: {
+            type: 'object',
+            properties: {
+                Errors: {
+                    type: 'number'
+                },
+                Transactions: {
+                    type: 'number'
+                }
+            },
+            required: [
+                'Errors',
+                'Transactions'
+            ]
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'hydraRelationId',
+        'headIdentifier',
+        'status',
+        'contestationPeriod',
+        'isEnabled',
+        'openedAt',
+        'closedAt',
+        'finalizedAt',
+        'contestationDeadline',
+        'latestActivityAt',
+        'latestSnapshotNumber',
+        'reconciliationStalledTxId',
+        'reconciliationStalledReason',
+        'reconciliationStalledSince',
+        'initTxHash',
+        'closeTxHash',
+        'fanoutTxHash'
+    ]
+} as const;
+
+export const HydraLowBalanceRuleSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string'
+        },
+        updatedAt: {
+            type: 'string'
+        },
+        hydraLocalParticipantId: {
+            type: 'string'
+        },
+        assetUnit: {
+            type: 'string'
+        },
+        thresholdAmount: {
+            type: 'string'
+        },
+        enabled: {
+            type: 'boolean'
+        },
+        topupEnabled: {
+            type: 'boolean'
+        },
+        topupAmount: {
+            type: 'string',
+            nullable: true
+        },
+        status: {
+            type: 'string',
+            enum: [
+                'Unknown',
+                'Healthy',
+                'Low'
+            ]
+        },
+        lastKnownAmount: {
+            type: 'string',
+            nullable: true
+        },
+        lastCheckedAt: {
+            type: 'string',
+            nullable: true
+        },
+        lastAlertedAt: {
+            type: 'string',
+            nullable: true
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'hydraLocalParticipantId',
+        'assetUnit',
+        'thresholdAmount',
+        'enabled',
+        'topupEnabled',
+        'topupAmount',
+        'status',
+        'lastKnownAmount',
+        'lastCheckedAt',
+        'lastAlertedAt'
+    ]
+} as const;
+
+export const HydraLocalParticipantSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        hydraHeadId: {
+            type: 'string',
+            nullable: true
+        },
+        walletId: {
+            type: 'string'
+        },
+        cardanoVkey: {
+            type: 'string'
+        },
+        nodeUrl: {
+            type: 'string'
+        },
+        nodeHttpUrl: {
+            type: 'string'
+        },
+        hasCommitted: {
+            type: 'boolean'
+        },
+        commitTxHash: {
+            type: 'string',
+            nullable: true
+        },
+        hydraHostId: {
+            type: 'string'
+        },
+        hostNodeId: {
+            type: 'string'
+        },
+        Wallet: {
+            type: 'object',
+            properties: {
+                walletAddress: {
+                    type: 'string'
+                }
+            },
+            required: [
+                'walletAddress'
+            ]
+        },
+        HydraHead: {
+            type: 'object',
+            nullable: true,
+            properties: {
+                status: {
+                    type: 'string',
+                    enum: [
+                        'Disconnected',
+                        'Connected',
+                        'Connecting',
+                        'Idle',
+                        'Initializing',
+                        'Open',
+                        'Closed',
+                        'FanoutPossible',
+                        'Final'
+                    ]
+                }
+            },
+            required: [
+                'status'
+            ]
+        },
+        keysDisclosedAt: {
+            type: 'string',
+            nullable: true,
+            format: 'date-time'
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'hydraHeadId',
+        'walletId',
+        'cardanoVkey',
+        'nodeUrl',
+        'nodeHttpUrl',
+        'hasCommitted',
+        'commitTxHash',
+        'hydraHostId',
+        'hostNodeId',
+        'keysDisclosedAt'
+    ]
+} as const;
+
+export const HydraRemoteParticipantSchema = {
+    type: 'object',
+    properties: {
+        id: {
+            type: 'string'
+        },
+        createdAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        updatedAt: {
+            type: 'string',
+            format: 'date-time'
+        },
+        hydraHeadId: {
+            type: 'string',
+            nullable: true
+        },
+        walletId: {
+            type: 'string'
+        },
+        cardanoVkey: {
+            type: 'string'
+        },
+        advertise: {
+            type: 'string'
+        },
+        hasCommitted: {
+            type: 'boolean'
+        },
+        commitTxHash: {
+            type: 'string',
+            nullable: true
+        },
+        hydraVerificationKeyId: {
+            type: 'string'
+        }
+    },
+    required: [
+        'id',
+        'createdAt',
+        'updatedAt',
+        'hydraHeadId',
+        'walletId',
+        'cardanoVkey',
+        'advertise',
+        'hasCommitted',
+        'commitTxHash',
+        'hydraVerificationKeyId'
+    ]
+} as const;
+
 export const RailReadinessSchema = {
     type: 'object',
     properties: {
@@ -5986,6 +6910,81 @@ export const RailReadinessSchema = {
                             ]
                         },
                         description: 'Individual checks, in setup order'
+                    },
+                    PurchaseSources: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                policyId: {
+                                    type: 'string',
+                                    nullable: true,
+                                    description: 'Registry policy id this configured V2 source can purchase from'
+                                },
+                                smartContractAddress: {
+                                    type: 'string',
+                                    description: 'V2 escrow contract address this configured source can purchase through'
+                                },
+                                isPurchaseReady: {
+                                    type: 'boolean',
+                                    description: 'Whether this exact policy and contract source can execute outbound purchases'
+                                },
+                                Checks: {
+                                    type: 'array',
+                                    items: {
+                                        type: 'object',
+                                        properties: {
+                                            id: {
+                                                type: 'string',
+                                                enum: [
+                                                    'cardano.payment_source',
+                                                    'cardano.contract_current',
+                                                    'cardano.rpc_provider',
+                                                    'cardano.admin_signatures',
+                                                    'cardano.selling_wallet',
+                                                    'cardano.purchasing_wallet',
+                                                    'cardano.payments_enabled',
+                                                    'x402.enabled_chain',
+                                                    'x402.rpc_url',
+                                                    'x402.facilitator',
+                                                    'x402.selling_wallet',
+                                                    'x402.purchasing_wallet',
+                                                    'x402.budget'
+                                                ],
+                                                description: 'Stable check identifier. The admin UI maps setup steps onto these'
+                                            },
+                                            label: {
+                                                type: 'string',
+                                                description: 'Short human-readable name for the check'
+                                            },
+                                            isComplete: {
+                                                type: 'boolean',
+                                                description: 'Whether the backend considers this check satisfied'
+                                            },
+                                            detail: {
+                                                type: 'string',
+                                                nullable: true,
+                                                description: 'Why the check is incomplete, or extra context when it passes. Null when there is nothing to add'
+                                            }
+                                        },
+                                        required: [
+                                            'id',
+                                            'label',
+                                            'isComplete',
+                                            'detail'
+                                        ]
+                                    },
+                                    description: 'Buyer-direction checks for this source; selling-wallet readiness is intentionally excluded'
+                                }
+                            },
+                            required: [
+                                'policyId',
+                                'smartContractAddress',
+                                'isPurchaseReady',
+                                'Checks'
+                            ]
+                        },
+                        description: 'Per-source outbound purchase readiness for CardanoV2. Policy ids and contract addresses are public on-chain identifiers; secrets are never returned'
                     }
                 },
                 required: [

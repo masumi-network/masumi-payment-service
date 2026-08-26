@@ -389,10 +389,7 @@ export const seed = async (prisma: PrismaClient) => {
 				const { policyId } = await getRegistryScriptV2(Network.Preprod);
 				if (policyId != DEFAULTS.REGISTRY_POLICY_ID_V2_PREPROD) {
 					throw new Error(
-						'V2 registry policyId is changed expected: ' +
-							DEFAULTS.REGISTRY_POLICY_ID_V2_PREPROD +
-							' got: ' +
-							policyId,
+						'V2 registry policyId is changed expected: ' + DEFAULTS.REGISTRY_POLICY_ID_V2_PREPROD + ' got: ' + policyId,
 					);
 				}
 				const purchasingUnusedAddress = (await purchasingWallet.getUnusedAddresses())[0];
@@ -463,6 +460,16 @@ export const seed = async (prisma: PrismaClient) => {
 				console.log(
 					'V2 contract seeded on preprod: ' + smartContractAddress + ' added. Registry policyId: ' + policyId,
 				);
+
+				// Hydra heads are not seeded.
+				//
+				// They used to be, from HYDRA_* environment variables, and the block wrote
+				// participant columns (`nodeUrl`, `nodeHttpUrl`) that the Host-only
+				// migration removed, so every run threw into a caught log line and seeded
+				// nothing. Removed rather than repaired: a head is created by the invite
+				// handshake now — reserve a node on a Host, issue an invite, have the
+				// counterparty redeem it — and half a head assembled by hand has no node
+				// behind it and no way to open.
 			} catch (error) {
 				console.error(
 					'Error when seeding preprod V2, ensure you succeed with seeding, the following error occurred: ',
@@ -665,10 +672,7 @@ export const seed = async (prisma: PrismaClient) => {
 				const { policyId } = await getRegistryScriptV2(Network.Mainnet);
 				if (policyId != DEFAULTS.REGISTRY_POLICY_ID_V2_MAINNET) {
 					throw new Error(
-						'V2 registry policyId is changed expected: ' +
-							DEFAULTS.REGISTRY_POLICY_ID_V2_MAINNET +
-							' got: ' +
-							policyId,
+						'V2 registry policyId is changed expected: ' + DEFAULTS.REGISTRY_POLICY_ID_V2_MAINNET + ' got: ' + policyId,
 					);
 				}
 				const purchasingUnusedAddress = (await purchasingWallet.getUnusedAddresses())[0];

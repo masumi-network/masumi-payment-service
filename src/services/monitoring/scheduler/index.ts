@@ -12,6 +12,24 @@ let jobsInitializationPromise: Promise<void> | null = null;
 let jobsInitializationToken = 0;
 
 async function runScheduledJob(job: JobDefinition) {
+	if (job.shouldRun) {
+		let shouldRun: boolean;
+		try {
+			shouldRun = await job.shouldRun();
+		} catch (error) {
+			// The gate failing is not the job failing. Run it: a job that finds
+			// nothing is cheaper than a feature that silently stops working
+			// because the question about it could not be answered.
+			logger.warn(`Gate for scheduled job '${job.startMessage}' failed; running the job`, {
+				error: error instanceof Error ? { message: error.message } : error,
+			});
+			shouldRun = true;
+		}
+		// Silently: a job skipped every interval would otherwise be the loudest
+		// thing in the log of a service that does not use the feature at all.
+		if (!shouldRun) return;
+	}
+
 	logger.info(job.startMessage);
 	const start = Date.now();
 	try {

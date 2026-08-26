@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { formatDateTime } from '@/lib/format-date';
 import { rowActivation } from '@/lib/a11y';
@@ -32,6 +32,7 @@ import {
 import { cn, groupDigits, shortenAddress } from '@/lib/utils';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
+import { buildX402TransactionScope } from '@/lib/x402-transactions';
 import {
   postX402PaymentsReconcile,
   type PostX402PaymentsReconcileData,
@@ -80,7 +81,7 @@ const DIRECTION_LABEL: Record<X402PaymentAttempt['direction'], string> = {
 
 export function PaymentsTab() {
   const { networks } = useAvailableX402Networks();
-  const { activeRail, selectedX402ChainId } = useAppContext();
+  const { selectedX402ChainId, capabilities } = useAppContext();
   const [filters, setFilters] = useState<X402PaymentFilters>({});
   const [selected, setSelected] = useState<X402PaymentAttempt | null>(null);
   // Captured when the details dialog opens (event time, render stays pure); the reconcile
@@ -92,38 +93,21 @@ export function PaymentsTab() {
     setDetailsOpenedAt(Date.now());
   };
 
-  // On the EVM rail, scope the payment list to the chain selected in the sidebar, and keep
-  // it in sync when that selection changes. A manual chain filter persists until the
-  // sidebar selection actually changes (tracked via ref), so this follows the chip without
-  // overriding an in-table choice on every render.
+  // The payment-source selector owns chain scope. Transactions follow it so the page never
+  // exposes a second chain control that can disagree with the active EVM source.
   const selectedCaip2 = networks.find((n) => n.id === selectedX402ChainId)?.caip2Id;
-  const lastAppliedCaip2 = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (activeRail !== 'x402') return;
-    // No chain selected (e.g. right after a network switch clears selectedX402ChainId): drop
-    // the previous chain scope so the table doesn't keep querying the old, now-invalid chain.
-    if (!selectedX402ChainId) {
-      if (lastAppliedCaip2.current !== undefined) {
-        lastAppliedCaip2.current = undefined;
-        setFilters((prev) => (prev.caip2Network ? { ...prev, caip2Network: undefined } : prev));
-      }
-      return;
-    }
-    if (!selectedCaip2) return; // chain selected but networks still loading
-    if (lastAppliedCaip2.current === selectedCaip2) return;
-    lastAppliedCaip2.current = selectedCaip2;
-
-    setFilters((prev) =>
-      prev.caip2Network === selectedCaip2 ? prev : { ...prev, caip2Network: selectedCaip2 },
-    );
-  }, [activeRail, selectedX402ChainId, selectedCaip2]);
+  const transactionScope = buildX402TransactionScope(filters, selectedCaip2);
   const { attempts, isLoading, hasMore, loadMore, isFetchingNextPage, refetch, isRefetching } =
-    useX402PaymentAttempts(filters);
+    useX402PaymentAttempts(transactionScope.filters, transactionScope.isEnabled);
 
   const chainLabel = (caip2: string) =>
     networks.find((n) => n.caip2Id === caip2)?.displayName ?? caip2;
 
   // The switcher is the primary control; it maps to the coarse side/needs-action filters.
+  // Needs-action / reconcile is admin-only — hide that view for pay keys.
+  const viewOptions = capabilities.canAdmin
+    ? VIEW_OPTIONS
+    : VIEW_OPTIONS.filter((v) => v.key !== 'needs');
   const activeView: PaymentView = filters.needsManualAction ? 'needs' : (filters.side ?? 'all');
   const setView = (view: PaymentView) =>
     setFilters((prev) => ({
@@ -134,12 +118,18 @@ export function PaymentsTab() {
       status: view === 'needs' ? undefined : prev.status,
     }));
 
+  useEffect(() => {
+    if (!capabilities.canAdmin && filters.needsManualAction) {
+      setFilters((prev) => ({ ...prev, needsManualAction: undefined }));
+    }
+  }, [capabilities.canAdmin, filters.needsManualAction]);
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         Every x402 payment this service signed (Pay / outbound) or verified and settled (Receive /
-        inbound), newest first. Use the switcher for the buy vs sell side or the reconciliation
-        backlog.
+        inbound), newest first. Use the switcher for the buy vs sell side
+        {capabilities.canAdmin ? ' or the reconciliation backlog' : ''}.
       </p>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -148,7 +138,7 @@ export function PaymentsTab() {
             role="group"
             aria-label="Payment view"
           >
-            {VIEW_OPTIONS.map((v) => (
+            {viewOptions.map((v) => (
               <button
                 key={v.key}
                 type="button"
@@ -191,30 +181,6 @@ export function PaymentsTab() {
               </SelectContent>
             </Select>
           )}
-
-          <Select
-            value={filters.caip2Network ?? ALL}
-            onValueChange={(value) =>
-              setFilters((prev) => ({
-                ...prev,
-                caip2Network: value === ALL ? undefined : value,
-              }))
-            }
-          >
-            <SelectTrigger className="w-[170px]">
-              <SelectValue placeholder="All chains" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value={ALL}>All chains</SelectItem>
-                {networks.map((network) => (
-                  <SelectItem key={network.id} value={network.caip2Id}>
-                    {network.displayName}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
         </div>
         <RefreshButton onRefresh={refetch} isRefreshing={isRefetching} />
       </div>
@@ -494,7 +460,7 @@ function ReconcileSection({
   openedAtMs: number;
   onReconciled: () => void;
 }) {
-  const { apiClient } = useAppContext();
+  const { apiClient, capabilities } = useAppContext();
   const [txHash, setTxHash] = useState('');
   const [pendingResolution, setPendingResolution] = useState<'settled' | 'failed' | null>(null);
   const reconcile = useApiMutation({
@@ -511,7 +477,8 @@ function ReconcileSection({
   const ambiguousVerified = attempt.status === 'Verified' && isStale;
   const isReconcilable =
     attempt.direction === 'InboundSettle' && (ambiguousVerified || settledMissingRecord);
-  if (!isReconcilable) return null;
+  // Reconcile is admin-only — pay keys can view payments but must not see this UI.
+  if (!capabilities.canAdmin || !isReconcilable) return null;
 
   const txHashValid = TX_HASH_REGEX.test(txHash);
   const submit = async (resolution: 'settled' | 'failed') => {
@@ -552,7 +519,7 @@ function ReconcileSection({
         />
         <p id="reconcile-txhash-hint" className="text-xs text-muted-foreground">
           {txHash !== '' && !txHashValid
-            ? 'Not a valid transaction hash — expected 0x followed by 64 hex characters.'
+            ? 'Not a valid transaction hash. Expected 0x followed by 64 hex characters.'
             : 'Required to mark the attempt settled.'}
         </p>
       </div>

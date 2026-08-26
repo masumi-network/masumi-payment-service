@@ -571,6 +571,18 @@ class WebhookSenderService {
 			return lines.join('\n');
 		}
 
+		if (payload.event_type === WebhookEventType.HYDRA_HEAD_LOW_BALANCE) {
+			lines.push('');
+			this.appendDetailLine(lines, '🧑‍🤝‍🧑', 'Participant', payload.data.hydraLocalParticipantId);
+			this.appendDetailLine(lines, '🌊', 'Hydra head', payload.data.hydraHeadId);
+			this.appendDetailLine(lines, '🪙', 'Asset', payload.data.assetUnit);
+			this.appendDetailLine(lines, '🎯', 'Threshold', payload.data.thresholdAmount);
+			this.appendDetailLine(lines, '💰', 'In-head balance', payload.data.currentAmount);
+			this.appendDetailLine(lines, '🕒', 'Checked at', payload.data.checkedAt);
+			this.appendDetailLine(lines, '⏱️', 'Event time', payload.timestamp);
+			return lines.join('\n');
+		}
+
 		lines.push('');
 		this.appendDetailLine(lines, '🏷️', 'ID', payload.data.id);
 		this.appendDetailLine(lines, '⛓️', 'Blockchain ID', payload.data.blockchainIdentifier);
@@ -620,6 +632,8 @@ class WebhookSenderService {
 				return { emoji: '🚨', title: 'x402 payment failed' };
 			case WebhookEventType.X402_WALLET_LOW_BALANCE:
 				return { emoji: '🪫', title: 'x402 wallet balance low' };
+			case WebhookEventType.HYDRA_HEAD_LOW_BALANCE:
+				return { emoji: '🪫', title: 'Hydra in-head balance low' };
 			case WEBHOOK_TEST_EVENT_TYPE:
 				return { emoji: '🧪', title: 'Test webhook delivery' };
 			default:

@@ -50,6 +50,10 @@ export function useAgents(params?: AgentListFilters) {
   );
   const source = resolveAgentListSource(selectedPaymentSourceId, selectedPaymentSource, network);
 
+  // The query cannot run until the selected payment source is known, and agents
+  // are listed per source.
+  const isEnabled = hasCurrentNetworkPaymentSources && !!selectedPaymentSourceId;
+
   const query = useInfiniteQuery({
     queryKey: [
       'agents',
@@ -101,6 +105,11 @@ export function useAgents(params?: AgentListFilters) {
   return {
     agents,
     hasMore: Boolean(query.hasNextPage),
+    // A disabled query is not "loading" by TanStack's definition: it is pending
+    // and not fetching, so `isLoading` is false before the payment source has
+    // resolved. Callers read that as "asked and got nothing" and told the
+    // operator there were no agents, when nothing had been asked yet. Waiting on
+    // the source is reported as loading, because to the operator it is.
     isLoading: isLoadingPaymentSources || isSourceResolving || query.isLoading,
     isFetching: query.isFetching,
     isRefetching: query.isRefetching,

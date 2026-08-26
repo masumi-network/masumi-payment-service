@@ -2,7 +2,7 @@ import { useCallback, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Sparkles, Wand2, ShieldCheck, ArrowUpRight, X } from 'lucide-react';
+import { ArrowRight, Sparkles, Wand2, ShieldCheck, X } from 'lucide-react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
@@ -26,7 +26,7 @@ interface SetupV2BannerProps {
   onMigrateClick?: () => void;
 }
 
-export function SetupV2Banner({ onMigrateClick }: SetupV2BannerProps) {
+export function SetupV2Banner({ onMigrateClick: _onMigrateClick }: SetupV2BannerProps) {
   const { network } = useAppContext();
   const { paymentSources, isLoading } = usePaymentSourceExtendedAll();
 
@@ -115,24 +115,13 @@ export function SetupV2Banner({ onMigrateClick }: SetupV2BannerProps) {
             </div>
             <p className="text-sm text-muted-foreground max-w-2xl">
               {hasLegacyOnly
-                ? 'V2 is the default for new agents — zero fees, updated registry metadata, and weighted admin signatures. Run the quick setup, then migrate your existing agents below.'
+                ? 'V2 is the default for new agents: zero fees, updated registry metadata, and weighted admin signatures. Run the quick setup, then migrate your existing agents below.'
                 : 'A guided 3-step wizard generates wallets, configures Blockfrost, and creates the V2 payment source so you can register your first AI agent in minutes.'}
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2 shrink-0">
-          {hasLegacyOnly && onMigrateClick && (
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={onMigrateClick}
-              className="gap-2 btn-hover-lift"
-            >
-              <ArrowUpRight className="h-4 w-4" />
-              Migrate agents
-            </Button>
-          )}
           <Button asChild size="lg" className="gap-2 btn-hover-lift group">
             <Link href={setupHref}>
               <Wand2 className="h-4 w-4" />

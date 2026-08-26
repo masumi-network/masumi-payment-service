@@ -398,9 +398,20 @@ export async function setX402WalletBudget(input: {
 	return flattenBudget(budget);
 }
 
-export async function listX402WalletBudgets(apiKeyId?: string) {
+/**
+ * Which budgets a caller may see. Deliberately NOT an optional `apiKeyId`: this
+ * previously took `apiKeyId?: string` and passed it straight into `where`, and
+ * Prisma drops an `undefined` filter — so omitting the argument silently returned
+ * every tenant's budgets. That was contained while the endpoint was admin-only.
+ * Now that it is reachable at pay level, the same omission would be a
+ * cross-tenant leak, so the unrestricted case must be spelled out and cannot be
+ * reached by forgetting an argument.
+ */
+export type X402BudgetScope = { apiKeyId: string } | 'all';
+
+export async function listX402WalletBudgets(scope: X402BudgetScope) {
 	const budgets = await prisma.x402WalletBudget.findMany({
-		where: { apiKeyId },
+		where: scope === 'all' ? { enabled: true } : { apiKeyId: scope.apiKeyId, enabled: true },
 		orderBy: { createdAt: 'desc' },
 		select: BUDGET_SELECT,
 	});

@@ -1,0 +1,229 @@
+/**
+ * Durable node registry on the persistence volume.
+ *
+ * Every mutation is written temp-then-rename with an fsync on both the file and
+ * its directory, because a torn `node.json` would orphan a node that still
+ * holds a peer port, a key pair and a persistence directory — and the Host
+ * rebuilds its port allocation from these records at boot, so a half-written
+ * one is not a cosmetic problem.
+ */
+
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fsyncDir, writeFileAtomic } from './atomic-write.js';
+import { getOwnInteger, getOwnString, isPlainObject } from './json.js';
+import type { NodeRecord } from './types.js';
+
+const NODE_FILE = 'node.json';
+
+export class RegistryError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'RegistryError';
+	}
+}
+
+function parseNodeRecord(raw: string, source: string): NodeRecord {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		throw new RegistryError(`${source} is not valid JSON; the registry may be damaged`);
+	}
+	if (!isPlainObject(parsed)) {
+		throw new RegistryError(`${source} does not contain a node record`);
+	}
+	const nodeId = getOwnString(parsed, 'nodeId');
+	const peerPort = getOwnInteger(parsed, 'peerPort');
+	if (nodeId === undefined || nodeId.length === 0) {
+		throw new RegistryError(`${source} is missing nodeId`);
+	}
+	if (peerPort === undefined) {
+		throw new RegistryError(`${source} is missing a usable peerPort`);
+	}
+
+	const record = parsed as unknown as NodeRecord;
+
+	// Records written before the counter was renamed carry `restartCount`.
+	// Reading them as a missing `startAttempts` would make every arithmetic on
+	// it NaN, and `NaN >= maxStartAttempts` is false — so a node that genuinely
+	// could not start would retry forever instead of failing. Carry the old
+	// value across on read; the next write persists the new name.
+	if (typeof record.startAttempts !== 'number') {
+		record.startAttempts = getOwnInteger(parsed, 'restartCount') ?? 0;
+	}
+
+	return record;
+}
+
+export class NodeRegistryStore {
+	private readonly nodesDir: string;
+	/**
+	 * Serialises mutations per node.
+	 *
+	 * `update` is a read-modify-write, so two overlapping calls would both read
+	 * the same record and the later write would silently discard the earlier
+	 * one — the exact loss the helper exists to prevent. Chaining per node makes
+	 * each read-modify-write atomic with respect to the others.
+	 */
+	private readonly writeQueues = new Map<string, Promise<unknown>>();
+
+	constructor(dataDir: string) {
+		this.nodesDir = path.join(dataDir, 'nodes');
+	}
+
+	/** Run `task` after any in-flight mutation for this node has settled. */
+	private enqueue<T>(nodeId: string, task: () => Promise<T>): Promise<T> {
+		const previous = this.writeQueues.get(nodeId) ?? Promise.resolve();
+		// Swallow the predecessor's rejection here so one failed update does not
+		// cascade into every queued one; the original caller still sees its error.
+		const next = previous.then(task, task);
+		this.writeQueues.set(
+			nodeId,
+			next.catch(() => undefined),
+		);
+		return next;
+	}
+
+	nodeDir(nodeId: string): string {
+		if (nodeId.includes('/') || nodeId.includes('..') || nodeId.length === 0) {
+			throw new RegistryError(`refusing to resolve a directory for suspicious nodeId ${JSON.stringify(nodeId)}`);
+		}
+		return path.join(this.nodesDir, nodeId);
+	}
+
+	async ensureLayout(nodeId: string): Promise<string> {
+		const dir = this.nodeDir(nodeId);
+		await fs.mkdir(path.join(dir, 'keys'), { recursive: true, mode: 0o700 });
+		await fs.mkdir(path.join(dir, 'persistence'), { recursive: true });
+		await fs.mkdir(path.join(dir, 'peers'), { recursive: true });
+		return dir;
+	}
+
+	/**
+	 * Persist a record wholesale.
+	 *
+	 * Prefer {@link update} for anything that changes an existing node: writing a
+	 * snapshot captured earlier silently discards whatever else touched the
+	 * record in between, and process-exit handlers do exactly that.
+	 */
+	async write(record: NodeRecord): Promise<void> {
+		const dir = this.nodeDir(record.nodeId);
+		await fs.mkdir(dir, { recursive: true });
+		const next = { ...record, updatedAt: new Date().toISOString() };
+		await writeFileAtomic(path.join(dir, NODE_FILE), `${JSON.stringify(next, null, 2)}\n`);
+	}
+
+	/**
+	 * Read-modify-write. The mutator receives the record as it is on disk *now*,
+	 * so no caller can persist a stale snapshot — which is the whole class of bug
+	 * that lets an async exit handler's update be overwritten by an in-flight
+	 * start.
+	 *
+	 * Returns the written record, or null when the node no longer exists.
+	 */
+	async update(nodeId: string, mutate: (current: NodeRecord) => NodeRecord): Promise<NodeRecord | null> {
+		return await this.updateAsync(nodeId, (current) => Promise.resolve(mutate(current)));
+	}
+
+	/**
+	 * `update`, for a mutator that has work of its own to do first.
+	 *
+	 * The queue is the only thing serialising a node's writers, and it used to
+	 * cover the record write alone — so a caller that had to touch the node's
+	 * directory as well did that outside any lock. `setPeers` is the case: it
+	 * checked the node was stopped, wrote every peer key file, pruned the
+	 * leftovers, and only then updated the record. A start claiming the node
+	 * inside that window read the OLD peer list and launched against the NEW key
+	 * files, naming one peer's address with another's key — a one-member cluster
+	 * that never reaches quorum, never opens its API, and is planned `Idle`
+	 * forever because an unresponsive node is exactly what the plan waits on.
+	 *
+	 * Holding the queue across the whole sequence closes it: a claim lands either
+	 * wholly before (the mutator reads `Starting` and refuses) or wholly after
+	 * (the files it launches against are the ones the record names).
+	 *
+	 * The mutator runs with the node's queue HELD: it must not call back into
+	 * `update`/`updateAsync` for the same node, which would wait on itself.
+	 */
+	async updateAsync(nodeId: string, mutate: (current: NodeRecord) => Promise<NodeRecord>): Promise<NodeRecord | null> {
+		return this.enqueue(nodeId, async () => {
+			const current = await this.read(nodeId);
+			if (current === null) {
+				return null;
+			}
+			const next = await mutate(current);
+			if (next.nodeId !== nodeId) {
+				throw new RegistryError(`a mutator may not change nodeId (${nodeId} -> ${next.nodeId})`);
+			}
+			await this.write(next);
+			return next;
+		});
+	}
+
+	async read(nodeId: string): Promise<NodeRecord | null> {
+		const file = path.join(this.nodeDir(nodeId), NODE_FILE);
+		let raw: string;
+		try {
+			raw = await fs.readFile(file, 'utf8');
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+				return null;
+			}
+			throw error;
+		}
+		return parseNodeRecord(raw, file);
+	}
+
+	/**
+	 * Load every record. A damaged record is surfaced rather than skipped: the
+	 * caller rebuilds port allocation from this list, and silently dropping an
+	 * entry would let a live node's port be handed to a new one.
+	 */
+	async list(): Promise<NodeRecord[]> {
+		let entries: string[];
+		try {
+			entries = await fs.readdir(this.nodesDir);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+				return [];
+			}
+			throw error;
+		}
+
+		const records: NodeRecord[] = [];
+		for (const entry of entries.sort()) {
+			if (entry.startsWith('.')) {
+				continue;
+			}
+			const record = await this.read(entry);
+			if (record !== null) {
+				records.push(record);
+			}
+		}
+		return records;
+	}
+
+	/**
+	 * Remove a node's whole directory, including its persistence. Callers must
+	 * have confirmed the head is finalised — this destroys the only copy of the
+	 * head state held on this host.
+	 *
+	 * Queued like every other mutation, and it was not. A directory removal takes
+	 * real time, and `write` recreates the directory it writes into, so an
+	 * `update` that had already read the record could land its write after the
+	 * `rm` and leave a node.json describing a node with no keys, no peers and no
+	 * persistence — one that can never start, while the peer port it names has
+	 * already been handed to somebody else. Queued, an update either runs first
+	 * or reads nothing and returns null.
+	 */
+	async remove(nodeId: string): Promise<void> {
+		await this.enqueue(nodeId, async () => {
+			await fs.rm(this.nodeDir(nodeId), { recursive: true, force: true });
+			await fsyncDir(this.nodesDir);
+		});
+		// Nothing is left to serialise against, and the map would otherwise keep an
+		// entry per node this host has ever removed.
+		this.writeQueues.delete(nodeId);
+	}
+}
