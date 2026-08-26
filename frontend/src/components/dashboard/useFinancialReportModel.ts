@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { hashKey, useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import {
   getReportsFacets,
@@ -92,7 +92,14 @@ export function isCurrentFinancialReportBody(
   visibleBody: ReportBody | null,
   debouncedBody: ReportBody | null,
 ): boolean {
-  return visibleBody != null && visibleBody === debouncedBody;
+  // Compare content, not object identity. effectiveForm is memoized on
+  // facetsQuery.data?.managedWallets, so any facets refetch (a window refocus
+  // past the 60s stale time) rebuilds an identical body with a new identity.
+  // Read as a filter change, that blanked the metrics, charts and wallet table
+  // for a whole debounce window and reset table pagination to page 0.
+  // hashKey is the same stable hash the query key already uses, so freshness
+  // and cache identity cannot disagree.
+  return visibleBody != null && hashKey([visibleBody]) === hashKey([debouncedBody]);
 }
 
 export function getCurrentFinancialReportExportError(
