@@ -171,6 +171,58 @@ export async function verifyHydraHeadInitOnChain(options: {
 	return { initTxHash };
 }
 
+/** Minimal L1 surface needed to resolve the chain-replay anchor of an InitTx. */
+export type HydraInitAnchorObserver = {
+	txs: (hash: string) => Promise<{ block: string | null }>;
+	blocks: (hashOrNumber: string) => Promise<{ hash: string; slot: number | null; previous_block?: string | null }>;
+};
+
+/**
+ * Resolve the `--start-chain-from` anchor for a verified InitTx: the chain
+ * point of the block immediately BEFORE the block that carries the InitTx.
+ * hydra-node begins observation strictly AFTER the given point, so the parent
+ * block is the newest anchor that still re-observes the InitTx during a
+ * persistence-loss chain replay.
+ *
+ * Best-effort by design: returns null when the parent point cannot be
+ * expressed (no previous block, a slot-less block, a non-canonical response)
+ * AND on any observer transport failure or timeout. The anchor must never
+ * fail a verification that already proved the InitTx — the init backfill
+ * retries null anchors on its next cycle. Only a malformed initTxHash throws,
+ * because that is a caller bug, not an observation condition.
+ */
+export async function resolveHydraInitChainAnchor(
+	observer: HydraInitAnchorObserver,
+	initTxHash: string,
+	observerTimeoutMs: number = DEFAULT_HEAD_INIT_OBSERVER_TIMEOUT_MS,
+): Promise<{ slot: bigint; hash: string } | null> {
+	const canonicalTxHash = normalizeHex(initTxHash, 64, 'Hydra InitTx hash');
+	try {
+		return await withObserverTimeout(
+			(async () => {
+				const transaction = await observer.txs(canonicalTxHash);
+				if (!transaction.block) return null;
+				const initBlock = await observer.blocks(transaction.block);
+				const parentHash = initBlock.previous_block;
+				if (!parentHash) return null;
+				const parent = await observer.blocks(parentHash);
+				if (
+					parent.slot === null ||
+					parent.slot === undefined ||
+					!Number.isSafeInteger(parent.slot) ||
+					parent.slot < 0
+				) {
+					return null;
+				}
+				return { slot: BigInt(parent.slot), hash: normalizeHex(parent.hash, 64, 'Hydra init anchor block hash') };
+			})(),
+			observerTimeoutMs,
+		);
+	} catch {
+		return null;
+	}
+}
+
 function validateHeadTokens(
 	output: HydraHeadChainOutput,
 	headId: string,

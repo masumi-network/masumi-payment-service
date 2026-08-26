@@ -25,7 +25,9 @@ import { verifyPersistedHydraHeadOnChain } from '@/routes/api/hydra/head';
 const MAX_PER_CYCLE = 5;
 
 /**
- * One pass over heads that are live but have no recorded opening transaction.
+ * One pass over heads that are live but have no recorded opening transaction,
+ * or no chain-replay anchor yet (initChainSlot/initChainHash; heads verified
+ * before the anchor columns existed). Verification persists both.
  *
  * Only heads past Initializing are considered: before that there may genuinely
  * be no InitTx on chain yet, and asking would fail every cycle.
@@ -34,7 +36,7 @@ export async function backfillHydraInitTxHashes(): Promise<number> {
 	const heads = await prisma.hydraHead.findMany({
 		where: {
 			isEnabled: true,
-			initTxHash: null,
+			OR: [{ initTxHash: null }, { initChainSlot: null }],
 			headIdentifier: { not: null },
 			status: { in: [HydraHeadStatus.Open, HydraHeadStatus.Closed, HydraHeadStatus.FanoutPossible] },
 		},

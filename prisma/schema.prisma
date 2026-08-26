@@ -1803,6 +1803,15 @@ model HydraHead {
   closeTxHash  String?
   fanoutTxHash String?
 
+  /// Chain-replay anchor for hydra-node persistence-loss recovery: the block
+  /// point immediately BEFORE the block that carries the InitTx. A wiped node
+  /// restarted with `--start-chain-from <initChainSlot>.<initChainHash>`
+  /// re-observes the whole head from L1 (verified live on preprod; see
+  /// docs/hydra-persistence-recovery-verification.md). Both fields are null or
+  /// both set; written alongside initTxHash during on-chain verification.
+  initChainSlot BigInt?
+  initChainHash String?
+
   /// Monotonic ownership fence (fencing token): incremented once per
   /// head-session acquisition. Lifecycle writes carry it, so a stale session's
   /// late write misses its guarded UPDATE and self-demotes instead of
