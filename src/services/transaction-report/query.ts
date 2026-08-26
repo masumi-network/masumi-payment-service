@@ -55,7 +55,13 @@ export type {
 	ReportRoleCursor,
 } from './query-cursor';
 
-const STATES_AFTER_FUNDS_LOCKED = Object.values(OnChainState);
+// Every on-chain state, deliberately. A request with no usable `FundsLocked`
+// transition is admitted so the report can mark it undateable rather than drop
+// it: such a row carries a null `fundsLockedAt`, so `getEventBucket` in
+// `aggregate.ts` puts it in no history bucket and the affected metrics turn
+// partial under HISTORY_ECONOMIC_TIMESTAMP_MISSING. Narrowing this list, or
+// adding a date predicate here, would remove that signal.
+const ALL_ON_CHAIN_STATES = Object.values(OnChainState);
 const REPORT_FEE_CONTEXT_MAX_ROWS = 5_000;
 const REPORT_FEE_CONTEXT_MAX_EVENTS = 100_000;
 const REPORT_FEE_CONTEXT_MAX_QUERY_ROWS = 250;
@@ -181,10 +187,7 @@ function sellerDateWhere(filters: ReportQueryFilters): Prisma.PaymentRequestWher
 			OR: [
 				paymentTransitionWhere(OnChainState.FundsLocked, filters.from, filters.to),
 				{
-					AND: [
-						{ onChainState: { in: STATES_AFTER_FUNDS_LOCKED } },
-						missingUsableTransitionWhere(OnChainState.FundsLocked),
-					],
+					AND: [{ onChainState: { in: ALL_ON_CHAIN_STATES } }, missingUsableTransitionWhere(OnChainState.FundsLocked)],
 				},
 			],
 		};
@@ -227,10 +230,7 @@ function buyerDateWhere(filters: ReportQueryFilters): Prisma.PurchaseRequestWher
 			OR: [
 				purchaseTransitionWhere(OnChainState.FundsLocked, filters.from, filters.to),
 				{
-					AND: [
-						{ onChainState: { in: STATES_AFTER_FUNDS_LOCKED } },
-						missingUsableTransitionWhere(OnChainState.FundsLocked),
-					],
+					AND: [{ onChainState: { in: ALL_ON_CHAIN_STATES } }, missingUsableTransitionWhere(OnChainState.FundsLocked)],
 				},
 			],
 		};
@@ -239,10 +239,7 @@ function buyerDateWhere(filters: ReportQueryFilters): Prisma.PurchaseRequestWher
 		OR: [
 			purchaseTransitionWhere(OnChainState.FundsLocked, filters.from, filters.to),
 			{
-				AND: [
-					{ onChainState: { in: STATES_AFTER_FUNDS_LOCKED } },
-					missingUsableTransitionWhere(OnChainState.FundsLocked),
-				],
+				AND: [{ onChainState: { in: ALL_ON_CHAIN_STATES } }, missingUsableTransitionWhere(OnChainState.FundsLocked)],
 			},
 			purchaseTransitionWhere(OnChainState.RefundWithdrawn, filters.from, filters.to),
 			{
