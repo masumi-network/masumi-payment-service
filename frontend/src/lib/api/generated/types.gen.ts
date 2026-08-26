@@ -16013,9 +16013,19 @@ export type PostReportsTransactionsResponses = {
                     unpricedUnits: Array<string>;
                     rates: Array<{
                         unit: string;
+                        coinId: string | null;
                         rate: string;
                         source: 'supplied' | 'coingecko';
+                        provenance: {
+                            cadence: 'daily';
+                            sampleCount: number;
+                            requestedDayCount: number;
+                            firstSampleAt: string;
+                            lastSampleAt: string;
+                            currency: string;
+                        } | null;
                     }> | null;
+                    fetchedAt: Date | null;
                 } | null;
                 warnings: Array<{
                     code: string;
@@ -16567,9 +16577,19 @@ export type PostReportsSummaryResponses = {
                     unpricedUnits: Array<string>;
                     rates: Array<{
                         unit: string;
+                        coinId: string | null;
                         rate: string;
                         source: 'supplied' | 'coingecko';
+                        provenance: {
+                            cadence: 'daily';
+                            sampleCount: number;
+                            requestedDayCount: number;
+                            firstSampleAt: string;
+                            lastSampleAt: string;
+                            currency: string;
+                        } | null;
                     }> | null;
+                    fetchedAt: Date | null;
                 } | null;
                 warnings: Array<{
                     code: string;

@@ -834,6 +834,11 @@ export const postReportsTransactionsResponseTransformer = async (data: any): Pro
     }
     data.data.metadata.filters.from = new Date(data.data.metadata.filters.from);
     data.data.metadata.filters.to = new Date(data.data.metadata.filters.to);
+    if (data.data.metadata.fiat) {
+        if (data.data.metadata.fiat.fetchedAt) {
+            data.data.metadata.fiat.fetchedAt = new Date(data.data.metadata.fiat.fetchedAt);
+        }
+    }
     return data;
 };
 
@@ -858,5 +863,10 @@ export const postReportsSummaryResponseTransformer = async (data: any): Promise<
     }
     data.data.metadata.filters.from = new Date(data.data.metadata.filters.from);
     data.data.metadata.filters.to = new Date(data.data.metadata.filters.to);
+    if (data.data.metadata.fiat) {
+        if (data.data.metadata.fiat.fetchedAt) {
+            data.data.metadata.fiat.fetchedAt = new Date(data.data.metadata.fiat.fetchedAt);
+        }
+    }
     return data;
 };
