@@ -7,7 +7,10 @@ export const PREPROD_USDM_UNIT = '16a55b2a349361ff88c03788f93e1e966e5d689605d044
 
 export function formatCryptoUnitConversion(convertedUnit: string, conversionFactor: string) {
 	let unitName = convertedUnit;
-	if (convertedUnit === '') {
+	// ADA reaches this function under two spellings. `''` is what the contract
+	// datums carry, and `'lovelace'` is what a wallet UTxO carries, so an invoice
+	// built from wallet amounts used to print "1 lovelace" instead of "1 ADA".
+	if (convertedUnit === '' || convertedUnit.toLowerCase() === 'lovelace') {
 		unitName = 'ADA';
 	} else if (convertedUnit === MAINNET_USDCX_UNIT) {
 		unitName = 'USDCx';

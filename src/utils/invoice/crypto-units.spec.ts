@@ -7,8 +7,8 @@ import { MAINNET_USDCX_UNIT, MAINNET_USDM_UNIT, PREPROD_USDM_UNIT, formatCryptoU
  * customer keeps, and nothing downstream would notice.
  */
 describe('formatCryptoUnitConversion', () => {
-	it('labels the empty unit as ADA', () => {
-		expect(formatCryptoUnitConversion('', '1.5')).toBe(' 1.5 ADA');
+	it.each(['', 'lovelace', 'LOVELACE'])('labels the ADA alias %p as ADA', (unit) => {
+		expect(formatCryptoUnitConversion(unit, '1.5')).toBe(' 1.5 ADA');
 	});
 
 	it.each([
