@@ -16,6 +16,7 @@ import {
   fetchTransactionReportExport,
   saveTransactionReportExport,
 } from '@/lib/transaction-report/download';
+import { getFiatIssue } from '@/lib/transaction-report/fiat-settings';
 import {
   buildTransactionReportBody,
   createTransactionReportForm,
@@ -203,6 +204,12 @@ export function useFinancialReportModel() {
   const debouncedBody = useDebouncedValue(body, 350);
   const isBodyCurrent = isCurrentFinancialReportBody(body, debouncedBody);
 
+  const fiatCapability = facetsQuery.data?.fiat ?? null;
+  const fiatIssue = useMemo(
+    () => getFiatIssue(fiatCapability, effectiveForm.fiatCurrency, body?.from ?? null),
+    [body, effectiveForm.fiatCurrency, fiatCapability],
+  );
+
   const summaryQuery = useQuery<ReportSummary>({
     queryKey: ['transaction-report-summary', debouncedBody, reportState.refreshVersion],
     queryFn: async ({ signal }) => {
@@ -221,7 +228,7 @@ export function useFinancialReportModel() {
       if (!summary) throw new Error('Report summary was missing from the server response.');
       return summary;
     },
-    enabled: isBodyCurrent,
+    enabled: isBodyCurrent && fiatIssue == null,
     staleTime: 60_000,
     retry: false,
   });
@@ -248,8 +255,12 @@ export function useFinancialReportModel() {
   });
 
   const exportZip = useCallback(() => {
+    if (fiatIssue) {
+      toast.error(fiatIssue.message);
+      return;
+    }
     if (body) exportMutation.mutate(body);
-  }, [body, exportMutation]);
+  }, [body, exportMutation, fiatIssue]);
 
   const updateForm = useCallback((patch: Partial<TransactionReportFormState>) => {
     setReportState((current) => ({
@@ -329,6 +340,8 @@ export function useFinancialReportModel() {
     facetsError: facetsQuery.error
       ? extractApiErrorMessage(facetsQuery.error, 'Failed to load report filters')
       : null,
+    fiatCapability,
+    fiatIssue,
     form: effectiveForm,
     isExporting: exportMutation.isPending,
     isLoadingFacets: facetsQuery.isLoading,
