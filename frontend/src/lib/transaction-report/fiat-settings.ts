@@ -38,8 +38,8 @@ export const REPORT_FIAT_MODE_OPTIONS: ReadonlyArray<
   },
   {
     value: 'TransactionTime',
-    label: 'The rate at the time of each transaction',
-    hint: 'Every request uses the price closest to the moment its transaction settled. CoinGecko sets how far apart its prices sit: minutes apart on a short report, up to an hour on a longer one.',
+    label: 'The rate at the moment each request is booked',
+    hint: 'Every request uses the price closest to the exact time it is booked on, not just the day. The date basis above picks that time. CoinGecko sets how far apart its prices sit: minutes apart on a short report, up to an hour on a longer one.',
   },
 ];
 
