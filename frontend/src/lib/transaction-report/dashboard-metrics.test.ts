@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  buildReportChartPoints,
-  buildReportLinePath,
   collectReportAssetUnits,
   formatReportAmount,
   formatReportCountValue,
@@ -10,11 +8,9 @@ import {
   getEmptyReportAssetLabel,
   getReportTransactionCountDisplay,
   getReportAssetDescriptor,
-  getReportChartDomain,
   getReportMetricAmount,
   REPORT_METRICS,
   resolveReportAssetUnit,
-  scaleReportChartY,
   type ReportAmount,
   type ReportMetrics,
   type ReportSummary,
@@ -161,19 +157,19 @@ test('uses summary asset metadata to format exact zeros for empty metrics', () =
   const usdcx = getReportAssetDescriptor(report, 'usdcx-policy-unit');
 
   assert.deepEqual(formatReportAmount(undefined, ada), {
-    value: '0.000000',
+    value: '0.00',
     unitLabel: 'ADA',
-    text: '0.000000 ADA',
+    text: '0.00 ADA',
   });
   assert.deepEqual(formatReportAmount(undefined, usdm), {
-    value: '0.000000',
+    value: '0.00',
     unitLabel: 'USDM',
-    text: '0.000000 USDM',
+    text: '0.00 USDM',
   });
   assert.deepEqual(formatReportAmount(undefined, usdcx), {
-    value: '0.000000',
+    value: '0.00',
     unitLabel: 'USDCx',
-    text: '0.000000 USDCx',
+    text: '0.00 USDCx',
   });
 });
 
@@ -187,9 +183,9 @@ test('formats exact decimal and atomic amount strings without losing negative si
   const atomic = amount('policy.asset', '-9007199254740993000001');
 
   assert.deepEqual(formatReportAmount(decimal), {
-    value: '-9,007,199,254,740,993.000001',
+    value: '-9,007,199,254,740,993.00',
     unitLabel: 'ADA',
-    text: '-9,007,199,254,740,993.000001 ADA',
+    text: '-9,007,199,254,740,993.00 ADA',
   });
   assert.deepEqual(formatReportAmount(atomic), {
     value: '-9,007,199,254,740,993,000,001',
@@ -198,32 +194,39 @@ test('formats exact decimal and atomic amount strings without losing negative si
   });
 });
 
-test('partial empty metrics preserve exact units and label the zero as observed', () => {
+test('a partial metric with no amount reads as unknown, never as a formatted zero', () => {
   const usdm = { unit: 'usdm-policy-unit', decimals: 6, symbol: 'USDM' } as const;
 
   assert.deepEqual(
     formatReportMetricValue({ amounts: [], completeness: 'partial' }, usdm.unit, usdm),
     {
-      text: '0.000000 USDM observed',
+      text: 'Not known',
+      value: '0.00',
+      unitLabel: 'USDM',
       isPartial: true,
+      isUnknown: true,
       isNegative: false,
     },
   );
   assert.deepEqual(
     formatReportMetricValue({ amounts: [], completeness: 'complete' }, usdm.unit, usdm),
     {
-      text: '0.000000 USDM',
+      text: '0.00 USDM',
+      value: '0.00',
+      unitLabel: 'USDM',
       isPartial: false,
+      isUnknown: false,
       isNegative: false,
     },
   );
 });
 
-test('partial zero transaction counts remain observed values instead of confirmed empty reports', () => {
-  assert.equal(formatReportCountValue(12, 'partial'), '12 observed');
+test('a partial count still separates "none found" from "none exist"', () => {
+  // The estimate dot carries completeness now, so the number itself stays clean.
+  assert.equal(formatReportCountValue(12, 'partial'), '12');
   assert.equal(formatReportCountValue(12, 'complete'), '12');
   assert.deepEqual(getReportTransactionCountDisplay(0, 'partial', 'filtered transaction'), {
-    text: '0 observed filtered transactions',
+    text: '0 filtered transactions',
     isConfirmedEmpty: false,
   });
   assert.deepEqual(getReportTransactionCountDisplay(0, 'complete', 'distinct logical payment'), {
@@ -257,377 +260,27 @@ test('finds an exact metric amount and formats a missing unit as zero', () => {
   });
 });
 
-test('returns no SVG points for empty report history', () => {
-  assert.deepEqual(
-    buildReportChartPoints([], 'sellerNetRevenue', 'lovelace', {
-      width: 100,
-      height: 100,
-      padding: 10,
-    }),
-    [],
-  );
-});
-
-test('plots one negative chart point from a zero baseline and keeps its accessible data', () => {
-  const bucketStart = new Date('2026-01-01T00:00:00.000Z');
-  const bucketEnd = new Date('2026-01-02T00:00:00.000Z');
-  const history: ReportSummary['history'] = [
-    {
-      bucketStart,
-      bucketEnd,
-      metrics: metrics({
-        sellerNetRevenue: {
-          amounts: [
-            {
-              ...amount('lovelace', '-9007199254740993000001'),
-              decimalAmount: '-9007199254740993.000001',
-              decimals: 6,
-              symbol: 'ADA',
-            },
-          ],
-          completeness: 'partial',
-        },
-      }),
-    },
-  ];
-
-  assert.deepEqual(
-    buildReportChartPoints(history, 'sellerNetRevenue', 'lovelace', {
-      width: 100,
-      height: 80,
-      padding: 10,
-    }),
-    [
-      {
-        x: 50,
-        y: 70,
-        bucketStart,
-        bucketEnd,
-        rawAmount: '-9007199254740993000001',
-        valueText: '-9,007,199,254,740,993.000001 ADA',
-        completeness: 'partial',
-      },
-    ],
-  );
-});
-
-test('spreads an all-equal positive series across the zero-based plot', () => {
-  const history: ReportSummary['history'] = [0, 1, 2].map((day) => ({
-    bucketStart: new Date(Date.UTC(2026, 0, day + 1)),
-    bucketEnd: new Date(Date.UTC(2026, 0, day + 2)),
-    metrics: metrics({
-      buyerGrossSpend: {
-        amounts: [amount('unit-a', '7')],
-        completeness: 'complete',
-      },
-    }),
-  }));
-
-  const points = buildReportChartPoints(history, 'buyerGrossSpend', 'unit-a', {
-    width: 100,
-    height: 80,
-    padding: 10,
+test('displayed amounts round to the cent without hiding a small nonzero figure', () => {
+  const ada = { unit: 'lovelace', decimals: 6, symbol: 'ADA' } as const;
+  const decimal = (decimalAmount: string, rawAmount: string) => ({
+    ...amount('lovelace', rawAmount),
+    decimalAmount,
+    decimals: 6,
+    symbol: 'ADA',
   });
 
-  assert.deepEqual(
-    points.map(({ x, y }) => ({ x, y })),
-    [
-      { x: 10, y: 10 },
-      { x: 50, y: 10 },
-      { x: 90, y: 10 },
-    ],
-  );
-});
+  // Half-up, and a carry that widens the integer part.
+  assert.equal(formatReportAmount(decimal('368.700000', '368700000'), ada).value, '368.70');
+  assert.equal(formatReportAmount(decimal('1.005000', '1005000'), ada).value, '1.01');
+  assert.equal(formatReportAmount(decimal('1.004999', '1004999'), ada).value, '1.00');
+  assert.equal(formatReportAmount(decimal('9.999000', '9999000'), ada).value, '10.00');
+  assert.equal(formatReportAmount(decimal('-1.005000', '-1005000'), ada).value, '-1.01');
 
-test('formats a missing stablecoin chart bucket with metadata from its series', () => {
-  const history: ReportSummary['history'] = [
-    {
-      bucketStart: new Date('2026-01-01T00:00:00.000Z'),
-      bucketEnd: new Date('2026-01-02T00:00:00.000Z'),
-      metrics: metrics({
-        protocolFees: {
-          amounts: [],
-          completeness: 'complete',
-        },
-      }),
-    },
-    {
-      bucketStart: new Date('2026-01-02T00:00:00.000Z'),
-      bucketEnd: new Date('2026-01-03T00:00:00.000Z'),
-      metrics: metrics({
-        protocolFees: {
-          amounts: [
-            {
-              ...knownAmount('usdm-policy-unit', 'USDM', '1000000'),
-              decimalAmount: '1.000000',
-            },
-          ],
-          completeness: 'complete',
-        },
-      }),
-    },
-  ];
+  // A fee too small to show must not read as nothing.
+  assert.equal(formatReportAmount(decimal('0.001234', '1234'), ada).text, '< 0.01 ADA');
+  assert.equal(formatReportAmount(decimal('-0.001234', '-1234'), ada).text, '> -0.01 ADA');
+  assert.equal(formatReportAmount(decimal('0.000000', '0'), ada).text, '0.00 ADA');
 
-  const points = buildReportChartPoints(history, 'protocolFees', 'usdm-policy-unit', {
-    width: 100,
-    height: 100,
-    padding: 10,
-  });
-
-  assert.deepEqual(
-    points.map(({ rawAmount, valueText }) => ({ rawAmount, valueText })),
-    [
-      { rawAmount: '0', valueText: '0.000000 USDM' },
-      { rawAmount: '1000000', valueText: '1.000000 USDM' },
-    ],
-  );
-});
-
-test('uses an explicit descriptor when every stablecoin chart bucket is empty', () => {
-  const history: ReportSummary['history'] = [0, 1].map((day) => ({
-    bucketStart: new Date(Date.UTC(2026, 0, day + 1)),
-    bucketEnd: new Date(Date.UTC(2026, 0, day + 2)),
-    metrics: metrics({
-      returnedFunds: {
-        amounts: [],
-        completeness: 'complete',
-      },
-    }),
-  }));
-
-  const points = buildReportChartPoints(
-    history,
-    'returnedFunds',
-    'usdcx-policy-unit',
-    { width: 100, height: 80, padding: 10 },
-    undefined,
-    { unit: 'usdcx-policy-unit', decimals: 6, symbol: 'USDCx' },
-  );
-
-  assert.deepEqual(
-    points.map(({ rawAmount, valueText }) => ({ rawAmount, valueText })),
-    [
-      { rawAmount: '0', valueText: '0.000000 USDCx' },
-      { rawAmount: '0', valueText: '0.000000 USDCx' },
-    ],
-  );
-});
-
-test('scales negative and positive atomic amounts around zero without changing their strings', () => {
-  const history: ReportSummary['history'] = ['-10', '0', '10'].map((rawAmount, index) => ({
-    bucketStart: new Date(Date.UTC(2026, 0, index + 1)),
-    bucketEnd: new Date(Date.UTC(2026, 0, index + 2)),
-    metrics: metrics({
-      sellerNetRevenue: {
-        amounts: [amount('unit-a', rawAmount)],
-        completeness: 'complete',
-      },
-    }),
-  }));
-
-  const points = buildReportChartPoints(history, 'sellerNetRevenue', 'unit-a', {
-    width: 100,
-    height: 100,
-    padding: 10,
-  });
-
-  assert.deepEqual(
-    points.map(({ y, rawAmount, valueText }) => ({ y, rawAmount, valueText })),
-    [
-      { y: 90, rawAmount: '-10', valueText: '-10 unit-a' },
-      { y: 50, rawAmount: '0', valueText: '0 unit-a' },
-      { y: 10, rawAmount: '10', valueText: '10 unit-a' },
-    ],
-  );
-});
-
-test('scales signed amounts above Number safe range with BigInt precision', () => {
-  const rawAmounts = ['-9007199254740993000002', '0', '9007199254740993000002'];
-  const history: ReportSummary['history'] = rawAmounts.map((rawAmount, index) => ({
-    bucketStart: new Date(Date.UTC(2026, 0, index + 1)),
-    bucketEnd: new Date(Date.UTC(2026, 0, index + 2)),
-    metrics: metrics({
-      totalCardanoFees: {
-        amounts: [amount('lovelace', rawAmount)],
-        completeness: 'complete',
-      },
-    }),
-  }));
-
-  const points = buildReportChartPoints(history, 'totalCardanoFees', 'lovelace', {
-    width: 100,
-    height: 100,
-    padding: 10,
-  });
-
-  assert.deepEqual(
-    points.map(({ y, rawAmount }) => ({ y, rawAmount })),
-    [
-      { y: 90, rawAmount: rawAmounts[0] },
-      { y: 50, rawAmount: rawAmounts[1] },
-      { y: 10, rawAmount: rawAmounts[2] },
-    ],
-  );
-  assert.ok(points.every(({ x, y }) => x >= 0 && x <= 100 && y >= 0 && y <= 100));
-});
-
-test('builds a zero-inclusive domain for shared formula-series scaling', () => {
-  const history: ReportSummary['history'] = [
-    {
-      bucketStart: new Date('2026-01-01T00:00:00.000Z'),
-      bucketEnd: new Date('2026-01-02T00:00:00.000Z'),
-      metrics: metrics({
-        sellerNetRevenue: {
-          amounts: [amount('unit-a', '-10')],
-          completeness: 'complete',
-        },
-        protocolFees: {
-          amounts: [amount('unit-a', '0')],
-          completeness: 'complete',
-        },
-      }),
-    },
-    {
-      bucketStart: new Date('2026-01-02T00:00:00.000Z'),
-      bucketEnd: new Date('2026-01-03T00:00:00.000Z'),
-      metrics: metrics({
-        sellerNetRevenue: {
-          amounts: [amount('unit-a', '10')],
-          completeness: 'complete',
-        },
-        protocolFees: {
-          amounts: [amount('unit-a', '100')],
-          completeness: 'complete',
-        },
-      }),
-    },
-  ];
-  const domain = getReportChartDomain(history, ['sellerNetRevenue', 'protocolFees'], 'unit-a');
-  const dimensions = { width: 100, height: 100, padding: 10 };
-  const sellerPoints = buildReportChartPoints(
-    history,
-    'sellerNetRevenue',
-    'unit-a',
-    dimensions,
-    domain,
-  );
-  const feePoints = buildReportChartPoints(history, 'protocolFees', 'unit-a', dimensions, domain);
-
-  assert.deepEqual(domain, { min: BigInt(-10), max: BigInt(100) });
-  assert.equal(sellerPoints[0].y, 90);
-  assert.equal(feePoints[1].y, 10);
-  assert.equal(feePoints[0].y, 82.727272);
-});
-
-test('places and preserves the visible zero baseline for signed chart domains', () => {
-  const dimensions = { width: 100, height: 100, padding: 10 };
-
-  assert.equal(scaleReportChartY(BigInt(0), { min: BigInt(-10), max: BigInt(10) }, dimensions), 50);
-  assert.equal(scaleReportChartY(BigInt(0), { min: BigInt(0), max: BigInt(10) }, dimensions), 90);
-});
-
-test('uses a centered all-zero fallback domain for empty and zero history', () => {
-  assert.deepEqual(getReportChartDomain([], ['buyerNetSpend'], 'unit-a'), {
-    min: BigInt(0),
-    max: BigInt(0),
-  });
-
-  const history: ReportSummary['history'] = [
-    {
-      bucketStart: new Date('2026-01-01T00:00:00.000Z'),
-      bucketEnd: new Date('2026-01-02T00:00:00.000Z'),
-      metrics: metrics({
-        buyerNetSpend: {
-          amounts: [amount('unit-a', '0')],
-          completeness: 'complete',
-        },
-      }),
-    },
-  ];
-
-  assert.deepEqual(getReportChartDomain(history, ['buyerNetSpend'], 'unit-a'), {
-    min: BigInt(0),
-    max: BigInt(0),
-  });
-  assert.equal(
-    buildReportChartPoints(history, 'buyerNetSpend', 'unit-a', {
-      width: 100,
-      height: 80,
-      padding: 10,
-    })[0].y,
-    40,
-  );
-});
-
-test('uses bounded default SVG dimensions when dimensions are omitted', () => {
-  const history: ReportSummary['history'] = [
-    {
-      bucketStart: new Date('2026-01-01T00:00:00.000Z'),
-      bucketEnd: new Date('2026-01-02T00:00:00.000Z'),
-      metrics: metrics({
-        returnedFunds: {
-          amounts: [amount('unit-a', '1')],
-          completeness: 'complete',
-        },
-      }),
-    },
-  ];
-
-  const [point] = buildReportChartPoints(history, 'returnedFunds', 'unit-a');
-
-  assert.deepEqual({ x: point.x, y: point.y }, { x: 320, y: 16 });
-});
-
-test('builds an SVG line path from bounded chart points', () => {
-  assert.equal(buildReportLinePath([]), '');
-  assert.equal(
-    buildReportLinePath([
-      { x: 10, y: 90 },
-      { x: 50.25, y: 40.5 },
-      { x: 90, y: 10 },
-    ]),
-    'M 10 90 L 50.25 40.5 L 90 10',
-  );
-});
-
-test('breaks chart lines across partial buckets with no observed amount', () => {
-  const history: ReportSummary['history'] = [
-    {
-      bucketStart: new Date('2026-01-01T00:00:00.000Z'),
-      bucketEnd: new Date('2026-01-02T00:00:00.000Z'),
-      metrics: metrics({
-        sellerNetRevenue: {
-          amounts: [amount('unit-a', '10')],
-          completeness: 'complete',
-        },
-      }),
-    },
-    {
-      bucketStart: new Date('2026-01-02T00:00:00.000Z'),
-      bucketEnd: new Date('2026-01-03T00:00:00.000Z'),
-      metrics: metrics({
-        sellerNetRevenue: { amounts: [], completeness: 'partial' },
-      }),
-    },
-    {
-      bucketStart: new Date('2026-01-03T00:00:00.000Z'),
-      bucketEnd: new Date('2026-01-04T00:00:00.000Z'),
-      metrics: metrics({
-        sellerNetRevenue: {
-          amounts: [amount('unit-a', '20')],
-          completeness: 'complete',
-        },
-      }),
-    },
-  ];
-
-  const points = buildReportChartPoints(history, 'sellerNetRevenue', 'unit-a', {
-    width: 100,
-    height: 100,
-    padding: 10,
-  });
-
-  assert.equal(points[1].isUnknown, true);
-  assert.equal(points[1].valueText, '0 unit-a observed');
-  assert.equal(buildReportLinePath(points), 'M 10 50 M 90 10');
+  // An asset with unknown decimals counts indivisible units, so it keeps none.
+  assert.equal(formatReportAmount(amount('policy.asset', '4200001')).value, '4,200,001');
 });
