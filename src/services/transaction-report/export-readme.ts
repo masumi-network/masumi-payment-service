@@ -49,8 +49,8 @@ function fiatSection(metadata: ReportCsvMetadata): string[] {
 		fiat.mode === 'PeriodAverage'
 			? `one average rate for the whole period, so every request in this export used the same rate`
 			: fiat.mode === 'TransactionTime'
-				? `the rate closest in time to each request's own settling transaction. CoinGecko sets the spacing of its price series, so the nearest price is within minutes for a short report and within an hour for a longer one`
-				: `the rate of each request's own accounting date, so requests booked on different days used different rates`;
+				? `the price closest in time to each request's own accounting instant, the one the date basis above picks. CoinGecko sets the spacing of its price series, so the nearest price is within minutes for a short report and within an hour for a longer one`
+				: `the daily average rate of each request's own accounting date, so requests booked on different days used different rates`;
 	const lines = [
 		'## Currency',
 		'',
