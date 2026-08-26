@@ -155,7 +155,6 @@ import {
 	deleteX402LowBalanceRuleDelete,
 	deleteX402WalletPost,
 	listAvailableX402NetworksGet,
-	listX402BudgetsGet,
 	listX402LowBalanceRulesGet,
 	listX402NetworksGet,
 	getX402WalletGet,
@@ -163,7 +162,6 @@ import {
 	listX402SettlementsGet,
 	listX402WalletsGet,
 	reconcileX402PaymentPost,
-	setX402BudgetPost,
 	setX402LowBalanceRulePost,
 	settleX402Post,
 	updateX402LowBalanceRulePatch,
@@ -401,10 +399,6 @@ export const apiRouter: Routing = {
 				available: {
 					get: listAvailableX402NetworksGet,
 				},
-			},
-			budgets: {
-				get: listX402BudgetsGet,
-				post: setX402BudgetPost,
 			},
 			'low-balance': {
 				get: listX402LowBalanceRulesGet,

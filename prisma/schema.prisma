@@ -41,8 +41,6 @@ model ApiKey {
   X402WalletScopes              ApiKeyX402WalletScope[]
   InboxAgentRegistrationRequest InboxAgentRegistrationRequest[]
   CreatedX402Wallets            X402EvmWallet[]
-  X402WalletBudgets             X402WalletBudget[]              @relation("X402WalletBudgetGrantee")
-  CreatedX402WalletBudgets      X402WalletBudget[]              @relation("X402WalletBudgetCreatedBy")
   CreatedX402Networks           X402Network[]
   X402PaymentAttempts           X402PaymentAttempt[]
 }
@@ -598,7 +596,6 @@ model X402EvmWallet {
   Secret              X402WalletSecret              @relation(fields: [secretId], references: [id])
   CreatedBy           ApiKey?                       @relation(fields: [createdById], references: [id], onDelete: SetNull)
   FacilitatesNetworks X402Network[]                 @relation("X402NetworkFacilitatorWallet")
-  Budgets             X402WalletBudget[]
   PaymentAttempts     X402PaymentAttempt[]
   ApiKeyScopes        ApiKeyX402WalletScope[]
   LowBalanceRules     X402EvmWalletLowBalanceRule[]
@@ -631,32 +628,6 @@ model X402EvmWalletLowBalanceRule {
   @@unique([evmWalletId, asset])
   @@index([evmWalletId, enabled])
   @@index([enabled, status])
-}
-
-model X402WalletBudget {
-  id              String        @id @default(cuid())
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  apiKeyId        String
-  evmWalletId     String
-  // Chain is implied by the wallet's network (EvmWallet.networkId); no caip2Network here.
-  asset           String
-  remainingAmount BigInt
-  spentAmount     BigInt        @default(0)
-  // Incremented whenever an admin replaces the grant. In-flight refunds must match the
-  // generation they reserved from so they cannot credit a later replacement grant.
-  generation      Int           @default(0)
-  enabled         Boolean       @default(true)
-  createdById     String?
-  ApiKey          ApiKey        @relation("X402WalletBudgetGrantee", fields: [apiKeyId], references: [id], onDelete: Cascade)
-  CreatedBy       ApiKey?       @relation("X402WalletBudgetCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  EvmWallet       X402EvmWallet @relation(fields: [evmWalletId], references: [id], onDelete: Cascade)
-
-  @@unique([apiKeyId, evmWalletId, asset])
-  @@index([apiKeyId, enabled])
-  @@index([evmWalletId, enabled])
-  @@index([evmWalletId, asset])
-  @@index([createdById])
 }
 
 model X402PaymentAttempt {
