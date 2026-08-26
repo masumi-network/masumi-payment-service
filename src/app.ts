@@ -11,6 +11,7 @@ import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
+import { robotsNoindex, serveRobotsTxt } from '@/utils/middleware/robots-noindex';
 import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
@@ -137,6 +138,9 @@ export async function startApp() {
 					xXssProtection: false,
 				}),
 			);
+
+			app.use(robotsNoindex);
+			app.get('/robots.txt', serveRobotsTxt);
 
 			const replacer = (_key: string, value: unknown): unknown => {
 				if (typeof value === 'bigint') {
