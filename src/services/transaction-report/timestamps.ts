@@ -87,10 +87,7 @@ function dateFromMilliseconds(milliseconds: bigint): Date | null {
 	return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function getConfirmedStateTimes(
-	transactions: readonly ReportTransactionEvent[],
-	state: ReportOnChainState,
-): Date[] {
+function getConfirmedStateTimes(transactions: readonly ReportTransactionEvent[], state: ReportOnChainState): Date[] {
 	return mergeReportTransactions(transactions)
 		.filter((transaction) => isConfirmedStateTransaction(transaction, state))
 		.map((transaction) => dateFromBlockTime(transaction.blockTime))

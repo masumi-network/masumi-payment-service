@@ -48,13 +48,10 @@ describe('fiat daily rates', () => {
 	});
 
 	it('averages the days inside a bucket', () => {
-		const table = dailyTable(
-			{ '2026-08-01': '0.400000000000', '2026-08-02': '0.600000000000' },
-			'PeriodAverage',
-		);
-		expect(table.rateFor(ADA, { from: new Date('2026-08-01T00:00:00Z'), to: new Date('2026-08-03T00:00:00Z') })).toEqual(
-			{ rate: '0.500000000000', source: 'coingecko' },
-		);
+		const table = dailyTable({ '2026-08-01': '0.400000000000', '2026-08-02': '0.600000000000' }, 'PeriodAverage');
+		expect(
+			table.rateFor(ADA, { from: new Date('2026-08-01T00:00:00Z'), to: new Date('2026-08-03T00:00:00Z') }),
+		).toEqual({ rate: '0.500000000000', source: 'coingecko' });
 	});
 
 	it('prefers a caller-supplied rate over the fetched series', () => {
@@ -118,7 +115,11 @@ describe('fiat conversion', () => {
 	});
 
 	it('refuses to convert a metric when one of its assets has no rate', () => {
-		const table = createFiatRateTable({ currency: 'usd', mode: 'AccountingDate', supplied: [{ unit: ADA, rate: '0.5' }] });
+		const table = createFiatRateTable({
+			currency: 'usd',
+			mode: 'AccountingDate',
+			supplied: [{ unit: ADA, rate: '0.5' }],
+		});
 		const result = withFiatAmount(
 			[
 				{ unit: ADA, amount: 100_000_000n },
@@ -132,7 +133,11 @@ describe('fiat conversion', () => {
 	});
 
 	it('ignores a zero amount, so an untouched asset never blocks a conversion', () => {
-		const table = createFiatRateTable({ currency: 'usd', mode: 'AccountingDate', supplied: [{ unit: ADA, rate: '0.5' }] });
+		const table = createFiatRateTable({
+			currency: 'usd',
+			mode: 'AccountingDate',
+			supplied: [{ unit: ADA, rate: '0.5' }],
+		});
 		const result = withFiatAmount(
 			[
 				{ unit: ADA, amount: 2_000_000n },
