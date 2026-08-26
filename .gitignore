@@ -44,7 +44,7 @@ scripts/example-invoice.pdf
 scripts/example-invoice.html
 
 # Prisma Generated Files
-src/generated/
+src/generated
 
 # Local vector-db/agent-memory tool artifacts
 *.rvf
