@@ -129,7 +129,13 @@ describe('failClosedAfterStatusPersistenceFailure under the ownership fence', ()
 
 		expect(mockUpdateMany).toHaveBeenCalledWith({
 			where: { id: 'head-1', ownerEpoch: 3n },
-			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null, reconciliationCompletedAt: null },
+			data: {
+				isEnabled: false,
+				initTxHash: null,
+				initChainSlot: null,
+				initChainHash: null,
+				reconciliationCompletedAt: null,
+			},
 		});
 	});
 
