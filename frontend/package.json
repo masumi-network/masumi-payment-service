@@ -9,6 +9,7 @@
     "build": "next build",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
+    "test": "node --import tsx --test $(find src -type f -name '*.test.ts')",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
