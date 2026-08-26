@@ -205,6 +205,15 @@ const normalizedFiltersSchema = z.object({
 	timeZone: z.string(),
 });
 
+const fiatRateProvenanceSchema = z.object({
+	cadence: z.literal('daily'),
+	sampleCount: z.number().int().min(0),
+	requestedDayCount: z.number().int().min(0),
+	firstSampleAt: z.string(),
+	lastSampleAt: z.string(),
+	currency: z.string(),
+});
+
 const reportFiatMetadataSchema = z.object({
 	currency: z.string(),
 	mode: z.enum(REPORT_FIAT_MODES),
@@ -215,8 +224,17 @@ const reportFiatMetadataSchema = z.object({
 	completeness: z.enum(['complete', 'partial']),
 	unpricedUnits: z.array(z.string()),
 	rates: z
-		.array(z.object({ unit: z.string(), rate: z.string(), source: z.enum(['supplied', 'coingecko']) }))
+		.array(
+			z.object({
+				unit: z.string(),
+				coinId: z.string().nullable(),
+				rate: z.string(),
+				source: z.enum(['supplied', 'coingecko']),
+				provenance: fiatRateProvenanceSchema.nullable(),
+			}),
+		)
 		.nullable(),
+	fetchedAt: z.date().nullable(),
 });
 
 const reportMetadataSchema = z.object({

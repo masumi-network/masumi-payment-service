@@ -98,6 +98,12 @@ export type FiatRateFetchResult = Readonly<{
 	points: Map<string, FiatPricePoint[]>;
 	/** Units with no CoinGecko listing at all. */
 	unsupportedUnits: readonly string[];
+	/**
+	 * When the provider answered, so a reader can tell a rate quoted today from
+	 * the same rate quoted after a provider revision. Null when no request was
+	 * made, because every unit was already covered or unlisted.
+	 */
+	fetchedAt: Date | null;
 }>;
 
 /**
@@ -155,7 +161,7 @@ export async function fetchDailyFiatRates(input: FiatRateFetchInput): Promise<Fi
 	const supportedUnits = units.filter((unit) => getCoinId(unit) != null);
 	const daily = new Map<string, Map<string, string>>();
 	const points = new Map<string, FiatPricePoint[]>();
-	if (supportedUnits.length === 0) return { daily, points, unsupportedUnits };
+	if (supportedUnits.length === 0) return { daily, points, unsupportedUnits, fetchedAt: null };
 
 	assertPriceableRange(input.from);
 	// After the range guard, so a cached answer cannot smuggle a window the
@@ -190,7 +196,9 @@ export async function fetchDailyFiatRates(input: FiatRateFetchInput): Promise<Fi
 		}
 	}
 
-	const result = { daily, points, unsupportedUnits };
+	// `fetchedAt` records the answer, not the question, so a cached result keeps
+	// the time the provider actually replied.
+	const result = { daily, points, unsupportedUnits, fetchedAt: new Date() };
 	writeRateCache(cacheKey, readAt, result);
 	return result;
 }
