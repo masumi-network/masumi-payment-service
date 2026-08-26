@@ -332,6 +332,14 @@ const paymentPayload = {
 };
 const typedPaymentPayload = paymentPayload as Parameters<typeof service.settleX402Payment>[0]['paymentPayload'];
 
+// What @x402/core actually hands back on the buy side, which is NOT what arrives over the wire on
+// the sell side. The client assembles the payload as an object literal and sets `extensions` and
+// `resource` as own keys even when the forwarded 402 declared neither, so both are present and
+// undefined in the common case. canonical-json throws on any own key valued undefined, so signing
+// every extension-free payment used to fail here. The sell-side fixture above stays wire-shaped:
+// its body is zod-parsed, and zod omits absent optional keys rather than setting them.
+const sdkPaymentPayload = { ...paymentPayload, extensions: undefined };
+
 // A raw 402 the buyer forwards to the service (buy side).
 const paymentRequired = {
 	x402Version: 2,
@@ -441,7 +449,7 @@ describe('x402 service helpers', () => {
 			validation: { valid: true },
 		});
 		mockEncodePaymentSignatureHeader.mockReturnValue('x-payment-header-base64');
-		mockCreatePaymentPayload.mockResolvedValue(paymentPayload);
+		mockCreatePaymentPayload.mockResolvedValue(sdkPaymentPayload);
 		mockBudgetFindFirst.mockResolvedValue({ id: 'budget-1', remainingAmount: 1_000_000n, generation: 0 });
 		// Default the on-chain balance well above any test amount so the pre-check passes; the
 		// insufficient-balance case overrides mockReadContract per test.
@@ -1448,6 +1456,30 @@ describe('x402 service helpers', () => {
 			);
 			// The service never fetches the resource.
 			expect(mockBudgetUpdate).not.toHaveBeenCalled();
+		});
+
+		it('signs a payload whose extensions and resource are undefined keys from the SDK', async () => {
+			// The default mock already covers `extensions`; drop `resource` too so both of the keys
+			// @x402/core leaves undefined are exercised on one payment.
+			const { resource: _resource, ...withoutResource } = sdkPaymentPayload;
+			const sdkPayloadWithoutResource = { ...withoutResource, resource: undefined };
+			mockCreatePaymentPayload.mockResolvedValue(sdkPayloadWithoutResource);
+
+			const result = await service.createX402Payment({
+				apiKeyId: 'api-key-1',
+				caip2NetworkLimit: [source.network],
+				evmWalletId: 'wallet-1',
+				paymentRequired,
+				usageLimited: false,
+			});
+
+			expect(result.paymentPayloadHash).toBe(service.hashX402PaymentPayload(sdkPayloadWithoutResource));
+			expect(mockX402PaymentAttemptUpdate).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: { id: 'attempt-outbound-1' },
+					data: expect.objectContaining({ status: 'Verified', resource: undefined }),
+				}),
+			);
 		});
 
 		it('pins the client policy to the single budgeted requirement', async () => {
