@@ -107,14 +107,16 @@ describe('escapeLikePattern', () => {
 });
 
 describe('looksLikeHash', () => {
-	it('accepts hex of at least eight characters', () => {
+	it('accepts hex of at least five characters', () => {
+		// Five keeps a short pasted hash prefix findable.
+		expect(looksLikeHash('deadb')).toBe(true);
 		expect(looksLikeHash('deadbeef')).toBe(true);
 		expect(looksLikeHash('0123456789abcdef')).toBe(true);
 	});
 
-	it('rejects short or non-hex queries', () => {
+	it('rejects shorter or non-hex queries', () => {
+		expect(looksLikeHash('dead')).toBe(false);
 		expect(looksLikeHash('abc')).toBe(false);
-		expect(looksLikeHash('deadbee')).toBe(false);
 		expect(looksLikeHash('weatheragent')).toBe(false);
 	});
 });
@@ -197,7 +199,7 @@ describe('buildTransactionSearchFilter', () => {
 		});
 	});
 
-	it('omits the hash branches for a short or non-hex query', () => {
+	it('omits the hash branches for a shorter or non-hex query', () => {
 		// These cannot be answered from an index and the relation branches compile
 		// to subqueries, so running them for every keystroke made the unbounded
 		// count endpoints scan far more than they had to.

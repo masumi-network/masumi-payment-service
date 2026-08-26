@@ -4948,7 +4948,7 @@ export type GetPaymentData = {
          */
         filterAgentIdentifier?: string;
         /**
-         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (8+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (5+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
          */
         searchQuery?: string;
         /**
@@ -5526,7 +5526,7 @@ export type GetPaymentCountData = {
          */
         filterAgentIdentifier?: string;
         /**
-         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (8+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (5+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
          */
         searchQuery?: string;
     };
@@ -5579,7 +5579,7 @@ export type GetPurchaseCountData = {
          */
         filterAgentIdentifier?: string;
         /**
-         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (8+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (5+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
          */
         searchQuery?: string;
     };
@@ -7759,7 +7759,7 @@ export type GetPurchaseData = {
          */
         filterAgentIdentifier?: string;
         /**
-         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (8+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (5+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
          */
         searchQuery?: string;
         /**

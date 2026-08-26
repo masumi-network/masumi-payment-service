@@ -18,7 +18,6 @@ import {
 	transactionLayerToForceLayerApi,
 } from '@/utils/logic/force-layer';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
-import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
 import { resolvePurchaseCreationContext } from './shared';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import {

@@ -116,19 +116,22 @@ export function escapeLikePattern(value: string): string {
 	return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
+/** Shortest hex query that opens the hash columns to a search. */
+export const HASH_QUERY_MIN_LENGTH = 5;
+
 /**
  * True when the query could plausibly be a hash or on-chain identifier, i.e.
- * hex and long enough to be selective.
+ * hex and long enough to be worth the cost.
  *
  * The hash columns and the two transaction-hash relations are only searched
  * when this holds. They cannot be served from an index, and the relation
  * branches compile to subqueries over the join table and the unindexed
- * `Transaction.txHash`, so running them for every short query made the
- * unbounded `count` endpoints scan far more than they had to. A hash is never
- * eight characters of prose, so nothing findable is lost.
+ * `Transaction.txHash`, so running them for every one- or two-character query
+ * made the unbounded `count` endpoints scan far more than they had to. Five
+ * characters keeps a short pasted hash prefix findable.
  */
 export function looksLikeHash(searchLower: string): boolean {
-	return searchLower.length >= 8 && /^[0-9a-f]+$/.test(searchLower);
+	return searchLower.length >= HASH_QUERY_MIN_LENGTH && /^[0-9a-f]+$/.test(searchLower);
 }
 
 /**

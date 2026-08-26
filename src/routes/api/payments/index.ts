@@ -30,7 +30,7 @@ import { forceLayerApiToTransactionLayer } from '@/utils/logic/force-layer';
 import { extractPolicyId } from '@/utils/converter/agent-identifier';
 import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
-import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
+import { assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
 	createPaymentSchemaOutput,
 	createPaymentsSchemaInput,

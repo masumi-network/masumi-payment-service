@@ -211,9 +211,9 @@ export default function Transactions() {
       return filteredTransactions;
 
     const amountRange = parseAmountSearchRange(query);
-    // Mirror backend looksLikeHash: the hash columns and the head ID are only
-    // searched for a hex query of 8+ characters.
-    const isHashQuery = query.length >= 8 && /^[0-9a-f]+$/.test(query);
+    // Mirror backend looksLikeHash (HASH_QUERY_MIN_LENGTH): the hash columns and
+    // the head ID are only searched for a hex query of 5+ characters.
+    const isHashQuery = query.length >= 5 && /^[0-9a-f]+$/.test(query);
     // Mirror backend buildMatchingLayers: exact match plus the 'hydra' alias.
     const matchingLayer =
       query === 'hydra' ? 'L2' : query === 'l1' || query === 'l2' ? query.toUpperCase() : null;
