@@ -30,10 +30,29 @@ export function toJsonValue(value: unknown): Prisma.InputJsonValue {
 	return parsed as Prisma.InputJsonValue;
 }
 
+// Canonical serialization shared by the payload hash and the encrypted audit copy.
+//
+// canonical-json routes a value of `undefined` into its object branch and calls Object.keys on
+// it, so any own key valued undefined throws `TypeError: Cannot convert undefined or null to
+// object`. @x402/core assembles a signed payload as an object literal and sets `extensions` and
+// `resource` as own keys even when the forwarded 402 declared neither, so a payload straight
+// from the SDK crashes an unguarded canonicalStringify. toJsonValue drops those keys first.
+//
+// Both callers must work over identical bytes. paymentPayloadHash is the replay key (unique on
+// X402Settlement, and the advisory claim key around settle), so a hashed form that drifts from
+// the stored form would be invisible. Deriving the string in one place makes that drift
+// impossible.
+function canonicalPayloadString(paymentPayload: unknown): string {
+	// Without this guard a non-object reaches JSON.parse(undefined) inside toJsonValue and reports
+	// `SyntaxError: "undefined" is not valid JSON`, which points at JSON rather than at the payload.
+	if (typeof paymentPayload !== 'object' || paymentPayload === null) {
+		throw new TypeError('x402 payment payload must be a non-null object');
+	}
+	return canonicalStringify(toJsonValue(paymentPayload));
+}
+
 export function hashX402PaymentPayload(paymentPayload: unknown): string {
-	return createHash('sha256')
-		.update(canonicalStringify(toJsonValue(paymentPayload)))
-		.digest('hex');
+	return createHash('sha256').update(canonicalPayloadString(paymentPayload)).digest('hex');
 }
 
 // The signed x402 payload embeds a reusable payment authorization (EIP-3009 / Permit2
@@ -41,7 +60,7 @@ export function hashX402PaymentPayload(paymentPayload: unknown): string {
 // is a write-only audit record (never selected back by the service); decrypt with the
 // configured key only for manual forensics. Stored as a JSON string in the Json column.
 export function encryptPaymentPayloadForStorage(paymentPayload: unknown): Prisma.InputJsonValue {
-	return encrypt(canonicalStringify(toJsonValue(paymentPayload)));
+	return encrypt(canonicalPayloadString(paymentPayload));
 }
 
 export function getPaymentIdentifier(paymentPayload: PaymentPayload): { id: string | null; errors: string[] } {
