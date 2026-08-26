@@ -22,7 +22,7 @@ How should supplied rates and CoinGecko historical data produce repeatable bucke
 - REPORTED: Fiat is optional. Exact per-asset totals remain authoritative.
 - REPORTED: A supplied asset rate wins. CoinGecko may fill only missing rates when configured.
 - REPORTED: Charts and exports default to one average historical rate per bucket. A caller may select a rate at each row's accounting date.
-- REPORTED: Every fiat result carries its currency, source, method, and rate date or date range.
+- REPORTED: Every fiat result carries its currency, source, method, and rate date or date range. A bucket average also carries the provenance named in [research-historical-fiat-rate-windows.md](research-historical-fiat-rate-windows.md): cadence, sample count, first and last sample timestamps, asset identity, quote currency, and fetch time. JSON and CSV both export these fields. A rate date alone cannot identify the observations behind an average when coverage is partial or the cadence changes.
 
 ## Evidence
 
@@ -34,6 +34,6 @@ How should supplied rates and CoinGecko historical data produce repeatable bucke
 
 - Precedence, rate lookup identity, request-scoped deduplication, rounding, precision, and missing-rate behavior are exact.
 - Bucket-average and per-row formulas name their timestamp source and provider observations.
-- JSON and CSV metadata can reproduce which rate affected each value.
+- JSON and CSV metadata can reproduce which rate affected each value, including the bucket-average provenance listed above.
 - Provider failure cannot prevent the default exact-asset report.
 - Client construction selects `demoAPIKey` or `proAPIKey` to match the configured CoinGecko environment.
