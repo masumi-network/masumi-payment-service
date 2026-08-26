@@ -1,5 +1,6 @@
 import { getReportAssetMetadata } from '@/utils/asset-units';
 import type { ReportCsvMetadata } from './csv';
+import type { ReportFiatRate } from './fiat';
 import type { ReportWarning } from './records';
 import { fieldReferenceSection } from './export-readme-fields';
 
@@ -36,6 +37,26 @@ function assetLabel(unit: string): string {
 	return getReportAssetMetadata(unit)?.symbol ?? unit;
 }
 
+/**
+ * Says which observations produced one bucket rate.
+ *
+ * A rate on its own cannot be checked. Naming the samples, the days they cover,
+ * and the days the period asked for lets a reader redo the mean and see at once
+ * whether the series had gaps.
+ */
+function rateProvenanceText(rate: ReportFiatRate): string {
+	const parts: string[] = [];
+	if (rate.provenance != null) {
+		const { sampleCount, cadence, firstSampleAt, lastSampleAt, requestedDayCount } = rate.provenance;
+		parts.push(
+			`the mean of ${sampleCount} ${cadence} samples from ${firstSampleAt} to ${lastSampleAt}, out of ${requestedDayCount} days in the period`,
+		);
+	}
+	if (rate.source === 'supplied') parts.push('supplied with the request');
+	else if (rate.coinId != null) parts.push(`read from CoinGecko \`${rate.coinId}\``);
+	return parts.length === 0 ? '' : `, ${parts.join(', ')}`;
+}
+
 function fiatSection(metadata: ReportCsvMetadata): string[] {
 	const fiat = metadata.fiat;
 	if (fiat == null) {
@@ -70,7 +91,10 @@ function fiatSection(metadata: ReportCsvMetadata): string[] {
 	if (fiat.rates != null && fiat.rates.length > 0) {
 		lines.push('', 'Rates used:', '');
 		for (const rate of fiat.rates) {
-			lines.push(`- 1 ${assetLabel(rate.unit)} = ${rate.rate} ${code}`);
+			lines.push(`- 1 ${assetLabel(rate.unit)} = ${rate.rate} ${code}${rateProvenanceText(rate)}`);
+		}
+		if (fiat.fetchedAt != null) {
+			lines.push('', `The provider answered at ${fiat.fetchedAt.toISOString()}.`);
 		}
 	} else if (fiat.mode !== 'PeriodAverage') {
 		lines.push(
