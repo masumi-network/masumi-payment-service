@@ -45,27 +45,27 @@ A content hash proves byte equality, not document authorship, availability, conf
 
 At `dev@7d71365b`, `@masumi/payment-core/verification` and `AgentVerification` persist and emit a KERI-specific CIP-25 block containing:
 
-| Existing field | Meaning |
-| --- | --- |
-| `method` | Currently exemplified by `KERI-ACDC` |
-| `issuer.aid`, `issuer.oobi` | Issuer KERI AID and KEL discovery endpoint |
-| `schema.said`, `schema.oobi` | ACDC schema SAID and retrieval endpoint |
+| Existing field                       | Meaning                                                   |
+| ------------------------------------ | --------------------------------------------------------- |
+| `method`                             | Currently exemplified by `KERI-ACDC`                      |
+| `issuer.aid`, `issuer.oobi`          | Issuer KERI AID and KEL discovery endpoint                |
+| `schema.said`, `schema.oobi`         | ACDC schema SAID and retrieval endpoint                   |
 | `credential.said`, `credential.oobi` | ACDC SAID and signed/anchored artifact retrieval endpoint |
-| `credential.registry` | Optional TEL/registry SAID |
-| `holder.aid`, `holder.oobi` | Issuee/holder AID and KEL discovery endpoint |
-| `baseUrl` | Optional KERIA/witness resolver root |
+| `credential.registry`                | Optional TEL/registry SAID                                |
+| `holder.aid`, `holder.oobi`          | Issuee/holder AID and KEL discovery endpoint              |
+| `baseUrl`                            | Optional KERIA/witness resolver root                      |
 
 The comments correctly treat an OOBI as an untrusted locator whose returned material must be verified against AIDs/SAIDs. The current model is useful and should remain readable, but its required KERI fields prevent a non-KERI issuer from using W3C Data Integrity, JOSE/COSE, X.509, or a future proof mechanism.
 
 ### Standards and maturity comparison
 
-| Option | Signature and identity lifecycle | Status | Evidence/document fit | Maturity and consequence |
-| --- | --- | --- | --- | --- |
-| **Veridian + KERI/ACDC/CESR/OOBI/TEL** | KERI maintains a stable AID across key rotation through an append-only KEL and pre-rotation. ACDC issuance/state is bound by a seal to the issuer key state rather than by directly signing the ACDC. Targeted ACDCs bind an issuee AID. Witnesses/watchers can make duplicity detectable. | TEL can model issued/revoked state and binds each state transition to issuer key state. | SAIDs give strong content integrity and ACDC chains give provenance. OOBIs discover schemas, credentials, KELs, and registries. Arbitrary evidence still needs an application profile, access control, retention, and availability policy. | KERI, ACDC, and CESR now have Trust over IP v1.1 specifications and active open-source implementations. However, the older ACDC IETF submission is an expired individual draft with no IETF standing; the standalone OOBI I-D expired in 2024. Veridian describes its first wallet release as ongoing R&D/demonstration, while also reporting audit and penetration testing. Its April 2026 integration docs still warn that deployed Signify code uses forks and that Java support is planned. Strong optional profile, weak universal dependency. |
-| **W3C VC 2.0 + Data Integrity** | Issuer embeds a standardized proof, for example the W3C EdDSA cryptosuite. Holder binding is expressed by subject/holder identifiers and a signed presentation when required. Controlled Identifiers/DIDs can rotate keys, but verifiers need historical key-state access for old signatures. | W3C Bitstring Status List v1.0 supports revocation and suspension with signed, cacheable lists and herd privacy. | VC 2.0 defines `evidence` and integrity-protected `relatedResource`/evidence references using `digestSRI` or `digestMultibase`. | VC 2.0, Data Integrity, EdDSA cryptosuites, Controlled Identifiers, and Bitstring Status List are W3C Recommendations dated 15 May 2025. Broadest standards-first base here. JSON-LD/context handling remains an implementation cost. |
-| **W3C VC 2.0 + JOSE/COSE** | W3C's securing specification standardizes enveloping JWS, SD-JWT, and COSE forms and supports JWK/controlled-identifier key discovery. JOSE/COSE fit common enterprise crypto and HSMs; X.509 may be used by an agreed profile. | Use W3C Bitstring Status List for VC status; certificate CRL/OCSP is separate and covers the signing certificate, not credential status. | Same VC 2.0 evidence model. JWE (RFC 7516) or COSE encryption (RFC 9052) can protect evidence packages independently of the credential representation. | The W3C JOSE/COSE VC specification is a 2025 Recommendation and underlying JOSE/COSE formats are RFCs. A pragmatic profile for an external professional-services issuer, subject to trust-registry and key-history rules. |
-| **IETF SD-JWT VC + Token Status List** | Selective disclosure plus optional holder key binding (`cnf` and KB-JWT) is explicit. | Token Status List supplies privacy-preserving aggregate status for JWT, SD-JWT, CWT, and mdoc-like tokens. | Type metadata can be integrity protected, but an application evidence vocabulary/profile is still required. | As of 16 August 2026, SD-JWT VC `-18` is still an active Internet-Draft in AD evaluation; Token Status List `-21` is in the RFC Editor queue but is still an Internet-Draft. Track and support later, but do not freeze either draft as the only v1 wire format. |
-| **Custom on-chain registry/status** | Cardano scripts can enforce a chosen issuer/minter authorization model. Rotation must be designed explicitly. | A UTxO or token state can be independently queried without an issuer API. | On-chain evidence is permanently public and expensive; external evidence still needs the same URI/hash/retention design. | Chain-native and independently available, but custom, privacy-sensitive, and not interoperable with standard credential wallets. Prefer as an anchor/checkpoint, not the credential or evidence protocol. |
+| Option                                 | Signature and identity lifecycle                                                                                                                                                                                                                                                              | Status                                                                                                                                   | Evidence/document fit                                                                                                                                                                                                                      | Maturity and consequence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Veridian + KERI/ACDC/CESR/OOBI/TEL** | KERI maintains a stable AID across key rotation through an append-only KEL and pre-rotation. ACDC issuance/state is bound by a seal to the issuer key state rather than by directly signing the ACDC. Targeted ACDCs bind an issuee AID. Witnesses/watchers can make duplicity detectable.    | TEL can model issued/revoked state and binds each state transition to issuer key state.                                                  | SAIDs give strong content integrity and ACDC chains give provenance. OOBIs discover schemas, credentials, KELs, and registries. Arbitrary evidence still needs an application profile, access control, retention, and availability policy. | KERI, ACDC, and CESR now have Trust over IP v1.1 specifications and active open-source implementations. However, the older ACDC IETF submission is an expired individual draft with no IETF standing; the standalone OOBI I-D expired in 2024. Veridian describes its first wallet release as ongoing R&D/demonstration, while also reporting audit and penetration testing. Its April 2026 integration docs still warn that deployed Signify code uses forks and that Java support is planned. Strong optional profile, weak universal dependency. |
+| **W3C VC 2.0 + Data Integrity**        | Issuer embeds a standardized proof, for example the W3C EdDSA cryptosuite. Holder binding is expressed by subject/holder identifiers and a signed presentation when required. Controlled Identifiers/DIDs can rotate keys, but verifiers need historical key-state access for old signatures. | W3C Bitstring Status List v1.0 supports revocation and suspension with signed, cacheable lists and herd privacy.                         | VC 2.0 defines `evidence` and integrity-protected `relatedResource`/evidence references using `digestSRI` or `digestMultibase`.                                                                                                            | VC 2.0, Data Integrity, EdDSA cryptosuites, Controlled Identifiers, and Bitstring Status List are W3C Recommendations dated 15 May 2025. Broadest standards-first base here. JSON-LD/context handling remains an implementation cost.                                                                                                                                                                                                                                                                                                               |
+| **W3C VC 2.0 + JOSE/COSE**             | W3C's securing specification standardizes enveloping JWS, SD-JWT, and COSE forms and supports JWK/controlled-identifier key discovery. JOSE/COSE fit common enterprise crypto and HSMs; X.509 may be used by an agreed profile.                                                               | Use W3C Bitstring Status List for VC status; certificate CRL/OCSP is separate and covers the signing certificate, not credential status. | Same VC 2.0 evidence model. JWE (RFC 7516) or COSE encryption (RFC 9052) can protect evidence packages independently of the credential representation.                                                                                     | The W3C JOSE/COSE VC specification is a 2025 Recommendation and underlying JOSE/COSE formats are RFCs. A pragmatic profile for an external professional-services issuer, subject to trust-registry and key-history rules.                                                                                                                                                                                                                                                                                                                           |
+| **IETF SD-JWT VC + Token Status List** | Selective disclosure plus optional holder key binding (`cnf` and KB-JWT) is explicit.                                                                                                                                                                                                         | Token Status List supplies privacy-preserving aggregate status for JWT, SD-JWT, CWT, and mdoc-like tokens.                               | Type metadata can be integrity protected, but an application evidence vocabulary/profile is still required.                                                                                                                                | As of 16 August 2026, SD-JWT VC `-18` is still an active Internet-Draft in AD evaluation; Token Status List `-21` is in the RFC Editor queue but is still an Internet-Draft. Track and support later, but do not freeze either draft as the only v1 wire format.                                                                                                                                                                                                                                                                                    |
+| **Custom on-chain registry/status**    | Cardano scripts can enforce a chosen issuer/minter authorization model. Rotation must be designed explicitly.                                                                                                                                                                                 | A UTxO or token state can be independently queried without an issuer API.                                                                | On-chain evidence is permanently public and expensive; external evidence still needs the same URI/hash/retention design.                                                                                                                   | Chain-native and independently available, but custom, privacy-sensitive, and not interoperable with standard credential wallets. Prefer as an anchor/checkpoint, not the credential or evidence protocol.                                                                                                                                                                                                                                                                                                                                           |
 
 Primary protocol facts:
 
@@ -92,12 +92,14 @@ Use the W3C VC 2.0 shape as the semantic baseline even when the outer Cardano an
 
 ```json
 {
-  "evidence": [{
-    "id": "https://evidence.example/objects/opaque-id",
-    "type": ["Evidence", "EncryptedEvidencePackage"],
-    "mediaType": "application/jose+json",
-    "digestSRI": "sha384-<base64 digest of exact stored ciphertext bytes>"
-  }]
+	"evidence": [
+		{
+			"id": "https://evidence.example/objects/opaque-id",
+			"type": ["Evidence", "EncryptedEvidencePackage"],
+			"mediaType": "application/jose+json",
+			"digestSRI": "sha384-<base64 digest of exact stored ciphertext bytes>"
+		}
+	]
 }
 ```
 
@@ -114,14 +116,14 @@ Hashes can disclose information. [RFC 6920](https://www.rfc-editor.org/rfc/rfc69
 
 ### Storage option analysis
 
-| Storage | Integrity | Availability | Privacy/erasure | Use |
-| --- | --- | --- | --- | --- |
-| **Document bytes on Cardano** | Strong immutable inclusion after confirmation. | Excellent while the chain is available. | Worst option: public, replicated, practically non-erasable; encryption may eventually fail and metadata remains. Size/cost also poor. | Only for deliberately public, non-personal, small protocol artifacts. Never default KYC evidence. |
-| **Ordinary HTTPS object store** | TLS protects transport, not a compromised origin; credential digest supplies end-to-end byte integrity. | Domain/provider/SaaS can disappear; mitigate with two independent providers, export/escrow, monitoring, and a durable archive copy. | Best access control and deletion mechanics. Requests reveal verifier access to the server. | Default for controlled evidence and credentials. Use opaque, non-guessable URLs; authorization; no PII in paths; immutable object versions. |
-| **Public IPFS, cleartext** | CID gives content addressing. | Content exists only while at least one provider retains and announces it. | Public to anyone with CID, DHT/provider/request metadata public, hard to recall all copies. | Reject for KYC/KYB evidence. |
-| **Public IPFS, encrypted bytes** | CID plus credential digest protects ciphertext. | Requires multiple pins/storage contracts; public gateways are not an SLA. | Plaintext protected while crypto/key control holds, but CID/provider/request metadata is public and deletion of all copies cannot be guaranteed. | Optional high-availability tier only after privacy assessment; never sole copy. Encrypt before adding. |
-| **Private IPFS/content-addressed cluster** | Content addressing retained. | Operator must run/contract replicas and backups. | Better metadata control and deletion than public IPFS, but still operationally complex. | Viable equivalent to an object store where content-addressed replication is an explicit requirement. |
-| **Durable regulated archive** | Fixity checks, immutable versions, and signed/timestamped records can provide strong audit history. | Strongest when governed by retention SLA, format migration, export, and independent escrow. | Retention/legal hold can conflict with erasure and must have a documented legal basis. | Required tier for evidence whose legal/audit validity must outlive issuer infrastructure. |
+| Storage                                    | Integrity                                                                                               | Availability                                                                                                                        | Privacy/erasure                                                                                                                                  | Use                                                                                                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Document bytes on Cardano**              | Strong immutable inclusion after confirmation.                                                          | Excellent while the chain is available.                                                                                             | Worst option: public, replicated, practically non-erasable; encryption may eventually fail and metadata remains. Size/cost also poor.            | Only for deliberately public, non-personal, small protocol artifacts. Never default KYC evidence.                                           |
+| **Ordinary HTTPS object store**            | TLS protects transport, not a compromised origin; credential digest supplies end-to-end byte integrity. | Domain/provider/SaaS can disappear; mitigate with two independent providers, export/escrow, monitoring, and a durable archive copy. | Best access control and deletion mechanics. Requests reveal verifier access to the server.                                                       | Default for controlled evidence and credentials. Use opaque, non-guessable URLs; authorization; no PII in paths; immutable object versions. |
+| **Public IPFS, cleartext**                 | CID gives content addressing.                                                                           | Content exists only while at least one provider retains and announces it.                                                           | Public to anyone with CID, DHT/provider/request metadata public, hard to recall all copies.                                                      | Reject for KYC/KYB evidence.                                                                                                                |
+| **Public IPFS, encrypted bytes**           | CID plus credential digest protects ciphertext.                                                         | Requires multiple pins/storage contracts; public gateways are not an SLA.                                                           | Plaintext protected while crypto/key control holds, but CID/provider/request metadata is public and deletion of all copies cannot be guaranteed. | Optional high-availability tier only after privacy assessment; never sole copy. Encrypt before adding.                                      |
+| **Private IPFS/content-addressed cluster** | Content addressing retained.                                                                            | Operator must run/contract replicas and backups.                                                                                    | Better metadata control and deletion than public IPFS, but still operationally complex.                                                          | Viable equivalent to an object store where content-addressed replication is an explicit requirement.                                        |
+| **Durable regulated archive**              | Fixity checks, immutable versions, and signed/timestamped records can provide strong audit history.     | Strongest when governed by retention SLA, format migration, export, and independent escrow.                                         | Retention/legal hold can conflict with erasure and must have a documented legal basis.                                                           | Required tier for evidence whose legal/audit validity must outlive issuer infrastructure.                                                   |
 
 IPFS itself is not persistence. [IPFS persistence documentation](https://docs.ipfs.tech/concepts/persistence/) says unpinned data can be garbage-collected, third-party pinning services can disappear, and IPFS does not guarantee persistent availability. [IPFS privacy documentation](https://docs.ipfs.tech/concepts/privacy-and-encryption/) says the public DHT exposes CIDs/providers, traffic is public, and IPFS supplies transport encryption but not content encryption.
 
@@ -187,12 +189,12 @@ Archive providers must define retention, legal hold, deletion, geographic replic
 
 ### Evidence tiers
 
-| Tier | Contents and lifecycle | Suitable for |
-| --- | --- | --- |
-| **E0 — no disclosed evidence** | On chain: minimal credential anchor. Credential: claims, issuer, agent/controller binding, policy, expiry, status. `evidence` records only procedure/type or a private discovery handle. | Public registry display and most verifiers that need the attester's conclusion, not source documents. |
-| **E1 — controlled evidence (default)** | Encrypted evidence package in access-controlled immutable HTTPS object storage; SHA-384 `digestSRI` in credential; second independent backup/archive; documented retention/deletion; monitored retrieval. | KYC/KYB evidence and ordinary external-attester reports. |
-| **E2 — replicated confidential evidence** | E1 plus encrypted content-addressed replica, at least two independently operated pins/storage commitments, gateway and direct retrieval tests, metadata/privacy assessment, and an HTTPS/archive fallback. | Cases where cross-provider resilience justifies public/private IPFS operational and privacy cost. |
-| **E3 — regulated long-term evidence** | E1/E2 plus PAdES B-LTA or equivalent signed-document profile, archived validation bundle, trusted timestamps, periodic revalidation/resealing, legal-hold controls, provider exit/export, and multi-decade format migration. | Audit, assurance, or regulated records requiring long-term evidentiary value. |
+| Tier                                     | Contents and lifecycle                                                                                                                                                                                                       | Suitable for                                                                                          |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **E0: no disclosed evidence**            | On chain: minimal credential anchor. Credential: claims, issuer, agent/controller binding, policy, expiry, status. `evidence` records only procedure/type or a private discovery handle.                                     | Public registry display and most verifiers that need the attester's conclusion, not source documents. |
+| **E1: controlled evidence (default)**    | Encrypted evidence package in access-controlled immutable HTTPS object storage; SHA-384 `digestSRI` in credential; second independent backup/archive; documented retention/deletion; monitored retrieval.                    | KYC/KYB evidence and ordinary external-attester reports.                                              |
+| **E2: replicated confidential evidence** | E1 plus encrypted content-addressed replica, at least two independently operated pins/storage commitments, gateway and direct retrieval tests, metadata/privacy assessment, and an HTTPS/archive fallback.                   | Cases where cross-provider resilience justifies public/private IPFS operational and privacy cost.     |
+| **E3: regulated long-term evidence**     | E1/E2 plus PAdES B-LTA or equivalent signed-document profile, archived validation bundle, trusted timestamps, periodic revalidation/resealing, legal-hold controls, provider exit/export, and multi-decade format migration. | Audit, assurance, or regulated records requiring long-term evidentiary value.                         |
 
 E1 is the recommended minimum for attached KYC evidence. E3 is required when the signed report itself must remain legally/technically verifiable after issuer systems or certificate services disappear. E2 is optional resilience, not an upgrade in legal validity or privacy.
 
@@ -217,16 +219,16 @@ Do not rewrite, reinterpret, or invalidate existing `KERI-ACDC` records.
 2. **Add a generic envelope beside it.** A future method-neutral record should have common fields such as `profile`, `credential.id`, `credential.digest`, `issuer.id`, `subject.id`, `status`, `evidence`, and method-specific `proofParameters`. The generic design ticket decides exact names and compact encoding.
 3. **Losslessly map, do not translate cryptography.** A synthesized wrapper for an existing record maps:
 
-   | KERI field | Generic meaning |
-   | --- | --- |
-   | `method=KERI-ACDC` | `profile=keri-acdc-v1` |
-   | `credential.said` | credential content identifier/digest in CESR SAID form |
-   | `credential.oobi` | credential retrieval locator |
-   | `issuer.aid` / `issuer.oobi` | issuer identifier / key-history discovery locator |
-   | `holder.aid` / `holder.oobi` | subject/issuee identifier / key-history discovery locator |
-   | `schema.said` / `schema.oobi` | integrity-bound schema identifier / locator |
-   | `credential.registry` | KERI TEL status authority |
-   | `baseUrl` | optional resolver/witness service locator |
+   | KERI field                    | Generic meaning                                           |
+   | ----------------------------- | --------------------------------------------------------- |
+   | `method=KERI-ACDC`            | `profile=keri-acdc-v1`                                    |
+   | `credential.said`             | credential content identifier/digest in CESR SAID form    |
+   | `credential.oobi`             | credential retrieval locator                              |
+   | `issuer.aid` / `issuer.oobi`  | issuer identifier / key-history discovery locator         |
+   | `holder.aid` / `holder.oobi`  | subject/issuee identifier / key-history discovery locator |
+   | `schema.said` / `schema.oobi` | integrity-bound schema identifier / locator               |
+   | `credential.registry`         | KERI TEL status authority                                 |
+   | `baseUrl`                     | optional resolver/witness service locator                 |
 
 4. **Preserve opaque method data byte-for-byte.** A new verifier dispatches `keri-acdc-v1` to the KERI verifier. It must not pretend a SAID is an SRI digest without decoding/validating the CESR derivation code, and it must not pretend TEL status is Bitstring Status List status.
 5. **No mandatory on-chain rewrite.** Indexers/APIs can synthesize the method-neutral view for old assets. A user-authorized metadata update may dual-publish the wrapper later, but the wrapper must point to the same ACDC SAID and TEL. Old clients continue reading the original block.
@@ -238,7 +240,7 @@ This path allows current KERI anchors to remain first-class while new issuers ca
 
 ### Sources
 
-- [W3C Verifiable Credentials Data Model v2.0 — Recommendation, 15 May 2025](https://www.w3.org/TR/vc-data-model-2.0/)
+- [W3C Verifiable Credentials Data Model v2.0: Recommendation, 15 May 2025](https://www.w3.org/TR/vc-data-model-2.0/)
 - [W3C Verifiable Credential Data Integrity 1.0](https://www.w3.org/TR/vc-data-integrity/)
 - [W3C Data Integrity EdDSA Cryptosuites v1.0](https://www.w3.org/TR/vc-di-eddsa/)
 - [W3C Securing Verifiable Credentials using JOSE and COSE](https://www.w3.org/TR/vc-jose-cose/)
@@ -255,17 +257,17 @@ This path allows current KERI anchors to remain first-class while new issuers ca
 - [WebOfTrust KERIA](https://github.com/WebOfTrust/keria)
 - [Veridian wallet repository](https://github.com/veridian-id/veridian-wallet)
 - [Veridian documentation](https://docs.veridian.id/)
-- [RFC 3986 — URI Generic Syntax](https://www.rfc-editor.org/rfc/rfc3986)
-- [RFC 6920 — Naming Things with Hashes](https://www.rfc-editor.org/rfc/rfc6920)
+- [RFC 3986: URI Generic Syntax](https://www.rfc-editor.org/rfc/rfc3986)
+- [RFC 6920: Naming Things with Hashes](https://www.rfc-editor.org/rfc/rfc6920)
 - [W3C Subresource Integrity](https://www.w3.org/TR/SRI/)
-- [RFC 7516 — JSON Web Encryption](https://www.rfc-editor.org/rfc/rfc7516)
-- [RFC 8493 — BagIt File Packaging Format](https://www.rfc-editor.org/rfc/rfc8493)
-- [RFC 9052 — CBOR Object Signing and Encryption](https://www.rfc-editor.org/rfc/rfc9052)
+- [RFC 7516: JSON Web Encryption](https://www.rfc-editor.org/rfc/rfc7516)
+- [RFC 8493: BagIt File Packaging Format](https://www.rfc-editor.org/rfc/rfc8493)
+- [RFC 9052: CBOR Object Signing and Encryption](https://www.rfc-editor.org/rfc/rfc9052)
 - [IPFS content addressing](https://docs.ipfs.tech/concepts/content-addressing/)
 - [IPFS persistence, permanence, and pinning](https://docs.ipfs.tech/concepts/persistence/)
 - [IPFS privacy and encryption](https://docs.ipfs.tech/concepts/privacy-and-encryption/)
-- [ETSI EN 319 142-1 V1.2.1 — PAdES baseline signatures](https://www.etsi.org/deliver/etsi_en/319100_319199/31914201/01.02.01_60/en_31914201v010201p.pdf)
-- [ETSI EN 319 102-1 V1.4.1 — creation and validation procedures](https://www.etsi.org/deliver/etsi_en/319100_319199/31910201/01.04.01_60/en_31910201v010401p.pdf)
+- [ETSI EN 319 142-1 V1.2.1: PAdES baseline signatures](https://www.etsi.org/deliver/etsi_en/319100_319199/31914201/01.02.01_60/en_31914201v010201p.pdf)
+- [ETSI EN 319 102-1 V1.4.1: creation and validation procedures](https://www.etsi.org/deliver/etsi_en/319100_319199/31910201/01.04.01_60/en_31910201v010401p.pdf)
 - [GDPR official text](https://eur-lex.europa.eu/eli/reg/2016/679/oj/eng)
 - [EDPB blockchain guidance summary](https://www.edpb.europa.eu/system/files/2025-05/edpb-summary-022025-blockchains_en.pdf)
 - [EDPB final blockchain guidelines page](https://www.edpb.europa.eu/documents/guideline/guidelines-on-processing-of-personal-data-through-blockchain-technologies_en)

@@ -94,13 +94,13 @@ Logical API shape before CIP-25 string chunking:
 
 ```json
 {
-  "method": "W3C-VC-JOSE",
-  "version": "1",
-  "credential": {
-    "digest": "<unpadded-base64url-sha256-of-compact-jws>",
-    "uri": "https://issuer.example/credentials/123",
-    "mirrors": ["ipfs://bafy...", "ar://..."]
-  }
+	"method": "W3C-VC-JOSE",
+	"version": "1",
+	"credential": {
+		"digest": "<unpadded-base64url-sha256-of-compact-jws>",
+		"uri": "https://issuer.example/credentials/123",
+		"mirrors": ["ipfs://bafy...", "ar://..."]
+	}
 }
 ```
 
