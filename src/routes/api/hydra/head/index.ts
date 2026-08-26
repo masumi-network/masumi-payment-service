@@ -30,6 +30,7 @@ import {
 	deriveHydraVerificationKeyCborHex,
 	HydraHeadInitObservationError,
 	normalizeHydraVerificationKeyCborHex,
+	resolveHydraInitChainAnchor,
 	verifyHydraHeadInitOnChain,
 } from '@/lib/hydra';
 import { toPrismaJsonValue } from '@/utils/json-value';
@@ -263,6 +264,7 @@ const hydraHeadOnChainVerificationSelect = {
 	isEnabled: true,
 	headIdentifier: true,
 	contestationPeriod: true,
+	initChainSlot: true,
 	LocalParticipant: {
 		select: {
 			walletId: true,
@@ -361,8 +363,9 @@ export async function verifyPersistedHydraHeadOnChain(
 		}
 	}
 
+	const observer = getBlockfrostInstance(head.HydraRelation.network, rpcProviderApiKey);
 	const verified = await verifyHydraHeadInitOnChain({
-		observer: getBlockfrostInstance(head.HydraRelation.network, rpcProviderApiKey),
+		observer,
 		headId: head.headIdentifier,
 		expectedVerificationKeys: [localVerificationKey, remoteVerificationKey],
 		// On-chain participant tokens are minted for each node's OWN Cardano key,
@@ -374,6 +377,13 @@ export async function verifyPersistedHydraHeadOnChain(
 	if (options.persist === false) {
 		return { headIdentifier: head.headIdentifier, initTxHash: verified.initTxHash };
 	}
+	// Anchor resolution is best-effort and immutable once stored: the parent
+	// point of an L1-confirmed InitTx block never changes, so skip the three
+	// Blockfrost round-trips on every later verification (top-up, decommit,
+	// commit all pass through here). A transient failure yields null instead of
+	// throwing — the anchor must never take down a verification that already
+	// proved the InitTx — and the init backfill retries null anchors.
+	const anchor = head.initChainSlot === null ? await resolveHydraInitChainAnchor(observer, verified.initTxHash) : null;
 	const persisted = await prisma.hydraHead.updateMany({
 		where: {
 			id: head.id,
@@ -381,7 +391,10 @@ export async function verifyPersistedHydraHeadOnChain(
 			headIdentifier: head.headIdentifier,
 			contestationPeriod: head.contestationPeriod,
 		},
-		data: { initTxHash: verified.initTxHash },
+		data: {
+			initTxHash: verified.initTxHash,
+			...(anchor ? { initChainSlot: anchor.slot, initChainHash: anchor.hash } : {}),
+		},
 	});
 	if (persisted.count !== 1) throw createHttpError(409, 'Hydra head changed during on-chain verification');
 	return { headIdentifier: head.headIdentifier, initTxHash: verified.initTxHash };
@@ -565,8 +578,12 @@ export async function updateHydraHeadEnabledState(
 	const quarantined = await prisma.hydraHead.update({
 		where: { id },
 		// A disabled head's prior InitTx binding is no longer an admission token.
-		// Re-enable always proves the current head/participants/configuration again.
-		data: { isEnabled: false, initTxHash: null },
+		// Re-enable always proves the current head/participants/configuration
+		// again. The chain-replay anchor is derived from that binding, so it is
+		// cleared with it: a deep rollback can move the InitTx to a different
+		// block, and a stale anchor would silently defeat --start-chain-from
+		// recovery. The init backfill re-resolves it after re-enable.
+		data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		include: headInclude,
 	});
 	await manager.reconcileEnabledState(id);

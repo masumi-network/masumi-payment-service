@@ -240,6 +240,8 @@ export async function failClosedAfterStatusPersistenceFailure(
 					data: {
 						isEnabled: false,
 						initTxHash: null,
+						initChainSlot: null,
+						initChainHash: null,
 						reconciliationCompletedAt: null,
 					},
 				}),
