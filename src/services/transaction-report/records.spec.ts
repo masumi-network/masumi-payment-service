@@ -759,6 +759,16 @@ describe('buildReportRow', () => {
 
 		expect(row.buyer?.grossSpend).toEqual(expectedGrossSpend);
 	});
+
+	it('does not call a one-sided row short of evidence for the side it never had', () => {
+		// A seller row carries no buyer amounts by design. Reading through the
+		// absent side put this note in every export, on every row.
+		const row = buildReportRow(record(), 'Billable', new Date('2026-01-02T00:00:00.000Z'), COHORT_WINDOW);
+
+		expect(row.buyer).toBeNull();
+		expect(row.seller?.grossRevenue).not.toBeNull();
+		expect(getReportRowWarnings(row).map((warning) => warning.code)).not.toContain('ECONOMIC_METRIC_EVIDENCE_PARTIAL');
+	});
 });
 
 describe('serializeReportRow', () => {
