@@ -60,7 +60,7 @@ export const EVM_ASSET_PRESETS: EvmAssetPreset[] = [
     network: 'eip155:84532',
     symbol: 'USDC',
     name: 'USD Coin',
-    address: '0x036CbD53842c5426634e7929541eC2318f3dCF7c',
+    address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
     decimals: 6,
   },
 ];

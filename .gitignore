@@ -20,6 +20,8 @@ src/services/.DS_Store
 # Claude local settings (user-specific)
 .claude*
 
+.claude-flow/
+
 # Claude Code session memory (local only)
 .remember/
 

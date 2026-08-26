@@ -31,7 +31,9 @@ export function toJsonValue(value: unknown): Prisma.InputJsonValue {
 }
 
 export function hashX402PaymentPayload(paymentPayload: unknown): string {
-	return createHash('sha256').update(canonicalStringify(paymentPayload)).digest('hex');
+	return createHash('sha256')
+		.update(canonicalStringify(toJsonValue(paymentPayload)))
+		.digest('hex');
 }
 
 // The signed x402 payload embeds a reusable payment authorization (EIP-3009 / Permit2
@@ -39,7 +41,7 @@ export function hashX402PaymentPayload(paymentPayload: unknown): string {
 // is a write-only audit record (never selected back by the service); decrypt with the
 // configured key only for manual forensics. Stored as a JSON string in the Json column.
 export function encryptPaymentPayloadForStorage(paymentPayload: unknown): Prisma.InputJsonValue {
-	return encrypt(canonicalStringify(paymentPayload));
+	return encrypt(canonicalStringify(toJsonValue(paymentPayload)));
 }
 
 export function getPaymentIdentifier(paymentPayload: PaymentPayload): { id: string | null; errors: string[] } {
