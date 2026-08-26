@@ -69,15 +69,28 @@ describe('reportFacetsOutputSchema', () => {
 		deletedAt: null,
 	};
 
+	const fiatCapability = {
+		isConfigured: true,
+		isDemoKey: true,
+		historyDays: 365,
+		earliestPriceableDate: new Date('2026-01-01T00:00:00.000Z'),
+		currencies: ['usd'],
+		modes: ['PeriodAverage' as const],
+		attribution: 'Exchange rates by CoinGecko',
+		setupHint: 'Set COINGECKO_API_KEY.',
+	};
+
 	it('allows only managed buyer and seller wallet types', () => {
 		expect(
 			reportFacetsOutputSchema.safeParse({
+				fiat: fiatCapability,
 				paymentSources: [],
 				managedWallets: [{ ...wallet, type: HotWalletType.Selling }],
 			}).success,
 		).toBe(true);
 		expect(
 			reportFacetsOutputSchema.safeParse({
+				fiat: fiatCapability,
 				paymentSources: [],
 				managedWallets: [{ ...wallet, type: HotWalletType.Funding }],
 			}).success,

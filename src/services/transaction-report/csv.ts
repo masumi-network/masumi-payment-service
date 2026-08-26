@@ -9,10 +9,11 @@ import type {
 	ReportBucket,
 	RequestedReportBucket,
 } from './aggregate';
+import type { ReportFiatMetadata } from './fiat';
 import type { ReportRow, ReportWarning } from './records';
 
 type CsvCell = Readonly<{ value: string; isUntrusted: boolean }>;
-type AmountColumns = Readonly<{ ada: string; usdm: string; usdcx: string; otherAssets: string }>;
+type AmountColumns = Readonly<{ ada: string; usdm: string; usdcx: string; otherAssets: string; fiat: string }>;
 
 type NormalizedReportFilters = Readonly<{
 	paymentSourceId: ReportFilterInput['paymentSourceId'];
@@ -41,6 +42,7 @@ export type ReportCsvMetadata = Readonly<{
 	filters: NormalizedReportFilters;
 	requestedBucket: RequestedReportBucket;
 	bucket: ReportBucket;
+	fiat?: ReportFiatMetadata | null;
 	warnings?: readonly ReportWarning[];
 }>;
 
@@ -57,7 +59,7 @@ export class ReportCsvSizeLimitError extends Error {
 	}
 }
 
-const AMOUNT_SUFFIXES = ['ada', 'usdm', 'usdcx', 'other_assets_json'] as const;
+const AMOUNT_SUFFIXES = ['ada', 'usdm', 'usdcx', 'other_assets_json', 'fiat'] as const;
 const AGGREGATE_METRICS = [
 	'sellerGrossRevenue',
 	'protocolFees',
@@ -107,6 +109,10 @@ const CONTEXT_HEADERS = [
 	'filter_time_zone',
 	'filter_bucket',
 	'report_bucket',
+	'fiat_currency',
+	'fiat_rate_mode',
+	'fiat_rate_provider',
+	'fiat_completeness',
 	'warning_codes_json',
 ] as const;
 
@@ -238,7 +244,7 @@ function createCsv(
 
 function splitAmounts(amounts: readonly AtomicAmount[] | null): AmountColumns | null {
 	if (amounts == null) return null;
-	const known = new Map<'ada' | 'usdm' | 'usdcx', bigint>();
+	const known = new Map<'ada' | 'usdm' | 'usdcx' | 'fiat', bigint>();
 	const other: Record<string, string> = {};
 	for (const amount of normalizeAmounts(amounts)) {
 		const metadata = getReportAssetMetadata(amount.unit);
@@ -250,6 +256,7 @@ function splitAmounts(amounts: readonly AtomicAmount[] | null): AmountColumns | 
 		usdm: atomicToDecimalString(known.get('usdm') ?? 0n, 6),
 		usdcx: atomicToDecimalString(known.get('usdcx') ?? 0n, 6),
 		otherAssets: JSON.stringify(other),
+		fiat: known.has('fiat') ? atomicToDecimalString(known.get('fiat') as bigint, 6) : '',
 	};
 }
 
@@ -260,8 +267,14 @@ function amountHeaders(prefix: string): string[] {
 function amountCells(amounts: readonly AtomicAmount[] | null): CsvCell[] {
 	const columns = splitAmounts(amounts);
 	return columns == null
-		? [trusted(''), trusted(''), trusted(''), trusted('')]
-		: [trusted(columns.ada), trusted(columns.usdm), trusted(columns.usdcx), trusted(columns.otherAssets)];
+		? [trusted(''), trusted(''), trusted(''), trusted(''), trusted('')]
+		: [
+				trusted(columns.ada),
+				trusted(columns.usdm),
+				trusted(columns.usdcx),
+				trusted(columns.otherAssets),
+				trusted(columns.fiat),
+			];
 }
 
 function aggregateMetricHeaders(prefix: string): string[] {
@@ -314,6 +327,10 @@ function contextCells(metadata: ReportCsvMetadata): CsvCell[] {
 		untrusted(filters.timeZone),
 		trusted(metadata.requestedBucket),
 		trusted(metadata.bucket),
+		trusted(metadata.fiat == null ? '' : metadata.fiat.currency.toUpperCase()),
+		trusted(metadata.fiat?.mode ?? ''),
+		trusted(metadata.fiat?.provider ?? ''),
+		trusted(metadata.fiat?.completeness ?? ''),
 		trusted(JSON.stringify(warningCodes)),
 	];
 }
@@ -353,6 +370,9 @@ const TRANSACTION_HEADERS = [
 	'seller_revenue_recognized_at',
 	'buyer_gross_spend_at',
 	'buyer_returned_at',
+	'result_submitted_tx_hash',
+	'settlement_tx_hash',
+	'settlement_tx_type',
 	'managed_wallet_id',
 	'managed_wallet_address',
 	'managed_wallet_vkey',
@@ -410,6 +430,9 @@ function transactionCells(row: ReportRow): CsvCell[] {
 		dateCell(row.timestamps.sellerRevenueRecognizedAt),
 		dateCell(row.timestamps.buyerGrossSpendAt),
 		dateCell(row.timestamps.buyerReturnedAt),
+		untrusted(row.settlement.resultSubmittedTxHash),
+		untrusted(row.settlement.settlementTxHash),
+		trusted(row.settlement.settlementTxType),
 		untrusted(row.managedWallet?.id),
 		untrusted(row.managedWallet?.walletAddress),
 		untrusted(row.managedWallet?.walletVkey),

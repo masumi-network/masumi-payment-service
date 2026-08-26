@@ -102,6 +102,62 @@ function isConfirmedStateTransaction(transaction: ReportTransactionEvent, state:
 	return transaction.status === 'Confirmed' && transaction.txHash != null && transaction.newOnChainState === state;
 }
 
+/**
+ * The on-chain states that end an escrow. Each is reached by its own withdraw
+ * transaction, and a request reaches at most one of them.
+ */
+const REPORT_SETTLEMENT_STATES = ['Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn'] as const;
+
+export type ReportSettlementEvidence = Readonly<{
+	/** Hash of the confirmed transaction that submitted the result, if any. */
+	resultSubmittedTxHash: string | null;
+	/** Hash of the confirmed withdraw transaction, if the escrow already ended. */
+	settlementTxHash: string | null;
+	/** Which withdraw it was, as the on-chain state that transaction produced. */
+	settlementTxType: (typeof REPORT_SETTLEMENT_STATES)[number] | null;
+}>;
+
+function getConfirmedStateTransaction(
+	transactions: readonly ReportTransactionEvent[],
+	state: ReportOnChainState,
+): ReportTransactionEvent | null {
+	return (
+		mergeReportTransactions(transactions)
+			.filter((transaction) => isConfirmedStateTransaction(transaction, state))
+			// A confirmed transaction can still miss its block time, so ordering
+			// falls back to the hash rather than dropping the row.
+			.sort(
+				(left, right) =>
+					(left.blockTime ?? Number.MAX_SAFE_INTEGER) - (right.blockTime ?? Number.MAX_SAFE_INTEGER) ||
+					(left.txHash ?? '').localeCompare(right.txHash ?? ''),
+			)[0] ?? null
+	);
+}
+
+/**
+ * The transaction hashes an operator needs to tie a report row back to the
+ * chain: the withdraw that ended the escrow, and the result submission that
+ * came before it. Both are reported, because a row that is not withdrawn yet
+ * still has a submitted result to point at.
+ */
+export function getReportSettlementEvidence(transactions: readonly ReportTransactionEvent[]): ReportSettlementEvidence {
+	const settlements = REPORT_SETTLEMENT_STATES.map((state) => ({
+		state,
+		transaction: getConfirmedStateTransaction(transactions, state),
+	})).filter((candidate) => candidate.transaction != null);
+	const settlement = settlements.sort(
+		(left, right) =>
+			(left.transaction!.blockTime ?? Number.MAX_SAFE_INTEGER) -
+			(right.transaction!.blockTime ?? Number.MAX_SAFE_INTEGER),
+	)[0];
+
+	return {
+		resultSubmittedTxHash: getConfirmedStateTransaction(transactions, 'ResultSubmitted')?.txHash ?? null,
+		settlementTxHash: settlement?.transaction?.txHash ?? null,
+		settlementTxType: settlement?.state ?? null,
+	};
+}
+
 export function hasConfirmedStateTransaction(
 	transactions: readonly ReportTransactionEvent[],
 	state: ReportOnChainState,
