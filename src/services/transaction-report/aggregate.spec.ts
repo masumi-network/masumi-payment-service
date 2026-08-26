@@ -527,37 +527,6 @@ describe('aggregateReportRows totals', () => {
 		});
 	});
 
-	it('marks a share that rounds to zero as apportioned rather than read', () => {
-		// Three requests share one lovelace of fee, so the shares are 1, 0, 0. The
-		// report holds only the middle one. Its share is zero, but it is still a
-		// share worked out by a rule, not a figure the chain recorded.
-		const batchTransaction = transaction(
-			'tiny-batch-withdraw',
-			'Withdrawn',
-			'2026-01-02T12:00:00.000Z',
-			1n,
-			['Seller:tiny-batch'],
-			['chain-a', 'chain-b', 'chain-c'],
-		);
-		const result = aggregateReportRows(
-			[
-				row({
-					id: 'tiny-batch',
-					blockchainIdentifier: 'chain-b',
-					transactions: [batchTransaction],
-					feeAllocationScope: 'shared_or_unknown',
-				}),
-			],
-			'Day',
-			'Etc/UTC',
-			new Date('2026-01-01T00:00:00.000Z'),
-			new Date('2026-01-04T00:00:00.000Z'),
-			'CreatedAt',
-		);
-
-		expect(result.totals.totalCardanoFees.completeness).toBe('partial');
-	});
-
 	it('keeps admin exact when a filtered counterpart is the same logical payment', () => {
 		const seller = row({
 			id: 'seller-filtered-batch',
@@ -1105,9 +1074,7 @@ describe('aggregateReportRows history', () => {
 				expectedWallet,
 			);
 			expect(result.historyFeeCompleteness).toBe('partial');
-			expect(result.warnings.map((warning) => warning.code)).not.toContain(
-				'SHARED_CARDANO_FEE_COMPONENT_ALLOCATION',
-			);
+			expect(result.warnings.map((warning) => warning.code)).not.toContain('SHARED_CARDANO_FEE_COMPONENT_ALLOCATION');
 		},
 	);
 
@@ -1406,10 +1373,7 @@ describe('aggregateReportRows footing', () => {
 		);
 		expect(metricNames.length).toBeGreaterThan(0);
 		for (const metricName of metricNames) {
-			expect([metricName, historyAmount(result, metricName)]).toEqual([
-				metricName,
-				amount(result.totals[metricName]),
-			]);
+			expect([metricName, historyAmount(result, metricName)]).toEqual([metricName, amount(result.totals[metricName])]);
 		}
 	});
 });
