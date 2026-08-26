@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
-import type { AddressInfo } from 'node:net';
+import { Socket, type AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -87,6 +87,42 @@ describe('search-engine exclusion', () => {
 		expect(robots.status).toBe(200);
 		expect(robots.headers.get('x-robots-tag')).toBe('noindex, nofollow');
 		expect(await robots.text()).toBe('User-agent: *\nAllow: /\n');
+	});
+
+	// The path parse runs synchronously outside handle()'s promise catch, so a
+	// throw would crash this unauthenticated process. fetch cannot send a
+	// malformed request target, so drive it over a raw socket.
+	it('answers a malformed request target with 400 instead of crashing', async () => {
+		const port = (server.address() as AddressInfo).port;
+		const statusLine = await new Promise<string>((resolve, reject) => {
+			const socket = new Socket();
+			let data = '';
+			socket.setTimeout(2_000, () => socket.destroy(new Error('timed out')));
+			socket.connect(port, '127.0.0.1', () => socket.write('GET //[ HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'));
+			socket.on('data', (chunk) => (data += chunk.toString()));
+			socket.on('close', () => resolve(data.split('\r\n')[0] ?? ''));
+			socket.on('error', reject);
+		});
+		expect(statusLine).toContain('400');
+		// The process survived: a normal request still answers.
+		expect((await fetch(`${base}/robots.txt`, { headers: { Connection: 'close' } })).status).toBe(200);
+	});
+
+	// robots.txt must be answered ahead of the limiter: a 429/5xx robots.txt is
+	// a temporary full crawl block that would hide the noindex header.
+	it('serves robots.txt even when the rate limiter is saturated', async () => {
+		const limited = createExchangePlane({ store, logger, onRedeemed, limits: { requestsPerMinute: 1 } });
+		await new Promise<void>((resolve) => limited.listen(0, '127.0.0.1', resolve));
+		const limitedBase = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
+		try {
+			expect((await fetch(`${limitedBase}/exchange/redeem`, { headers: { Connection: 'close' } })).status).toBe(405);
+			expect((await fetch(`${limitedBase}/exchange/redeem`, { headers: { Connection: 'close' } })).status).toBe(429);
+			const robots = await fetch(`${limitedBase}/robots.txt`, { headers: { Connection: 'close' } });
+			expect(robots.status).toBe(200);
+			expect(await robots.text()).toBe('User-agent: *\nAllow: /\n');
+		} finally {
+			await new Promise<void>((resolve) => limited.close(() => resolve()));
+		}
 	});
 });
 

@@ -37,7 +37,9 @@ async function startFakeNode(): Promise<FakeNode> {
 	const received: FakeNode['received'] = [];
 	const server = createServer((request, response) => {
 		received.push({ url: request.url ?? '', method: request.method ?? '', headers: request.headers });
-		response.writeHead(200, { 'Content-Type': 'application/json' });
+		// The node advertises itself as indexable; the control plane must strip
+		// this so its own noindex stamp wins on the proxied response.
+		response.writeHead(200, { 'Content-Type': 'application/json', 'X-Robots-Tag': 'index' });
 		response.end(JSON.stringify({ ok: true, sawUrl: request.url }));
 	});
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -121,6 +123,13 @@ describe('node api proxy', () => {
 		expect(response.status).toBe(200);
 		expect((await response.json()) as { ok: boolean }).toMatchObject({ ok: true });
 		expect(node.received[0]?.url).toBe('/snapshot/utxo');
+	});
+
+	// A same-name upstream header would beat the handler's setHeader in
+	// writeHead's merge, so the proxy strips the node's x-robots-tag.
+	it('keeps proxied responses noindex despite an upstream x-robots-tag', async () => {
+		const response = await call('GET', '/v1/nodes/node-1/api/snapshot/utxo', USER);
+		expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow');
 	});
 
 	// history/snapshot-utxo/address query params drive what the node streams back.

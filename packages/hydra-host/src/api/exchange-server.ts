@@ -150,13 +150,22 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	const server = createServer((request, response) => {
 		// Same search-engine exclusion as the control plane (see server.ts).
 		response.setHeader('X-Robots-Tag', 'noindex, nofollow');
+		// Parse the path once, up front, and guard it. A hostile request target
+		// makes new URL throw, and this runs synchronously outside handle()'s
+		// promise catch, so an unguarded throw would crash the whole process.
+		let pathname: string;
+		try {
+			pathname = new URL(request.url ?? '/', 'http://exchange.invalid').pathname.replace(/\/+$/, '');
+		} catch {
+			send(response, 400, { error: 'bad request' });
+			return;
+		}
 		// Answer robots.txt ahead of the limiter: Google treats a 429/5xx
 		// robots.txt as a temporary full crawl block, which would hide the
 		// noindex header from crawlers while the plane is saturated.
-		const pathname = new URL(request.url ?? '/', 'http://exchange.invalid').pathname.replace(/\/+$/, '');
 		if ((request.method === 'GET' || request.method === 'HEAD') && pathname === '/robots.txt') {
 			response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
-			response.end(request.method === 'HEAD' ? undefined : 'User-agent: *\nAllow: /\n');
+			response.end('User-agent: *\nAllow: /\n');
 			return;
 		}
 		const now = Date.now();
@@ -181,7 +190,7 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 		}
 
 		inFlight += 1;
-		void handle(request, response, source)
+		void handle(request, response, source, pathname)
 			.catch((error: unknown) => {
 				// Never echo the message: this is an unauthenticated surface and the
 				// error text can describe internal state.
@@ -199,9 +208,12 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	server.keepAliveTimeout = 10_000;
 	return server;
 
-	async function handle(request: IncomingMessage, response: ServerResponse, source: string): Promise<void> {
-		const pathname = new URL(request.url ?? '/', 'http://exchange.invalid').pathname.replace(/\/+$/, '');
-
+	async function handle(
+		request: IncomingMessage,
+		response: ServerResponse,
+		source: string,
+		pathname: string,
+	): Promise<void> {
 		if (request.method !== 'POST') {
 			send(response, 405, { error: 'method not allowed' });
 			return;
