@@ -283,8 +283,8 @@ async function processUpdate(
 
 	// Submit FIRST, then write DB. Same rationale as
 	// register/deregister single-item: on submit failure there is no
-	// orphan Transaction row to clean up, and we revert state back to
-	// UpdateRequested so the next tick can retry.
+	// orphan Transaction row to clean up, so the catch below only has to
+	// stamp the failure and free the wallet.
 	let newTxHash: string;
 	try {
 		newTxHash = await wallet.submitTx(signedTx);

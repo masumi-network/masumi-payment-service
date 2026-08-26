@@ -10,6 +10,7 @@ import { BlockfrostProvider, IFetcher, LanguageVersion, MeshTxBuilder, Network, 
 import { PaymentSourceType } from '@/generated/prisma/client';
 import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
 import { assertNever } from '@/utils/assert-never';
+import { getLovelaceFromUtxo } from '@/utils/utxo';
 
 export type RegistryMetadata = {
 	[key: string]: string | string[] | RegistryMetadata | RegistryMetadata[] | undefined;
@@ -20,21 +21,51 @@ const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.c
 /**
  * Total collateral these registry transactions declare.
  *
- * Must stay BELOW what the collateral input holds. `pickCollateralUtxo` only
- * accepts a UTxO of at least `DEFAULT_MIN_COLLATERAL_LOVELACE` (5 ADA) and
- * prefers the smallest qualifying one, so it reliably picks the 5 ADA UTxO
- * that `ensureCollateralReady` mints. Declaring the same 5 ADA collapses
- * mesh's `collateral_return` to `Coin 0`, which mesh still emits and the
- * ledger rejects with `BabbageOutputTooSmallUTxO` — a phase-1 failure, so
- * `evaluateTx` never sees it and the tx only dies at submit.
+ * Must stay below what the collateral input holds. The ledger returns the
+ * difference as a `collateral_return` output, and rejects the transaction when
+ * that output falls under the min-UTxO floor. Declaring the full
+ * `SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount` (5 ADA) against the 5 ADA
+ * UTxO the funding path mints leaves nothing to return, which is what these
+ * builders used to do.
  *
- * 3 ADA covers the requirement with room to spare: at preprod prices the
- * inflated default budgets (mem 7e6, steps 3e9) come to ~620k lovelace of
- * script fee, and Conway asks for `collateralPercentage` (150%) of that, so
- * ~930k. It also matches every sibling call site in this V1 tree and the
- * `MIN_TOTAL_COLLATERAL_LOVELACE` floor the V2 builders derive from.
+ * 3 ADA still covers the requirement: at preprod prices the inflated default
+ * budgets (mem 7e6, steps 3e9) come to roughly 620k lovelace of script fee, and
+ * Conway asks for `collateralPercentage` (150%) of that, so roughly 930k. It
+ * matches the sibling deregister call site and the `MIN_TOTAL_COLLATERAL_LOVELACE`
+ * floor the V2 builders derive from.
  */
 const REGISTRY_TOTAL_COLLATERAL_LOVELACE = '3000000';
+
+/**
+ * Smallest collateral input these builders accept.
+ *
+ * `assertCollateralCoversDeclaredTotal` enforces it. The floor is the same
+ * 5 ADA `pickCollateralUtxo` already requires, which leaves 2 ADA of
+ * `collateral_return`: clear of the min-UTxO floor with room to spare.
+ *
+ * The guard is not redundant. Only some callers route their collateral through
+ * `pickCollateralUtxo`. The single-item register paths take
+ * `sortAndLimitUtxos(...)[0]`, which orders by asset count and not by value, and
+ * the single-item update and deregister paths fall back to that same element
+ * when nothing clears the floor. Any of those can hand over an input smaller
+ * than the declared total. Without this guard such a build dies at submit with a
+ * phase-1 rejection that names no cause, because phase-1 failures never reach
+ * `evaluateTx`.
+ */
+const REGISTRY_MIN_COLLATERAL_INPUT_LOVELACE = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
+
+function assertCollateralCoversDeclaredTotal(collateralUtxo: UTxO): void {
+	const heldLovelace = getLovelaceFromUtxo(collateralUtxo);
+	if (heldLovelace >= REGISTRY_MIN_COLLATERAL_INPUT_LOVELACE) {
+		return;
+	}
+	throw new Error(
+		`Collateral UTxO ${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex} holds ` +
+			`${heldLovelace.toString()} lovelace. Registry transactions declare ` +
+			`${REGISTRY_TOTAL_COLLATERAL_LOVELACE} as total collateral and need an input of at least ` +
+			`${REGISTRY_MIN_COLLATERAL_INPUT_LOVELACE.toString()} lovelace to leave a returnable remainder.`,
+	);
+}
 
 // V2 mint contract Action enum: MintAction=0, UpdateAction=1, BurnAction=2.
 // V1 mint contract Action enum: MintAction=0, BurnAction=1.
@@ -162,6 +193,8 @@ export async function generateRegistryMintTransaction(
 	// is cold (first tx of the process lifetime).
 	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
 	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
+	assertCollateralCoversDeclaredTotal(collateralUtxo);
+
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
@@ -404,6 +437,8 @@ async function generateRegistryUpdateTransaction(
 	}
 	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
 	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
+	assertCollateralCoversDeclaredTotal(collateralUtxo);
+
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});
@@ -499,6 +534,8 @@ async function generateRegistryDeregisterTransaction(
 	// cache miss.
 	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
 	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
+	assertCollateralCoversDeclaredTotal(collateralUtxo);
+
 	const txBuilder = new MeshTxBuilder({
 		fetcher: blockchainProvider,
 	});

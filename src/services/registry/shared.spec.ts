@@ -36,6 +36,7 @@ class FakeMeshTxBuilder {
 	addingPlutusMint = false;
 	mintItem: MintLeg | undefined = undefined;
 	mints: MintLeg[] = [];
+	totalCollateral: string | undefined = undefined;
 	serializer = {
 		deserializer: {
 			key: {
@@ -116,7 +117,8 @@ class FakeMeshTxBuilder {
 	txInCollateral() {
 		return this;
 	}
-	setTotalCollateral() {
+	setTotalCollateral(amount: string) {
+		this.totalCollateral = amount;
 		return this;
 	}
 	txOut() {
@@ -154,14 +156,32 @@ const { generateRegistryUpdateTransactionAutomaticFees } = await import('./share
 const POLICY_ID = 'a'.repeat(56);
 const SCRIPT = { version: 'V3' as const, code: 'aabbccdd' };
 
-function utxo(txHash: string, outputIndex: number): UTxO {
+function utxo(txHash: string, outputIndex: number, lovelace = '5000000'): UTxO {
 	return {
 		input: { txHash, outputIndex },
 		output: {
 			address: 'addr_test1placeholder',
-			amount: [{ unit: 'lovelace', quantity: '5000000' }],
+			amount: [{ unit: 'lovelace', quantity: lovelace }],
 		},
 	} as unknown as UTxO;
+}
+
+function buildUpdate(collateralUtxo: UTxO) {
+	return generateRegistryUpdateTransactionAutomaticFees(
+		provider,
+		'preprod',
+		SCRIPT,
+		'addr_test1updater',
+		'addr_test1recipient',
+		'2000000',
+		POLICY_ID,
+		'01' + 'aa'.repeat(28) + '000000',
+		'02' + 'bb'.repeat(28) + '000000',
+		utxo('1111', 0),
+		collateralUtxo,
+		[utxo('dddd', 0)],
+		{ name: 'Agent A', description: 'desc' },
+	);
 }
 
 const provider = {
@@ -213,5 +233,33 @@ describe('generateRegistryUpdateTransactionAutomaticFees', () => {
 			// UpdateAction redeemer alternative is 1.
 			expect(leg.redeemer).toEqual({ data: { alternative: 1, fields: [] }, exUnits: expect.anything() });
 		}
+	});
+});
+
+describe('registry collateral declaration', () => {
+	/**
+	 * The declared total must stay strictly below the collateral input. Equal
+	 * values leave no `collateral_return`, and the ledger rejects that in phase 1,
+	 * before `evaluateTx` ever sees the transaction.
+	 */
+	it('declares less collateral than the smallest accepted input holds', async () => {
+		await expect(buildUpdate(utxo('cccc', 0))).resolves.toBe('beadface');
+
+		const finalBuilder = builtBuilders[builtBuilders.length - 1];
+		expect(finalBuilder.totalCollateral).toBeDefined();
+		expect(BigInt(finalBuilder.totalCollateral!)).toBeLessThan(
+			BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount),
+		);
+	});
+
+	/**
+	 * Not every caller routes its collateral through `pickCollateralUtxo`. The
+	 * single-item register path takes `sortAndLimitUtxos(...)[0]`, which orders by
+	 * asset count and not by value, so it can hand over an input worth less than
+	 * the declared total. That has to fail at build time with a readable reason
+	 * rather than at submit with an unexplained phase-1 rejection.
+	 */
+	it('refuses a collateral input that cannot cover the declared total', async () => {
+		await expect(buildUpdate(utxo('cccc', 0, '2000000'))).rejects.toThrow(/holds 2000000 lovelace/);
 	});
 });

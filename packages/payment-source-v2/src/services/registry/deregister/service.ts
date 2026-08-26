@@ -276,9 +276,9 @@ async function processSingleDeregistration(
 	const signedTx = await wallet.signTx(unsignedTx);
 
 	// Submit FIRST, then write DB. See register/service.ts single-item
-	// path for full rationale. On submit failure, no orphan Transaction
-	// row to clean up; just revert state back to DeregistrationRequested
-	// and clear the wallet lock so the next tick can retry.
+	// path for full rationale. On submit failure there is no orphan
+	// Transaction row to clean up, so the catch below only has to stamp the
+	// failure and free the wallet.
 	let newTxHash: string;
 	try {
 		newTxHash = await wallet.submitTx(signedTx);
