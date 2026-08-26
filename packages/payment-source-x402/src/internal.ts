@@ -210,10 +210,9 @@ export type X402OwnerScope = string | null;
  * scope list yet.
  *
  * Access means SPEND, not just visibility: an assigned wallet inherits own-wallet
- * semantics (Cardano parity), so a pay key can sign payments from it without a
- * budget grant — capped only by its usage credits (when usageLimited) and the
- * on-chain balance. Set an X402WalletBudget row alongside the assignment when a
- * per-wallet ceiling is wanted.
+ * semantics (Cardano parity), so a pay key can sign payments from it — capped
+ * only by its usage credits (when usageLimited) and the on-chain balance. Spend
+ * caps live on the key, never on the wallet (ADR 0016).
  */
 export type X402WalletAccess = {
 	scope: X402OwnerScope;

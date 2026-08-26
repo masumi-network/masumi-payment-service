@@ -8,19 +8,14 @@ import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
 import { cn, shortenAddress } from '@/lib/utils';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
-import { useX402Budgets, useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
+import { useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
 import { isTestnetEnv, isX402ChainUsable, walletsForNetworks, X402_ACCENT } from '@/lib/x402-rail';
 import { useRailReadiness } from '@/lib/hooks/useRailReadiness';
-import { areChecksComplete, checkDetail } from '@/lib/rail-readiness';
+import { checkDetail } from '@/lib/rail-readiness';
 import { X402Network, X402Wallet } from '@/lib/api/generated';
 import { CreateWalletDialog } from '@/components/x402/WalletsTab';
 import { ChainForm } from '@/components/x402/ChainsTab';
-import { BudgetDialog } from '@/components/x402/BudgetsTab';
-import {
-  hasSpendableBudgetForChain,
-  initialX402SetupStep,
-  type X402SetupStep,
-} from '@/lib/x402-setup';
+import { initialX402SetupStep, type X402SetupStep } from '@/lib/x402-setup';
 import {
   X402ChainSelectionStep,
   X402SetupStepHeaderIcon,
@@ -31,7 +26,7 @@ import {
 const STEP_LABELS = ['Welcome', 'Chain', 'Receiving', 'Paying', 'Ready'];
 const ADD_SOURCE_STEP_LABELS = ['Welcome', 'Chain', 'Receiving', 'Ready'];
 
-type DialogKind = 'wallet' | 'budget' | null;
+type DialogKind = 'wallet' | null;
 type ReceivingMode = 'managed' | 'remote';
 
 /**
@@ -58,9 +53,8 @@ export function X402SetupWelcome({
   } = useAppContext();
   const { wallets, isLoading: walletsLoading } = useX402Wallets();
   const { networks, isLoading: networksLoading } = useX402Networks({ network: networkType });
-  const { budgets, isLoading: budgetsLoading } = useX402Budgets();
   // Step completion comes from the backend, not from re-deriving it here. The
-  // chain/wallet/budget lists are still read for the affordances below (which
+  // chain and wallet lists are still read for the affordances below (which
   // chain to configure, which wallet addresses to show) — but whether a step
   // counts as DONE is the server's call.
   const {
@@ -83,8 +77,7 @@ export function X402SetupWelcome({
   // The x402 hooks are disabled (and return []) until authorized, which would otherwise read
   // as "nothing configured". Treat the pre-auth window as loading so step state never acts on
   // empty data.
-  const loading =
-    !authorized || walletsLoading || networksLoading || budgetsLoading || readinessLoading;
+  const loading = !authorized || walletsLoading || networksLoading || readinessLoading;
 
   const envChains = useMemo(() => {
     const wantTestnet = isTestnetEnv(networkType);
@@ -96,7 +89,7 @@ export function X402SetupWelcome({
   }, [networks, networkType, savedChain]);
   const envWallets = useMemo(() => walletsForNetworks(wallets, envChains), [wallets, envChains]);
   // Wallets are split by direction: a Selling wallet settles inbound payments (facilitator),
-  // a Purchasing wallet funds outbound ones (budget). Each step owns its type.
+  // a Purchasing wallet funds outbound ones. Each step owns its type.
   // The inbound step is complete only when the rail can actually settle: an
   // enabled chain WITH an RPC URL and exactly one facilitator. Deriving this
   // locally used to pass a facilitator-but-no-RPC chain, marking the step done
@@ -112,18 +105,18 @@ export function X402SetupWelcome({
     envChains.find((chain) => isX402ChainUsable(chain)) ??
     envChains.find((chain) => !!chain.facilitatorWalletId || !!chain.facilitatorUrl) ??
     null;
-  // Outbound needs both halves — a purchasing wallet and a funded, enabled budget
-  // on it. The backend already scopes budgets to this environment's chains.
-  const hasBudget = areChecksComplete(x402Readiness, ['x402.purchasing_wallet', 'x402.budget']);
   const selectedChainIsReady = selectedChain ? isX402ChainUsable(selectedChain) : false;
   const isReceivingReadyConfirmed = selectedChainIsReady && hasFacilitator && !readinessUnavailable;
   const selectedSellingWallets = envWallets.filter(
     (wallet) => wallet.type === 'Selling' && wallet.networkId === selectedChain?.id,
   );
-  const selectedPurchasingWallets = envWallets.filter(
+  // Outbound needs a Purchasing wallet; spend caps are per-API-key usage credits granted
+  // with PATCH /api/v1/api-key, not part of rail setup. The readiness endpoint reports ONE
+  // chain (the ready one, else the best-scoring one), which is not necessarily the chain
+  // this wizard has selected, so derive the paying state from the selected chain's wallets.
+  const canPayOnSelectedChain = envWallets.some(
     (wallet) => wallet.type === 'Purchasing' && wallet.networkId === selectedChain?.id,
   );
-  const selectedChainHasBudget = hasSpendableBudgetForChain(budgets, selectedChain?.caip2Id);
 
   // Prefer attaching a facilitator to an enabled chain in the active env that lacks one (Base
   // ships preconfigured), then any chain in the same env, never crossing environments.
@@ -152,7 +145,9 @@ export function X402SetupWelcome({
     const nextStep = initialX402SetupStep({
       isReadinessKnown: !readinessUnavailable,
       isReceivingReady: hasFacilitator,
-      isPayingReady: hasBudget,
+      // Same chain the paying screen speaks about, so the step the wizard opens on
+      // cannot disagree with the state it then renders.
+      isPayingReady: canPayOnSelectedChain,
       startAtChainSelection: shouldAddToReadyRail,
     });
     if (nextStep > 0 && configuredChain) {
@@ -163,8 +158,8 @@ export function X402SetupWelcome({
       setCurrentStep(nextStep);
     });
   }, [
+    canPayOnSelectedChain,
     configuredChain,
-    hasBudget,
     hasFacilitator,
     isAddingPaymentSource,
     loading,
@@ -175,7 +170,6 @@ export function X402SetupWelcome({
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
     queryClient.invalidateQueries({ queryKey: ['x402-networks'] });
-    queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
     // Step completion now comes from the readiness endpoint, so it has to be
     // refetched alongside the lists — otherwise a step the user just finished
     // stays incomplete until the 30s staleTime expires.
@@ -237,7 +231,7 @@ export function X402SetupWelcome({
           {[
             { icon: Link2, label: 'Select an EVM chain', delay: 'animate-delay-100' },
             { icon: WalletIcon, label: 'Configure how you receive', delay: 'animate-delay-125' },
-            { icon: Coins, label: 'Fund a spend budget (optional)', delay: 'animate-delay-150' },
+            { icon: Coins, label: 'Fund outbound payments (optional)', delay: 'animate-delay-150' },
           ].map((feature) => (
             <div
               key={feature.label}
@@ -451,43 +445,33 @@ export function X402SetupWelcome({
           </Badge>
         </h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-          Create a Purchasing wallet and grant an API key a capped budget so your agents can pay
-          other x402 resources. Skip if you only receive payments.
+          Create a Purchasing wallet so your agents can pay other x402 resources. A usage-limited
+          API key is capped by its usage credits. Skip if you only receive payments.
         </p>
       </div>
 
       <Card
         className={cn(
           'mt-6 space-y-4 p-5 text-center',
-          selectedChainHasBudget && 'border-green-500/20 bg-green-500/[0.04]',
+          canPayOnSelectedChain && 'border-green-500/20 bg-green-500/[0.04]',
         )}
       >
         {walletChips('Purchasing')}
-        {selectedChainHasBudget ? (
+        {canPayOnSelectedChain ? (
           <p className="flex items-center justify-center gap-1.5 text-sm text-green-600 dark:text-green-500">
-            <CheckCircle2 className="h-4 w-4" /> Spend budget configured
+            <CheckCircle2 className="h-4 w-4" /> Purchasing wallet ready
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">
-            {selectedPurchasingWallets.length > 0
-              ? 'Grant an API key a spend budget on your Purchasing wallet.'
-              : 'Create a Purchasing wallet to fund outbound payments.'}
+            Create a Purchasing wallet to fund outbound payments.
           </p>
         )}
         <Button
-          variant={selectedChainHasBudget ? 'outline' : 'default'}
+          variant={canPayOnSelectedChain ? 'outline' : 'default'}
           className="gap-2"
-          onClick={() =>
-            selectedPurchasingWallets.length > 0
-              ? setOpenDialog('budget')
-              : openWalletDialog('Purchasing')
-          }
+          onClick={() => openWalletDialog('Purchasing')}
         >
-          {selectedPurchasingWallets.length === 0
-            ? 'Create purchasing wallet'
-            : selectedChainHasBudget
-              ? 'Manage budgets'
-              : 'Set budget'}
+          {canPayOnSelectedChain ? 'Add wallet' : 'Create purchasing wallet'}
         </Button>
       </Card>
 
@@ -496,7 +480,7 @@ export function X402SetupWelcome({
           Back
         </Button>
         <Button className="btn-hover-lift group gap-2" onClick={() => setCurrentStep(4)}>
-          {selectedChainHasBudget ? 'Continue' : 'Skip for now'}
+          {canPayOnSelectedChain ? 'Continue' : 'Skip for now'}
           <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
         </Button>
       </div>
@@ -536,10 +520,10 @@ export function X402SetupWelcome({
               optional: false,
             },
             {
-              label: selectedChainHasBudget
+              label: canPayOnSelectedChain
                 ? 'Outbound payments enabled'
                 : 'Outbound payments skipped',
-              done: selectedChainHasBudget,
+              done: canPayOnSelectedChain,
               optional: false,
             },
           ].map((item, index) => (
@@ -667,17 +651,6 @@ export function X402SetupWelcome({
         open={openDialog === 'wallet'}
         defaultType={walletType}
         defaultNetworkId={selectedChain?.id}
-        onClose={() => setOpenDialog(null)}
-        onSaved={() => {
-          setOpenDialog(null);
-          invalidate();
-        }}
-      />
-      <BudgetDialog
-        key={openDialog === 'budget' ? 'budget-open' : 'budget-closed'}
-        open={openDialog === 'budget'}
-        editing={null}
-        defaultWalletId={selectedPurchasingWallets[0]?.id}
         onClose={() => setOpenDialog(null)}
         onSaved={() => {
           setOpenDialog(null);

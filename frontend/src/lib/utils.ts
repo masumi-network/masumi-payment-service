@@ -351,7 +351,7 @@ export function formatX402Amount(amount: string | null | undefined, decimals: nu
 
 // Group an integer string with thousand separators for readability, e.g.
 // "1000000" -> "1,000,000". Used for base-unit amounts whose token decimals are
-// unknown (budgets, payment attempts), where a decimal point can't be placed safely.
+// unknown (payment attempts), where a decimal point can't be placed safely.
 export function groupDigits(value: string | null | undefined): string {
   if (value == null || value === '') return '—';
   if (!/^-?\d+$/.test(value)) return value;

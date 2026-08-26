@@ -198,12 +198,11 @@ export async function deleteX402ManagedWallet(
 	assertWalletOwner(ownerScope, wallet);
 	assertWalletNetworkAllowed(caip2NetworkLimit, wallet.Network.caip2Id);
 
-	// Soft-delete the wallet, disable its budgets and low-balance rules, and detach it
+	// Soft-delete the wallet, disable its low-balance rules, and detach it
 	// from any network it facilitates, so a retired/compromised key can no longer sign,
 	// settle or raise alerts.
 	await prisma.$transaction([
 		prisma.x402EvmWallet.update({ where: { id: evmWalletId }, data: { deletedAt: new Date() } }),
-		prisma.x402WalletBudget.updateMany({ where: { evmWalletId }, data: { enabled: false } }),
 		prisma.x402EvmWalletLowBalanceRule.updateMany({ where: { evmWalletId }, data: { enabled: false } }),
 		prisma.x402Network.updateMany({
 			where: { facilitatorWalletId: evmWalletId },

@@ -12,7 +12,6 @@ import { formatDateTime } from '@/lib/format-date';
 import { useX402LowBalanceRules } from '@/lib/hooks/useX402';
 import { X402Wallet } from '@/lib/api/generated';
 import { AlertsTab } from './AlertsTab';
-import { BudgetsTab } from './BudgetsTab';
 import { WalletBalances } from './WalletExtras';
 
 export function WalletDetailsDialog({
@@ -60,13 +59,6 @@ export function WalletDetailsDialog({
             <h3 className="text-sm font-semibold">Balances</h3>
             <WalletBalances wallet={wallet} enabled={open} />
           </section>
-
-          {wallet.type === 'Purchasing' && capabilities.canPay && (
-            <section className="space-y-3 border-t pt-5">
-              <h3 className="text-sm font-semibold">Spend budgets</h3>
-              <BudgetsTab wallet={wallet} />
-            </section>
-          )}
 
           {capabilities.canAdmin && (
             <section className="space-y-3 border-t pt-5">

@@ -5323,69 +5323,6 @@
                     }
                 ]
             },
-            "X402Budget": {
-                "type": "object",
-                "properties": {
-                    "id": {
-                        "type": "string"
-                    },
-                    "apiKeyId": {
-                        "type": "string",
-                        "description": "API key the budget is granted to"
-                    },
-                    "evmWalletId": {
-                        "type": "string",
-                        "description": "Managed EVM wallet the budget draws from"
-                    },
-                    "evmWalletAddress": {
-                        "type": "string",
-                        "description": "Resolved address of the managed EVM wallet the budget draws from"
-                    },
-                    "caip2Network": {
-                        "type": "string",
-                        "pattern": "^eip155:\\d+$"
-                    },
-                    "asset": {
-                        "type": "string",
-                        "pattern": "^0x[a-fA-F0-9]{40}$",
-                        "description": "Token contract the budget is denominated in"
-                    },
-                    "remainingAmount": {
-                        "type": "string",
-                        "description": "Remaining spendable amount, in token base units"
-                    },
-                    "spentAmount": {
-                        "type": "string",
-                        "description": "Amount already spent, in token base units"
-                    },
-                    "createdById": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "Id of the API key that created this budget"
-                    },
-                    "createdAt": {
-                        "type": "string",
-                        "format": "date-time"
-                    },
-                    "updatedAt": {
-                        "type": "string",
-                        "format": "date-time"
-                    }
-                },
-                "required": [
-                    "id",
-                    "apiKeyId",
-                    "evmWalletId",
-                    "evmWalletAddress",
-                    "caip2Network",
-                    "asset",
-                    "remainingAmount",
-                    "spentAmount",
-                    "createdById",
-                    "createdAt",
-                    "updatedAt"
-                ]
-            },
             "X402PaymentAttempt": {
                 "type": "object",
                 "properties": {
@@ -6856,8 +6793,7 @@
                                                     "x402.rpc_url",
                                                     "x402.facilitator",
                                                     "x402.selling_wallet",
-                                                    "x402.purchasing_wallet",
-                                                    "x402.budget"
+                                                    "x402.purchasing_wallet"
                                                 ],
                                                 "description": "Stable check identifier. The admin UI maps setup steps onto these"
                                             },
@@ -6921,8 +6857,7 @@
                                                                 "x402.rpc_url",
                                                                 "x402.facilitator",
                                                                 "x402.selling_wallet",
-                                                                "x402.purchasing_wallet",
-                                                                "x402.budget"
+                                                                "x402.purchasing_wallet"
                                                             ],
                                                             "description": "Stable check identifier. The admin UI maps setup steps onto these"
                                                         },
@@ -28455,7 +28390,7 @@
         },
         "/x402/wallets/delete": {
             "post": {
-                "description": "Retires a managed EVM wallet: soft-deletes it, disables its budgets, and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.",
+                "description": "Retires a managed EVM wallet: soft-deletes it and detaches it from any chain it facilitates so a compromised key can no longer sign or settle.",
                 "summary": "Retire a managed x402 EVM wallet. (admin access required; network scoped)",
                 "tags": [
                     "x402"
@@ -28521,189 +28456,6 @@
                                         "status": "success",
                                         "data": {
                                             "id": "clmanagedwallet0001"
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        "/x402/budgets": {
-            "get": {
-                "description": "Lists per-API-key spend budgets for managed x402 wallets. A non-admin key always sees only its own budgets, and the apiKeyId filter is ignored for it; an admin may filter by API key, or omit it for all.",
-                "summary": "List x402 wallet budgets. (pay access required)",
-                "tags": [
-                    "x402"
-                ],
-                "security": [
-                    {
-                        "API-Key": []
-                    }
-                ],
-                "parameters": [
-                    {
-                        "schema": {
-                            "type": "string",
-                            "description": "Filter budgets to a single API key"
-                        },
-                        "required": false,
-                        "description": "Filter budgets to a single API key",
-                        "name": "apiKeyId",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "x402 wallet budgets",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "enum": [
-                                                "success"
-                                            ]
-                                        },
-                                        "data": {
-                                            "type": "object",
-                                            "properties": {
-                                                "Budgets": {
-                                                    "type": "array",
-                                                    "items": {
-                                                        "$ref": "#/components/schemas/X402Budget"
-                                                    }
-                                                }
-                                            },
-                                            "required": [
-                                                "Budgets"
-                                            ]
-                                        }
-                                    },
-                                    "required": [
-                                        "status",
-                                        "data"
-                                    ],
-                                    "example": {
-                                        "status": "success",
-                                        "data": {
-                                            "Budgets": [
-                                                {
-                                                    "id": "clx402budget0001",
-                                                    "apiKeyId": "api_key_id",
-                                                    "evmWalletId": "clmanagedwallet0001",
-                                                    "evmWalletAddress": "0x1111111111111111111111111111111111111111",
-                                                    "caip2Network": "eip155:8453",
-                                                    "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-                                                    "remainingAmount": "1000000",
-                                                    "spentAmount": "0",
-                                                    "createdById": "api_key_id",
-                                                    "createdAt": "2026-06-02T12:00:00.000Z",
-                                                    "updatedAt": "2026-06-02T12:00:00.000Z"
-                                                }
-                                            ]
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "Sets the remaining spend budget for an (API key, managed wallet, chain, asset) tuple. Replaces the remaining amount.",
-                "summary": "Set an x402 wallet budget. (admin access required)",
-                "tags": [
-                    "x402"
-                ],
-                "security": [
-                    {
-                        "API-Key": []
-                    }
-                ],
-                "requestBody": {
-                    "description": "Budget to set",
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "apiKeyId": {
-                                        "type": "string"
-                                    },
-                                    "evmWalletId": {
-                                        "type": "string"
-                                    },
-                                    "caip2Network": {
-                                        "type": "string",
-                                        "pattern": "^eip155:\\d+$"
-                                    },
-                                    "asset": {
-                                        "type": "string",
-                                        "pattern": "^0x[a-fA-F0-9]{40}$"
-                                    },
-                                    "remainingAmount": {
-                                        "type": "string",
-                                        "pattern": "^\\d+$"
-                                    }
-                                },
-                                "required": [
-                                    "apiKeyId",
-                                    "evmWalletId",
-                                    "caip2Network",
-                                    "asset",
-                                    "remainingAmount"
-                                ],
-                                "example": {
-                                    "apiKeyId": "api_key_id",
-                                    "evmWalletId": "clmanagedwallet0001",
-                                    "caip2Network": "eip155:8453",
-                                    "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-                                    "remainingAmount": "1000000"
-                                }
-                            }
-                        }
-                    }
-                },
-                "responses": {
-                    "200": {
-                        "description": "Budget saved",
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "type": "object",
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "enum": [
-                                                "success"
-                                            ]
-                                        },
-                                        "data": {
-                                            "$ref": "#/components/schemas/X402Budget"
-                                        }
-                                    },
-                                    "required": [
-                                        "status",
-                                        "data"
-                                    ],
-                                    "example": {
-                                        "status": "success",
-                                        "data": {
-                                            "id": "clx402budget0001",
-                                            "apiKeyId": "api_key_id",
-                                            "evmWalletId": "clmanagedwallet0001",
-                                            "evmWalletAddress": "0x1111111111111111111111111111111111111111",
-                                            "caip2Network": "eip155:8453",
-                                            "asset": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-                                            "remainingAmount": "1000000",
-                                            "spentAmount": "0",
-                                            "createdById": "api_key_id",
-                                            "createdAt": "2026-06-02T12:00:00.000Z",
-                                            "updatedAt": "2026-06-02T12:00:00.000Z"
                                         }
                                     }
                                 }
@@ -29267,7 +29019,7 @@
         },
         "/x402/pay": {
             "post": {
-                "description": "Signs a payment for a forwarded 402 using a managed EVM wallet, charged against the caller budget. Returns the X-PAYMENT header for the caller to send with its own retried request; this service never fetches the resource itself.",
+                "description": "Signs a payment for a forwarded 402 using a managed EVM wallet, debited against the caller's usage credits when the key is usage limited. Returns the X-PAYMENT header for the caller to send with its own retried request; this service never fetches the resource itself.",
                 "summary": "Sign a payment for a forwarded 402. (pay access required)",
                 "tags": [
                     "x402"
@@ -36593,7 +36345,7 @@
         },
         "/rail-readiness": {
             "get": {
-                "description": "Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. CardanoV2 also returns per-policy/contract PurchaseSources so read-auth consumers can gate outbound purchases against the exact source; these identifiers are public on-chain values. isReady covers blocking checks only: for x402 that means an enabled chain with exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while purchasing wallet and budget are reported but optional. Only configuration presence is exposed — no keys or private wallet data.",
+                "description": "Reports whether each payment rail is actually configured well enough to take payments, so setup UIs do not have to re-derive it from several list endpoints. Each rail returns isReady plus the individual checks behind it, each with a stable id the admin UI maps its setup steps onto. CardanoV2 also returns per-policy/contract PurchaseSources so read-auth consumers can gate outbound purchases against the exact source; these identifiers are public on-chain values. isReady covers blocking checks only: for x402 that means an enabled chain with a usable RPC URL and exactly one facilitator mode configured (a row with both a facilitator wallet and a facilitator URL fails at settle time), while the purchasing wallet is reported but optional. Only configuration presence is exposed — no keys or private wallet data.",
                 "summary": "Get payment rail readiness. (read access required)",
                 "tags": [
                     "rail-readiness"
@@ -36770,12 +36522,6 @@
                                                         {
                                                             "id": "x402.purchasing_wallet",
                                                             "label": "Purchasing wallet",
-                                                            "isComplete": false,
-                                                            "detail": "Optional — needed only to pay other agents"
-                                                        },
-                                                        {
-                                                            "id": "x402.budget",
-                                                            "label": "Spending budget",
                                                             "isComplete": false,
                                                             "detail": "Optional — needed only to pay other agents"
                                                         }

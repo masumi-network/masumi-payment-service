@@ -2816,41 +2816,6 @@ export type X402WalletCreated = X402Wallet & {
     privateKey: string | null;
 };
 
-export type X402Budget = {
-    id: string;
-    /**
-     * API key the budget is granted to
-     */
-    apiKeyId: string;
-    /**
-     * Managed EVM wallet the budget draws from
-     */
-    evmWalletId: string;
-    /**
-     * Resolved address of the managed EVM wallet the budget draws from
-     */
-    evmWalletAddress: string;
-    caip2Network: string;
-    /**
-     * Token contract the budget is denominated in
-     */
-    asset: string;
-    /**
-     * Remaining spendable amount, in token base units
-     */
-    remainingAmount: string;
-    /**
-     * Amount already spent, in token base units
-     */
-    spentAmount: string;
-    /**
-     * Id of the API key that created this budget
-     */
-    createdById: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-};
-
 export type X402PaymentAttempt = {
     id: string;
     createdAt: Date;
@@ -3357,7 +3322,7 @@ export type RailReadiness = {
             /**
              * Stable check identifier. The admin UI maps setup steps onto these
              */
-            id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet' | 'x402.budget';
+            id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet';
             /**
              * Short human-readable name for the check
              */
@@ -3394,7 +3359,7 @@ export type RailReadiness = {
                 /**
                  * Stable check identifier. The admin UI maps setup steps onto these
                  */
-                id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet' | 'x402.budget';
+                id: 'cardano.payment_source' | 'cardano.contract_current' | 'cardano.rpc_provider' | 'cardano.admin_signatures' | 'cardano.selling_wallet' | 'cardano.purchasing_wallet' | 'cardano.payments_enabled' | 'x402.enabled_chain' | 'x402.rpc_url' | 'x402.facilitator' | 'x402.selling_wallet' | 'x402.purchasing_wallet';
                 /**
                  * Short human-readable name for the check
                  */
@@ -12224,60 +12189,6 @@ export type PostX402WalletsDeleteResponses = {
 };
 
 export type PostX402WalletsDeleteResponse = PostX402WalletsDeleteResponses[keyof PostX402WalletsDeleteResponses];
-
-export type GetX402BudgetsData = {
-    body?: never;
-    path?: never;
-    query?: {
-        /**
-         * Filter budgets to a single API key
-         */
-        apiKeyId?: string;
-    };
-    url: '/x402/budgets';
-};
-
-export type GetX402BudgetsResponses = {
-    /**
-     * x402 wallet budgets
-     */
-    200: {
-        status: 'success';
-        data: {
-            Budgets: Array<X402Budget>;
-        };
-    };
-};
-
-export type GetX402BudgetsResponse = GetX402BudgetsResponses[keyof GetX402BudgetsResponses];
-
-export type PostX402BudgetsData = {
-    /**
-     * Budget to set
-     */
-    body?: {
-        apiKeyId: string;
-        evmWalletId: string;
-        caip2Network: string;
-        asset: string;
-        remainingAmount: string;
-    };
-    path?: never;
-    query?: never;
-    url: '/x402/budgets';
-};
-
-export type PostX402BudgetsResponses = {
-    /**
-     * Budget saved
-     */
-    200: {
-        status: 'success';
-        data: X402Budget;
-    };
-};
-
-export type PostX402BudgetsResponse = PostX402BudgetsResponses[keyof PostX402BudgetsResponses];
 
 export type PostX402VerifyData = {
     /**

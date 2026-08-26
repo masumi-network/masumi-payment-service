@@ -21,7 +21,7 @@ import { type ApiKeyCapabilities, DEFAULT_CAPABILITIES } from '@/lib/permissions
 export type NetworkType = 'Preprod' | 'Mainnet';
 
 // Which payment rail the UI is currently in context of. 'cardano' is the
-// historical default; 'x402' surfaces the EVM rail (chains/wallets/budgets).
+// historical default; 'x402' surfaces the EVM rail (chains/wallets).
 export type ActiveRail = 'cardano' | 'x402';
 
 export const AppContext = createContext<

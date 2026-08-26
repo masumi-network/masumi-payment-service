@@ -5332,70 +5332,6 @@ export const X402WalletCreatedSchema = {
     ]
 } as const;
 
-export const X402BudgetSchema = {
-    type: 'object',
-    properties: {
-        id: {
-            type: 'string'
-        },
-        apiKeyId: {
-            type: 'string',
-            description: 'API key the budget is granted to'
-        },
-        evmWalletId: {
-            type: 'string',
-            description: 'Managed EVM wallet the budget draws from'
-        },
-        evmWalletAddress: {
-            type: 'string',
-            description: 'Resolved address of the managed EVM wallet the budget draws from'
-        },
-        caip2Network: {
-            type: 'string',
-            pattern: '^eip155:\\d+$'
-        },
-        asset: {
-            type: 'string',
-            pattern: '^0x[a-fA-F0-9]{40}$',
-            description: 'Token contract the budget is denominated in'
-        },
-        remainingAmount: {
-            type: 'string',
-            description: 'Remaining spendable amount, in token base units'
-        },
-        spentAmount: {
-            type: 'string',
-            description: 'Amount already spent, in token base units'
-        },
-        createdById: {
-            type: 'string',
-            nullable: true,
-            description: 'Id of the API key that created this budget'
-        },
-        createdAt: {
-            type: 'string',
-            format: 'date-time'
-        },
-        updatedAt: {
-            type: 'string',
-            format: 'date-time'
-        }
-    },
-    required: [
-        'id',
-        'apiKeyId',
-        'evmWalletId',
-        'evmWalletAddress',
-        'caip2Network',
-        'asset',
-        'remainingAmount',
-        'spentAmount',
-        'createdById',
-        'createdAt',
-        'updatedAt'
-    ]
-} as const;
-
 export const X402PaymentAttemptSchema = {
     type: 'object',
     properties: {
@@ -6883,8 +6819,7 @@ export const RailReadinessSchema = {
                                         'x402.rpc_url',
                                         'x402.facilitator',
                                         'x402.selling_wallet',
-                                        'x402.purchasing_wallet',
-                                        'x402.budget'
+                                        'x402.purchasing_wallet'
                                     ],
                                     description: 'Stable check identifier. The admin UI maps setup steps onto these'
                                 },
@@ -6948,8 +6883,7 @@ export const RailReadinessSchema = {
                                                     'x402.rpc_url',
                                                     'x402.facilitator',
                                                     'x402.selling_wallet',
-                                                    'x402.purchasing_wallet',
-                                                    'x402.budget'
+                                                    'x402.purchasing_wallet'
                                                 ],
                                                 description: 'Stable check identifier. The admin UI maps setup steps onto these'
                                             },

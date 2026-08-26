@@ -3,7 +3,6 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
 import { isTestnetEnv } from '@/lib/x402-rail';
 import {
-  getX402Budgets,
   getX402LowBalance,
   getX402Networks,
   getX402NetworksAvailable,
@@ -12,7 +11,6 @@ import {
   getX402SettlementsCount,
   getX402Wallets,
   getX402WalletsBalance,
-  X402Budget,
   X402LowBalanceRule,
   X402AvailableNetwork,
   X402Network,
@@ -181,10 +179,10 @@ export function useX402NetworksForSession(options?: {
 
 /**
  * Eagerly loads every managed EVM wallet (paging through /x402/wallets). Used by
- * the chain/budget pickers and setup flows that need the full set to choose
- * from. `enabled` lets form dialogs defer the load until opened. Pass `type` to
- * fetch only Purchasing (budget) or Selling (facilitator) wallets. Read-only
- * labels should use the denormalized address on the network/budget instead.
+ * the chain pickers and setup flows that need the full set to choose from.
+ * `enabled` lets form dialogs defer the load until opened. Pass `type` to
+ * fetch only Purchasing or Selling (facilitator) wallets. Read-only
+ * labels should use the denormalized address on the network instead.
  */
 export function useX402Wallets(enabled = true, type?: X402Wallet['type'], networkId?: string) {
   const { apiClient, authorized, capabilities } = useAppContext();
@@ -283,31 +281,6 @@ export function useX402WalletsPaginated() {
     hasMore: Boolean(query.hasNextPage),
     isFetchingNextPage: query.isFetchingNextPage,
     loadMore,
-    isRefetching: query.isRefetching,
-    refetch: async () => {
-      await query.refetch();
-    },
-  };
-}
-
-export function useX402Budgets() {
-  const { apiClient, authorized } = useAppContext();
-
-  const query = useQuery({
-    queryKey: ['x402-budgets'],
-    queryFn: async () => {
-      const response = await handleApiCall(() => getX402Budgets({ client: apiClient, query: {} }), {
-        errorMessage: 'Failed to fetch budgets',
-      });
-      return response?.data?.data?.Budgets ?? [];
-    },
-    enabled: !!apiClient && authorized,
-    staleTime: 30000,
-  });
-
-  return {
-    budgets: (query.data ?? []) as X402Budget[],
-    isLoading: query.isLoading,
     isRefetching: query.isRefetching,
     refetch: async () => {
       await query.refetch();
