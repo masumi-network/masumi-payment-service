@@ -5,8 +5,16 @@ const config: { COINGECKO_API_KEY?: string; IS_COINGECKO_DEMO?: boolean } = {};
 jest.unstable_mockModule('@masumi/payment-core/config', () => ({ CONFIG: config }));
 jest.unstable_mockModule('@masumi/payment-core/logger', () => ({ logger: { error: jest.fn() } }));
 
+const getRange = jest.fn<() => Promise<{ prices: number[][] }>>();
+jest.unstable_mockModule('@coingecko/coingecko-typescript', () => ({
+	default: class {
+		coins = { marketChart: { getRange } };
+	},
+}));
+
 const {
 	assertPriceableRange,
+	clearFiatRateCache,
 	fetchDailyFiatRates,
 	getCoinId,
 	getEarliestPriceableDate,
@@ -21,6 +29,9 @@ describe('CoinGecko rate provider', () => {
 	beforeEach(() => {
 		config.COINGECKO_API_KEY = 'demo-key';
 		config.IS_COINGECKO_DEMO = true;
+		getRange.mockReset();
+		getRange.mockResolvedValue({ prices: [[Date.UTC(2026, 7, 25), 0.5]] });
+		clearFiatRateCache();
 	});
 
 	it('prices preprod tUSDM off the mainnet listing, which is the only one that exists', () => {
@@ -48,9 +59,9 @@ describe('CoinGecko rate provider', () => {
 	it('asks the operator to set a key when none is configured', async () => {
 		config.COINGECKO_API_KEY = undefined;
 		expect(isFiatRateProviderConfigured()).toBe(false);
-		await expect(
-			fetchDailyFiatRates({ units: ['lovelace'], currency: 'usd', from: NOW, to: NOW }),
-		).rejects.toThrow(/COINGECKO_API_KEY/u);
+		await expect(fetchDailyFiatRates({ units: ['lovelace'], currency: 'usd', from: NOW, to: NOW })).rejects.toThrow(
+			/COINGECKO_API_KEY/u,
+		);
 	});
 
 	it('never calls the provider for a report holding only unlisted tokens', async () => {
@@ -63,5 +74,32 @@ describe('CoinGecko rate provider', () => {
 		});
 		expect(result.unsupportedUnits).toEqual(['deadbeefsometoken']);
 		expect(result.daily.size).toBe(0);
+	});
+
+	it('reads the provider once for a window a report pages through', async () => {
+		const request = { units: ['lovelace'], currency: 'usd', from: NOW, to: NOW };
+		const first = await fetchDailyFiatRates(request);
+		const second = await fetchDailyFiatRates({ ...request });
+		// One answer serves every page. Without this a ten-page report would spend
+		// ten rounds of a demo key's request budget on the same question.
+		expect(getRange).toHaveBeenCalledTimes(1);
+		expect(second.daily.get('lovelace')).toEqual(first.daily.get('lovelace'));
+	});
+
+	it('reads the provider again for a different window', async () => {
+		await fetchDailyFiatRates({ units: ['lovelace'], currency: 'usd', from: NOW, to: NOW });
+		await fetchDailyFiatRates({
+			units: ['lovelace'],
+			currency: 'usd',
+			from: NOW,
+			to: new Date('2026-08-26T00:00:00.000Z'),
+		});
+		expect(getRange).toHaveBeenCalledTimes(2);
+	});
+
+	it('reads the provider again for a different currency', async () => {
+		await fetchDailyFiatRates({ units: ['lovelace'], currency: 'usd', from: NOW, to: NOW });
+		await fetchDailyFiatRates({ units: ['lovelace'], currency: 'eur', from: NOW, to: NOW });
+		expect(getRange).toHaveBeenCalledTimes(2);
 	});
 });
