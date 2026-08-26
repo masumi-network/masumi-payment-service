@@ -4,6 +4,7 @@ import type { Client } from '@/lib/api/generated/client';
 import type { PostReportsSummaryData } from '@/lib/api/generated';
 import {
   fetchTransactionReportExport,
+  OBJECT_URL_RELEASE_DELAY_MS,
   saveTransactionReportExport,
   type ReportExportKind,
 } from './download';
@@ -155,6 +156,56 @@ test('saveTransactionReportExport always releases its URL when the browser click
     assert.equal(anchor.download, 'masumi-transactions.csv');
     assert.equal(clicked, true);
     assert.equal(removed, true);
+    assert.equal(revokedUrl, 'blob:report');
+  } finally {
+    if (documentDescriptor) {
+      Object.defineProperty(globalThis, 'document', documentDescriptor);
+    } else {
+      Reflect.deleteProperty(globalThis, 'document');
+    }
+    if (createObjectUrlDescriptor) {
+      Object.defineProperty(URL, 'createObjectURL', createObjectUrlDescriptor);
+    } else {
+      Reflect.deleteProperty(URL, 'createObjectURL');
+    }
+    if (revokeObjectUrlDescriptor) {
+      Object.defineProperty(URL, 'revokeObjectURL', revokeObjectUrlDescriptor);
+    } else {
+      Reflect.deleteProperty(URL, 'revokeObjectURL');
+    }
+  }
+});
+
+test('saveTransactionReportExport keeps its URL alive until the download has started', async () => {
+  const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const createObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
+  const revokeObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
+  let revokedUrl: string | undefined;
+  const anchor = { href: '', download: '', click: () => {}, remove: () => {} };
+
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: { createElement: () => anchor, body: { appendChild: () => anchor } },
+  });
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: () => 'blob:report',
+  });
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: (url: string) => {
+      revokedUrl = url;
+    },
+  });
+
+  try {
+    saveTransactionReportExport({ blob: new Blob(['csv']), filename: 'masumi-transactions.csv' });
+
+    // Revoking here is what cancels the download in the browsers that read the
+    // blob after the click returns.
+    assert.equal(revokedUrl, undefined);
+
+    await new Promise((resolve) => setTimeout(resolve, OBJECT_URL_RELEASE_DELAY_MS + 50));
     assert.equal(revokedUrl, 'blob:report');
   } finally {
     if (documentDescriptor) {
