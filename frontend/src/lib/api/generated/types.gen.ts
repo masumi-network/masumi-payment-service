@@ -15737,6 +15737,16 @@ export type GetReportsFacetsResponses = {
     200: {
         status: 'success';
         data: {
+            fiat: {
+                isConfigured: boolean;
+                isDemoKey: boolean;
+                historyDays: number | null;
+                earliestPriceableDate: Date | null;
+                currencies: Array<string>;
+                modes: Array<'PeriodAverage' | 'AccountingDate' | 'TransactionTime'>;
+                attribution: string;
+                setupHint: string;
+            };
             paymentSources: Array<{
                 id: string;
                 network: 'Preprod' | 'Mainnet';
@@ -15778,7 +15788,7 @@ export type PostReportsTransactionsData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'BucketAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
@@ -15842,9 +15852,9 @@ export type PostReportsTransactionsErrors = {
         };
     };
     /**
-     * Fiat conversion is not available yet
+     * The exchange rate provider could not price a requested asset
      */
-    501: {
+    502: {
         status: 'error';
         error: {
             message: string;
@@ -15905,6 +15915,11 @@ export type PostReportsTransactionsResponses = {
                     sellerRevenueRecognizedAt: Date | null;
                     buyerGrossSpendAt: Date | null;
                     buyerReturnedAt: Date | null;
+                };
+                settlement: {
+                    resultSubmittedTxHash: string | null;
+                    settlementTxHash: string | null;
+                    settlementTxType: 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
                 };
                 seller: {
                     grossRevenue: Array<{
@@ -16044,6 +16059,21 @@ export type PostReportsTransactionsResponses = {
                     revenueMode: 'Billable' | 'CashReceived' | 'RequestedGross';
                     timeZone: string;
                 };
+                fiat: {
+                    currency: string;
+                    mode: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
+                    provider: 'coingecko' | 'supplied';
+                    attribution: string | null;
+                    isDemoKey: boolean;
+                    demoHistoryDays: number | null;
+                    completeness: 'complete' | 'partial';
+                    unpricedUnits: Array<string>;
+                    rates: Array<{
+                        unit: string;
+                        rate: string;
+                        source: 'supplied' | 'coingecko';
+                    }> | null;
+                } | null;
                 warnings: Array<{
                     code: string;
                     message: string;
@@ -16073,7 +16103,7 @@ export type PostReportsSummaryData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'BucketAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
@@ -16136,9 +16166,9 @@ export type PostReportsSummaryErrors = {
         };
     };
     /**
-     * Fiat conversion is not available yet
+     * The exchange rate provider could not price a requested asset
      */
-    501: {
+    502: {
         status: 'error';
         error: {
             message: string;
@@ -16177,6 +16207,16 @@ export type PostReportsSummaryResponses = {
                 transactionCount: number;
                 transactionCountCompleteness: 'complete' | 'partial';
                 sellerGrossRevenue: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                sellerPendingRevenue: {
                     amounts: Array<{
                         unit: string;
                         rawAmount: string;
@@ -16309,6 +16349,16 @@ export type PostReportsSummaryResponses = {
                         }>;
                         completeness: 'complete' | 'partial';
                     };
+                    sellerPendingRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
                     protocolFees: {
                         amounts: Array<{
                             unit: string;
@@ -16418,6 +16468,16 @@ export type PostReportsSummaryResponses = {
                     transactionCount: number;
                     transactionCountCompleteness: 'complete' | 'partial';
                     sellerGrossRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerPendingRevenue: {
                         amounts: Array<{
                             unit: string;
                             rawAmount: string;
@@ -16553,6 +16613,21 @@ export type PostReportsSummaryResponses = {
                     revenueMode: 'Billable' | 'CashReceived' | 'RequestedGross';
                     timeZone: string;
                 };
+                fiat: {
+                    currency: string;
+                    mode: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
+                    provider: 'coingecko' | 'supplied';
+                    attribution: string | null;
+                    isDemoKey: boolean;
+                    demoHistoryDays: number | null;
+                    completeness: 'complete' | 'partial';
+                    unpricedUnits: Array<string>;
+                    rates: Array<{
+                        unit: string;
+                        rate: string;
+                        source: 'supplied' | 'coingecko';
+                    }> | null;
+                } | null;
                 warnings: Array<{
                     code: string;
                     message: string;
@@ -16582,7 +16657,7 @@ export type PostReportsTransactionsCsvData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'BucketAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
@@ -16645,9 +16720,9 @@ export type PostReportsTransactionsCsvErrors = {
         };
     };
     /**
-     * Fiat conversion is not available yet
+     * The exchange rate provider could not price a requested asset
      */
-    501: {
+    502: {
         status: 'error';
         error: {
             message: string;
@@ -16701,7 +16776,7 @@ export type PostReportsWalletSummaryCsvData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'BucketAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
@@ -16764,9 +16839,9 @@ export type PostReportsWalletSummaryCsvErrors = {
         };
     };
     /**
-     * Fiat conversion is not available yet
+     * The exchange rate provider could not price a requested asset
      */
-    501: {
+    502: {
         status: 'error';
         error: {
             message: string;
@@ -16820,7 +16895,7 @@ export type PostReportsTotalsCsvData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'BucketAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
@@ -16883,9 +16958,9 @@ export type PostReportsTotalsCsvErrors = {
         };
     };
     /**
-     * Fiat conversion is not available yet
+     * The exchange rate provider could not price a requested asset
      */
-    501: {
+    502: {
         status: 'error';
         error: {
             message: string;
@@ -16939,7 +17014,7 @@ export type PostReportsExportZipData = {
         timeZone?: string;
         fiat?: {
             currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
-            mode?: 'BucketAverage' | 'AccountingDate';
+            mode?: 'PeriodAverage' | 'AccountingDate' | 'TransactionTime';
             suppliedRates?: Array<{
                 unit: string;
                 rate: string;
@@ -17002,9 +17077,9 @@ export type PostReportsExportZipErrors = {
         };
     };
     /**
-     * Fiat conversion is not available yet
+     * The exchange rate provider could not price a requested asset
      */
-    501: {
+    502: {
         status: 'error';
         error: {
             message: string;

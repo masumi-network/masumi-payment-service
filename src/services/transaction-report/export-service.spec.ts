@@ -55,7 +55,32 @@ const totals = Buffer.from('totals');
 const report = {
 	rows: [{ id: 'row-1' }],
 	aggregate: { totals: {}, wallets: [], bucket: 'Day' },
-	metadata: { generatedAt: new Date('2026-08-24T12:34:56.789Z') },
+	metadata: {
+		generatedAt: new Date('2026-08-24T12:34:56.789Z'),
+		asOf: new Date('2026-08-24T12:00:00.000Z'),
+		paymentSource: {
+			id: 'source-1',
+			network: 'Preprod',
+			paymentSourceType: 'Web3CardanoV1',
+			feeRatePermille: 50,
+			smartContractAddress: 'addr_test1w',
+			deletedAt: null,
+		},
+		filters: {
+			paymentSourceId: 'source-1',
+			managedWalletIds: null,
+			externalAddresses: [],
+			roles: ['Buyer', 'Seller'],
+			states: [],
+			from: new Date('2026-08-01T00:00:00.000Z'),
+			to: new Date('2026-08-24T00:00:00.000Z'),
+			dateBasis: 'CreatedAt',
+			revenueMode: 'Billable',
+			timeZone: 'Etc/UTC',
+		},
+		fiat: null,
+		warnings: [],
+	},
 };
 const artifact = {
 	filePath: '/tmp/report.csv',
@@ -94,7 +119,7 @@ describe('createReportExport', () => {
 		expect(mockStageReportZip).not.toHaveBeenCalled();
 	});
 
-	it('stages one ZIP from the same three CSV buffers', async () => {
+	it('stages one ZIP from the same three CSV buffers, alongside the README', async () => {
 		await createReportExport(input, ctx, 'zip');
 
 		expect(mockGetCompleteReportData).toHaveBeenCalledTimes(1);
@@ -129,9 +154,11 @@ describe('createReportExport', () => {
 			},
 		);
 		expect(mockStageReportZip).toHaveBeenCalledWith(
-			{ transactions, walletSummary, totals },
+			expect.objectContaining({ transactions, walletSummary, totals }),
 			'masumi-transaction-report-20260824T123456Z',
 		);
+		const [zipFiles] = mockStageReportZip.mock.calls[0] as [{ readme: Buffer }];
+		expect(zipFiles.readme.toString('utf8')).toContain('# Masumi transaction report');
 		expect(mockStageReportCsv).not.toHaveBeenCalled();
 	});
 

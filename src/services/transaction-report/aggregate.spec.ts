@@ -59,6 +59,7 @@ function record(overrides: Partial<ReportRequestRecord> = {}): ReportRequestReco
 		sellerReturnAddress: null,
 		paymentSourceType: 'Web3CardanoV2',
 		configuredFeeRatePermille: 50,
+		resultHash: 'result-hash',
 		unlockTime: BigInt(new Date('2026-01-02T00:00:00.000Z').getTime()),
 		collateralReturnLovelace: 2_000_000n,
 		requestedFunds: [{ unit: 'lovelace', amount: 100_000_000n }],
@@ -122,6 +123,74 @@ describe('chooseReportBucket', () => {
 			chooseReportBucket(new Date('2026-01-02T00:00:00.000Z'), new Date('2026-01-01T00:00:00.000Z'), 'Day'),
 		).toThrow('must be after');
 	});
+});
+
+describe('aggregateReportRows pending revenue', () => {
+	/** Locked, and the dispute window closes well after the report's as-of time. */
+	const pending = (overrides: Partial<ReportRequestRecord> = {}) =>
+		row({
+			id: 'pending-1',
+			onChainState: 'FundsLocked',
+			unlockTime: BigInt(new Date('2027-06-01T00:00:00.000Z').getTime()),
+			transactions: [transaction('lock', 'FundsLocked', '2026-01-02T12:00:00.000Z')],
+			...overrides,
+		});
+
+	const aggregate = (rows: ReportRow[], dateBasis: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt') =>
+		aggregateReportRows(
+			rows,
+			'Day',
+			'Etc/UTC',
+			new Date('2026-01-01T00:00:00.000Z'),
+			new Date('2026-01-05T00:00:00.000Z'),
+			dateBasis,
+		);
+
+	it('counts money that is locked but not earned yet', () => {
+		const result = aggregate([pending()], 'CreatedAt');
+		expect(amount(result.totals.sellerPendingRevenue)).toBe(100_000_000n);
+		expect(amount(result.totals.sellerGrossRevenue)).toBe(0n);
+	});
+
+	it('counts nothing once the escrow has ended', () => {
+		expect(amount(aggregate([row()], 'CreatedAt').totals.sellerPendingRevenue)).toBe(0n);
+	});
+
+	it('counts nothing once the dispute window has closed, because it is earned by then', () => {
+		const earned = pending({
+			onChainState: 'ResultSubmitted',
+			unlockTime: BigInt(new Date('2026-01-03T00:00:00.000Z').getTime()),
+			transactions: [
+				transaction('lock', 'FundsLocked', '2026-01-02T12:00:00.000Z'),
+				transaction('result', 'ResultSubmitted', '2026-01-02T18:00:00.000Z'),
+			],
+		});
+		expect(amount(aggregate([earned], 'CreatedAt').totals.sellerPendingRevenue)).toBe(0n);
+	});
+
+	it('counts nothing without a confirmed lock, because the money is not proven to be in escrow', () => {
+		const unproven = pending({ transactions: [] });
+		expect(amount(aggregate([unproven], 'CreatedAt').totals.sellerPendingRevenue)).toBe(0n);
+	});
+
+	it('counts nothing for an invalid datum, which is a dead end rather than a wait', () => {
+		expect(
+			amount(aggregate([pending({ onChainState: 'FundsOrDatumInvalid' })], 'CreatedAt').totals.sellerPendingRevenue),
+		).toBe(0n);
+	});
+
+	it.each(['CreatedAt', 'FundsLockedAt', 'RevenueRecognizedAt'] as const)(
+		'places it on the day the funds were locked whatever the %s basis is',
+		(dateBasis) => {
+			// The request was created on 1 January and locked on 2 January. The
+			// day it will be earned on has not happened, so the lock day is the
+			// only date it has.
+			const result = aggregate([pending()], dateBasis);
+			const locked = result.history.find((entry) => entry.bucketStart.toISOString().startsWith('2026-01-02'));
+			expect(amount(locked!.metrics.sellerPendingRevenue)).toBe(100_000_000n);
+			expect(historyAmount(result, 'sellerPendingRevenue')).toBe(100_000_000n);
+		},
+	);
 });
 
 describe('aggregateReportRows totals', () => {
@@ -291,9 +360,11 @@ describe('aggregateReportRows totals', () => {
 		);
 
 		expect(exact.totals.transactionCount).toBe(1);
-		expect(amount(exact.totals.adminCardanoFees)).toBe(0n);
+		// Both sides settled inside the window, so the actor counters are exact and
+		// the admin share is the remainder: 100 paid, 30 by the two actors.
+		expect(amount(exact.totals.actorCardanoFees)).toBe(30n);
+		expect(amount(exact.totals.adminCardanoFees)).toBe(70n);
 		expect(amount(exact.totals.totalCardanoFees)).toBe(100n);
-		expect(exact.totals.adminCardanoFees.completeness).toBe('partial');
 		expect(exact.wallets.map((wallet) => wallet.metrics.transactionCount)).toEqual([1, 1]);
 		expect(exact.wallets.reduce((total, wallet) => total + amount(wallet.metrics.totalCardanoFees), 0n)).toBe(100n);
 		expect(exact.wallets.filter((wallet) => amount(wallet.metrics.totalCardanoFees) > 0n)).toHaveLength(1);
@@ -408,7 +479,9 @@ describe('aggregateReportRows totals', () => {
 		expect(amount(buyerWallet.metrics.adminCardanoFees)).toBe(0n);
 		expect(buyerWallet.metrics.totalCardanoFees.completeness).toBe('complete');
 		expect(buyerWallet.metrics.adminCardanoFees.completeness).toBe('partial');
-		expect(result.warnings.map((warning) => warning.code)).toContain('SHARED_CARDANO_FEE_COMPONENT_ALLOCATION');
+		// Sharing a fee between the requests it settled is how the report works,
+		// not a shortfall in it, so it raises no note of its own.
+		expect(result.warnings.map((warning) => warning.code)).not.toContain('SHARED_CARDANO_FEE_COMPONENT_ALLOCATION');
 	});
 
 	it('counts a covered V2 batch fee once when every related request is selected', () => {
@@ -485,7 +558,7 @@ describe('aggregateReportRows totals', () => {
 		expect(result.warnings.map((warning) => warning.code)).toContain('CARDANO_FEE_COVERAGE_PARTIAL');
 	});
 
-	it('excludes a whole shared fee when a related logical payment is filtered out', () => {
+	it('takes an equal share of a shared fee when a related logical payment is filtered out', () => {
 		const seller = row({
 			id: 'seller-logical-filter',
 			transactions: [
@@ -508,7 +581,16 @@ describe('aggregateReportRows totals', () => {
 			'CreatedAt',
 		);
 
-		expect(result.totals.totalCardanoFees).toEqual({ amounts: [], completeness: 'partial' });
+		// The transaction settled two requests and the report holds one of them,
+		// so the report owes half the fee. Half of 500 is exactly 250, and the
+		// other half belongs to a request outside this report, so the figure is
+		// exact for what the report covers.
+		expect(result.totals.totalCardanoFees).toEqual({
+			amounts: [{ unit: 'lovelace', amount: 250n }],
+			completeness: 'complete',
+		});
+		// Admin fees stay unknown here for a separate reason: they are the total
+		// less the actor fees, and this row's actor allocation is itself partial.
 		expect(result.totals.adminCardanoFees).toEqual({ amounts: [], completeness: 'partial' });
 	});
 
@@ -797,7 +879,10 @@ describe('aggregateReportRows history', () => {
 		expect(amount(result.history[1].metrics.buyerGrossSpend, 'policyasset')).toBe(0n);
 		expect(amount(result.history[2].metrics.returnedFunds, 'policyasset')).toBe(1_000n);
 		expect(amount(result.history[2].metrics.buyerNetSpend, 'policyasset')).toBe(-1_000n);
-		expect(result.history.map((entry) => entry.metrics.transactionCount)).toEqual([1, 0, 1]);
+		// One request, counted once, on the first day it touched. The money still
+		// splits across both chain events, but the count has to foot to the total.
+		expect(result.history.map((entry) => entry.metrics.transactionCount)).toEqual([1, 0, 0]);
+		expect(result.totals.transactionCount).toBe(1);
 		expect(result.totals.buyerNetSpend.amounts).toEqual([]);
 	});
 
@@ -989,7 +1074,7 @@ describe('aggregateReportRows history', () => {
 				expectedWallet,
 			);
 			expect(result.historyFeeCompleteness).toBe('partial');
-			expect(result.warnings.map((warning) => warning.code)).toContain('SHARED_CARDANO_FEE_COMPONENT_ALLOCATION');
+			expect(result.warnings.map((warning) => warning.code)).not.toContain('SHARED_CARDANO_FEE_COMPONENT_ALLOCATION');
 		},
 	);
 
@@ -1213,5 +1298,82 @@ describe('aggregateReportRows history', () => {
 			),
 		).toThrow(stopped);
 		expect(checks).toBe(3);
+	});
+});
+
+describe('aggregateReportRows fiat zero placeholders', () => {
+	it('keeps history complete when an unfinished request carries only a zero fiat amount', () => {
+		const from = new Date('2026-03-01T00:00:00.000Z');
+		const to = new Date('2026-03-05T00:00:00.000Z');
+		const pending = row(
+			{
+				onChainState: 'FundsLocked',
+				transactions: [transaction('lock', 'FundsLocked', '2026-03-02T12:00:00.000Z')],
+			},
+			'Billable',
+			'RevenueRecognizedAt',
+			from,
+			to,
+		);
+		const seller = pending.seller;
+		if (seller == null) throw new Error('the fixture must carry a seller side');
+		// Fiat conversion appends a zero fiat amount to every figure, empty ones included.
+		const converted: ReportRow = {
+			...pending,
+			seller: { ...seller, grossRevenue: [{ unit: 'fiat:eur', amount: 0n }] },
+		};
+
+		const result = aggregateReportRows([converted], 'Day', 'Etc/UTC', from, to, 'RevenueRecognizedAt');
+
+		for (const entry of result.history) {
+			expect(entry.metrics.sellerGrossRevenue.completeness).toBe('complete');
+		}
+	});
+});
+
+describe('aggregateReportRows footing', () => {
+	it('adds the daily counts and the daily actor fees back up to the period totals', () => {
+		const from = new Date('2026-03-01T00:00:00.000Z');
+		const to = new Date('2026-03-05T00:00:00.000Z');
+		const seller = row(
+			{
+				sellerCardanoFees: 300_000n,
+				transactions: [
+					transaction('lock', 'FundsLocked', '2026-03-01T12:00:00.000Z'),
+					transaction('withdraw', 'Withdrawn', '2026-03-03T12:00:00.000Z'),
+				],
+			},
+			'Billable',
+			'RevenueRecognizedAt',
+			from,
+			to,
+		);
+		const buyer = row(
+			{
+				id: 'request-2',
+				role: 'Buyer',
+				requestType: 'PurchaseRequest',
+				blockchainIdentifier: 'chain-2',
+				buyerCardanoFees: 200_000n,
+				transactions: [transaction('buyer-lock', 'FundsLocked', '2026-03-02T12:00:00.000Z')],
+			},
+			'Billable',
+			'RevenueRecognizedAt',
+			from,
+			to,
+		);
+		const result = aggregateReportRows([seller, buyer], 'Day', 'Etc/UTC', from, to, 'RevenueRecognizedAt');
+
+		const countSum = result.history.reduce((total, entry) => total + entry.metrics.transactionCount, 0);
+		expect(countSum).toBe(result.totals.transactionCount);
+
+		const metricNames = Object.keys(result.totals).filter(
+			(key): key is Exclude<keyof ReportAggregate, 'transactionCount' | 'transactionCountCompleteness'> =>
+				key !== 'transactionCount' && key !== 'transactionCountCompleteness',
+		);
+		expect(metricNames.length).toBeGreaterThan(0);
+		for (const metricName of metricNames) {
+			expect([metricName, historyAmount(result, metricName)]).toEqual([metricName, amount(result.totals[metricName])]);
+		}
 	});
 });

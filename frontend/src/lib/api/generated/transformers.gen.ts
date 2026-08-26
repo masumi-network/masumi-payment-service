@@ -799,6 +799,9 @@ export const postTxSyncQuarantineRetryResponseTransformer = async (data: any): P
 };
 
 export const getReportsFacetsResponseTransformer = async (data: any): Promise<GetReportsFacetsResponse> => {
+    if (data.data.fiat.earliestPriceableDate) {
+        data.data.fiat.earliestPriceableDate = new Date(data.data.fiat.earliestPriceableDate);
+    }
     data.data.paymentSources = data.data.paymentSources.map((item: any) => {
         if (item.deletedAt) {
             item.deletedAt = new Date(item.deletedAt);

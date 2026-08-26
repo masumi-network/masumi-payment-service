@@ -20,6 +20,7 @@ export type StagedReportArtifact = {
 };
 
 export type ReportCsvFiles = {
+	readme: Buffer;
 	transactions: Buffer;
 	walletSummary: Buffer;
 	totals: Buffer;
@@ -86,6 +87,7 @@ async function writeZipExclusive(filePath: string, files: ReportCsvFiles): Promi
 
 	try {
 		for (const [filename, content] of [
+			['README.md', files.readme],
 			['transactions.csv', files.transactions],
 			['wallet-summary.csv', files.walletSummary],
 			['totals.csv', files.totals],

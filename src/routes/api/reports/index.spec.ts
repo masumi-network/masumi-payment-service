@@ -87,6 +87,7 @@ function metadata() {
 		asOf: generatedAt,
 		paymentSource: source,
 		filters: filters(),
+		fiat: null,
 		warnings: [],
 	};
 }
@@ -105,6 +106,7 @@ function aggregate() {
 		transactionCount: 0,
 		transactionCountCompleteness: 'complete',
 		sellerGrossRevenue: metric(),
+		sellerPendingRevenue: metric(),
 		protocolFees: metric(),
 		sellerCardanoFees: metric(),
 		actorCardanoFees: metric(),
@@ -134,6 +136,16 @@ describe('report JSON endpoints', () => {
 		jest.clearAllMocks();
 		mockFindApiKey.mockResolvedValue(apiKey());
 		mockGetFacets.mockResolvedValue({
+			fiat: {
+				isConfigured: false,
+				isDemoKey: false,
+				historyDays: null,
+				earliestPriceableDate: null,
+				currencies: ['usd'],
+				modes: ['PeriodAverage'],
+				attribution: 'Exchange rates by CoinGecko',
+				setupHint: 'Set COINGECKO_API_KEY.',
+			},
 			paymentSources: [source],
 			managedWallets: [
 				{

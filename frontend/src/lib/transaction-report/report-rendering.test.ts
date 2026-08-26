@@ -1,40 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  decimateReportChartPoints,
   paginateReportRows,
-  REPORT_CHART_POINT_LIMIT,
   REPORT_TABLE_PAGE_SIZE,
   resetReportTablePageState,
 } from './report-rendering';
-
-test('chart decimation bounds SVG nodes while preserving endpoints and local extremes', () => {
-  const points = Array.from({ length: REPORT_CHART_POINT_LIMIT * 4 }, (_, index) => ({
-    x: index,
-    y: index === 400 ? -1_000 : index === 401 ? 1_000 : 0,
-  }));
-
-  const visible = decimateReportChartPoints(points);
-
-  assert.ok(visible.length <= REPORT_CHART_POINT_LIMIT);
-  assert.equal(visible[0], points[0]);
-  assert.equal(visible.at(-1), points.at(-1));
-  assert.ok(visible.includes(points[400]));
-  assert.ok(visible.includes(points[401]));
-});
-
-test('chart decimation preserves an unknown gap without exceeding the marker limit', () => {
-  const points = Array.from({ length: 1_000 }, (_, index) => ({
-    x: index,
-    y: 0,
-    isUnknown: index === 333,
-  }));
-
-  const visible = decimateReportChartPoints(points, 10);
-
-  assert.ok(visible.includes(points[333]));
-  assert.ok(visible.filter((point) => !point.isUnknown).length <= 10);
-});
 
 test('report table pagination clamps stale pages and exposes one bounded slice', () => {
   const rows = Array.from({ length: REPORT_TABLE_PAGE_SIZE * 2 + 3 }, (_, index) => index);

@@ -1,47 +1,57 @@
-import { useState } from 'react';
-import { Download, Loader2, RefreshCw, RotateCcw, TrendingUp } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { useMemo, useState } from 'react';
+import { Download, Loader2, RefreshCw, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { InfoHint } from '@/components/ui/info-hint';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { shortenAddress } from '@/lib/utils';
 import {
   collectReportAssetUnits,
   getReportAssetDescriptor,
-  getReportTransactionCountDisplay,
   resolveReportAssetUnit,
 } from '@/lib/transaction-report/dashboard-metrics';
-import { FinancialHistoryCharts } from './FinancialHistoryCharts';
-import { FinancialMetricCards } from './FinancialMetricCards';
-import { FinancialReportFilters } from './FinancialReportFilters';
+import {
+  REPORT_DATE_PRESET_LABELS,
+  REPORT_METRIC_LABELS,
+  REPORT_SERIES_COLORS,
+} from '@/lib/transaction-report/report-labels';
+import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { FinancialWalletTable } from './FinancialWalletTable';
+import { ReportCompletenessNote } from './report/ReportCompleteness';
+import {
+  NO_FIAT_CURRENCY,
+  fiatCurrencyFromUnit,
+  fiatUnitFor,
+} from '@/lib/transaction-report/fiat-settings';
+import { ReportFilterBar } from './report/ReportFilterBar';
+import { ReportOverviewTab } from './report/ReportOverviewTab';
+import { ReportSeriesTab } from './report/ReportSeriesTab';
+import { ReportViewSwitch } from './report/ReportViewSwitch';
 import { useFinancialReportModel } from './useFinancialReportModel';
 
-function humanize(value: string): string {
-  return value.replace(/([A-Z])/g, ' $1').trim();
-}
+const EXPORT_VIEW_DEFAULTS = {
+  roles: ['Buyer', 'Seller'],
+  states: [],
+  hasUnmappedFilters: false,
+} as const;
+
+const OVERVIEW_TAB = 'Overview';
+const REVENUE_TAB = 'Revenue';
+const SPENDING_TAB = 'Spending';
+const FEES_TAB = 'Fees';
+const WALLETS_TAB = 'Wallets';
 
 function ReportLoadingState() {
   return (
-    <div className="space-y-4" aria-label="Calculating financial report">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="space-y-4" aria-label="Building the report">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }, (_, index) => (
-          <Card key={index} className="shadow-none">
-            <CardContent className="space-y-3 p-5">
-              <Skeleton className="h-4 w-28" />
-              <Skeleton className="h-7 w-40" />
-            </CardContent>
-          </Card>
+          <div key={index} className="space-y-3 rounded-lg border p-6">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-7 w-40" />
+          </div>
         ))}
       </div>
-      <Skeleton className="h-64 w-full" />
+      <Skeleton className="h-72 w-full rounded-lg" />
     </div>
   );
 }
@@ -49,17 +59,34 @@ function ReportLoadingState() {
 export function FinancialReportSection() {
   const model = useFinancialReportModel();
   const [requestedUnit, setRequestedUnit] = useState('');
-  const assetUnits = model.summary ? collectReportAssetUnits(model.summary) : [];
-  const selectedUnit = resolveReportAssetUnit(assetUnits, requestedUnit);
+  const [requestedTab, setRequestedTab] = useState(OVERVIEW_TAB);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+
   const summary = model.summary;
-  const transactionCountDisplay = summary
-    ? getReportTransactionCountDisplay(
-        summary.totals.transactionCount,
-        summary.totals.transactionCountCompleteness,
-        'distinct logical payment',
-      )
-    : null;
+  const assetUnits = summary ? collectReportAssetUnits(summary) : [];
+  const fiatUnit =
+    model.form.fiatCurrency === NO_FIAT_CURRENCY ? null : fiatUnitFor(model.form.fiatCurrency);
+  const selectedUnit = resolveReportAssetUnit(assetUnits, requestedUnit, fiatUnit);
+  const roleSet = new Set(model.form.roles);
+  const hasSeller = roleSet.has('Seller');
+  const hasBuyer = roleSet.has('Buyer');
+
+  const views = useMemo(
+    () => [
+      OVERVIEW_TAB,
+      ...(hasSeller ? [REVENUE_TAB] : []),
+      ...(hasBuyer ? [SPENDING_TAB] : []),
+      FEES_TAB,
+      WALLETS_TAB,
+    ],
+    [hasBuyer, hasSeller],
+  );
+  // Turning a side off can remove the open view, so fall back rather than
+  // leaving the reader on a view that no longer exists.
+  const activeTab = views.includes(requestedTab) ? requestedTab : OVERVIEW_TAB;
+
   const isBusy = model.isLoadingFacets || model.isLoadingSummary || model.isRefetching;
+  const periodLabel = REPORT_DATE_PRESET_LABELS[model.form.datePreset];
   const generatedAt = summary
     ? new Intl.DateTimeFormat(undefined, {
         dateStyle: 'medium',
@@ -67,8 +94,46 @@ export function FinancialReportSection() {
         timeZone: summary.metadata.filters.timeZone,
       }).format(summary.metadata.generatedAt)
     : null;
+  const assetLabel = (unit: string) =>
+    summary
+      ? (getReportAssetDescriptor(summary, unit).symbol ?? shortenAddress(unit, 8))
+      : shortenAddress(unit, 8);
+
+  const statusMessage = model.facetsError
+    ? { tone: 'error' as const, text: model.facetsError }
+    : model.fiatIssue
+      ? { tone: 'error' as const, text: model.fiatIssue.message }
+      : model.bodyError
+        ? { tone: 'error' as const, text: model.bodyError }
+        : model.summaryError
+          ? { tone: 'error' as const, text: model.summaryError }
+          : model.exportError
+            ? { tone: 'error' as const, text: model.exportError }
+            : model.isLoadingFacets
+              ? { tone: 'busy' as const, text: 'Loading the filters…' }
+              : isBusy
+                ? { tone: 'busy' as const, text: 'Building the report…' }
+                : model.paymentSources.length === 0
+                  ? { tone: 'quiet' as const, text: 'This network has no payment source yet.' }
+                  : null;
+
+  /**
+   * One control decides what the reader is looking at.
+   *
+   * The dropdown offers the assets and, below them, the same report converted
+   * to a currency. Picking a currency switches the conversion on; picking an
+   * asset switches it off again, so the setting can never disagree with the
+   * figures on screen.
+   */
+  const selectUnit = (unit: string) => {
+    const currency = fiatCurrencyFromUnit(unit);
+    setRequestedUnit(unit);
+    model.updateForm({ fiatCurrency: currency ?? NO_FIAT_CURRENCY });
+  };
+
   const resetReport = () => {
     setRequestedUnit('');
+    setRequestedTab(OVERVIEW_TAB);
     model.reset();
   };
 
@@ -79,33 +144,27 @@ export function FinancialReportSection() {
       aria-labelledby="financial-reporting-title"
       aria-busy={isBusy}
     >
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="mb-1 flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-500/10 text-teal-700 dark:text-teal-300">
-              <TrendingUp className="h-4 w-4" />
-            </div>
-            <h2 id="financial-reporting-title" className="text-lg font-semibold">
-              Financial reporting
-            </h2>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Revenue, spend, refunds, protocol fees, and Cardano fees from one server snapshot.
-          </p>
-          {summary && generatedAt && (
-            <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-              <span>{transactionCountDisplay?.text}</span>
-              {summary.totals.transactionCountCompleteness === 'partial' && (
-                <Badge variant="warning">Partial count</Badge>
-              )}
-              <span>
-                · {humanize(summary.metadata.filters.dateBasis)} · {summary.bucket} buckets ·{' '}
-                {summary.metadata.filters.timeZone} · generated {generatedAt}
-              </span>
-            </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex items-center gap-1.5">
+          <h2 id="financial-reporting-title" className="text-lg font-semibold">
+            Money and fees
+          </h2>
+          <InfoHint label="money and fees">
+            <p>What this payment source earned, spent, and paid in fees.</p>
+            <p>
+              Every figure comes from one database snapshot, so the cards, the history, and the
+              export agree with each other.
+            </p>
+          </InfoHint>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span>{periodLabel}</span>
+          {generatedAt && <span>· Updated {generatedAt}</span>}
+          {summary && (
+            <ReportCompletenessNote warnings={summary.metadata.warnings} className="ml-1" />
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="ml-auto flex flex-wrap gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={resetReport}>
             <RotateCcw className="h-4 w-4" /> Reset
           </Button>
@@ -122,150 +181,223 @@ export function FinancialReportSection() {
           <Button
             type="button"
             size="sm"
-            onClick={() => model.exportZip()}
-            disabled={model.isExporting || summary == null || model.body == null}
+            onClick={() => setIsExportOpen(true)}
+            disabled={model.body == null}
           >
-            {model.isExporting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            {model.isExporting ? 'Preparing…' : 'Download ZIP'}
+            <Download className="h-4 w-4" />
+            Export
           </Button>
         </div>
       </div>
 
-      <FinancialReportFilters
+      <ReportFilterBar
         form={model.form}
-        isLoading={model.isLoadingFacets}
         managedWallets={model.managedWallets}
-        paymentSources={model.paymentSources}
-        snapshotPaymentSource={summary?.metadata.paymentSource ?? null}
-        onSetPaymentSource={model.setPaymentSource}
+        assetUnits={assetUnits}
+        selectedUnit={selectedUnit}
+        assetLabel={assetLabel}
+        onSelectUnit={selectUnit}
         onToggleRole={model.toggleRole}
         onToggleState={model.toggleState}
         onToggleWallet={model.toggleWallet}
         onUpdate={model.updateForm}
+        fiatCapability={model.fiatCapability}
+        fiatIssue={model.fiatIssue}
       />
 
-      <div className="min-h-6" aria-live="polite">
-        {model.facetsError ? (
-          <p className="text-sm text-destructive">{model.facetsError}</p>
-        ) : model.isLoadingFacets ? (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading report filters…
-          </p>
-        ) : model.bodyError ? (
-          <p className="text-sm text-destructive">{model.bodyError}</p>
-        ) : model.summaryError ? (
-          <p className="text-sm text-destructive">{model.summaryError}</p>
-        ) : model.exportError ? (
-          <p className="text-sm text-destructive">{model.exportError}</p>
-        ) : isBusy ? (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Calculating financial report…
-          </p>
-        ) : model.paymentSources.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No accessible payment source is available on this network.
-          </p>
-        ) : null}
-      </div>
+      {statusMessage && (
+        <p
+          aria-live="polite"
+          className={
+            statusMessage.tone === 'error'
+              ? 'text-sm text-destructive'
+              : 'flex items-center gap-2 text-sm text-muted-foreground'
+          }
+        >
+          {statusMessage.tone === 'busy' && <Loader2 className="h-4 w-4 animate-spin" />}
+          {statusMessage.text}
+        </p>
+      )}
 
       {isBusy && !summary ? (
         <ReportLoadingState />
       ) : summary ? (
         <div className="space-y-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold">Accounting totals</h3>
-              <p className="text-xs text-muted-foreground">
-                Known values remain visible when historical fee allocation is partial.
-              </p>
-            </div>
-            {assetUnits.length > 0 && (
-              <div className="w-full space-y-1.5 sm:w-64">
-                <label htmlFor="financial-report-asset" className="text-xs font-medium">
-                  Business asset
-                </label>
-                <Select value={selectedUnit ?? undefined} onValueChange={setRequestedUnit}>
-                  <SelectTrigger id="financial-report-asset">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {assetUnits.map((unit) => {
-                      const descriptor = getReportAssetDescriptor(summary, unit);
-                      return (
-                        <SelectItem key={unit} value={unit}>
-                          {descriptor.symbol ?? shortenAddress(unit, 8)}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
+          <ReportViewSwitch views={views} activeView={activeTab} onSelect={setRequestedTab} />
 
-          {transactionCountDisplay?.isConfirmedEmpty && (
-            <Card className="border-dashed shadow-none">
-              <CardContent className="py-8 text-center">
-                <p className="font-medium">No matching transactions</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Change the period, wallet, role, state, or address filters.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          <FinancialMetricCards
-            summary={summary}
-            roles={model.form.roles}
-            selectedUnit={selectedUnit}
-          />
-
-          {summary.metadata.warnings.length > 0 && (
-            <div
-              id="financial-report-warnings"
-              className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"
-            >
-              <div className="mb-2 flex items-center gap-2">
-                <Badge variant="warning">Partial data</Badge>
-                <h3 className="text-sm font-semibold">Report warnings</h3>
-              </div>
-              <ul className="space-y-1 text-sm text-amber-900 dark:text-amber-100">
-                {summary.metadata.warnings.map((warning, index) => (
-                  <li key={`${warning.code}:${warning.rowId ?? ''}:${index}`}>{warning.message}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <FinancialHistoryCharts
-            summary={summary}
-            roles={model.form.roles}
-            selectedUnit={selectedUnit}
-          />
-
-          <div>
-            <div className="mb-3">
-              <h3 className="text-sm font-semibold">Wallet and role breakdown</h3>
-              <p className="text-xs text-muted-foreground">
-                Each managed wallet keeps separate Buyer and Seller accounting rows.
-              </p>
-            </div>
-            <FinancialWalletTable
+          {activeTab === OVERVIEW_TAB && (
+            <ReportOverviewTab
               summary={summary}
-              facets={{
-                paymentSources: model.paymentSources,
-                managedWallets: model.managedWallets,
-              }}
-              selectedUnit={selectedUnit}
               roles={model.form.roles}
+              selectedUnit={selectedUnit}
             />
-          </div>
+          )}
+
+          {activeTab === REVENUE_TAB && selectedUnit && (
+            <ReportSeriesTab
+              summary={summary}
+              unit={selectedUnit}
+              title="Revenue over time"
+              description="What selling brought in, before and after the protocol fee."
+              metricKeys={[
+                'sellerGrossRevenue',
+                'protocolFees',
+                'sellerCardanoFees',
+                'sellerNetRevenue',
+              ]}
+              accents={{
+                sellerGrossRevenue: REPORT_SERIES_COLORS.revenue,
+                protocolFees: REPORT_SERIES_COLORS.protocolFee,
+                sellerCardanoFees: REPORT_SERIES_COLORS.networkFee,
+                sellerNetRevenue: REPORT_SERIES_COLORS.revenue,
+              }}
+              series={[
+                {
+                  key: 'sellerGrossRevenue',
+                  label: REPORT_METRIC_LABELS.sellerGrossRevenue,
+                  color: REPORT_SERIES_COLORS.revenue,
+                  kind: 'area',
+                },
+                {
+                  key: 'protocolFees',
+                  label: REPORT_METRIC_LABELS.protocolFees,
+                  color: REPORT_SERIES_COLORS.protocolFee,
+                },
+                {
+                  key: 'sellerNetRevenue',
+                  label: REPORT_METRIC_LABELS.sellerNetRevenue,
+                  color: REPORT_SERIES_COLORS.revenue,
+                },
+              ]}
+              emptyMessage="Nothing was sold in this period."
+            />
+          )}
+
+          {activeTab === SPENDING_TAB && selectedUnit && (
+            <ReportSeriesTab
+              summary={summary}
+              unit={selectedUnit}
+              title="Spending over time"
+              description="What buying cost, before and after refunds came back."
+              metricKeys={['buyerGrossSpend', 'returnedFunds', 'buyerCardanoFees', 'buyerNetSpend']}
+              accents={{
+                buyerGrossSpend: REPORT_SERIES_COLORS.spend,
+                returnedFunds: REPORT_SERIES_COLORS.refund,
+                buyerCardanoFees: REPORT_SERIES_COLORS.networkFee,
+                buyerNetSpend: REPORT_SERIES_COLORS.spend,
+              }}
+              series={[
+                {
+                  key: 'buyerGrossSpend',
+                  label: REPORT_METRIC_LABELS.buyerGrossSpend,
+                  color: REPORT_SERIES_COLORS.spend,
+                  kind: 'area',
+                },
+                {
+                  key: 'returnedFunds',
+                  label: REPORT_METRIC_LABELS.returnedFunds,
+                  color: REPORT_SERIES_COLORS.refund,
+                },
+                {
+                  key: 'buyerNetSpend',
+                  label: REPORT_METRIC_LABELS.buyerNetSpend,
+                  color: REPORT_SERIES_COLORS.spend,
+                },
+              ]}
+              emptyMessage="Nothing was bought in this period."
+            />
+          )}
+
+          {(activeTab === REVENUE_TAB || activeTab === SPENDING_TAB) && !selectedUnit && (
+            <div className="rounded-lg border p-6 text-sm text-muted-foreground">
+              Nothing was paid or earned in this period.
+            </div>
+          )}
+
+          {activeTab === FEES_TAB && (
+            <ReportSeriesTab
+              summary={summary}
+              unit="lovelace"
+              title="Network fees over time"
+              description="Cardano charges a fee per transaction. This is who paid it."
+              metricKeys={[
+                ...(hasSeller ? (['sellerCardanoFees'] as const) : []),
+                ...(hasBuyer ? (['buyerCardanoFees'] as const) : []),
+                'adminCardanoFees',
+                'totalCardanoFees',
+              ]}
+              accents={{
+                sellerCardanoFees: REPORT_SERIES_COLORS.revenue,
+                buyerCardanoFees: REPORT_SERIES_COLORS.spend,
+                adminCardanoFees: REPORT_SERIES_COLORS.admin,
+                totalCardanoFees: REPORT_SERIES_COLORS.networkFee,
+              }}
+              series={[
+                {
+                  key: 'totalCardanoFees',
+                  label: REPORT_METRIC_LABELS.totalCardanoFees,
+                  color: REPORT_SERIES_COLORS.networkFee,
+                  kind: 'area',
+                },
+                // Per bucket the service reports each side separately. The
+                // combined actor figure only exists on the totals, so charting
+                // it would draw a flat zero line under real per-side values.
+                ...(hasSeller
+                  ? [
+                      {
+                        key: 'sellerCardanoFees' as const,
+                        label: REPORT_METRIC_LABELS.sellerCardanoFees,
+                        color: REPORT_SERIES_COLORS.revenue,
+                      },
+                    ]
+                  : []),
+                ...(hasBuyer
+                  ? [
+                      {
+                        key: 'buyerCardanoFees' as const,
+                        label: REPORT_METRIC_LABELS.buyerCardanoFees,
+                        color: REPORT_SERIES_COLORS.spend,
+                      },
+                    ]
+                  : []),
+                {
+                  key: 'adminCardanoFees',
+                  label: REPORT_METRIC_LABELS.adminCardanoFees,
+                  color: REPORT_SERIES_COLORS.admin,
+                  dashed: true,
+                },
+              ]}
+              emptyMessage="No transaction fee was charged in this period."
+            />
+          )}
+
+          {activeTab === WALLETS_TAB && (
+            <div>
+              <div className="mb-3">
+                <div className="font-medium">By wallet</div>
+                <p className="text-sm text-muted-foreground">
+                  The same figures, split across the wallets that moved the money.
+                </p>
+              </div>
+              <FinancialWalletTable
+                summary={summary}
+                facets={{ managedWallets: model.managedWallets }}
+                selectedUnit={selectedUnit}
+                roles={model.form.roles}
+              />
+            </div>
+          )}
         </div>
       ) : null}
+
+      {isExportOpen && (
+        <DownloadDetailsDialog
+          open
+          onClose={() => setIsExportOpen(false)}
+          viewDefaults={EXPORT_VIEW_DEFAULTS}
+          initialForm={model.form}
+        />
+      )}
     </section>
   );
 }

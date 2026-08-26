@@ -5,7 +5,7 @@ import {
 	finalizeReportAggregate as finalizeAggregate,
 	readAggregateMetricAmounts as readMetricAmounts,
 } from './aggregate-amounts';
-import { getKnownReportTransactionDates, getReportTransactionCount } from './aggregate-counts';
+import { getReportCountDates, getReportTransactionCount } from './aggregate-counts';
 import { analyzeReportFees, assignCompleteReportFeeReconciliation, type FeeAnalysis } from './aggregate-fees';
 import type { ReportMetricWindow, ReportRow, ReportWarning } from './records';
 import { groupReportRowsByPayment } from './row-groups';
@@ -26,6 +26,7 @@ export type ReportAggregate = {
 	transactionCount: number;
 	transactionCountCompleteness: ReportMetricCompleteness;
 	sellerGrossRevenue: ReportAggregateMetric;
+	sellerPendingRevenue: ReportAggregateMetric;
 	protocolFees: ReportAggregateMetric;
 	sellerCardanoFees: ReportAggregateMetric;
 	actorCardanoFees: ReportAggregateMetric;
@@ -73,6 +74,7 @@ function createAggregate(): ReportAggregate {
 		transactionCount: 0,
 		transactionCountCompleteness: 'complete',
 		sellerGrossRevenue: createMetric(),
+		sellerPendingRevenue: createMetric(),
 		protocolFees: createMetric(),
 		sellerCardanoFees: createMetric(),
 		actorCardanoFees: createMetric(),
@@ -86,8 +88,15 @@ function createAggregate(): ReportAggregate {
 	};
 }
 
+/**
+ * Does this figure actually carry money?
+ *
+ * A zero entry is not money. Fiat conversion appends a zero fiat amount to
+ * every figure, including empty ones, so counting entries alone would read an
+ * empty figure as unplaced money and mark the whole history partial.
+ */
 function hasAmounts(amounts: readonly AtomicAmount[] | null): boolean {
-	return amounts != null && amounts.length > 0;
+	return amounts != null && amounts.some((amount) => amount.amount !== 0n);
 }
 
 function isProtocolMetricComplete(row: ReportRow): boolean {
@@ -96,6 +105,17 @@ function isProtocolMetricComplete(row: ReportRow): boolean {
 
 function combineCompleteness(...values: ReportMetricCompleteness[]): ReportMetricCompleteness {
 	return values.every((value) => value === 'complete') ? 'complete' : 'partial';
+}
+
+/**
+ * Money locked in escrow that the seller has not earned yet.
+ *
+ * It is kept out of the role metrics on purpose: it is not revenue, and a
+ * cohort history must not place it on an accounting date it does not have.
+ */
+function addPendingRevenue(aggregate: ReportAggregate, row: ReportRow): void {
+	if (row.seller == null) return;
+	addMetric(aggregate.sellerPendingRevenue, row.pendingRevenue);
 }
 
 function addRoleMetrics(aggregate: ReportAggregate, row: ReportRow): void {
@@ -149,6 +169,7 @@ function aggregateGlobalRows(
 	for (const [index, row] of rows.entries()) {
 		runReportCheckpoint(index, checkpoint);
 		addRoleMetrics(aggregate, row);
+		addPendingRevenue(aggregate, row);
 	}
 	Object.assign(aggregate, getReportTransactionCount(rows, dateBasis, from, to));
 	const fees = analyzeReportFees(rows, dateBasis, from, to, checkpoint);
@@ -276,10 +297,28 @@ function getEventBucket(
 	return historyByStart.get(findLocalDateStart(localStart, readLocalDate).getTime()) ?? null;
 }
 
-function recordHistoryRow(bucket: MutableHistoryAggregate, row: ReportRow): void {
-	if (bucket.transactionKeys.has(row.blockchainIdentifier)) return;
-	bucket.transactionKeys.add(row.blockchainIdentifier);
-	bucket.metrics.transactionCount += 1;
+/**
+ * Counts every request once, on the one day `getReportCountDates` picked.
+ *
+ * Counting it on each day it touched would make the daily counts add up to more
+ * than the period total, and anyone footing the column would find the two
+ * disagreeing with no warning that they measure different things.
+ */
+function recordHistoryCounts(
+	rows: readonly ReportRow[],
+	dateBasis: ReportDateBasis,
+	from: Date,
+	to: Date,
+	bucket: ReportBucket,
+	readLocalDate: (date: Date) => LocalDate,
+	historyByStart: ReadonlyMap<number, MutableHistoryAggregate>,
+): void {
+	for (const [paymentKey, date] of getReportCountDates(rows, dateBasis, from, to)) {
+		const entry = getEventBucket(date, from, to, bucket, readLocalDate, historyByStart);
+		if (entry == null || entry.transactionKeys.has(paymentKey)) continue;
+		entry.transactionKeys.add(paymentKey);
+		entry.metrics.transactionCount += 1;
+	}
 }
 
 function markMetricPartial(history: readonly MutableHistoryAggregate[], metricName: AggregateMetricName): void {
@@ -288,6 +327,26 @@ function markMetricPartial(history: readonly MutableHistoryAggregate[], metricNa
 
 function getCohortDate(row: ReportRow, dateBasis: Exclude<ReportDateBasis, 'RevenueRecognizedAt'>): Date | null {
 	return dateBasis === 'CreatedAt' ? row.createdAt : row.timestamps.fundsLockedAt;
+}
+
+/**
+ * Pending revenue is placed on the day the funds were locked.
+ *
+ * That is the only date the money is known to have, and it is the same date on
+ * every date basis, so the pending line never moves when the basis changes.
+ */
+function addPendingRevenueHistory(
+	row: ReportRow,
+	from: Date,
+	to: Date,
+	bucket: ReportBucket,
+	readLocalDate: (date: Date) => LocalDate,
+	historyByStart: ReadonlyMap<number, MutableHistoryAggregate>,
+): void {
+	if (row.seller == null || row.pendingRevenue.length === 0) return;
+	const entry = getEventBucket(row.timestamps.fundsLockedAt, from, to, bucket, readLocalDate, historyByStart);
+	if (entry == null) return;
+	addMetric(entry.metrics.sellerPendingRevenue, row.pendingRevenue);
 }
 
 function addCohortHistory(
@@ -309,7 +368,6 @@ function addCohortHistory(
 		for (const metricName of metricNames) missingTimestampMetrics.add(metricName);
 		return;
 	}
-	recordHistoryRow(entry, row);
 	addRoleMetrics(entry.metrics, row);
 }
 
@@ -336,18 +394,22 @@ function addSellerRevenueHistory(
 	}
 	const entry = getEventBucket(date, from, to, bucket, readLocalDate, historyByStart);
 	if (entry == null) {
-		if (row.actorCardanoFeeAllocation.completeness === 'partial') {
+		if (row.actorCardanoFeeAllocation.historyCompleteness === 'partial') {
 			missingTimestampMetrics.add('sellerCardanoFees');
 			missingTimestampMetrics.add('sellerNetRevenue');
 		}
 		return;
 	}
-	recordHistoryRow(entry, row);
 	const protocolCompleteness = isProtocolMetricComplete(row) ? 'complete' : 'partial';
-	const actorFeeCompleteness = row.actorCardanoFeeAllocation.completeness;
+	// A daily figure carries the history flag: an amount can be exact for the
+	// period and still sit on the wrong day inside it.
+	const actorFeeCompleteness = row.actorCardanoFeeAllocation.historyCompleteness;
 	addMetric(entry.metrics.sellerGrossRevenue, row.seller.grossRevenue);
 	addMetric(entry.metrics.protocolFees, row.seller.protocolFee.amounts ?? [], protocolCompleteness);
 	addMetric(entry.metrics.sellerCardanoFees, row.seller.cardanoFees, actorFeeCompleteness);
+	// The combined actor figure follows the same date as the side it came from,
+	// so the daily fees add back up to the period total.
+	addMetric(entry.metrics.actorCardanoFees, row.seller.cardanoFees, actorFeeCompleteness);
 	addMetric(
 		entry.metrics.sellerNetRevenue,
 		row.seller.netRevenue,
@@ -370,17 +432,25 @@ function addBuyerRevenueHistory(
 		missingTimestampMetrics.add('buyerGrossSpend');
 		missingTimestampMetrics.add('buyerNetSpend');
 	}
-	if (grossEntry == null && row.actorCardanoFeeAllocation.completeness === 'partial') {
+	if (grossEntry == null && row.actorCardanoFeeAllocation.historyCompleteness === 'partial') {
 		missingTimestampMetrics.add('buyerCardanoFees');
 		missingTimestampMetrics.add('buyerNetSpend');
 	} else if (grossEntry != null) {
-		recordHistoryRow(grossEntry, row);
 		addMetric(grossEntry.metrics.buyerGrossSpend, row.buyer.grossSpend);
-		addMetric(grossEntry.metrics.buyerCardanoFees, row.buyer.cardanoFees, row.actorCardanoFeeAllocation.completeness);
+		addMetric(
+			grossEntry.metrics.buyerCardanoFees,
+			row.buyer.cardanoFees,
+			row.actorCardanoFeeAllocation.historyCompleteness,
+		);
+		addMetric(
+			grossEntry.metrics.actorCardanoFees,
+			row.buyer.cardanoFees,
+			row.actorCardanoFeeAllocation.historyCompleteness,
+		);
 		addMetric(
 			grossEntry.metrics.buyerNetSpend,
 			row.buyer.grossSpend == null ? null : addAmounts(row.buyer.grossSpend, row.buyer.cardanoFees),
-			row.actorCardanoFeeAllocation.completeness,
+			row.actorCardanoFeeAllocation.historyCompleteness,
 		);
 	}
 
@@ -390,12 +460,11 @@ function addBuyerRevenueHistory(
 		missingTimestampMetrics.add('returnedFunds');
 		missingTimestampMetrics.add('buyerNetSpend');
 	} else if (returnEntry != null) {
-		recordHistoryRow(returnEntry, row);
 		addMetric(returnEntry.metrics.returnedFunds, row.buyer.returnedFunds);
 		addMetric(
 			returnEntry.metrics.buyerNetSpend,
 			row.buyer.returnedFunds == null ? null : subtractAmounts([], row.buyer.returnedFunds),
-			row.actorCardanoFeeAllocation.completeness,
+			row.actorCardanoFeeAllocation.historyCompleteness,
 		);
 	}
 }
@@ -429,6 +498,7 @@ function buildWalletAggregates(
 		for (const [index, row] of group.rows.entries()) {
 			runReportCheckpoint(index, checkpoint);
 			addRoleMetrics(metrics, row);
+			addPendingRevenue(metrics, row);
 		}
 		Object.assign(metrics, getReportTransactionCount(group.rows, dateBasis, from, to));
 		metricsByGroup.set(key, metrics);
@@ -546,9 +616,25 @@ function addFeeHistory(
 				}
 			}
 			if (component.isAdminComplete && component.actorFees !== 0n && component.admin !== 0n) {
-				hasAdminHistoryGap = true;
+				// The admin share is what is left after the actor counters, and those
+				// counters cover a whole request rather than one transaction. So the
+				// remainder cannot be split per transaction and goes, as an estimate,
+				// on the day the component last moved.
+				const settlement = component.transactions.reduce<Date | null>(
+					(latest, transaction) =>
+						transaction.blockTime != null && (latest == null || transaction.blockTime.getTime() > latest.getTime())
+							? transaction.blockTime
+							: latest,
+					null,
+				);
+				const entry = getEventBucket(settlement, from, to, bucket, readLocalDate, historyByStart);
+				if (entry == null || component.admin == null) hasAdminHistoryGap = true;
+				else addMetric(entry.metrics.adminCardanoFees, [{ unit: 'lovelace', amount: component.admin }], 'partial');
 			}
-			if (component.actorFees !== 0n || !component.isActorComplete) hasActorHistoryGap = true;
+			// Actor fees are placed with the rows above, so only an unresolved
+			// component is a gap here. The historyActor check below catches any
+			// row whose fee found no bucket at all.
+			if (!component.isActorComplete) hasActorHistoryGap = true;
 			continue;
 		}
 		const ownerPaymentKeys = component.paymentKeys.filter((key) =>
@@ -622,16 +708,14 @@ export function aggregateReportRows(
 	for (const [index, row] of rows.entries()) {
 		runReportCheckpoint(index, checkpoint);
 		if (dateBasis === 'RevenueRecognizedAt') {
-			for (const date of getKnownReportTransactionDates(row)) {
-				const entry = getEventBucket(date, from, to, bucket, readLocalDate, historyByStart);
-				if (entry != null) recordHistoryRow(entry, row);
-			}
 			addSellerRevenueHistory(row, from, to, bucket, readLocalDate, historyByStart, missingTimestampMetrics);
 			addBuyerRevenueHistory(row, from, to, bucket, readLocalDate, historyByStart, missingTimestampMetrics);
 		} else {
 			addCohortHistory(row, dateBasis, from, to, bucket, readLocalDate, historyByStart, missingTimestampMetrics);
 		}
+		addPendingRevenueHistory(row, from, to, bucket, readLocalDate, historyByStart);
 	}
+	recordHistoryCounts(rows, dateBasis, from, to, bucket, readLocalDate, historyByStart);
 	const global = aggregateGlobalRows(rows, dateBasis, from, to, checkpoint);
 	const totals = global.metrics;
 	const isFeeHistoryComplete = addFeeHistory(
@@ -652,28 +736,6 @@ export function aggregateReportRows(
 	}
 
 	const warnings: ReportWarning[] = [];
-	const detailRowCountsByPayment = new Map<string, number>();
-	for (const [index, row] of rows.entries()) {
-		runReportCheckpoint(index, checkpoint);
-		detailRowCountsByPayment.set(
-			row.blockchainIdentifier,
-			(detailRowCountsByPayment.get(row.blockchainIdentifier) ?? 0) + 1,
-		);
-	}
-	if (
-		global.fees.components.some(
-			(component) =>
-				component.paymentKeys.length > 1 ||
-				component.paymentKeys.some((key) => (detailRowCountsByPayment.get(key) ?? 0) > 1),
-		)
-	) {
-		warnings.push({
-			code: 'SHARED_CARDANO_FEE_COMPONENT_ALLOCATION',
-			message:
-				'Shared Cardano fee components use one stable request owner for reconciliation. This is not economic wallet attribution.',
-			rowId: null,
-		});
-	}
 	const hasActorFeeAllocation = rows.some((row) => row.actorCardanoFeeAllocation.completeness === 'partial');
 	if (hasActorFeeAllocation) {
 		warnings.push({

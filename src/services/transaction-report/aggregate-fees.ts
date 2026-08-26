@@ -1,5 +1,6 @@
 import type { ReportMetricWindow, ReportRow } from './records';
 import { groupReportRowsByPayment } from './row-groups';
+import { feeShareForPaymentKeys } from './fee-split';
 import { mergeReportTransactions } from './timestamps';
 import { NO_REPORT_CHECKPOINT, runReportCheckpoint, type ReportCheckpoint } from './checkpoint';
 
@@ -18,6 +19,7 @@ export type FeeComponent = {
 	admin: bigint | null;
 	isTotalComplete: boolean;
 	isAdminComplete: boolean;
+	/** True when a shared transaction fee had to be divided by an equal share. */
 	buyerActorFees: bigint;
 	sellerActorFees: bigint;
 	actorFees: bigint;
@@ -96,6 +98,7 @@ export function analyzeReportFees(
 		for (const key of keys.slice(1)) parent.set(find(key), find(keys[0]));
 	};
 	let hasUnknownTotalEvidence = false;
+	/** Requests whose fee figures came from an equal share rather than a reading. */
 	const covered: CoveredTransaction[] = [];
 	for (const [index, transaction] of mergedTransactions.entries()) {
 		runReportCheckpoint(index, checkpoint);
@@ -121,10 +124,9 @@ export function analyzeReportFees(
 			transaction.fees != null &&
 			transaction.fees >= 0n &&
 			(dateBasis !== 'RevenueRecognizedAt' || blockTime != null);
-		const isLogicalCoverageComplete =
-			transaction.relatedPaymentKeysComplete !== false &&
-			paymentKeys.length > 0 &&
-			paymentKeys.every((key) => selectedPaymentKeys.has(key));
+		// Without the full list of settled requests there is no denominator, so
+		// no share of this fee can be worked out at all.
+		const hasKnownBatch = transaction.relatedPaymentKeysComplete !== false && paymentKeys.length > 0;
 		if (!isCoreComplete) {
 			markIncomplete(totalEvidence);
 			continue;
@@ -134,12 +136,16 @@ export function analyzeReportFees(
 			markIncomplete(totalEvidence);
 			continue;
 		}
-		if (!isLogicalCoverageComplete) {
+		if (!hasKnownBatch) {
 			markIncomplete(totalEvidence);
 			continue;
 		}
+		// The report owes only the shares of the requests it holds. A batch can
+		// reach outside the filter, and those shares stay outside the report.
+		const share = feeShareForPaymentKeys(transaction.fees, paymentKeys, selectedPaymentKeys);
+		if (share === 0n) continue;
 		if (selectedRelatedKeys.length > 1) union(selectedRelatedKeys);
-		covered.push({ fee: transaction.fees, blockTime, paymentKeys });
+		covered.push({ fee: share, blockTime, paymentKeys: selectedRelatedKeys });
 	}
 
 	const rowsByPayment = groupReportRowsByPayment(rows, checkpoint);
@@ -183,15 +189,15 @@ export function analyzeReportFees(
 		}
 		const actorFees = buyerActorFees + sellerActorFees;
 		const total = transactions.reduce((sum, transaction) => sum + transaction.fee, 0n);
-		const isTotalComplete = paymentKeys.every((key) => totalEvidence.get(key));
-		const isAdminComplete = isTotalComplete && isActorComplete && total >= actorFees;
+		const isTotalKnown = paymentKeys.every((key) => totalEvidence.get(key));
+		const canDeriveAdmin = isTotalKnown && isActorComplete && total >= actorFees;
 		return {
 			paymentKeys,
 			transactions,
 			total,
-			admin: isAdminComplete ? total - actorFees : null,
-			isTotalComplete,
-			isAdminComplete,
+			admin: canDeriveAdmin ? total - actorFees : null,
+			isTotalComplete: isTotalKnown,
+			isAdminComplete: canDeriveAdmin,
 			buyerActorFees,
 			sellerActorFees,
 			actorFees,
@@ -249,7 +255,7 @@ function componentRowReconciliation(component: FeeComponent, isOwner: boolean): 
 		return {
 			buyerCardanoFees: component.buyerActorFees,
 			sellerCardanoFees: component.sellerActorFees,
-			adminCardanoFees: null,
+			adminCardanoFees: component.admin,
 			totalCardanoFees: component.total,
 			completeness: 'partial',
 		};
@@ -307,10 +313,10 @@ export function assignCompleteReportFeeReconciliation(
 			allocations.set(reportRowKey(row), {
 				isFeeReconciliationOwner: isOwner,
 				feeComponentScope: completeness === 'complete' ? 'complete' : 'partial',
-				actorCardanoFeeAllocation: {
-					...row.actorCardanoFeeAllocation,
-					completeness: 'partial',
-				},
+				// The component says nothing about whether this request's own fee
+				// counter is contained by the report window, so the row keeps the
+				// answer it worked out for itself.
+				actorCardanoFeeAllocation: row.actorCardanoFeeAllocation,
 				cardanoFeeReconciliation: componentRowReconciliation(component, isOwner),
 			});
 		}

@@ -1,4 +1,9 @@
 import type { PostReportsSummaryData } from '@/lib/api/generated';
+import {
+  NO_FIAT_CURRENCY,
+  type ReportFiatCurrencyChoice,
+  type ReportFiatMode,
+} from '@/lib/transaction-report/fiat-settings';
 import type { TransactionFilterState } from './TransactionFilters';
 
 type ReportBody = PostReportsSummaryData['body'];
@@ -24,6 +29,24 @@ export const REPORT_ON_CHAIN_STATES = [
   'DisputedWithdrawn',
 ] as const satisfies readonly ReportOnChainState[];
 
+/**
+ * The states that end an escrow. A request reaches at most one of them, and
+ * nothing moves after that, so a period holding only these states will not be
+ * restated later.
+ *
+ * Mirrors REPORT_SETTLEMENT_STATES in
+ * src/services/transaction-report/timestamps.ts.
+ */
+export const REPORT_FINAL_ON_CHAIN_STATES = [
+  'Withdrawn',
+  'RefundWithdrawn',
+  'DisputedWithdrawn',
+] as const satisfies readonly ReportOnChainState[];
+
+export function isFinalReportState(state: ReportOnChainState): boolean {
+  return (REPORT_FINAL_ON_CHAIN_STATES as readonly ReportOnChainState[]).includes(state);
+}
+
 export type TransactionReportViewDefaults = Readonly<{
   roles: readonly ReportRole[];
   states: readonly ReportOnChainState[];
@@ -43,6 +66,8 @@ export type TransactionReportFormState = Readonly<{
   revenueMode: ReportRevenueMode;
   bucket: ReportBucket;
   timeZone: string;
+  fiatCurrency: ReportFiatCurrencyChoice;
+  fiatMode: ReportFiatMode;
 }>;
 
 export type ReportBodyResult =
@@ -128,6 +153,8 @@ export function createTransactionReportForm(
     revenueMode: 'Billable',
     bucket: 'Auto',
     timeZone,
+    fiatCurrency: NO_FIAT_CURRENCY,
+    fiatMode: 'PeriodAverage',
   };
 }
 
@@ -272,6 +299,9 @@ export function buildTransactionReportBody(
       revenueMode: form.revenueMode,
       timeZone: form.timeZone.trim(),
       bucket: form.bucket,
+      ...(form.fiatCurrency === NO_FIAT_CURRENCY
+        ? {}
+        : { fiat: { currency: form.fiatCurrency, mode: form.fiatMode } }),
     },
   };
 }

@@ -40,6 +40,9 @@ function record(overrides: Partial<ReportRequestRecord> = {}): ReportRequestReco
 		sellerReturnAddress: null,
 		paymentSourceType: 'Web3CardanoV1',
 		configuredFeeRatePermille: 50,
+		// No result was submitted, so the withdrawal date carries the revenue.
+		// Tests that need the earlier unlock date set both fields together.
+		resultHash: null,
 		unlockTime: 1_000n,
 		collateralReturnLovelace: 2_000_000n,
 		requestedFunds: [{ unit: 'lovelace', amount: 100_000_000n }],
@@ -211,7 +214,7 @@ describe('buildReportRow', () => {
 		});
 	});
 
-	it('keeps shared V2 admin fees partial', () => {
+	it('gives a batched row its own share of the fee, and still no admin figure', () => {
 		const row = buildReportRow(
 			record({
 				paymentSourceType: 'Web3CardanoV2',
@@ -235,8 +238,12 @@ describe('buildReportRow', () => {
 			COHORT_WINDOW,
 		);
 		expect(row.cardanoFeeReconciliation).toMatchObject({
+			// Half of the 400000 the transaction charged, because it settled two
+			// requests. The share is exact, so the row carries it.
+			totalCardanoFees: 200_000n,
+			// The stored actor counters cover the whole life of the request, not
+			// this one transaction, so the remainder still cannot be worked out.
 			adminCardanoFees: null,
-			totalCardanoFees: null,
 			completeness: 'partial',
 		});
 		expect(getReportRowWarnings(row).map((warning) => warning.code)).toContain('CARDANO_FEE_RECONCILIATION_PARTIAL');
@@ -638,6 +645,20 @@ describe('buildReportRow', () => {
 		expect(row.actorCardanoFeeAllocation).toMatchObject({ strategy: 'lifetime_cohort', completeness: 'partial' });
 	});
 
+	it('books a withdrawn request on its unlock date once a result hash exists', () => {
+		// The stored result hash proves the request was already billable at the
+		// unlock time, so a later withdrawal cannot move the revenue forward into
+		// a period that was reported already.
+		const row = buildReportRow(
+			record({ resultHash: 'result-hash', unlockTime: BigInt(Date.UTC(2026, 0, 1) + 60_000) }),
+			'Billable',
+			new Date('2026-01-04T00:00:00.000Z'),
+			COHORT_WINDOW,
+		);
+
+		expect(row.timestamps.sellerRevenueRecognizedAt?.toISOString()).toBe('2026-01-01T00:01:00.000Z');
+	});
+
 	it('omits seller metrics when seller recognition is outside a revenue window', () => {
 		const row = buildReportRow(record(), 'Billable', new Date('2026-01-04T00:00:00.000Z'), {
 			dateBasis: 'RevenueRecognizedAt',
@@ -842,5 +863,87 @@ describe('serializeReportRow', () => {
 		expect(serialized.feeComponentScope).toBe('complete');
 		expect(serialized.cardanoFeeReconciliation.isAggregationOwner).toBe(true);
 		expect(JSON.stringify(serialized)).not.toContain('[object Object]');
+	});
+});
+
+describe('buildReportRow actor fee lifetime', () => {
+	function settledTransactions() {
+		return [
+			{
+				id: 'lock',
+				txHash: 'hash-lock',
+				status: 'Confirmed' as const,
+				newOnChainState: 'FundsLocked' as const,
+				blockTime: blockTime('2026-01-01T10:00:00.000Z'),
+				fees: 150_000n,
+				relatedRequestKeys: ['Seller:request-1'],
+				relatedPaymentKeys: ['chain-1'],
+			},
+			{
+				id: 'withdraw',
+				txHash: 'hash-withdraw',
+				status: 'Confirmed' as const,
+				newOnChainState: 'Withdrawn' as const,
+				blockTime: blockTime('2026-01-02T10:00:00.000Z'),
+				fees: 180_000n,
+				relatedRequestKeys: ['Seller:request-1'],
+				relatedPaymentKeys: ['chain-1'],
+			},
+		];
+	}
+
+	it('calls the actor fee exact once a settled request lived entirely inside the window', () => {
+		const row = buildReportRow(
+			record({ transactions: settledTransactions() }),
+			'Billable',
+			new Date('2026-01-03T00:00:00.000Z'),
+			COHORT_WINDOW,
+		);
+
+		expect(row.actorCardanoFeeAllocation.completeness).toBe('complete');
+		// The day it sits on is still a choice, so a bucket stays an estimate.
+		expect(row.actorCardanoFeeAllocation.historyCompleteness).toBe('partial');
+		expect(getReportRowWarnings(row).map((warning) => warning.code)).not.toContain(
+			'ACTOR_CARDANO_FEE_EVENT_ALLOCATION_PARTIAL',
+		);
+	});
+
+	it('does not call a one-sided row short of evidence for the side it never had', () => {
+		// A seller row carries no buyer amounts by design. Reading through the
+		// absent side put this note in every export, on every row.
+		const row = buildReportRow(
+			record({ transactions: settledTransactions() }),
+			'Billable',
+			new Date('2026-01-03T00:00:00.000Z'),
+			COHORT_WINDOW,
+		);
+
+		expect(row.buyer).toBeNull();
+		expect(row.seller?.grossRevenue).not.toBeNull();
+		expect(getReportRowWarnings(row).map((warning) => warning.code)).not.toContain('ECONOMIC_METRIC_EVIDENCE_PARTIAL');
+	});
+
+	it('keeps the actor fee partial when the request locked before the window', () => {
+		const transactions = settledTransactions();
+		transactions[0].blockTime = blockTime('2025-12-20T10:00:00.000Z');
+		const row = buildReportRow(
+			record({ transactions }),
+			'Billable',
+			new Date('2026-01-03T00:00:00.000Z'),
+			COHORT_WINDOW,
+		);
+
+		expect(row.actorCardanoFeeAllocation.completeness).toBe('partial');
+	});
+
+	it('keeps the actor fee partial while the request is still open', () => {
+		const row = buildReportRow(
+			record({ onChainState: 'ResultSubmitted', transactions: settledTransactions() }),
+			'Billable',
+			new Date('2026-01-03T00:00:00.000Z'),
+			COHORT_WINDOW,
+		);
+
+		expect(row.actorCardanoFeeAllocation.completeness).toBe('partial');
 	});
 });

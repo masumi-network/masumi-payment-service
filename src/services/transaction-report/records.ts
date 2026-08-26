@@ -1,5 +1,6 @@
 import { serializeReportAmount } from '@/utils/asset-units';
-import { addAmounts, subtractAmounts, type AtomicAmount } from './amounts';
+import { addAmounts, normalizeAmounts, subtractAmounts, type AtomicAmount } from './amounts';
+import type { FiatRowRates } from './fiat/rates';
 import {
 	calculateBuyerMetrics,
 	calculateSellerMetrics,
@@ -11,6 +12,7 @@ import {
 } from './metrics';
 import {
 	getReportFeeTransactions,
+	getReportSettlementEvidence,
 	getReportTimestamps,
 	hasConfirmedOnChainTransaction,
 	hasConfirmedStateTransaction,
@@ -53,6 +55,7 @@ export type ReportRequestRecord = {
 	sellerReturnAddress: string | null;
 	paymentSourceType: ReportPaymentSourceType;
 	configuredFeeRatePermille: number;
+	resultHash: string | null;
 	unlockTime: bigint;
 	collateralReturnLovelace: bigint | null;
 	requestedFunds: readonly AtomicAmount[];
@@ -222,6 +225,37 @@ function reconcileRowCardanoFees(
 	};
 }
 
+/** The states that end an escrow. Nothing is pending once one is reached. */
+const SETTLED_STATES: ReadonlySet<ReportOnChainState> = new Set(['Withdrawn', 'RefundWithdrawn', 'DisputedWithdrawn']);
+
+/**
+ * Money locked in escrow that the seller has not earned yet.
+ *
+ * A request whose dispute window is still open earns nothing, so it lands in no
+ * period and its revenue reads as unknown. That hides real money and marks the
+ * whole period an estimate. Reporting it as its own figure lets the earned line
+ * stay clean while the committed money stays visible.
+ *
+ * It is always placed on the day the funds were locked. That is the only date
+ * such a request has, because the date it will be earned on has not happened.
+ */
+function getPendingRevenue(
+	record: ReportRequestRecord,
+	timestamps: ReturnType<typeof getReportTimestamps>,
+	window: ReportMetricWindow,
+): AtomicAmount[] {
+	if (record.role !== 'Seller') return [];
+	if (record.onChainState == null || SETTLED_STATES.has(record.onChainState)) return [];
+	if (record.onChainState === 'FundsOrDatumInvalid') return [];
+	// Without a confirmed lock there is no proof the money reached the escrow,
+	// and without a lock date there is no period to put it in.
+	if (timestamps.fundsLockedAt == null) return [];
+	// Already earned, so it belongs to the revenue line instead.
+	if (timestamps.sellerRevenueRecognizedAt != null) return [];
+	if (!isInMetricWindow(timestamps.fundsLockedAt, window)) return [];
+	return normalizeAmounts(record.requestedFunds);
+}
+
 function getRowFeeComponentScope(
 	record: ReportRequestRecord,
 	window: ReportMetricWindow,
@@ -234,6 +268,36 @@ function getRowFeeComponentScope(
 			return paymentKeys.length !== 1 || paymentKeys[0] !== record.blockchainIdentifier;
 		});
 	return hasIncompleteTransaction ? 'partial' : 'complete';
+}
+
+/**
+ * Is every fee this request will ever pay inside the report window?
+ *
+ * The stored actor fee counters are lifetime totals for a request, so a report
+ * can only claim them exactly when the whole life of the request falls inside
+ * its own dates. That needs a settled state, so no later transaction can add to
+ * the counter, a confirmed lock so the earliest fee is on record at all, and a
+ * first and last confirmed transaction that both sit in the window, so no
+ * earlier transaction is being dragged in from another period.
+ */
+function isActorFeeLifetimeInWindow(
+	record: ReportRequestRecord,
+	window: ReportMetricWindow,
+	hasConfirmedFundsLockedTransaction: boolean,
+): boolean {
+	if (record.onChainState == null || !SETTLED_STATES.has(record.onChainState)) return false;
+	if (!hasConfirmedFundsLockedTransaction) return false;
+	const times: number[] = [];
+	for (const transaction of record.transactions) {
+		if (transaction.status !== 'Confirmed' || transaction.txHash == null) continue;
+		const blockTime = transaction.blockTime;
+		if (blockTime == null || !Number.isSafeInteger(blockTime) || blockTime < 0) return false;
+		times.push(blockTime * 1000);
+	}
+	if (times.length === 0) return false;
+	return (
+		isInMetricWindow(new Date(Math.min(...times)), window) && isInMetricWindow(new Date(Math.max(...times)), window)
+	);
 }
 
 export function buildReportRow(
@@ -264,9 +328,11 @@ export function buildReportRow(
 		buyerCardanoFees: record.buyerCardanoFees,
 		sellerCardanoFees: record.sellerCardanoFees,
 	};
+	const settlement = getReportSettlementEvidence(record.transactions);
 	const timestamps = getReportTimestamps({
 		createdAt: record.createdAt,
 		onChainState: record.onChainState,
+		resultHash: record.resultHash,
 		unlockTime: record.unlockTime,
 		asOfTime: BigInt(asOf.getTime()),
 		revenueMode,
@@ -298,7 +364,16 @@ export function buildReportRow(
 	const actorCardanoFeeAllocation = {
 		strategy:
 			window.dateBasis === 'RevenueRecognizedAt' ? ('accounting_allocation' as const) : ('lifetime_cohort' as const),
-		completeness: 'partial' as const,
+		/** Is the amount exact for the period? */
+		completeness: isActorFeeLifetimeInWindow(record, window, hasConfirmedFundsLockedTransaction)
+			? ('complete' as const)
+			: ('partial' as const),
+		/**
+		 * Is the amount exact for one day of that period? Never. A request pays
+		 * on the day it locks and again on the day it settles, and the counter
+		 * records no split, so the whole amount goes on one accounting date.
+		 */
+		historyCompleteness: 'partial' as const,
 		attachedAt:
 			window.dateBasis !== 'RevenueRecognizedAt'
 				? null
@@ -329,6 +404,10 @@ export function buildReportRow(
 		...record,
 		feeComponentScope,
 		timestamps,
+		settlement,
+		pendingRevenue: getPendingRevenue(record, timestamps, window),
+		/** Filled in by the fiat pass when a currency was asked for. */
+		fiatRates: null as FiatRowRates | null,
 		seller,
 		buyer,
 		actorCardanoFeeAllocation,
@@ -358,6 +437,7 @@ export function serializeReportRow(row: ReportRow) {
 		buyerReturnAddress: row.buyerReturnAddress,
 		sellerReturnAddress: row.sellerReturnAddress,
 		timestamps: row.timestamps,
+		settlement: row.settlement,
 		seller:
 			row.seller == null
 				? null
@@ -383,7 +463,13 @@ export function serializeReportRow(row: ReportRow) {
 						netSpend: serializeAmounts(row.buyer.netSpend),
 						payoutCompleteness: row.buyerPayoutCompleteness,
 					},
-		actorCardanoFeeAllocation: row.actorCardanoFeeAllocation,
+		// `historyCompleteness` stays internal: each history bucket already carries
+		// its own completeness, so the wire would only repeat it.
+		actorCardanoFeeAllocation: {
+			strategy: row.actorCardanoFeeAllocation.strategy,
+			completeness: row.actorCardanoFeeAllocation.completeness,
+			attachedAt: row.actorCardanoFeeAllocation.attachedAt,
+		},
 		feeAllocationScope: row.feeAllocationScope,
 		feeComponentScope: row.feeComponentScope,
 		cardanoFeeReconciliation: {

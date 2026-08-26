@@ -37421,6 +37421,59 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
+                                                "fiat": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "isConfigured": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "isDemoKey": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "historyDays": {
+                                                            "type": "integer",
+                                                            "nullable": true
+                                                        },
+                                                        "earliestPriceableDate": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time"
+                                                        },
+                                                        "currencies": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "modes": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "PeriodAverage",
+                                                                    "AccountingDate",
+                                                                    "TransactionTime"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "attribution": {
+                                                            "type": "string"
+                                                        },
+                                                        "setupHint": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "isConfigured",
+                                                        "isDemoKey",
+                                                        "historyDays",
+                                                        "earliestPriceableDate",
+                                                        "currencies",
+                                                        "modes",
+                                                        "attribution",
+                                                        "setupHint"
+                                                    ]
+                                                },
                                                 "paymentSources": {
                                                     "type": "array",
                                                     "items": {
@@ -37519,6 +37572,7 @@
                                                 }
                                             },
                                             "required": [
+                                                "fiat",
                                                 "paymentSources",
                                                 "managedWallets"
                                             ]
@@ -37853,10 +37907,11 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
-                                                            "AccountingDate"
+                                                            "PeriodAverage",
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -38096,6 +38151,34 @@
                                                                     "sellerRevenueRecognizedAt",
                                                                     "buyerGrossSpendAt",
                                                                     "buyerReturnedAt"
+                                                                ]
+                                                            },
+                                                            "settlement": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "resultSubmittedTxHash": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "settlementTxHash": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "settlementTxType": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn",
+                                                                            null
+                                                                        ]
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "resultSubmittedTxHash",
+                                                                    "settlementTxHash",
+                                                                    "settlementTxType"
                                                                 ]
                                                             },
                                                             "seller": {
@@ -38705,6 +38788,7 @@
                                                             "buyerReturnAddress",
                                                             "sellerReturnAddress",
                                                             "timestamps",
+                                                            "settlement",
                                                             "seller",
                                                             "buyer",
                                                             "actorCardanoFeeAllocation",
@@ -38882,6 +38966,92 @@
                                                                 "timeZone"
                                                             ]
                                                         },
+                                                        "fiat": {
+                                                            "type": "object",
+                                                            "nullable": true,
+                                                            "properties": {
+                                                                "currency": {
+                                                                    "type": "string"
+                                                                },
+                                                                "mode": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "PeriodAverage",
+                                                                        "AccountingDate",
+                                                                        "TransactionTime"
+                                                                    ]
+                                                                },
+                                                                "provider": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "coingecko",
+                                                                        "supplied"
+                                                                    ]
+                                                                },
+                                                                "attribution": {
+                                                                    "type": "string",
+                                                                    "nullable": true
+                                                                },
+                                                                "isDemoKey": {
+                                                                    "type": "boolean"
+                                                                },
+                                                                "demoHistoryDays": {
+                                                                    "type": "integer",
+                                                                    "nullable": true
+                                                                },
+                                                                "completeness": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "complete",
+                                                                        "partial"
+                                                                    ]
+                                                                },
+                                                                "unpricedUnits": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "rates": {
+                                                                    "type": "array",
+                                                                    "nullable": true,
+                                                                    "items": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "unit": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "rate": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "source": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "supplied",
+                                                                                    "coingecko"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "unit",
+                                                                            "rate",
+                                                                            "source"
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "currency",
+                                                                "mode",
+                                                                "provider",
+                                                                "attribution",
+                                                                "isDemoKey",
+                                                                "demoHistoryDays",
+                                                                "completeness",
+                                                                "unpricedUnits",
+                                                                "rates"
+                                                            ]
+                                                        },
                                                         "warnings": {
                                                             "type": "array",
                                                             "items": {
@@ -38911,6 +39081,7 @@
                                                         "asOf",
                                                         "paymentSource",
                                                         "filters",
+                                                        "fiat",
                                                         "warnings"
                                                     ]
                                                 }
@@ -39149,8 +39320,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -39401,10 +39572,11 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
-                                                            "AccountingDate"
+                                                            "PeriodAverage",
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -39524,6 +39696,57 @@
                                                             ]
                                                         },
                                                         "sellerGrossRevenue": {
+                                                            "type": "object",
+                                                            "properties": {
+                                                                "amounts": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "unit": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "rawAmount": {
+                                                                                "type": "string",
+                                                                                "pattern": "^-?\\d+$"
+                                                                            },
+                                                                            "decimalAmount": {
+                                                                                "type": "string",
+                                                                                "nullable": true
+                                                                            },
+                                                                            "decimals": {
+                                                                                "type": "integer",
+                                                                                "nullable": true,
+                                                                                "minimum": 0
+                                                                            },
+                                                                            "symbol": {
+                                                                                "type": "string",
+                                                                                "nullable": true
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "unit",
+                                                                            "rawAmount",
+                                                                            "decimalAmount",
+                                                                            "decimals",
+                                                                            "symbol"
+                                                                        ]
+                                                                    }
+                                                                },
+                                                                "completeness": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "complete",
+                                                                        "partial"
+                                                                    ]
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "amounts",
+                                                                "completeness"
+                                                            ]
+                                                        },
+                                                        "sellerPendingRevenue": {
                                                             "type": "object",
                                                             "properties": {
                                                                 "amounts": {
@@ -40089,6 +40312,7 @@
                                                         "transactionCount",
                                                         "transactionCountCompleteness",
                                                         "sellerGrossRevenue",
+                                                        "sellerPendingRevenue",
                                                         "protocolFees",
                                                         "sellerCardanoFees",
                                                         "actorCardanoFees",
@@ -40209,6 +40433,57 @@
                                                                             "completeness"
                                                                         ]
                                                                     },
+                                                                    "sellerPendingRevenue": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "amounts": {
+                                                                                "type": "array",
+                                                                                "items": {
+                                                                                    "type": "object",
+                                                                                    "properties": {
+                                                                                        "unit": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "rawAmount": {
+                                                                                            "type": "string",
+                                                                                            "pattern": "^-?\\d+$"
+                                                                                        },
+                                                                                        "decimalAmount": {
+                                                                                            "type": "string",
+                                                                                            "nullable": true
+                                                                                        },
+                                                                                        "decimals": {
+                                                                                            "type": "integer",
+                                                                                            "nullable": true,
+                                                                                            "minimum": 0
+                                                                                        },
+                                                                                        "symbol": {
+                                                                                            "type": "string",
+                                                                                            "nullable": true
+                                                                                        }
+                                                                                    },
+                                                                                    "required": [
+                                                                                        "unit",
+                                                                                        "rawAmount",
+                                                                                        "decimalAmount",
+                                                                                        "decimals",
+                                                                                        "symbol"
+                                                                                    ]
+                                                                                }
+                                                                            },
+                                                                            "completeness": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "complete",
+                                                                                    "partial"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "amounts",
+                                                                            "completeness"
+                                                                        ]
+                                                                    },
                                                                     "protocolFees": {
                                                                         "type": "object",
                                                                         "properties": {
@@ -40724,6 +40999,7 @@
                                                                     "transactionCount",
                                                                     "transactionCountCompleteness",
                                                                     "sellerGrossRevenue",
+                                                                    "sellerPendingRevenue",
                                                                     "protocolFees",
                                                                     "sellerCardanoFees",
                                                                     "actorCardanoFees",
@@ -40822,6 +41098,57 @@
                                                                             "completeness"
                                                                         ]
                                                                     },
+                                                                    "sellerPendingRevenue": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "amounts": {
+                                                                                "type": "array",
+                                                                                "items": {
+                                                                                    "type": "object",
+                                                                                    "properties": {
+                                                                                        "unit": {
+                                                                                            "type": "string"
+                                                                                        },
+                                                                                        "rawAmount": {
+                                                                                            "type": "string",
+                                                                                            "pattern": "^-?\\d+$"
+                                                                                        },
+                                                                                        "decimalAmount": {
+                                                                                            "type": "string",
+                                                                                            "nullable": true
+                                                                                        },
+                                                                                        "decimals": {
+                                                                                            "type": "integer",
+                                                                                            "nullable": true,
+                                                                                            "minimum": 0
+                                                                                        },
+                                                                                        "symbol": {
+                                                                                            "type": "string",
+                                                                                            "nullable": true
+                                                                                        }
+                                                                                    },
+                                                                                    "required": [
+                                                                                        "unit",
+                                                                                        "rawAmount",
+                                                                                        "decimalAmount",
+                                                                                        "decimals",
+                                                                                        "symbol"
+                                                                                    ]
+                                                                                }
+                                                                            },
+                                                                            "completeness": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "complete",
+                                                                                    "partial"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "amounts",
+                                                                            "completeness"
+                                                                        ]
+                                                                    },
                                                                     "protocolFees": {
                                                                         "type": "object",
                                                                         "properties": {
@@ -41337,6 +41664,7 @@
                                                                     "transactionCount",
                                                                     "transactionCountCompleteness",
                                                                     "sellerGrossRevenue",
+                                                                    "sellerPendingRevenue",
                                                                     "protocolFees",
                                                                     "sellerCardanoFees",
                                                                     "actorCardanoFees",
@@ -41517,6 +41845,92 @@
                                                                 "timeZone"
                                                             ]
                                                         },
+                                                        "fiat": {
+                                                            "type": "object",
+                                                            "nullable": true,
+                                                            "properties": {
+                                                                "currency": {
+                                                                    "type": "string"
+                                                                },
+                                                                "mode": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "PeriodAverage",
+                                                                        "AccountingDate",
+                                                                        "TransactionTime"
+                                                                    ]
+                                                                },
+                                                                "provider": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "coingecko",
+                                                                        "supplied"
+                                                                    ]
+                                                                },
+                                                                "attribution": {
+                                                                    "type": "string",
+                                                                    "nullable": true
+                                                                },
+                                                                "isDemoKey": {
+                                                                    "type": "boolean"
+                                                                },
+                                                                "demoHistoryDays": {
+                                                                    "type": "integer",
+                                                                    "nullable": true
+                                                                },
+                                                                "completeness": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "complete",
+                                                                        "partial"
+                                                                    ]
+                                                                },
+                                                                "unpricedUnits": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                },
+                                                                "rates": {
+                                                                    "type": "array",
+                                                                    "nullable": true,
+                                                                    "items": {
+                                                                        "type": "object",
+                                                                        "properties": {
+                                                                            "unit": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "rate": {
+                                                                                "type": "string"
+                                                                            },
+                                                                            "source": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                    "supplied",
+                                                                                    "coingecko"
+                                                                                ]
+                                                                            }
+                                                                        },
+                                                                        "required": [
+                                                                            "unit",
+                                                                            "rate",
+                                                                            "source"
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "currency",
+                                                                "mode",
+                                                                "provider",
+                                                                "attribution",
+                                                                "isDemoKey",
+                                                                "demoHistoryDays",
+                                                                "completeness",
+                                                                "unpricedUnits",
+                                                                "rates"
+                                                            ]
+                                                        },
                                                         "warnings": {
                                                             "type": "array",
                                                             "items": {
@@ -41546,6 +41960,7 @@
                                                         "asOf",
                                                         "paymentSource",
                                                         "filters",
+                                                        "fiat",
                                                         "warnings"
                                                     ]
                                                 }
@@ -41920,8 +42335,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -42172,10 +42587,11 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
-                                                            "AccountingDate"
+                                                            "PeriodAverage",
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -42465,8 +42881,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -42717,10 +43133,11 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
-                                                            "AccountingDate"
+                                                            "PeriodAverage",
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -43010,8 +43427,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -43262,10 +43679,11 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
-                                                            "AccountingDate"
+                                                            "PeriodAverage",
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -43555,8 +43973,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -43807,10 +44225,11 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
-                                                            "AccountingDate"
+                                                            "PeriodAverage",
+                                                            "AccountingDate",
+                                                            "TransactionTime"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -44100,8 +44519,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {

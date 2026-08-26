@@ -6,6 +6,7 @@ import { unzipSync } from 'fflate';
 import { REPORT_CSV_CONTENT_TYPE, REPORT_ZIP_CONTENT_TYPE, stageReportCsv, stageReportZip } from './export-files';
 
 const csvFiles = {
+	readme: Buffer.from('# Masumi transaction report\n', 'utf8'),
 	transactions: Buffer.from('id,amount\r\ntransaction-1,1000000\r\n', 'utf8'),
 	walletSummary: Buffer.from('wallet_id,revenue\r\nwallet-1,950000\r\n', 'utf8'),
 	totals: Buffer.from('gross,fees,net\r\n1000000,50000,950000\r\n', 'utf8'),
@@ -42,14 +43,20 @@ describe('stageReportCsv', () => {
 });
 
 describe('stageReportZip', () => {
-	it('stages exactly three CSV members without changing their bytes', async () => {
+	it('stages the readme and the three CSV members without changing their bytes', async () => {
 		const artifact = await stageReportZip(csvFiles, 'financial-report');
 
 		try {
 			const zipBytes = await readFile(artifact.filePath);
 			const members = unzipSync(zipBytes);
 
-			expect(Object.keys(members).sort()).toEqual(['totals.csv', 'transactions.csv', 'wallet-summary.csv']);
+			expect(Object.keys(members).sort()).toEqual([
+				'README.md',
+				'totals.csv',
+				'transactions.csv',
+				'wallet-summary.csv',
+			]);
+			expect(Buffer.from(members['README.md'])).toEqual(csvFiles.readme);
 			expect(Buffer.from(members['transactions.csv'])).toEqual(csvFiles.transactions);
 			expect(Buffer.from(members['wallet-summary.csv'])).toEqual(csvFiles.walletSummary);
 			expect(Buffer.from(members['totals.csv'])).toEqual(csvFiles.totals);
