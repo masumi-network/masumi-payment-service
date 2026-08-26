@@ -4944,11 +4944,11 @@ export type GetPaymentData = {
          */
         filterNeedsManualAction?: string;
         /**
-         * Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields.
+         * Restrict results to one or more agents by exact agent identifier, as a comma-separated list of at most 20. Prefer this over searchQuery when filtering by agent: it is an exact (case-insensitive) match and will not match other fields. Supplying this field does not apply the default Web3CardanoV1 compatibility filter, so agents on a Web3CardanoV2 source are found too. A value naming no agent matches nothing.
          */
         filterAgentIdentifier?: string;
         /**
-         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount.
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (8+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
          */
         searchQuery?: string;
         /**
@@ -5518,11 +5518,15 @@ export type GetPaymentCountData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
-         * Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields.
+         * Filter by on-chain state
+         */
+        filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        /**
+         * Restrict results to one or more agents by exact agent identifier, as a comma-separated list of at most 20. Prefer this over searchQuery when filtering by agent: it is an exact (case-insensitive) match and will not match other fields. Supplying this field does not apply the default Web3CardanoV1 compatibility filter, so agents on a Web3CardanoV2 source are found too. A value naming no agent matches nothing.
          */
         filterAgentIdentifier?: string;
         /**
-         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount.
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (8+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
          */
         searchQuery?: string;
     };
@@ -5567,11 +5571,15 @@ export type GetPurchaseCountData = {
          */
         filterPaymentSourceType?: 'Web3CardanoV1' | 'Web3CardanoV2';
         /**
-         * Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields.
+         * Filter by on-chain state
+         */
+        filterOnChainState?: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn';
+        /**
+         * Restrict results to one or more agents by exact agent identifier, as a comma-separated list of at most 20. Prefer this over searchQuery when filtering by agent: it is an exact (case-insensitive) match and will not match other fields. Supplying this field does not apply the default Web3CardanoV1 compatibility filter, so agents on a Web3CardanoV2 source are found too. A value naming no agent matches nothing.
          */
         filterAgentIdentifier?: string;
         /**
-         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount.
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (8+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
          */
         searchQuery?: string;
     };
@@ -7747,11 +7755,11 @@ export type GetPurchaseData = {
          */
         filterNeedsManualAction?: string;
         /**
-         * Restrict results to one or more agents by exact agent identifier. Accepts a comma-separated list. Prefer this over searchQuery when filtering by agent: it is an exact match and will not match other fields.
+         * Restrict results to one or more agents by exact agent identifier, as a comma-separated list of at most 20. Prefer this over searchQuery when filtering by agent: it is an exact (case-insensitive) match and will not match other fields. Supplying this field does not apply the default Web3CardanoV1 compatibility filter, so agents on a Web3CardanoV2 source are found too. A value naming no agent matches nothing.
          */
         filterAgentIdentifier?: string;
         /**
-         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, input hash, result hash, current or historical transaction hash, smart contract wallet address, on-chain state, or amount.
+         * Free-text search. Matches ID, blockchain identifier (exact), agent identifier, agent name, smart contract wallet address, on-chain state, layer ("L1", "L2" or "hydra"), or amount. A query that looks like a hash (8+ hex characters) additionally matches input hash, result hash, Hydra head ID, and the current or any historical transaction hash. Matching is case-insensitive, and "%" and "_" are matched literally.
          */
         searchQuery?: string;
         /**

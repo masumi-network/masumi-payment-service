@@ -1,7 +1,10 @@
 import {
 	buildAgentIdentifierFilter,
+	buildMatchingLayers,
 	buildNeedsManualActionFilter,
 	buildTransactionSearchFilter,
+	escapeLikePattern,
+	looksLikeHash,
 	normalizeSearchQuery,
 	parseAmountSearchRange,
 } from './queries';
@@ -16,17 +19,12 @@ describe('normalizeSearchQuery', () => {
 	it('trims surrounding whitespace and lowercases', () => {
 		// The frontend mirror trims; an untrimmed backend disagreed with it, so
 		// ' weather' matched client-side and returned nothing server-side.
-		expect(normalizeSearchQuery(' weather ')).toEqual({ raw: 'weather', lower: 'weather' });
-		expect(normalizeSearchQuery('\tWeather\n')).toEqual({ raw: 'Weather', lower: 'weather' });
-	});
-
-	it('preserves case in raw for the exact blockchainIdentifier match', () => {
-		expect(normalizeSearchQuery(' AbCdEf ')).toEqual({ raw: 'AbCdEf', lower: 'abcdef' });
+		expect(normalizeSearchQuery(' weather ')).toBe('weather');
+		expect(normalizeSearchQuery('\tWeather\n')).toBe('weather');
 	});
 
 	it('keeps a trimmed numeric query parseable as an amount', () => {
-		const search = normalizeSearchQuery('  1.5 ');
-		expect(parseAmountSearchRange(search!.lower)).toEqual({ gte: 1500000n, lte: 1599999n });
+		expect(parseAmountSearchRange(normalizeSearchQuery('  1.5 ')!)).toEqual({ gte: 1500000n, lte: 1599999n });
 	});
 });
 
@@ -46,46 +44,101 @@ describe('buildNeedsManualActionFilter', () => {
 });
 
 describe('buildAgentIdentifierFilter', () => {
+	const agentClauses = (filter: string | undefined) =>
+		(buildAgentIdentifierFilter(filter) as { AND?: [{ OR: unknown[] }] }).AND?.[0].OR;
+
 	it('returns an empty fragment when no filter is supplied', () => {
 		expect(buildAgentIdentifierFilter(undefined)).toEqual({});
-		expect(buildAgentIdentifierFilter('')).toEqual({});
 	});
 
-	it('matches a single identifier exactly', () => {
-		expect(buildAgentIdentifierFilter('abc123')).toEqual({
-			agentIdentifier: { in: ['abc123'] },
-		});
+	it('matches a single identifier exactly, ignoring case', () => {
+		// Identifiers are hex and validateHexString accepts upper case, so a row can
+		// hold either form and an exact case-sensitive compare would miss it.
+		expect(agentClauses('abc123')).toEqual([{ agentIdentifier: { equals: 'abc123', mode: 'insensitive' } }]);
+		expect(agentClauses('AbC123')).toEqual([{ agentIdentifier: { equals: 'AbC123', mode: 'insensitive' } }]);
 	});
 
 	it('splits a comma-separated list and trims each entry', () => {
-		expect(buildAgentIdentifierFilter(' abc123 , def456 ')).toEqual({
-			agentIdentifier: { in: ['abc123', 'def456'] },
-		});
+		expect(agentClauses(' abc123 , def456 ')).toEqual([
+			{ agentIdentifier: { equals: 'abc123', mode: 'insensitive' } },
+			{ agentIdentifier: { equals: 'def456', mode: 'insensitive' } },
+		]);
 	});
 
-	it('drops empty entries rather than emitting an unmatchable in: []', () => {
-		expect(buildAgentIdentifierFilter('abc123,,def456')).toEqual({
-			agentIdentifier: { in: ['abc123', 'def456'] },
-		});
-		// All-empty must fall back to "no filter", never `in: ['']`, which silently
-		// matches nothing and would return an empty list instead of every row.
-		expect(buildAgentIdentifierFilter(',,')).toEqual({});
-		expect(buildAgentIdentifierFilter('   ')).toEqual({});
+	it('drops empty entries from a list that still names an agent', () => {
+		expect(agentClauses('abc123,,def456')).toEqual([
+			{ agentIdentifier: { equals: 'abc123', mode: 'insensitive' } },
+			{ agentIdentifier: { equals: 'def456', mode: 'insensitive' } },
+		]);
 	});
 
-	it('preserves identifier case', () => {
-		// Identifiers are hex asset ids compared exactly; lowercasing here would
-		// stop mixed-case input from ever matching the stored value.
-		expect(buildAgentIdentifierFilter('AbC123')).toEqual({
-			agentIdentifier: { in: ['AbC123'] },
-		});
+	it('matches nothing when the filter is present but names no agent', () => {
+		// Fails closed: a caller building the parameter as `agentIds.join(',')`
+		// sends '' for an empty selection, and returning "no filter" for that
+		// showed every agent's transactions under one agent's heading.
+		expect(buildAgentIdentifierFilter('')).toEqual({ agentIdentifier: { in: [] } });
+		expect(buildAgentIdentifierFilter(',,')).toEqual({ agentIdentifier: { in: [] } });
+		expect(buildAgentIdentifierFilter('   ')).toEqual({ agentIdentifier: { in: [] } });
+	});
+
+	it('nests its OR under AND so it cannot clobber the search filter OR', () => {
+		const where = {
+			...buildAgentIdentifierFilter('abc123'),
+			...buildTransactionSearchFilter('weather', undefined, undefined, 'RequestedFunds'),
+		} as { AND?: unknown[]; OR?: unknown[] };
+
+		expect(where.AND).toBeDefined();
+		expect(where.OR).toBeDefined();
+	});
+});
+
+describe('escapeLikePattern', () => {
+	it('neutralises the LIKE metacharacters', () => {
+		// Prisma interpolates the value straight into the pattern, so an unescaped
+		// '%' matched every row while the frontend mirror matched none.
+		expect(escapeLikePattern('100%')).toBe('100\\%');
+		expect(escapeLikePattern('a_b')).toBe('a\\_b');
+		expect(escapeLikePattern('a\\b')).toBe('a\\\\b');
+	});
+
+	it('leaves an ordinary query untouched', () => {
+		expect(escapeLikePattern('weather')).toBe('weather');
+	});
+});
+
+describe('looksLikeHash', () => {
+	it('accepts hex of at least eight characters', () => {
+		expect(looksLikeHash('deadbeef')).toBe(true);
+		expect(looksLikeHash('0123456789abcdef')).toBe(true);
+	});
+
+	it('rejects short or non-hex queries', () => {
+		expect(looksLikeHash('abc')).toBe(false);
+		expect(looksLikeHash('deadbee')).toBe(false);
+		expect(looksLikeHash('weatheragent')).toBe(false);
+	});
+});
+
+describe('buildMatchingLayers', () => {
+	it('matches a layer name exactly and maps the hydra alias to L2', () => {
+		expect(buildMatchingLayers('l1')).toEqual(['L1']);
+		expect(buildMatchingLayers('l2')).toEqual(['L2']);
+		expect(buildMatchingLayers('hydra')).toEqual(['L2']);
+	});
+
+	it('does not match on a substring', () => {
+		// 'l1' contains '1', so a substring match would let a single character
+		// select every transaction on a layer.
+		expect(buildMatchingLayers('1')).toBeUndefined();
+		expect(buildMatchingLayers('l')).toBeUndefined();
+		expect(buildMatchingLayers(undefined)).toBeUndefined();
 	});
 });
 
 describe('buildTransactionSearchFilter', () => {
-	const orClauses = (searchLower: string, searchRaw?: string) =>
+	const orClauses = (searchLower: string) =>
 		(
-			buildTransactionSearchFilter(searchLower, undefined, undefined, 'RequestedFunds', searchRaw) as {
+			buildTransactionSearchFilter(searchLower, undefined, undefined, 'RequestedFunds') as {
 				OR: unknown[];
 			}
 		).OR;
@@ -100,41 +153,75 @@ describe('buildTransactionSearchFilter', () => {
 		});
 	});
 
-	it('includes agentIdentifier, id, hashes and wallet address', () => {
+	it('includes agentIdentifier, id and wallet address for any query', () => {
 		const clauses = orClauses('abc');
 
 		expect(clauses).toContainEqual({ agentIdentifier: { contains: 'abc', mode: 'insensitive' } });
 		expect(clauses).toContainEqual({ id: { contains: 'abc', mode: 'insensitive' } });
-		expect(clauses).toContainEqual({ inputHash: { contains: 'abc', mode: 'insensitive' } });
-		expect(clauses).toContainEqual({ resultHash: { contains: 'abc', mode: 'insensitive' } });
 		expect(clauses).toContainEqual({
 			SmartContractWallet: { walletAddress: { contains: 'abc', mode: 'insensitive' } },
 		});
 	});
 
-	it('matches both the current and historical transaction hashes', () => {
+	it('escapes LIKE metacharacters in every contains clause', () => {
+		// Unescaped, '%' matched every row server-side while the frontend mirror
+		// compared it literally and matched none.
+		const clauses = orClauses('100%') as Array<Record<string, { contains?: string }>>;
+		expect(clauses).toContainEqual({ agentName: { contains: '100\\%', mode: 'insensitive' } });
+		for (const clause of clauses) {
+			for (const value of Object.values(clause)) {
+				if (value?.contains !== undefined) expect(value.contains).toBe('100\\%');
+			}
+		}
+
+		// `equals` is not a LIKE pattern, so escaping it would search for a
+		// literal backslash that is not in the stored value.
+		expect(clauses).toContainEqual({ blockchainIdentifier: { equals: '100%', mode: 'insensitive' } });
+	});
+
+	it('searches the hash columns and relations only for a hash-shaped query', () => {
 		// History holds the PREVIOUS transactions, so the current hash is only ever on
 		// CurrentTransaction — dropping either branch loses half the hashes.
-		const clauses = orClauses('deadbeef');
+		const hashClauses = orClauses('deadbeef');
 
-		expect(clauses).toContainEqual({
+		expect(hashClauses).toContainEqual({ inputHash: { contains: 'deadbeef', mode: 'insensitive' } });
+		expect(hashClauses).toContainEqual({ resultHash: { contains: 'deadbeef', mode: 'insensitive' } });
+		expect(hashClauses).toContainEqual({
 			CurrentTransaction: { txHash: { contains: 'deadbeef', mode: 'insensitive' } },
 		});
-		expect(clauses).toContainEqual({
+		expect(hashClauses).toContainEqual({
 			TransactionHistory: { some: { txHash: { contains: 'deadbeef', mode: 'insensitive' } } },
 		});
-	});
-
-	it('matches blockchainIdentifier exactly, on the raw query', () => {
-		// Compressed-then-hex encoded: a substring is meaningless and `contains` would
-		// also forfeit the unique index. The raw value must survive lowercasing.
-		expect(orClauses('abcdef', 'AbCdEf')).toContainEqual({
-			blockchainIdentifier: { equals: 'AbCdEf' },
+		expect(hashClauses).toContainEqual({
+			CurrentTransaction: { hydraHeadId: { contains: 'deadbeef', mode: 'insensitive' } },
 		});
 	});
 
-	it('falls back to the lowercased query when no raw query is passed', () => {
-		expect(orClauses('abcdef')).toContainEqual({ blockchainIdentifier: { equals: 'abcdef' } });
+	it('omits the hash branches for a short or non-hex query', () => {
+		// These cannot be answered from an index and the relation branches compile
+		// to subqueries, so running them for every keystroke made the unbounded
+		// count endpoints scan far more than they had to.
+		const clauses = JSON.stringify(orClauses('weather'));
+
+		expect(clauses).not.toContain('inputHash');
+		expect(clauses).not.toContain('resultHash');
+		expect(clauses).not.toContain('txHash');
+		expect(clauses).not.toContain('TransactionHistory');
+		expect(clauses).not.toContain('hydraHeadId');
+	});
+
+	it('matches blockchainIdentifier exactly and case-insensitively', () => {
+		// Compressed-then-hex encoded, so a substring is meaningless: consumers paste
+		// the whole value. A purchase stores the identifier its buyer supplied, which
+		// need not be in the lower-case form the generator emits.
+		expect(orClauses('abcdef')).toContainEqual({
+			blockchainIdentifier: { equals: 'abcdef', mode: 'insensitive' },
+		});
+	});
+
+	it('adds a layer branch only for a layer name', () => {
+		expect(orClauses('hydra')).toContainEqual({ CurrentTransaction: { layer: { in: ['L2'] } } });
+		expect(JSON.stringify(orClauses('weather'))).not.toContain('layer');
 	});
 
 	it('never matches on network or payment source type', () => {
@@ -199,9 +286,26 @@ describe('parseAmountSearchRange', () => {
 	});
 
 	it('preserves precision above 2^53 lovelace', () => {
-		expect(parseAmountSearchRange('9007199254740993')).toEqual({
-			gte: 9007199254740993000000n,
-			lte: 9007199254740993999999n,
+		// 2^53 + 1 lovelace: exactly the value a float round-trip would lose.
+		expect(parseAmountSearchRange('9007199254.740993')).toEqual({
+			gte: 9007199254740993n,
+			lte: 9007199254740993n,
+		});
+	});
+
+	it('clamps a range that would overflow the bigint amount column', () => {
+		// `amount` is a Postgres bigint, and a bound past its range is rejected by
+		// the driver — a long numeric query used to 500 instead of returning
+		// nothing. Nothing can be stored above the ceiling, so a range starting
+		// above it matches nothing.
+		const overflowing = parseAmountSearchRange('99999999999999');
+		expect(overflowing).toBeDefined();
+		expect(overflowing!.gte > overflowing!.lte).toBe(true);
+
+		// A range that merely ends above the ceiling is capped at it.
+		expect(parseAmountSearchRange('9223372036854')).toEqual({
+			gte: 9223372036854000000n,
+			lte: 9223372036854775807n,
 		});
 	});
 

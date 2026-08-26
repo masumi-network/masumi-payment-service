@@ -32,14 +32,6 @@ import { getBlockfrostInstance } from '@/utils/blockfrost';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter, assertHotWalletInScope } from '@/utils/shared/wallet-scope';
 import {
-	buildAgentIdentifierFilter,
-	buildMatchingStates,
-	buildNeedsManualActionFilter,
-	buildTransactionSearchFilter,
-	normalizeSearchQuery,
-	parseAmountSearchRange,
-} from '@/utils/shared/queries';
-import {
 	createPaymentSchemaOutput,
 	createPaymentsSchemaInput,
 	paymentResponseSchema,
@@ -48,7 +40,7 @@ import {
 	queryPaymentsSchemaInput,
 	queryPaymentsSchemaOutput,
 } from './schemas';
-import { getPaymentsForQuery, resolvePaymentPaymentSourceTypeFilter } from './queries';
+import { buildPaymentListWhere, getPaymentsForQuery } from './queries';
 import { serializePaymentsResponse } from './serializers';
 import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
 
@@ -84,27 +76,8 @@ export const queryPaymentCountGet = readAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPaymentCountSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
-		const search = normalizeSearchQuery(input.searchQuery);
-		const searchLower = search?.lower;
 		const total = await prisma.paymentRequest.count({
-			where: {
-				PaymentSource: {
-					network: input.network,
-					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: resolvePaymentPaymentSourceTypeFilter(input),
-					deletedAt: null,
-				},
-				...buildWalletScopeFilter(ctx.walletScopeIds),
-				...buildNeedsManualActionFilter(input.filterNeedsManualAction),
-				...buildAgentIdentifierFilter(input.filterAgentIdentifier),
-				...buildTransactionSearchFilter(
-					searchLower,
-					buildMatchingStates(searchLower),
-					searchLower ? parseAmountSearchRange(searchLower) : undefined,
-					'RequestedFunds',
-					search?.raw,
-				),
-			},
+			where: buildPaymentListWhere(input, ctx.walletScopeIds),
 		});
 
 		return {

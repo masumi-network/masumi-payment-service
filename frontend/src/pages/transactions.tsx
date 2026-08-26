@@ -104,7 +104,11 @@ export default function Transactions() {
     if (filters.status) params.filterOnChainState = filters.status;
     if (filters.needsAction) params.filterNeedsManualAction = true;
 
-    if (debouncedSearchQuery) params.searchQuery = debouncedSearchQuery;
+    // Trimmed to match the backend's own normalizeSearchQuery, so a stray
+    // trailing space cannot create a second react-query key for a request
+    // that returns identical rows.
+    const trimmedSearchQuery = debouncedSearchQuery.trim();
+    if (trimmedSearchQuery) params.searchQuery = trimmedSearchQuery;
 
     return params;
   }, [activeTab, debouncedSearchQuery, filters]);
@@ -196,17 +200,23 @@ export default function Transactions() {
   // (buildTransactionSearchFilter) to avoid items appearing/disappearing when the
   // server responds. Matching MORE fields here than the backend is the bug this
   // guards against: those rows show during the debounce and vanish on response.
-  // Deliberately absent, matching the backend: network, paymentSourceType,
-  // transaction type, layer and hydraHeadId — the query is already scoped to
-  // one network and source type, and the backend search matches none of these,
-  // so matching them here would surface rows that vanish on the server response.
+  // Deliberately absent, matching the backend: network, paymentSourceType and
+  // transaction type — the query is already scoped to one network and source
+  // type, so matching them would make any substring of those return everything.
+  // The backend lower-cases and trims the query and matches every column
+  // case-insensitively, so a single lower-cased `query` mirrors it exactly.
   const displayTransactions = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
-    const rawQuery = searchQuery.trim();
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
       return filteredTransactions;
 
     const amountRange = parseAmountSearchRange(query);
+    // Mirror backend looksLikeHash: the hash columns and the head ID are only
+    // searched for a hex query of 8+ characters.
+    const isHashQuery = query.length >= 8 && /^[0-9a-f]+$/.test(query);
+    // Mirror backend buildMatchingLayers: exact match plus the 'hydra' alias.
+    const matchingLayer =
+      query === 'hydra' ? 'L2' : query === 'l1' || query === 'l2' ? query.toUpperCase() : null;
 
     // Mirror backend buildMatchingStates
     const matchingStates = ON_CHAIN_STATES.filter(
@@ -215,11 +225,16 @@ export default function Transactions() {
 
     return filteredTransactions.filter((tx) => {
       if (tx.id?.toLowerCase().includes(query)) return true;
-      if (tx.blockchainIdentifier === rawQuery) return true;
-      if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
-      if (tx.TransactionHistory?.some((h) => h.txHash?.toLowerCase().includes(query))) return true;
-      if (tx.inputHash?.toLowerCase().includes(query)) return true;
-      if (tx.resultHash?.toLowerCase().includes(query)) return true;
+      if (tx.blockchainIdentifier?.toLowerCase() === query) return true;
+      if (isHashQuery) {
+        if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
+        if (tx.TransactionHistory?.some((h) => h.txHash?.toLowerCase().includes(query)))
+          return true;
+        if (tx.inputHash?.toLowerCase().includes(query)) return true;
+        if (tx.resultHash?.toLowerCase().includes(query)) return true;
+        if (tx.CurrentTransaction?.hydraHeadId?.toLowerCase().includes(query)) return true;
+      }
+      if (matchingLayer && tx.CurrentTransaction?.layer === matchingLayer) return true;
       if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;

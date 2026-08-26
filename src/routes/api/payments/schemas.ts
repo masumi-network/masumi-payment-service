@@ -76,6 +76,7 @@ export const queryPaymentCountSchemaInput = z.object({
 		.describe(
 			'Filter by payment source type. When omitted with no smart-contract-address filter, payment count defaults to Web3CardanoV1 for backwards compatibility.',
 		),
+	filterOnChainState: z.nativeEnum(OnChainState).optional().describe('Filter by on-chain state'),
 	filterAgentIdentifier: agentIdentifierFilterSchema,
 	searchQuery: searchQuerySchema,
 });

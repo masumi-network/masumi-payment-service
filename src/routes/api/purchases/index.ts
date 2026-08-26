@@ -19,14 +19,6 @@ import {
 } from '@/utils/logic/force-layer';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import {
-	buildAgentIdentifierFilter,
-	buildMatchingStates,
-	buildNeedsManualActionFilter,
-	buildTransactionSearchFilter,
-	normalizeSearchQuery,
-	parseAmountSearchRange,
-} from '@/utils/shared/queries';
 import { resolvePurchaseCreationContext } from './shared';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import {
@@ -38,7 +30,7 @@ import {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 } from './schemas';
-import { getPurchasesForQuery, resolvePurchasePaymentSourceTypeFilter } from './queries';
+import { buildPurchaseListWhere, getPurchasesForQuery } from './queries';
 import { serializePurchasesResponse } from './serializers';
 import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
 
@@ -74,27 +66,8 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 	handler: async ({ input, ctx }: { input: z.infer<typeof queryPurchaseCountSchemaInput>; ctx: AuthContext }) => {
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
-		const search = normalizeSearchQuery(input.searchQuery);
-		const searchLower = search?.lower;
 		const total = await prisma.purchaseRequest.count({
-			where: {
-				PaymentSource: {
-					deletedAt: null,
-					network: input.network,
-					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: resolvePurchasePaymentSourceTypeFilter(input),
-				},
-				...buildWalletScopeFilter(ctx.walletScopeIds),
-				...buildNeedsManualActionFilter(input.filterNeedsManualAction),
-				...buildAgentIdentifierFilter(input.filterAgentIdentifier),
-				...buildTransactionSearchFilter(
-					searchLower,
-					buildMatchingStates(searchLower),
-					searchLower ? parseAmountSearchRange(searchLower) : undefined,
-					'PaidFunds',
-					search?.raw,
-				),
-			},
+			where: buildPurchaseListWhere(input, ctx.walletScopeIds),
 		});
 
 		return {
