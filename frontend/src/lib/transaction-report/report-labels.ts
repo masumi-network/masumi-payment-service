@@ -10,7 +10,7 @@ import type { ReportMetricKey } from './dashboard-metrics';
  */
 export const REPORT_METRIC_LABELS = {
   sellerGrossRevenue: 'Gross revenue',
-  sellerPendingRevenue: 'Not yet earned',
+  sellerPendingRevenue: 'Not yet final',
   protocolFees: 'Protocol fees',
   sellerCardanoFees: 'Seller network fees',
   sellerNetRevenue: 'Net revenue',
@@ -26,7 +26,7 @@ export const REPORT_METRIC_LABELS = {
 /** Short line under a metric, shown where there is room for it. */
 export const REPORT_METRIC_HINTS = {
   sellerGrossRevenue: 'Earned before any fee',
-  sellerPendingRevenue: 'Locked in escrow, dated the day it was locked until it settles',
+  sellerPendingRevenue: 'Locked in escrow, outcome not decided yet',
   protocolFees: 'Kept by the payment source',
   sellerCardanoFees: 'Chain fees paid by selling wallets',
   sellerNetRevenue: 'Gross revenue minus fees',
