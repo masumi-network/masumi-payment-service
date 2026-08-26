@@ -211,7 +211,7 @@ describe('buildReportRow', () => {
 		});
 	});
 
-	it('keeps shared V2 admin fees partial', () => {
+	it('gives a batched row its own share of the fee, and still no admin figure', () => {
 		const row = buildReportRow(
 			record({
 				paymentSourceType: 'Web3CardanoV2',
@@ -235,8 +235,12 @@ describe('buildReportRow', () => {
 			COHORT_WINDOW,
 		);
 		expect(row.cardanoFeeReconciliation).toMatchObject({
+			// Half of the 400000 the transaction charged, because it settled two
+			// requests. The share is exact, so the row carries it.
+			totalCardanoFees: 200_000n,
+			// The stored actor counters cover the whole life of the request, not
+			// this one transaction, so the remainder still cannot be worked out.
 			adminCardanoFees: null,
-			totalCardanoFees: null,
 			completeness: 'partial',
 		});
 		expect(getReportRowWarnings(row).map((warning) => warning.code)).toContain('CARDANO_FEE_RECONCILIATION_PARTIAL');

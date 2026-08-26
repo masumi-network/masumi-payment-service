@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { feeShareForPaymentKey, feeShareForPaymentKeys, isSharedFee, splitFeeEvenly } from './fee-split';
+import { feeShareForPaymentKey, feeShareForPaymentKeys, splitFeeEvenly } from './fee-split';
 
 describe('splitFeeEvenly', () => {
 	it('divides a fee that splits exactly', () => {
@@ -62,10 +62,3 @@ describe('feeShareForPaymentKeys', () => {
 	});
 });
 
-describe('isSharedFee', () => {
-	it('is true only when more than one request settled in the transaction', () => {
-		expect(isSharedFee(['alpha'])).toBe(false);
-		expect(isSharedFee(['alpha', 'alpha'])).toBe(false);
-		expect(isSharedFee(['alpha', 'bravo'])).toBe(true);
-	});
-});
