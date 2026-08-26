@@ -1,21 +1,23 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import { Coins, Wand2 } from 'lucide-react';
 import { useAppContext, type NetworkType } from '@/lib/contexts/AppContext';
 import { useX402Networks } from '@/lib/hooks/useX402';
-import { isX402ChainUsable, X402_ACCENT } from '@/lib/x402-rail';
+import { filterX402PaymentSourceChains, isX402ChainUsable, X402_ACCENT } from '@/lib/x402-rail';
 import { cn, shortenAddress } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ChainDialog } from '@/components/x402/ChainsTab';
+import { X402Network } from '@/lib/api/generated';
 
 /**
  * The x402 (EVM) half of the Payment Sources page. A configured chain is the EVM
  * equivalent of a Cardano payment source, so it belongs alongside them — but the two
  * data shapes differ enough (contract + fee + wallets vs chain + RPC + facilitator) that
- * they read as parallel sections rather than one mismatched table. Only fully configured
- * chains are listed as sources; anything still mid-setup routes through the wizard.
+ * they read as parallel sections rather than one mismatched table. Draft chains stay visible
+ * here so operators can finish their setup without a separate Chains page.
  */
 export function X402SourcesSection({
   network,
@@ -30,29 +32,18 @@ export function X402SourcesSection({
   // Bind chains to the env this section is rendered for (the page's Preprod/Mainnet
   // selection) rather than the ambient active network, so the list, header, and empty
   // state can never show one environment's chains while labelled with the other's.
-  const { networks, isLoading } = useX402Networks({ silentErrors: true, network });
-
-  // Only fully configured chains count as payment sources here, mirroring the rail picker.
-  const usableChains = useMemo(() => networks.filter(isX402ChainUsable), [networks]);
-  const hasUnconfigured = useMemo(
-    () => networks.some((chain) => !isX402ChainUsable(chain)),
-    [networks],
-  );
+  const { networks, isLoading, refetch } = useX402Networks({ silentErrors: true, network });
+  const [editingChain, setEditingChain] = useState<X402Network | null>(null);
+  const [isChainDialogOpen, setIsChainDialogOpen] = useState(false);
 
   const filteredChains = useMemo(() => {
-    if (!searchQuery) return usableChains;
-    const query = searchQuery.toLowerCase();
-    return usableChains.filter(
-      (chain) =>
-        chain.displayName.toLowerCase().includes(query) ||
-        chain.caip2Id.toLowerCase().includes(query),
-    );
-  }, [usableChains, searchQuery]);
+    return filterX402PaymentSourceChains(networks, searchQuery);
+  }, [networks, searchQuery]);
 
-  const setActive = (chainId: string) => {
+  const activateChain = (chainId: string, destination: string) => {
     setActiveRail('x402');
     setSelectedX402ChainId(chainId);
-    router.push('/x402');
+    router.push(destination);
   };
 
   return (
@@ -100,14 +91,10 @@ export function X402SourcesSection({
                     <Coins className={cn('h-6 w-6', X402_ACCENT.icon)} />
                     <div className="space-y-1">
                       <p className="text-sm font-medium">
-                        {searchQuery
-                          ? 'No matching x402 chains'
-                          : `No configured x402 chains for ${network}`}
+                        {searchQuery ? 'No matching x402 chains' : `No x402 chains for ${network}`}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {hasUnconfigured
-                          ? 'A chain exists but still needs setup before it can be used.'
-                          : 'Set up an EVM chain to accept and send stablecoin payments over x402.'}
+                        Set up an EVM chain to accept and send stablecoin payments over x402.
                       </p>
                     </div>
                     {!searchQuery && (
@@ -124,7 +111,9 @@ export function X402SourcesSection({
               </tr>
             ) : (
               filteredChains.map((chain) => {
-                const isActive = activeRail === 'x402' && chain.id === selectedX402ChainId;
+                const isUsable = isX402ChainUsable(chain);
+                const isActive =
+                  isUsable && activeRail === 'x402' && chain.id === selectedX402ChainId;
                 return (
                   <tr
                     key={chain.id}
@@ -134,7 +123,10 @@ export function X402SourcesSection({
                     )}
                   >
                     <td className={cn('p-4 pl-6', isActive && 'border-l-4 border-l-green-500')}>
-                      <div className="text-sm font-medium">{chain.displayName}</div>
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        {chain.displayName}
+                        {!isUsable && <Badge variant="warning">Needs setup</Badge>}
+                      </div>
                       <div className="font-mono text-xs text-muted-foreground">{chain.caip2Id}</div>
                     </td>
                     <td className="p-4">
@@ -151,16 +143,22 @@ export function X402SourcesSection({
                           {shortenAddress(chain.facilitatorWalletAddress, 6)}
                           <CopyButton value={chain.facilitatorWalletAddress} />
                         </div>
+                      ) : chain.facilitatorUrl ? (
+                        <Badge variant="outline">Remote</Badge>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </td>
                     <td className="p-4 pr-8">
                       <div className="flex justify-end gap-2">
-                        {/* Scope the rail to this row's chain before navigating, so /x402
-                            opens under the chain the user chose to manage, not whichever
-                            chain happened to be selected. */}
-                        <Button variant="ghost" size="sm" onClick={() => setActive(chain.id)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditingChain(chain);
+                            setIsChainDialogOpen(true);
+                          }}
+                        >
                           Manage
                         </Button>
                         {isActive ? (
@@ -180,11 +178,15 @@ export function X402SourcesSection({
                               </p>
                             </TooltipContent>
                           </Tooltip>
-                        ) : (
-                          <Button variant="outline" size="sm" onClick={() => setActive(chain.id)}>
+                        ) : isUsable ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => activateChain(chain.id, '/x402/wallets')}
+                          >
                             Set as Active
                           </Button>
-                        )}
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -194,6 +196,21 @@ export function X402SourcesSection({
           </tbody>
         </table>
       </div>
+
+      <ChainDialog
+        key={isChainDialogOpen ? (editingChain?.id ?? 'new') : 'closed'}
+        open={isChainDialogOpen}
+        editing={editingChain}
+        onClose={() => {
+          setIsChainDialogOpen(false);
+          setEditingChain(null);
+        }}
+        onSaved={() => {
+          setIsChainDialogOpen(false);
+          setEditingChain(null);
+          refetch();
+        }}
+      />
     </div>
   );
 }

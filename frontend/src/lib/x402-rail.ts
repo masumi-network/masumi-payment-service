@@ -21,6 +21,14 @@ export function isTestnetEnv(network: NetworkType): boolean {
   return network === 'Preprod';
 }
 
+export function resolveX402ChainEnvironment(
+  network: NetworkType,
+  submittedIsTestnet: boolean,
+  isEnvironmentLocked: boolean,
+): boolean {
+  return isEnvironmentLocked ? isTestnetEnv(network) : submittedIsTestnet;
+}
+
 /** Enabled EVM chains that belong to the given Cardano environment. */
 export function chainsForEnv<T extends { isEnabled: boolean; isTestnet: boolean }>(
   chains: T[],
@@ -34,6 +42,19 @@ export function chainsForEnv<T extends { isEnabled: boolean; isTestnet: boolean 
 export function walletsForNetworks(wallets: X402Wallet[], networks: X402Network[]): X402Wallet[] {
   const networkIds = new Set(networks.map((network) => network.id));
   return wallets.filter((wallet) => networkIds.has(wallet.networkId));
+}
+
+/** Payment Sources must keep drafts visible so operators can finish or remove their config. */
+export function filterX402PaymentSourceChains<
+  T extends Pick<X402Network, 'displayName' | 'caip2Id'>,
+>(chains: T[], searchQuery: string): T[] {
+  if (!searchQuery) return chains;
+  const query = searchQuery.toLowerCase();
+  return chains.filter(
+    (chain) =>
+      chain.displayName.toLowerCase().includes(query) ||
+      chain.caip2Id.toLowerCase().includes(query),
+  );
 }
 
 /** Whether any budget belongs to an enabled network in the supplied environment scope. */

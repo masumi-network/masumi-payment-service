@@ -30,7 +30,7 @@ import {
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useX402Networks, useX402Wallets } from '@/lib/hooks/useX402';
-import { isTestnetEnv } from '@/lib/x402-rail';
+import { isTestnetEnv, resolveX402ChainEnvironment } from '@/lib/x402-rail';
 import { shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { postX402Networks, X402Network, PostX402NetworksData } from '@/lib/api/generated';
@@ -290,23 +290,25 @@ function FacilitatorLabel({ address, walletId }: { address: string | null; walle
   return <span className="font-mono">{address ? shortenAddress(address, 6) : walletId}</span>;
 }
 
-export function ChainDialog({
-  open,
+export function ChainForm({
   editing,
+  defaultFacilitatorMode = 'wallet',
+  lockEnvironment = false,
   onClose,
   onSaved,
 }: {
-  open: boolean;
   editing: X402Network | null;
+  defaultFacilitatorMode?: 'wallet' | 'managed' | 'remote';
+  lockEnvironment?: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (network: X402Network) => void;
 }) {
   const { apiClient, network } = useAppContext();
   // Only load the wallet set while the form is open (it feeds the picker). A facilitator
   // settles inbound payments and must be bound to THIS chain (the backend rejects any other
   // binding), so only this chain's Selling wallets are selectable. A chain being created has
   // no id yet — and can have no bound wallets — so the picker stays empty until it is saved.
-  const { wallets } = useX402Wallets(open && !!editing, 'Selling', editing?.id);
+  const { wallets } = useX402Wallets(!!editing, 'Selling', editing?.id);
   const saveChain = useApiMutation({
     mutationFn: (body: NonNullable<PostX402NetworksData['body']>) =>
       postX402Networks({ client: apiClient, body }),
@@ -328,7 +330,9 @@ export function ChainDialog({
       rpcUrl: editing?.rpcUrl ?? '',
       // A new chain should land in the environment it is created from (testnet chains
       // pair with Preprod), otherwise it is invisible in the active env after saving.
-      isTestnet: editing?.isTestnet ?? isTestnetEnv(network),
+      isTestnet: lockEnvironment
+        ? isTestnetEnv(network)
+        : (editing?.isTestnet ?? isTestnetEnv(network)),
       // A new self-hosted chain cannot have a bound facilitator wallet until the network row
       // exists. Save it disabled first; remote-facilitator users may enable it in this form.
       isEnabled: editing?.isEnabled ?? false,
@@ -337,7 +341,13 @@ export function ChainDialog({
         editing?.defaultAssetDecimals != null ? String(editing.defaultAssetDecimals) : '',
       // Existing remote-facilitator chains open in remote mode; everything else defaults to
       // the owned-wallet mode. facilitatorAuth is write-only, so it is never prefilled.
-      facilitatorMode: editing?.facilitatorUrl ? 'remote' : 'wallet',
+      facilitatorMode: editing?.facilitatorUrl
+        ? 'remote'
+        : editing?.facilitatorWalletId
+          ? 'wallet'
+          : defaultFacilitatorMode === 'managed'
+            ? 'wallet'
+            : defaultFacilitatorMode,
       facilitatorWalletId: editing?.facilitatorWalletId ?? NO_FACILITATOR,
       facilitatorUrl: editing?.facilitatorUrl ?? '',
       facilitatorAuth: '',
@@ -368,7 +378,7 @@ export function ChainDialog({
         caip2Id: data.caip2Id,
         displayName: data.displayName,
         rpcUrl: data.rpcUrl,
-        isTestnet: data.isTestnet,
+        isTestnet: resolveX402ChainEnvironment(network, data.isTestnet, lockEnvironment),
         isEnabled: data.isEnabled,
         defaultAsset: data.defaultAsset ? data.defaultAsset : null,
         defaultAssetDecimals: data.defaultAsset ? Number(data.defaultAssetDecimals) : null,
@@ -387,10 +397,256 @@ export function ChainDialog({
       })
       .catch(() => null);
     if (!response) return;
+    const savedNetwork = response.data?.data;
+    if (!savedNetwork) return;
     toast.success(editing ? 'Chain updated' : 'Chain added');
-    onSaved();
+    onSaved(savedNetwork);
   };
 
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <div className="space-y-2">
+        <label htmlFor="chain-caip2Id" className="text-sm font-medium">
+          CAIP-2 chain id
+        </label>
+        <Input
+          id="chain-caip2Id"
+          placeholder="eip155:8453"
+          className="font-mono"
+          readOnly={!!editing}
+          {...register('caip2Id')}
+        />
+        {errors.caip2Id && <p className="text-xs text-destructive">{errors.caip2Id.message}</p>}
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="chain-displayName" className="text-sm font-medium">
+          Display name
+        </label>
+        <Input id="chain-displayName" placeholder="Base" {...register('displayName')} />
+        {errors.displayName && (
+          <p className="text-xs text-destructive">{errors.displayName.message}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="chain-rpcUrl" className="text-sm font-medium">
+          RPC URL
+        </label>
+        <Input id="chain-rpcUrl" placeholder="https://mainnet.base.org" {...register('rpcUrl')} />
+        {errors.rpcUrl && <p className="text-xs text-destructive">{errors.rpcUrl.message}</p>}
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="chain-defaultAsset" className="text-sm font-medium">
+          Default asset (optional)
+        </label>
+        <Input
+          id="chain-defaultAsset"
+          placeholder="0x… token contract"
+          className="font-mono"
+          {...register('defaultAsset')}
+        />
+        {errors.defaultAsset && (
+          <p className="text-xs text-destructive">{errors.defaultAsset.message}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="chain-defaultAssetDecimals" className="text-sm font-medium">
+          Default asset decimals
+        </label>
+        <Input
+          id="chain-defaultAssetDecimals"
+          type="number"
+          inputMode="numeric"
+          min="0"
+          max="255"
+          placeholder="6"
+          disabled={!defaultAsset}
+          {...register('defaultAssetDecimals')}
+        />
+        {errors.defaultAssetDecimals && (
+          <p className="text-xs text-destructive">{errors.defaultAssetDecimals.message}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Facilitator</label>
+        <Controller
+          control={control}
+          name="facilitatorMode"
+          render={({ field }) => (
+            <Select value={field.value} onValueChange={field.onChange}>
+              <SelectTrigger aria-label="Facilitator mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="wallet">Owned Selling wallet (self-hosted)</SelectItem>
+                  <SelectItem value="remote">Remote facilitator URL</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          )}
+        />
+
+        {facilitatorMode === 'wallet' ? (
+          <>
+            <Controller
+              control={control}
+              name="facilitatorWalletId"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger aria-label="Facilitator wallet">
+                    <SelectValue placeholder="Select a managed wallet" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={NO_FACILITATOR}>None</SelectItem>
+                      {wallets.map((wallet) => (
+                        <SelectItem key={wallet.id} value={wallet.id} className="font-mono">
+                          {shortenAddress(wallet.address, 8)}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.facilitatorWalletId ? (
+              <p className="text-xs text-destructive">{errors.facilitatorWalletId.message}</p>
+            ) : editing ? (
+              <p className="text-xs text-muted-foreground">
+                An owned Selling wallet bound to this chain signs settlements locally and pays gas.
+                Required to enable the chain.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Save the chain first, then create a Selling wallet bound to it and assign it here as
+                the facilitator.
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            <Input
+              placeholder="https://facilitator.example"
+              aria-label="Facilitator URL"
+              {...register('facilitatorUrl')}
+            />
+            {errors.facilitatorUrl && (
+              <p className="text-xs text-destructive">{errors.facilitatorUrl.message}</p>
+            )}
+            <Input
+              type="password"
+              placeholder={
+                hasExistingRemoteFacilitator
+                  ? 'Authorization header value (blank keeps it on the same origin)'
+                  : 'Authorization header value (optional)'
+              }
+              aria-label="Facilitator auth"
+              autoComplete="new-password"
+              spellCheck={false}
+              disabled={clearFacilitatorAuth}
+              {...register('facilitatorAuth')}
+            />
+            {hasExistingRemoteFacilitator && (
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <p className="text-sm font-medium">Clear stored authorization</p>
+                  <p className="text-xs text-muted-foreground">
+                    Stop sending the existing Authorization header after this save.
+                  </p>
+                </div>
+                <Controller
+                  control={control}
+                  name="clearFacilitatorAuth"
+                  render={({ field }) => (
+                    <Switch
+                      aria-label="Clear stored facilitator authorization"
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  )}
+                />
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              A remote facilitator settles inbound payments over HTTPS. The node holds no key on
+              this chain. Auth is stored encrypted and never shown again
+              {hasExistingRemoteFacilitator
+                ? clearFacilitatorAuth
+                  ? '; the stored value will be cleared when saved.'
+                  : '; blank preserves it only while the URL origin stays unchanged.'
+                : '.'}
+            </p>
+          </>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between rounded-lg border p-3">
+        <div>
+          <p className="text-sm font-medium">Testnet</p>
+          <p className="text-xs text-muted-foreground">
+            {lockEnvironment
+              ? `Fixed by the active ${network} environment.`
+              : 'Pairs with the Preprod environment.'}
+          </p>
+        </div>
+        <Controller
+          control={control}
+          name="isTestnet"
+          render={({ field }) => (
+            <Switch
+              aria-label="Testnet"
+              checked={field.value}
+              disabled={lockEnvironment}
+              onCheckedChange={field.onChange}
+            />
+          )}
+        />
+      </div>
+
+      <div className="flex items-center justify-between rounded-lg border p-3">
+        <div>
+          <p className="text-sm font-medium">Enabled</p>
+          <p className="text-xs text-muted-foreground">Allow x402 payments on this chain.</p>
+        </div>
+        <Controller
+          control={control}
+          name="isEnabled"
+          render={({ field }) => (
+            <Switch aria-label="Enabled" checked={field.value} onCheckedChange={field.onChange} />
+          )}
+        />
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isSaving}>
+          {isSaving ? 'Saving…' : editing ? 'Save changes' : 'Add chain'}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+export function ChainDialog({
+  open,
+  editing,
+  defaultFacilitatorMode = 'wallet',
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  editing: X402Network | null;
+  defaultFacilitatorMode?: 'wallet' | 'managed' | 'remote';
+  onClose: () => void;
+  onSaved: (network: X402Network) => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
       <DialogContent>
@@ -400,237 +656,14 @@ export function ChainDialog({
             Configure an EVM chain for the x402 payment rail. The CAIP-2 id is the unique key.
           </DialogDescription>
         </DialogHeader>
-
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="space-y-2">
-            <label htmlFor="chain-caip2Id" className="text-sm font-medium">
-              CAIP-2 chain id
-            </label>
-            <Input
-              id="chain-caip2Id"
-              placeholder="eip155:8453"
-              className="font-mono"
-              readOnly={!!editing}
-              {...register('caip2Id')}
-            />
-            {errors.caip2Id && <p className="text-xs text-destructive">{errors.caip2Id.message}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="chain-displayName" className="text-sm font-medium">
-              Display name
-            </label>
-            <Input id="chain-displayName" placeholder="Base" {...register('displayName')} />
-            {errors.displayName && (
-              <p className="text-xs text-destructive">{errors.displayName.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="chain-rpcUrl" className="text-sm font-medium">
-              RPC URL
-            </label>
-            <Input
-              id="chain-rpcUrl"
-              placeholder="https://mainnet.base.org"
-              {...register('rpcUrl')}
-            />
-            {errors.rpcUrl && <p className="text-xs text-destructive">{errors.rpcUrl.message}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="chain-defaultAsset" className="text-sm font-medium">
-              Default asset (optional)
-            </label>
-            <Input
-              id="chain-defaultAsset"
-              placeholder="0x… token contract"
-              className="font-mono"
-              {...register('defaultAsset')}
-            />
-            {errors.defaultAsset && (
-              <p className="text-xs text-destructive">{errors.defaultAsset.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label htmlFor="chain-defaultAssetDecimals" className="text-sm font-medium">
-              Default asset decimals
-            </label>
-            <Input
-              id="chain-defaultAssetDecimals"
-              type="number"
-              inputMode="numeric"
-              min="0"
-              max="255"
-              placeholder="6"
-              disabled={!defaultAsset}
-              {...register('defaultAssetDecimals')}
-            />
-            {errors.defaultAssetDecimals && (
-              <p className="text-xs text-destructive">{errors.defaultAssetDecimals.message}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Facilitator</label>
-            <Controller
-              control={control}
-              name="facilitatorMode"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger aria-label="Facilitator mode">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="wallet">Owned Selling wallet (self-hosted)</SelectItem>
-                      <SelectItem value="remote">Remote facilitator URL</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              )}
-            />
-
-            {facilitatorMode === 'wallet' ? (
-              <>
-                <Controller
-                  control={control}
-                  name="facilitatorWalletId"
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger aria-label="Facilitator wallet">
-                        <SelectValue placeholder="Select a managed wallet" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value={NO_FACILITATOR}>None</SelectItem>
-                          {wallets.map((wallet) => (
-                            <SelectItem key={wallet.id} value={wallet.id} className="font-mono">
-                              {shortenAddress(wallet.address, 8)}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                {errors.facilitatorWalletId ? (
-                  <p className="text-xs text-destructive">{errors.facilitatorWalletId.message}</p>
-                ) : editing ? (
-                  <p className="text-xs text-muted-foreground">
-                    An owned Selling wallet bound to this chain signs settlements locally and pays
-                    gas. Required to enable the chain.
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Save the chain first, then create a Selling wallet bound to it and assign it
-                    here as the facilitator.
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <Input
-                  placeholder="https://facilitator.example"
-                  aria-label="Facilitator URL"
-                  {...register('facilitatorUrl')}
-                />
-                {errors.facilitatorUrl && (
-                  <p className="text-xs text-destructive">{errors.facilitatorUrl.message}</p>
-                )}
-                <Input
-                  type="password"
-                  placeholder={
-                    hasExistingRemoteFacilitator
-                      ? 'Authorization header value (blank keeps it on the same origin)'
-                      : 'Authorization header value (optional)'
-                  }
-                  aria-label="Facilitator auth"
-                  autoComplete="new-password"
-                  spellCheck={false}
-                  disabled={clearFacilitatorAuth}
-                  {...register('facilitatorAuth')}
-                />
-                {hasExistingRemoteFacilitator && (
-                  <div className="flex items-center justify-between rounded-lg border p-3">
-                    <div>
-                      <p className="text-sm font-medium">Clear stored authorization</p>
-                      <p className="text-xs text-muted-foreground">
-                        Stop sending the existing Authorization header after this save.
-                      </p>
-                    </div>
-                    <Controller
-                      control={control}
-                      name="clearFacilitatorAuth"
-                      render={({ field }) => (
-                        <Switch
-                          aria-label="Clear stored facilitator authorization"
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      )}
-                    />
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  A remote facilitator settles inbound payments over HTTPS. The node holds no key on
-                  this chain. Auth is stored encrypted and never shown again
-                  {hasExistingRemoteFacilitator
-                    ? clearFacilitatorAuth
-                      ? '; the stored value will be cleared when saved.'
-                      : '; blank preserves it only while the URL origin stays unchanged.'
-                    : '.'}
-                </p>
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <p className="text-sm font-medium">Testnet</p>
-              <p className="text-xs text-muted-foreground">Pairs with the Preprod environment.</p>
-            </div>
-            <Controller
-              control={control}
-              name="isTestnet"
-              render={({ field }) => (
-                <Switch
-                  aria-label="Testnet"
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              )}
-            />
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <p className="text-sm font-medium">Enabled</p>
-              <p className="text-xs text-muted-foreground">Allow x402 payments on this chain.</p>
-            </div>
-            <Controller
-              control={control}
-              name="isEnabled"
-              render={({ field }) => (
-                <Switch
-                  aria-label="Enabled"
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              )}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSaving}>
-              {isSaving ? 'Saving…' : editing ? 'Save changes' : 'Add chain'}
-            </Button>
-          </DialogFooter>
-        </form>
+        {open && (
+          <ChainForm
+            editing={editing}
+            defaultFacilitatorMode={defaultFacilitatorMode}
+            onClose={onClose}
+            onSaved={onSaved}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -25,6 +25,12 @@ import {
 } from '@/lib/payment-source-type';
 import { chainsForEnv, isX402ChainUsable, isX402SetUpForEnv, X402_ACCENT } from '@/lib/x402-rail';
 import { hasEvmChainLimit } from '@/lib/permissions';
+import {
+  CARDANO_ONLY_PATHS,
+  isX402RailPath,
+  X402_DASHBOARD_PATH,
+  X402_SETUP_PATH,
+} from '@/lib/x402-navigation';
 
 interface NetworkSourceCardProps {
   collapsed: boolean;
@@ -34,9 +40,6 @@ interface NetworkSourceCardProps {
 // Routes that only make sense on one rail. Switching rails from one of these jumps to the
 // new rail's home so the page content matches the picked context immediately, rather than
 // waiting on the async redirect in _app (which is skipped while the chain query refetches).
-const CARDANO_ONLY_PAGES = ['/', '/inbox-agents', '/wallets', '/transactions', '/invoices'];
-const X402_ONLY_PAGES = ['/x402', '/x402-setup'];
-
 /** Small pill that tells the two rails apart inside the selector. */
 function RailBadge({ rail, className }: { rail: 'cardano' | 'x402'; className?: string }) {
   return (
@@ -105,9 +108,12 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     // it isn't selectable in the dropdown, so upgrade to a usable chain when one exists.
     if (selectedChain && isX402ChainUsable(selectedChain)) return;
     if (!hasEvmChains) {
+      // Setup must keep the EVM rail active while the first chain is still a draft or absent.
+      if (router.pathname === X402_SETUP_PATH) return;
       // No EVM chain for this env — fall back to the Cardano rail so the UI stays usable.
       setActiveRail('cardano');
       setSelectedX402ChainId(null);
+      if (isX402RailPath(router.pathname)) void router.replace('/');
       return;
     }
     const usable = evmChains.find(isX402ChainUsable);
@@ -130,13 +136,14 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     evmChains,
     setSelectedX402ChainId,
     setActiveRail,
+    router,
   ]);
 
   const selectCardanoSource = (id: string) => {
     setActiveRail('cardano');
     setSelectedPaymentSourceId(id);
     // Leave x402-only routes so the page matches the Cardano context we just switched to.
-    if (X402_ONLY_PAGES.includes(router.pathname)) {
+    if (isX402RailPath(router.pathname)) {
       router.push('/');
     }
   };
@@ -144,8 +151,8 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
     setActiveRail('x402');
     setSelectedX402ChainId(id);
     // Leave Cardano-only routes so the page matches the x402 context we just switched to.
-    if (CARDANO_ONLY_PAGES.includes(router.pathname)) {
-      router.push('/x402');
+    if ((CARDANO_ONLY_PATHS as readonly string[]).includes(router.pathname)) {
+      router.push(X402_DASHBOARD_PATH);
     }
   };
 
