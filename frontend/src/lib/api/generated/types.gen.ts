@@ -15624,3 +15624,1362 @@ export type PostRequestRepairResponses = {
 };
 
 export type PostRequestRepairResponse = PostRequestRepairResponses[keyof PostRequestRepairResponses];
+
+export type GetReportsFacetsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/reports/facets';
+};
+
+export type GetReportsFacetsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type GetReportsFacetsError = GetReportsFacetsErrors[keyof GetReportsFacetsErrors];
+
+export type GetReportsFacetsResponses = {
+    /**
+     * Accessible report filters
+     */
+    200: {
+        status: 'success';
+        data: {
+            paymentSources: Array<{
+                id: string;
+                network: 'Preprod' | 'Mainnet';
+                paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+                feeRatePermille: number;
+                smartContractAddress: string;
+                deletedAt: Date | null;
+            }>;
+            managedWallets: Array<{
+                id: string;
+                paymentSourceId: string;
+                type: 'Selling' | 'Purchasing';
+                walletAddress: string;
+                walletVkey: string;
+                collectionAddress: string | null;
+                note: string | null;
+                deletedAt: Date | null;
+            }>;
+        };
+    };
+};
+
+export type GetReportsFacetsResponse = GetReportsFacetsResponses[keyof GetReportsFacetsResponses];
+
+export type PostReportsTransactionsData = {
+    /**
+     * Payment source, wallet, role, state, accounting date, revenue, and pagination filters
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'BucketAverage' | 'AccountingDate';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        cursor?: string;
+        limit?: number;
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/transactions';
+};
+
+export type PostReportsTransactionsErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Fiat conversion is not available yet
+     */
+    501: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsTransactionsError = PostReportsTransactionsErrors[keyof PostReportsTransactionsErrors];
+
+export type PostReportsTransactionsResponses = {
+    /**
+     * Transaction report rows
+     */
+    200: {
+        status: 'success';
+        data: {
+            rows: Array<{
+                id: string;
+                role: 'Buyer' | 'Seller';
+                requestType: 'PaymentRequest' | 'PurchaseRequest';
+                createdAt: Date;
+                blockchainIdentifier: string;
+                agentIdentifier: string | null;
+                agentName: string | null;
+                onChainState: 'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | null;
+                metadata: string | null;
+                managedWallet: {
+                    id: string;
+                    walletAddress: string;
+                    walletVkey: string;
+                    collectionAddress: string | null;
+                    deletedAt: Date | null;
+                } | null;
+                counterpartyAddress: string | null;
+                buyerReturnAddress: string | null;
+                sellerReturnAddress: string | null;
+                timestamps: {
+                    createdAt: Date;
+                    fundsLockedAt: Date | null;
+                    sellerRevenueRecognizedAt: Date | null;
+                    buyerGrossSpendAt: Date | null;
+                    buyerReturnedAt: Date | null;
+                };
+                seller: {
+                    grossRevenue: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }> | null;
+                    protocolFee: {
+                        configuredRatePermille: number;
+                        appliedRatePermille: number | null;
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }> | null;
+                        provenance: 'calculated' | 'projected' | 'exact_zero' | 'not_applicable' | 'insufficient_data';
+                        basis: 'stored_requested_plus_collateral' | 'contract_version' | null;
+                        completeness: 'exact' | 'reconstructed' | 'not_applicable' | 'insufficient_data';
+                    };
+                    cardanoFees: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    cardanoFeeTiming: 'stored_cumulative' | 'accounting_allocation';
+                    netRevenue: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }> | null;
+                    payoutCompleteness: 'complete' | 'partial';
+                } | null;
+                buyer: {
+                    grossSpend: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }> | null;
+                    returnedFunds: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }> | null;
+                    cardanoFees: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    cardanoFeeTiming: 'stored_cumulative' | 'accounting_allocation';
+                    netSpend: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }> | null;
+                    payoutCompleteness: 'complete' | 'partial';
+                } | null;
+                actorCardanoFeeAllocation: {
+                    strategy: 'accounting_allocation' | 'lifetime_cohort';
+                    completeness: 'complete' | 'partial';
+                    attachedAt: Date | null;
+                };
+                feeAllocationScope: 'single_request' | 'shared_or_unknown';
+                feeComponentScope: 'complete' | 'partial';
+                cardanoFeeReconciliation: {
+                    buyerCardanoFees: {
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    };
+                    sellerCardanoFees: {
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    };
+                    adminCardanoFees: {
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    } | null;
+                    totalCardanoFees: {
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    } | null;
+                    completeness: 'complete' | 'partial' | 'inconsistent';
+                    isAggregationOwner: boolean;
+                };
+            }>;
+            page: {
+                nextCursor: string | null;
+                hasMore: boolean;
+            };
+            metadata: {
+                generatedAt: Date;
+                asOf: Date;
+                paymentSource: {
+                    id: string;
+                    network: 'Preprod' | 'Mainnet';
+                    paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+                    feeRatePermille: number;
+                    smartContractAddress: string;
+                    deletedAt: Date | null;
+                };
+                filters: {
+                    paymentSourceId: string;
+                    managedWalletIds: Array<string> | null;
+                    externalAddresses: Array<string>;
+                    roles: Array<'Buyer' | 'Seller'>;
+                    states: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+                    from: Date;
+                    to: Date;
+                    dateBasis: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+                    revenueMode: 'Billable' | 'CashReceived' | 'RequestedGross';
+                    timeZone: string;
+                };
+                warnings: Array<{
+                    code: string;
+                    message: string;
+                    rowId: string | null;
+                }>;
+            };
+        };
+    };
+};
+
+export type PostReportsTransactionsResponse = PostReportsTransactionsResponses[keyof PostReportsTransactionsResponses];
+
+export type PostReportsSummaryData = {
+    /**
+     * Report filters and history bucket size
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'BucketAverage' | 'AccountingDate';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        bucket?: 'Auto' | 'Day' | 'Week' | 'Month';
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/summary';
+};
+
+export type PostReportsSummaryErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Fiat conversion is not available yet
+     */
+    501: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsSummaryError = PostReportsSummaryErrors[keyof PostReportsSummaryErrors];
+
+export type PostReportsSummaryResponses = {
+    /**
+     * Transaction report totals and history
+     */
+    200: {
+        status: 'success';
+        data: {
+            totals: {
+                transactionCount: number;
+                transactionCountCompleteness: 'complete' | 'partial';
+                sellerGrossRevenue: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                protocolFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                sellerCardanoFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                actorCardanoFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                sellerNetRevenue: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                buyerGrossSpend: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                returnedFunds: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                buyerCardanoFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                buyerNetSpend: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                adminCardanoFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+                totalCardanoFees: {
+                    amounts: Array<{
+                        unit: string;
+                        rawAmount: string;
+                        decimalAmount: string | null;
+                        decimals: number | null;
+                        symbol: string | null;
+                    }>;
+                    completeness: 'complete' | 'partial';
+                };
+            };
+            wallets: Array<{
+                managedWallet: {
+                    id: string;
+                    walletAddress: string;
+                    walletVkey: string;
+                    collectionAddress: string | null;
+                    deletedAt: Date | null;
+                } | null;
+                role: 'Buyer' | 'Seller';
+                metrics: {
+                    transactionCount: number;
+                    transactionCountCompleteness: 'complete' | 'partial';
+                    sellerGrossRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    protocolFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    actorCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerNetRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerGrossSpend: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    returnedFunds: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerNetSpend: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    adminCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    totalCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                };
+            }>;
+            history: Array<{
+                bucketStart: Date;
+                bucketEnd: Date;
+                metrics: {
+                    transactionCount: number;
+                    transactionCountCompleteness: 'complete' | 'partial';
+                    sellerGrossRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    protocolFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    actorCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    sellerNetRevenue: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerGrossSpend: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    returnedFunds: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    buyerNetSpend: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    adminCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                    totalCardanoFees: {
+                        amounts: Array<{
+                            unit: string;
+                            rawAmount: string;
+                            decimalAmount: string | null;
+                            decimals: number | null;
+                            symbol: string | null;
+                        }>;
+                        completeness: 'complete' | 'partial';
+                    };
+                };
+            }>;
+            bucket: 'Day' | 'Week' | 'Month';
+            metadata: {
+                generatedAt: Date;
+                asOf: Date;
+                paymentSource: {
+                    id: string;
+                    network: 'Preprod' | 'Mainnet';
+                    paymentSourceType: 'Web3CardanoV1' | 'Web3CardanoV2';
+                    feeRatePermille: number;
+                    smartContractAddress: string;
+                    deletedAt: Date | null;
+                };
+                filters: {
+                    paymentSourceId: string;
+                    managedWalletIds: Array<string> | null;
+                    externalAddresses: Array<string>;
+                    roles: Array<'Buyer' | 'Seller'>;
+                    states: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+                    from: Date;
+                    to: Date;
+                    dateBasis: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+                    revenueMode: 'Billable' | 'CashReceived' | 'RequestedGross';
+                    timeZone: string;
+                };
+                warnings: Array<{
+                    code: string;
+                    message: string;
+                    rowId: string | null;
+                }>;
+            };
+        };
+    };
+};
+
+export type PostReportsSummaryResponse = PostReportsSummaryResponses[keyof PostReportsSummaryResponses];
+
+export type PostReportsTransactionsCsvData = {
+    /**
+     * Report filters and history bucket size
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'BucketAverage' | 'AccountingDate';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        bucket?: 'Auto' | 'Day' | 'Week' | 'Month';
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/transactions.csv';
+};
+
+export type PostReportsTransactionsCsvErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Fiat conversion is not available yet
+     */
+    501: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsTransactionsCsvError = PostReportsTransactionsCsvErrors[keyof PostReportsTransactionsCsvErrors];
+
+export type PostReportsTransactionsCsvResponses = {
+    /**
+     * Transaction rows CSV
+     */
+    200: Blob | File;
+};
+
+export type PostReportsTransactionsCsvResponse = PostReportsTransactionsCsvResponses[keyof PostReportsTransactionsCsvResponses];
+
+export type PostReportsWalletSummaryCsvData = {
+    /**
+     * Report filters and history bucket size
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'BucketAverage' | 'AccountingDate';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        bucket?: 'Auto' | 'Day' | 'Week' | 'Month';
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/wallet-summary.csv';
+};
+
+export type PostReportsWalletSummaryCsvErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Fiat conversion is not available yet
+     */
+    501: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsWalletSummaryCsvError = PostReportsWalletSummaryCsvErrors[keyof PostReportsWalletSummaryCsvErrors];
+
+export type PostReportsWalletSummaryCsvResponses = {
+    /**
+     * Wallet and role totals CSV
+     */
+    200: Blob | File;
+};
+
+export type PostReportsWalletSummaryCsvResponse = PostReportsWalletSummaryCsvResponses[keyof PostReportsWalletSummaryCsvResponses];
+
+export type PostReportsTotalsCsvData = {
+    /**
+     * Report filters and history bucket size
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'BucketAverage' | 'AccountingDate';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        bucket?: 'Auto' | 'Day' | 'Week' | 'Month';
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/totals.csv';
+};
+
+export type PostReportsTotalsCsvErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Fiat conversion is not available yet
+     */
+    501: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsTotalsCsvError = PostReportsTotalsCsvErrors[keyof PostReportsTotalsCsvErrors];
+
+export type PostReportsTotalsCsvResponses = {
+    /**
+     * Payment source totals CSV
+     */
+    200: Blob | File;
+};
+
+export type PostReportsTotalsCsvResponse = PostReportsTotalsCsvResponses[keyof PostReportsTotalsCsvResponses];
+
+export type PostReportsExportZipData = {
+    /**
+     * Report filters and history bucket size
+     */
+    body: {
+        paymentSourceId: string;
+        managedWalletIds?: Array<string>;
+        externalAddresses?: Array<string>;
+        roles?: Array<'Buyer' | 'Seller'>;
+        states?: Array<'FundsLocked' | 'FundsOrDatumInvalid' | 'ResultSubmitted' | 'RefundRequested' | 'Disputed' | 'WithdrawAuthorized' | 'RefundAuthorized' | 'Withdrawn' | 'RefundWithdrawn' | 'DisputedWithdrawn' | 'Pending'>;
+        from: Date | null;
+        to: Date | null;
+        dateBasis?: 'CreatedAt' | 'FundsLockedAt' | 'RevenueRecognizedAt';
+        revenueMode?: 'Billable' | 'CashReceived' | 'RequestedGross';
+        timeZone?: string;
+        fiat?: {
+            currency: 'usd' | 'eur' | 'gbp' | 'jpy' | 'chf' | 'aed';
+            mode?: 'BucketAverage' | 'AccountingDate';
+            suppliedRates?: Array<{
+                unit: string;
+                rate: string;
+                from?: Date | null;
+                to?: Date | null;
+            }>;
+        };
+    } & {
+        bucket?: 'Auto' | 'Day' | 'Week' | 'Month';
+    };
+    path?: never;
+    query?: never;
+    url: '/reports/export.zip';
+};
+
+export type PostReportsExportZipErrors = {
+    /**
+     * The report filters or cursor are invalid
+     */
+    400: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Unauthorized
+     */
+    401: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The payment source or requested managed wallet is not accessible
+     */
+    404: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report exceeds its row or file size limit; narrow the filters
+     */
+    413: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The API key exceeded its report request rate
+     */
+    429: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * Fiat conversion is not available yet
+     */
+    501: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * All report processing slots are in use
+     */
+    503: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+    /**
+     * The report calculation timed out; narrow the filters
+     */
+    504: {
+        status: 'error';
+        error: {
+            message: string;
+        };
+    };
+};
+
+export type PostReportsExportZipError = PostReportsExportZipErrors[keyof PostReportsExportZipErrors];
+
+export type PostReportsExportZipResponses = {
+    /**
+     * Complete transaction report ZIP archive
+     */
+    200: Blob | File;
+};
+
+export type PostReportsExportZipResponse = PostReportsExportZipResponses[keyof PostReportsExportZipResponses];
