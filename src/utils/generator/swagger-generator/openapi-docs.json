@@ -37421,6 +37421,58 @@
                                         "data": {
                                             "type": "object",
                                             "properties": {
+                                                "fiat": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "isConfigured": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "isDemoKey": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "historyDays": {
+                                                            "type": "integer",
+                                                            "nullable": true
+                                                        },
+                                                        "earliestPriceableDate": {
+                                                            "type": "string",
+                                                            "nullable": true,
+                                                            "format": "date-time"
+                                                        },
+                                                        "currencies": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "modes": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "PeriodAverage",
+                                                                    "AccountingDate"
+                                                                ]
+                                                            }
+                                                        },
+                                                        "attribution": {
+                                                            "type": "string"
+                                                        },
+                                                        "setupHint": {
+                                                            "type": "string"
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "isConfigured",
+                                                        "isDemoKey",
+                                                        "historyDays",
+                                                        "earliestPriceableDate",
+                                                        "currencies",
+                                                        "modes",
+                                                        "attribution",
+                                                        "setupHint"
+                                                    ]
+                                                },
                                                 "paymentSources": {
                                                     "type": "array",
                                                     "items": {
@@ -37519,6 +37571,7 @@
                                                 }
                                             },
                                             "required": [
+                                                "fiat",
                                                 "paymentSources",
                                                 "managedWallets"
                                             ]
@@ -37853,10 +37906,10 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
+                                                            "PeriodAverage",
                                                             "AccountingDate"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -38096,6 +38149,34 @@
                                                                     "sellerRevenueRecognizedAt",
                                                                     "buyerGrossSpendAt",
                                                                     "buyerReturnedAt"
+                                                                ]
+                                                            },
+                                                            "settlement": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "resultSubmittedTxHash": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "settlementTxHash": {
+                                                                        "type": "string",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "settlementTxType": {
+                                                                        "type": "string",
+                                                                        "nullable": true,
+                                                                        "enum": [
+                                                                            "Withdrawn",
+                                                                            "RefundWithdrawn",
+                                                                            "DisputedWithdrawn",
+                                                                            null
+                                                                        ]
+                                                                    }
+                                                                },
+                                                                "required": [
+                                                                    "resultSubmittedTxHash",
+                                                                    "settlementTxHash",
+                                                                    "settlementTxType"
                                                                 ]
                                                             },
                                                             "seller": {
@@ -38705,6 +38786,7 @@
                                                             "buyerReturnAddress",
                                                             "sellerReturnAddress",
                                                             "timestamps",
+                                                            "settlement",
                                                             "seller",
                                                             "buyer",
                                                             "actorCardanoFeeAllocation",
@@ -38882,6 +38964,63 @@
                                                                 "timeZone"
                                                             ]
                                                         },
+                                                        "fiat": {
+                                                            "type": "object",
+                                                            "nullable": true,
+                                                            "properties": {
+                                                                "currency": {
+                                                                    "type": "string"
+                                                                },
+                                                                "mode": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "PeriodAverage",
+                                                                        "AccountingDate"
+                                                                    ]
+                                                                },
+                                                                "provider": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "coingecko",
+                                                                        "supplied"
+                                                                    ]
+                                                                },
+                                                                "attribution": {
+                                                                    "type": "string",
+                                                                    "nullable": true
+                                                                },
+                                                                "isDemoKey": {
+                                                                    "type": "boolean"
+                                                                },
+                                                                "demoHistoryDays": {
+                                                                    "type": "integer",
+                                                                    "nullable": true
+                                                                },
+                                                                "completeness": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "complete",
+                                                                        "partial"
+                                                                    ]
+                                                                },
+                                                                "unpricedUnits": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "currency",
+                                                                "mode",
+                                                                "provider",
+                                                                "attribution",
+                                                                "isDemoKey",
+                                                                "demoHistoryDays",
+                                                                "completeness",
+                                                                "unpricedUnits"
+                                                            ]
+                                                        },
                                                         "warnings": {
                                                             "type": "array",
                                                             "items": {
@@ -38911,6 +39050,7 @@
                                                         "asOf",
                                                         "paymentSource",
                                                         "filters",
+                                                        "fiat",
                                                         "warnings"
                                                     ]
                                                 }
@@ -39149,8 +39289,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -39401,10 +39541,10 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
+                                                            "PeriodAverage",
                                                             "AccountingDate"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -41517,6 +41657,63 @@
                                                                 "timeZone"
                                                             ]
                                                         },
+                                                        "fiat": {
+                                                            "type": "object",
+                                                            "nullable": true,
+                                                            "properties": {
+                                                                "currency": {
+                                                                    "type": "string"
+                                                                },
+                                                                "mode": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "PeriodAverage",
+                                                                        "AccountingDate"
+                                                                    ]
+                                                                },
+                                                                "provider": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "coingecko",
+                                                                        "supplied"
+                                                                    ]
+                                                                },
+                                                                "attribution": {
+                                                                    "type": "string",
+                                                                    "nullable": true
+                                                                },
+                                                                "isDemoKey": {
+                                                                    "type": "boolean"
+                                                                },
+                                                                "demoHistoryDays": {
+                                                                    "type": "integer",
+                                                                    "nullable": true
+                                                                },
+                                                                "completeness": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                        "complete",
+                                                                        "partial"
+                                                                    ]
+                                                                },
+                                                                "unpricedUnits": {
+                                                                    "type": "array",
+                                                                    "items": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            },
+                                                            "required": [
+                                                                "currency",
+                                                                "mode",
+                                                                "provider",
+                                                                "attribution",
+                                                                "isDemoKey",
+                                                                "demoHistoryDays",
+                                                                "completeness",
+                                                                "unpricedUnits"
+                                                            ]
+                                                        },
                                                         "warnings": {
                                                             "type": "array",
                                                             "items": {
@@ -41546,6 +41743,7 @@
                                                         "asOf",
                                                         "paymentSource",
                                                         "filters",
+                                                        "fiat",
                                                         "warnings"
                                                     ]
                                                 }
@@ -41920,8 +42118,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -42172,10 +42370,10 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
+                                                            "PeriodAverage",
                                                             "AccountingDate"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -42465,8 +42663,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -42717,10 +42915,10 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
+                                                            "PeriodAverage",
                                                             "AccountingDate"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -43010,8 +43208,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -43262,10 +43460,10 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
+                                                            "PeriodAverage",
                                                             "AccountingDate"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -43555,8 +43753,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -43807,10 +44005,10 @@
                                                     "mode": {
                                                         "type": "string",
                                                         "enum": [
-                                                            "BucketAverage",
+                                                            "PeriodAverage",
                                                             "AccountingDate"
                                                         ],
-                                                        "default": "BucketAverage"
+                                                        "default": "PeriodAverage"
                                                     },
                                                     "suppliedRates": {
                                                         "type": "array",
@@ -44100,8 +44298,8 @@
                             }
                         }
                     },
-                    "501": {
-                        "description": "Fiat conversion is not available yet",
+                    "502": {
+                        "description": "The exchange rate provider could not price a requested asset",
                         "content": {
                             "application/json": {
                                 "schema": {

@@ -118,7 +118,7 @@ const reportErrors = {
 	400: jsonErrorResponse('The report filters or cursor are invalid'),
 	401: jsonErrorResponse('Unauthorized'),
 	404: jsonErrorResponse('The payment source or requested managed wallet is not accessible'),
-	501: jsonErrorResponse('Fiat conversion is not available yet'),
+	502: jsonErrorResponse('The exchange rate provider could not price a requested asset'),
 	504: jsonErrorResponse('The report calculation timed out; narrow the filters'),
 };
 

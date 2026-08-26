@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import {
+	getReportSettlementEvidence,
 	getReportTimestamps,
 	hasConfirmedOnChainTransaction,
 	hasConfirmedStateTransaction,
@@ -325,5 +326,53 @@ describe('transaction history completeness', () => {
 				'chain-1',
 			),
 		).toEqual({ amount: 0n, completeness: 'complete' });
+	});
+});
+
+describe('report settlement evidence', () => {
+	it('reports the withdraw hash and names which withdraw it was', () => {
+		const evidence = getReportSettlementEvidence([
+			event({ id: 'lock', txHash: 'hash-lock', newOnChainState: 'FundsLocked' }),
+			event({ id: 'submit', txHash: 'hash-submit', newOnChainState: 'ResultSubmitted' }),
+			event({ id: 'withdraw', txHash: 'hash-withdraw', newOnChainState: 'Withdrawn' }),
+		]);
+		expect(evidence).toEqual({
+			resultSubmittedTxHash: 'hash-submit',
+			settlementTxHash: 'hash-withdraw',
+			settlementTxType: 'Withdrawn',
+		});
+	});
+
+	it('still reports the submitted result while the escrow is open', () => {
+		const evidence = getReportSettlementEvidence([
+			event({ id: 'submit', txHash: 'hash-submit', newOnChainState: 'ResultSubmitted' }),
+		]);
+		expect(evidence.resultSubmittedTxHash).toBe('hash-submit');
+		expect(evidence.settlementTxHash).toBeNull();
+		expect(evidence.settlementTxType).toBeNull();
+	});
+
+	it('names a refund withdrawal as its own settlement type', () => {
+		const evidence = getReportSettlementEvidence([
+			event({ id: 'refund', txHash: 'hash-refund', newOnChainState: 'RefundWithdrawn' }),
+		]);
+		expect(evidence.settlementTxHash).toBe('hash-refund');
+		expect(evidence.settlementTxType).toBe('RefundWithdrawn');
+	});
+
+	it('ignores an unconfirmed withdraw, because its hash may never reach the chain', () => {
+		const evidence = getReportSettlementEvidence([
+			event({ id: 'pending', txHash: 'hash-pending', newOnChainState: 'Withdrawn', status: 'Pending' }),
+		]);
+		expect(evidence.settlementTxHash).toBeNull();
+		expect(evidence.settlementTxType).toBeNull();
+	});
+
+	it('takes the earliest confirmed transaction when a state was reached twice', () => {
+		const evidence = getReportSettlementEvidence([
+			event({ id: 'late', txHash: 'hash-late', newOnChainState: 'Withdrawn', blockTime: 1_767_225_900 }),
+			event({ id: 'early', txHash: 'hash-early', newOnChainState: 'Withdrawn', blockTime: 1_767_225_700 }),
+		]);
+		expect(evidence.settlementTxHash).toBe('hash-early');
 	});
 });
