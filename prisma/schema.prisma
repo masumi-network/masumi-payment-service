@@ -281,6 +281,7 @@ model Transaction {
   // co-exist; write cost is acceptable since only ambiguous-funding rows
   // populate this column.
   @@index([intendedTxHash])
+  @@index([txHash])
   @@index([layer])
   @@index([hydraHeadId])
 }
