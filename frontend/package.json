@@ -13,8 +13,8 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "openapi-ts": "openapi-ts",
-    "openapi-ts-latest": "cp ./../src/utils/generator/swagger-generator/openapi-docs.json ./openapi-docs.json && openapi-ts"
+    "openapi-ts": "openapi-ts && node --import tsx scripts/patch-report-export-response-types.ts",
+    "openapi-ts-latest": "cp ./../src/utils/generator/swagger-generator/openapi-docs.json ./openapi-docs.json && pnpm run openapi-ts"
   },
   "dependencies": {
     "@hey-api/openapi-ts": "0.98.2",
