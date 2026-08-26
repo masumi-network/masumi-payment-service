@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { patchWallet } from '@/lib/api/generated';
@@ -45,6 +45,12 @@ export function useCollectionAddressEditor({
 }) {
   const queryClient = useQueryClient();
   const { apiClient, network } = useAppContext();
+  // save() awaits two network round trips. The dialog can switch wallet in that
+  // time, so the completion has to know which wallet it started on.
+  const activeWalletIdRef = useRef<string | null>(wallet?.id ?? null);
+  useEffect(() => {
+    activeWalletIdRef.current = wallet?.id ?? null;
+  }, [wallet?.id]);
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
   // `undefined` means no local save yet. Null means the user cleared the address.
@@ -64,6 +70,7 @@ export function useCollectionAddressEditor({
 
   const save = async () => {
     if (!wallet) return;
+    const savingWalletId = wallet.id;
 
     const normalizedAddress = normalizeCollectionAddress(draft);
     if (normalizedAddress) {
@@ -97,8 +104,13 @@ export function useCollectionAddressEditor({
       {
         onSuccess: () => {
           toast.success('Collection address updated successfully');
-          setIsEditing(false);
-          setSavedCollectionAddress(normalizedAddress);
+          // Only touch editor state that still belongs to the saved wallet.
+          // Writing it back after a switch showed the previous wallet's address
+          // on the new one, and a later save persisted it there.
+          if (activeWalletIdRef.current === savingWalletId) {
+            setIsEditing(false);
+            setSavedCollectionAddress(normalizedAddress);
+          }
           void invalidateWalletQueries();
           void invalidateTransactionReportFacets(queryClient);
         },
