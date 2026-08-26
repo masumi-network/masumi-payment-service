@@ -186,18 +186,25 @@ describe('report export result handler', () => {
 		expect(cleanup).toHaveBeenCalledTimes(1);
 	});
 
-	it('cleans once when opening the staged file fails', async () => {
+	it('answers with an error, not an empty 200, when the staged file cannot be opened', async () => {
 		const { artifact, cleanup } = await createArtifact(Buffer.from('unused'), {
 			filePath: join(testDirectory, 'missing.csv'),
 		});
 		const logger = createLogger();
+		const response = new TestResponse();
 
-		await executeSuccess(artifact, new TestResponse(), logger);
+		await executeSuccess(artifact, response, logger);
 
 		expect(cleanup).toHaveBeenCalledTimes(1);
 		expect(logger.error).toHaveBeenCalledWith('Report export stream failed', {
 			error: expect.objectContaining({ code: 'ENOENT' }),
 		});
+		// A staged 200 with a Content-Length and no body reads as a valid but
+		// empty export, so the download headers must never be set here.
+		expect(response.statusCode).not.toBe(200);
+		expect(response.headers.has('content-disposition')).toBe(false);
+		expect(response.headers.has('content-length')).toBe(false);
+		expect(response.jsonBody).toMatchObject({ status: 'error' });
 	});
 
 	it('cleans once when the client disconnects during streaming', async () => {
