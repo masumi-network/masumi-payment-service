@@ -160,6 +160,10 @@ export function createControlPlane(deps: ServerDeps): Server {
 
 	const server = createServer((request, response) => {
 		void (async () => {
+			// The host must never appear in search engines. setHeader survives the
+			// later writeHead calls (including proxied upstream headers), so this
+			// one line covers every response from the control plane.
+			response.setHeader('X-Robots-Tag', 'noindex, nofollow');
 			const method = request.method ?? 'GET';
 			const pathname = new URL(request.url ?? '/', 'http://placeholder').pathname;
 

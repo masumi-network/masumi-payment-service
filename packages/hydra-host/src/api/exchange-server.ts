@@ -148,6 +148,9 @@ export function createExchangePlane(deps: ExchangeDeps): Server {
 	const failuresInWindow = new Map<string, number>();
 
 	const server = createServer((request, response) => {
+		// Same search-engine exclusion as the control plane: setHeader survives
+		// the later writeHead calls, so one line covers every response.
+		response.setHeader('X-Robots-Tag', 'noindex, nofollow');
 		const now = Date.now();
 		if (now - requestWindowStartedAt >= 60_000) {
 			requestWindowStartedAt = now;
