@@ -270,4 +270,22 @@ describe('resolveHydraInitChainAnchor', () => {
 	it('rejects a non-canonical InitTx hash', async () => {
 		await expect(resolveHydraInitChainAnchor(anchorObserver(), 'zz')).rejects.toThrow('not canonical hexadecimal');
 	});
+
+	it('returns null instead of throwing when the observer fails transiently', async () => {
+		const observer = {
+			txs: jest.fn(async (_hash: string): Promise<{ block: string | null }> => {
+				throw new Error('Blockfrost 429');
+			}),
+			blocks: jest.fn(async (_hashOrNumber: string) => ({ hash: PARENT_BLOCK, slot: 499, previous_block: null })),
+		};
+		await expect(resolveHydraInitChainAnchor(observer, INIT_TX_HASH)).resolves.toBeNull();
+	});
+
+	it('returns null when the observer pass exceeds its timeout', async () => {
+		const observer = {
+			txs: jest.fn((_hash: string) => new Promise<{ block: string | null }>(() => undefined)),
+			blocks: jest.fn(async (_hashOrNumber: string) => ({ hash: PARENT_BLOCK, slot: 499, previous_block: null })),
+		};
+		await expect(resolveHydraInitChainAnchor(observer, INIT_TX_HASH, 50)).resolves.toBeNull();
+	});
 });

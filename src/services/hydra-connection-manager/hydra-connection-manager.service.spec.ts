@@ -820,6 +820,8 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			data: {
 				isEnabled: false,
 				initTxHash: null,
+				initChainSlot: null,
+				initChainHash: null,
 				reconciliationCompletedAt: null,
 			},
 		});
@@ -922,6 +924,8 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			data: {
 				isEnabled: false,
 				initTxHash: null,
+				initChainSlot: null,
+				initChainHash: null,
 				reconciliationCompletedAt: null,
 			},
 		});
@@ -1125,6 +1129,8 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			data: {
 				isEnabled: false,
 				initTxHash: null,
+				initChainSlot: null,
+				initChainHash: null,
 				reconciliationCompletedAt: null,
 			},
 		});
@@ -1179,12 +1185,14 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 			data: {
 				isEnabled: false,
 				initTxHash: null,
+				initChainSlot: null,
+				initChainHash: null,
 				reconciliationCompletedAt: null,
 			},
 		});
 		expect(mockHydraHeadUpdateMany).toHaveBeenNthCalledWith(2, {
 			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
-			data: { isEnabled: false, initTxHash: null },
+			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 		expect(mockPaymentRequestUpdateMany).not.toHaveBeenCalled();
 		expect(mockPurchaseRequestUpdateMany).not.toHaveBeenCalled();
@@ -1307,7 +1315,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		);
 		expect(mockHydraHeadUpdateMany).toHaveBeenNthCalledWith(2, {
 			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
-			data: { isEnabled: false, initTxHash: null },
+			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 		const lockedHeadQuery = (
 			(mockQueryRaw.mock.calls[1]?.[0] as { strings?: readonly string[] } | undefined)?.strings ?? []
@@ -1367,7 +1375,7 @@ describe('HydraConnectionManager confirmed transaction output sync', () => {
 		expect(mockPrismaTransaction).toHaveBeenCalledTimes(2);
 		expect(mockHydraHeadUpdateMany).toHaveBeenLastCalledWith({
 			where: { hydraRelationId: 'relation-1', id: { not: 'head-1' } },
-			data: { isEnabled: false, initTxHash: null },
+			data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 		});
 	});
 

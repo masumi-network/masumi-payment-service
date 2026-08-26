@@ -83,6 +83,8 @@ export async function persistRegressiveHeadStatus(
 						data: {
 							isEnabled: false,
 							initTxHash: null,
+							initChainSlot: null,
+							initChainHash: null,
 							reconciliationCompletedAt: null,
 						},
 					});
@@ -91,7 +93,7 @@ export async function persistRegressiveHeadStatus(
 					}
 					await tx.hydraHead.updateMany({
 						where: { hydraRelationId, id: { not: hydraHeadId } },
-						data: { isEnabled: false, initTxHash: null },
+						data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 					});
 					return 'quarantined-confirmed-finality-conflict';
 				}
@@ -147,6 +149,8 @@ export async function persistRegressiveHeadStatus(
 					updateData.openedAt = null;
 					updateData.isEnabled = false;
 					updateData.initTxHash = null;
+					updateData.initChainSlot = null;
+					updateData.initChainHash = null;
 					updateData.lastReconciledSnapshotSequence = null;
 					updateData.lastReconciledSnapshotTransactionIndex = null;
 					updateData.latestSnapshotNumber = 0n;
@@ -170,6 +174,8 @@ export async function persistRegressiveHeadStatus(
 							status: current.status,
 							isEnabled: false,
 							initTxHash: null,
+							initChainSlot: null,
+							initChainHash: null,
 						},
 					});
 					if (invalidated.count !== 1) {
@@ -177,7 +183,7 @@ export async function persistRegressiveHeadStatus(
 					}
 					await tx.hydraHead.updateMany({
 						where: { hydraRelationId, id: { not: hydraHeadId } },
-						data: { isEnabled: false, initTxHash: null },
+						data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 					});
 					return 'quarantined-relation-conflict';
 				}

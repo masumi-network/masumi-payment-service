@@ -254,7 +254,7 @@ describe('Hydra head state convergence', () => {
 		await expect(updateHydraHeadEnabledState('head-1', false)).resolves.toBe(disabledHead);
 
 		expect(mockUpdateHead).toHaveBeenCalledWith(
-			expect.objectContaining({ data: { isEnabled: false, initTxHash: null } }),
+			expect.objectContaining({ data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null } }),
 		);
 		expect(mockReleaseClose).not.toHaveBeenCalled();
 		expect(mockReconcileEnabledState).toHaveBeenCalledTimes(1);
@@ -288,7 +288,7 @@ describe('Hydra head state convergence', () => {
 		expect(mockUpdateHead).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: { id: 'head-1' },
-				data: { isEnabled: false, initTxHash: null },
+				data: { isEnabled: false, initTxHash: null, initChainSlot: null, initChainHash: null },
 			}),
 		);
 		expect(verify).toHaveBeenCalledWith('head-1');
