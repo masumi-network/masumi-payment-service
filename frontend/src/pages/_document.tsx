@@ -4,6 +4,7 @@ export default function Document() {
   return (
     <Html lang="en">
       <Head>
+        <meta name="robots" content="noindex, nofollow" />
         <meta
           property="og:title"
           content="Masumi - The Definitive Protocol for AI Agent Networks"

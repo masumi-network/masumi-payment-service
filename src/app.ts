@@ -138,6 +138,16 @@ export async function startApp() {
 				}),
 			);
 
+			// This service must never appear in search engines: every response
+			// carries a noindex directive and robots.txt disallows all crawling.
+			app.use((_req, res, next) => {
+				res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+				next();
+			});
+			app.get('/robots.txt', (_req, res) => {
+				res.type('text/plain').send('User-agent: *\nDisallow: /\n');
+			});
+
 			const replacer = (_key: string, value: unknown): unknown => {
 				if (typeof value === 'bigint') {
 					return value.toString();
