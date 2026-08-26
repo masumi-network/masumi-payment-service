@@ -87,6 +87,7 @@ function record(id: string, role: 'Buyer' | 'Seller' = 'Seller'): ReportRequestR
 		sellerReturnAddress: null,
 		paymentSourceType: 'Web3CardanoV2',
 		configuredFeeRatePermille: 25,
+		resultHash: 'result-hash',
 		unlockTime: 0n,
 		collateralReturnLovelace: 0n,
 		requestedFunds: [{ unit: 'lovelace', amount: 9_007_199_254_740_993n }],
