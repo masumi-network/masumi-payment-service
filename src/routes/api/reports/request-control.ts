@@ -4,7 +4,7 @@ import { Middleware } from 'express-zod-api';
 import createHttpError from 'http-errors';
 
 const reportControlInputSchema = z.object({});
-const REPORT_CONCURRENCY_LIMIT = 4;
+export const REPORT_CONCURRENCY_LIMIT = 4;
 export const REPORT_RESPONSE_TIMEOUT_MS = 5 * 60_000;
 let activeReportRequests = 0;
 
@@ -86,14 +86,23 @@ export const reportConcurrencyMiddleware = new Middleware<
 			clearResponseDeadline();
 			releaseWhenComplete();
 		};
+		const armResponseDeadline = () => {
+			responseDeadline = setTimeout(() => {
+				hasResponseCompleted = true;
+				response.destroy();
+				// `release()`, not `releaseWhenComplete()`. The deadline is the only
+				// bound on how long one request can hold a slot, and an operation
+				// that never settles leaves `hasOperationSettled` false for ever, so
+				// the conditional release can never fire. The response is destroyed
+				// above, so nothing is still being delivered to a client. Work that
+				// settles later re-enters `release()` and returns on `hasReleased`.
+				release();
+			}, REPORT_RESPONSE_TIMEOUT_MS);
+			responseDeadline.unref();
+		};
 		response.once('finish', handleResponseCompleted);
 		response.once('close', handleResponseCompleted);
-		responseDeadline = setTimeout(() => {
-			hasResponseCompleted = true;
-			response.destroy();
-			releaseWhenComplete();
-		}, REPORT_RESPONSE_TIMEOUT_MS);
-		responseDeadline.unref();
+		armResponseDeadline();
 		const runReportOperation = async <T>(
 			operation: (trackPendingWork: (work: Promise<unknown>) => void) => Promise<T>,
 		): Promise<T> => {
@@ -106,6 +115,12 @@ export const reportConcurrencyMiddleware = new Middleware<
 				}
 				activeReportRequests += 1;
 				hasReleased = false;
+				// `release()` cleared the deadline and removed both response
+				// listeners, and the response has already completed, so nothing is
+				// left to free this slot. Without a fresh timer an operation that
+				// never settles holds it for the lifetime of the process and the
+				// effective concurrency limit drops by one for good.
+				armResponseDeadline();
 			}
 			const trackPendingWork = (work: Promise<unknown>) => {
 				const settlement = work.then(
