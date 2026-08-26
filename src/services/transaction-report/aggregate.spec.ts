@@ -59,6 +59,7 @@ function record(overrides: Partial<ReportRequestRecord> = {}): ReportRequestReco
 		sellerReturnAddress: null,
 		paymentSourceType: 'Web3CardanoV2',
 		configuredFeeRatePermille: 50,
+		resultHash: 'result-hash',
 		unlockTime: BigInt(new Date('2026-01-02T00:00:00.000Z').getTime()),
 		collateralReturnLovelace: 2_000_000n,
 		requestedFunds: [{ unit: 'lovelace', amount: 100_000_000n }],

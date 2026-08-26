@@ -29,6 +29,7 @@ describe('report transaction timestamps', () => {
 	it('uses the earliest confirmed FundsLocked block time', () => {
 		const result = getReportTimestamps({
 			createdAt,
+			resultHash: 'result-hash',
 			onChainState: 'Withdrawn',
 			unlockTime: 1_767_226_000_000n,
 			asOfTime: 1_767_230_000_000n,
@@ -44,6 +45,7 @@ describe('report transaction timestamps', () => {
 	it('uses unlock time for projected ResultSubmitted revenue', () => {
 		const result = getReportTimestamps({
 			createdAt,
+			resultHash: 'result-hash',
 			onChainState: 'ResultSubmitted',
 			unlockTime: 1_767_226_000_000n,
 			asOfTime: 1_767_230_000_000n,
@@ -60,6 +62,7 @@ describe('report transaction timestamps', () => {
 		];
 		const input = {
 			createdAt,
+			resultHash: 'result-hash',
 			onChainState: 'Withdrawn' as const,
 			unlockTime: 1_767_226_000_000n,
 			asOfTime: 1_767_320_000_000n,
@@ -82,6 +85,7 @@ describe('report transaction timestamps', () => {
 	] as const)('does not project ResultSubmitted revenue from %s evidence', (_name, transaction) => {
 		const result = getReportTimestamps({
 			createdAt,
+			resultHash: 'result-hash',
 			onChainState: 'ResultSubmitted',
 			unlockTime: 1_767_226_000_000n,
 			asOfTime: 1_767_230_000_000n,
@@ -91,9 +95,159 @@ describe('report transaction timestamps', () => {
 		expect(result.sellerRevenueRecognizedAt).toBeNull();
 	});
 
+	it('does not rebook a reported period when the withdrawal lands later', () => {
+		// A report for 1 to 15 August books this revenue on the 14th, the unlock
+		// day. The seller withdraws on the 16th. A later report for 15 to 20
+		// August must not book the same revenue a second time, so the date has to
+		// stay on the 14th once the withdrawal exists.
+		const unlockTime = BigInt(Date.UTC(2026, 7, 14, 12));
+		const submitted = event({
+			id: 'submit',
+			txHash: 'hash-submit',
+			newOnChainState: 'ResultSubmitted',
+			blockTime: Date.UTC(2026, 7, 13, 9) / 1_000,
+		});
+		const withdrawn = event({
+			id: 'withdraw',
+			txHash: 'hash-withdraw',
+			newOnChainState: 'Withdrawn',
+			blockTime: Date.UTC(2026, 7, 16, 10) / 1_000,
+		});
+		const input = {
+			createdAt,
+			resultHash: 'result-hash',
+			unlockTime,
+			revenueMode: 'Billable' as const,
+		};
+
+		// Before the withdrawal, on the 15th.
+		expect(
+			getReportTimestamps({
+				...input,
+				onChainState: 'ResultSubmitted',
+				asOfTime: BigInt(Date.UTC(2026, 7, 15)),
+				transactions: [submitted],
+			}).sellerRevenueRecognizedAt?.toISOString(),
+		).toBe('2026-08-14T12:00:00.000Z');
+
+		// After the withdrawal, on the 20th.
+		expect(
+			getReportTimestamps({
+				...input,
+				onChainState: 'Withdrawn',
+				asOfTime: BigInt(Date.UTC(2026, 7, 20)),
+				transactions: [submitted, withdrawn],
+			}).sellerRevenueRecognizedAt?.toISOString(),
+		).toBe('2026-08-14T12:00:00.000Z');
+
+		// The stored result hash carries the proof, so a missing or rolled-back
+		// result row cannot move the date onto the withdrawal day either.
+		expect(
+			getReportTimestamps({
+				...input,
+				onChainState: 'Withdrawn',
+				asOfTime: BigInt(Date.UTC(2026, 7, 20)),
+				transactions: [withdrawn],
+			}).sellerRevenueRecognizedAt?.toISOString(),
+		).toBe('2026-08-14T12:00:00.000Z');
+
+		// Without a result there was never a billable date to keep, so the
+		// withdrawal day stands.
+		expect(
+			getReportTimestamps({
+				...input,
+				resultHash: null,
+				onChainState: 'Withdrawn',
+				asOfTime: BigInt(Date.UTC(2026, 7, 20)),
+				transactions: [withdrawn],
+			}).sellerRevenueRecognizedAt?.toISOString(),
+		).toBe('2026-08-16T10:00:00.000Z');
+	});
+
+	it('books a cancelled refund request on the cancellation, not the passed unlock date', () => {
+		// The buyer requests a refund before the unlock and cancels it afterwards.
+		// `UnSetRefundRequested` puts the request back into `ResultSubmitted`, so
+		// it only becomes billable at the cancellation. The unlock date sits in a
+		// period that was reported already and must not gain revenue now.
+		const unlockTime = BigInt(Date.UTC(2026, 7, 14, 12));
+		const submitted = event({
+			id: 'submit',
+			txHash: 'hash-submit',
+			newOnChainState: 'ResultSubmitted',
+			blockTime: Date.UTC(2026, 7, 13, 9) / 1_000,
+		});
+		const refundRequested = event({
+			id: 'refund-request',
+			txHash: 'hash-refund-request',
+			newOnChainState: 'RefundRequested',
+			blockTime: Date.UTC(2026, 7, 13, 18) / 1_000,
+		});
+		const cancelled = event({
+			id: 'cancel',
+			txHash: 'hash-cancel',
+			newOnChainState: 'ResultSubmitted',
+			blockTime: Date.UTC(2026, 7, 18, 9) / 1_000,
+		});
+		const withdrawn = event({
+			id: 'withdraw',
+			txHash: 'hash-withdraw',
+			newOnChainState: 'Withdrawn',
+			blockTime: Date.UTC(2026, 7, 20, 10) / 1_000,
+		});
+		const input = {
+			createdAt,
+			resultHash: 'result-hash',
+			unlockTime,
+			asOfTime: BigInt(Date.UTC(2026, 7, 25)),
+			revenueMode: 'Billable' as const,
+		};
+
+		expect(
+			getReportTimestamps({
+				...input,
+				onChainState: 'ResultSubmitted',
+				transactions: [submitted, refundRequested, cancelled],
+			}).sellerRevenueRecognizedAt?.toISOString(),
+		).toBe('2026-08-18T09:00:00.000Z');
+
+		// The withdrawal keeps the cancellation date, the same way it keeps the
+		// unlock date in the ordinary case.
+		expect(
+			getReportTimestamps({
+				...input,
+				onChainState: 'Withdrawn',
+				transactions: [submitted, refundRequested, cancelled, withdrawn],
+			}).sellerRevenueRecognizedAt?.toISOString(),
+		).toBe('2026-08-18T09:00:00.000Z');
+
+		// A cancellation before the unlock changes nothing, because the buyer's
+		// window to dispute still runs to the unlock time.
+		expect(
+			getReportTimestamps({
+				...input,
+				onChainState: 'ResultSubmitted',
+				transactions: [
+					submitted,
+					refundRequested,
+					{ ...cancelled, blockTime: Date.UTC(2026, 7, 14, 6) / 1_000 },
+				],
+			}).sellerRevenueRecognizedAt?.toISOString(),
+		).toBe('2026-08-14T12:00:00.000Z');
+		// `SubmitResult` is valid from every state, so the seller can re-submit a
+		// result at any time. That was never contested, so it keeps the unlock date.
+		expect(
+			getReportTimestamps({
+				...input,
+				onChainState: 'ResultSubmitted',
+				transactions: [submitted, { ...cancelled, id: 'resubmit', txHash: 'hash-resubmit' }],
+			}).sellerRevenueRecognizedAt?.toISOString(),
+		).toBe('2026-08-14T12:00:00.000Z');
+	});
+
 	it('uses the terminal chain transition for settled seller revenue and buyer returns', () => {
 		const result = getReportTimestamps({
 			createdAt,
+			resultHash: 'result-hash',
 			onChainState: 'DisputedWithdrawn',
 			unlockTime: 1_767_226_000_000n,
 			asOfTime: 1_767_230_000_000n,
@@ -115,6 +269,7 @@ describe('report transaction timestamps', () => {
 	it('uses creation time for requested gross revenue', () => {
 		const result = getReportTimestamps({
 			createdAt,
+			resultHash: 'result-hash',
 			onChainState: null,
 			unlockTime: 1_767_226_000_000n,
 			asOfTime: 1_767_230_000_000n,
@@ -128,6 +283,7 @@ describe('report transaction timestamps', () => {
 	it('does not substitute database observation time for missing chain time', () => {
 		const result = getReportTimestamps({
 			createdAt,
+			resultHash: 'result-hash',
 			onChainState: 'Withdrawn',
 			unlockTime: 1_767_226_000_000n,
 			asOfTime: 1_767_230_000_000n,
