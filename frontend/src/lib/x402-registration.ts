@@ -29,9 +29,12 @@ export type EvmAssetPreset = {
 
 export type X402RegistrationNetwork = X402AvailableNetwork;
 
-// Known USDC deployments per chain. These addresses are also seeded as network
-// defaults by prisma/migrations/20260720010000_x402_network_default_asset_decimals;
-// keep the two lists in sync when adding a chain. A network's configured
+// Known USDC deployments per chain. Migration 20260720010000 backfills
+// defaultAssetDecimals for these (chain, address) pairs; it seeds no defaultAsset.
+// Its Base Sepolia row still carries the typo'd address on purpose, because an
+// applied migration cannot be rewritten without breaking its checksum. Migration
+// 20260729100000 corrects the stored rows instead. When adding a chain, add it here
+// and in a new decimals backfill, not in the historical one. A network's configured
 // defaultAsset/defaultAssetDecimals always takes precedence (see
 // assetPresetsForNetwork below), so drift here only affects the preset labels.
 export const EVM_ASSET_PRESETS: EvmAssetPreset[] = [
