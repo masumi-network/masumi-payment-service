@@ -166,6 +166,15 @@ function utxo(txHash: string, outputIndex: number, lovelace = '5000000'): UTxO {
 	} as unknown as UTxO;
 }
 
+const provider = {
+	fetchProtocolParameters: async () => ({
+		priceMem: '0.0577',
+		priceStep: '0.0000721',
+		collateralPercentage: 150,
+	}),
+	evaluateTx: async () => [{ tag: 'MINT', index: 0, budget: { mem: 1_000_000, steps: 500_000_000 } }],
+} as never;
+
 function buildUpdate(collateralUtxo: UTxO) {
 	return generateRegistryUpdateTransactionAutomaticFees(
 		provider,
@@ -183,15 +192,6 @@ function buildUpdate(collateralUtxo: UTxO) {
 		{ name: 'Agent A', description: 'desc' },
 	);
 }
-
-const provider = {
-	fetchProtocolParameters: async () => ({
-		priceMem: '0.0577',
-		priceStep: '0.0000721',
-		collateralPercentage: 150,
-	}),
-	evaluateTx: async () => [{ tag: 'MINT', index: 0, budget: { mem: 1_000_000, steps: 500_000_000 } }],
-} as never;
 
 beforeEach(() => {
 	builtBuilders.length = 0;
