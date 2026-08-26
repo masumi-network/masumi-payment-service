@@ -14,8 +14,19 @@ import { TRANSACTION_REPORT_FACETS_QUERY_KEY } from '@/lib/queries/transaction-r
 import {
   fetchTransactionReportExport,
   saveTransactionReportExport,
-  type ReportExportKind,
 } from '@/lib/transaction-report/download';
+import { getFiatIssue } from '@/lib/transaction-report/fiat-settings';
+import {
+  REPORT_CSV_KINDS,
+  isEveryReportCsvKind,
+  type ReportCsvKind,
+} from './report-export/export-kinds';
+import {
+  REPORT_PURPOSES,
+  applyReportPurpose,
+  inferReportPurpose,
+  type ReportPurpose,
+} from './report-export/report-purposes';
 import {
   buildTransactionReportBody,
   createTransactionReportForm,
@@ -35,6 +46,12 @@ type UseDownloadDetailsModelOptions = Readonly<{
   open: boolean;
   onClose: () => void;
   viewDefaults: TransactionReportViewDefaults;
+  /**
+   * Filters the caller already has on screen. The dashboard passes its own
+   * report filters so exporting what you are looking at needs no re-picking.
+   * Reset still returns to the view defaults.
+   */
+  initialForm?: TransactionReportFormState;
 }>;
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -45,19 +62,41 @@ export function useDownloadDetailsModel({
   open,
   onClose,
   viewDefaults,
+  initialForm,
 }: UseDownloadDetailsModelOptions) {
   const { apiClient, network, selectedPaymentSourceId } = useAppContext();
   const [rangeAnchor, setRangeAnchor] = useState(() => new Date());
-  const [form, setForm] = useState<TransactionReportFormState>(() =>
-    createTransactionReportForm(selectedPaymentSourceId ?? '', viewDefaults),
+  const [form, setForm] = useState<TransactionReportFormState>(
+    () => initialForm ?? createTransactionReportForm(selectedPaymentSourceId ?? '', viewDefaults),
   );
-  const [exportKind, setExportKind] = useState<ReportExportKind>('transactions');
+  const [purpose, setPurposeState] = useState<ReportPurpose>(() =>
+    inferReportPurpose(initialForm ?? createTransactionReportForm('', viewDefaults)),
+  );
+  const [exportKinds, setExportKinds] = useState<readonly ReportCsvKind[]>(
+    () =>
+      REPORT_PURPOSES[
+        inferReportPurpose(initialForm ?? createTransactionReportForm('', viewDefaults))
+      ].files,
+  );
+
+  /**
+   * Switching flow clears every filter the new flow hides, so an unseen filter
+   * can never narrow the exported file.
+   */
+  const setPurpose = useCallback((next: ReportPurpose) => {
+    setPurposeState(next);
+    setForm((current) => applyReportPurpose(current, next));
+    if (next !== 'custom') setExportKinds(REPORT_PURPOSES[next].files);
+  }, []);
 
   const reset = useCallback(
     (paymentSourceId = selectedPaymentSourceId ?? '') => {
       setRangeAnchor(new Date());
-      setForm(createTransactionReportForm(paymentSourceId, viewDefaults));
-      setExportKind('transactions');
+      const nextForm = createTransactionReportForm(paymentSourceId, viewDefaults);
+      const nextPurpose = inferReportPurpose(nextForm);
+      setForm(applyReportPurpose(nextForm, nextPurpose));
+      setPurposeState(nextPurpose);
+      setExportKinds(REPORT_PURPOSES[nextPurpose].files);
     },
     [selectedPaymentSourceId, viewDefaults],
   );
@@ -133,6 +172,12 @@ export function useDownloadDetailsModel({
   );
   const debouncedBody = useDebouncedValue(bodyResult.body, 350);
 
+  const fiatCapability = facetsQuery.data?.fiat ?? null;
+  const fiatIssue = useMemo(
+    () => getFiatIssue(fiatCapability, effectiveForm.fiatCurrency, bodyResult.body?.from ?? null),
+    [bodyResult.body, effectiveForm.fiatCurrency, fiatCapability],
+  );
+
   const summaryQuery = useQuery<ReportSummary>({
     queryKey: ['transaction-report-preview', debouncedBody],
     queryFn: async ({ signal }) => {
@@ -145,19 +190,28 @@ export function useDownloadDetailsModel({
       if (!summary) throw new Error('Report summary was missing from the server response.');
       return summary;
     },
-    enabled: open && bodyResult.body != null && debouncedBody != null,
+    enabled: open && bodyResult.body != null && debouncedBody != null && fiatIssue == null,
     staleTime: 0,
   });
 
   const exportMutation = useMutation({
     mutationFn: async () => {
+      if (fiatIssue) throw new Error(fiatIssue.message);
       if (!bodyResult.body) throw new Error(bodyResult.error);
-      const file = await fetchTransactionReportExport({
-        client: apiClient,
-        body: bodyResult.body,
-        kind: exportKind,
-      });
-      saveTransactionReportExport(file);
+      if (exportKinds.length === 0) throw new Error('Select at least one file to download.');
+      // All three files come from the server's own ZIP, so they share one
+      // snapshot. A smaller pick is fetched file by file instead.
+      const kinds = isEveryReportCsvKind(exportKinds)
+        ? (['zip'] as const)
+        : REPORT_CSV_KINDS.filter((kind) => exportKinds.includes(kind));
+      for (const kind of kinds) {
+        const file = await fetchTransactionReportExport({
+          client: apiClient,
+          body: bodyResult.body,
+          kind,
+        });
+        saveTransactionReportExport(file);
+      }
     },
     onSuccess: () => {
       toast.success('Report download started');
@@ -170,10 +224,6 @@ export function useDownloadDetailsModel({
 
   const updateForm = useCallback((patch: Partial<TransactionReportFormState>) => {
     setForm((current) => ({ ...current, ...patch }));
-  }, []);
-
-  const setPaymentSource = useCallback((paymentSourceId: string) => {
-    setForm((current) => ({ ...current, paymentSourceId, managedWalletIds: [] }));
   }, []);
 
   const toggleRole = useCallback((role: ReportRole) => {
@@ -196,10 +246,12 @@ export function useDownloadDetailsModel({
   return {
     bodyError: bodyResult.error,
     download: exportMutation.mutate,
-    exportKind,
+    exportKinds,
     facetsError: facetsQuery.error
       ? errorMessage(facetsQuery.error, 'Failed to load report filters')
       : null,
+    fiatCapability,
+    fiatIssue,
     form: effectiveForm,
     isDownloading: exportMutation.isPending,
     isLoadingFacets: facetsQuery.isLoading,
@@ -208,12 +260,19 @@ export function useDownloadDetailsModel({
     managedWallets,
     paymentSources,
     preview: summaryQuery.data ?? null,
+    purpose,
+    setPurpose,
     previewError: summaryQuery.error
       ? errorMessage(summaryQuery.error, 'Failed to preview the report')
       : null,
     reset: () => reset(effectiveForm.paymentSourceId || preferredPaymentSourceId),
-    setExportKind,
-    setPaymentSource,
+    setAllExportKinds: (isSelected: boolean) => setExportKinds(isSelected ? REPORT_CSV_KINDS : []),
+    toggleExportKind: (kind: ReportCsvKind) =>
+      setExportKinds((current) =>
+        current.includes(kind)
+          ? current.filter((value) => value !== kind)
+          : REPORT_CSV_KINDS.filter((value) => value === kind || current.includes(value)),
+      ),
     toggleRole,
     toggleState,
     toggleWallet,
