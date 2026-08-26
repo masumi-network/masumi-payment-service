@@ -10,12 +10,12 @@ import {
   type ReportMetricKey,
   type ReportMetrics,
 } from '@/lib/transaction-report/dashboard-metrics';
+import { REPORT_METRIC_LABELS } from '@/lib/transaction-report/report-labels';
 import { shortenAddress } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -27,6 +27,7 @@ import {
   type ReportTablePageState,
 } from '@/lib/transaction-report/report-rendering';
 import { ReportTablePagination } from './ReportTablePagination';
+import { EstimateDot } from './report/ReportCompleteness';
 
 type ReportSummary = PostReportsSummaryResponses[200]['data'];
 type ReportFacets = GetReportsFacetsResponses[200]['data'];
@@ -35,7 +36,7 @@ type ReportRole = ReportWallet['role'];
 
 type FinancialWalletTableProps = Readonly<{
   summary: ReportSummary;
-  facets: ReportFacets | null;
+  facets: Pick<ReportFacets, 'managedWallets'> | null;
   selectedUnit: string | null;
   roles: readonly ReportRole[];
 }>;
@@ -100,28 +101,26 @@ function MetricValue({
   fallback,
 }: Readonly<{ metric: ReportMetric; fallback: ReportAmountFallback | null }>) {
   const availableAmounts = metric.amounts;
-  const isPartial = metric.completeness === 'partial';
   const fallbackUnit = typeof fallback === 'string' ? fallback : (fallback?.unit ?? '');
   const emptyDisplay = formatReportMetricValue(metric, fallbackUnit, fallback ?? '');
 
   return (
-    <div className="flex min-w-max flex-col items-end gap-1 font-mono text-xs tabular-nums">
+    <div className="flex min-w-max flex-col items-end gap-0.5 font-mono text-xs tabular-nums">
       {availableAmounts.length > 0 ? (
         availableAmounts.map((amount) => (
-          <span key={amount.unit}>
+          <span key={amount.unit} className="inline-flex items-start gap-1">
             {
               formatReportMetricValue({ ...metric, amounts: [amount] }, amount.unit, amount.unit)
                 .text
             }
+            {metric.completeness === 'partial' && <EstimateDot />}
           </span>
         ))
       ) : (
-        <span>{emptyDisplay.text}</span>
-      )}
-      {isPartial && (
-        <Badge variant="warning" className="px-1.5 py-0 font-sans text-[10px]">
-          Partial
-        </Badge>
+        <span className="inline-flex items-start gap-1">
+          {emptyDisplay.text}
+          {metric.completeness === 'partial' && <EstimateDot />}
+        </span>
       )}
     </div>
   );
@@ -137,19 +136,6 @@ function metricForUnit(
   return { ...metric, amounts: amount ? [amount] : [] };
 }
 
-function visibleMetricKeys(role: ReportRole): ReportMetricKey[] {
-  const roleMetrics = ROLE_METRICS[role];
-  return [
-    roleMetrics.gross,
-    roleMetrics.adjustment,
-    roleMetrics.actorCardanoFee,
-    roleMetrics.net,
-    'actorCardanoFees',
-    'adminCardanoFees',
-    'totalCardanoFees',
-  ];
-}
-
 function WalletIdentity({
   wallet,
   note,
@@ -158,7 +144,7 @@ function WalletIdentity({
     return (
       <div>
         <div className="font-medium">Unassigned</div>
-        <div className="text-xs text-muted-foreground">No managed wallet</div>
+        <div className="text-xs text-muted-foreground">Not linked to a managed wallet</div>
       </div>
     );
   }
@@ -177,9 +163,6 @@ function WalletIdentity({
       </div>
       <div className="font-mono text-xs text-muted-foreground" title={wallet.walletAddress}>
         {shortenAddress(wallet.walletAddress, 7)}
-      </div>
-      <div className="font-mono text-[11px] text-muted-foreground" title={wallet.id}>
-        ID {shortenAddress(wallet.id, 5)}
       </div>
     </div>
   );
@@ -223,163 +206,149 @@ export function FinancialWalletTable({
     selectedUnit == null ? null : getReportAssetDescriptor(summary, selectedUnit);
 
   const grossHeading =
-    onlyRole === 'Seller' ? 'Gross revenue' : onlyRole === 'Buyer' ? 'Gross spend' : 'Gross';
+    onlyRole === 'Seller'
+      ? REPORT_METRIC_LABELS.sellerGrossRevenue
+      : onlyRole === 'Buyer'
+        ? REPORT_METRIC_LABELS.buyerGrossSpend
+        : 'Gross';
   const adjustmentHeading =
     onlyRole === 'Seller'
-      ? 'Protocol fee'
+      ? REPORT_METRIC_LABELS.protocolFees
       : onlyRole === 'Buyer'
-        ? 'Returned funds'
-        : 'Protocol / returned';
+        ? REPORT_METRIC_LABELS.returnedFunds
+        : 'Fee or refund';
   const actorFeeHeading =
     onlyRole === 'Seller'
-      ? 'Seller Cardano fee'
+      ? REPORT_METRIC_LABELS.sellerCardanoFees
       : onlyRole === 'Buyer'
-        ? 'Buyer Cardano fee'
-        : 'Actor Cardano fee';
+        ? REPORT_METRIC_LABELS.buyerCardanoFees
+        : 'Own network fees';
   const netHeading =
-    onlyRole === 'Seller' ? 'Net revenue' : onlyRole === 'Buyer' ? 'Net spend' : 'Net';
-  const columnCount = showRole ? 11 : 10;
+    onlyRole === 'Seller'
+      ? REPORT_METRIC_LABELS.sellerNetRevenue
+      : onlyRole === 'Buyer'
+        ? REPORT_METRIC_LABELS.buyerNetSpend
+        : 'Net';
+  const columnCount = showRole ? 8 : 7;
 
   return (
     <>
-      <Table>
-        <TableCaption>
-          Counts are distinct logical payments inside each wallet and role group, so group counts
-          are not additive. Reconciled actor, admin, and total fees use the stable owner named by
-          report warnings when a component spans groups.
-        </TableCaption>
-        <TableHeader>
-          <TableRow>
-            <TableHead scope="col">Wallet</TableHead>
-            {showRole && <TableHead scope="col">Role</TableHead>}
-            <TableHead scope="col" className="text-right">
-              Transactions
-            </TableHead>
-            <TableHead scope="col" className="text-right">
-              {grossHeading}
-            </TableHead>
-            <TableHead scope="col" className="text-right">
-              {adjustmentHeading}
-            </TableHead>
-            <TableHead scope="col" className="text-right">
-              {actorFeeHeading}
-            </TableHead>
-            <TableHead scope="col" className="text-right">
-              {netHeading}
-            </TableHead>
-            <TableHead scope="col" className="text-right">
-              Reconciled actor
-            </TableHead>
-            <TableHead scope="col" className="text-right">
-              Admin fee
-            </TableHead>
-            <TableHead scope="col" className="text-right">
-              Total fee
-            </TableHead>
-            <TableHead scope="col">Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.length === 0 ? (
+      <div className="overflow-x-auto rounded-lg border">
+        <Table>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={columnCount} className="h-24 text-center text-muted-foreground">
-                No wallet activity matches these report filters.
-              </TableCell>
+              <TableHead scope="col">Wallet</TableHead>
+              {showRole && <TableHead scope="col">Side</TableHead>}
+              <TableHead scope="col" className="text-right">
+                Payments
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                {grossHeading}
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                {adjustmentHeading}
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                {actorFeeHeading}
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                {netHeading}
+              </TableHead>
+              <TableHead scope="col" className="text-right">
+                {REPORT_METRIC_LABELS.totalCardanoFees}
+              </TableHead>
             </TableRow>
-          ) : (
-            walletPage.items.map((wallet) => {
-              const roleMetrics = ROLE_METRICS[wallet.role];
-              const visibleKeys = visibleMetricKeys(wallet.role);
-              const isPartial =
-                wallet.metrics.transactionCountCompleteness === 'partial' ||
-                visibleKeys.some(
-                  (metricKey) => wallet.metrics[metricKey].completeness === 'partial',
-                );
-              const businessMetric = (metricKey: ReportMetricKey) =>
-                selectedUnit == null
-                  ? wallet.metrics[metricKey]
-                  : metricForUnit(wallet.metrics, metricKey, selectedUnit);
+          </TableHeader>
+          <TableBody>
+            {rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={columnCount} className="h-24 text-center text-muted-foreground">
+                  No wallet was active in this period.
+                </TableCell>
+              </TableRow>
+            ) : (
+              walletPage.items.map((wallet) => {
+                const roleMetrics = ROLE_METRICS[wallet.role];
+                const businessMetric = (metricKey: ReportMetricKey) =>
+                  selectedUnit == null
+                    ? wallet.metrics[metricKey]
+                    : metricForUnit(wallet.metrics, metricKey, selectedUnit);
 
-              return (
-                <TableRow key={`${wallet.managedWallet?.id ?? 'unassigned'}:${wallet.role}`}>
-                  <TableHead scope="row" className="h-auto py-2 text-foreground">
-                    <WalletIdentity
-                      wallet={wallet.managedWallet}
-                      note={
-                        wallet.managedWallet
-                          ? (notesByWalletId.get(wallet.managedWallet.id) ?? null)
-                          : null
-                      }
-                    />
-                  </TableHead>
-                  {showRole && (
+                return (
+                  <TableRow key={`${wallet.managedWallet?.id ?? 'unassigned'}:${wallet.role}`}>
                     <TableHead scope="row" className="h-auto py-2 text-foreground">
-                      <Badge variant="secondary">{wallet.role}</Badge>
+                      <WalletIdentity
+                        wallet={wallet.managedWallet}
+                        note={
+                          wallet.managedWallet
+                            ? (notesByWalletId.get(wallet.managedWallet.id) ?? null)
+                            : null
+                        }
+                      />
                     </TableHead>
-                  )}
-                  <TableCell className="text-right font-mono text-xs tabular-nums">
-                    {formatReportCountValue(
-                      wallet.metrics.transactionCount,
-                      wallet.metrics.transactionCountCompleteness,
+                    {showRole && (
+                      <TableHead scope="row" className="h-auto py-2 text-foreground">
+                        <Badge variant="secondary">
+                          {wallet.role === 'Seller' ? 'Selling' : 'Buying'}
+                        </Badge>
+                      </TableHead>
                     )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <MetricValue
-                      metric={businessMetric(roleMetrics.gross)}
-                      fallback={selectedAsset}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <MetricValue
-                      metric={businessMetric(roleMetrics.adjustment)}
-                      fallback={selectedAsset}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <MetricValue
-                      metric={metricForUnit(
-                        wallet.metrics,
-                        roleMetrics.actorCardanoFee,
-                        CARDANO_UNIT,
-                      )}
-                      fallback={CARDANO_UNIT}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <MetricValue
-                      metric={businessMetric(roleMetrics.net)}
-                      fallback={selectedAsset}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <MetricValue
-                      metric={metricForUnit(wallet.metrics, 'actorCardanoFees', CARDANO_UNIT)}
-                      fallback={CARDANO_UNIT}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <MetricValue
-                      metric={metricForUnit(wallet.metrics, 'adminCardanoFees', CARDANO_UNIT)}
-                      fallback={CARDANO_UNIT}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <MetricValue
-                      metric={metricForUnit(wallet.metrics, 'totalCardanoFees', CARDANO_UNIT)}
-                      fallback={CARDANO_UNIT}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={isPartial ? 'warning' : 'success'}>
-                      {isPartial ? 'Partial' : 'Complete'}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              );
-            })
-          )}
-        </TableBody>
-      </Table>
+                    <TableCell className="text-right font-mono text-xs tabular-nums">
+                      <span className="inline-flex items-start gap-1">
+                        {formatReportCountValue(
+                          wallet.metrics.transactionCount,
+                          wallet.metrics.transactionCountCompleteness,
+                        )}
+                        {wallet.metrics.transactionCountCompleteness === 'partial' && (
+                          <EstimateDot />
+                        )}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <MetricValue
+                        metric={businessMetric(roleMetrics.gross)}
+                        fallback={selectedAsset}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <MetricValue
+                        metric={businessMetric(roleMetrics.adjustment)}
+                        fallback={selectedAsset}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <MetricValue
+                        metric={metricForUnit(
+                          wallet.metrics,
+                          roleMetrics.actorCardanoFee,
+                          CARDANO_UNIT,
+                        )}
+                        fallback={CARDANO_UNIT}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <MetricValue
+                        metric={businessMetric(roleMetrics.net)}
+                        fallback={selectedAsset}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <MetricValue
+                        metric={metricForUnit(wallet.metrics, 'totalCardanoFees', CARDANO_UNIT)}
+                        fallback={CARDANO_UNIT}
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        A wallet that both sells and buys gets one row per side. Payment counts are per row, so they
+        do not add up to the total above.
+      </p>
       <ReportTablePagination
         page={walletPage.page}
         pageCount={walletPage.pageCount}
@@ -387,7 +356,7 @@ export function FinancialWalletTable({
         endIndex={walletPage.endIndex}
         totalCount={walletPage.totalCount}
         itemLabel="wallet rows"
-        ariaLabel="Wallet and role breakdown pagination"
+        ariaLabel="Wallet breakdown pagination"
         onPageChange={(page) => setTablePageState({ dataset: summary.wallets, page })}
       />
     </>
