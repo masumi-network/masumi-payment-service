@@ -317,7 +317,15 @@ function purchaseExternalAddressWhere(externalAddresses: string[]): Prisma.Purch
 	};
 }
 
-function buyerScopeWhere(filters: ReportQueryFilters): Prisma.PurchaseRequestWhereInput {
+// The cursor belongs inside AND, never spread beside the other clauses.
+// requestStateWhere returns a top-level OR for a mixed Pending plus on-chain
+// filter and cursorWhere returns one too, so spreading both put two OR keys in
+// one object literal: the cursor won and every page after the first ignored the
+// state filter.
+function buyerScopeWhere(
+	filters: ReportQueryFilters,
+	cursor: ReportRoleCursor | null = null,
+): Prisma.PurchaseRequestWhereInput {
 	return {
 		paymentSourceId: filters.paymentSourceId,
 		...managedWalletWhere(filters.authorizedManagedWalletIds),
@@ -326,11 +334,16 @@ function buyerScopeWhere(filters: ReportQueryFilters): Prisma.PurchaseRequestWhe
 			buyerDateWhere(filters),
 			purchaseExternalAddressWhere(filters.externalAddresses),
 			snapshotBoundaryWhere(filters.asOf),
+			cursorWhere(cursor),
 		],
 	};
 }
 
-function sellerScopeWhere(filters: ReportQueryFilters): Prisma.PaymentRequestWhereInput {
+// See buyerScopeWhere: the cursor has to stay inside AND.
+function sellerScopeWhere(
+	filters: ReportQueryFilters,
+	cursor: ReportRoleCursor | null = null,
+): Prisma.PaymentRequestWhereInput {
 	return {
 		paymentSourceId: filters.paymentSourceId,
 		...managedWalletWhere(filters.authorizedManagedWalletIds),
@@ -339,6 +352,7 @@ function sellerScopeWhere(filters: ReportQueryFilters): Prisma.PaymentRequestWhe
 			sellerDateWhere(filters),
 			paymentExternalAddressWhere(filters.externalAddresses),
 			snapshotBoundaryWhere(filters.asOf),
+			cursorWhere(cursor),
 		],
 	};
 }
@@ -475,10 +489,7 @@ async function findSellerRecords(
 	if (!filters.roles.includes('Seller')) return [];
 	assertQueryActive(signal);
 	const result = await database.paymentRequest.findMany({
-		where: {
-			...sellerScopeWhere(filters),
-			...cursorWhere(cursor),
-		},
+		where: sellerScopeWhere(filters, cursor),
 		orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
 		take,
 		select: paymentReportSelect,
@@ -647,10 +658,7 @@ async function findBuyerRecords(
 	if (!filters.roles.includes('Buyer')) return [];
 	assertQueryActive(signal);
 	const result = await database.purchaseRequest.findMany({
-		where: {
-			...buyerScopeWhere(filters),
-			...cursorWhere(cursor),
-		},
+		where: buyerScopeWhere(filters, cursor),
 		orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
 		take,
 		select: purchaseReportSelect,
