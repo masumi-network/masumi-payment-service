@@ -41,6 +41,7 @@ import {
 	resetRegistryPrepFailureCount,
 } from '../../wallet-collateral/prep-failure-guard';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
+import { describeAmbiguousRegistrySubmit } from '../submit-failure';
 import { asV2Provider } from '../../provider-cast';
 import { buildAgentMetadata, validateRegistrationPricing } from '../register/service';
 
@@ -290,6 +291,16 @@ async function processUpdate(
 		newTxHash = await wallet.submitTx(signedTx);
 	} catch (error) {
 		logger.error('Error submitting V2 update tx', { error, requestId: request.id });
+		const ambiguous = describeAmbiguousRegistrySubmit(signedTx, error);
+		if (ambiguous) {
+			logger.warn('Error submitting V2 update tx was AMBIGUOUS; the transaction may be on chain', {
+				error,
+				requestId: request.id,
+				intendedTxHash: ambiguous.intendedTxHash,
+			});
+			await markRequestFailed(request, ambiguous.failure);
+			return;
+		}
 		// Terminal, not a silent re-queue. This used to revert to UpdateRequested,
 		// which retries every tick forever with `error` left NULL: a deterministic
 		// rejection (collateral, phase-1, script-data-hash) then loops invisibly and

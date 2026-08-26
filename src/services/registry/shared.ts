@@ -187,6 +187,8 @@ export async function generateRegistryMintTransaction(
 	// V1 callers MUST NOT pass this (no V1 splitter convention).
 	walletSplitterLovelace?: bigint,
 ) {
+	assertCollateralCoversDeclaredTotal(collateralUtxo);
+
 	if (rpcApiKey) {
 		// `protocolParams(...)` below does NOT carry cost models; mesh-sdk
 		// hashes script_data against its BUNDLED cost-model arrays. Patch them
@@ -209,8 +211,6 @@ export async function generateRegistryMintTransaction(
 	// caches the mesh-format Protocol object so we don't repeat
 	// `/epochs/latest/parameters` here. Fall back to a live fetch if the cache
 	// is cold (first tx of the process lifetime).
-	assertCollateralCoversDeclaredTotal(collateralUtxo);
-
 	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
 	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
@@ -450,11 +450,11 @@ async function generateRegistryUpdateTransaction(
 	rpcApiKey?: string,
 	walletSplitterLovelace?: bigint,
 ) {
+	assertCollateralCoversDeclaredTotal(collateralUtxo);
+
 	if (rpcApiKey) {
 		await syncMeshCostModelsFromChain(rpcApiKey);
 	}
-	assertCollateralCoversDeclaredTotal(collateralUtxo);
-
 	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
 	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({
@@ -543,6 +543,8 @@ async function generateRegistryDeregisterTransaction(
 	rpcApiKey?: string,
 	walletSplitterLovelace?: bigint,
 ) {
+	assertCollateralCoversDeclaredTotal(collateralUtxo);
+
 	if (rpcApiKey) {
 		// See cost-model sync comment in generateRegistryMintTransaction above.
 		await syncMeshCostModelsFromChain(rpcApiKey);
@@ -550,8 +552,6 @@ async function generateRegistryDeregisterTransaction(
 	// Reuse the cached mesh-format chain params populated by the cost-model
 	// sync (see generateRegistryMintTransaction). Fall back to a live fetch on
 	// cache miss.
-	assertCollateralCoversDeclaredTotal(collateralUtxo);
-
 	const cachedParams = rpcApiKey == null ? null : getCachedChainProtocolParameters(rpcApiKey);
 	const protocolParameters = cachedParams ?? (await blockchainProvider.fetchProtocolParameters(Number.NaN));
 	const txBuilder = new MeshTxBuilder({

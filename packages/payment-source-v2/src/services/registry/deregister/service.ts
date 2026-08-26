@@ -2,6 +2,7 @@ import { PaymentSourceType, RegistrationState, TransactionStatus } from '@/gener
 import { prisma } from '@masumi/payment-core/db';
 import { logger } from '@masumi/payment-core/logger';
 import type { LanguageVersion, UTxO } from '@meshsdk/core';
+import { describeAmbiguousRegistrySubmit } from '../submit-failure';
 import { asV2Provider } from '../../provider-cast';
 import { convertNetwork } from '@/utils/converter/network-convert';
 import { lockAndQueryRegistryRequests } from '@/utils/db/lock-and-query-registry-request';
@@ -284,6 +285,16 @@ async function processSingleDeregistration(
 		newTxHash = await wallet.submitTx(signedTx);
 	} catch (error) {
 		logger.error('Error submitting V2 deregister single-item tx', { error, requestId: request.id });
+		const ambiguous = describeAmbiguousRegistrySubmit(signedTx, error);
+		if (ambiguous) {
+			logger.warn('Error submitting V2 deregister single-item tx was AMBIGUOUS; the transaction may be on chain', {
+				error,
+				requestId: request.id,
+				intendedTxHash: ambiguous.intendedTxHash,
+			});
+			await markRequestFailed(request, ambiguous.failure);
+			return;
+		}
 		// Terminal, not a silent re-queue. See the matching comment in
 		// `update/service.ts`: reverting to DeregistrationRequested retried a
 		// deterministic rejection every tick with `error` left NULL. The batch half
