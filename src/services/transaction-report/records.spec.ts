@@ -40,6 +40,9 @@ function record(overrides: Partial<ReportRequestRecord> = {}): ReportRequestReco
 		sellerReturnAddress: null,
 		paymentSourceType: 'Web3CardanoV1',
 		configuredFeeRatePermille: 50,
+		// No result was submitted, so the withdrawal date carries the revenue.
+		// Tests that need the earlier unlock date set both fields together.
+		resultHash: null,
 		unlockTime: 1_000n,
 		collateralReturnLovelace: 2_000_000n,
 		requestedFunds: [{ unit: 'lovelace', amount: 100_000_000n }],
@@ -640,6 +643,20 @@ describe('buildReportRow', () => {
 			netSpend: [{ unit: 'lovelace', amount: 100_000n }],
 		});
 		expect(row.actorCardanoFeeAllocation).toMatchObject({ strategy: 'lifetime_cohort', completeness: 'partial' });
+	});
+
+	it('books a withdrawn request on its unlock date once a result hash exists', () => {
+		// The stored result hash proves the request was already billable at the
+		// unlock time, so a later withdrawal cannot move the revenue forward into
+		// a period that was reported already.
+		const row = buildReportRow(
+			record({ resultHash: 'result-hash', unlockTime: BigInt(Date.UTC(2026, 0, 1) + 60_000) }),
+			'Billable',
+			new Date('2026-01-04T00:00:00.000Z'),
+			COHORT_WINDOW,
+		);
+
+		expect(row.timestamps.sellerRevenueRecognizedAt?.toISOString()).toBe('2026-01-01T00:01:00.000Z');
 	});
 
 	it('omits seller metrics when seller recognition is outside a revenue window', () => {
