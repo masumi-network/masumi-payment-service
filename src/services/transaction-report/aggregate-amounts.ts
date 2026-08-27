@@ -5,7 +5,7 @@ import {
 	type AmountAccumulator,
 	type AtomicAmount,
 } from './amounts';
-import type { ReportAggregate, ReportAggregateMetric, ReportMetricCompleteness } from './aggregate';
+import type { ReportAggregate, ReportAggregateMetric, ReportMetricCompleteness } from './aggregate-types';
 
 const metricAmounts = new WeakMap<ReportAggregateMetric, AmountAccumulator>();
 

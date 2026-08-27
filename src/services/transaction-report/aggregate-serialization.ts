@@ -1,5 +1,5 @@
 import { serializeReportAmount } from '@/utils/asset-units';
-import type { ReportAggregate, ReportAggregateMetric, ReportAggregateResult } from './aggregate';
+import type { ReportAggregate, ReportAggregateMetric, ReportAggregateResult } from './aggregate-types';
 
 function serializeAggregateMetric(metric: ReportAggregateMetric) {
 	return { amounts: metric.amounts.map(serializeReportAmount), completeness: metric.completeness };
