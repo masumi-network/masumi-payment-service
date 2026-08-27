@@ -10,6 +10,7 @@
 		"./auth-middleware": "./src/auth-middleware.ts",
 		"./blockchain-error-interpreter": "./src/blockchain-error-interpreter.ts",
 		"./blockchain-identifier": "./src/blockchain-identifier.ts",
+		"./collateral": "./src/collateral.ts",
 		"./config": "./src/config.ts",
 		"./db": "./src/db.ts",
 		"./db-retry": "./src/db-retry.ts",
