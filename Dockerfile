@@ -37,6 +37,9 @@ ARG NEXT_PUBLIC_PAYMENT_API_BASE_URL=/api/v1
 ENV NEXT_PUBLIC_PAYMENT_API_BASE_URL=${NEXT_PUBLIC_PAYMENT_API_BASE_URL}
 COPY frontend/package.json ./
 COPY frontend/openapi-ts.config.ts ./openapi-ts.config.ts
+# `openapi-ts` runs a post-generation patch script from here. Without this the
+# stage fails with ERR_MODULE_NOT_FOUND on the script path.
+COPY frontend/scripts ./scripts
 COPY frontend/src ./src
 COPY frontend/public ./public
 COPY frontend/next.config.ts ./
