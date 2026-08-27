@@ -61,4 +61,3 @@ describe('feeShareForPaymentKeys', () => {
 		expect(feeShareForPaymentKeys(300n, ['alpha'], new Set(['delta']))).toBe(0n);
 	});
 });
-
