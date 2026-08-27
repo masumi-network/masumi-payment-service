@@ -173,9 +173,9 @@ describe('aggregateReportRows pending revenue', () => {
 	});
 
 	it('counts nothing for an invalid datum, which is a dead end rather than a wait', () => {
-		expect(amount(aggregate([pending({ onChainState: 'FundsOrDatumInvalid' })], 'CreatedAt').totals.sellerPendingRevenue)).toBe(
-			0n,
-		);
+		expect(
+			amount(aggregate([pending({ onChainState: 'FundsOrDatumInvalid' })], 'CreatedAt').totals.sellerPendingRevenue),
+		).toBe(0n);
 	});
 
 	it.each(['CreatedAt', 'FundsLockedAt', 'RevenueRecognizedAt'] as const)(
