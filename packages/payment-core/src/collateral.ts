@@ -17,6 +17,8 @@
  * hardcoded constant cannot track either bound.
  */
 
+import { logger } from './logger';
+
 /**
  * Structural shape of the parts of a mesh `UTxO` this module reads.
  *
@@ -249,6 +251,17 @@ export function deriveTotalCollateral(
 ): string {
 	const params = extractCollateralProtocolParams(protocolParameters);
 	if (params == null) {
+		// Degrading to the floor is safe but it silently discards the scaling, which
+		// is the whole reason this helper exists. Log it: the only way to get here
+		// is a protocol-parameters bag missing `priceMem`/`priceStep`/
+		// `collateralPercentage`, which means either a failed fetch or a mesh
+		// rename, and both need an operator to notice.
+		logger.warn(
+			'deriveTotalCollateral: protocol parameters missing price/collateral fields; falling back to the floor',
+			{
+				fallbackLovelace: MIN_TOTAL_COLLATERAL_LOVELACE.toString(),
+			},
+		);
 		return MIN_TOTAL_COLLATERAL_LOVELACE.toString();
 	}
 	const raw = computeCollateralFromExUnits(budgets, params);
