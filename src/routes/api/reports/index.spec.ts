@@ -106,6 +106,7 @@ function aggregate() {
 		transactionCount: 0,
 		transactionCountCompleteness: 'complete',
 		sellerGrossRevenue: metric(),
+		sellerPendingRevenue: metric(),
 		protocolFees: metric(),
 		sellerCardanoFees: metric(),
 		actorCardanoFees: metric(),
