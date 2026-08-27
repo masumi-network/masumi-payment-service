@@ -58,7 +58,7 @@ export type {
 // Every on-chain state, deliberately. A request with no usable `FundsLocked`
 // transition is admitted so the report can mark it undateable rather than drop
 // it: such a row carries a null `fundsLockedAt`, so `getEventBucket` in
-// `aggregate.ts` puts it in no history bucket and the affected metrics turn
+// `aggregate-history.ts` puts it in no history bucket and the affected metrics turn
 // partial under HISTORY_ECONOMIC_TIMESTAMP_MISSING. Narrowing this list, or
 // adding a date predicate here, would remove that signal.
 const ALL_ON_CHAIN_STATES = Object.values(OnChainState);
