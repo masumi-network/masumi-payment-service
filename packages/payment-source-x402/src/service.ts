@@ -81,7 +81,7 @@ async function assertSettlementNetworkSnapshot(
 	}
 }
 
-// Wallet CRUD lives in ./wallets; network/budget CRUD in ./networks; attempt/settlement list
+// Wallet CRUD lives in ./wallets; network CRUD in ./networks; attempt/settlement list
 // projections in ./queries; payload serialization in ./payload; the outbound-payment (buy) flow
 // in ./pay. Re-exported so existing import sites (`@masumi/payment-source-x402`) and the service
 // spec keep one entry point.
@@ -92,13 +92,7 @@ export {
 	listX402ManagedWallets,
 	updateX402ManagedWallet,
 } from './wallets';
-export {
-	listAvailableX402Networks,
-	listX402Networks,
-	listX402WalletBudgets,
-	setX402WalletBudget,
-	upsertX402Network,
-} from './networks';
+export { listAvailableX402Networks, listX402Networks, upsertX402Network } from './networks';
 export { listX402PaymentAttempts, listX402Settlements } from './queries';
 export { reconcileX402PaymentAttempt } from './reconcile';
 export { createX402Payment } from './pay';

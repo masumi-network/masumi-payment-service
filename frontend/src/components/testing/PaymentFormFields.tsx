@@ -88,9 +88,17 @@ export const paymentFormSchema = z.object({
   metadata: z.string().optional(),
   requestedFundsAmount: z.string().optional(),
   requestedFundsUnit: z.string().optional(),
+  forceLayer: z.enum(['Auto', 'L1', 'Hydra']),
 });
 
 export type PaymentFormValues = z.infer<typeof paymentFormSchema>;
+
+/** Map the form's routing choice to the API field: 'Auto' means omit (automatic routing). */
+export function forceLayerToApi(
+  value: PaymentFormValues['forceLayer'],
+): 'L1' | 'Hydra' | undefined {
+  return value === 'Auto' ? undefined : value;
+}
 
 interface PaymentFormFieldsProps {
   register: UseFormRegister<PaymentFormValues>;
@@ -99,6 +107,17 @@ interface PaymentFormFieldsProps {
   control: Control<PaymentFormValues>;
   errors: FieldErrors<PaymentFormValues>;
   paidAgents: PaidAgentOption[];
+  /**
+   * Every agent on the selected payment source, paid or free.
+   *
+   * The empty state used to blame free pricing whichever way the list came back
+   * empty, when the usual cause is the payment source selected in the header:
+   * agents are listed per source, so an agent registered on the V2 source is
+   * invisible while V1 is selected, and one registered on another node is
+   * invisible entirely. Knowing whether there are any agents at all is what
+   * separates those two messages.
+   */
+  totalAgents?: number;
   isLoadingAgents: boolean;
   hasAgentsError?: boolean;
 }
@@ -164,6 +183,7 @@ export function PaymentFormFields({
   control,
   errors,
   paidAgents,
+  totalAgents,
   isLoadingAgents,
   hasAgentsError = false,
   inputData,
@@ -215,7 +235,9 @@ export function PaymentFormFields({
                       : hasAgentsError
                         ? 'Could not load agents'
                         : paidAgents.length === 0
-                          ? 'No paid agents available'
+                          ? totalAgents === 0
+                            ? 'No agents on this payment source'
+                            : 'No paid agents on this payment source'
                           : 'Select a paid agent'
                   }
                 />
@@ -248,8 +270,11 @@ export function PaymentFormFields({
           <>
             {!hasAgentsError && (
               <p className="text-xs text-muted-foreground">
-                No paid agents are registered on this exact payment source. Free agents cannot be
-                used with the payment flow.
+                {totalAgents === undefined
+                  ? 'No paid agents available.'
+                  : totalAgents === 0
+                    ? 'No agents on the payment source selected at the top of the page. Agents are listed per source, so check that the right one is selected.'
+                    : 'Every agent on this payment source is free, and a payment needs a price.'}
               </p>
             )}
           </>
@@ -360,6 +385,32 @@ export function PaymentFormFields({
         />
       </div>
 
+      {/* Layer Routing (forceLayer) */}
+      <div className="space-y-2 animate-fade-in-up opacity-0 animate-stagger-4">
+        <Label>Layer Routing</Label>
+        <Controller
+          control={control}
+          name="forceLayer"
+          render={({ field }) => (
+            <Select value={field.value} onValueChange={field.onChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Auto (recommended)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Auto">Auto (recommended)</SelectItem>
+                <SelectItem value="L1">Force L1</SelectItem>
+                <SelectItem value="Hydra">Force Hydra (Beta)</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        />
+        <p className="text-xs text-muted-foreground">
+          Auto uses Hydra when an open head is available, otherwise L1. Force Hydra fails the
+          funds-lock instead of falling back to L1; the choice is signed into the payment terms.
+          Hydra requires a V2 payment source.
+        </p>
+      </div>
+
       {/* Simulate Dynamic Price */}
       {isDynamicPricing && (
         <Card className="animate-fade-in-up opacity-0 animate-stagger-5 border-dashed">
@@ -369,7 +420,7 @@ export function PaymentFormFields({
                 Simulate Dynamic Price <span className="text-destructive">*</span>
               </Label>
               <p className="text-xs text-muted-foreground">
-                This agent uses dynamic pricing — in production the agent determines the price per
+                This agent uses dynamic pricing. In production the agent determines the price per
                 request. Enter the amount in the smallest unit (e.g., lovelace for ADA where 1 ADA =
                 1000000 lovelace).
               </p>

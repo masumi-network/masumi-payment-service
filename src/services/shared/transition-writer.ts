@@ -1,4 +1,10 @@
-import { PaymentAction, Prisma, PurchasingAction, TransactionStatus } from '@/generated/prisma/client';
+import {
+	PaymentAction,
+	Prisma,
+	PurchasingAction,
+	TransactionLayer,
+	TransactionStatus,
+} from '@/generated/prisma/client';
 
 type PaymentNextActionCreateData = Prisma.XOR<
 	Omit<Prisma.PaymentActionDataCreateWithoutPaymentRequestCurrentInput, 'requestedAction'>,
@@ -20,12 +26,18 @@ export function connectPreviousAction(nextActionId: string) {
 	} satisfies Pick<Prisma.PaymentRequestUpdateInput, 'ActionHistory'>;
 }
 
-export function createPendingTransaction(blocksWalletId: string, txHash: string | null = null) {
+export function createPendingTransaction(
+	blocksWalletId: string,
+	txHash: string | null = null,
+	l2?: { layer: TransactionLayer; hydraHeadId: string },
+) {
 	return {
 		CurrentTransaction: {
 			create: {
 				txHash,
 				status: TransactionStatus.Pending,
+				layer: l2?.layer ?? TransactionLayer.L1,
+				...(l2?.hydraHeadId ? { HydraHead: { connect: { id: l2.hydraHeadId } } } : {}),
 				// wallet-timeouts/service.ts filters by `PendingTransaction.lastCheckedAt: { lte: now-1min }`;
 				// Prisma `lte` does not match NULL. Without an explicit timestamp here the row is
 				// invisible to the cleanup cron and a crash between this create and the post-submit

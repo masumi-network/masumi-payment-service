@@ -6,7 +6,7 @@ import { useAppContext } from '@/lib/contexts/AppContext';
 
 interface WelcomeBannerProps {
   agentCount: number;
-  walletCount: number;
+  hasFundedWallet: boolean;
   transactionCount: number;
   hasPaymentSource: boolean;
 }
@@ -28,7 +28,7 @@ function subscribe(callback: () => void) {
 
 export function WelcomeBanner({
   agentCount,
-  walletCount,
+  hasFundedWallet,
   transactionCount,
   hasPaymentSource,
 }: WelcomeBannerProps) {
@@ -58,7 +58,7 @@ export function WelcomeBanner({
     {
       label: 'Fund a wallet',
       href: '/wallets',
-      done: walletCount > 0,
+      done: hasFundedWallet,
       icon: Wallet,
       visible: capabilities.canAdmin,
     },

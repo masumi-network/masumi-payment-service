@@ -36,6 +36,7 @@ class FakeMeshTxBuilder {
 	addingPlutusMint = false;
 	mintItem: MintLeg | undefined = undefined;
 	mints: MintLeg[] = [];
+	totalCollateral: string | undefined = undefined;
 	serializer = {
 		deserializer: {
 			key: {
@@ -116,7 +117,8 @@ class FakeMeshTxBuilder {
 	txInCollateral() {
 		return this;
 	}
-	setTotalCollateral() {
+	setTotalCollateral(amount: string) {
+		this.totalCollateral = amount;
 		return this;
 	}
 	txOut() {
@@ -154,12 +156,12 @@ const { generateRegistryUpdateTransactionAutomaticFees } = await import('./share
 const POLICY_ID = 'a'.repeat(56);
 const SCRIPT = { version: 'V3' as const, code: 'aabbccdd' };
 
-function utxo(txHash: string, outputIndex: number): UTxO {
+function utxo(txHash: string, outputIndex: number, lovelace = '5000000'): UTxO {
 	return {
 		input: { txHash, outputIndex },
 		output: {
 			address: 'addr_test1placeholder',
-			amount: [{ unit: 'lovelace', quantity: '5000000' }],
+			amount: [{ unit: 'lovelace', quantity: lovelace }],
 		},
 	} as unknown as UTxO;
 }
@@ -172,6 +174,35 @@ const provider = {
 	}),
 	evaluateTx: async () => [{ tag: 'MINT', index: 0, budget: { mem: 1_000_000, steps: 500_000_000 } }],
 } as never;
+
+function providerWithBudget(budget: { mem: number; steps: number }) {
+	return {
+		fetchProtocolParameters: async () => ({
+			priceMem: '0.0577',
+			priceStep: '0.0000721',
+			collateralPercentage: 150,
+		}),
+		evaluateTx: async () => [{ tag: 'MINT', index: 0, budget }],
+	} as never;
+}
+
+function buildUpdate(collateralUtxo: UTxO, evaluationProvider: unknown = provider) {
+	return generateRegistryUpdateTransactionAutomaticFees(
+		evaluationProvider as never,
+		'preprod',
+		SCRIPT,
+		'addr_test1updater',
+		'addr_test1recipient',
+		'2000000',
+		POLICY_ID,
+		'01' + 'aa'.repeat(28) + '000000',
+		'02' + 'bb'.repeat(28) + '000000',
+		utxo('1111', 0),
+		collateralUtxo,
+		[utxo('dddd', 0)],
+		{ name: 'Agent A', description: 'desc' },
+	);
+}
 
 beforeEach(() => {
 	builtBuilders.length = 0;
@@ -213,5 +244,79 @@ describe('generateRegistryUpdateTransactionAutomaticFees', () => {
 			// UpdateAction redeemer alternative is 1.
 			expect(leg.redeemer).toEqual({ data: { alternative: 1, fields: [] }, exUnits: expect.anything() });
 		}
+	});
+});
+
+describe('registry collateral declaration', () => {
+	/**
+	 * The declared total must stay strictly below the collateral input. Equal
+	 * values leave no `collateral_return`, and the ledger rejects that in phase 1,
+	 * before `evaluateTx` ever sees the transaction.
+	 */
+	it('declares less collateral than the smallest accepted input holds', async () => {
+		await expect(buildUpdate(utxo('cccc', 0))).resolves.toBe('beadface');
+
+		const finalBuilder = builtBuilders[builtBuilders.length - 1];
+		expect(finalBuilder.totalCollateral).toBeDefined();
+		expect(BigInt(finalBuilder.totalCollateral!)).toBeLessThan(
+			BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount),
+		);
+	});
+
+	/**
+	 * Not every caller routes its collateral through `pickCollateralUtxo`. The
+	 * single-item register path takes `sortAndLimitUtxos(...)[0]`, which orders by
+	 * asset count and not by value, so it can hand over an input worth less than
+	 * the declared total. That has to fail at build time with a readable reason
+	 * rather than at submit with an unexplained phase-1 rejection.
+	 */
+	it('refuses a collateral input that cannot cover the declared total', async () => {
+		await expect(buildUpdate(utxo('cccc', 0, '2000000'))).rejects.toThrow(/holds 2000000 lovelace/);
+	});
+
+	/**
+	 * An input worth exactly the declared total leaves a zero `collateral_return`,
+	 * which is the failure this whole change exists to stop. The floor therefore
+	 * has to sit strictly above the declared total and carry min-UTxO headroom. It
+	 * must not be tied to an unrelated constant that merely happens to be larger.
+	 */
+	it('refuses a collateral input worth exactly the declared total', async () => {
+		await expect(buildUpdate(utxo('cccc', 0, '3000000'))).rejects.toThrow(/holds 3000000 lovelace/);
+	});
+
+	/**
+	 * The point of deriving rather than hardcoding. The ledger takes
+	 * `collateralPercentage` of the fee, so a more expensive budget needs a larger
+	 * declaration. A constant cannot follow that; this value has to rise with the
+	 * budget. (It tracks the script half of the fee only, which is why the safety
+	 * multiplier is applied on top. See `computeCollateralFromExUnits`.)
+	 */
+	it('declares more than the floor when the evaluated budget is expensive', async () => {
+		const expensive = providerWithBudget({ mem: 14_000_000, steps: 10_000_000_000 });
+
+		await expect(buildUpdate(utxo('cccc', 0, '10000000'), expensive)).resolves.toBe('beadface');
+
+		const finalBuilder = builtBuilders[builtBuilders.length - 1];
+		// scriptFee = ceil(14e6 * 0.0577) + ceil(10e9 * 0.0000721) = 1_528_800
+		// required  = 150% of that                                 = 2_293_200
+		// declared  = required * 1.5 safety                        = 3_439_800
+		expect(BigInt(finalBuilder.totalCollateral!)).toBe(3_439_800n);
+	});
+
+	/**
+	 * The other bound. However expensive the budget, the declared total must stay
+	 * below the input, or mesh emits a `collateral_return` that the ledger rejects
+	 * in phase 1. The cap wins over the derived requirement.
+	 */
+	it('caps the declared total below the input even when the budget wants more', async () => {
+		const expensive = providerWithBudget({ mem: 14_000_000, steps: 10_000_000_000 });
+
+		await expect(buildUpdate(utxo('cccc', 0, '4200000'), expensive)).resolves.toBe('beadface');
+
+		const finalBuilder = builtBuilders[builtBuilders.length - 1];
+		// Uncapped the derivation wants 3_439_800; the 4.2 ADA input allows only
+		// 4_200_000 - 1_000_000 of min-UTxO headroom for the return.
+		expect(BigInt(finalBuilder.totalCollateral!)).toBe(3_200_000n);
+		expect(BigInt(finalBuilder.totalCollateral!)).toBeLessThan(4_200_000n);
 	});
 });

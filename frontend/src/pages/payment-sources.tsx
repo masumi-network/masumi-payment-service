@@ -12,6 +12,7 @@ import { PaymentSourceDialog } from '@/components/payment-sources/PaymentSourceD
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { invalidateAgentQueries } from '@/lib/queries/agent-cache';
+import { invalidateTransactionReportFacets } from '@/lib/queries/transaction-report-cache';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import {
   deletePaymentSourceExtended,
@@ -253,6 +254,7 @@ export default function PaymentSourcesPage() {
     queryClient.invalidateQueries({ queryKey: ['wallets'] });
     queryClient.invalidateQueries({ queryKey: ['transactions'] });
     invalidateAgentQueries(queryClient);
+    void invalidateTransactionReportFacets(queryClient);
   };
 
   return (
@@ -578,6 +580,7 @@ export default function PaymentSourcesPage() {
             onClose={() => setSourceToUpdate(null)}
             onSuccess={() => {
               refetch();
+              void invalidateTransactionReportFacets(queryClient);
             }}
             paymentSourceId={sourceToUpdate?.id || ''}
             currentApiKey={sourceToUpdate?.PaymentSourceConfig?.rpcProviderApiKey || ''}

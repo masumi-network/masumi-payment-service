@@ -1,5 +1,5 @@
 import { AppProvider } from '@/lib/contexts/AppContext';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import '@/styles/globals.css';
 import '@/styles/styles.scss';
@@ -25,6 +25,13 @@ import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
 import { capabilitiesFromApiKeyStatus, isAdminOnlyPath, isPayOnlyPath } from '@/lib/permissions';
 import { hasLegacyOnlyPaymentSources, isV2PaymentSource } from '@/lib/payment-source-type';
+import {
+  deniedPathFallback,
+  isSetupPath,
+  setupPath,
+  shouldRestoreX402Rail,
+  X402_DASHBOARD_PATH,
+} from '@/lib/x402-navigation';
 
 function App({ Component, pageProps, router }: AppProps) {
   return (
@@ -62,6 +69,7 @@ function ToastWrapper() {
 }
 
 function ThemedApp({ Component, pageProps, router }: AppProps) {
+  const isRouteChanging = useRef(false);
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileWarningDismissed, setIsMobileWarningDismissed] = useState(false);
@@ -80,10 +88,28 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     isSetupMode,
     setIsSetupMode,
     activeRail,
+    setActiveRail,
   } = useAppContext();
 
   // Add dynamic favicon functionality
   useDynamicFavicon();
+
+  useEffect(() => {
+    const onStart = () => {
+      isRouteChanging.current = true;
+    };
+    const onEnd = () => {
+      isRouteChanging.current = false;
+    };
+    router.events.on('routeChangeStart', onStart);
+    router.events.on('routeChangeComplete', onEnd);
+    router.events.on('routeChangeError', onEnd);
+    return () => {
+      router.events.off('routeChangeStart', onStart);
+      router.events.off('routeChangeComplete', onEnd);
+      router.events.off('routeChangeError', onEnd);
+    };
+  }, [router.events]);
 
   useEffect(() => {
     queueMicrotask(() => setMounted(true));
@@ -109,6 +135,14 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     // Non-admins cannot open admin-only routes — do this before waiting on
     // payment sources to load, or deep-links would mount those pages and fire admin APIs first.
     if (apiKey && isHealthy && !capabilities.canAdmin && isAdminOnlyPath(router.pathname)) {
+      const x402Fallback = deniedPathFallback(
+        router.pathname,
+        router.pathname === '/payment-sources' && activeRail === 'x402' ? X402_DASHBOARD_PATH : '',
+      );
+      if (x402Fallback) {
+        router.replace(x402Fallback);
+        return;
+      }
       if (isLoading) {
         router.replace('/');
         return;
@@ -128,7 +162,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       !capabilities.canPay &&
       isPayOnlyPath(router.pathname)
     ) {
-      router.replace('/');
+      router.replace(deniedPathFallback(router.pathname, '/'));
       return;
     }
 
@@ -152,6 +186,16 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     if (
       apiKey &&
       isHealthy &&
+      activeRail !== 'x402' &&
+      shouldRestoreX402Rail(router.pathname, x402Loading, x402ChainCount, isRouteChanging.current)
+    ) {
+      setActiveRail('x402');
+      return;
+    }
+
+    if (
+      apiKey &&
+      isHealthy &&
       capabilities.canAdmin &&
       currentNetworkPaymentSources.length === 0 &&
       !x402MaybeStandalone
@@ -169,7 +213,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       isHealthy &&
       isSetupMode &&
       legacyOnlyPaymentSources &&
-      router.pathname !== '/setup'
+      !isSetupPath(router.pathname)
     ) {
       setIsSetupMode(false);
     }
@@ -186,7 +230,11 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       router.pathname !== '/setup' &&
       !setupAccessiblePages.includes(router.pathname)
     ) {
-      router.replace('/setup?network=' + (network === 'Mainnet' ? 'Mainnet' : 'Preprod'));
+      router.replace(
+        setupPath(activeRail, router.pathname) +
+          '?network=' +
+          (network === 'Mainnet' ? 'Mainnet' : 'Preprod'),
+      );
     }
     // Full context switch: on the x402 (EVM) rail, Cardano-only pages aren't in the
     // sidebar, so bounce direct/deep-link navigations to them back to the x402 hub.
@@ -196,7 +244,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     if (apiKey && isHealthy && !isSetupMode && x402Confirmed) {
       const cardanoOnlyPages = ['/', '/inbox-agents', '/wallets', '/transactions', '/invoices'];
       if (cardanoOnlyPages.includes(router.pathname)) {
-        router.replace('/x402');
+        router.replace(X402_DASHBOARD_PATH);
       }
     }
   }, [
@@ -210,6 +258,7 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     isSetupMode,
     setIsSetupMode,
     activeRail,
+    setActiveRail,
     x402Loading,
     x402Networks,
     capabilities.canAdmin,

@@ -115,7 +115,7 @@ export function SetupV2Banner({ onMigrateClick: _onMigrateClick }: SetupV2Banner
             </div>
             <p className="text-sm text-muted-foreground max-w-2xl">
               {hasLegacyOnly
-                ? 'V2 is the default for new agents — zero fees, updated registry metadata, and weighted admin signatures. Run the quick setup, then migrate your existing agents below.'
+                ? 'V2 is the default for new agents: zero fees, updated registry metadata, and weighted admin signatures. Run the quick setup, then migrate your existing agents below.'
                 : 'A guided 3-step wizard generates wallets, configures Blockfrost, and creates the V2 payment source so you can register your first AI agent in minutes.'}
             </p>
           </div>

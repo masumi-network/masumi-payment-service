@@ -107,12 +107,54 @@ import {
 	acknowledgeSwapTimeoutEndpointPost,
 } from './swap';
 import {
+	closeHeadPost,
+	commitHeadPost,
+	deleteLocalParticipantDelete,
+	revealParticipantKeysPost,
+	fundParticipantNodePost,
+	withdrawParticipantNodePost,
+	participantFundingGet,
+	deleteRelationDelete,
+	deleteRemoteParticipantDelete,
+	fanoutHeadPost,
+	getLocalParticipantGet,
+	getOrListHeadsGet,
+	getHeadBalanceGet,
+	getOrListRelationsGet,
+	getRemoteParticipantGet,
+	initHeadPost,
+	ensureHydraWalletBasePost,
+	queryInviteGet,
+	createInvitePost,
+	previewInvitePost,
+	redeemInvitePost,
+	deleteInviteDelete,
+	listHydraHostsGet,
+	registerHydraHostPost,
+	updateHydraHostPatch,
+	deleteHydraHostDelete,
+	checkHydraHostPost,
+	listHydraWalletBasesGet,
+	listHeadErrorsGet,
+	getHeadConnectionGet,
+	clearHeadErrorsDelete,
+	topupHeadPost,
+	listHeadTransactionsGet,
+	recoverTopupPost,
+	listTopupsGet,
+	withdrawHeadPost,
+	listWithdrawalsGet,
+	listHydraLowBalanceRulesGet,
+	setHydraLowBalanceRulePost,
+	deleteHydraLowBalanceRuleDelete,
+	updateHeadPatch,
+} from './hydra';
+import {
 	createX402PaymentPost,
 	createX402WalletPost,
 	deleteX402LowBalanceRuleDelete,
 	deleteX402WalletPost,
 	listAvailableX402NetworksGet,
-	listX402BudgetsGet,
 	listX402LowBalanceRulesGet,
 	listX402NetworksGet,
 	getX402WalletGet,
@@ -120,7 +162,6 @@ import {
 	listX402SettlementsGet,
 	listX402WalletsGet,
 	reconcileX402PaymentPost,
-	setX402BudgetPost,
 	setX402LowBalanceRulePost,
 	settleX402Post,
 	updateX402LowBalanceRulePatch,
@@ -133,6 +174,15 @@ import {
 	x402WalletBalanceGet,
 	x402WalletsCountGet,
 } from './x402';
+import {
+	reportExportZipEndpointPost,
+	reportFacetsEndpointGet,
+	reportSummaryEndpointPost,
+	reportTotalsCsvEndpointPost,
+	reportTransactionsCsvEndpointPost,
+	reportTransactionsEndpointPost,
+	reportWalletSummaryCsvEndpointPost,
+} from './reports';
 
 export const apiRouter: Routing = {
 	v1: {
@@ -359,10 +409,6 @@ export const apiRouter: Routing = {
 					get: listAvailableX402NetworksGet,
 				},
 			},
-			budgets: {
-				get: listX402BudgetsGet,
-				post: setX402BudgetPost,
-			},
 			'low-balance': {
 				get: listX402LowBalanceRulesGet,
 				post: setX402LowBalanceRulePost,
@@ -464,8 +510,102 @@ export const apiRouter: Routing = {
 				post: triggerFundDistributionEndpointPost,
 			},
 		},
+		hydra: {
+			invite: {
+				get: queryInviteGet,
+				post: createInvitePost,
+				delete: deleteInviteDelete,
+				preview: { post: previewInvitePost },
+				redeem: { post: redeemInvitePost },
+			},
+			host: {
+				get: listHydraHostsGet,
+				post: registerHydraHostPost,
+				patch: updateHydraHostPatch,
+				delete: deleteHydraHostDelete,
+				check: { post: checkHydraHostPost },
+			},
+			'wallet-base': {
+				get: listHydraWalletBasesGet,
+				post: ensureHydraWalletBasePost,
+			},
+			relation: {
+				get: getOrListRelationsGet,
+				delete: deleteRelationDelete,
+			},
+			head: {
+				get: getOrListHeadsGet,
+				patch: updateHeadPatch,
+				init: { post: initHeadPost },
+				commit: { post: commitHeadPost },
+				topup: {
+					post: topupHeadPost,
+					get: listTopupsGet,
+					// A deposit the head never absorbed does not return on its own.
+					recover: { post: recoverTopupPost },
+				},
+				// The other direction: funds leaving an open head, without closing it.
+				withdraw: {
+					post: withdrawHeadPost,
+					get: listWithdrawalsGet,
+				},
+				close: { post: closeHeadPost },
+				fanout: { post: fanoutHeadPost },
+				balance: { get: getHeadBalanceGet },
+				errors: { get: listHeadErrorsGet, delete: clearHeadErrorsDelete },
+				// What the head has done, in order — the three lifecycle hashes on the
+				// head record leave out everything between them.
+				transactions: { get: listHeadTransactionsGet },
+				connection: { get: getHeadConnectionGet },
+			},
+			// Read and delete only: participants are created by redeeming an invite.
+			participant: {
+				local: {
+					get: getLocalParticipantGet,
+					delete: deleteLocalParticipantDelete,
+					// One-time backup of the node's signing keys; seals after first use.
+					keys: { post: revealParticipantKeysPost },
+					// Fund the node's own Cardano key, without which Init cannot post.
+					fund: { post: fundParticipantNodePost, get: participantFundingGet },
+					// Return what the node did not spend, once its head is final.
+					withdraw: { post: withdrawParticipantNodePost },
+				},
+				remote: {
+					get: getRemoteParticipantGet,
+					delete: deleteRemoteParticipantDelete,
+				},
+			},
+			'low-balance': {
+				get: listHydraLowBalanceRulesGet,
+				post: setHydraLowBalanceRulePost,
+				delete: deleteHydraLowBalanceRuleDelete,
+			},
+		},
 		'rail-readiness': {
 			get: railReadinessEndpointGet,
+		},
+		reports: {
+			facets: {
+				get: reportFacetsEndpointGet,
+			},
+			transactions: {
+				post: reportTransactionsEndpointPost,
+			},
+			summary: {
+				post: reportSummaryEndpointPost,
+			},
+			'transactions.csv': {
+				post: reportTransactionsCsvEndpointPost,
+			},
+			'wallet-summary.csv': {
+				post: reportWalletSummaryCsvEndpointPost,
+			},
+			'totals.csv': {
+				post: reportTotalsCsvEndpointPost,
+			},
+			'export.zip': {
+				post: reportExportZipEndpointPost,
+			},
 		},
 	},
 };

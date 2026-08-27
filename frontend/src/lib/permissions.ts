@@ -42,6 +42,11 @@ export const ADMIN_ONLY_PATHS = [
   '/setup',
   '/x402-setup',
   '/payment-sources',
+  // Every route under /api/v1/hydra is registered with the admin factory, so
+  // this page has nothing a read or pay key can load.
+  '/hydra-heads',
+  // Chain config (RPC/facilitator) remains admin-only under Payment Sources.
+  '/x402/chains',
 ] as const;
 
 export function isAdminOnlyPath(pathname: string): boolean {
@@ -57,11 +62,14 @@ export function isAdminOnlyPath(pathname: string): boolean {
  * `/webhooks` qualifies: every webhooks endpoint, GET included, is
  * payAuthenticated.
  *
- * `/wallets` and `/x402` are deliberately absent. The wallets table is built
- * from GET /wallet/list and GET /balance, and the x402 page's chain projection
- * plus attempt/settlement history are read-level too, so every signed-in
- * session may view them. Their mutating controls, the per-wallet detail dialog
- * and the x402 wallet/chain/budget/alert tabs stay gated inside those pages.
+ * `/wallets`, `/x402/wallets` and `/x402/payments` are deliberately absent.
+ * The wallets table is built from GET /wallet/list and GET /balance, and the
+ * x402 chain projection plus attempt/settlement history are read-level too,
+ * so every signed-in session may view them. Their mutating controls and the
+ * per-wallet detail dialog stay gated inside those pages.
+ *
+ * The old `/x402/budgets` and `/x402/alerts` routes now redirect to Wallets.
+ * Permission checks for wallet policy happen inside the wallet details UI.
  */
 export const PAY_ONLY_PATHS = ['/webhooks'] as const;
 

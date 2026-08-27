@@ -6,6 +6,17 @@ export { authorizeRefundV2 as authorizeRefund } from './payments/authorize-refun
 export { handleAutomaticDecisionsV2 as handleAutomaticDecisions } from './payments/automatic-decisions/service';
 export { collectOutstandingPaymentsV2 as collectOutstandingPayments } from './payments/collection/service';
 export { submitResultV2 as submitResult } from './payments/submit-result/service';
+// The head-only passes, for running the moment the work appears rather than at
+// the next batch tick. They never touch the L1 path.
+export { submitResultL2V2 as submitResultL2 } from './payments/submit-result/service';
+export { collectOutstandingPaymentsL2V2 as collectL2 } from './payments/collection/service';
+export { authorizeRefundL2V2 as authorizeRefundL2 } from './payments/authorize-refund/service';
+export { collectRefundL2V2 as collectRefundL2 } from './purchases/collect-refund/service';
+export { requestRefundsL2V2 as requestRefundL2 } from './purchases/request-refund/service';
+export { authorizeWithdrawalsL2V2 as authorizeWithdrawalL2 } from './purchases/authorize-withdrawal/service';
+// Under the batch mutex, never the bare pass: the nudge and the L1 batch would
+// otherwise select the same request and escrow it twice.
+export { processL2PurchaseLocksExclusively as lockFundsL2 } from './purchases/batch-payments/service';
 
 export { authorizeWithdrawalsV2 as authorizeWithdrawals } from './purchases/authorize-withdrawal/service';
 export { batchLatestPaymentEntriesV2 as batchLatestPaymentEntries } from './purchases/batch-payments/service';
@@ -25,3 +36,7 @@ export { parseInboxAgentRegistrationMetadata } from './registry-inbox/metadata';
 
 export { fetchUTxOsWithDeferOnEmpty } from './utxo-fetch-helpers';
 export { asV2Provider } from './provider-cast';
+
+// L2 (in-head) escrow-state reconciler — the Hydra mirror of L1 tx-sync, so a
+// counterparty-driven in-head transition advances this node's own request rows.
+export { reconcileHydraHeadEscrowStates } from './hydra-reconcile';

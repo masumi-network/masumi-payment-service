@@ -45,7 +45,11 @@ import {
 import { RefreshButton } from '@/components/RefreshButton';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { useAvailableX402Networks, useX402WalletsPaginated } from '@/lib/hooks/useX402';
+import {
+  useAvailableX402Networks,
+  useX402Networks,
+  useX402WalletsPaginated,
+} from '@/lib/hooks/useX402';
 import { cn, copyToClipboard, shortenAddress } from '@/lib/utils';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { extractApiPayload } from '@/lib/api-response';
@@ -55,7 +59,8 @@ import {
   PostX402WalletsData,
   X402Wallet,
 } from '@/lib/api/generated';
-import { EditWalletNoteDialog, WalletBalanceDialog } from '@/components/x402/WalletExtras';
+import { EditWalletNoteDialog } from '@/components/x402/WalletExtras';
+import { WalletDetailsDialog, WalletLowBalanceBadge } from '@/components/x402/WalletDetailsDialog';
 
 const PRIVATE_KEY_REGEX = /^0x[a-fA-F0-9]{64}$/;
 
@@ -75,13 +80,13 @@ const WALLET_TYPE_OPTIONS: Array<{
   {
     value: 'Purchasing',
     label: 'Purchasing',
-    hint: 'Funds outbound payments (budgets) — the buy side.',
+    hint: 'Funds outbound payments. The buy side.',
     icon: ShoppingCart,
   },
   {
     value: 'Selling',
     label: 'Selling',
-    hint: 'Settles inbound payments as a chain facilitator — the sell side.',
+    hint: 'Settles inbound payments as a chain facilitator. The sell side.',
     icon: Store,
   },
 ];
@@ -91,27 +96,25 @@ export function WalletsTab() {
   const queryClient = useQueryClient();
   const { wallets, isLoading, isRefetching, refetch, hasMore, isFetchingNextPage, loadMore } =
     useX402WalletsPaginated();
-  // Label-only network lookup: the wallet list spans both environments, and a label miss
-  // falls back to the raw CAIP-2 id, so load silently across all environments.
   const { networks } = useAvailableX402Networks({ silentErrors: true, allEnvironments: true });
   const chainLabel = (caip2: string) =>
     networks.find((network) => network.caip2Id === caip2)?.displayName ?? caip2;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [retiringId, setRetiringId] = useState<string | null>(null);
-  const [balanceWallet, setBalanceWallet] = useState<X402Wallet | null>(null);
+  const [detailsWallet, setDetailsWallet] = useState<X402Wallet | null>(null);
   const [editWallet, setEditWallet] = useState<X402Wallet | null>(null);
   const [walletToRetire, setWalletToRetire] = useState<X402Wallet | null>(null);
-  // Wallet lifecycle is admin-only (it is the one path that returns EVM key material).
   const canMutateWallets = capabilities.canAdmin;
 
   const retireWallet = useApiMutation({
     mutationFn: (body: { id: string }) => postX402WalletsDelete({ client: apiClient, body }),
     // Invalidate the whole 'x402-wallets' key space (paginated list AND the eager,
-    // type-filtered picker queries used by the Chains/Budgets/Alerts dialogs) so a
+    // type-filtered picker queries used by the Chains/Alerts dialogs) so a
     // retired wallet disappears from every picker immediately, not after staleTime.
-    // Retiring also disables this wallet's budgets and detaches it as a chain
-    // facilitator, so refresh those caches too.
-    invalidateKeys: [['x402-wallets'], ['x402-budgets'], ['x402-networks']],
+    // Retiring also detaches the wallet as a chain facilitator, and drops the
+    // selling/purchasing counts the readiness contract reads, so refresh those
+    // caches too.
+    invalidateKeys: [['x402-wallets'], ['x402-networks'], ['rail-readiness']],
     errorMessage: 'Failed to retire wallet',
   });
 
@@ -184,9 +187,6 @@ export function WalletsTab() {
                   <EmptyState
                     title="No managed wallets"
                     description={
-                      // An unscoped key sees every wallet, so an empty list really is
-                      // empty. A scoped one only sees what it was assigned or created,
-                      // where the same empty list means something quite different.
                       capabilities.canAdmin || !capabilities.x402WalletScopeEnabled
                         ? 'Create a wallet to fund and settle x402 payments.'
                         : 'No managed wallets are assigned to this API key. A scoped key only sees wallets an admin assigned to it. Ask an admin to assign one.'
@@ -215,10 +215,11 @@ export function WalletsTab() {
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => setBalanceWallet(wallet)}>
+                      <Button variant="ghost" size="sm" onClick={() => setDetailsWallet(wallet)}>
                         <WalletIcon className="h-4 w-4" />
-                        Balances
+                        Details
                       </Button>
+                      {capabilities.canAdmin && <WalletLowBalanceBadge walletId={wallet.id} />}
                       {canMutateWallets && (
                         <>
                           <Button
@@ -265,18 +266,19 @@ export function WalletsTab() {
         onSaved={() => {
           setDialogOpen(false);
           // Invalidate the whole 'x402-wallets' key space so the new wallet appears in the
-          // list and in the type-filtered pickers (Chains facilitator, Budgets, Alerts).
+          // list and in the type-filtered pickers (Chains facilitator, Alerts). A new
+          // wallet also moves the readiness checks the setup surfaces read.
           queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
-          // A newly created wallet becomes selectable as a budget target.
-          queryClient.invalidateQueries({ queryKey: ['x402-budgets'] });
+          queryClient.invalidateQueries({ queryKey: ['rail-readiness'] });
         }}
       />
 
-      <WalletBalanceDialog
-        key={balanceWallet ? `bal-${balanceWallet.id}` : 'bal-closed'}
-        wallet={balanceWallet}
-        open={balanceWallet != null}
-        onClose={() => setBalanceWallet(null)}
+      <WalletDetailsDialog
+        key={detailsWallet ? `details-${detailsWallet.id}` : 'details-closed'}
+        wallet={detailsWallet}
+        open={detailsWallet != null}
+        onClose={() => setDetailsWallet(null)}
+        chainLabel={chainLabel}
       />
 
       <EditWalletNoteDialog
@@ -286,7 +288,6 @@ export function WalletsTab() {
         onClose={() => setEditWallet(null)}
         onSaved={() => {
           setEditWallet(null);
-          // The edited note also shows in the eager picker queries, so invalidate them all.
           queryClient.invalidateQueries({ queryKey: ['x402-wallets'] });
         }}
       />
@@ -295,7 +296,7 @@ export function WalletsTab() {
         open={walletToRetire !== null}
         onClose={() => setWalletToRetire(null)}
         title="Retire managed wallet"
-        description="This disables the wallet's budgets and detaches it from any chain it facilitates, so a compromised key can no longer sign or settle. This cannot be undone."
+        description="This detaches the wallet from any chain it facilitates, so a compromised key can no longer sign or settle. This cannot be undone."
         onConfirm={confirmRetire}
         isLoading={retiringId !== null && retiringId === walletToRetire?.id}
       />
@@ -310,16 +311,18 @@ export function CreateWalletDialog({
   onClose,
   onSaved,
   defaultType = 'Purchasing',
+  defaultNetworkId,
 }: {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
   defaultType?: WalletType;
+  defaultNetworkId?: string;
 }) {
   const { apiClient } = useAppContext();
   // A managed wallet is bound to exactly one x402 network (payment source).
-  const { networks, isLoading: networksLoading } = useAvailableX402Networks();
-  const [networkId, setNetworkId] = useState('');
+  const { networks, isLoading: networksLoading } = useX402Networks();
+  const [networkId, setNetworkId] = useState(defaultNetworkId ?? '');
   const [type, setType] = useState<WalletType>(defaultType);
   const [keySource, setKeySource] = useState<KeySource>('generate');
   const [privateKey, setPrivateKey] = useState('');
@@ -587,7 +590,7 @@ function BackupKeyStep({
   const performDownload = () => {
     setConfirmDownloadOpen(false);
     const contents = [
-      'Masumi x402 managed wallet — PRIVATE KEY BACKUP',
+      'Masumi x402 managed wallet: PRIVATE KEY BACKUP',
       `Direction: ${type}`,
       `Address:   ${address}`,
       `Private key: ${privateKey}`,

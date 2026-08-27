@@ -3,12 +3,6 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  LayoutDashboard,
-  Bot,
-  Wallet,
-  FileText,
-  Receipt,
-  Key,
   Settings,
   Sun,
   Moon,
@@ -17,10 +11,7 @@ import {
   PanelLeft,
   Bell,
   Search,
-  Code,
-  Wand2,
   AlertTriangle,
-  Coins,
 } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/ThemeContext';
 import { useSidebar } from '@/lib/contexts/SidebarContext';
@@ -32,6 +23,7 @@ import { SearchDialog } from '@/components/search/SearchDialog';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -46,23 +38,16 @@ import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSour
 import {
   DEFAULT_PAYMENT_SOURCE_TYPE,
   hasLegacyOnlyPaymentSources as networkHasLegacyOnlyPaymentSources,
+  isV2PaymentSource,
 } from '@/lib/payment-source-type';
 import { X402SetupBanner } from '@/components/x402/X402SetupBanner';
 import { useX402NetworksForSession } from '@/lib/hooks/useX402';
 import { chainsForEnv } from '@/lib/x402-rail';
+import { buildMainNavigation } from '@/components/layout/main-navigation';
+import { railHomePath, setupPath } from '@/lib/x402-navigation';
 interface MainLayoutProps {
   children: React.ReactNode;
 }
-
-type NavItem = {
-  href: string;
-  name: string;
-  icon: React.ReactNode;
-  badge: string | null;
-  group: number;
-  notificationDot?: boolean;
-  notificationLabel?: string;
-};
 
 export function MainLayout({ children }: MainLayoutProps) {
   const router = useRouter();
@@ -88,6 +73,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     isChangingNetwork,
     isSetupMode,
     setupWizardStep,
+    setSetupWizardStep,
     activeRail,
     capabilities,
   } = useAppContext();
@@ -159,6 +145,12 @@ export function MainLayout({ children }: MainLayoutProps) {
     [network, paymentSources],
   );
   const hasPaymentSources = currentNetworkPaymentSources.length > 0;
+  const hasV2PaymentSource = currentNetworkPaymentSources.some(isV2PaymentSource);
+  // Hydra is V2-only (ADR 0005). Show the nav whenever the current network has a
+  // V2 source at all, not only when the *selected* source is V2 — otherwise the
+  // link flickers off during load / when another source is selected, hiding the
+  // very page users go to in order to set up a head.
+  const canShowHydraNav = hasV2PaymentSource;
   const hasLegacyOnlyPaymentSources = networkHasLegacyOnlyPaymentSources(
     currentNetworkPaymentSources,
   );
@@ -188,183 +180,49 @@ export function MainLayout({ children }: MainLayoutProps) {
   }, [activeWalletAlertCount]);
   const notificationCount = newTransactionsCount + unacknowledgedWalletAlertCount;
 
-  const navItems = useMemo<NavItem[]>(() => {
-    const { canAdmin, canPay } = capabilities;
-
-    // Show the setup-only sidebar while in Cardano setup, or when there are no payment
-    // sources at all — unless a configured x402 rail is active, which has its own nav.
-    if (isSetupMode || (!hasPaymentSources && !isX402Standalone)) {
-      const setupNav: NavItem[] = [];
-      if (canAdmin) {
-        setupNav.push({
-          href: '/setup',
-          name: 'Setup',
-          icon: <Wand2 className="h-4 w-4" />,
-          badge: null,
-          group: 0,
-        });
-        setupNav.push({
-          href: '/api-keys',
-          name: 'API keys',
-          icon: <Key className="h-4 w-4" />,
-          badge: null,
-          group: 1,
-        });
-      }
-      if (canPay) {
-        setupNav.push({
-          href: '/webhooks',
-          name: 'Webhooks',
-          icon: <Bell className="h-4 w-4" />,
-          badge: null,
-          group: 1,
-        });
-      }
-      setupNav.push({
-        href: '/developers',
-        name: 'Developers',
-        icon: <Code className="h-4 w-4 text-violet-500" />,
-        badge: null,
-        group: 1,
-      });
-      return setupNav;
-    }
-
-    // Shared items appear on both rails. The rest are gated by the active rail so the
-    // sidebar fully reflects the Cardano vs x402 (EVM) context the user picked.
-    const sharedAgents: NavItem = {
-      href: '/ai-agents',
-      name: 'AI Agents',
-      icon: <Bot className="h-4 w-4" />,
-      badge: null,
-      group: 0,
-    };
-    // Webhooks are scoped to the selected payment source / network, so they belong with the
-    // context-aware items (group 0), not the account-level cluster (API keys, Developers).
-    const sharedWebhooks: NavItem | null = canPay
-      ? {
-          href: '/webhooks',
-          name: 'Webhooks',
-          icon: <Bell className="h-4 w-4" />,
-          badge: null,
-          group: 0,
-        }
-      : null;
-    const sharedGroup1: NavItem[] = [
-      ...(canAdmin
-        ? [
-            {
-              href: '/api-keys',
-              name: 'API keys',
-              icon: <Key className="h-4 w-4" />,
-              badge: null,
-              group: 1,
-            } satisfies NavItem,
-          ]
-        : []),
-      {
-        href: '/developers',
-        name: 'Developers',
-        icon: <Code className="h-4 w-4 text-violet-500" />,
-        badge: null,
-        group: 1,
-      },
-    ];
-
-    if (activeRail === 'x402') {
-      return [
-        // The chain projection and payment history are read-level, so the rail
-        // is navigable by every session; its wallet/chain/budget/alert tabs stay
-        // gated inside the page.
-        {
-          href: '/x402',
-          name: 'x402',
-          icon: <Coins className="h-4 w-4" />,
-          badge: null,
-          group: 0,
-        },
-        sharedAgents,
-        ...(sharedWebhooks ? [sharedWebhooks] : []),
-        ...sharedGroup1,
-      ];
-    }
-
-    return [
-      {
-        href: '/',
-        name: 'Dashboard',
-        icon: <LayoutDashboard className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-      },
-      sharedAgents,
-      {
-        href: '/inbox-agents',
-        name: 'Inbox Agents',
-        icon: <MessageSquare className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-      },
-      // Listing wallets is read-level, so every session gets the page; the
-      // mutating controls inside it stay gated on canAdmin.
-      {
-        href: '/wallets',
-        name: 'Wallets',
-        icon: <Wallet className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-        notificationDot: activeWalletAlertCount > 0,
-        notificationLabel: walletAlertLabel,
-      },
-      {
-        href: '/transactions',
-        name: 'Transactions',
-        icon: <FileText className="h-4 w-4" />,
-        badge: formatCount(newTransactionsCount),
-        group: 0,
-      },
-      ...(canAdmin
-        ? [
-            {
-              href: '/tx-sync-quarantine',
-              name: 'Sync Quarantine',
-              icon: <AlertTriangle className="h-4 w-4" />,
-              badge: null,
-              group: 0,
-            } satisfies NavItem,
-          ]
-        : []),
-      {
-        href: '/invoices',
-        name: 'Invoices',
-        icon: <Receipt className="h-4 w-4" />,
-        badge: null,
-        group: 0,
-      },
-      ...(sharedWebhooks ? [sharedWebhooks] : []),
-      ...sharedGroup1,
-    ];
-  }, [
-    isSetupMode,
-    hasPaymentSources,
-    isX402Standalone,
-    activeRail,
-    newTransactionsCount,
-    activeWalletAlertCount,
-    walletAlertLabel,
-    capabilities,
-  ]);
+  const navItems = useMemo(
+    () =>
+      buildMainNavigation({
+        activeRail,
+        canAdmin: capabilities.canAdmin,
+        canPay: capabilities.canPay,
+        canShowHydraNav,
+        hasPaymentSources,
+        isSetupMode,
+        isX402Standalone,
+        setupHref: setupPath(activeRail, router.pathname),
+        transactionBadge: formatCount(newTransactionsCount),
+        walletAlertCount: activeWalletAlertCount,
+        walletAlertLabel,
+      }),
+    [
+      activeRail,
+      capabilities.canAdmin,
+      capabilities.canPay,
+      canShowHydraNav,
+      hasPaymentSources,
+      isSetupMode,
+      isX402Standalone,
+      router.pathname,
+      newTransactionsCount,
+      activeWalletAlertCount,
+      walletAlertLabel,
+    ],
+  );
 
   const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
     if (newNetwork === network) return;
-    if (router.pathname === '/setup') {
+    if (router.pathname === '/setup' || router.pathname === '/x402-setup') {
       if (setupWizardStep > 0) {
         setPendingNetwork(newNetwork);
         setShowNetworkSwitchConfirm(true);
         return;
       }
       setNetwork(newNetwork);
-      router.replace('/setup?network=' + newNetwork, undefined, { shallow: true });
+      setSetupWizardStep(0);
+      router.replace(setupPath(activeRail, router.pathname) + '?network=' + newNetwork, undefined, {
+        shallow: true,
+      });
       return;
     }
     setNetwork(newNetwork);
@@ -376,8 +234,13 @@ export function MainLayout({ children }: MainLayoutProps) {
     setPendingNetwork(null);
     if (targetNetwork === null) return;
     setNetwork(targetNetwork);
-    if (router.pathname === '/setup') {
-      router.replace('/setup?network=' + targetNetwork, undefined, { shallow: true });
+    if (router.pathname === '/setup' || router.pathname === '/x402-setup') {
+      setSetupWizardStep(0);
+      router.replace(
+        setupPath(activeRail, router.pathname) + '?network=' + targetNetwork,
+        undefined,
+        { shallow: true },
+      );
     }
   };
 
@@ -418,12 +281,12 @@ export function MainLayout({ children }: MainLayoutProps) {
             )}
           >
             {!(collapsed && !isHovered) ? (
-              <Link href="/" key="masumi-logo-full">
+              <Link href={railHomePath(activeRail)} key="masumi-logo-full">
                 <MasumiLogo />
               </Link>
             ) : (
               <Link
-                href="/"
+                href={railHomePath(activeRail)}
                 key="masumi-logo-icon"
                 className="flex items-center justify-center w-8 h-8"
                 style={
@@ -470,6 +333,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           )}
         >
           {navItems.map((item, index) => {
+            const Icon = item.icon;
             const isDev = item.href === '/developers';
             const isActive = router.pathname === item.href;
             const showSeparator = index > 0 && item.group !== navItems[index - 1].group;
@@ -520,9 +384,14 @@ export function MainLayout({ children }: MainLayoutProps) {
                       : undefined
                   }
                 >
-                  {item.icon}
+                  <Icon className={cn('h-4 w-4', item.iconClassName)} />
                   {!(collapsed && !isHovered) && <span className="truncate">{item.name}</span>}
-                  {!(collapsed && !isHovered) && item.badge && (
+                  {!(collapsed && !isHovered) && item.beta && (
+                    <span className="ml-auto rounded-full border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-medium uppercase leading-none tracking-wide text-muted-foreground">
+                      Beta
+                    </span>
+                  )}
+                  {!(collapsed && !isHovered) && !item.beta && item.badge && (
                     <span
                       key={item.badge}
                       className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-normal text-white animate-pop-in"
@@ -753,11 +622,10 @@ export function MainLayout({ children }: MainLayoutProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Switch network?</DialogTitle>
+            <DialogDescription>
+              Switching network cancels the current setup and starts it again for the new network.
+            </DialogDescription>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground py-2">
-            Switching network will cancel the current setup. You will need to start again for the
-            new network. Do you want to continue?
-          </p>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button
               type="button"

@@ -11,6 +11,7 @@ import path from 'path';
 import { requestTiming } from '@/utils/middleware/request-timing';
 import { DEFAULTS } from '@masumi/payment-core/config';
 import { requestLogger } from '@/utils/middleware/request-logger';
+import { robotsNoindex, serveRobotsTxt } from '@/utils/middleware/robots-noindex';
 import { generateApiKeySecureHash } from '@masumi/payment-core/api-key-hash';
 import { migrateApiKeyEncryption } from '@/utils/startup-migrations/api-key-encryption';
 import { migrateWebhookEncryption } from '@/utils/startup-migrations/webhook-encryption';
@@ -19,7 +20,9 @@ import { backfillTransactionAgentNames } from '@/utils/startup-migrations/backfi
 import { warnOutOfSyncV2PaymentSources } from '@/utils/startup-migrations/warn-out-of-sync-v2-sources';
 import { blockchainStateMonitorService } from '@/services/monitoring';
 import fs from 'fs';
+import { getHydraConnectionManager } from './services/hydra-connection-manager/hydra-connection-manager.service';
 import helmet from 'helmet';
+import { CORS_EXPOSED_HEADERS_VALUE } from '@/utils/cors-headers';
 
 const __dirname = path.resolve();
 
@@ -47,6 +50,10 @@ async function initialize() {
 		logger.warn('*****************************************************************');
 	}
 	await initJobs();
+
+	// Reconnect to any enabled Hydra heads that are reachable
+	await getHydraConnectionManager().initialize();
+	logger.info('Hydra connection manager initialized', { component: 'hydra' });
 
 	// Start blockchain state monitoring
 	await blockchainStateMonitorService.startMonitoring(30000); // Monitor every 30 seconds
@@ -132,6 +139,9 @@ export async function startApp() {
 					xXssProtection: false,
 				}),
 			);
+
+			app.use(robotsNoindex);
+			app.get('/robots.txt', serveRobotsTxt);
 
 			const replacer = (_key: string, value: unknown): unknown => {
 				if (typeof value === 'bigint') {
@@ -335,15 +345,23 @@ export async function startApp() {
 
 			app.use('/admin', express.static(adminDistDir));
 			app.use('/_next', express.static(path.join(adminDistDir, '_next')));
-			// Catch all routes for admin and serve the correct HTML file for each route
-			app.get('/admin/*name', (req, res, next) => {
-				// Skip static files (files with extensions)
+			// Every admin route, served as its own pre-rendered page.
+			//
+			// Mounted as middleware rather than a wildcard `get`: a hard reload of
+			// /admin/hydra-heads fell through the wildcard and was answered by the
+			// API's JSON 404, so the admin worked until someone pressed refresh.
+			// Prefix mounting has no pattern to get wrong.
+			app.use('/admin', (req, res, next) => {
+				if (req.method !== 'GET' && req.method !== 'HEAD') {
+					return next();
+				}
+				// Static assets were already handled above; anything with an
+				// extension that reached here does not exist.
 				if (req.path.match(/\.[a-zA-Z0-9]+$/)) {
 					return next();
 				}
 
-				const routeName = req.path.replace('/admin/', '').replace(/\/$/, '');
-
+				const routeName = req.path.replace(/^\/+/, '').replace(/\/+$/, '');
 				const htmlFile = routeName === '' ? 'index.html' : `${routeName}.html`;
 				const requestedPath = path.resolve(adminDistDir, htmlFile);
 
@@ -351,11 +369,20 @@ export async function startApp() {
 				const relativeToBase = path.relative(adminDistDir, requestedPath);
 				const isOutsideBase = relativeToBase.startsWith('..') || path.isAbsolute(relativeToBase);
 
-				if (isOutsideBase || !fs.existsSync(requestedPath)) {
-					res.sendFile(path.join(adminDistDir, '404.html'));
-					return;
+				// Read and send rather than `res.sendFile`: sendFile hands its errors
+				// to the API's error handler, which answers them as a JSON 404 — so a
+				// hard reload of a real admin page returned an API error instead of
+				// the page, and the page was there the whole time.
+				const isMissing = isOutsideBase || !fs.existsSync(requestedPath);
+				const fileToSend = isMissing ? path.join(adminDistDir, '404.html') : requestedPath;
+				try {
+					res
+						.status(isMissing ? 404 : 200)
+						.type('html')
+						.send(fs.readFileSync(fileToSend));
+				} catch {
+					next();
 				}
-				res.sendFile(requestedPath);
 			});
 		},
 		http: {
@@ -367,7 +394,7 @@ export async function startApp() {
 			'Access-Control-Max-Age': '5000',
 			'Access-Control-Allow-Origin': '*',
 			'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH',
-			'Access-Control-Expose-Headers': 'Content-Range, X-Total-Count',
+			'Access-Control-Expose-Headers': CORS_EXPOSED_HEADERS_VALUE,
 		}),
 		logger: logger,
 	});

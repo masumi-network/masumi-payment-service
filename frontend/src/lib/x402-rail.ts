@@ -1,4 +1,4 @@
-import type { X402Budget, X402Network, X402Wallet } from '@/lib/api/generated';
+import type { X402Network, X402Wallet } from '@/lib/api/generated';
 import type { NetworkType } from '@/lib/contexts/AppContext';
 
 /**
@@ -21,6 +21,14 @@ export function isTestnetEnv(network: NetworkType): boolean {
   return network === 'Preprod';
 }
 
+export function resolveX402ChainEnvironment(
+  network: NetworkType,
+  submittedIsTestnet: boolean,
+  isEnvironmentLocked: boolean,
+): boolean {
+  return isEnvironmentLocked ? isTestnetEnv(network) : submittedIsTestnet;
+}
+
 /** Enabled EVM chains that belong to the given Cardano environment. */
 export function chainsForEnv<T extends { isEnabled: boolean; isTestnet: boolean }>(
   chains: T[],
@@ -36,15 +44,30 @@ export function walletsForNetworks(wallets: X402Wallet[], networks: X402Network[
   return wallets.filter((wallet) => networkIds.has(wallet.networkId));
 }
 
-/** Whether any budget belongs to an enabled network in the supplied environment scope. */
-export function hasBudgetOnEnabledNetworks(
-  budgets: Pick<X402Budget, 'caip2Network'>[],
+/** Payment Sources must keep drafts visible so operators can finish or remove their config. */
+export function filterX402PaymentSourceChains<
+  T extends Pick<X402Network, 'displayName' | 'caip2Id'>,
+>(chains: T[], searchQuery: string): T[] {
+  if (!searchQuery) return chains;
+  const query = searchQuery.toLowerCase();
+  return chains.filter(
+    (chain) =>
+      chain.displayName.toLowerCase().includes(query) ||
+      chain.caip2Id.toLowerCase().includes(query),
+  );
+}
+/**
+ * Whether outbound payments are actually possible: a Purchasing wallet bound to a chain
+ * that is ENABLED in the supplied scope. A wallet on a disabled chain cannot pay —
+ * `POST /x402/pay` rejects it with "The wallet network is not enabled" — so it must not
+ * count as a configured paying side and must not suppress the setup guide.
+ */
+export function hasPurchasingWalletOnEnabledNetworks(
+  wallets: X402Wallet[],
   networks: X402Network[],
 ): boolean {
-  const enabledNetworkIds = new Set(
-    networks.filter((network) => network.isEnabled).map((network) => network.caip2Id),
-  );
-  return budgets.some((budget) => enabledNetworkIds.has(budget.caip2Network));
+  const enabled = networks.filter((network) => network.isEnabled);
+  return walletsForNetworks(wallets, enabled).some((wallet) => wallet.type === 'Purchasing');
 }
 
 /**

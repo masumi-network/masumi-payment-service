@@ -1,5 +1,6 @@
 import { HttpExistsError, allowedObjectSchema } from './http-exists-error';
 import { EndpointsFactory, ensureHttpError, FlatObject, ResultHandler } from 'express-zod-api';
+import type { Request, Response } from 'express';
 import createHttpError, { HttpError } from 'http-errors';
 
 import { z } from './zod';
@@ -38,6 +39,69 @@ const redactSensitive = (value: RuntimePropertyValue): RuntimePropertyValue => {
 const logServerError = (error: HttpError, logger: ErrorLogger, url: string, payload: FlatObject | null) =>
 	!error.expose &&
 	logger.error('Server side error', { error, url, payload: redactSensitive(payload) as FlatObject | null });
+
+export const endpointErrorResponseSchema = z
+	.object({
+		status: z.literal('error'),
+		error: z.object({ message: z.string() }),
+	})
+	.example({
+		status: 'error',
+		error: { message: 'Sample error message' },
+	})
+	.or(
+		z
+			.object({
+				status: z.literal('error'),
+				error: z.object({ message: z.string() }),
+				id: z.string(),
+				object: allowedObjectSchema,
+			})
+			.example({
+				status: 'error',
+				error: { message: 'Sample error message' },
+				id: '123',
+				object: {
+					id: '123',
+					name: 'Sample name',
+				},
+			}),
+	);
+
+export const sendEndpointError = ({
+	error,
+	input,
+	request,
+	response,
+	logger,
+}: {
+	error: Error;
+	input: FlatObject | null;
+	request: Pick<Request, 'url'>;
+	response: Response;
+	logger: ErrorLogger;
+}): void => {
+	if (error instanceof HttpExistsError) {
+		response.status(409).json({
+			status: 'error',
+			error: { message: error.message },
+			id: error.id,
+			object: error.object as z.infer<typeof allowedObjectSchema>,
+		});
+		return;
+	}
+	const httpError = ensureHttpError(error);
+
+	logServerError(httpError, logger, request.url, input);
+	response
+		.status(httpError.statusCode)
+		.set(httpError.headers)
+		.json({
+			status: 'error',
+			error: { message: getPublicErrorMessage(httpError) },
+		});
+};
+
 const customResultHandler = new ResultHandler({
 	positive: (output) => {
 		const responseSchema = z.object({
@@ -47,53 +111,10 @@ const customResultHandler = new ResultHandler({
 
 		return responseSchema;
 	},
-	negative: z
-		.object({
-			status: z.literal('error'),
-			error: z.object({ message: z.string() }),
-		})
-		.example({
-			status: 'error',
-			error: { message: 'Sample error message' },
-		})
-		.or(
-			z
-				.object({
-					status: z.literal('error'),
-					error: z.object({ message: z.string() }),
-					id: z.string(),
-					object: allowedObjectSchema,
-				})
-				.example({
-					status: 'error',
-					error: { message: 'Sample error message' },
-					id: '123',
-					object: {
-						id: '123',
-						name: 'Sample name',
-					},
-				}),
-		),
+	negative: endpointErrorResponseSchema,
 	handler: ({ error, input, output, request, response, logger }) => {
 		if (error) {
-			if (error instanceof HttpExistsError) {
-				return void response.status(409).json({
-					status: 'error',
-					error: { message: error.message },
-					id: error.id,
-					object: error.object as z.infer<typeof allowedObjectSchema>,
-				});
-			}
-			const httpError = ensureHttpError(error);
-
-			logServerError(httpError, logger, request.url, input);
-			return void response
-				.status(httpError.statusCode)
-				.set(httpError.headers)
-				.json({
-					status: 'error',
-					error: { message: getPublicErrorMessage(httpError) },
-				});
+			return void sendEndpointError({ error, input, request, response, logger });
 		}
 		response.status(200).json({ status: 'success', data: output });
 	},

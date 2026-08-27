@@ -15,16 +15,15 @@ import { CopyButton } from '@/components/ui/copy-button';
 import TransactionDetailsDialog from '@/components/transactions/TransactionDetailsDialog';
 import { DownloadDetailsDialog } from '@/components/transactions/DownloadDetailsDialog';
 import { Download } from 'lucide-react';
-import { dateRangeUtils } from '@/lib/utils';
 import { useTransactions, OnChainStateFilter, ON_CHAIN_STATES } from '@/lib/hooks/useTransactions';
 import { AnimatedPage } from '@/components/ui/animated-page';
 import { SearchInput } from '@/components/ui/search-input';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Badge } from '@/components/ui/badge';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { parseAmountSearchRange, parseAmountToBigInt } from '@/lib/parseAmountSearchRange';
 import Link from 'next/link';
 import { PaymentSourceTypeBadge } from '@/components/payment-sources/PaymentSourceTypeBadge';
-import { getPaymentSourceTypeLabel } from '@/lib/payment-source-type';
 import { TransactionAgentIdentifierCell } from '@/components/transactions/TransactionAgentIdentifierCell';
 import { getLatestTxHash } from '@/components/transactions/transaction-format.helpers';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -33,8 +32,10 @@ import {
   EMPTY_FILTERS,
   type TransactionFilterState,
 } from '@/components/transactions/TransactionFilters';
+import { buildTransactionReportViewDefaults } from '@/components/transactions/download-details.helpers';
 import { useBulkClearTransactionErrors } from '@/lib/hooks/useBulkClearTransactionErrors';
 import { toast } from 'react-toastify';
+import { useResync } from '@/lib/hooks/useResync';
 
 type Transaction = ReturnType<typeof useTransactions>['transactions'][number];
 
@@ -43,13 +44,32 @@ const formatStatus = (status: string | null) => {
   return status.replace(/([A-Z])/g, ' $1').trim();
 };
 
+const isHydraTransaction = (transaction: Transaction) =>
+  transaction.CurrentTransaction?.layer === 'L2';
+
+// The layer (L1 vs Hydra L2) is only known once the request has been picked up
+// and locked (i.e. a CurrentTransaction exists). Before that, show neither.
+const getTransactionLayerLabel = (transaction: Transaction): 'Hydra L2' | 'L1' | null => {
+  const layer = transaction.CurrentTransaction?.layer;
+  if (layer === 'L2') return 'Hydra L2';
+  if (layer === 'L1') return 'L1';
+  return null;
+};
+
+const getHydraHeadId = (transaction: Transaction) =>
+  transaction.CurrentTransaction?.hydraHeadId ?? null;
+
 export default function Transactions() {
-  const { apiClient, selectedPaymentSourceId, network, selectedPaymentSource, capabilities } =
-    useAppContext();
+  const { apiClient, selectedPaymentSourceId, network, capabilities } = useAppContext();
+  const resync = useResync();
 
   const [activeTab, setActiveTab] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<TransactionFilterState>(EMPTY_FILTERS);
+  const reportViewDefaults = useMemo(
+    () => buildTransactionReportViewDefaults(activeTab, filters, searchQuery.trim().length > 0),
+    [activeTab, filters, searchQuery],
+  );
   const debouncedSearchQuery = useDebouncedValue(searchQuery);
   const isNeedsActionTab = activeTab === 'Needs Action';
   // Error recovery posts to /payment|purchase/error-state-recovery, both
@@ -77,7 +97,11 @@ export default function Transactions() {
     if (filters.status) params.filterOnChainState = filters.status;
     if (filters.needsAction) params.filterNeedsManualAction = true;
 
-    if (debouncedSearchQuery) params.searchQuery = debouncedSearchQuery;
+    // Trimmed to match the backend's own normalizeSearchQuery, so a stray
+    // trailing space cannot create a second react-query key for a request
+    // that returns identical rows.
+    const trimmedSearchQuery = debouncedSearchQuery.trim();
+    if (trimmedSearchQuery) params.searchQuery = trimmedSearchQuery;
 
     return params;
   }, [activeTab, debouncedSearchQuery, filters]);
@@ -166,13 +190,26 @@ export default function Transactions() {
 
   // Client-side filter for instant feedback while server results are pending.
   // Mirrors the backend Prisma OR filter in src/utils/shared/queries.ts
-  // to avoid items appearing/disappearing when the server responds.
+  // (buildTransactionSearchFilter) to avoid items appearing/disappearing when the
+  // server responds. Matching MORE fields here than the backend is the bug this
+  // guards against: those rows show during the debounce and vanish on response.
+  // Deliberately absent, matching the backend: network, paymentSourceType and
+  // transaction type — the query is already scoped to one network and source
+  // type, so matching them would make any substring of those return everything.
+  // The backend lower-cases and trims the query and matches every column
+  // case-insensitively, so a single lower-cased `query` mirrors it exactly.
   const displayTransactions = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     if (!query || (query === debouncedSearchQuery.toLowerCase().trim() && !isPlaceholderData))
       return filteredTransactions;
 
     const amountRange = parseAmountSearchRange(query);
+    // Mirror backend looksLikeHash (HASH_QUERY_MIN_LENGTH): the hash columns and
+    // the head ID are only searched for a hex query of 5+ characters.
+    const isHashQuery = query.length >= 5 && /^[0-9a-f]+$/.test(query);
+    // Mirror backend buildMatchingLayers: exact match plus the 'hydra' alias.
+    const matchingLayer =
+      query === 'hydra' ? 'L2' : query === 'l1' || query === 'l2' ? query.toUpperCase() : null;
 
     // Mirror backend buildMatchingStates
     const matchingStates = ON_CHAIN_STATES.filter(
@@ -181,11 +218,17 @@ export default function Transactions() {
 
     return filteredTransactions.filter((tx) => {
       if (tx.id?.toLowerCase().includes(query)) return true;
-      if (getLatestTxHash(tx)?.toLowerCase().includes(query)) return true;
+      if (tx.blockchainIdentifier?.toLowerCase() === query) return true;
+      if (isHashQuery) {
+        if (tx.CurrentTransaction?.txHash?.toLowerCase().includes(query)) return true;
+        if (tx.TransactionHistory?.some((h) => h.txHash?.toLowerCase().includes(query)))
+          return true;
+        if (tx.inputHash?.toLowerCase().includes(query)) return true;
+        if (tx.resultHash?.toLowerCase().includes(query)) return true;
+        if (tx.CurrentTransaction?.hydraHeadId?.toLowerCase().includes(query)) return true;
+      }
+      if (matchingLayer && tx.CurrentTransaction?.layer === matchingLayer) return true;
       if (tx.SmartContractWallet?.walletAddress?.toLowerCase().includes(query)) return true;
-      if (tx.PaymentSource?.network?.toLowerCase().includes(query)) return true;
-      if (tx.PaymentSource?.paymentSourceType?.toLowerCase().includes(query)) return true;
-      if (tx.type?.toLowerCase().includes(query)) return true;
       if (matchingStates.length > 0 && tx.onChainState && matchingStates.includes(tx.onChainState))
         return true;
       if (tx.agentIdentifier?.toLowerCase().includes(query)) return true;
@@ -265,12 +308,13 @@ export default function Transactions() {
 
         // Keep only the failed rows selected so the user can retry them.
         setSelectedIds(new Set(failedIds));
+        await resync('transactions');
         refreshTransactions();
       } finally {
         setBulkRecoveryMode(null);
       }
     },
-    [visibleTransactions, selectedIds, recoverErrors, refreshTransactions],
+    [visibleTransactions, selectedIds, recoverErrors, refreshTransactions, resync],
   );
 
   // When context changes, clear "new transactions" badge via the hook (single source of truth for localStorage)
@@ -310,95 +354,6 @@ export default function Transactions() {
     }
   };
 
-  // Generate CSV data for transactions
-  const generateCSVData = useCallback(
-    (transactions: Transaction[]): string => {
-      const headers = [
-        'Transaction Type',
-        'Transaction Hash',
-        'Agent Name',
-        'Agent Identifier',
-        'Payment Amounts',
-        'Network',
-        'Payment Source Type',
-        'Status',
-        'Date',
-        'Fee rate (%)',
-      ];
-      const rows = transactions.map((transaction) => {
-        // The list is filtered by network + source type only, so rows can
-        // belong to OTHER sources than the selected one. Only stamp the
-        // selected source's fee rate onto rows that actually belong to it.
-        const feeRatePermille =
-          transaction.PaymentSource?.id === selectedPaymentSource?.id
-            ? selectedPaymentSource?.feeRatePermille
-            : undefined;
-        const feeRateDisplay =
-          typeof feeRatePermille === 'number' ? (feeRatePermille / 10).toFixed(1) + '%' : 'Unknown';
-        const paymentAmounts: string[] = [];
-        if (transaction.type === 'payment' && transaction.RequestedFunds) {
-          paymentAmounts.push(
-            ...transaction.RequestedFunds.map((fund) =>
-              formatAssetAmount(fund.amount, fund.unit, network),
-            ),
-          );
-        } else if (transaction.type === 'purchase' && transaction.PaidFunds) {
-          paymentAmounts.push(
-            ...transaction.PaidFunds.map((fund) =>
-              formatAssetAmount(fund.amount, fund.unit, network),
-            ),
-          );
-        }
-        const amount = paymentAmounts.join(', ');
-
-        const hash = getLatestTxHash(transaction) || '—';
-        const agentName = transaction.agentName?.trim() || '—';
-        const agentIdentifier = transaction.agentIdentifier?.trim() || '—';
-        const status = formatStatus(transaction.onChainState);
-        const date = formatDateTime(transaction.createdAt);
-
-        return [
-          transaction.type,
-          hash,
-          agentName,
-          agentIdentifier,
-          amount,
-          transaction.PaymentSource.network,
-          getPaymentSourceTypeLabel(transaction.PaymentSource.paymentSourceType),
-          status,
-          date,
-          feeRateDisplay,
-        ];
-      });
-
-      // RFC 4180: embed a literal `"` by doubling it, and wrap any field
-      // containing `,`, `"`, `\r`, or `\n` in surrounding quotes. We wrap
-      // every field unconditionally for consistency, so only the `"`
-      // doubling is strictly required here — without it, an agent name
-      // or note containing a quote breaks the CSV (parsers see it as a
-      // field terminator and split that row into extra columns).
-      const escapeCsvField = (value: unknown): string =>
-        `"${String(value ?? '').replace(/"/g, '""')}"`;
-      return [headers, ...rows].map((row) => row.map(escapeCsvField).join(',')).join('\n');
-    },
-    [selectedPaymentSource?.id, selectedPaymentSource?.feeRatePermille, network],
-  );
-
-  // Download CSV file
-  const downloadCSV = (transactions: Transaction[], filename: string = 'transactions.csv') => {
-    const csvData = generateCSVData(transactions);
-    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', filename);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <MainLayout>
       <Head>
@@ -428,12 +383,11 @@ export default function Transactions() {
               />
               <Button
                 onClick={() => setShowDownloadDialog(true)}
-                disabled={visibleTransactions.length === 0}
                 variant="outline"
                 className="flex items-center gap-2 btn-hover-lift"
               >
                 <Download className="h-4 w-4" />
-                Download CSV
+                Export report
               </Button>
               {/* Developers > Testing creates real payments/purchases via
                   pay-authenticated endpoints, and the tab is hidden for
@@ -669,6 +623,26 @@ export default function Transactions() {
                             paymentSourceType={transaction.PaymentSource.paymentSourceType}
                             showDefault
                           />
+                          <div className="flex items-center gap-1.5">
+                            {getTransactionLayerLabel(transaction) ? (
+                              <Badge
+                                variant={isHydraTransaction(transaction) ? 'success' : 'outline'}
+                                className="w-fit"
+                              >
+                                {getTransactionLayerLabel(transaction)}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                            {isHydraTransaction(transaction) && getHydraHeadId(transaction) && (
+                              <span
+                                className="max-w-[120px] truncate font-mono text-xs text-muted-foreground"
+                                title={getHydraHeadId(transaction) ?? undefined}
+                              >
+                                {getHydraHeadId(transaction)}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="p-4">
@@ -724,16 +698,13 @@ export default function Transactions() {
           onRefresh={refreshTransactions}
         />
 
-        <DownloadDetailsDialog
-          open={showDownloadDialog}
-          onClose={() => setShowDownloadDialog(false)}
-          onDownload={(startDate, endDate, filteredTransactions) => {
-            downloadCSV(
-              filteredTransactions,
-              `transactions-${activeTab.toLowerCase()}-${dateRangeUtils.formatDateRange(startDate, endDate).replace(/\s+/g, '-')}.csv`,
-            );
-          }}
-        />
+        {showDownloadDialog && (
+          <DownloadDetailsDialog
+            open
+            onClose={() => setShowDownloadDialog(false)}
+            viewDefaults={reportViewDefaults}
+          />
+        )}
       </AnimatedPage>
     </MainLayout>
   );

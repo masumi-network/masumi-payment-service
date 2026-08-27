@@ -23,6 +23,7 @@ export const paymentSchemaOutputExample = {
 	requestedById: 'requester_id',
 	resultHash: 'result_hash',
 	onChainState: null,
+	forceLayer: null,
 	inputHash: 'input_hash',
 	NextAction: {
 		requestedAction: PaymentAction.AuthorizeRefundRequested,

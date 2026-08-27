@@ -1,7 +1,8 @@
 import { z } from '@masumi/payment-core/zod';
-import { HotWalletType, PaymentSourceType } from '@/generated/prisma/client';
+import { HotWalletType, PaymentSourceType, TransactionLayer } from '@/generated/prisma/client';
 import { prisma } from '@masumi/payment-core/db';
 import createHttpError from 'http-errors';
+import { nudgeHydraCycle } from '@/services/hydra-nudge';
 import { payAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
 import { AuthContext, checkIsAllowedNetworkOrThrowUnauthorized } from '@masumi/payment-core/auth';
 import { validateHexString } from '@/utils/validator/hex';
@@ -11,9 +12,12 @@ import { recordBusinessEndpointError } from '@masumi/payment-core/metrics';
 import { lovelaceToAdaNumberSafe } from '@/utils/lovelace';
 import { transformPurchaseGetAmounts, transformPurchaseGetTimestamps } from '@/utils/shared/transformers';
 import { resolveTransactionAgentName } from '@/utils/shared/resolve-transaction-agent-name';
+import {
+	forceLayerApiToTransactionLayer,
+	resolveEffectiveForceLayer,
+	transactionLayerToForceLayerApi,
+} from '@/utils/logic/force-layer';
 import { readAuthenticatedEndpointFactory } from '@masumi/payment-core/auth';
-import { buildWalletScopeFilter } from '@/utils/shared/wallet-scope';
-import { buildNeedsManualActionFilter } from '@/utils/shared/queries';
 import { resolvePurchaseCreationContext } from './shared';
 import { decodeBlockchainIdentifier } from '@masumi/payment-core/blockchain-identifier';
 import {
@@ -25,7 +29,7 @@ import {
 	queryPurchaseRequestSchemaInput,
 	queryPurchaseRequestSchemaOutput,
 } from './schemas';
-import { getPurchasesForQuery, resolvePurchasePaymentSourceTypeFilter } from './queries';
+import { buildPurchaseListWhere, getPurchasesForQuery } from './queries';
 import { serializePurchasesResponse } from './serializers';
 import { isCardanoPubKeyAddressForNetwork } from '@/types/payment-source';
 
@@ -62,16 +66,7 @@ export const queryPurchaseCountGet = readAuthenticatedEndpointFactory.build({
 		await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
 
 		const total = await prisma.purchaseRequest.count({
-			where: {
-				PaymentSource: {
-					deletedAt: null,
-					network: input.network,
-					smartContractAddress: input.filterSmartContractAddress ?? undefined,
-					paymentSourceType: resolvePurchasePaymentSourceTypeFilter(input),
-				},
-				...buildWalletScopeFilter(ctx.walletScopeIds),
-				...buildNeedsManualActionFilter(input.filterNeedsManualAction),
-			},
+			where: buildPurchaseListWhere(input, ctx.walletScopeIds),
 		});
 
 		return {
@@ -88,6 +83,30 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 		const startTime = Date.now();
 		try {
 			await checkIsAllowedNetworkOrThrowUnauthorized(ctx.networkLimit, input.network);
+			const decodedBlockchainIdentifier = decodeBlockchainIdentifier(input.blockchainIdentifier);
+			if (decodedBlockchainIdentifier == null) {
+				throw createHttpError(400, 'Invalid blockchain identifier, format invalid');
+			}
+			const inferredPaymentSourceType =
+				decodedBlockchainIdentifier.smartContractAddress != null
+					? PaymentSourceType.Web3CardanoV2
+					: PaymentSourceType.Web3CardanoV1;
+			if (input.paymentSourceType != null && input.paymentSourceType !== inferredPaymentSourceType) {
+				throw createHttpError(400, 'Payment source type does not match the blockchain identifier');
+			}
+
+			const resolvedPaymentSourceType = input.paymentSourceType ?? inferredPaymentSourceType;
+			const isV2 = resolvedPaymentSourceType === PaymentSourceType.Web3CardanoV2;
+			const v2SmartContractAddress = decodedBlockchainIdentifier.smartContractAddress;
+			const forceLayer = forceLayerApiToTransactionLayer(input.forceLayer);
+			const paymentForceLayer = forceLayerApiToTransactionLayer(input.paymentForceLayer);
+			if (!isV2 && forceLayer === TransactionLayer.L2) {
+				throw createHttpError(400, 'forceLayer="Hydra" is supported only for Web3CardanoV2 payment sources');
+			}
+			if (!isV2 && paymentForceLayer === TransactionLayer.L2) {
+				throw createHttpError(400, 'paymentForceLayer="Hydra" is supported only for Web3CardanoV2 purchases');
+			}
+
 			const existingPurchaseRequest = await prisma.purchaseRequest.findUnique({
 				where: {
 					blockchainIdentifier: input.blockchainIdentifier,
@@ -132,8 +151,22 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				},
 			});
 			if (existingPurchaseRequest != null) {
+				const {
+					currentHydraUtxoTxHash: _currentHydraUtxoTxHash,
+					currentHydraUtxoOutputIndex: _currentHydraUtxoOutputIndex,
+					currentHydraUtxoValue: _currentHydraUtxoValue,
+					unresolvedHydraTerminalTxHash: _unresolvedHydraTerminalTxHash,
+					unresolvedHydraTerminalReason: _unresolvedHydraTerminalReason,
+					hydraFanoutHandoffHeadId: _hydraFanoutHandoffHeadId,
+					hydraFanoutHandoffTxHash: _hydraFanoutHandoffTxHash,
+					hydraFanoutHandoffOutputIndex: _hydraFanoutHandoffOutputIndex,
+					...existingPurchaseResponse
+				} = existingPurchaseRequest;
 				throw new HttpExistsError('Purchase exists', existingPurchaseRequest.id, {
-					...existingPurchaseRequest,
+					...existingPurchaseResponse,
+					// Map the stored DB layer (L1/L2) back to the API vocabulary (L1/Hydra).
+					forceLayer: transactionLayerToForceLayerApi(existingPurchaseRequest.forceLayer),
+					paymentForceLayer: transactionLayerToForceLayerApi(existingPurchaseRequest.paymentForceLayer),
 					// safe: response schema is z.number() (ADA). lovelaceToAdaNumberSafe
 					// throws if the lovelace value exceeds Number.MAX_SAFE_INTEGER.
 					totalBuyerCardanoFees: lovelaceToAdaNumberSafe(existingPurchaseRequest.totalBuyerCardanoFees),
@@ -200,21 +233,6 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 			const explicitSmartContractAddress =
 				input.smartContractAddress != null && input.smartContractAddress.length > 0 ? input.smartContractAddress : null;
 
-			const decodedBlockchainIdentifier = decodeBlockchainIdentifier(input.blockchainIdentifier);
-			if (decodedBlockchainIdentifier == null) {
-				throw createHttpError(400, 'Invalid blockchain identifier, format invalid');
-			}
-			const inferredPaymentSourceType =
-				decodedBlockchainIdentifier.smartContractAddress != null
-					? PaymentSourceType.Web3CardanoV2
-					: PaymentSourceType.Web3CardanoV1;
-			if (input.paymentSourceType != null && input.paymentSourceType !== inferredPaymentSourceType) {
-				throw createHttpError(400, 'Payment source type does not match the blockchain identifier');
-			}
-
-			const resolvedPaymentSourceType = input.paymentSourceType ?? inferredPaymentSourceType;
-			const isV2 = resolvedPaymentSourceType === PaymentSourceType.Web3CardanoV2;
-			const v2SmartContractAddress = decodedBlockchainIdentifier.smartContractAddress;
 			if (!isV2 && input.supportedPaymentSourceIndex != null) {
 				throw createHttpError(
 					400,
@@ -333,6 +351,9 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 				rpcProviderApiKey: paymentSource.PaymentSourceConfig.rpcProviderApiKey,
 				smartContractAddress: paymentSource.smartContractAddress,
 			});
+			if (resolveEffectiveForceLayer(forceLayer, paymentForceLayer) === 'conflict') {
+				throw createHttpError(400, 'forceLayer conflicts with the seller-signed paymentForceLayer');
+			}
 			const smartContractAddress = paymentSource.smartContractAddress;
 			if (isV2) {
 				if (
@@ -388,7 +409,18 @@ export const createPurchaseInitPost = payAuthenticatedEndpointFactory.build({
 					onChainName: onChainAgentName,
 					preferOnChain: true,
 				}),
+				forceLayer,
+				paymentForceLayer,
 			});
+
+			// A lock inside an open head completes in under a second, so waiting for
+			// the batch tick is latency we add rather than latency the chain imposes.
+			// The tick remains the backstop if this pass finds the head unusable.
+			//
+			// Safe to read immediately: `handlePurchaseCreditInit` awaits a closed
+			// `prisma.$transaction`, so the request this pass is meant to pick up is
+			// committed before this line runs.
+			nudgeHydraCycle('lockFunds');
 
 			return {
 				...initialPurchaseRequest,

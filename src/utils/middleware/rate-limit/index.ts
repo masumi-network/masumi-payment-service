@@ -67,11 +67,11 @@ const prepareRateLimitUpdate = (
 export const createAuthenticatedRateLimitMiddleware = ({ maxRequests, windowMs }: RateLimitOptions) => {
 	const apiKeyBucket = createRateLimitBucket();
 
-	return new Middleware<AuthContext, Record<string, never>, string, typeof rateLimitInputSchema>({
+	return new Middleware<AuthContext, AuthContext, string, typeof rateLimitInputSchema>({
 		input: rateLimitInputSchema,
 		handler: async ({ ctx, response }) => {
 			if (ctx.canAdmin) {
-				return {};
+				return ctx;
 			}
 
 			const now = Date.now();
@@ -93,7 +93,7 @@ export const createAuthenticatedRateLimitMiddleware = ({ maxRequests, windowMs }
 				apiKeyBucket.set(ctx.id, apiKeyUpdate.nextCounter);
 			}
 
-			return {};
+			return ctx;
 		},
 	});
 };

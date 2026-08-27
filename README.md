@@ -90,6 +90,7 @@ Additional guides can be found in the [docs](docs/) folder:
 - [Deployment Guide](docs/deployment.md)
 - [Monitoring Guide](docs/monitoring.md)
 - [x402 EVM Payment Rail Guide](docs/x402.md)
+- [Hydra Operations Guide](docs/hydra-operations.md)
 
 ## Audit
 

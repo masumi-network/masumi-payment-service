@@ -260,6 +260,8 @@ describe('unregisterAgentPost', () => {
 		});
 		expect(mockUpdateRegistryRequest.mock.calls[0]?.[0]?.data).toEqual({
 			state: RegistrationState.DeregistrationRequested,
+			// A re-queued row must not keep the reason a previous attempt failed for.
+			error: null,
 			deregistrationHotWalletId: 'recipient-wallet-id',
 		});
 		expect(responseMock._getJSONData().data.RecipientWallet).toEqual({

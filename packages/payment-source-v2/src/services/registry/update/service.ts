@@ -41,6 +41,7 @@ import {
 	resetRegistryPrepFailureCount,
 } from '../../wallet-collateral/prep-failure-guard';
 import { unlockHotWalletIfNoPendingTransaction } from '../../wallet-lock-helpers';
+import { describeAmbiguousRegistrySubmit } from '../submit-failure';
 import { asV2Provider } from '../../provider-cast';
 import { buildAgentMetadata, validateRegistrationPricing } from '../register/service';
 
@@ -283,22 +284,32 @@ async function processUpdate(
 
 	// Submit FIRST, then write DB. Same rationale as
 	// register/deregister single-item: on submit failure there is no
-	// orphan Transaction row to clean up, and we revert state back to
-	// UpdateRequested so the next tick can retry.
+	// orphan Transaction row to clean up, so the catch below only has to
+	// stamp the failure and free the wallet.
 	let newTxHash: string;
 	try {
 		newTxHash = await wallet.submitTx(signedTx);
 	} catch (error) {
 		logger.error('Error submitting V2 update tx', { error, requestId: request.id });
-		await prisma.registryRequest.update({
-			where: { id: request.id },
-			data: {
-				state: RegistrationState.UpdateRequested,
-				DeregistrationHotWallet: {
-					update: { lockedAt: null },
-				},
-			},
-		});
+		const ambiguous = describeAmbiguousRegistrySubmit(signedTx, error);
+		if (ambiguous) {
+			logger.warn('Error submitting V2 update tx was AMBIGUOUS; the transaction may be on chain', {
+				error,
+				requestId: request.id,
+				intendedTxHash: ambiguous.intendedTxHash,
+			});
+			await markRequestFailed(request, ambiguous.failure);
+			return;
+		}
+		// Terminal, not a silent re-queue. This used to revert to UpdateRequested,
+		// which retries every tick forever with `error` left NULL: a deterministic
+		// rejection (collateral, phase-1, script-data-hash) then loops invisibly and
+		// an operator sees a queued row with nothing to read. Both batch paths
+		// already treat a submit rejection as terminal (`register/service.ts` and
+		// the batch half of this file), so match them. UpdateFailed records the
+		// reason, frees the wallet, and stays re-queueable: the update route accepts
+		// UpdateFailed and resets the row in place.
+		await markRequestFailed(request, error);
 		return;
 	}
 
