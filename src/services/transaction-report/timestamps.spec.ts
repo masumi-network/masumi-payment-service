@@ -226,11 +226,7 @@ describe('report transaction timestamps', () => {
 			getReportTimestamps({
 				...input,
 				onChainState: 'ResultSubmitted',
-				transactions: [
-					submitted,
-					refundRequested,
-					{ ...cancelled, blockTime: Date.UTC(2026, 7, 14, 6) / 1_000 },
-				],
+				transactions: [submitted, refundRequested, { ...cancelled, blockTime: Date.UTC(2026, 7, 14, 6) / 1_000 }],
 			}).sellerRevenueRecognizedAt?.toISOString(),
 		).toBe('2026-08-14T12:00:00.000Z');
 		// `SubmitResult` is valid from every state, so the seller can re-submit a
