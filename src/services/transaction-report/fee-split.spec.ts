@@ -39,6 +39,17 @@ describe('feeShareForPaymentKey', () => {
 		expect(shares(['charlie', 'bravo', 'alpha'])).toEqual([33n, 33n, 34n]);
 	});
 
+	it('orders mixed case by code point, so the remainder does not follow the runtime locale', () => {
+		// `localeCompare` puts 'apple' before 'Banana' and 'apple' before 'Zulu'.
+		// Code point order puts every capital first. The remainder goes to the
+		// earliest shares, so the two orders disagree about who pays the extra
+		// lovelace. Code point order is the same on every runtime and locale.
+		const keys = ['apple', 'Banana', 'Zulu'];
+		expect(feeShareForPaymentKey(100n, keys, 'Banana')).toBe(34n);
+		expect(feeShareForPaymentKey(100n, keys, 'Zulu')).toBe(33n);
+		expect(feeShareForPaymentKey(100n, keys, 'apple')).toBe(33n);
+	});
+
 	it('counts a repeated key once', () => {
 		expect(feeShareForPaymentKey(100n, ['alpha', 'alpha'], 'alpha')).toBe(100n);
 	});
