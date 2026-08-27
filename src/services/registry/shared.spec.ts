@@ -175,9 +175,20 @@ const provider = {
 	evaluateTx: async () => [{ tag: 'MINT', index: 0, budget: { mem: 1_000_000, steps: 500_000_000 } }],
 } as never;
 
-function buildUpdate(collateralUtxo: UTxO) {
+function providerWithBudget(budget: { mem: number; steps: number }) {
+	return {
+		fetchProtocolParameters: async () => ({
+			priceMem: '0.0577',
+			priceStep: '0.0000721',
+			collateralPercentage: 150,
+		}),
+		evaluateTx: async () => [{ tag: 'MINT', index: 0, budget }],
+	} as never;
+}
+
+function buildUpdate(collateralUtxo: UTxO, evaluationProvider: unknown = provider) {
 	return generateRegistryUpdateTransactionAutomaticFees(
-		provider,
+		evaluationProvider as never,
 		'preprod',
 		SCRIPT,
 		'addr_test1updater',
@@ -271,5 +282,41 @@ describe('registry collateral declaration', () => {
 	 */
 	it('refuses a collateral input worth exactly the declared total', async () => {
 		await expect(buildUpdate(utxo('cccc', 0, '3000000'))).rejects.toThrow(/holds 3000000 lovelace/);
+	});
+
+	/**
+	 * The point of deriving rather than hardcoding. The ledger takes
+	 * `collateralPercentage` of the fee, so a more expensive budget needs a larger
+	 * declaration. A constant cannot follow that; this value has to rise with the
+	 * budget. (It tracks the script half of the fee only, which is why the safety
+	 * multiplier is applied on top. See `computeCollateralFromExUnits`.)
+	 */
+	it('declares more than the floor when the evaluated budget is expensive', async () => {
+		const expensive = providerWithBudget({ mem: 14_000_000, steps: 10_000_000_000 });
+
+		await expect(buildUpdate(utxo('cccc', 0, '10000000'), expensive)).resolves.toBe('beadface');
+
+		const finalBuilder = builtBuilders[builtBuilders.length - 1];
+		// scriptFee = ceil(14e6 * 0.0577) + ceil(10e9 * 0.0000721) = 1_528_800
+		// required  = 150% of that                                 = 2_293_200
+		// declared  = required * 1.5 safety                        = 3_439_800
+		expect(BigInt(finalBuilder.totalCollateral!)).toBe(3_439_800n);
+	});
+
+	/**
+	 * The other bound. However expensive the budget, the declared total must stay
+	 * below the input, or mesh emits a `collateral_return` that the ledger rejects
+	 * in phase 1. The cap wins over the derived requirement.
+	 */
+	it('caps the declared total below the input even when the budget wants more', async () => {
+		const expensive = providerWithBudget({ mem: 14_000_000, steps: 10_000_000_000 });
+
+		await expect(buildUpdate(utxo('cccc', 0, '4200000'), expensive)).resolves.toBe('beadface');
+
+		const finalBuilder = builtBuilders[builtBuilders.length - 1];
+		// Uncapped the derivation wants 3_439_800; the 4.2 ADA input allows only
+		// 4_200_000 - 1_000_000 of min-UTxO headroom for the return.
+		expect(BigInt(finalBuilder.totalCollateral!)).toBe(3_200_000n);
+		expect(BigInt(finalBuilder.totalCollateral!)).toBeLessThan(4_200_000n);
 	});
 });

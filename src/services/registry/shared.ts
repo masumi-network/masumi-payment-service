@@ -11,6 +11,12 @@ import { PaymentSourceType } from '@/generated/prisma/client';
 import { getCachedChainProtocolParameters, syncMeshCostModelsFromChain } from '@/utils/mesh-cost-model-sync';
 import { assertNever } from '@/utils/assert-never';
 import { getLovelaceFromUtxo } from '@/utils/utxo';
+import {
+	MIN_TOTAL_COLLATERAL_LOVELACE,
+	collateralReturnMinLovelace,
+	deriveTotalCollateral,
+	nativeAssetCount,
+} from '@masumi/payment-core/collateral';
 
 export type RegistryMetadata = {
 	[key: string]: string | string[] | RegistryMetadata | RegistryMetadata[] | undefined;
@@ -19,69 +25,72 @@ export type RegistryMetadata = {
 const minimumRegistryFundingLovelace = BigInt(SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount);
 
 /**
- * Total collateral these registry transactions declare.
+ * Total collateral these registry transactions declare, derived per build.
  *
- * Must stay below what the collateral input holds. The ledger returns the
- * difference as a `collateral_return` output, and rejects the transaction when
- * that output falls under the min-UTxO floor. Declaring the full
- * `SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount` (5 ADA) against the 5 ADA
- * UTxO the funding path mints leaves nothing to return, which is what these
- * builders used to do.
+ * The declared total is pinned between two moving bounds and a constant cannot
+ * track either one. It must sit ABOVE the ledger's requirement
+ * (`collateralPercentage` of the fee, else the node answers
+ * `InsufficientCollateral`) and strictly BELOW what the collateral input holds,
+ * because mesh ALWAYS emits a `collateral_return` of `input - declared` and
+ * never min-UTxO-checks it (`addCollateralReturn` in both pinned core-cst
+ * lines). Declaring the full `SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount`
+ * (5 ADA) against the 5 ADA UTxO the funding path mints produced a zero-lovelace
+ * return, which the ledger rejects in phase 1, before `evaluateTx` ever runs.
  *
- * 3 ADA still covers the requirement: at preprod prices the inflated default
- * budgets (mem 7e6, steps 3e9) come to roughly 620k lovelace of script fee, and
- * Conway asks for `collateralPercentage` (150%) of that, so roughly 930k. It
- * matches the sibling deregister call site and the `MIN_TOTAL_COLLATERAL_LOVELACE`
- * floor the V2 builders derive from.
+ * `deriveTotalCollateral` is the same helper the V2 batch builders use. It scales
+ * with the redeemer budget, floors at `MIN_TOTAL_COLLATERAL_LOVELACE`, and caps
+ * at what this input can cover while still leaving a returnable remainder. On the
+ * first pass `exUnits` is the inflated default and on the second it is the
+ * chain-evaluated budget, so the declared total tracks the real cost either way.
  */
-const REGISTRY_TOTAL_COLLATERAL_LOVELACE = '3000000';
-
-/**
- * Headroom the collateral input must keep above the declared total.
- *
- * The remainder becomes a `collateral_return` output, so it has to clear the
- * ledger min-UTxO floor. 1 ADA is the same round figure the rest of this tree
- * treats as a safe plain-output minimum (see `calculateMinUtxo` in
- * `src/utils/min-utxo`), and it avoids threading protocol parameters into a
- * guard that only needs a floor.
- */
-const REGISTRY_COLLATERAL_RETURN_MARGIN_LOVELACE = 1_000_000n;
+function registryTotalCollateral(
+	exUnits: { mem: number; steps: number },
+	protocolParameters: unknown,
+	collateralUtxo: UTxO,
+): string {
+	return deriveTotalCollateral(
+		[exUnits],
+		protocolParameters,
+		getLovelaceFromUtxo(collateralUtxo),
+		nativeAssetCount(collateralUtxo),
+	);
+}
 
 /**
  * Smallest collateral input these builders accept.
  *
- * Derived from the declared total, deliberately NOT from
- * `SERVICE_CONSTANTS.SMART_CONTRACT.collateralAmount`. The two are close today,
- * but tying the floor to that constant means lowering it to the declared total
- * would silently re-admit the zero-remainder transaction this guard exists to
- * stop.
+ * `deriveTotalCollateral` caps the declared total to what the input covers, but
+ * it never declares below `MIN_TOTAL_COLLATERAL_LOVELACE`. An input under that
+ * floor plus a returnable remainder therefore still yields a zero or negative
+ * `collateral_return`. This guard turns that into a readable build-time error
+ * instead of a phase-1 rejection at submit that names no cause.
+ *
+ * The floor tracks the collateral's native assets, because mesh copies the full
+ * input value into the return and the ledger's min-UTxO grows with it.
  *
  * The guard is not redundant with `pickCollateralUtxo`. Only some callers route
  * their collateral through it. The single-item register paths take
  * `sortAndLimitUtxos(...)[0]`, which orders by asset count and not by value, and
  * the single-item update and deregister paths fall back to that same element
- * when nothing clears the floor. Any of those can hand over an input smaller
- * than the declared total. Without this guard such a build dies at submit with a
- * phase-1 rejection that names no cause, because phase-1 failures never reach
- * `evaluateTx`.
+ * when nothing clears the floor. Any of those can hand over an input too small
+ * to declare against.
  *
  * It never rejects an input that used to build: these builders previously
  * declared the full 5 ADA, which needed more than 5 ADA of input to leave a
- * returnable remainder, and this floor is 4 ADA.
+ * returnable remainder, and this floor is 4 ADA for pure-ADA collateral.
  */
-const REGISTRY_MIN_COLLATERAL_INPUT_LOVELACE =
-	BigInt(REGISTRY_TOTAL_COLLATERAL_LOVELACE) + REGISTRY_COLLATERAL_RETURN_MARGIN_LOVELACE;
-
 function assertCollateralCoversDeclaredTotal(collateralUtxo: UTxO): void {
 	const heldLovelace = getLovelaceFromUtxo(collateralUtxo);
-	if (heldLovelace >= REGISTRY_MIN_COLLATERAL_INPUT_LOVELACE) {
+	const requiredLovelace =
+		MIN_TOTAL_COLLATERAL_LOVELACE + collateralReturnMinLovelace(nativeAssetCount(collateralUtxo));
+	if (heldLovelace >= requiredLovelace) {
 		return;
 	}
 	throw new Error(
 		`Collateral UTxO ${collateralUtxo.input.txHash}#${collateralUtxo.input.outputIndex} holds ` +
-			`${heldLovelace.toString()} lovelace. Registry transactions declare ` +
-			`${REGISTRY_TOTAL_COLLATERAL_LOVELACE} as total collateral and need an input of at least ` +
-			`${REGISTRY_MIN_COLLATERAL_INPUT_LOVELACE.toString()} lovelace to leave a returnable remainder.`,
+			`${heldLovelace.toString()} lovelace. Registry transactions declare at least ` +
+			`${MIN_TOTAL_COLLATERAL_LOVELACE.toString()} as total collateral and need an input of at least ` +
+			`${requiredLovelace.toString()} lovelace to leave a returnable remainder.`,
 	);
 }
 
@@ -233,7 +242,7 @@ export async function generateRegistryMintTransaction(
 		})
 		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral(REGISTRY_TOTAL_COLLATERAL_LOVELACE)
+		.setTotalCollateral(registryTotalCollateral(exUnits, protocolParameters, collateralUtxo))
 		.txOut(recipientWalletAddress, [
 			{
 				unit: policyId + assetName,
@@ -490,7 +499,7 @@ async function generateRegistryUpdateTransaction(
 		})
 		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral(REGISTRY_TOTAL_COLLATERAL_LOVELACE)
+		.setTotalCollateral(registryTotalCollateral(exUnits, protocolParameters, collateralUtxo))
 		.txOut(recipientWalletAddress, [
 			{
 				unit: policyId + newAssetName,
@@ -568,7 +577,7 @@ async function generateRegistryDeregisterTransaction(
 		.mintRedeemerValue({ alternative: burnRedeemerAlternative, fields: [] }, 'Mesh', exUnits)
 		.txIn(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
 		.txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex)
-		.setTotalCollateral(REGISTRY_TOTAL_COLLATERAL_LOVELACE);
+		.setTotalCollateral(registryTotalCollateral(exUnits, protocolParameters, collateralUtxo));
 	for (const utxo of utxos) {
 		txBuilder.txIn(utxo.input.txHash, utxo.input.outputIndex);
 	}
