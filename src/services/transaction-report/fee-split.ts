@@ -33,9 +33,18 @@ export function splitFeeEvenly(fee: bigint, shareCount: number): bigint[] {
 	return Array.from({ length: shareCount }, (_unused, index) => (index < remainder ? base + 1n : base));
 }
 
-/** The batch a fee is shared across, in one fixed order on every run. */
+/**
+ * The batch a fee is shared across, in one fixed order on every run.
+ *
+ * The order decides which requests receive the remainder, so it must not depend
+ * on where the service runs. `localeCompare` reads the runtime's ICU build and
+ * default locale, and it orders mixed case differently from code points, so two
+ * deployments could hand the same leftover lovelace to different requests. A
+ * code point comparison is the same everywhere, and it matches the plain
+ * `sort()` the query layer already uses on these keys.
+ */
 function sortedBatch(paymentKeys: readonly string[]): string[] {
-	return Array.from(new Set(paymentKeys)).sort((left, right) => left.localeCompare(right));
+	return Array.from(new Set(paymentKeys)).sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
 /**
