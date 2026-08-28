@@ -41,7 +41,12 @@ import { useAgentDetailsDialog } from '@/lib/contexts/AgentDetailsDialogContext'
 import { lookupWalletByVkey } from '@/lib/wallet-lookup';
 import { isV2PaymentSource } from '@/lib/payment-source-type';
 import { MigrateAgentsDialog } from '@/components/ai-agents/MigrateAgentsDialog';
-import { parseAgentStatus, getAgentStatusBadgeVariant } from '@/lib/agent-status';
+import {
+  parseAgentStatus,
+  getAgentStatusBadgeVariant,
+  getAgentStatusHelperText,
+  getAgentIdentifierPlaceholder,
+} from '@/lib/agent-status';
 import { AGENT_TYPE_LABELS, getAgentTypeLabel } from '@/lib/agent-type';
 import { formatDate } from '@/lib/format-date';
 import { getPrimaryCardanoPricing } from '@/lib/registry-pricing';
@@ -666,7 +671,9 @@ export default function AIAgentsPage() {
                                 <CopyButton value={agent.agentIdentifier} />
                               </div>
                             ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
+                              <span className="text-xs text-muted-foreground">
+                                {getAgentIdentifierPlaceholder(agent.state)}
+                              </span>
                             )}
                           </td>
                           <td className="p-4">
@@ -763,9 +770,16 @@ export default function AIAgentsPage() {
                             )}
                           </td>
                           <td className="p-4">
-                            <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
-                              {parseAgentStatus(agent.state)}
-                            </Badge>
+                            <div className="space-y-1">
+                              <Badge variant={getAgentStatusBadgeVariant(agent.state)}>
+                                {parseAgentStatus(agent.state)}
+                              </Badge>
+                              {getAgentStatusHelperText(agent.state) && (
+                                <p className="text-xs text-muted-foreground max-w-48">
+                                  {getAgentStatusHelperText(agent.state)}
+                                </p>
+                              )}
+                            </div>
                           </td>
                           <td className="p-4 pr-8">
                             {isDeregisterableAgentState(agent.state) ? (
