@@ -50,6 +50,10 @@ export function resolveMnemonic(
 	return { mnemonic: brew(), wasGenerated: true, envName };
 }
 
+export function isSeedV1LegacyEnabled(raw: string | undefined): boolean {
+	return raw?.toLowerCase() === 'true';
+}
+
 export function printGeneratedMnemonics(generated: ResolvedMnemonic[]): void {
 	const toShow = generated.filter((entry) => entry.wasGenerated);
 	if (toShow.length === 0) {
