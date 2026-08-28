@@ -20,6 +20,7 @@ import {
 } from 'react-hook-form';
 import type { X402AvailableNetwork, X402Wallet } from '@/lib/api/generated';
 import { formatFundUnit } from '@/lib/utils';
+import { getPriceAmountAriaLabel, getPriceAmountLabel } from '@/lib/agent-registration-price-label';
 import { REGISTRY_LIMITS } from '@/lib/registry-validation';
 import type { X402OptionDraft } from '@/lib/x402-registration';
 import {
@@ -416,64 +417,69 @@ function LegacyMasumiPricingFields({
               Add coin
             </Button>
           </div>
-          {priceFields.map((priceField, index) => (
-            <div
-              key={priceField.id}
-              className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
-            >
-              <div className="min-w-0 flex-1">
-                <Controller
-                  control={control}
-                  name={`prices.${index}.unit` as const}
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger aria-label={`Coin for Masumi price ${index + 1}`}>
-                        <SelectValue placeholder="Select a coin" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value={stablecoinUnit}>{stablecoinUnit}</SelectItem>
-                          <SelectItem value="lovelace">
-                            {formatFundUnit('lovelace', network)}
-                          </SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-              </div>
-              <div className="min-w-0 flex-1">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  aria-label={`Amount for Masumi price ${index + 1}`}
-                  placeholder="0.00"
-                  onWheel={(event) => event.currentTarget.blur()}
-                  value={watch(`prices.${index}.amount`) || ''}
-                  {...register(`prices.${index}.amount` as const)}
-                  min="0"
-                  step="0.000001"
-                />
-                {errors.prices && Array.isArray(errors.prices) && errors.prices[index]?.amount ? (
-                  <p className="mt-1 text-xs text-destructive">
-                    {errors.prices[index]?.amount?.message}
-                  </p>
+          {priceFields.map((priceField, index) => {
+            const selectedUnit = watch(`prices.${index}.unit`) || defaultPriceUnit;
+            const displayUnit = formatFundUnit(selectedUnit, network);
+            return (
+              <div
+                key={priceField.id}
+                className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-start"
+              >
+                <div className="min-w-0 flex-1">
+                  <Controller
+                    control={control}
+                    name={`prices.${index}.unit` as const}
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger aria-label={`Coin for Masumi price ${index + 1}`}>
+                          <SelectValue placeholder="Select a coin" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value={stablecoinUnit}>{stablecoinUnit}</SelectItem>
+                            <SelectItem value="lovelace">
+                              {formatFundUnit('lovelace', network)}
+                            </SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <label className="text-xs font-medium">{getPriceAmountLabel(displayUnit)}</label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    aria-label={getPriceAmountAriaLabel(displayUnit, index)}
+                    placeholder="0.00"
+                    onWheel={(event) => event.currentTarget.blur()}
+                    value={watch(`prices.${index}.amount`) || ''}
+                    {...register(`prices.${index}.amount` as const)}
+                    min="0"
+                    step="0.000001"
+                  />
+                  {errors.prices && Array.isArray(errors.prices) && errors.prices[index]?.amount ? (
+                    <p className="mt-1 text-xs text-destructive">
+                      {errors.prices[index]?.amount?.message}
+                    </p>
+                  ) : null}
+                </div>
+                {index > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 self-end sm:h-9 sm:w-9 sm:self-auto"
+                    aria-label={`Remove Masumi price ${index + 1}`}
+                    onClick={() => removePrice(index)}
+                  >
+                    <Trash2 />
+                  </Button>
                 ) : null}
               </div>
-              {index > 0 ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 self-end sm:h-9 sm:w-9 sm:self-auto"
-                  aria-label={`Remove Masumi price ${index + 1}`}
-                  onClick={() => removePrice(index)}
-                >
-                  <Trash2 />
-                </Button>
-              ) : null}
-            </div>
-          ))}
+            );
+          })}
           {errors.prices && typeof errors.prices.message === 'string' ? (
             <p className="text-sm text-destructive">{errors.prices.message}</p>
           ) : null}
