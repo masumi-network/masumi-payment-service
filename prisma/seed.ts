@@ -22,6 +22,13 @@ import { MeshWallet } from '@meshsdk/core';
 
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
+import {
+	formatMissingEnvError,
+	isMissingEnvValue,
+	printGeneratedMnemonics,
+	resolveMnemonic,
+	validatePreprodSeedPrerequisites,
+} from './seed.validation';
 
 dotenv.config();
 const connectionString = process.env.DATABASE_URL;
@@ -29,20 +36,20 @@ const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-function createMnemonicIfMissing(mnemonic: string | undefined) {
-	return mnemonic ?? (MeshWallet.brew(false) as string[]).join(' ');
+function brewMnemonic(): string {
+	return (MeshWallet.brew(false) as string[]).join(' ');
 }
 
 // V2 wallets must be supplied via env: contract addresses are derived from these
 // mnemonics and re-seeding with a brewed mnemonic would orphan any V2 funds. V1
 // keeps the brew fallback for backwards compatibility with the original seed UX.
 function requireMnemonic(mnemonic: string | undefined, envName: string): string {
-	if (!mnemonic) {
+	if (isMissingEnvValue(mnemonic)) {
 		throw new Error(
 			`${envName} is required for V2 seeding. Set it in your .env to a 24-word mnemonic that is distinct from your V1 wallets.`,
 		);
 	}
-	return mnemonic;
+	return mnemonic!.trim();
 }
 
 async function queryLatestTxHash(blockfrostApiKey: string, smartContractAddress: string, networkLabel: string) {
@@ -165,8 +172,18 @@ export const seed = async (prisma: PrismaClient) => {
 	}
 
 	let collectionWalletPreprodAddress: string | null | undefined = process.env.COLLECTION_WALLET_PREPROD_ADDRESS;
-	const purchaseWalletPreprodMnemonic = createMnemonicIfMissing(process.env.PURCHASE_WALLET_PREPROD_MNEMONIC);
-	const sellingWalletPreprodMnemonic = createMnemonicIfMissing(process.env.SELLING_WALLET_PREPROD_MNEMONIC);
+	const purchaseWalletPreprodResolved = resolveMnemonic(
+		process.env.PURCHASE_WALLET_PREPROD_MNEMONIC,
+		'PURCHASE_WALLET_PREPROD_MNEMONIC',
+		brewMnemonic,
+	);
+	const sellingWalletPreprodResolved = resolveMnemonic(
+		process.env.SELLING_WALLET_PREPROD_MNEMONIC,
+		'SELLING_WALLET_PREPROD_MNEMONIC',
+		brewMnemonic,
+	);
+	const purchaseWalletPreprodMnemonic = purchaseWalletPreprodResolved.mnemonic;
+	const sellingWalletPreprodMnemonic = sellingWalletPreprodResolved.mnemonic;
 	// V2 mnemonics validated lazily at the V2 source creation site so that V1-only
 	// deployments (no BLOCKFROST_API_KEY_PREPROD) don't fail on missing V2 env.
 	const purchaseWalletV2PreprodMnemonicRaw = process.env.PURCHASE_WALLET_V2_PREPROD_MNEMONIC;
@@ -178,8 +195,18 @@ export const seed = async (prisma: PrismaClient) => {
 		process.env.COLLECTION_WALLET_V2_PREPROD_ADDRESS ?? collectionWalletPreprodAddress;
 
 	let collectionWalletMainnetAddress: string | null | undefined = process.env.COLLECTION_WALLET_MAINNET_ADDRESS;
-	const purchaseWalletMainnetMnemonic = createMnemonicIfMissing(process.env.PURCHASE_WALLET_MAINNET_MNEMONIC);
-	const sellingWalletMainnetMnemonic = createMnemonicIfMissing(process.env.SELLING_WALLET_MAINNET_MNEMONIC);
+	const purchaseWalletMainnetResolved = resolveMnemonic(
+		process.env.PURCHASE_WALLET_MAINNET_MNEMONIC,
+		'PURCHASE_WALLET_MAINNET_MNEMONIC',
+		brewMnemonic,
+	);
+	const sellingWalletMainnetResolved = resolveMnemonic(
+		process.env.SELLING_WALLET_MAINNET_MNEMONIC,
+		'SELLING_WALLET_MAINNET_MNEMONIC',
+		brewMnemonic,
+	);
+	const purchaseWalletMainnetMnemonic = purchaseWalletMainnetResolved.mnemonic;
+	const sellingWalletMainnetMnemonic = sellingWalletMainnetResolved.mnemonic;
 	const purchaseWalletV2MainnetMnemonicRaw = process.env.PURCHASE_WALLET_V2_MAINNET_MNEMONIC;
 	const sellingWalletV2MainnetMnemonicRaw = process.env.SELLING_WALLET_V2_MAINNET_MNEMONIC;
 	if (!collectionWalletMainnetAddress) {
@@ -188,9 +215,17 @@ export const seed = async (prisma: PrismaClient) => {
 	const collectionWalletV2MainnetAddress =
 		process.env.COLLECTION_WALLET_V2_MAINNET_ADDRESS ?? collectionWalletMainnetAddress;
 
-	const blockfrostApiKeyPreprod = process.env.BLOCKFROST_API_KEY_PREPROD;
+	const preprodValidation = validatePreprodSeedPrerequisites({
+		DATABASE_URL: process.env.DATABASE_URL,
+		ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
+		BLOCKFROST_API_KEY_PREPROD: process.env.BLOCKFROST_API_KEY_PREPROD,
+	});
+	if (!preprodValidation.ok) {
+		throw new Error(formatMissingEnvError(preprodValidation.missing));
+	}
 
-	const encryptionKey = process.env.ENCRYPTION_KEY;
+	const blockfrostApiKeyPreprod = process.env.BLOCKFROST_API_KEY_PREPROD!.trim();
+	const encryptionKey = process.env.ENCRYPTION_KEY!.trim();
 
 	const adminWallet1AddressPreprod = DEFAULTS.ADMIN_WALLET1_PREPROD;
 	const adminWallet2AddressPreprod = DEFAULTS.ADMIN_WALLET2_PREPROD;
@@ -201,7 +236,8 @@ export const seed = async (prisma: PrismaClient) => {
 	const cooldownTimePreprod = DEFAULTS.COOLDOWN_TIME_PREPROD;
 	const cooldownTimeMainnet = DEFAULTS.COOLDOWN_TIME_MAINNET;
 
-	if (encryptionKey != null && blockfrostApiKeyPreprod != null && blockfrostApiKeyPreprod != '') {
+	// Preprod seed path — DATABASE_URL, ENCRYPTION_KEY, and BLOCKFROST_API_KEY_PREPROD validated above.
+	{
 		const fee = feePermillePreprod;
 		if (fee < 0 || fee > 1000) {
 			console.error('Fee permille is not valid, must be between 0 and 1000 (0.0% and 100.0%)');
@@ -321,6 +357,7 @@ export const seed = async (prisma: PrismaClient) => {
 				});
 
 				console.log('Contract seeded on preprod: ' + smartContractAddress + ' added. Registry policyId: ' + policyId);
+				printGeneratedMnemonics([purchaseWalletPreprodResolved, sellingWalletPreprodResolved]);
 			} catch (error) {
 				console.error(
 					'Error when seeding preprod, ensure you succeed with seeding, the following error occurred: ',
@@ -482,10 +519,6 @@ export const seed = async (prisma: PrismaClient) => {
 				// PaymentSource" error that hides this root-cause stack.
 				throw error;
 			}
-	} else {
-		console.log(
-			'Smart contract preprod to monitor is not seeded. Provide ENCRYPTION_KEY and BLOCKFROST_API_KEY_PREPROD in .env',
-		);
 	}
 
 	const blockfrostApiKeyMainnet = process.env.BLOCKFROST_API_KEY_MAINNET;
@@ -612,6 +645,7 @@ export const seed = async (prisma: PrismaClient) => {
 				});
 
 				console.log('Contract seeded on mainnet: ' + smartContractAddress + ' added. Registry policyId: ' + policyId);
+				printGeneratedMnemonics([purchaseWalletMainnetResolved, sellingWalletMainnetResolved]);
 			} catch (error) {
 				console.error(
 					'Error when seeding mainnet, ensure you succeed with seeding, the following error occurred: ',
