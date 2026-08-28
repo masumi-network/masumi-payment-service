@@ -33,6 +33,13 @@ import { AgentX402Options } from './AgentX402Options';
 import { AgentCardanoSources } from './AgentCardanoSources';
 import { AgentVerifications } from './AgentVerifications';
 import { parseLegacyAgentPricing } from '@/lib/registry-pricing';
+import {
+  hasExampleOutputs,
+  hasMeaningfulAuthor,
+  hasMeaningfulCapability,
+  hasMeaningfulLegal,
+  shouldShowAdditionalDetailsSection,
+} from '@/lib/agent-metadata-visibility';
 
 // The list page decorates agents with their relation to the active payment
 // source ('payment' = registered elsewhere, merely accepts payment here).
@@ -105,6 +112,20 @@ export function AIAgentDetailsDialog({
   const legacyPricing = useMemo(
     () => parseLegacyAgentPricing(agent?.AgentPricing),
     [agent?.AgentPricing],
+  );
+  const showAdditionalDetails = useMemo(
+    () => (agent ? shouldShowAdditionalDetailsSection(agent) : false),
+    [agent],
+  );
+  const showAuthor = useMemo(() => hasMeaningfulAuthor(agent?.Author), [agent?.Author]);
+  const showLegal = useMemo(() => hasMeaningfulLegal(agent?.Legal), [agent?.Legal]);
+  const showCapability = useMemo(
+    () => hasMeaningfulCapability(agent?.Capability),
+    [agent?.Capability],
+  );
+  const showExampleOutputs = useMemo(
+    () => hasExampleOutputs(agent?.ExampleOutputs),
+    [agent?.ExampleOutputs],
   );
 
   // Manage actions (deregister/verify) only apply to agents registered on the
@@ -396,120 +417,132 @@ export function AIAgentDetailsDialog({
 
                     <AgentVerifications verifications={agent.verifications} />
 
-                    <div className="flex items-center gap-4 pt-2">
-                      <Separator className="flex-1" />
-                      <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
-                        Additional Details
-                      </h3>
-                      <Separator className="flex-1" />
-                    </div>
+                    {showAdditionalDetails ? (
+                      <div className="flex items-center gap-4 pt-2">
+                        <Separator className="flex-1" />
+                        <h3 className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+                          Additional Details
+                        </h3>
+                        <Separator className="flex-1" />
+                      </div>
+                    ) : null}
 
                     {/* Author and Legal */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Author</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3 text-sm">
-                            <div className="flex justify-between gap-3">
-                              <span className="text-muted-foreground shrink-0">Name</span>
-                              <span className="text-right break-words">{agent.Author.name}</span>
-                            </div>
-                            {agent.Author.contactEmail && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Email</span>
-                                <a
-                                  href={`mailto:${agent.Author.contactEmail}`}
-                                  className="text-primary hover:underline text-right break-all"
-                                >
-                                  {agent.Author.contactEmail}
-                                </a>
+                    {showAuthor || showLegal ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {showAuthor ? (
+                          <Card>
+                            <CardHeader>
+                              <CardTitle className="text-sm font-medium">Author</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="space-y-3 text-sm">
+                                {agent.Author.name ? (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">Name</span>
+                                    <span className="text-right break-words">
+                                      {agent.Author.name}
+                                    </span>
+                                  </div>
+                                ) : null}
+                                {agent.Author.contactEmail ? (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">Email</span>
+                                    <a
+                                      href={`mailto:${agent.Author.contactEmail}`}
+                                      className="text-primary hover:underline text-right break-all"
+                                    >
+                                      {agent.Author.contactEmail}
+                                    </a>
+                                  </div>
+                                ) : null}
+                                {agent.Author.organization ? (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">
+                                      Organization
+                                    </span>
+                                    <span className="text-right break-words">
+                                      {agent.Author.organization}
+                                    </span>
+                                  </div>
+                                ) : null}
+                                {agent.Author.contactOther ? (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">Website</span>
+                                    <a
+                                      href={agent.Author.contactOther}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1 text-right break-all"
+                                    >
+                                      {agent.Author.contactOther}{' '}
+                                      <Link2 className="h-3 w-3 shrink-0" />
+                                    </a>
+                                  </div>
+                                ) : null}
                               </div>
-                            )}
-                            {agent.Author.organization && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Organization</span>
-                                <span className="text-right break-words">
-                                  {agent.Author.organization}
-                                </span>
+                            </CardContent>
+                          </Card>
+                        ) : null}
+                        {showLegal ? (
+                          <Card>
+                            <CardHeader>
+                              <CardTitle className="text-sm font-medium">Legal</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="space-y-3 text-sm">
+                                {agent.Legal?.terms ? (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">
+                                      Terms of Use
+                                    </span>
+                                    <a
+                                      href={agent.Legal.terms}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1"
+                                    >
+                                      View Link <Link2 className="h-3 w-3 shrink-0" />
+                                    </a>
+                                  </div>
+                                ) : null}
+                                {agent.Legal?.privacyPolicy ? (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">
+                                      Privacy Policy
+                                    </span>
+                                    <a
+                                      href={agent.Legal.privacyPolicy}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1"
+                                    >
+                                      View Link <Link2 className="h-3 w-3 shrink-0" />
+                                    </a>
+                                  </div>
+                                ) : null}
+                                {agent.Legal?.other ? (
+                                  <div className="flex justify-between gap-3">
+                                    <span className="text-muted-foreground shrink-0">Support</span>
+                                    <a
+                                      href={agent.Legal.other}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:underline flex items-center gap-1"
+                                    >
+                                      View Link <Link2 className="h-3 w-3 shrink-0" />
+                                    </a>
+                                  </div>
+                                ) : null}
                               </div>
-                            )}
-                            {agent.Author.contactOther && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Website</span>
-                                <a
-                                  href={agent.Author.contactOther}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1 text-right break-all"
-                                >
-                                  {agent.Author.contactOther} <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-sm font-medium">Legal</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-3 text-sm">
-                            {agent.Legal?.terms && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Terms of Use</span>
-                                <a
-                                  href={agent.Legal.terms}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {agent.Legal?.privacyPolicy && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">
-                                  Privacy Policy
-                                </span>
-                                <a
-                                  href={agent.Legal.privacyPolicy}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {agent.Legal?.other && (
-                              <div className="flex justify-between gap-3">
-                                <span className="text-muted-foreground shrink-0">Support</span>
-                                <a
-                                  href={agent.Legal.other}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1"
-                                >
-                                  View Link <Link2 className="h-3 w-3 shrink-0" />
-                                </a>
-                              </div>
-                            )}
-                            {(!agent.Legal || Object.values(agent.Legal).every((v) => !v)) && (
-                              <span className="text-muted-foreground">
-                                No legal information provided.
-                              </span>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
+                            </CardContent>
+                          </Card>
+                        ) : null}
+                      </div>
+                    ) : null}
 
                     {/* Capability */}
-                    {agent.Capability && (agent.Capability.name || agent.Capability.version) && (
+                    {showCapability ? (
                       <Card>
                         <CardHeader>
                           <CardTitle className="text-sm font-medium">Capability</CardTitle>
@@ -524,10 +557,10 @@ export function AIAgentDetailsDialog({
                           </div>
                         </CardContent>
                       </Card>
-                    )}
+                    ) : null}
 
                     {/* Example Outputs */}
-                    {agent.ExampleOutputs && agent.ExampleOutputs.length > 0 && (
+                    {showExampleOutputs ? (
                       <Card>
                         <CardHeader>
                           <CardTitle className="text-sm font-medium">Example Outputs</CardTitle>
@@ -560,7 +593,7 @@ export function AIAgentDetailsDialog({
                           </div>
                         </CardContent>
                       </Card>
-                    )}
+                    ) : null}
 
                     {/* Wallet Information */}
                     <Card>
