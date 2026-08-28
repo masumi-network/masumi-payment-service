@@ -8,7 +8,7 @@ const v2Source = {
 
 test('canEditAgentMetadata matches table pencil gating', () => {
   assert.equal(
-    canEditAgentMetadata({ relation: 'managed', canPay: true, selectedPaymentSource: v2Source }),
+    canEditAgentMetadata({ relation: 'registered', canPay: true, selectedPaymentSource: v2Source }),
     true,
   );
   assert.equal(
@@ -16,7 +16,7 @@ test('canEditAgentMetadata matches table pencil gating', () => {
     false,
   );
   assert.equal(
-    canEditAgentMetadata({ relation: 'managed', canPay: false, selectedPaymentSource: v2Source }),
+    canEditAgentMetadata({ relation: 'registered', canPay: false, selectedPaymentSource: v2Source }),
     false,
   );
 });
