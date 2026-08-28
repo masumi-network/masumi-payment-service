@@ -2,6 +2,7 @@ import { describe, expect, it, jest } from '@jest/globals';
 import {
 	formatMissingEnvError,
 	isMissingEnvValue,
+	isSeedV1LegacyEnabled,
 	printGeneratedMnemonics,
 	resolveMnemonic,
 	validatePreprodSeedPrerequisites,
@@ -62,6 +63,15 @@ describe('seed.validation', () => {
 			expect(formatMissingEnvError(['DATABASE_URL', 'BLOCKFROST_API_KEY_PREPROD'])).toBe(
 				'Seed aborted: missing required environment variable(s): DATABASE_URL, BLOCKFROST_API_KEY_PREPROD',
 			);
+		});
+	});
+
+	describe('isSeedV1LegacyEnabled', () => {
+		it('enables legacy V1 seeding only when explicitly true', () => {
+			expect(isSeedV1LegacyEnabled('true')).toBe(true);
+			expect(isSeedV1LegacyEnabled('TRUE')).toBe(true);
+			expect(isSeedV1LegacyEnabled('false')).toBe(false);
+			expect(isSeedV1LegacyEnabled(undefined)).toBe(false);
 		});
 	});
 
