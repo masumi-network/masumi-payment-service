@@ -42,6 +42,14 @@ import { PaymentOptionsSection } from './PaymentOptionsSection';
 import { RegisterAgentDetailsSection } from './RegisterAgentDetailsSection';
 import { RegisterAgentWalletSection } from './RegisterAgentWalletSection';
 import { RegisterAgentAdditionalSection } from './RegisterAgentAdditionalSection';
+import { RegisterAgentReviewSection } from './RegisterAgentReviewSection';
+import {
+  getRegisterAgentConfirmButtonLabel,
+  getRegisterAgentReviewStepButtonLabel,
+  getRegisterAgentReviewTitle,
+  type RegisterAgentDialogStep,
+} from '@/lib/register-agent-review';
+import { Spinner } from '@/components/ui/spinner';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -92,6 +100,8 @@ export function RegisterAIAgentDialog({
   const isReRegisterMode = !isUpdateMode && !!prefillAgent;
   const sourceAgent = editingAgent ?? prefillAgent ?? null;
   const [isLoading, setIsLoading] = useState(false);
+  const [step, setStep] = useState<RegisterAgentDialogStep>('form');
+  const [reviewValues, setReviewValues] = useState<AgentFormValues | null>(null);
   // Author/legal/capability/example-output fields are all optional, so collapse
   // them by default to shorten the form; auto-expand when editing/re-registering
   // an existing agent (below) so its saved values are visible.
@@ -157,6 +167,7 @@ export function RegisterAIAgentDialog({
   const selectedWalletVkey = watch('selectedWallet');
   const selectedRecipientWalletAddress = watch('recipientWalletAddress');
   const selectedSendFundingAda = watch('sendFundingAda');
+  const pricingType = watch('pricingType');
   useEffect(() => {
     setSellingWallets(
       wallets
@@ -217,6 +228,8 @@ export function RegisterAIAgentDialog({
 
   useEffect(() => {
     if (!open) return;
+    setStep('form');
+    setReviewValues(null);
     // Expanded when there's an agent to review (update/re-register), collapsed
     // for a fresh registration.
     setShowAdditional(Boolean(sourceAgent));
@@ -607,6 +620,47 @@ export function RegisterAIAgentDialog({
     ],
   );
 
+  const mintingWalletLabel = useMemo(() => {
+    if (isUpdateMode) {
+      return editingAgent?.SmartContractWallet?.walletAddress
+        ? editingAgent.SmartContractWallet.walletAddress
+        : 'Current holder wallet';
+    }
+    const match = sellingWallets.find((w) => w.wallet.walletVkey === selectedWalletVkey);
+    if (!match) return '—';
+    return match.wallet.note
+      ? `${match.wallet.note} (${match.wallet.walletAddress})`
+      : match.wallet.walletAddress;
+  }, [isUpdateMode, editingAgent, sellingWallets, selectedWalletVkey]);
+
+  const holdingWalletLabel = useMemo(() => {
+    if (!selectedRecipientWalletAddress) return 'Use minting wallet (default)';
+    const match = recipientWalletOptions.find(
+      (w) => w.walletAddress === selectedRecipientWalletAddress,
+    );
+    if (!match) return selectedRecipientWalletAddress;
+    return match.note ? `${match.note} (${match.walletAddress})` : match.walletAddress;
+  }, [selectedRecipientWalletAddress, recipientWalletOptions]);
+
+  const pricingSummary = useMemo(() => {
+    if (isV2Target) {
+      return masumiOptions.length > 0 || x402Options.length > 0
+        ? 'Per payment-source options (V2)'
+        : 'No payment options selected';
+    }
+    return pricingType;
+  }, [isV2Target, masumiOptions.length, x402Options.length, pricingType]);
+
+  const goToReview = handleSubmit((data) => {
+    setReviewValues(data);
+    setStep('review');
+  });
+
+  const handleConfirm = useCallback(async () => {
+    if (!reviewValues) return;
+    await onSubmit(reviewValues);
+  }, [onSubmit, reviewValues]);
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent size="lg" className="overflow-y-auto" elevatedChildStack={elevatedChildStack}>
@@ -626,92 +680,133 @@ export function RegisterAIAgentDialog({
                 : 'This registers your agent on the Masumi Network, making it visible to everyone.'}
           </p>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <RegisterAgentDetailsSection
-            register={register}
-            errors={errors}
-            watch={watch}
-            setValue={setValue}
-            typeLocked={isUpdateMode}
-          />
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (step === 'review') {
+              void handleConfirm();
+            }
+          }}
+          className="space-y-6"
+        >
+          {step === 'form' ? (
+            <>
+              <RegisterAgentDetailsSection
+                register={register}
+                errors={errors}
+                watch={watch}
+                setValue={setValue}
+                typeLocked={isUpdateMode}
+              />
 
-          <RegisterAgentWalletSection
-            isUpdateMode={isUpdateMode}
-            editingAgentWalletAddress={editingAgent?.SmartContractWallet?.walletAddress}
-            control={control}
-            errors={errors}
-            register={register}
-            isLoadingWallets={isLoadingWallets}
-            sellingWallets={sellingWallets}
-            hasSelectedWallet={!!selectedWallet}
-            recipientWalletOptions={recipientWalletOptions}
-            selectedRecipientWalletAddress={selectedRecipientWalletAddress}
-          />
+              <RegisterAgentWalletSection
+                isUpdateMode={isUpdateMode}
+                editingAgentWalletAddress={editingAgent?.SmartContractWallet?.walletAddress}
+                control={control}
+                errors={errors}
+                register={register}
+                isLoadingWallets={isLoadingWallets}
+                sellingWallets={sellingWallets}
+                hasSelectedWallet={!!selectedWallet}
+                recipientWalletOptions={recipientWalletOptions}
+                selectedRecipientWalletAddress={selectedRecipientWalletAddress}
+              />
 
-          <PaymentOptionsSection
-            rows={paymentOptionRows}
-            masumiOptions={masumiOptions}
-            x402Options={x402Options}
-            masumiError={masumiError}
-            x402Error={x402Error}
-            isV2Target={isV2Target}
-            network={network}
-            stablecoinUnit={stablecoinUnit}
-            defaultPriceUnit={defaultPriceUnit}
-            x402Networks={x402Networks}
-            x402Wallets={x402Wallets}
-            isLoadingX402Wallets={isLoadingX402Wallets}
-            onAddOption={addPaymentOption}
-            onChangeOptionType={changePaymentOptionType}
-            onRemoveOption={removePaymentOption}
-            onMasumiOptionChange={changeMasumiOption}
-            onX402OptionChange={changeX402Option}
-            control={control}
-            watch={watch}
-            errors={errors}
-            register={register}
-            priceFields={priceFields}
-            appendPrice={appendPrice}
-            removePrice={removePrice}
-            replacePrices={replacePrices}
-          />
+              <PaymentOptionsSection
+                rows={paymentOptionRows}
+                masumiOptions={masumiOptions}
+                x402Options={x402Options}
+                masumiError={masumiError}
+                x402Error={x402Error}
+                isV2Target={isV2Target}
+                network={network}
+                stablecoinUnit={stablecoinUnit}
+                defaultPriceUnit={defaultPriceUnit}
+                x402Networks={x402Networks}
+                x402Wallets={x402Wallets}
+                isLoadingX402Wallets={isLoadingX402Wallets}
+                onAddOption={addPaymentOption}
+                onChangeOptionType={changePaymentOptionType}
+                onRemoveOption={removePaymentOption}
+                onMasumiOptionChange={changeMasumiOption}
+                onX402OptionChange={changeX402Option}
+                control={control}
+                watch={watch}
+                errors={errors}
+                register={register}
+                priceFields={priceFields}
+                appendPrice={appendPrice}
+                removePrice={removePrice}
+                replacePrices={replacePrices}
+              />
 
-          {isV2Target && (
-            <VerificationsSection
-              verifications={verifications}
-              onChange={setVerifications}
-              error={verificationsError}
-            />
+              {isV2Target && (
+                <VerificationsSection
+                  verifications={verifications}
+                  onChange={setVerifications}
+                  error={verificationsError}
+                />
+              )}
+
+              <RegisterAgentAdditionalSection
+                show={showAdditional}
+                onToggle={() => setShowAdditional((v) => !v)}
+                register={register}
+                errors={errors}
+                exampleOutputFields={exampleOutputFields}
+                appendExampleOutput={appendExampleOutput}
+                removeExampleOutput={removeExampleOutput}
+              />
+            </>
+          ) : (
+            reviewValues && (
+              <RegisterAgentReviewSection
+                values={reviewValues}
+                mintingWalletLabel={mintingWalletLabel}
+                holdingWalletLabel={holdingWalletLabel}
+                masumiOptionCount={masumiOptions.length}
+                x402OptionCount={x402Options.length}
+                verificationCount={verifications.length}
+                pricingSummary={String(pricingSummary)}
+              />
+            )
           )}
-
-          <RegisterAgentAdditionalSection
-            show={showAdditional}
-            onToggle={() => setShowAdditional((v) => !v)}
-            register={register}
-            errors={errors}
-            exampleOutputFields={exampleOutputFields}
-            appendExampleOutput={appendExampleOutput}
-            removeExampleOutput={removeExampleOutput}
-          />
 
           <div className="flex justify-end items-center gap-2">
             <Button variant="outline" onClick={onClose} type="button">
               Cancel
             </Button>
             <div className="flex items-center gap-2">
-              <Button type="submit" disabled={isLoading || (isLoadingWallets && !isUpdateMode)}>
-                {isLoading
-                  ? isUpdateMode
-                    ? 'Updating...'
-                    : isReRegisterMode
-                      ? 'Re-registering...'
-                      : 'Registering...'
-                  : isUpdateMode
-                    ? 'Update'
-                    : isReRegisterMode
-                      ? 'Re-register'
-                      : 'Register'}
-              </Button>
+              {step === 'review' && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setStep('form')}
+                  disabled={isLoading}
+                >
+                  Back
+                </Button>
+              )}
+              {step === 'form' ? (
+                <Button
+                  type="button"
+                  className="gap-2"
+                  disabled={isLoadingWallets && !isUpdateMode}
+                  onClick={() => void goToReview()}
+                >
+                  {isLoadingWallets && !isUpdateMode && <Spinner size={14} />}
+                  {getRegisterAgentReviewStepButtonLabel({ isUpdateMode, isReRegisterMode })}
+                </Button>
+              ) : (
+                <Button type="submit" className="gap-2" disabled={isLoading || !reviewValues}>
+                  {isLoading && <Spinner size={14} />}
+                  {getRegisterAgentConfirmButtonLabel({
+                    isSubmitting: isLoading,
+                    isUpdateMode,
+                    isReRegisterMode,
+                  })}
+                </Button>
+              )}
             </div>
           </div>
         </form>
