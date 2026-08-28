@@ -170,6 +170,13 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
           )}`
         : 'Select source';
 
+  const collapsedSourceLabel =
+    activeRail === 'x402'
+      ? 'Switch x402 (EVM) payment chain'
+      : capabilities.canAdmin
+        ? 'Switch or manage payment sources'
+        : 'Switch payment source';
+
   const dropdown = (
     <SourceDropdown
       networkSources={networkSources}
@@ -228,7 +235,8 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
                   'h-10 w-10 p-0 justify-center relative sidebar-active-indicator',
                   isOnPaymentSourcesPage && 'is-active',
                 )}
-                title={activeRail === 'x402' ? 'x402 (EVM) chain' : 'Payment Source'}
+                title={collapsedSourceLabel}
+                aria-label={collapsedSourceLabel}
               >
                 {activeRail === 'x402' ? (
                   <Coins className="h-4 w-4" />
@@ -278,13 +286,17 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
+              type="button"
               className={cn(
-                'flex items-center gap-2 w-full rounded-md px-3 h-7',
+                'flex items-center gap-2 w-full rounded-md px-3 py-2 min-h-9',
+                'border border-transparent hover:border-border/60',
                 'hover:bg-[#00000008] dark:hover:bg-[#ffffff08]',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 'transition-colors duration-150 text-left cursor-pointer',
                 'relative sidebar-active-indicator',
                 isOnPaymentSourcesPage && 'is-active',
               )}
+              aria-label={collapsedSourceLabel}
             >
               {activeRail === 'x402' ? (
                 <Coins className="h-3.5 w-3.5 shrink-0" />
@@ -292,6 +304,9 @@ export function NetworkSourceCard({ collapsed, onNetworkChange }: NetworkSourceC
                 <FileInput className="h-3.5 w-3.5 shrink-0" />
               )}
               <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Payment source
+                </div>
                 <div
                   className={cn(
                     'text-xs truncate',
@@ -455,6 +470,9 @@ function SourceDropdown({
       {capabilities.canAdmin && (
         <>
           <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
+            Management
+          </DropdownMenuLabel>
           <DropdownMenuItem
             className={cn('cursor-pointer', isOnPaymentSourcesPage && 'bg-accent')}
             onSelect={() => router.push('/payment-sources')}
