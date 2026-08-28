@@ -33,7 +33,9 @@ export default function EarningsPage() {
               <h2 className="text-sm font-medium">How to view agent earnings</h2>
               <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
                 <li>Open AI Agents.</li>
-                <li>Select an agent and open its details, or choose the earnings action on a row.</li>
+                <li>
+                  Select an agent and open its details, or choose the earnings action on a row.
+                </li>
                 <li>Open the Earnings tab to see totals and transactions for that agent.</li>
               </ol>
               <Button asChild>
