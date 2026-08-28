@@ -16,7 +16,11 @@ test('canEditAgentMetadata matches table pencil gating', () => {
     false,
   );
   assert.equal(
-    canEditAgentMetadata({ relation: 'registered', canPay: false, selectedPaymentSource: v2Source }),
+    canEditAgentMetadata({
+      relation: 'registered',
+      canPay: false,
+      selectedPaymentSource: v2Source,
+    }),
     false,
   );
 });
