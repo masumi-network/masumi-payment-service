@@ -1,4 +1,5 @@
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -8,10 +9,11 @@ import {
 } from '@/components/ui/select';
 import { Controller, type Control, type FieldErrors, type UseFormRegister } from 'react-hook-form';
 import type { WalletListItem } from '@/lib/api/generated';
-import { shortenAddress } from '@/lib/utils';
+import { cn, formatAssetAmount, formatFundUnit, shortenAddress } from '@/lib/utils';
+import { hasSufficientMintBalance, minMintBalanceAda } from '@/lib/agent-mint';
 import type { AgentFormValues } from './register-agent-schema';
-
-const MIN_MINT_BALANCE_LOVELACE = 3000000;
+import type { NetworkType } from '@/lib/contexts/AppContext';
+import { PlusCircle } from 'lucide-react';
 
 /**
  * Wallet-related fields of the register/update dialog: the minting wallet
@@ -29,6 +31,9 @@ export function RegisterAgentWalletSection({
   hasSelectedWallet,
   recipientWalletOptions,
   selectedRecipientWalletAddress,
+  selectedWalletVkey,
+  network,
+  onTopUp,
 }: {
   isUpdateMode: boolean;
   editingAgentWalletAddress: string | undefined;
@@ -40,7 +45,14 @@ export function RegisterAgentWalletSection({
   hasSelectedWallet: boolean;
   recipientWalletOptions: WalletListItem[];
   selectedRecipientWalletAddress: string | undefined;
+  selectedWalletVkey: string;
+  network: NetworkType;
+  onTopUp: (walletAddress: string) => void;
 }) {
+  const adaUnitLabel = formatFundUnit('lovelace', network);
+  const requiredAdaLabel = minMintBalanceAda().toFixed(2);
+  const selectedMintWallet = sellingWallets.find((w) => w.wallet.walletVkey === selectedWalletVkey);
+
   return (
     <>
       {isUpdateMode ? (
@@ -76,24 +88,64 @@ export function RegisterAgentWalletSection({
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {sellingWallets.map((wallet) => (
-                    <SelectItem
-                      disabled={wallet.balance <= MIN_MINT_BALANCE_LOVELACE}
-                      key={wallet.wallet.id}
-                      value={wallet.wallet.walletVkey}
-                    >
-                      {wallet.wallet.note
-                        ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
-                        : shortenAddress(wallet.wallet.walletAddress)}{' '}
-                      {wallet.balance <= MIN_MINT_BALANCE_LOVELACE ? ' - Insufficient balance' : ''}
-                    </SelectItem>
-                  ))}
+                  {sellingWallets.map((wallet) => {
+                    const eligible = hasSufficientMintBalance(wallet.balance);
+                    const balanceLabel = formatAssetAmount(wallet.balance, 'lovelace', network);
+                    return (
+                      <SelectItem
+                        disabled={!eligible}
+                        key={wallet.wallet.id}
+                        value={wallet.wallet.walletVkey}
+                      >
+                        {wallet.wallet.note
+                          ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
+                          : shortenAddress(wallet.wallet.walletAddress)}{' '}
+                        — {balanceLabel} {adaUnitLabel}
+                        {!eligible ? ` (need > ${requiredAdaLabel} ${adaUnitLabel})` : ''}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             )}
           />
           {errors.selectedWallet && (
             <p className="text-sm text-destructive">{errors.selectedWallet.message}</p>
+          )}
+          {selectedMintWallet && (
+            <div
+              className={cn(
+                'rounded-lg border px-3 py-2 text-sm flex flex-wrap items-center justify-between gap-2',
+                hasSufficientMintBalance(selectedMintWallet.balance)
+                  ? 'border-green-200 bg-green-50/60 dark:border-green-900/50 dark:bg-green-950/20'
+                  : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/20',
+              )}
+            >
+              <div>
+                <p>
+                  <span className="font-medium">
+                    {formatAssetAmount(selectedMintWallet.balance, 'lovelace', network)}{' '}
+                    {adaUnitLabel}
+                  </span>{' '}
+                  available
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Need more than {requiredAdaLabel} {adaUnitLabel} to mint
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant={
+                  hasSufficientMintBalance(selectedMintWallet.balance) ? 'outline' : 'default'
+                }
+                className="gap-1"
+                onClick={() => onTopUp(selectedMintWallet.wallet.walletAddress)}
+              >
+                <PlusCircle className="h-3.5 w-3.5" />
+                Top up
+              </Button>
+            </div>
           )}
         </div>
       )}

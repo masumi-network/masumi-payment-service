@@ -42,6 +42,8 @@ import { PaymentOptionsSection } from './PaymentOptionsSection';
 import { RegisterAgentDetailsSection } from './RegisterAgentDetailsSection';
 import { RegisterAgentWalletSection } from './RegisterAgentWalletSection';
 import { RegisterAgentAdditionalSection } from './RegisterAgentAdditionalSection';
+import { TransakWidget } from '@/components/wallets/TransakWidget';
+import { MIN_MINT_BALANCE_LOVELACE } from '@/lib/agent-mint';
 
 interface RegisterAIAgentDialogProps {
   open: boolean;
@@ -75,8 +77,6 @@ interface RegisterAIAgentDialogProps {
   elevatedChildStack?: boolean;
 }
 
-const MIN_MINT_BALANCE_LOVELACE = 3000000;
-
 export function RegisterAIAgentDialog({
   open,
   onClose,
@@ -92,6 +92,7 @@ export function RegisterAIAgentDialog({
   const isReRegisterMode = !isUpdateMode && !!prefillAgent;
   const sourceAgent = editingAgent ?? prefillAgent ?? null;
   const [isLoading, setIsLoading] = useState(false);
+  const [topUpWalletAddress, setTopUpWalletAddress] = useState<string | null>(null);
   // Author/legal/capability/example-output fields are all optional, so collapse
   // them by default to shorten the form; auto-expand when editing/re-registering
   // an existing agent (below) so its saved values are visible.
@@ -104,6 +105,7 @@ export function RegisterAIAgentDialog({
     wallets,
     isLoading: isLoadingWallets,
     isError: isWalletsError,
+    refetch: refetchWallets,
   } = useWallets({
     enabled: open,
   });
@@ -646,6 +648,9 @@ export function RegisterAIAgentDialog({
             hasSelectedWallet={!!selectedWallet}
             recipientWalletOptions={recipientWalletOptions}
             selectedRecipientWalletAddress={selectedRecipientWalletAddress}
+            selectedWalletVkey={selectedWalletVkey}
+            network={network}
+            onTopUp={(address) => setTopUpWalletAddress(address)}
           />
 
           <PaymentOptionsSection
