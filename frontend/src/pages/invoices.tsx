@@ -21,13 +21,8 @@ import { useUninvoicedPayments, type UninvoicedPayment } from '@/lib/hooks/useUn
 import { InvoiceDetailsDialog } from '@/components/invoices/InvoiceDetailsDialog';
 import { GenerateInvoiceDialog } from '@/components/invoices/GenerateInvoiceDialog';
 import { extractApiErrorMessage } from '@/lib/api-error';
+import { getCurrentMonth } from '@/lib/invoices-month';
 import { toast } from 'react-toastify';
-
-function getPreviousMonth(): string {
-  const now = new Date();
-  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
-}
 
 function formatMonthLabel(month: string): string {
   const [yearStr, monthStr] = month.split('-');
@@ -118,7 +113,7 @@ export default function Invoices() {
   const { network, capabilities } = useAppContext();
 
   const [activeTab, setActiveTab] = useState('Generated Invoices');
-  const [selectedMonth, setSelectedMonth] = useState(getPreviousMonth);
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceSummary | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
