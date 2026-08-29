@@ -88,3 +88,9 @@ packages/*/dist/
 # state would confuse it, and a new name must not become the first thing an
 # operator accidentally commits.
 .hydra-*/
+
+# Local QA/testing artifacts — .qa holds .env, admin/read API keys and wallet
+# keys, so it must never be committable. Added 2026-08-29 after finding these
+# were untracked-but-stageable.
+.qa/
+.playwright-mcp/
