@@ -17,8 +17,8 @@ import {
 import { convertBaseUnitsToDecimal } from '@/lib/convertDecimalToBaseUnits';
 import {
   buildCustomCreditUnit,
-  DEFAULT_CREDIT_DECIMALS,
   shortenCreditUnit,
+  UNKNOWN_GROUP_ID,
   type CreditChain,
   type CreditUnitOption,
 } from '@/lib/api-key-credit-units';
@@ -59,7 +59,7 @@ function currentBalanceLabel(
   const stored = current.find((row) => row.unit === unit);
   if (!stored) return 'not funded yet';
   try {
-    return `currently ${convertBaseUnitsToDecimal(stored.amount, decimals)} ${symbol}`;
+    return `currently ${convertBaseUnitsToDecimal(stored.amount, decimals)} ${symbol}`.trim();
   } catch {
     // A row the ledger holds in a shape this form cannot parse still has to be
     // visible; showing the raw value beats hiding the balance entirely.
@@ -68,16 +68,21 @@ function currentBalanceLabel(
 }
 
 /** The chain a group's units settle on, read off any option already in that group. */
-function chainForGroup(options: CreditUnitOption[], group: string): CreditChain {
-  return options.find((option) => option.group === group)?.chain ?? { kind: 'unknown' };
+function chainForGroup(options: CreditUnitOption[], groupId: string): CreditChain {
+  return options.find((option) => option.groupId === groupId)?.chain ?? { kind: 'unknown' };
+}
+
+/** The group's display name, which unlike its id is not guaranteed unique. */
+function nameForGroup(options: CreditUnitOption[], groupId: string): string {
+  return options.find((option) => option.groupId === groupId)?.group ?? groupId;
 }
 
 interface CustomEntry {
-  group: string;
+  groupId: string;
+  groupName: string;
   chain: CreditChain;
   value: string;
   symbol: string;
-  decimals: string;
   error?: string;
 }
 
@@ -104,14 +109,14 @@ export function UsageCreditsField({
     const groups = new Map<string, Array<{ option: CreditUnitOption; index: number }>>();
     options.forEach((option, index) => {
       if (taken.has(option.unit)) return;
-      const bucket = groups.get(option.group) ?? [];
+      const bucket = groups.get(option.groupId) ?? [];
       bucket.push({ option, index });
-      groups.set(option.group, bucket);
+      groups.set(option.groupId, bucket);
     });
     // A group whose presets are all taken still needs a row, because the custom
     // entry below lives inside it.
     for (const option of options) {
-      if (!groups.has(option.group)) groups.set(option.group, []);
+      if (!groups.has(option.groupId)) groups.set(option.groupId, []);
     }
     return Array.from(groups.entries());
   }, [options, rows]);
@@ -122,7 +127,8 @@ export function UsageCreditsField({
   // ledger, and those cannot take a custom asset. Once they are all placed as rows the
   // picker has nothing left to offer, so it is hidden rather than opened onto nothing.
   const hasSomethingToAdd = groupedAvailable.some(
-    ([group, entries]) => entries.length > 0 || chainForGroup(options, group).kind !== 'unknown',
+    ([groupId, entries]) =>
+      entries.length > 0 || chainForGroup(options, groupId).kind !== 'unknown',
   );
 
   function addCustomUnit(entry: CustomEntry) {
@@ -135,23 +141,22 @@ export function UsageCreditsField({
       setCustomEntry({ ...entry, error: 'That asset is already in the list' });
       return;
     }
-    const decimals = Number(entry.decimals);
-    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 30) {
-      setCustomEntry({ ...entry, error: 'Decimals must be a whole number from 0 to 30' });
-      return;
-    }
     setCustomOptions((previous) => [
       ...previous,
       {
         unit: built.unit,
         label: entry.symbol.trim() || UNNAMED_CUSTOM_SYMBOL,
-        group: entry.group,
+        groupId: entry.groupId,
+        group: entry.groupName,
         identifier: built.unit,
-        decimals,
+        // Base units, like every other unit nothing describes. PATCH carries only unit
+        // and amount, so decimals typed here would be gone on the next open and the
+        // same balance would read back rescaled.
+        decimals: 0,
         chain: entry.chain,
       },
     ]);
-    onChange([...rows, { unit: built.unit, amount: '', decimals }]);
+    onChange([...rows, { unit: built.unit, amount: '', decimals: 0 }]);
     setCustomEntry(null);
   }
 
@@ -166,12 +171,17 @@ export function UsageCreditsField({
 
       {rows.map((row, index) => {
         const option = optionFor(knownOptions, row.unit);
-        const symbol = option?.label ?? shortenCreditUnit(row.unit);
+        // A unit nothing describes has no symbol, only its own id, and repeating an
+        // elided id beside the amount and again in the balance hint says nothing the
+        // unit-id line below does not already say.
+        const named = option !== undefined && option.chain.kind !== 'unknown';
+        const symbol = named ? option.label : '';
+        const heading = option?.label ?? shortenCreditUnit(row.unit);
         return (
           <div key={row.unit} className="flex items-end gap-2">
             <div className="min-w-0 flex-1 space-y-1.5">
               <Label htmlFor={`credit-${index}`} className="text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{symbol}</span>
+                <span className="font-medium text-foreground">{heading}</span>
                 <span className="ml-1 opacity-70">
                   {option ? option.group : 'unknown unit'} ·{' '}
                   {currentBalanceLabel(current, row.unit, row.decimals, symbol)}
@@ -194,7 +204,9 @@ export function UsageCreditsField({
                     onChange(next);
                   }}
                 />
-                <span className="shrink-0 text-sm font-medium">{symbol}</span>
+                <span className="shrink-0 text-sm font-medium text-muted-foreground">
+                  {symbol || 'base units'}
+                </span>
               </div>
               <p className="text-[0.6875rem] break-all text-muted-foreground">
                 <span className="mr-1 uppercase opacity-70">unit id</span>
@@ -207,7 +219,7 @@ export function UsageCreditsField({
               variant="ghost"
               size="icon"
               title="Set this balance to zero"
-              aria-label={`Zero the ${symbol} balance`}
+              aria-label={`Zero the ${heading} balance`}
               disabled={disabled}
               onClick={() => onChange(rows.filter((_, position) => position !== index))}
             >
@@ -231,13 +243,13 @@ export function UsageCreditsField({
             disabled={disabled}
             onValueChange={(value) => {
               if (value.startsWith(CUSTOM_OPTION_PREFIX)) {
-                const group = value.slice(CUSTOM_OPTION_PREFIX.length);
+                const groupId = value.slice(CUSTOM_OPTION_PREFIX.length);
                 setCustomEntry({
-                  group,
-                  chain: chainForGroup(options, group),
+                  groupId,
+                  groupName: nameForGroup(options, groupId),
+                  chain: chainForGroup(options, groupId),
                   value: '',
                   symbol: '',
-                  decimals: String(DEFAULT_CREDIT_DECIMALS),
                 });
                 return;
               }
@@ -250,23 +262,23 @@ export function UsageCreditsField({
               <SelectValue placeholder="Add a credit unit" />
             </SelectTrigger>
             <SelectContent>
-              {groupedAvailable.map(([group, entries]) => {
-                const chain = chainForGroup(options, group);
+              {groupedAvailable.map(([groupId, entries]) => {
+                const chain = chainForGroup(options, groupId);
                 // 'Already on this key' collects units whose chain cannot be recovered
                 // from the stored string, so it can list what is there but cannot
                 // validate anything new typed into it.
                 const acceptsCustom = chain.kind !== 'unknown';
                 if (entries.length === 0 && !acceptsCustom) return null;
                 return (
-                  <SelectGroup key={group}>
-                    <SelectLabel>{group}</SelectLabel>
+                  <SelectGroup key={groupId}>
+                    <SelectLabel>{nameForGroup(options, groupId)}</SelectLabel>
                     {entries.map(({ option, index }) => (
                       <SelectItem key={option.unit || 'ada'} value={String(index)}>
                         {option.label}
                       </SelectItem>
                     ))}
                     {acceptsCustom && (
-                      <SelectItem value={`${CUSTOM_OPTION_PREFIX}${group}`}>
+                      <SelectItem value={`${CUSTOM_OPTION_PREFIX}${groupId}`}>
                         Custom asset&hellip;
                       </SelectItem>
                     )}
@@ -280,7 +292,7 @@ export function UsageCreditsField({
 
       {customEntry && (
         <div className="space-y-2 rounded-lg border p-3">
-          <p className="text-sm font-medium">Custom asset on {customEntry.group}</p>
+          <p className="text-sm font-medium">Custom asset on {customEntry.groupName}</p>
           <div className="space-y-1.5">
             <Label htmlFor="custom-credit-unit" className="text-xs text-muted-foreground">
               {customEntry.chain.kind === 'evm'
@@ -316,26 +328,10 @@ export function UsageCreditsField({
               Shown next to the amount, so the balance reads as an asset and not as a raw id.
             </p>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="custom-credit-decimals" className="text-xs text-muted-foreground">
-              Decimals
-            </Label>
-            <Input
-              id="custom-credit-decimals"
-              type="text"
-              inputMode="numeric"
-              value={customEntry.decimals}
-              onChange={(event) =>
-                setCustomEntry({ ...customEntry, decimals: event.target.value, error: undefined })
-              }
-            />
-            {/* Decimals only scale what this form shows and sends; getting them wrong
-                funds the key by a factor of ten, so they are asked for rather than
-                assumed for an asset the presets do not describe. */}
-            <p className="text-xs text-muted-foreground">
-              How many decimal places the asset uses. Most stablecoins use 6.
-            </p>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            Its balance is entered in base units, because nothing here records how many decimals the
+            asset uses and the node stores only the unit and the amount.
+          </p>
           {customEntry.error && <p className="text-xs text-destructive">{customEntry.error}</p>}
           <div className="flex gap-2">
             <Button

@@ -265,3 +265,62 @@ test('buildCustomCreditUnit rejects an empty entry and an unknown chain', () => 
   assert.ok('error' in buildCustomCreditUnit({ kind: 'cardano', network: 'Mainnet' }, '   '));
   assert.ok('error' in buildCustomCreditUnit({ kind: 'unknown' }, 'a'.repeat(56)));
 });
+
+test('buildCustomCreditUnit refuses uppercase Cardano hex and says why', () => {
+  // The credit gate keys a Map by the stored string and looks up the requested unit
+  // byte for byte (credit-init-transaction.ts). Cardano tooling emits lowercase hex,
+  // so an uppercase row matches nothing and every purchase in that asset fails with
+  // `Credit unit not found` while the dialog shows the balance as funded.
+  const result = buildCustomCreditUnit(
+    { kind: 'cardano', network: 'Mainnet' },
+    USDM_MAINNET.toUpperCase(),
+  );
+  assert.ok('error' in result);
+  assert.match(result.error, /lowercase/);
+});
+
+test('a unit read back off the ledger is edited in base units', () => {
+  // Nothing records the decimals of an asset no preset describes, and PATCH carries
+  // only unit and amount, so an assumed 6dp cannot survive a reopen: the same stored
+  // balance would read back rescaled by a million.
+  const options = creditUnitOptionsForKey({
+    networkLimit: [],
+    chainIdLimit: [],
+    evmNetworks: [],
+    existingUnits: ['aabbcc'],
+  });
+  const recovered = options.find((option) => option.unit === 'aabbcc');
+  assert.ok(recovered);
+  assert.equal(recovered.decimals, 0);
+  assert.equal(recovered.chain.kind, 'unknown');
+});
+
+test('two chains sharing a display name stay separate groups', () => {
+  // X402Network.caip2Id is unique; displayName is free text and is not. Grouping by
+  // the name merged both chains into one picker group with a single custom-asset
+  // entry, which then qualified the asset for whichever chain came first.
+  const options = creditUnitOptionsForKey({
+    networkLimit: [],
+    chainIdLimit: ['eip155:8453', 'eip155:84532'],
+    evmNetworks: [
+      { ...BASE_MAINNET, displayName: 'Base' },
+      { ...BASE_MAINNET, caip2Id: 'eip155:84532', displayName: 'Base' },
+    ],
+  });
+  const groupIds = new Set(options.map((option) => option.groupId));
+  assert.deepEqual([...groupIds].sort(), ['eip155:8453', 'eip155:84532']);
+  assert.deepEqual(new Set(options.map((option) => option.group)), new Set(['Base']));
+});
+
+test('Cardano and EVM group ids never collide', () => {
+  const options = creditUnitOptionsForKey({
+    networkLimit: ['Mainnet', 'Preprod'],
+    chainIdLimit: ['eip155:8453'],
+    evmNetworks: [BASE_MAINNET],
+  });
+  assert.deepEqual([...new Set(options.map((option) => option.groupId))].sort(), [
+    'cardano:mainnet',
+    'cardano:preprod',
+    'eip155:8453',
+  ]);
+});
