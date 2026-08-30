@@ -187,8 +187,17 @@ export const updateAPIKeySchemaInput = z.object({
 		.max(25)
 		.optional()
 		.describe('The amount of credits to add or remove from the API key. Only relevant if usageLimited is true. '),
-	usageLimited: z.boolean().default(true).optional().describe('Whether the API key is usage limited'),
-	status: z.nativeEnum(ApiKeyStatus).default(ApiKeyStatus.Active).optional().describe('The status of the API key'),
+	// No `.default(...)` on a PATCH field. Zod applies a default when the key is
+	// ABSENT, so `.default(true).optional()` turned every partial update that did
+	// not mention usageLimited into "cap this key", and the update dialog never
+	// sends the field. A key with no RemainingUsageCredits rows then failed every
+	// purchase with `Credit unit not found`, which surfaces as a bare 400
+	// 'Insufficient funds'. The same shape on `status` silently re-activated a
+	// Revoked key on any unrelated edit, and the defaulted `true` made the admin
+	// guard below reject the plain promotion call PATCH {id, canAdmin: true}.
+	// Omitted must mean unchanged, like every other field on this schema.
+	usageLimited: z.boolean().optional().describe('Whether the API key is usage limited. Omit to leave it unchanged.'),
+	status: z.nativeEnum(ApiKeyStatus).optional().describe('The status of the API key. Omit to leave it unchanged.'),
 	NetworkLimit: z
 		.array(z.nativeEnum(Network))
 		.max(3)
