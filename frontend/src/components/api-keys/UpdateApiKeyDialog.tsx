@@ -267,7 +267,10 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     defaultValue: apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:')),
   });
   const evmChainsGranted = evmChains.length > 0;
-  const hasEvmCreditRow = creditRows.some((row) => row.unit.startsWith('eip155:'));
+  // Saved rows, not the edited ones: pay.ts counts what the ledger holds. Reading the
+  // form inverted the warning on a removed row, claiming wallet-bounded spending in the
+  // one state where the row still exists and every EVM payment is refused.
+  const hasEvmCreditRow = currentCredits.some((credit) => credit.unit.startsWith('eip155:'));
 
   // The EVM chain list loads after first paint, so the defaults above fall back to base
   // units for any chain-qualified unit. Re-seed once the real decimals are known, but
@@ -615,12 +618,14 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                   )}
                   {/* The gap that makes a key look capped while it is not. pay.ts
                       grandfathers a usage-limited key with no eip155 row to its pre-cap
-                      behaviour, so its x402 spending is bounded only by the wallet. The
-                      first such row makes the cap binding on every granted chain. */}
+                      behaviour, so its x402 spending is bounded only by the wallet. It
+                      counts ROWS, not amounts: the first such row makes the cap binding
+                      on every granted chain, and a zeroed row still counts because the
+                      server keeps it rather than deleting it. */}
                   {creditRows.length > 0 && evmChainsGranted && !hasEvmCreditRow && (
                     <p className="text-xs text-amber-600 dark:text-amber-500">
-                      x402 payments on this key&apos;s EVM chains are not capped yet. The limit
-                      starts applying once the key holds a balance for one of them.
+                      x402 payments on this key&apos;s EVM chains are not capped yet. Saving a
+                      credit row for one of them starts the limit, even at zero.
                     </p>
                   )}
                 </div>
