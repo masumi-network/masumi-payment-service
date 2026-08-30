@@ -267,10 +267,13 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     defaultValue: apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:')),
   });
   const evmChainsGranted = evmChains.length > 0;
-  // Saved rows, not the edited ones: pay.ts counts what the ledger holds. Reading the
-  // form inverted the warning on a removed row, claiming wallet-bounded spending in the
-  // one state where the row still exists and every EVM payment is refused.
-  const hasEvmCreditRow = currentCredits.some((credit) => credit.unit.startsWith('eip155:'));
+  // What the ledger will hold after this save. Removing a row does not remove it: the
+  // server zeroes it and keeps it, and pay.ts counts rows. Reading only the form
+  // inverted the warning on a removal, claiming wallet-bounded spending in the one
+  // state where the row still exists and every EVM payment is refused.
+  const hasEvmCreditRow =
+    currentCredits.some((credit) => credit.unit.startsWith('eip155:')) ||
+    creditRows.some((row) => row.unit.startsWith('eip155:'));
 
   // The EVM chain list loads after first paint, so the defaults above fall back to base
   // units for any chain-qualified unit. Re-seed once the real decimals are known, but
@@ -611,9 +614,9 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                       array-root error, so the reason a save is blocked is always visible. */}
                   {creditRows.length === 0 && (
                     <p className="text-xs text-destructive">
-                      A usage-limited key needs at least one funded unit. With none, the node
-                      rejects every purchase with &quot;Insufficient funds&quot; before it writes a
-                      payment.
+                      A usage-limited key needs at least one funded unit. With none, every Cardano
+                      purchase is rejected as &quot;Insufficient funds&quot; before a payment is
+                      written, and x402 spending is not capped at all.
                     </p>
                   )}
                   {/* The gap that makes a key look capped while it is not. pay.ts
@@ -624,8 +627,8 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                       server keeps it rather than deleting it. */}
                   {creditRows.length > 0 && evmChainsGranted && !hasEvmCreditRow && (
                     <p className="text-xs text-amber-600 dark:text-amber-500">
-                      x402 payments on this key&apos;s EVM chains are not capped yet. Saving a
-                      credit row for one of them starts the limit, even at zero.
+                      x402 payments on this key&apos;s EVM chains are not capped yet. Fund one of
+                      them to start the limit; it then binds every chain above.
                     </p>
                   )}
                 </div>

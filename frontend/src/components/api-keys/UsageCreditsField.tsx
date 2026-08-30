@@ -108,7 +108,9 @@ export function UsageCreditsField({
   // Custom units are not in `options` (which is derived from the key's presets), so
   // without their names a just-added row falls back to 'unknown unit' and puts its own
   // elided id where the symbol belongs.
-  const knownOptions = useMemo(() => [...options, ...customOptions], [options, customOptions]);
+  // Custom names first: a unit already on the ledger also appears in `options` under its
+  // own elided id, and lookups take the first match, so the operator's name has to win.
+  const knownOptions = useMemo(() => [...customOptions, ...options], [customOptions, options]);
 
   const groupedAvailable = useMemo(() => {
     const taken = new Set(rows.map((row) => row.unit));
