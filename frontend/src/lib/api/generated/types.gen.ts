@@ -4176,11 +4176,11 @@ export type PatchApiKeyData = {
             amount: string;
         }>;
         /**
-         * Whether the API key is usage limited
+         * Whether the API key is usage limited. Omit to leave it unchanged.
          */
         usageLimited?: boolean;
         /**
-         * The status of the API key
+         * The status of the API key. Omit to leave it unchanged.
          */
         status?: 'Active' | 'Revoked';
         /**
