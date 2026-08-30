@@ -105,11 +105,10 @@ export function UsageCreditsField({
   onCustomOptionsChange,
 }: UsageCreditsFieldProps) {
   const [customEntry, setCustomEntry] = useState<CustomEntry | null>(null);
-  // Custom units are not in `options` (which is derived from the key's presets), so
-  // without their names a just-added row falls back to 'unknown unit' and puts its own
-  // elided id where the symbol belongs.
-  // Custom names first: a unit already on the ledger also appears in `options` under its
-  // own elided id, and lookups take the first match, so the operator's name has to win.
+  // Custom names first. Without them a just-added row falls back to 'unknown unit' and
+  // puts its own elided id where the symbol belongs; and a unit already on the ledger
+  // appears in `options` under that same elided id, so with lookups taking the first
+  // match the operator's own name has to come first to win.
   const knownOptions = useMemo(() => [...customOptions, ...options], [customOptions, options]);
 
   const groupedAvailable = useMemo(() => {
@@ -149,37 +148,38 @@ export function UsageCreditsField({
       setCustomEntry({ ...entry, error: 'That asset is already in the list' });
       return;
     }
-    onCustomOptionsChange([
-      // Replace rather than append: the same unit can be removed and added again under
-      // a different symbol, and optionFor takes the first match, so appending left the
-      // row wearing the name the operator just changed.
-      ...customOptions.filter((option) => option.unit !== built.unit),
-      {
-        unit: built.unit,
-        label: entry.symbol.trim() || UNNAMED_CUSTOM_SYMBOL,
-        groupId: entry.groupId,
-        group: entry.groupName,
-        identifier: built.unit,
-        // Base units, like every other unit nothing describes. PATCH carries only unit
-        // and amount, so decimals typed here would be gone on the next open and the
-        // same balance would read back rescaled.
-        decimals: 0,
-        chain: entry.chain,
-      },
-    ]);
-    onChange([...rows, { unit: built.unit, amount: '', decimals: 0 }]);
+    // Typing an address the picker already lists is not an error, but the preset knows
+    // the asset better than the entry form does: it carries the real symbol and, more
+    // importantly, the real decimals. Taking those keeps the row out of base units and
+    // stops a stale custom name shadowing the preset after the row is removed and
+    // re-added from the picker.
+    const preset = options.find((option) => option.unit === built.unit);
+    const named = customOptions.filter((option) => option.unit !== built.unit);
+    onCustomOptionsChange(
+      preset !== undefined
+        ? named
+        : [
+            ...named,
+            {
+              unit: built.unit,
+              label: entry.symbol.trim() || UNNAMED_CUSTOM_SYMBOL,
+              groupId: entry.groupId,
+              group: entry.groupName,
+              identifier: built.unit,
+              // Base units, like every other unit nothing describes. PATCH carries only
+              // unit and amount, so decimals typed here would be gone on the next open
+              // and the same balance would read back rescaled.
+              decimals: 0,
+              chain: entry.chain,
+            },
+          ],
+    );
+    onChange([...rows, { unit: built.unit, amount: '', decimals: preset?.decimals ?? 0 }]);
     setCustomEntry(null);
   }
 
   return (
     <div className="space-y-3">
-      {rows.length === 0 && (
-        <p className="text-xs text-muted-foreground">
-          No credit units on this key. A usage-limited key with no credits cannot pay for anything:
-          every purchase is rejected with &quot;Insufficient funds&quot;.
-        </p>
-      )}
-
       {rows.map((row, index) => {
         const option = optionFor(knownOptions, row.unit);
         const heading = option?.label ?? shortenCreditUnit(row.unit);
