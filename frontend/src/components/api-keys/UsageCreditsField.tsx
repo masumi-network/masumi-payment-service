@@ -148,7 +148,10 @@ export function UsageCreditsField({
       return;
     }
     onCustomOptionsChange([
-      ...customOptions,
+      // Replace rather than append: the same unit can be removed and added again under
+      // a different symbol, and optionFor takes the first match, so appending left the
+      // row wearing the name the operator just changed.
+      ...customOptions.filter((option) => option.unit !== built.unit),
       {
         unit: built.unit,
         label: entry.symbol.trim() || UNNAMED_CUSTOM_SYMBOL,
