@@ -5,6 +5,7 @@ import {
   buildCustomCreditUnit,
   consolidateCreditRows,
   creditDeltas,
+  creditRowProblem,
   creditUnitOptionsForKey,
   shortenCreditUnit,
   type CreditUnitOption,
@@ -325,4 +326,65 @@ test('Cardano and EVM group ids never collide', () => {
     'cardano:preprod',
     'eip155:8453',
   ]);
+});
+
+const NO_FUNDED_UNITS = new Set<string>();
+
+test('creditRowProblem refuses a new unit at zero, whatever shape the zero takes', () => {
+  // creditDeltas drops a zero delta and the request omits the field entirely, so the
+  // save reports success and creates nothing. For x402 that leaves a key its operator
+  // believes is capped spending against the wallet's whole balance.
+  for (const amount of ['0', '0.0', '0.00', '.0', '0.']) {
+    assert.match(
+      creditRowProblem({ unit: '', amount, decimals: 6 }, NO_FUNDED_UNITS) ?? '',
+      /above zero/,
+      amount,
+    );
+  }
+});
+
+test('creditRowProblem allows zeroing a unit the ledger already holds', () => {
+  // Zeroing an existing row is a real delta and the server keeps the row, which is the
+  // record that the key is capped on that unit.
+  assert.equal(creditRowProblem({ unit: '', amount: '0', decimals: 6 }, new Set([''])), undefined);
+});
+
+test('creditRowProblem rejects a blank amount rather than treating it as zero', () => {
+  assert.match(
+    creditRowProblem({ unit: '', amount: '   ', decimals: 6 }, NO_FUNDED_UNITS) ?? '',
+    /Enter a balance/,
+  );
+});
+
+test('creditRowProblem names base units when the row has no decimals', () => {
+  assert.match(
+    creditRowProblem({ unit: 'zz', amount: '1.5', decimals: 0 }, NO_FUNDED_UNITS) ?? '',
+    /whole number of base units/,
+  );
+  assert.equal(
+    creditRowProblem({ unit: 'zz', amount: '150', decimals: 0 }, NO_FUNDED_UNITS),
+    undefined,
+  );
+});
+
+test('creditRowProblem refuses an over-precise amount instead of truncating it', () => {
+  assert.match(
+    creditRowProblem({ unit: '', amount: '1.1234567', decimals: 6 }, NO_FUNDED_UNITS) ?? '',
+    /at most 6 decimals/,
+  );
+  assert.equal(
+    creditRowProblem({ unit: '', amount: '1.123456', decimals: 6 }, NO_FUNDED_UNITS),
+    undefined,
+  );
+});
+
+test('creditRowProblem rejects negatives and exponent notation', () => {
+  // A balance, not a delta. convertDecimalToBaseUnits would also throw on '1e5'.
+  for (const amount of ['-1', '1e5', 'abc']) {
+    assert.notEqual(
+      creditRowProblem({ unit: '', amount, decimals: 6 }, NO_FUNDED_UNITS),
+      undefined,
+      amount,
+    );
+  }
 });

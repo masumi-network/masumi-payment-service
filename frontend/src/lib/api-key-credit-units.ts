@@ -4,6 +4,7 @@ import {
   getActiveStablecoinSymbol,
 } from '@/lib/constants/defaultWallets';
 import { assetPresetsForNetwork, type AssetPresetNetwork } from '@/lib/x402-registration';
+import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
 
 /**
  * The unit an ADA credit row must carry.
@@ -285,4 +286,38 @@ export function creditDeltas(
     deltas.push({ unit, amount: (-amount).toString() });
   }
   return deltas;
+}
+
+/**
+ * Why an edited balance cannot be saved, or undefined when it can.
+ *
+ * Pulled out of the dialog's resolver so the rules are testable on their own: each one
+ * exists because breaking it produces a key that looks funded and pays nothing, and
+ * that is not a state a form should be able to reach quietly.
+ *
+ * `fundedUnits` is the set of units the ledger already holds a row for.
+ */
+export function creditRowProblem(
+  row: { unit: string; amount: string; decimals: number },
+  fundedUnits: ReadonlySet<string>,
+): string | undefined {
+  if (row.amount.trim() === '') {
+    return 'Enter a balance, or remove this unit';
+  }
+  // Balances, not deltas: a negative balance is meaningless and the server rejects it
+  // anyway. Precision is checked against the unit's own decimals so an over-precise
+  // entry is refused instead of silently truncated on convert.
+  if (!isValidDecimalAmount(row.amount, { decimals: row.decimals })) {
+    return row.decimals === 0
+      ? 'Enter a whole number of base units'
+      : `Enter a positive amount with at most ${row.decimals} decimals`;
+  }
+  // A zero balance for a unit the ledger has no row for sends no delta at all
+  // (creditDeltas skips it) and the server refuses to create one (400 'Invalid
+  // amount'). The save would report success and leave the unit uncapped, which for
+  // x402 means the key keeps spending with no ceiling.
+  if (!fundedUnits.has(row.unit) && convertDecimalToBaseUnits(row.amount, row.decimals) === '0') {
+    return 'Enter an amount above zero. The node cannot store a new unit at zero.';
+  }
+  return undefined;
 }
