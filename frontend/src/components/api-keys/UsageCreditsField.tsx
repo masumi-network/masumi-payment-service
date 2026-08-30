@@ -153,7 +153,12 @@ export function UsageCreditsField({
     // importantly, the real decimals. Taking those keeps the row out of base units and
     // stops a stale custom name shadowing the preset after the row is removed and
     // re-added from the picker.
-    const preset = options.find((option) => option.unit === built.unit);
+    // Chain 'unknown' means the option was recovered from the ledger, not configured on
+    // the node: its label is the elided unit id and its decimals are a fallback, so it
+    // knows nothing the entry form does not and must not override the typed symbol.
+    const preset = options.find(
+      (option) => option.unit === built.unit && option.chain.kind !== 'unknown',
+    );
     const named = customOptions.filter((option) => option.unit !== built.unit);
     onCustomOptionsChange(
       preset !== undefined
