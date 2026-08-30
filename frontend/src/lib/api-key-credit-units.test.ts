@@ -241,7 +241,9 @@ test('buildCustomCreditUnit refuses a malformed EVM address', () => {
   }
 });
 
-test('buildCustomCreditUnit keeps Cardano asset-name hex case-significant', () => {
+test('buildCustomCreditUnit stores a lowercase Cardano unit verbatim', () => {
+  // Stored exactly as written: the server normalizes only EVM-shaped units, so this
+  // string is what the credit gate will look up.
   const unit = `${'a'.repeat(56)}44654144`;
   assert.deepEqual(buildCustomCreditUnit({ kind: 'cardano', network: 'Mainnet' }, unit), { unit });
 });
