@@ -22,6 +22,17 @@ export const DEFAULT_CREDIT_DECIMALS = 6;
 
 export type CardanoNetwork = 'Mainnet' | 'Preprod';
 
+/**
+ * The chain a group of units settles on, carried so a custom asset typed into that
+ * group can be validated and chain-qualified without the field guessing from the
+ * group's display name. 'unknown' marks units recovered from the key's own ledger:
+ * a stored string alone does not say which chain issued it.
+ */
+export type CreditChain =
+  | { kind: 'cardano'; network: CardanoNetwork }
+  | { kind: 'evm'; caip2Id: string }
+  | { kind: 'unknown' };
+
 export interface CreditUnitOption {
   /** Exact string written to `UsageCreditsToAddOrRemove[].unit`. */
   unit: string;
@@ -32,10 +43,12 @@ export interface CreditUnitOption {
   /** Full identifier, shown under the label so two same-symbol assets stay distinguishable. */
   identifier: string;
   decimals: number;
+  chain: CreditChain;
 }
 
 function cardanoOptions(network: CardanoNetwork): CreditUnitOption[] {
   const group = `Cardano ${network}`;
+  const chain: CreditChain = { kind: 'cardano', network };
   const usdm = getUsdmConfig(network);
   const options: CreditUnitOption[] = [
     {
@@ -44,6 +57,7 @@ function cardanoOptions(network: CardanoNetwork): CreditUnitOption[] {
       group,
       identifier: 'lovelace',
       decimals: DEFAULT_CREDIT_DECIMALS,
+      chain,
     },
     {
       unit: usdm.fullAssetId,
@@ -51,6 +65,7 @@ function cardanoOptions(network: CardanoNetwork): CreditUnitOption[] {
       group,
       identifier: usdm.fullAssetId,
       decimals: DEFAULT_CREDIT_DECIMALS,
+      chain,
     },
   ];
   if (network === 'Mainnet') {
@@ -60,6 +75,7 @@ function cardanoOptions(network: CardanoNetwork): CreditUnitOption[] {
       group,
       identifier: USDCX_CONFIG.fullAssetId,
       decimals: DEFAULT_CREDIT_DECIMALS,
+      chain,
     });
   }
   return options;
@@ -76,6 +92,7 @@ function evmOptions(caip2Id: string, networks: AssetPresetNetwork[]): CreditUnit
     group: network.displayName,
     identifier: `${caip2Id}:${preset.address.toLowerCase()}`,
     decimals: preset.decimals,
+    chain: { kind: 'evm', caip2Id },
   }));
 }
 
@@ -118,6 +135,7 @@ export function creditUnitOptionsForKey({
       group: 'Already on this key',
       identifier: unit === ADA_CREDIT_UNIT ? 'lovelace' : unit,
       decimals: DEFAULT_CREDIT_DECIMALS,
+      chain: { kind: 'unknown' },
     });
   }
   return options;
@@ -141,6 +159,71 @@ export function consolidateCreditRows(
     totals.set(row.unit, (totals.get(row.unit) ?? BigInt(0)) + BigInt(row.amount));
   }
   return Array.from(totals, ([unit, amount]) => ({ unit, amount: amount.toString() }));
+}
+
+/**
+ * A Cardano native asset unit: a 28-byte policy id followed by an asset name of up
+ * to 32 bytes, both hex, concatenated exactly as the ledger stores them.
+ */
+const CARDANO_ASSET_UNIT = /^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{2}){0,32}$/;
+
+/** A bare ERC-20 contract address, before it is chain-qualified. */
+const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/** `UsageCreditsToAddOrRemove[].unit` is `z.string().max(150)` on both routes. */
+const MAX_CREDIT_UNIT_LENGTH = 150;
+
+/**
+ * Turn an operator-typed asset id into the exact unit string the debit path looks up,
+ * or explain why it cannot be one.
+ *
+ * The preset lists only cover the assets this repo ships constants for, so a key that
+ * pays in any other token could not be funded at all from the dialog. Accepting free
+ * text needs the same canonical shape the server enforces, because a near miss is not
+ * a cosmetic problem: `findNonCanonicalEvmCreditUnit` rejects EVM-ish units outright,
+ * and a Cardano unit that does not match what the purchase path requests is stored
+ * happily and then fails every payment with `Credit unit not found`.
+ *
+ * EVM input may be a bare address or an already-qualified `eip155:<id>:0x…` unit; a
+ * qualified one must name the chain it was typed under, so an address pasted into the
+ * wrong group is refused instead of silently re-homed.
+ */
+export function buildCustomCreditUnit(
+  chain: CreditChain,
+  raw: string,
+): { unit: string } | { error: string } {
+  const value = raw.trim();
+  if (value === '') return { error: 'Enter an asset id' };
+
+  if (chain.kind === 'evm') {
+    const qualified = value.toLowerCase().startsWith('eip155:');
+    const address = qualified ? value.slice(value.lastIndexOf(':') + 1) : value;
+    if (qualified && !value.toLowerCase().startsWith(`${chain.caip2Id.toLowerCase()}:`)) {
+      return { error: `That id is for another chain. This group is ${chain.caip2Id}.` };
+    }
+    if (!EVM_ADDRESS.test(address)) {
+      return { error: 'Enter a contract address: 0x followed by 40 hex characters' };
+    }
+    return { unit: `${chain.caip2Id}:${address}`.toLowerCase() };
+  }
+
+  if (chain.kind === 'cardano') {
+    if (value.toLowerCase() === 'lovelace' || value.toLowerCase() === 'ada') {
+      return { error: 'ADA is already in this list; pick it there' };
+    }
+    if (value.length > MAX_CREDIT_UNIT_LENGTH) {
+      return { error: `An asset id is at most ${MAX_CREDIT_UNIT_LENGTH} characters` };
+    }
+    if (!CARDANO_ASSET_UNIT.test(value)) {
+      return {
+        error: 'Enter policy id + asset name as hex: 56 characters, then the name in pairs',
+      };
+    }
+    // Asset-name hex is case-significant on Cardano, so this is stored verbatim.
+    return { unit: value };
+  }
+
+  return { error: 'This group does not accept a custom asset' };
 }
 
 /** Middle-elide a policy id or chain-qualified address so it fits a label. */
