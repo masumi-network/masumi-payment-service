@@ -241,7 +241,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     control,
     reset,
     setValue,
-    formState: { errors, isDirty },
+    formState: { errors, dirtyFields },
   } = useForm<UpdateApiKeyFormValues>({
     resolver: zodResolver(updateApiKeySchema),
     defaultValues: {
@@ -285,17 +285,21 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
   });
   const creditRows = useWatch({ control, name: 'credits', defaultValue: initialCreditRows });
 
-  // The EVM chain list loads after first paint, so the defaults above fall back to 6
-  // decimals for any chain-qualified unit. Re-seed once the real decimals are known, but
+  // The EVM chain list loads after first paint, so the defaults above fall back to base
+  // units for any chain-qualified unit. Re-seed once the real decimals are known, but
   // only while the operator has not started editing, so this can never eat their input.
   const seededCreditsRef = useRef<string | null>(null);
+  const creditsDirty = dirtyFields.credits !== undefined;
   useEffect(() => {
-    if (isDirty) return;
+    // dirtyFields.credits, not isDirty: the latter is form-wide, so typing a new token
+    // before the chain list arrived froze every chain-qualified row at the base-unit
+    // fallback while the label resolved to the preset, showing 5000000 next to USDC.
+    if (creditsDirty) return;
     const signature = initialCreditRows.map((row) => `${row.unit}:${row.decimals}`).join('|');
     if (signature === seededCreditsRef.current) return;
     seededCreditsRef.current = signature;
     setValue('credits', initialCreditRows);
-  }, [initialCreditRows, isDirty, setValue]);
+  }, [initialCreditRows, creditsDirty, setValue]);
 
   // react-hook-form nests array errors as errors.credits[index].amount; flatten them to
   // the index map the field component renders.
@@ -314,13 +318,19 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     // The endpoint takes deltas, not absolute balances, so diff the edited balances
     // against the stored ones and send only what moved. An unchanged unit is omitted;
     // a zero delta for a unit with no row is a 400 ('Invalid amount').
-    const usageCredits = creditDeltas(
-      currentCredits,
-      data.credits.map((credit) => ({
-        unit: credit.unit,
-        amount: convertDecimalToBaseUnits(credit.amount, credit.decimals),
-      })),
-    );
+    // Only while the cap is on. With it off the balances are neither validated nor
+    // shown, so a half-typed row would throw here (convertDecimalToBaseUnits rejects
+    // an empty string and handleSubmit re-throws, leaving the button dead), and a
+    // cleared list would send deltas that zero the ledger from a hidden section.
+    const usageCredits = data.usageLimited
+      ? creditDeltas(
+          currentCredits,
+          data.credits.map((credit) => ({
+            unit: credit.unit,
+            amount: convertDecimalToBaseUnits(credit.amount, credit.decimals),
+          })),
+        )
+      : [];
 
     const walletScopeChanged =
       data.walletScopeEnabled !== apiKey.walletScopeEnabled ||

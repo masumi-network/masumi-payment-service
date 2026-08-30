@@ -18,7 +18,6 @@ import { convertBaseUnitsToDecimal } from '@/lib/convertDecimalToBaseUnits';
 import {
   buildCustomCreditUnit,
   shortenCreditUnit,
-  UNKNOWN_GROUP_ID,
   type CreditChain,
   type CreditUnitOption,
 } from '@/lib/api-key-credit-units';
@@ -171,12 +170,13 @@ export function UsageCreditsField({
 
       {rows.map((row, index) => {
         const option = optionFor(knownOptions, row.unit);
-        // A unit nothing describes has no symbol, only its own id, and repeating an
-        // elided id beside the amount and again in the balance hint says nothing the
-        // unit-id line below does not already say.
-        const named = option !== undefined && option.chain.kind !== 'unknown';
-        const symbol = named ? option.label : '';
         const heading = option?.label ?? shortenCreditUnit(row.unit);
+        // What the number beside the input is counted in. A 0dp row holds base units
+        // whatever the asset is called, so naming it after the asset would put "250"
+        // next to a symbol that means a million times more, which is the misread this
+        // field exists to prevent. A unit nothing describes has no symbol at all, only
+        // its own id, which the unit-id line below already shows.
+        const denomination = row.decimals === 0 ? 'base units' : heading;
         return (
           <div key={row.unit} className="flex items-end gap-2">
             <div className="min-w-0 flex-1 space-y-1.5">
@@ -184,7 +184,7 @@ export function UsageCreditsField({
                 <span className="font-medium text-foreground">{heading}</span>
                 <span className="ml-1 opacity-70">
                   {option ? option.group : 'unknown unit'} ·{' '}
-                  {currentBalanceLabel(current, row.unit, row.decimals, symbol)}
+                  {currentBalanceLabel(current, row.unit, row.decimals, denomination)}
                 </span>
               </Label>
               {/* The symbol sits against the amount because the identifier line below
@@ -205,7 +205,7 @@ export function UsageCreditsField({
                   }}
                 />
                 <span className="shrink-0 text-sm font-medium text-muted-foreground">
-                  {symbol || 'base units'}
+                  {denomination}
                 </span>
               </div>
               <p className="text-[0.6875rem] break-all text-muted-foreground">
@@ -325,7 +325,7 @@ export function UsageCreditsField({
               onChange={(event) => setCustomEntry({ ...customEntry, symbol: event.target.value })}
             />
             <p className="text-xs text-muted-foreground">
-              Shown next to the amount, so the balance reads as an asset and not as a raw id.
+              Names the row, so it does not read as a bare id. Optional.
             </p>
           </div>
           <p className="text-xs text-muted-foreground">
