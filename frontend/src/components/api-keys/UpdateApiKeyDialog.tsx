@@ -444,13 +444,10 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                     <div className="flex items-center gap-2">
                       <Checkbox
                         aria-label="Select all EVM chains"
-                        checked={
-                          field.value.length === evmChainOptions.length
-                            ? true
-                            : field.value.length === 0
-                              ? false
-                              : 'indeterminate'
-                        }
+                        // Not 'indeterminate': the shared Checkbox styles only
+                        // data-[state=checked] and always renders its Check icon, so a
+                        // partial state paints a tick with no fill and reads as checked.
+                        checked={field.value.length === evmChainOptions.length}
                         onCheckedChange={() =>
                           field.onChange(
                             field.value.length === evmChainOptions.length
