@@ -70,12 +70,19 @@ export const getAPIKeySchemaOutput = z.object({
 });
 
 export const addAPIKeySchemaInput = z.object({
+	// Optional, NOT defaulted. A default is applied whenever the field is absent, and
+	// combined with the admin guard in the route that made the documented admin create
+	// call impossible: POST /api-key {permission: 'Admin'} was filled in as
+	// usageLimited: true and then rejected with 400 'Admin API keys cannot have usage
+	// limits' for a flag the caller never sent. The route applies the non-admin default
+	// itself, so an omitted field still means "usage limited" for everyone else.
 	usageLimited: z
 		.string()
-		.default('true')
-		.transform((s) => (s.toLowerCase() == 'true' ? true : false))
+		.optional()
+		.transform((s) => (s == null ? undefined : s.toLowerCase() == 'true'))
 		.describe(
-			'Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend',
+			'Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend. ' +
+				'Omitted defaults to true for non-admin keys; admin keys are never usage limited.',
 		),
 	UsageCredits: z
 		.array(
