@@ -359,16 +359,22 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
           <DialogTitle>Update API key</DialogTitle>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2.5 text-sm">
-          <span className="text-muted-foreground">Permission:</span>
-          <Badge variant={apiKey.canAdmin ? 'default' : apiKey.canPay ? 'secondary' : 'outline'}>
+        {/* Wraps rather than shrinks: as one no-wrap flex row, a narrow dialog squeezed
+            every child below its content width and the badges broke mid-word
+            ("Read and / Pay", "Mainne / t"). */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg border bg-muted/50 px-3 py-2.5 text-sm">
+          <span className="shrink-0 text-muted-foreground">Permission:</span>
+          <Badge
+            variant={apiKey.canAdmin ? 'default' : apiKey.canPay ? 'secondary' : 'outline'}
+            className="whitespace-nowrap"
+          >
             {getPermissionLabel(apiKey.canRead, apiKey.canPay, apiKey.canAdmin)}
           </Badge>
-          <Separator orientation="vertical" className="mx-1 h-4" />
-          <span className="text-muted-foreground">Networks:</span>
-          <div className="flex gap-1">
+          <Separator orientation="vertical" className="mx-1 h-4 max-sm:hidden" />
+          <span className="shrink-0 text-muted-foreground">Networks:</span>
+          <div className="flex flex-wrap gap-1">
             {apiKey.NetworkLimit.map((net) => (
-              <Badge key={net} variant="outline" className="font-normal">
+              <Badge key={net} variant="outline" className="font-normal whitespace-nowrap">
                 {net}
               </Badge>
             ))}
@@ -430,6 +436,34 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                 name="evmChains"
                 render={({ field }) => (
                   <div className="flex flex-col gap-2">
+                    {/* Named for what it does. The node stores no "unlimited" state:
+                        an omitted ChainIdLimit is expanded to the configured chain list
+                        at creation (routes/api/api-key/index.ts), and on PATCH an omitted
+                        one means unchanged. So "all" is a snapshot of today's chains, and
+                        a chain configured later is not granted by it. */}
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        aria-label="Select all EVM chains"
+                        checked={
+                          field.value.length === evmChainOptions.length
+                            ? true
+                            : field.value.length === 0
+                              ? false
+                              : 'indeterminate'
+                        }
+                        onCheckedChange={() =>
+                          field.onChange(
+                            field.value.length === evmChainOptions.length
+                              ? []
+                              : evmChainOptions.map((chain) => chain.caip2Id),
+                          )
+                        }
+                      />
+                      <label className="text-sm font-medium">
+                        All EVM chains configured on this node
+                      </label>
+                    </div>
+                    <Separator className="my-1" />
                     {evmChainOptions.map((chain) => (
                       <div key={chain.id} className="flex items-center gap-2">
                         <Checkbox
@@ -481,9 +515,26 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
             )}
           </div>
 
-          {!apiKey.canAdmin && (
+          {apiKey.canAdmin ? (
             <div className="space-y-2">
-              <div className="flex items-start gap-2">
+              <label className="text-sm font-medium">Spending limit</label>
+              <p className="text-xs text-muted-foreground">
+                Admin keys are never usage limited, so they hold no credit balances.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Same shape as every other switch in the app (ChainsTab,
+                  FundWalletSettingsForm): a bordered row, label left, control right. */}
+              <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Limit usage credits</p>
+                  <p className="text-xs text-muted-foreground">
+                    {usageLimited
+                      ? 'Capped. The key spends only the balances below, and any other unit is rejected.'
+                      : 'Uncapped. The key spends whatever the wallets it can reach hold.'}
+                  </p>
+                </div>
                 <Controller
                   control={control}
                   name="usageLimited"
@@ -495,49 +546,39 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                     />
                   )}
                 />
-                <div className="space-y-0.5">
-                  <Label className="text-sm font-medium">Limit usage credits</Label>
-                  <p className="text-xs text-muted-foreground">
-                    On, the key may only spend the balances below, and a purchase in any other unit
-                    is rejected. Off, the key spends freely from its wallets.
-                  </p>
-                </div>
               </div>
-            </div>
-          )}
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Usage credits</label>
-            {apiKey.canAdmin ? (
-              <p className="text-xs text-muted-foreground">
-                Admin keys are never usage limited, so they hold no credit balances.
-              </p>
-            ) : (
-              <>
-                <Controller
-                  control={control}
-                  name="credits"
-                  render={({ field }) => (
-                    <UsageCreditsField
-                      options={creditOptions}
-                      rows={field.value}
-                      current={currentCredits}
-                      onChange={field.onChange}
-                      rowErrors={creditRowErrors}
-                    />
+              {/* Only meaningful while the cap is on: an uncapped key ignores these
+                  balances entirely, so showing them invites edits that do nothing. */}
+              {usageLimited && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Usage credits</label>
+                  <Controller
+                    control={control}
+                    name="credits"
+                    render={({ field }) => (
+                      <UsageCreditsField
+                        options={creditOptions}
+                        rows={field.value}
+                        current={currentCredits}
+                        onChange={field.onChange}
+                        rowErrors={creditRowErrors}
+                      />
+                    )}
+                  />
+                  {/* Shown from the watched values rather than read out of the resolver's
+                      array-root error, so the reason a save is blocked is always visible. */}
+                  {creditRows.length === 0 && (
+                    <p className="text-xs text-destructive">
+                      A usage-limited key needs at least one funded unit. With none, the node
+                      rejects every purchase with &quot;Insufficient funds&quot; before it writes a
+                      payment.
+                    </p>
                   )}
-                />
-                {/* Shown from the watched values rather than read out of the resolver's
-                    array-root error, so the reason a save is blocked is always visible. */}
-                {usageLimited && creditRows.length === 0 && (
-                  <p className="text-xs text-destructive">
-                    A usage-limited key needs at least one funded unit. With none, the node rejects
-                    every purchase with &quot;Insufficient funds&quot; before it writes a payment.
-                  </p>
-                )}
-              </>
-            )}
-          </div>
+                </div>
+              )}
+            </>
+          )}
 
           {!apiKey.canAdmin && (
             <>

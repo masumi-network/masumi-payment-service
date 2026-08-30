@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   ADA_CREDIT_UNIT,
+  buildCustomCreditUnit,
   consolidateCreditRows,
   creditDeltas,
   creditUnitOptionsForKey,
@@ -196,4 +197,71 @@ test('consolidateCreditRows leaves a single row per unit untouched', () => {
     { unit: '', amount: '100' },
   ]);
   assert.deepEqual(consolidateCreditRows([]), []);
+});
+
+test('buildCustomCreditUnit chain-qualifies and lowercases a bare EVM address', () => {
+  // The x402 debit lowercases the asset address before it looks the row up, so a
+  // checksummed address — the form a wallet or explorer puts on the clipboard —
+  // would be stored verbatim and never match.
+  assert.deepEqual(
+    buildCustomCreditUnit(
+      { kind: 'evm', caip2Id: 'eip155:8453' },
+      '0x833589FCD6EDB6E08F4C7C32D4F71B54BDA02913',
+    ),
+    { unit: 'eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' },
+  );
+});
+
+test('buildCustomCreditUnit accepts an already-qualified unit for the same chain', () => {
+  assert.deepEqual(
+    buildCustomCreditUnit(
+      { kind: 'evm', caip2Id: 'eip155:8453' },
+      'eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+    ),
+    { unit: 'eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' },
+  );
+});
+
+test('buildCustomCreditUnit refuses a unit qualified for another chain', () => {
+  // Silently re-homing it would fund the key on a chain the operator did not pick.
+  const result = buildCustomCreditUnit(
+    { kind: 'evm', caip2Id: 'eip155:8453' },
+    'eip155:84532:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+  );
+  assert.ok('error' in result);
+  assert.match(result.error, /another chain/);
+});
+
+test('buildCustomCreditUnit refuses a malformed EVM address', () => {
+  // findNonCanonicalEvmCreditUnit fails these closed on the server; catching them
+  // here keeps the dialog from posting a save that can only 400.
+  for (const bad of ['0x1234', 'native', '833589fcd6edb6e08f4c7c32d4f71b54bda02913']) {
+    const result = buildCustomCreditUnit({ kind: 'evm', caip2Id: 'eip155:8453' }, bad);
+    assert.ok('error' in result, bad);
+  }
+});
+
+test('buildCustomCreditUnit keeps Cardano asset-name hex case-significant', () => {
+  const unit = `${'a'.repeat(56)}44654144`;
+  assert.deepEqual(buildCustomCreditUnit({ kind: 'cardano', network: 'Mainnet' }, unit), { unit });
+});
+
+test('buildCustomCreditUnit refuses a Cardano id that is not policy id + asset name hex', () => {
+  for (const bad of ['a'.repeat(55), `${'a'.repeat(56)}4`, 'not-hex-at-all']) {
+    const result = buildCustomCreditUnit({ kind: 'cardano', network: 'Mainnet' }, bad);
+    assert.ok('error' in result, bad);
+  }
+});
+
+test('buildCustomCreditUnit points lovelace at the ADA option instead of storing it', () => {
+  // A row stored as 'lovelace' can never match an ADA purchase: the purchase path
+  // maps 'lovelace' to '' before the credit gate compares units.
+  const result = buildCustomCreditUnit({ kind: 'cardano', network: 'Mainnet' }, 'lovelace');
+  assert.ok('error' in result);
+  assert.match(result.error, /ADA is already in this list/);
+});
+
+test('buildCustomCreditUnit rejects an empty entry and an unknown chain', () => {
+  assert.ok('error' in buildCustomCreditUnit({ kind: 'cardano', network: 'Mainnet' }, '   '));
+  assert.ok('error' in buildCustomCreditUnit({ kind: 'unknown' }, 'a'.repeat(56)));
 });
