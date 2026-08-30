@@ -40,6 +40,12 @@ interface UsageCreditsFieldProps {
   disabled?: boolean;
   /** Message per row index, keyed the same way the form validates. */
   rowErrors?: Record<number, string | undefined>;
+  /**
+   * Names for units added in this session, held by the parent because this field is
+   * unmounted whenever the cap is switched off and would otherwise forget them.
+   */
+  customOptions: CreditUnitOption[];
+  onCustomOptionsChange: (options: CreditUnitOption[]) => void;
 }
 
 function optionFor(options: CreditUnitOption[], unit: string): CreditUnitOption | undefined {
@@ -95,12 +101,13 @@ export function UsageCreditsField({
   onChange,
   disabled = false,
   rowErrors,
+  customOptions,
+  onCustomOptionsChange,
 }: UsageCreditsFieldProps) {
   const [customEntry, setCustomEntry] = useState<CustomEntry | null>(null);
-  // Options for units added in this session. They are not in `options` (which is
-  // derived from the key's presets), so without them a just-added custom row falls
-  // back to 'unknown unit' and puts its own elided id where the symbol belongs.
-  const [customOptions, setCustomOptions] = useState<CreditUnitOption[]>([]);
+  // Custom units are not in `options` (which is derived from the key's presets), so
+  // without their names a just-added row falls back to 'unknown unit' and puts its own
+  // elided id where the symbol belongs.
   const knownOptions = useMemo(() => [...options, ...customOptions], [options, customOptions]);
 
   const groupedAvailable = useMemo(() => {
@@ -140,8 +147,8 @@ export function UsageCreditsField({
       setCustomEntry({ ...entry, error: 'That asset is already in the list' });
       return;
     }
-    setCustomOptions((previous) => [
-      ...previous,
+    onCustomOptionsChange([
+      ...customOptions,
       {
         unit: built.unit,
         label: entry.symbol.trim() || UNNAMED_CUSTOM_SYMBOL,

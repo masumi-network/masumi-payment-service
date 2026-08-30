@@ -30,12 +30,13 @@ import { shortenAddress } from '@/lib/utils';
 import {
   convertBaseUnitsToDecimal,
   convertDecimalToBaseUnits,
-  isValidDecimalAmount,
 } from '@/lib/convertDecimalToBaseUnits';
 import {
   consolidateCreditRows,
   creditDeltas,
+  creditRowProblem,
   creditUnitOptionsForKey,
+  type CreditUnitOption,
 } from '@/lib/api-key-credit-units';
 import { UsageCreditsField, type CreditRow } from '@/components/api-keys/UsageCreditsField';
 import { Switch } from '@/components/ui/switch';
@@ -93,39 +94,11 @@ function buildUpdateApiKeySchema(fundedUnits: Set<string>) {
       // unmounted field, so the button looked dead and no request was made.
       if (!val.usageLimited) return;
       val.credits.forEach((credit, index) => {
-        if (credit.amount.trim() === '') {
+        const problem = creditRowProblem(credit, fundedUnits);
+        if (problem !== undefined) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            message: 'Enter a balance, or remove this unit',
-            path: ['credits', index, 'amount'],
-          });
-          return;
-        }
-        // Balances, not deltas: a negative balance is meaningless and the server
-        // rejects it anyway. Precision is checked against the unit's own decimals so
-        // an over-precise entry is refused instead of silently truncated on convert.
-        if (!isValidDecimalAmount(credit.amount, { decimals: credit.decimals })) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message:
-              credit.decimals === 0
-                ? 'Enter a whole number of base units'
-                : `Enter a positive amount with at most ${credit.decimals} decimals`,
-            path: ['credits', index, 'amount'],
-          });
-          return;
-        }
-        // A zero balance for a unit the ledger has no row for sends no delta at all
-        // (creditDeltas skips it) and the server refuses to create one (400 'Invalid
-        // amount'). The save would report success and leave the unit uncapped, which
-        // for x402 means the key keeps spending with no ceiling.
-        if (
-          !fundedUnits.has(credit.unit) &&
-          convertDecimalToBaseUnits(credit.amount, credit.decimals) === '0'
-        ) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'Enter an amount above zero. The node cannot store a new unit at zero.',
+            message: problem,
             path: ['credits', index, 'amount'],
           });
         }
@@ -230,6 +203,10 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     [currentCredits, creditOptions],
   );
 
+  // Held here, not in UsageCreditsField: that field is unmounted whenever the cap is
+  // switched off, so a custom asset's name would not survive a toggle.
+  const [customCreditOptions, setCustomCreditOptions] = useState<CreditUnitOption[]>([]);
+
   const updateApiKeySchema = useMemo(
     () => buildUpdateApiKeySchema(new Set(currentCredits.map((credit) => credit.unit))),
     [currentCredits],
@@ -284,6 +261,13 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     defaultValue: apiKey.usageLimited,
   });
   const creditRows = useWatch({ control, name: 'credits', defaultValue: initialCreditRows });
+  const evmChains = useWatch({
+    control,
+    name: 'evmChains',
+    defaultValue: apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:')),
+  });
+  const evmChainsGranted = evmChains.length > 0;
+  const hasEvmCreditRow = creditRows.some((row) => row.unit.startsWith('eip155:'));
 
   // The EVM chain list loads after first paint, so the defaults above fall back to base
   // units for any chain-qualified unit. Re-seed once the real decimals are known, but
@@ -583,7 +567,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                   <p className="text-sm font-medium">Limit usage credits</p>
                   <p className="text-xs text-muted-foreground">
                     {usageLimited
-                      ? 'Capped. The key spends only the balances below, and any other unit is rejected.'
+                      ? 'Capped. The key spends only the balances below.'
                       : 'Uncapped. The key spends whatever the wallets it can reach hold.'}
                   </p>
                 </div>
@@ -615,6 +599,8 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                         current={currentCredits}
                         onChange={field.onChange}
                         rowErrors={creditRowErrors}
+                        customOptions={customCreditOptions}
+                        onCustomOptionsChange={setCustomCreditOptions}
                       />
                     )}
                   />
@@ -625,6 +611,16 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                       A usage-limited key needs at least one funded unit. With none, the node
                       rejects every purchase with &quot;Insufficient funds&quot; before it writes a
                       payment.
+                    </p>
+                  )}
+                  {/* The gap that makes a key look capped while it is not. pay.ts
+                      grandfathers a usage-limited key with no eip155 row to its pre-cap
+                      behaviour, so its x402 spending is bounded only by the wallet. The
+                      first such row makes the cap binding on every granted chain. */}
+                  {creditRows.length > 0 && evmChainsGranted && !hasEvmCreditRow && (
+                    <p className="text-xs text-amber-600 dark:text-amber-500">
+                      x402 payments on this key&apos;s EVM chains are not capped yet. The limit
+                      starts applying once the key holds a balance for one of them.
                     </p>
                   )}
                 </div>
