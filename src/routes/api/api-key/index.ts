@@ -421,11 +421,13 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 								if (nextAmount < 0n) {
 									throw createHttpError(400, 'Invalid amount');
 								}
-								// A zeroed row is KEPT, not deleted. Deleting it removed the only
-								// evidence that this key is capped on that chain+asset, and the
-								// x402 enforcement probe reads "no EVM credit rows" as "pre-cap
-								// key, do not enforce" — so revoking a key's last EVM allowance
-								// used to hand it UNLIMITED spend instead of none.
+								// A zeroed row is KEPT, not deleted: it is the record that this key
+								// is capped on that chain and asset, and the operator can top it up
+								// again without retyping the unit. Enforcement no longer depends on
+								// the row existing — a usage-limited key with no credits for the
+								// unit it pays in is refused either way — but a key that shows its
+								// zeroed allowances is easier to reason about than one that hides
+								// them.
 								await prisma.unitValue.update({
 									where: { id: existingCredit.id },
 									data: { amount: nextAmount, unit },
