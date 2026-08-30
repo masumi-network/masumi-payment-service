@@ -5,6 +5,7 @@ import {
 } from '@/lib/constants/defaultWallets';
 import { assetPresetsForNetwork, type AssetPresetNetwork } from '@/lib/x402-registration';
 import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
+import { POSTGRES_BIGINT_MAX } from '@/lib/registry-validation';
 
 /**
  * The unit an ADA credit row must carry.
@@ -318,6 +319,14 @@ export function creditRowProblem(
   // x402 means the key keeps spending with no ceiling.
   if (!fundedUnits.has(row.unit) && convertDecimalToBaseUnits(row.amount, row.decimals) === '0') {
     return 'Enter an amount above zero. The node cannot store a new unit at zero.';
+  }
+  // UnitValue.amount is a Prisma BigInt, so Postgres refuses anything past int8 with
+  // `22003 value out of range`. Unchecked it leaves as a valid request and comes back
+  // as a generic 'Failed to update API key', with every other field in the same PATCH
+  // rolled back. Now that this field takes ADA rather than lovelace, an extra six
+  // digits is an easy slip.
+  if (BigInt(convertDecimalToBaseUnits(row.amount, row.decimals)) > POSTGRES_BIGINT_MAX) {
+    return `Enter at most ${POSTGRES_BIGINT_MAX.toString()} base units`;
   }
   return undefined;
 }

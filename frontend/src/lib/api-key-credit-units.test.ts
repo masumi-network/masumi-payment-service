@@ -388,3 +388,22 @@ test('creditRowProblem rejects negatives and exponent notation', () => {
     );
   }
 });
+
+test('creditRowProblem refuses a balance past what int8 can hold', () => {
+  // UnitValue.amount is a Prisma BigInt. Unbounded, the request is valid, Postgres
+  // raises 22003 on write, and the operator gets a generic failure with every other
+  // field of the same PATCH rolled back.
+  assert.match(
+    creditRowProblem({ unit: '', amount: '10000000000000', decimals: 6 }, NO_FUNDED_UNITS) ?? '',
+    /at most 9223372036854775807 base units/,
+  );
+});
+
+test('creditRowProblem allows the largest balance int8 can hold', () => {
+  // The bound is inclusive: 9223372036854775807 base units is storable, and rejecting
+  // it would refuse a value the ledger accepts.
+  assert.equal(
+    creditRowProblem({ unit: '', amount: '9223372036854775807', decimals: 0 }, NO_FUNDED_UNITS),
+    undefined,
+  );
+});
