@@ -266,7 +266,13 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     name: 'evmChains',
     defaultValue: apiKey.ChainIdLimit.filter((chainId) => chainId.startsWith('eip155:')),
   });
-  const evmChainsGranted = evmChains.length > 0;
+  // The SAVED grant, not the watched one. creditOptions is derived from
+  // apiKey.ChainIdLimit and cannot depend on a useWatch without a cycle (options feed
+  // initialCreditRows, which feed useForm, which yields control). Warning off the form
+  // therefore told the operator to fund a chain the picker below could not offer,
+  // because that chain existed only in the unsaved form. It appears once the grant is
+  // saved, which is also when it becomes actionable.
+  const evmChainsGranted = apiKey.ChainIdLimit.some((chainId) => chainId.startsWith('eip155:'));
   // What the ledger will hold after this save. Removing a row does not remove it: the
   // server zeroes it and keeps it, and pay.ts counts rows. Reading only the form
   // inverted the warning on a removal, claiming wallet-bounded spending in the one
