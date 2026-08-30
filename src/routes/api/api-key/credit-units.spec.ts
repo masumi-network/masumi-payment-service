@@ -22,12 +22,33 @@ describe('normalizeCreditUnit', () => {
 		);
 	});
 
-	it('leaves Cardano units verbatim', () => {
-		// Cardano asset-name hex is case-significant; only EVM-shaped units are safe
-		// to normalize.
-		expect(normalizeCreditUnit('lovelace')).toBe('lovelace');
+	it('leaves Cardano native-asset units verbatim', () => {
+		// Cardano asset-name hex is case-significant, so only EVM-shaped units and the
+		// ADA alias are safe to rewrite.
 		const cardanoUnit = '16a55b2a349361ff88c0AbCd' + 'ef'.repeat(10);
 		expect(normalizeCreditUnit(cardanoUnit)).toBe(cardanoUnit);
+	});
+
+	it('canonicalises the ADA alias to the empty unit', () => {
+		// The purchase path presents ADA as '' (normalizePurchaseUnit maps 'lovelace' to
+		// '' before the cost reaches the credit gate, which compares units verbatim), so a
+		// row stored as 'lovelace' could never match an ADA purchase and the key failed
+		// with `Credit unit not found:` for a balance that looked funded.
+		expect(normalizeCreditUnit('lovelace')).toBe('');
+		expect(normalizeCreditUnit('Lovelace')).toBe('');
+		expect(normalizeCreditUnit('')).toBe('');
+	});
+
+	it('folds an existing lovelace row onto the canonical ADA unit', () => {
+		// The update path matches rows on the normalized form and writes that form back,
+		// so a stale row is repaired on the next top-up instead of lingering as dead
+		// credit next to a working one.
+		expect(
+			consolidateUsageCredits([
+				{ unit: 'lovelace', amount: 1_000_000n },
+				{ unit: '', amount: 500_000n },
+			]),
+		).toEqual([{ unit: '', amount: 1_500_000n }]);
 	});
 
 	it('leaves non-matching strings verbatim', () => {
@@ -91,19 +112,21 @@ describe('consolidateUsageCredits', () => {
 	});
 
 	it('preserves distinct units and first-seen order', () => {
+		// ADA now lands on the canonical '' unit: 'lovelace' can never match an ADA
+		// purchase, which the credit gate compares verbatim against the normalized cost.
 		expect(
 			consolidateUsageCredits([
 				{ unit: 'lovelace', amount: 5n },
 				{ unit: 'eip155:8453:0x' + 'a'.repeat(40), amount: 7n },
 			]),
 		).toEqual([
-			{ unit: 'lovelace', amount: 5n },
+			{ unit: '', amount: 5n },
 			{ unit: 'eip155:8453:0x' + 'a'.repeat(40), amount: 7n },
 		]);
 	});
 
 	it('keeps an explicit zero grant visible', () => {
-		expect(consolidateUsageCredits([{ unit: 'lovelace', amount: 0n }])).toEqual([{ unit: 'lovelace', amount: 0n }]);
+		expect(consolidateUsageCredits([{ unit: 'lovelace', amount: 0n }])).toEqual([{ unit: '', amount: 0n }]);
 	});
 
 	it('throws on a negative amount', () => {
