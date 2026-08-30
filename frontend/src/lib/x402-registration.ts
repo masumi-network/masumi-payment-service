@@ -83,9 +83,17 @@ export function addressesMatch(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
 }
 
-export function assetPresetsForNetwork(
-  network: X402RegistrationNetwork | undefined,
-): EvmAssetPreset[] {
+/**
+ * The fields the preset lookup actually reads. Narrower than a whole network object so
+ * a caller holding the admin `X402Network` shape (which has no `canSettle`) can pass it
+ * without a cast.
+ */
+export type AssetPresetNetwork = Pick<
+  X402RegistrationNetwork,
+  'caip2Id' | 'displayName' | 'defaultAsset' | 'defaultAssetDecimals'
+>;
+
+export function assetPresetsForNetwork(network: AssetPresetNetwork | undefined): EvmAssetPreset[] {
   if (!network) return [];
 
   const presets = EVM_ASSET_PRESETS.filter((preset) => preset.network === network.caip2Id);
