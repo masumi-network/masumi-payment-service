@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { patchApiKey } from '@/lib/api/generated';
@@ -28,10 +28,17 @@ import { X402WalletScopeField } from '@/components/api-keys/X402WalletScopeField
 import { useAllWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
 import {
-  getActiveStablecoinConfig,
-  getActiveStablecoinSymbol,
-} from '@/lib/constants/defaultWallets';
-import { convertDecimalToBaseUnits, isValidDecimalAmount } from '@/lib/convertDecimalToBaseUnits';
+  convertBaseUnitsToDecimal,
+  convertDecimalToBaseUnits,
+  isValidDecimalAmount,
+} from '@/lib/convertDecimalToBaseUnits';
+import {
+  consolidateCreditRows,
+  creditDeltas,
+  creditUnitOptionsForKey,
+} from '@/lib/api-key-credit-units';
+import { UsageCreditsField, type CreditRow } from '@/components/api-keys/UsageCreditsField';
+import { Switch } from '@/components/ui/switch';
 
 interface UpdateApiKeyDialogProps {
   open: boolean;
@@ -49,6 +56,7 @@ interface UpdateApiKeyDialogProps {
     NetworkLimit: Array<'Preprod' | 'Mainnet'>;
     ChainIdLimit: string[];
     usageLimited: boolean;
+    RemainingUsageCredits: Array<{ unit: string; amount: string }>;
     status: 'Active' | 'Revoked';
     walletScopeEnabled: boolean;
     WalletScopes: Array<{ hotWalletId: string }>;
@@ -65,10 +73,8 @@ const updateApiKeySchema = z
       .optional()
       .or(z.literal('')),
     status: z.enum(['Active', 'Revoked']),
-    credits: z.object({
-      lovelace: z.string().optional(),
-      usdcx: z.string().optional(),
-    }),
+    usageLimited: z.boolean(),
+    credits: z.array(z.object({ unit: z.string(), amount: z.string(), decimals: z.number() })),
     walletScopeEnabled: z.boolean(),
     walletScopeIds: z.array(z.string()),
     x402WalletScopeEnabled: z.boolean(),
@@ -76,21 +82,36 @@ const updateApiKeySchema = z
     evmChains: z.array(z.string()),
   })
   .superRefine((val, ctx) => {
-    if (
-      val.credits?.lovelace &&
-      !isValidDecimalAmount(val.credits.lovelace, { allowNegative: true })
-    ) {
+    val.credits.forEach((credit, index) => {
+      if (credit.amount.trim() === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Enter a balance, or remove this unit',
+          path: ['credits', index, 'amount'],
+        });
+        return;
+      }
+      // Balances, not deltas: a negative balance is meaningless and the server
+      // rejects it anyway. Precision is checked against the unit's own decimals so
+      // an over-precise entry is refused instead of silently truncated on convert.
+      if (!isValidDecimalAmount(credit.amount, { decimals: credit.decimals })) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Enter a positive amount with at most ${credit.decimals} decimals`,
+          path: ['credits', index, 'amount'],
+        });
+      }
+    });
+    // The exact state that broke every purchase on this deployment: a key flagged
+    // usage-limited whose ledger has no row for the unit it pays in fails the credit
+    // gate with `Credit unit not found`, surfaced to the buyer as a bare 400
+    // 'Insufficient funds' with no purchase ever created.
+    if (val.usageLimited && val.credits.length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Invalid ADA amount',
-        path: ['credits', 'lovelace'],
-      });
-    }
-    if (val.credits?.usdcx && !isValidDecimalAmount(val.credits.usdcx, { allowNegative: true })) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Invalid USDCx amount',
-        path: ['credits', 'usdcx'],
+        message:
+          'A usage-limited key needs at least one funded unit, or every payment it makes is rejected.',
+        path: ['credits'],
       });
     }
   });
@@ -109,7 +130,7 @@ function getPermissionLabel(_canRead: boolean, canPay: boolean, canAdmin: boolea
 export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateApiKeyDialogProps) {
   const [showToken, setShowToken] = useState(false);
   const tokenInputRef = useRef<HTMLInputElement | null>(null);
-  const { apiClient, network } = useAppContext();
+  const { apiClient } = useAppContext();
 
   const updateApiKey = useApiMutation({
     mutationFn: (body: NonNullable<PatchApiKeyData['body']>) =>
@@ -139,19 +160,59 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     }));
   }, [managedWallets, paymentSources]);
 
+  // One editable row per unit, not per stored row: the ledger can hold duplicates for
+  // the same unit and every consumer below assumes a unit appears once.
+  const currentCredits = useMemo(
+    () => consolidateCreditRows(apiKey.RemainingUsageCredits),
+    [apiKey.RemainingUsageCredits],
+  );
+
+  // Offer the units this key can actually spend. The form used to hard-code ADA plus
+  // the "active stablecoin", which on Mainnet is USDCx: a key paying in USDM could not
+  // be funded for the asset it spends, and an EVM key could not be funded at all.
+  const creditOptions = useMemo(
+    () =>
+      creditUnitOptionsForKey({
+        networkLimit: apiKey.NetworkLimit,
+        chainIdLimit: apiKey.ChainIdLimit,
+        evmNetworks: evmChainOptions,
+        existingUnits: currentCredits.map((credit) => credit.unit),
+      }),
+    [apiKey.NetworkLimit, apiKey.ChainIdLimit, currentCredits, evmChainOptions],
+  );
+
+  // Seed with the key's stored balances so the dialog shows the ledger it edits. The
+  // old fields were always blank deltas, so the form could never say whether a key was
+  // funded at all.
+  const initialCreditRows = useMemo<CreditRow[]>(
+    () =>
+      currentCredits.map((credit) => {
+        const decimals = creditOptions.find((option) => option.unit === credit.unit)?.decimals ?? 6;
+        let amount = credit.amount;
+        try {
+          amount = convertBaseUnitsToDecimal(credit.amount, decimals);
+        } catch {
+          // Leave an unparseable stored value visible rather than dropping the row.
+        }
+        return { unit: credit.unit, amount, decimals };
+      }),
+    [currentCredits, creditOptions],
+  );
+
   const {
     register,
     handleSubmit,
     control,
     reset,
     setValue,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<UpdateApiKeyFormValues>({
     resolver: zodResolver(updateApiKeySchema),
     defaultValues: {
       newToken: '',
       status: apiKey.status,
-      credits: { lovelace: '', usdcx: '' },
+      usageLimited: apiKey.usageLimited,
+      credits: initialCreditRows,
       walletScopeEnabled: apiKey.walletScopeEnabled,
       walletScopeIds: apiKey.WalletScopes.map((ws) => ws.hotWalletId),
       x402WalletScopeEnabled: apiKey.x402WalletScopeEnabled,
@@ -181,20 +242,49 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     defaultValue: apiKey.X402WalletScopes.map((ws) => ws.evmWalletId),
   });
 
+  const usageLimited = useWatch({
+    control,
+    name: 'usageLimited',
+    defaultValue: apiKey.usageLimited,
+  });
+  const creditRows = useWatch({ control, name: 'credits', defaultValue: initialCreditRows });
+
+  // The EVM chain list loads after first paint, so the defaults above fall back to 6
+  // decimals for any chain-qualified unit. Re-seed once the real decimals are known, but
+  // only while the operator has not started editing, so this can never eat their input.
+  const seededCreditsRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isDirty) return;
+    const signature = initialCreditRows.map((row) => `${row.unit}:${row.decimals}`).join('|');
+    if (signature === seededCreditsRef.current) return;
+    seededCreditsRef.current = signature;
+    setValue('credits', initialCreditRows);
+  }, [initialCreditRows, isDirty, setValue]);
+
+  // react-hook-form nests array errors as errors.credits[index].amount; flatten them to
+  // the index map the field component renders.
+  const creditRowErrors = useMemo<Record<number, string | undefined>>(() => {
+    const creditErrors = errors.credits;
+    if (!Array.isArray(creditErrors)) return {};
+    const flattened: Record<number, string | undefined> = {};
+    creditErrors.forEach((entry, index) => {
+      const message = entry?.amount?.message;
+      if (typeof message === 'string') flattened[index] = message;
+    });
+    return flattened;
+  }, [errors.credits]);
+
   const onSubmit = async (data: UpdateApiKeyFormValues) => {
-    const usageCredits: Array<{ unit: string; amount: string }> = [];
-    if (data.credits.lovelace) {
-      usageCredits.push({
-        unit: 'lovelace',
-        amount: convertDecimalToBaseUnits(data.credits.lovelace),
-      });
-    }
-    if (data.credits.usdcx) {
-      usageCredits.push({
-        unit: getActiveStablecoinConfig(network).fullAssetId,
-        amount: convertDecimalToBaseUnits(data.credits.usdcx),
-      });
-    }
+    // The endpoint takes deltas, not absolute balances, so diff the edited balances
+    // against the stored ones and send only what moved. An unchanged unit is omitted;
+    // a zero delta for a unit with no row is a 400 ('Invalid amount').
+    const usageCredits = creditDeltas(
+      currentCredits,
+      data.credits.map((credit) => ({
+        unit: credit.unit,
+        amount: convertDecimalToBaseUnits(credit.amount, credit.decimals),
+      })),
+    );
 
     const walletScopeChanged =
       data.walletScopeEnabled !== apiKey.walletScopeEnabled ||
@@ -217,6 +307,9 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
         ...(data.status !== apiKey.status && { status: data.status }),
         ...(usageCredits.length > 0 && {
           UsageCreditsToAddOrRemove: usageCredits,
+        }),
+        ...(data.usageLimited !== apiKey.usageLimited && {
+          usageLimited: data.usageLimited,
         }),
         ...(walletScopeChanged && {
           walletScopeEnabled: data.walletScopeEnabled,
@@ -388,42 +481,62 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
             )}
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Add/Remove Credits</label>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="credits-ada" className="text-xs text-muted-foreground">
-                  ADA
-                </Label>
-                <Input
-                  id="credits-ada"
-                  type="number"
-                  placeholder="0.00"
-                  {...register('credits.lovelace')}
+          {!apiKey.canAdmin && (
+            <div className="space-y-2">
+              <div className="flex items-start gap-2">
+                <Controller
+                  control={control}
+                  name="usageLimited"
+                  render={({ field }) => (
+                    <Switch
+                      aria-label="Limit usage credits"
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  )}
                 />
-                {errors.credits && 'lovelace' in errors.credits && errors.credits.lovelace && (
-                  <p className="text-xs text-destructive">
-                    {(errors.credits.lovelace as any).message}
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-medium">Limit usage credits</Label>
+                  <p className="text-xs text-muted-foreground">
+                    On, the key may only spend the balances below, and a purchase in any other unit
+                    is rejected. Off, the key spends freely from its wallets.
                   </p>
-                )}
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="credits-usdcx" className="text-xs text-muted-foreground">
-                  {getActiveStablecoinSymbol(network)}
-                </Label>
-                <Input
-                  id="credits-usdcx"
-                  type="number"
-                  placeholder="0.00"
-                  {...register('credits.usdcx')}
-                />
-                {errors.credits && 'usdcx' in errors.credits && errors.credits.usdcx && (
-                  <p className="text-xs text-destructive">
-                    {(errors.credits.usdcx as any).message}
-                  </p>
-                )}
+                </div>
               </div>
             </div>
+          )}
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Usage credits</label>
+            {apiKey.canAdmin ? (
+              <p className="text-xs text-muted-foreground">
+                Admin keys are never usage limited, so they hold no credit balances.
+              </p>
+            ) : (
+              <>
+                <Controller
+                  control={control}
+                  name="credits"
+                  render={({ field }) => (
+                    <UsageCreditsField
+                      options={creditOptions}
+                      rows={field.value}
+                      current={currentCredits}
+                      onChange={field.onChange}
+                      rowErrors={creditRowErrors}
+                    />
+                  )}
+                />
+                {/* Shown from the watched values rather than read out of the resolver's
+                    array-root error, so the reason a save is blocked is always visible. */}
+                {usageLimited && creditRows.length === 0 && (
+                  <p className="text-xs text-destructive">
+                    A usage-limited key needs at least one funded unit. With none, the node rejects
+                    every purchase with &quot;Insufficient funds&quot; before it writes a payment.
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
           {!apiKey.canAdmin && (
