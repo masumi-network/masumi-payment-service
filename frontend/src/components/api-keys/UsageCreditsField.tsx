@@ -118,6 +118,13 @@ export function UsageCreditsField({
 
   const takenUnits = useMemo(() => new Set(rows.map((row) => row.unit)), [rows]);
 
+  // A key whose access list is empty still gets options for the units already on its
+  // ledger, and those cannot take a custom asset. Once they are all placed as rows the
+  // picker has nothing left to offer, so it is hidden rather than opened onto nothing.
+  const hasSomethingToAdd = groupedAvailable.some(
+    ([group, entries]) => entries.length > 0 || chainForGroup(options, group).kind !== 'unknown',
+  );
+
   function addCustomUnit(entry: CustomEntry) {
     const built = buildCustomCreditUnit(entry.chain, entry.value);
     if ('error' in built) {
@@ -216,57 +223,59 @@ export function UsageCreditsField({
           to fund yet.
         </p>
       ) : (
-        <Select
-          // Radix rejects an empty option value and ADA's unit IS the empty string, so
-          // the picker addresses options by index and maps back here.
-          value=""
-          disabled={disabled}
-          onValueChange={(value) => {
-            if (value.startsWith(CUSTOM_OPTION_PREFIX)) {
-              const group = value.slice(CUSTOM_OPTION_PREFIX.length);
-              setCustomEntry({
-                group,
-                chain: chainForGroup(options, group),
-                value: '',
-                symbol: '',
-                decimals: String(DEFAULT_CREDIT_DECIMALS),
-              });
-              return;
-            }
-            const option = options[Number(value)];
-            if (!option) return;
-            onChange([...rows, { unit: option.unit, amount: '', decimals: option.decimals }]);
-          }}
-        >
-          <SelectTrigger aria-label="Add a credit unit">
-            <SelectValue placeholder="Add a credit unit" />
-          </SelectTrigger>
-          <SelectContent>
-            {groupedAvailable.map(([group, entries]) => {
-              const chain = chainForGroup(options, group);
-              // 'Already on this key' collects units whose chain cannot be recovered
-              // from the stored string, so it can list what is there but cannot
-              // validate anything new typed into it.
-              const acceptsCustom = chain.kind !== 'unknown';
-              if (entries.length === 0 && !acceptsCustom) return null;
-              return (
-                <SelectGroup key={group}>
-                  <SelectLabel>{group}</SelectLabel>
-                  {entries.map(({ option, index }) => (
-                    <SelectItem key={option.unit || 'ada'} value={String(index)}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                  {acceptsCustom && (
-                    <SelectItem value={`${CUSTOM_OPTION_PREFIX}${group}`}>
-                      Custom asset&hellip;
-                    </SelectItem>
-                  )}
-                </SelectGroup>
-              );
-            })}
-          </SelectContent>
-        </Select>
+        hasSomethingToAdd && (
+          <Select
+            // Radix rejects an empty option value and ADA's unit IS the empty string, so
+            // the picker addresses options by index and maps back here.
+            value=""
+            disabled={disabled}
+            onValueChange={(value) => {
+              if (value.startsWith(CUSTOM_OPTION_PREFIX)) {
+                const group = value.slice(CUSTOM_OPTION_PREFIX.length);
+                setCustomEntry({
+                  group,
+                  chain: chainForGroup(options, group),
+                  value: '',
+                  symbol: '',
+                  decimals: String(DEFAULT_CREDIT_DECIMALS),
+                });
+                return;
+              }
+              const option = options[Number(value)];
+              if (!option) return;
+              onChange([...rows, { unit: option.unit, amount: '', decimals: option.decimals }]);
+            }}
+          >
+            <SelectTrigger aria-label="Add a credit unit">
+              <SelectValue placeholder="Add a credit unit" />
+            </SelectTrigger>
+            <SelectContent>
+              {groupedAvailable.map(([group, entries]) => {
+                const chain = chainForGroup(options, group);
+                // 'Already on this key' collects units whose chain cannot be recovered
+                // from the stored string, so it can list what is there but cannot
+                // validate anything new typed into it.
+                const acceptsCustom = chain.kind !== 'unknown';
+                if (entries.length === 0 && !acceptsCustom) return null;
+                return (
+                  <SelectGroup key={group}>
+                    <SelectLabel>{group}</SelectLabel>
+                    {entries.map(({ option, index }) => (
+                      <SelectItem key={option.unit || 'ada'} value={String(index)}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                    {acceptsCustom && (
+                      <SelectItem value={`${CUSTOM_OPTION_PREFIX}${group}`}>
+                        Custom asset&hellip;
+                      </SelectItem>
+                    )}
+                  </SelectGroup>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        )
       )}
 
       {customEntry && (
