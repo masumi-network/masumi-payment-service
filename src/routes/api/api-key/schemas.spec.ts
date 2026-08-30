@@ -47,10 +47,20 @@ describe('updateAPIKeySchemaInput', () => {
 });
 
 describe('addAPIKeySchemaInput', () => {
-	it('still defaults usageLimited on create', () => {
-		// Create is not partial: it writes a whole row, so a default is the right shape
-		// there and callers rely on it. Pinned so the PATCH fix is not mirrored here by
-		// mistake.
-		expect(addAPIKeySchemaInput.parse({ UsageCredits: [] }).usageLimited).toBe(true);
+	it('leaves usageLimited undefined when the field is absent', () => {
+		// This test previously pinned the schema default, on the reasoning that create
+		// writes a whole row so a default is harmless there. That was wrong: the route
+		// rejects `isAdmin && usageLimited`, so the default made the documented admin
+		// create call (POST /api-key {permission: 'Admin'}) fail with 400 'Admin API
+		// keys cannot have usage limits' for a flag the caller never sent. The default
+		// now lives in `resolveCreateUsageLimited`, which can still tell an omitted
+		// field from an explicit one.
+		const parsed = addAPIKeySchemaInput.parse({ UsageCredits: [] });
+		expect(parsed.usageLimited).toBeUndefined();
+	});
+
+	it('keeps an explicit usageLimited value in both directions', () => {
+		expect(addAPIKeySchemaInput.parse({ UsageCredits: [], usageLimited: 'true' }).usageLimited).toBe(true);
+		expect(addAPIKeySchemaInput.parse({ UsageCredits: [], usageLimited: 'false' }).usageLimited).toBe(false);
 	});
 });

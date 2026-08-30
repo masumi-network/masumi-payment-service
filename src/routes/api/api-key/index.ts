@@ -28,6 +28,7 @@ import {
 	updateAPIKeySchemaInput,
 	updateAPIKeySchemaOutput,
 } from './schemas';
+import { resolveCreateUsageLimited } from './usage-limited';
 import { consolidateUsageCredits, findNonCanonicalEvmCreditUnit, normalizeCreditUnit } from './credit-units';
 import {
 	computePermissionFromFlags,
@@ -260,9 +261,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 			hotWalletIds: input.walletScopeEnabled ? input.WalletScopeHotWalletIds : undefined,
 			evmWalletIds: input.x402WalletScopeEnabled ? input.X402WalletScopeEvmWalletIds : undefined,
 		});
-		if (isAdmin && input.usageLimited) {
-			throw createHttpError(400, 'Admin API keys cannot have usage limits');
-		}
+		const usageLimited = resolveCreateUsageLimited({ isAdmin, requested: input.usageLimited });
 		// Omitted means "every configured EVM chain in the key's environment", the twin
 		// of NetworkLimit defaulting to every Cardano network. An explicit [] still
 		// means none. Skipped for admins, whose networkLimit is [] and who are
@@ -302,7 +301,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 				canRead: canRead,
 				canPay: canPay,
 				canAdmin: canAdmin,
-				usageLimited: isAdmin ? false : input.usageLimited,
+				usageLimited: usageLimited,
 				networkLimit: isAdmin
 					? []
 					: mergeCaip2NetworkLimits(
