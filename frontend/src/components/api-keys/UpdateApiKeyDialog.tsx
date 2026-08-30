@@ -616,7 +616,10 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                     <p className="text-xs text-destructive">
                       A usage-limited key needs at least one funded unit. With none, every Cardano
                       purchase is rejected as &quot;Insufficient funds&quot; before a payment is
-                      written, and x402 spending is not capped at all.
+                      written, and{' '}
+                      {hasEvmCreditRow
+                        ? 'x402 payments are refused as well: removing an EVM row zeroes it on the server rather than deleting it, and a zeroed row still binds the cap.'
+                        : 'x402 spending is not capped at all.'}
                     </p>
                   )}
                   {/* The gap that makes a key look capped while it is not. pay.ts
