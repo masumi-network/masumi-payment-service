@@ -65,58 +65,87 @@ interface UpdateApiKeyDialogProps {
   };
 }
 
-const updateApiKeySchema = z
-  .object({
-    newToken: z
-      .string()
-      .min(15, 'Token must be at least 15 characters')
-      .optional()
-      .or(z.literal('')),
-    status: z.enum(['Active', 'Revoked']),
-    usageLimited: z.boolean(),
-    credits: z.array(z.object({ unit: z.string(), amount: z.string(), decimals: z.number() })),
-    walletScopeEnabled: z.boolean(),
-    walletScopeIds: z.array(z.string()),
-    x402WalletScopeEnabled: z.boolean(),
-    x402WalletScopeIds: z.array(z.string()),
-    evmChains: z.array(z.string()),
-  })
-  .superRefine((val, ctx) => {
-    val.credits.forEach((credit, index) => {
-      if (credit.amount.trim() === '') {
+/**
+ * Built per key rather than once at module scope, because two of its rules depend on
+ * what the ledger already holds: a zero balance is only expressible for a unit that
+ * already has a row.
+ */
+function buildUpdateApiKeySchema(fundedUnits: Set<string>) {
+  return z
+    .object({
+      newToken: z
+        .string()
+        .min(15, 'Token must be at least 15 characters')
+        .optional()
+        .or(z.literal('')),
+      status: z.enum(['Active', 'Revoked']),
+      usageLimited: z.boolean(),
+      credits: z.array(z.object({ unit: z.string(), amount: z.string(), decimals: z.number() })),
+      walletScopeEnabled: z.boolean(),
+      walletScopeIds: z.array(z.string()),
+      x402WalletScopeEnabled: z.boolean(),
+      x402WalletScopeIds: z.array(z.string()),
+      evmChains: z.array(z.string()),
+    })
+    .superRefine((val, ctx) => {
+      // The balances are hidden while the cap is off, and an uncapped key ignores them.
+      // Validating them anyway blocked Update with an error rendered only inside the
+      // unmounted field, so the button looked dead and no request was made.
+      if (!val.usageLimited) return;
+      val.credits.forEach((credit, index) => {
+        if (credit.amount.trim() === '') {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Enter a balance, or remove this unit',
+            path: ['credits', index, 'amount'],
+          });
+          return;
+        }
+        // Balances, not deltas: a negative balance is meaningless and the server
+        // rejects it anyway. Precision is checked against the unit's own decimals so
+        // an over-precise entry is refused instead of silently truncated on convert.
+        if (!isValidDecimalAmount(credit.amount, { decimals: credit.decimals })) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message:
+              credit.decimals === 0
+                ? 'Enter a whole number of base units'
+                : `Enter a positive amount with at most ${credit.decimals} decimals`,
+            path: ['credits', index, 'amount'],
+          });
+          return;
+        }
+        // A zero balance for a unit the ledger has no row for sends no delta at all
+        // (creditDeltas skips it) and the server refuses to create one (400 'Invalid
+        // amount'). The save would report success and leave the unit uncapped, which
+        // for x402 means the key keeps spending with no ceiling.
+        if (
+          !fundedUnits.has(credit.unit) &&
+          convertDecimalToBaseUnits(credit.amount, credit.decimals) === '0'
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Enter an amount above zero. The node cannot store a new unit at zero.',
+            path: ['credits', index, 'amount'],
+          });
+        }
+      });
+      // The exact state that broke every purchase on this deployment: a key flagged
+      // usage-limited whose ledger has no row for the unit it pays in fails the credit
+      // gate with `Credit unit not found`, surfaced to the buyer as a bare 400
+      // 'Insufficient funds' with no purchase ever created.
+      if (val.usageLimited && val.credits.length === 0) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Enter a balance, or remove this unit',
-          path: ['credits', index, 'amount'],
-        });
-        return;
-      }
-      // Balances, not deltas: a negative balance is meaningless and the server
-      // rejects it anyway. Precision is checked against the unit's own decimals so
-      // an over-precise entry is refused instead of silently truncated on convert.
-      if (!isValidDecimalAmount(credit.amount, { decimals: credit.decimals })) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Enter a positive amount with at most ${credit.decimals} decimals`,
-          path: ['credits', index, 'amount'],
+          message:
+            'A usage-limited key needs at least one funded unit, or every payment it makes is rejected.',
+          path: ['credits'],
         });
       }
     });
-    // The exact state that broke every purchase on this deployment: a key flagged
-    // usage-limited whose ledger has no row for the unit it pays in fails the credit
-    // gate with `Credit unit not found`, surfaced to the buyer as a bare 400
-    // 'Insufficient funds' with no purchase ever created.
-    if (val.usageLimited && val.credits.length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          'A usage-limited key needs at least one funded unit, or every payment it makes is rejected.',
-        path: ['credits'],
-      });
-    }
-  });
+}
 
-type UpdateApiKeyFormValues = z.infer<typeof updateApiKeySchema>;
+type UpdateApiKeyFormValues = z.infer<ReturnType<typeof buildUpdateApiKeySchema>>;
 
 /**
  * Get a human-readable permission label from flags.
@@ -187,7 +216,9 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
   const initialCreditRows = useMemo<CreditRow[]>(
     () =>
       currentCredits.map((credit) => {
-        const decimals = creditOptions.find((option) => option.unit === credit.unit)?.decimals ?? 6;
+        // 0 for anything no preset describes, so the stored value round-trips exactly
+        // instead of being rescaled by an assumed 6dp.
+        const decimals = creditOptions.find((option) => option.unit === credit.unit)?.decimals ?? 0;
         let amount = credit.amount;
         try {
           amount = convertBaseUnitsToDecimal(credit.amount, decimals);
@@ -197,6 +228,11 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
         return { unit: credit.unit, amount, decimals };
       }),
     [currentCredits, creditOptions],
+  );
+
+  const updateApiKeySchema = useMemo(
+    () => buildUpdateApiKeySchema(new Set(currentCredits.map((credit) => credit.unit))),
+    [currentCredits],
   );
 
   const {
@@ -434,58 +470,67 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
               <Controller
                 control={control}
                 name="evmChains"
-                render={({ field }) => (
-                  <div className="flex flex-col gap-2">
-                    {/* Named for what it does. The node stores no "unlimited" state:
+                render={({ field }) => {
+                  // Membership, not count: ChainIdLimit can still name a chain this node
+                  // no longer configures, which makes the two counts match while the
+                  // boxes below disagree. Clicking "all" then took the already-all
+                  // branch and cleared every EVM grant on the key.
+                  const allEvmChainsSelected = evmChainOptions.every((chain) =>
+                    field.value.includes(chain.caip2Id),
+                  );
+                  return (
+                    <div className="flex flex-col gap-2">
+                      {/* Named for what it does. The node stores no "unlimited" state:
                         an omitted ChainIdLimit is expanded to the configured chain list
                         at creation (routes/api/api-key/index.ts), and on PATCH an omitted
                         one means unchanged. So "all" is a snapshot of today's chains, and
                         a chain configured later is not granted by it. */}
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        aria-label="Select all EVM chains"
-                        // Not 'indeterminate': the shared Checkbox styles only
-                        // data-[state=checked] and always renders its Check icon, so a
-                        // partial state paints a tick with no fill and reads as checked.
-                        checked={field.value.length === evmChainOptions.length}
-                        onCheckedChange={() =>
-                          field.onChange(
-                            field.value.length === evmChainOptions.length
-                              ? []
-                              : evmChainOptions.map((chain) => chain.caip2Id),
-                          )
-                        }
-                      />
-                      <label className="text-sm font-medium">
-                        All EVM chains configured on this node
-                      </label>
-                    </div>
-                    <Separator className="my-1" />
-                    {evmChainOptions.map((chain) => (
-                      <div key={chain.id} className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">
                         <Checkbox
-                          aria-label={chain.displayName}
-                          checked={field.value.includes(chain.caip2Id)}
-                          onCheckedChange={() => {
-                            if (field.value.includes(chain.caip2Id)) {
-                              field.onChange(
-                                field.value.filter((c: string) => c !== chain.caip2Id),
-                              );
-                            } else {
-                              field.onChange([...field.value, chain.caip2Id]);
-                            }
-                          }}
+                          aria-label="Select all EVM chains"
+                          // Not 'indeterminate': the shared Checkbox styles only
+                          // data-[state=checked] and always renders its Check icon, so a
+                          // partial state paints a tick with no fill and reads as checked.
+                          checked={allEvmChainsSelected}
+                          onCheckedChange={() =>
+                            field.onChange(
+                              allEvmChainsSelected
+                                ? []
+                                : evmChainOptions.map((chain) => chain.caip2Id),
+                            )
+                          }
                         />
-                        <label className="text-sm">
-                          {chain.displayName}{' '}
-                          <span className="font-mono text-xs text-muted-foreground">
-                            {chain.caip2Id}
-                          </span>
+                        <label className="text-sm font-medium">
+                          All EVM chains configured on this node
                         </label>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <Separator className="my-1" />
+                      {evmChainOptions.map((chain) => (
+                        <div key={chain.id} className="flex items-center gap-2">
+                          <Checkbox
+                            aria-label={chain.displayName}
+                            checked={field.value.includes(chain.caip2Id)}
+                            onCheckedChange={() => {
+                              if (field.value.includes(chain.caip2Id)) {
+                                field.onChange(
+                                  field.value.filter((c: string) => c !== chain.caip2Id),
+                                );
+                              } else {
+                                field.onChange([...field.value, chain.caip2Id]);
+                              }
+                            }}
+                          />
+                          <label className="text-sm">
+                            {chain.displayName}{' '}
+                            <span className="font-mono text-xs text-muted-foreground">
+                              {chain.caip2Id}
+                            </span>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                }}
               />
             </div>
           )}
