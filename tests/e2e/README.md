@@ -95,6 +95,11 @@ Set `E2E_MAX_WORKERS=1` to run the files one after another. Do that when you are
 debugging a stuck run: a worker buffers its console output until its test file
 finishes, so live progress is hidden while a long on-chain wait is in flight.
 
+Concurrent flows also make the API server slower to answer. `POST /payment` and
+`POST /purchase` are CPU-heavy and share one event loop with the schedulers, so
+three at once stretch a ~5s call past 20s. Raise `TEST_TIMEOUT_API` (CI uses
+`120000`) instead of accepting the 30s default, or requests abort mid-flow.
+
 ### One selling wallet per flow (optional)
 
 What still serializes is on chain. V1 takes one request per hot wallet per
