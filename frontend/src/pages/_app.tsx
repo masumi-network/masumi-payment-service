@@ -70,6 +70,14 @@ function ToastWrapper() {
 
 function ThemedApp({ Component, pageProps, router }: AppProps) {
   const isRouteChanging = useRef(false);
+  // Previous rail, so an explicit switch away from x402 can be told apart from a deep
+  // link that arrives already on the Cardano rail. Updated by the recorder effect
+  // below, which is declared BEFORE the guard effect so the transition is recorded
+  // before the guard reads it on the same render.
+  const previousRailRef = useRef<'cardano' | 'x402'>('cardano');
+  // Pathname the user switched away from the EVM rail on. The restore stays suppressed
+  // for that pathname until the pending navigation actually lands somewhere else.
+  const suppressRailRestoreOnPathRef = useRef<string | null>(null);
   const [isHealthy, setIsHealthy] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileWarningDismissed, setIsMobileWarningDismissed] = useState(false);
@@ -131,6 +139,28 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
     silentErrors: true,
   });
 
+  // Record a switch off the EVM rail before the guard effect below can act on it.
+  //
+  // Declared first and free of early returns, so the transition is observed on every
+  // run: folding this into the guard effect meant a run that bailed early (still
+  // loading, admin-only redirect) consumed the transition, and the next run could no
+  // longer tell the user's switch from a deep link.
+  //
+  // Keyed by pathname rather than by a single render, because `router.push` has not
+  // landed yet at this point. Next emits `routeChangeStart` only after an
+  // `await matchesMiddleware(...)` inside push, so `isRouteChanging` is still false
+  // here; without this key, picking a Cardano source on /x402/wallets was reverted to
+  // x402 and the pending navigation to '/' was then bounced on to /x402/dashboard.
+  useEffect(() => {
+    const switchedAway = previousRailRef.current === 'x402' && activeRail === 'cardano';
+    previousRailRef.current = activeRail;
+    if (switchedAway) {
+      suppressRailRestoreOnPathRef.current = router.pathname;
+    } else if (suppressRailRestoreOnPathRef.current !== router.pathname) {
+      suppressRailRestoreOnPathRef.current = null;
+    }
+  }, [activeRail, router.pathname]);
+
   useEffect(() => {
     // Non-admins cannot open admin-only routes — do this before waiting on
     // payment sources to load, or deep-links would mount those pages and fire admin APIs first.
@@ -187,7 +217,13 @@ function ThemedApp({ Component, pageProps, router }: AppProps) {
       apiKey &&
       isHealthy &&
       activeRail !== 'x402' &&
-      shouldRestoreX402Rail(router.pathname, x402Loading, x402ChainCount, isRouteChanging.current)
+      shouldRestoreX402Rail(
+        router.pathname,
+        x402Loading,
+        x402ChainCount,
+        isRouteChanging.current,
+        suppressRailRestoreOnPathRef.current === router.pathname,
+      )
     ) {
       setActiveRail('x402');
       return;
