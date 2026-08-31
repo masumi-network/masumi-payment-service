@@ -76,8 +76,7 @@ const MIN_SEED_LOVELACE = 2_000_000n;
 
 const startedAt = new Date();
 const OUT_DIR =
-	args.out ??
-	join(process.cwd(), 'hydra-l2-flow', 'evidence', 'bench', startedAt.toISOString().replace(/[:.]/g, '-'));
+	args.out ?? join(process.cwd(), 'hydra-l2-flow', 'evidence', 'bench', startedAt.toISOString().replace(/[:.]/g, '-'));
 
 function log(m: string) {
 	console.log(`[bench] ${new Date().toISOString().slice(11, 19)} ${m}`);
@@ -161,17 +160,14 @@ function attachListener(socket: WebSocket, state: ListenerState, wanted: Set<str
 			if (txId && wanted.has(txId)) {
 				state.invalidCount += 1;
 				state.lastProgressAt = now;
-				const reason =
-					(frame.validationError as { reason?: string } | undefined)?.reason ?? 'no reason given';
+				const reason = (frame.validationError as { reason?: string } | undefined)?.reason ?? 'no reason given';
 				state.invalidReasons.push(`${txId.slice(0, 12)}…: ${reason}`);
 				recordEvent('invalid', txId, now);
 			}
 			return;
 		}
 		if (tag === 'SnapshotConfirmed') {
-			const snapshot = frame.snapshot as
-				| { confirmed?: unknown[]; confirmedTransactions?: unknown[] }
-				| undefined;
+			const snapshot = frame.snapshot as { confirmed?: unknown[]; confirmedTransactions?: unknown[] } | undefined;
 			const entries = snapshot?.confirmed ?? snapshot?.confirmedTransactions ?? [];
 			state.snapshotCount += 1;
 			for (const entry of entries) {
@@ -254,7 +250,9 @@ async function main() {
 		await new Promise((r) => setTimeout(r, 100));
 	}
 	if (state.headStatus !== 'Open') {
-		throw new Error(`head status is ${state.headStatus ?? 'unknown'}, expected Open — open it with 00-open-head.mts first`);
+		throw new Error(
+			`head status is ${state.headStatus ?? 'unknown'}, expected Open — open it with 00-open-head.mts first`,
+		);
 	}
 	log(`connected to ${args.node} (hydra-node ${state.hydraNodeVersion ?? '?'}), head is Open`);
 	let headParticipants: number | null = null;
@@ -312,7 +310,13 @@ async function main() {
 		const [hash, indexStr] = ref.split('#');
 		// scriptSize 0 is required: without it mesh marks the input incomplete and
 		// demands a fetcher (which cannot serve not-yet-submitted chain outputs).
-		splitBuilder.txIn(hash, Number(indexStr), [{ unit: 'lovelace', quantity: String(out.value.lovelace) }], aliceAddr, 0);
+		splitBuilder.txIn(
+			hash,
+			Number(indexStr),
+			[{ unit: 'lovelace', quantity: String(out.value.lovelace) }],
+			aliceAddr,
+			0,
+		);
 	}
 	for (let k = 0; k < CHAINS; k++) {
 		splitBuilder.txOut(aliceAddr, [{ unit: 'lovelace', quantity: seedLovelace.toString() }]);
@@ -464,11 +468,11 @@ async function main() {
 	const all = chains.flat().map((tx) => ({ tx, timing: timings.get(tx.txId) }));
 	const validLatencies = all
 		.filter((e) => e.timing?.sent !== undefined && e.timing?.valid !== undefined)
-		.map((e) => (e.timing!.valid! - e.timing!.sent!))
+		.map((e) => e.timing!.valid! - e.timing!.sent!)
 		.sort((a, b) => a - b);
 	const confirmedLatencies = all
 		.filter((e) => e.timing?.sent !== undefined && e.timing?.confirmed !== undefined)
-		.map((e) => (e.timing!.confirmed! - e.timing!.sent!))
+		.map((e) => e.timing!.confirmed! - e.timing!.sent!)
 		.sort((a, b) => a - b);
 	const sentTimes = all.filter((e) => e.timing?.sent !== undefined).map((e) => e.timing!.sent!);
 	const confirmedTimes = all.filter((e) => e.timing?.confirmed !== undefined).map((e) => e.timing!.confirmed!);
@@ -526,13 +530,14 @@ async function main() {
 	writeFileSync(join(OUT_DIR, 'events.ndjson'), events.join('\n') + '\n');
 	const latencyCaveat =
 		MODE === 'saturation'
-			? '\n> Latency here is measured **under saturation** (snapshot batching inflates it).\n' +
-				'> Use a `--mode latency` run for the <500ms per-payment claim.\n'
+			? `\n> Latency here is measured **under saturation**, with ${WINDOW} transactions in\n` +
+				"> flight. That queue sets the wait, not the head: by Little's Law it is about\n" +
+				'> window / TPS. Use a `--mode latency` run for the per-payment finality figure.\n'
 			: '\n> Sequential round-trips: each payment waits for multi-signed snapshot\n' +
-				'> confirmation before the next is sent — this is per-payment finality latency.\n';
+				'> confirmation before the next is sent, so this is per-payment finality latency.\n';
 	writeFileSync(
 		join(OUT_DIR, 'SUMMARY.md'),
-		`# Hydra L2 benchmark — ${MODE} — ${startedAt.toISOString()}\n\n` +
+		`# Hydra L2 benchmark: ${MODE}, ${startedAt.toISOString()}\n\n` +
 			`| metric | value |\n|---|---|\n` +
 			`| transactions sent / valid / confirmed | ${result.results.sent} / ${result.results.valid} / ${result.results.confirmed} |\n` +
 			`| **TPS (snapshot-confirmed)** | **${result.results.tpsConfirmed ?? 'n/a'}** |\n` +
@@ -541,7 +546,7 @@ async function main() {
 			`| latency to valid p50 / p95 / p99 (ms) | ${result.results.latencyMsToValid.p50} / ${result.results.latencyMsToValid.p95} / ${result.results.latencyMsToValid.p99} |\n` +
 			`| snapshots (avg txs each) | ${result.results.snapshots} (${result.results.txsPerSnapshot ?? 'n/a'}) |\n` +
 			`| invalid | ${result.results.invalid} |\n` +
-			`| config | ${CHAINS} chains × ${HOPS} hops, ${result.config.txShape} |\n` +
+			`| config | ${CHAINS} chains × ${HOPS} hops, window ${result.config.window}, ${result.config.txShape} |\n` +
 			`| hydra-node | ${result.environment.hydraNodeVersion}, ${result.environment.headParticipants}-party head |\n` +
 			`| hardware | ${result.environment.hardware}, ${result.environment.os} |\n` +
 			latencyCaveat,
