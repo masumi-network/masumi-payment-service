@@ -7,6 +7,7 @@ import {
   creditDeltas,
   creditRowProblem,
   creditUnitOptionsForKey,
+  normalizeCreditUnit,
   shortenCreditUnit,
   type CreditUnitOption,
 } from './api-key-credit-units';
@@ -405,5 +406,64 @@ test('creditRowProblem allows the largest balance int8 can hold', () => {
   assert.equal(
     creditRowProblem({ unit: '', amount: '9223372036854775807', decimals: 0 }, NO_FUNDED_UNITS),
     undefined,
+  );
+});
+
+test('normalizeCreditUnit folds lovelace onto the canonical ADA unit', () => {
+  // The server rewrites the unit it stores, so a 'lovelace' row is an ADA row that
+  // has not been touched since. Treating it as its own asset is what let the dialog
+  // offer an edit PATCH cannot express.
+  assert.equal(normalizeCreditUnit('lovelace'), ADA_CREDIT_UNIT);
+  assert.equal(normalizeCreditUnit('Lovelace'), ADA_CREDIT_UNIT);
+  assert.equal(normalizeCreditUnit(ADA_CREDIT_UNIT), ADA_CREDIT_UNIT);
+});
+
+test('normalizeCreditUnit lowercases a checksummed EVM unit', () => {
+  assert.equal(
+    normalizeCreditUnit('eip155:8453:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'),
+    'eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+  );
+});
+
+test('normalizeCreditUnit leaves a Cardano native asset verbatim', () => {
+  // Asset-name hex is case-significant and the credit gate matches it byte for byte,
+  // so lowercasing one here would group two genuinely different assets.
+  const unit = 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d';
+  assert.equal(normalizeCreditUnit(unit), unit);
+});
+
+test('consolidateCreditRows folds a legacy lovelace row into the ADA row', () => {
+  // The reported bug: two editable rows for one asset. Removing the 3 ADA row sent a
+  // delta the server normalized onto '' and took off the live balance instead.
+  assert.deepEqual(
+    consolidateCreditRows([
+      { unit: '', amount: '5000000' },
+      { unit: 'lovelace', amount: '3000000' },
+    ]),
+    [{ unit: '', amount: '8000000' }],
+  );
+});
+
+test('consolidateCreditRows folds EVM rows that differ only in address case', () => {
+  assert.deepEqual(
+    consolidateCreditRows([
+      { unit: 'eip155:8453:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', amount: '10' },
+      { unit: 'eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', amount: '5' },
+    ]),
+    [{ unit: 'eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', amount: '15' }],
+  );
+});
+
+test('consolidateCreditRows keeps distinct Cardano assets apart', () => {
+  const usdm = 'c48cbb3d5e57ed56e276bc45f99ab39abe94e6cd7ac39fb402da47ad0014df105553444d';
+  assert.deepEqual(
+    consolidateCreditRows([
+      { unit: '', amount: '1' },
+      { unit: usdm, amount: '2' },
+    ]),
+    [
+      { unit: '', amount: '1' },
+      { unit: usdm, amount: '2' },
+    ],
   );
 });
