@@ -28,7 +28,12 @@ import {
 	updateAPIKeySchemaInput,
 	updateAPIKeySchemaOutput,
 } from './schemas';
-import { consolidateUsageCredits, findNonCanonicalEvmCreditUnit, normalizeCreditUnit } from './credit-units';
+import {
+	consolidateUsageCredits,
+	findNonCanonicalEvmCreditUnit,
+	normalizeCreditUnit,
+	planCreditDelta,
+} from './credit-units';
 import {
 	computePermissionFromFlags,
 	flagsFromLegacyPermission,
@@ -413,13 +418,18 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 							deltasByUnit.set(unit, (deltasByUnit.get(unit) ?? 0n) + BigInt(usageCredit.amount));
 						}
 						for (const [unit, delta] of deltasByUnit) {
-							const existingCredit = apiKey.RemainingUsageCredits.find(
-								(credit) => normalizeCreditUnit(credit.unit) == unit,
-							);
-							if (existingCredit) {
-								const nextAmount = existingCredit.amount + delta;
-								if (nextAmount < 0n) {
-									throw createHttpError(400, 'Invalid amount');
+							// Applied across EVERY row carrying the unit, not just the first one
+							// found. Duplicate rows read as a single balance everywhere else, so
+							// resolving one row here refused edits the real balance covered and let
+							// a removal land on the wrong row.
+							const plan = planCreditDelta(apiKey.RemainingUsageCredits, unit, delta);
+							if (plan === null) {
+								throw createHttpError(400, 'Invalid amount');
+							}
+							if (plan.updateId !== null) {
+								// Fold the duplicates away first, so the unit is left on one row.
+								if (plan.deleteIds.length > 0) {
+									await prisma.unitValue.deleteMany({ where: { id: { in: plan.deleteIds } } });
 								}
 								// A zeroed row is KEPT, not deleted: it is the record that this key
 								// is capped on that chain and asset, and the operator can top it up
@@ -429,17 +439,14 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 								// zeroed allowances is easier to reason about than one that hides
 								// them.
 								await prisma.unitValue.update({
-									where: { id: existingCredit.id },
-									data: { amount: nextAmount, unit },
+									where: { id: plan.updateId },
+									data: { amount: plan.amount, unit },
 								});
 							} else {
-								if (delta <= 0n) {
-									throw createHttpError(400, 'Invalid amount');
-								}
 								await prisma.unitValue.create({
 									data: {
 										unit,
-										amount: delta,
+										amount: plan.amount,
 										apiKeyId: apiKey.id,
 										agentFixedPricingId: null,
 										paymentRequestId: null,
