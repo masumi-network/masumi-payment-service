@@ -274,7 +274,7 @@ export const addAPIKeyEndpointPost = adminAuthenticatedEndpointFactory.build({
 		const chainIdLimit = isAdmin ? [] : (input.ChainIdLimit ?? (await allConfiguredEvmChainIds(input.NetworkLimit)));
 		// Fail closed on a unit that was meant to be an EVM credit but is not exactly
 		// eip155:<chainId>:0x<40 hex>: stored verbatim it would never match the debit
-		// lookup and would leave the key's x402 spending uncapped while looking funded.
+		// lookup, so payments would fail despite the displayed balance.
 		const badUnit = findNonCanonicalEvmCreditUnit(input.UsageCredits.map((credit) => credit.unit));
 		if (badUnit != null) {
 			throw createHttpError(
@@ -390,11 +390,12 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 					if (!apiKey) {
 						throw createHttpError(404, 'API key not found');
 					}
-					if (input.UsageCreditsToAddOrRemove) {
+					if (input.UsageCreditsToAddOrRemove || input.usageLimited === true) {
+						const requestedUsageCredits = input.UsageCreditsToAddOrRemove ?? [];
 						// Same fail-closed check as the create path: an EVM-ish unit that is
 						// not exactly eip155:<chainId>:0x<40 hex> would never match the debit
-						// lookup and would leave the key's x402 spending uncapped.
-						const badUnit = findNonCanonicalEvmCreditUnit(input.UsageCreditsToAddOrRemove.map((credit) => credit.unit));
+						// lookup, so payments would fail despite the displayed balance.
+						const badUnit = findNonCanonicalEvmCreditUnit(requestedUsageCredits.map((credit) => credit.unit));
 						if (badUnit != null) {
 							throw createHttpError(
 								400,
@@ -407,7 +408,7 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 						// row and then updated the deleted id (raw P2025 500, whole PATCH lost),
 						// and two positive deltas for a new unit created two rows for it.
 						const deltasByUnit = new Map<string, bigint>();
-						for (const usageCredit of input.UsageCreditsToAddOrRemove) {
+						for (const usageCredit of requestedUsageCredits) {
 							// Match and store the normalized unit: the x402 debit looks credits up
 							// by the lowercased form, so a checksummed top-up would otherwise
 							// create (or leave) a row the payment path can never match. Comparing
@@ -415,6 +416,17 @@ export const updateAPIKeyEndpointPatch = adminAuthenticatedEndpointFactory.build
 							// of stranding it next to a new lowercase one.
 							const unit = normalizeCreditUnit(usageCredit.unit);
 							deltasByUnit.set(unit, (deltasByUnit.get(unit) ?? 0n) + BigInt(usageCredit.amount));
+						}
+						// Enabling the cap must also repair stored aliases. The update dialog
+						// displays `lovelace` as `''` and checksummed EVM units in lowercase, so
+						// an unchanged balance sends no delta. Seed a zero delta for each stored
+						// unit so the plan below consolidates and writes its canonical form before
+						// the limited key starts using exact-unit lookups.
+						if (input.usageLimited === true) {
+							for (const credit of apiKey.RemainingUsageCredits) {
+								const unit = normalizeCreditUnit(credit.unit);
+								if (!deltasByUnit.has(unit)) deltasByUnit.set(unit, 0n);
+							}
 						}
 						for (const [unit, delta] of deltasByUnit) {
 							// Applied across EVERY row carrying the unit, not just the first one
