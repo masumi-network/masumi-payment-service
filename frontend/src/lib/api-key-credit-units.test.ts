@@ -6,6 +6,7 @@ import {
   consolidateCreditRows,
   creditDeltas,
   creditRowProblem,
+  creditUnitGroupsForKey,
   creditUnitOptionsForKey,
   normalizeCreditUnit,
   shortenCreditUnit,
@@ -69,6 +70,51 @@ test('an EVM chain the node does not know contributes nothing', () => {
     evmNetworks: [BASE_MAINNET],
   });
   assert.deepEqual(options, []);
+});
+
+test('a configured EVM chain without presets keeps a custom-asset group', () => {
+  const groups = creditUnitGroupsForKey({
+    networkLimit: [],
+    chainIdLimit: ['eip155:137'],
+    evmNetworks: [
+      {
+        caip2Id: 'eip155:137',
+        displayName: 'Polygon',
+        defaultAsset: null,
+        defaultAssetDecimals: null,
+      },
+    ],
+  });
+
+  assert.deepEqual(groups, [
+    {
+      groupId: 'eip155:137',
+      group: 'Polygon',
+      customChain: { kind: 'evm', caip2Id: 'eip155:137' },
+    },
+  ]);
+});
+
+test('an unconfigured EVM chain does not create a custom-asset group', () => {
+  const groups = creditUnitGroupsForKey({
+    networkLimit: [],
+    chainIdLimit: ['eip155:999999'],
+    evmNetworks: [BASE_MAINNET],
+  });
+
+  assert.deepEqual(groups, []);
+});
+
+test('ADA is offered once when both Cardano networks are allowed', () => {
+  const options = creditUnitOptionsForKey({
+    networkLimit: ['Mainnet', 'Preprod'],
+    chainIdLimit: [],
+    evmNetworks: [],
+  });
+  const ada = options.filter((option) => option.unit === ADA_CREDIT_UNIT);
+
+  assert.equal(ada.length, 1);
+  assert.equal(ada[0]?.group, 'Cardano Mainnet and Preprod');
 });
 
 test('a chain configured with its own default asset wins over the preset', () => {
@@ -323,6 +369,7 @@ test('Cardano and EVM group ids never collide', () => {
     evmNetworks: [BASE_MAINNET],
   });
   assert.deepEqual([...new Set(options.map((option) => option.groupId))].sort(), [
+    'cardano:all',
     'cardano:mainnet',
     'cardano:preprod',
     'eip155:8453',
@@ -333,8 +380,8 @@ const NO_FUNDED_UNITS = new Set<string>();
 
 test('creditRowProblem refuses a new unit at zero, whatever shape the zero takes', () => {
   // creditDeltas drops a zero delta and the request omits the field entirely, so the
-  // save reports success and creates nothing. For x402 that leaves a key its operator
-  // believes is capped spending against the wallet's whole balance.
+  // save reports success and creates nothing. The operator would see a unit that the
+  // ledger never stored, while matching payments remain blocked.
   for (const amount of ['0', '0.0', '0.00', '.0', '0.']) {
     assert.match(
       creditRowProblem({ unit: '', amount, decimals: 6 }, NO_FUNDED_UNITS) ?? '',
