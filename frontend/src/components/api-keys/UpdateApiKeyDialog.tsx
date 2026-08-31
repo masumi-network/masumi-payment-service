@@ -39,6 +39,7 @@ import {
   usageCreditDeltas,
   type UpdateApiKeyFormValues,
 } from '@/components/api-keys/update-api-key-form';
+import { walletScopeProblem } from '@/components/api-keys/wallet-scope.helpers';
 import { Switch } from '@/components/ui/switch';
 
 interface UpdateApiKeyDialogProps {
@@ -594,12 +595,11 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                       <Checkbox
                         aria-label="Restrict to specific wallets"
                         checked={field.value}
-                        onCheckedChange={(checked) => {
-                          field.onChange(checked);
-                          if (!checked) {
-                            setValue('walletScopeIds', []);
-                          }
-                        }}
+                        // The selection survives an untick. Clearing it here made
+                        // untick-then-retick, a net-zero action on screen, save
+                        // walletScopeEnabled with an empty list: a deny-all key.
+                        // Submit already sends [] while the box is off.
+                        onCheckedChange={(checked) => field.onChange(checked)}
                       />
                     )}
                   />
@@ -655,10 +655,17 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                       ))
                     )}
                   </div>
-                  {walletScopeIds.length > 0 && (
+                  {walletScopeIds.length > 0 ? (
                     <p className="text-xs text-muted-foreground">
                       {walletScopeIds.length} wallet{walletScopeIds.length !== 1 ? 's' : ''}{' '}
                       selected
+                    </p>
+                  ) : (
+                    // Shown from the watched value, like the credits rule, so the reason
+                    // Update is blocked is on screen. Nothing named this state before: the
+                    // count line hid itself at zero, so a deny-all read as a tidy list.
+                    <p className="text-xs text-destructive">
+                      {walletScopeProblem(true, walletScopeIds)}
                     </p>
                   )}
                 </div>

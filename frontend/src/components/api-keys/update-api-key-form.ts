@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { convertDecimalToBaseUnits } from '@/lib/convertDecimalToBaseUnits';
 import { creditDeltas, creditRowProblem } from '@/lib/api-key-credit-units';
+import { walletScopeProblem } from '@/components/api-keys/wallet-scope.helpers';
 
 /** Mirrors updateAPIKeySchemaInput.UsageCreditsToAddOrRemove.max(25). */
 export const MAX_USAGE_CREDIT_DELTAS = 25;
@@ -44,6 +45,24 @@ export function buildUpdateApiKeySchema(currentCredits: StoredCredit[]) {
       evmChains: z.array(z.string()),
     })
     .superRefine((value, context) => {
+      // Wallet scope first: it is checked for every key, capped or not, so it has to
+      // sit above the uncapped early return below.
+      const walletScope = walletScopeProblem(value.walletScopeEnabled, value.walletScopeIds);
+      if (walletScope !== undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: walletScope,
+          path: ['walletScopeIds'],
+        });
+      }
+      const x402Scope = walletScopeProblem(value.x402WalletScopeEnabled, value.x402WalletScopeIds);
+      if (x402Scope !== undefined) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: x402Scope,
+          path: ['x402WalletScopeIds'],
+        });
+      }
       // An unlimited key ignores stored credits and sends no credit deltas.
       if (!value.usageLimited) return;
 
