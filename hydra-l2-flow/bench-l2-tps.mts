@@ -76,7 +76,8 @@ const MIN_SEED_LOVELACE = 2_000_000n;
 
 const startedAt = new Date();
 const OUT_DIR =
-	args.out ?? join(process.cwd(), 'hydra-l2-flow', 'evidence', 'bench', startedAt.toISOString().replace(/[:.]/g, '-'));
+	args.out ??
+	join(process.cwd(), 'hydra-l2-flow', 'evidence', 'bench', startedAt.toISOString().replace(/[:.]/g, '-'));
 
 function log(m: string) {
 	console.log(`[bench] ${new Date().toISOString().slice(11, 19)} ${m}`);
@@ -160,14 +161,17 @@ function attachListener(socket: WebSocket, state: ListenerState, wanted: Set<str
 			if (txId && wanted.has(txId)) {
 				state.invalidCount += 1;
 				state.lastProgressAt = now;
-				const reason = (frame.validationError as { reason?: string } | undefined)?.reason ?? 'no reason given';
+				const reason =
+					(frame.validationError as { reason?: string } | undefined)?.reason ?? 'no reason given';
 				state.invalidReasons.push(`${txId.slice(0, 12)}…: ${reason}`);
 				recordEvent('invalid', txId, now);
 			}
 			return;
 		}
 		if (tag === 'SnapshotConfirmed') {
-			const snapshot = frame.snapshot as { confirmed?: unknown[]; confirmedTransactions?: unknown[] } | undefined;
+			const snapshot = frame.snapshot as
+				| { confirmed?: unknown[]; confirmedTransactions?: unknown[] }
+				| undefined;
 			const entries = snapshot?.confirmed ?? snapshot?.confirmedTransactions ?? [];
 			state.snapshotCount += 1;
 			for (const entry of entries) {
@@ -250,9 +254,7 @@ async function main() {
 		await new Promise((r) => setTimeout(r, 100));
 	}
 	if (state.headStatus !== 'Open') {
-		throw new Error(
-			`head status is ${state.headStatus ?? 'unknown'}, expected Open — open it with 00-open-head.mts first`,
-		);
+		throw new Error(`head status is ${state.headStatus ?? 'unknown'}, expected Open — open it with 00-open-head.mts first`);
 	}
 	log(`connected to ${args.node} (hydra-node ${state.hydraNodeVersion ?? '?'}), head is Open`);
 	let headParticipants: number | null = null;
@@ -310,13 +312,7 @@ async function main() {
 		const [hash, indexStr] = ref.split('#');
 		// scriptSize 0 is required: without it mesh marks the input incomplete and
 		// demands a fetcher (which cannot serve not-yet-submitted chain outputs).
-		splitBuilder.txIn(
-			hash,
-			Number(indexStr),
-			[{ unit: 'lovelace', quantity: String(out.value.lovelace) }],
-			aliceAddr,
-			0,
-		);
+		splitBuilder.txIn(hash, Number(indexStr), [{ unit: 'lovelace', quantity: String(out.value.lovelace) }], aliceAddr, 0);
 	}
 	for (let k = 0; k < CHAINS; k++) {
 		splitBuilder.txOut(aliceAddr, [{ unit: 'lovelace', quantity: seedLovelace.toString() }]);
@@ -468,11 +464,11 @@ async function main() {
 	const all = chains.flat().map((tx) => ({ tx, timing: timings.get(tx.txId) }));
 	const validLatencies = all
 		.filter((e) => e.timing?.sent !== undefined && e.timing?.valid !== undefined)
-		.map((e) => e.timing!.valid! - e.timing!.sent!)
+		.map((e) => (e.timing!.valid! - e.timing!.sent!))
 		.sort((a, b) => a - b);
 	const confirmedLatencies = all
 		.filter((e) => e.timing?.sent !== undefined && e.timing?.confirmed !== undefined)
-		.map((e) => e.timing!.confirmed! - e.timing!.sent!)
+		.map((e) => (e.timing!.confirmed! - e.timing!.sent!))
 		.sort((a, b) => a - b);
 	const sentTimes = all.filter((e) => e.timing?.sent !== undefined).map((e) => e.timing!.sent!);
 	const confirmedTimes = all.filter((e) => e.timing?.confirmed !== undefined).map((e) => e.timing!.confirmed!);
