@@ -76,7 +76,10 @@ hydra-l2-flow/preprod/*.pid
 hydra-l2-flow/preprod/protocol-parameters*.json
 
 # Hydra L2 E2E — generated evidence reports (regenerate via run-hydra-e2e.sh evidence)
-hydra-l2-flow/evidence/
+# Exploratory bench runs stay local; the canonical settled run ships with the PR
+# so a reviewer can check every claim (the report cites these paths).
+hydra-l2-flow/evidence/*
+!hydra-l2-flow/evidence/2026-08-31-settled/
 
 # Hydra Host build output
 packages/*/dist/

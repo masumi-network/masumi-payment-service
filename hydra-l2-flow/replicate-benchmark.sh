@@ -247,14 +247,20 @@ cmd_escrow(){
 
   local buyer seller need
   buyer="$(pnpm exec tsx hydra-l2-flow/01-wallet.mts 2>/dev/null | grep -oE 'addr_test1q[a-z0-9]+' | head -1)"
-  # Must scope to the V2 payment source: the seed creates Selling wallets for
-  # BOTH V1 and V2, and an unscoped LIMIT 1 happily returns the V1 one — which
-  # funds an address the head never sees, and the escrow bench then starves.
+  # Resolve the seller EXACTLY as bench-escrow-e2e.mts does: via the head's
+  # HydraRelation -> RemoteWallet vkey. The old query took the first V2 Selling
+  # wallet with `LIMIT 1` and no ORDER BY, which is non-deterministic once more
+  # than one exists (04-fix-seller.mts adds one each time it runs, and the reseed
+  # does not remove the old ones). On 2026-08-31 that funded one seller while the
+  # bench checked another, and the bench aborted with "needs ~20 ADA in-head".
   seller="$(docker exec "$DB_CONTAINER" psql -U postgres -d masumi_hydra_test -t -A -c \
-    "SELECT hw.\"walletAddress\" FROM \"HotWallet\" hw
-       JOIN \"PaymentSource\" ps ON ps.id = hw.\"paymentSourceId\"
+    "SELECT hw.\"walletAddress\"
+       FROM \"HydraHead\" hh
+       JOIN \"HydraRelation\" hr ON hr.id = hh.\"hydraRelationId\"
+       JOIN \"WalletBase\" rw     ON rw.id = hr.\"remoteWalletId\"
+       JOIN \"HotWallet\" hw      ON hw.\"walletVkey\" = rw.\"walletVkey\"
       WHERE hw.type='Selling' AND hw.\"deletedAt\" IS NULL
-        AND ps.\"paymentSourceType\"='Web3CardanoV2' AND ps.\"deletedAt\" IS NULL
+      ORDER BY hh.\"createdAt\" DESC
       LIMIT 1;")"
   [ -n "$seller" ] || { red "  could not resolve the V2 Selling wallet"; return 1; }
   need=$(( ESCROWS * 4 + 10 ))
@@ -286,7 +292,13 @@ cmd_escrow(){
   fund_in_head "$buyer" $(( need * 1000000 )) buyer || return 1
   fund_in_head "$seller" 20000000 seller || return 1
 
+  # PIPESTATUS, not the pipe's status: the bench signals a PARTIAL run with
+  # exit 3, and a partial run leaves escrow script UTxOs in the head — which
+  # is what makes fanout fail on Plutus ex-units later. grep's 0 hid that.
   pnpm exec tsx hydra-l2-flow/bench-escrow-e2e.mts "$ESCROWS" 2>&1 | grep -E "Phase [ABC] done|RESULT|FATAL"
+  local rc=${PIPESTATUS[0]}
+  [ "$rc" -eq 0 ] || red "  bench-escrow-e2e exited $rc — escrows may be left open; settle will refuse to close"
+  return "$rc"
 }
 
 # ── timeline ─────────────────────────────────────────────────────────────────
@@ -299,6 +311,76 @@ cmd_timeline(){
     | tee hydra-l2-flow/evidence/timeline/head-timeline.txt
 }
 
+# ── settle : drain escrows, then Close -> Fanout so the result lands on L1 ───
+# Fanout takes the WHOLE UTxO set in ONE transaction (`Fanout` is a parameterless
+# client input; fanoutTx uses numberOfFanoutOutputs = UTxO.size utxo), so every
+# escrow script UTxO still in the head must validate inside a single Plutus
+# evaluation. 2026-08-28: 29 such UTxOs overspent the CPU budget by 39M units on
+# a 6.5KB tx — under the size limit, so partial fanout never triggered, and all
+# 24 retries rebuilt the identical failing transaction. Hence the drain gate.
+cmd_settle(){
+  # Timestamped, not date-only: two runs on the same day used to write into the
+  # same directory and the second silently overwrote the first's anchors.
+  local run_dir="${RUN_DIR:-$REPO/hydra-l2-flow/evidence/run-$(date -u +%Y-%m-%dT%H-%M-%SZ)}"
+  mkdir -p "$run_dir"
+  blue "[settle] evidence -> $run_dir"
+
+  # Capture the head id BEFORE Close: after fanout the node returns to Idle and
+  # /head no longer carries it, and it is what identifies our transactions on a
+  # head script address every head on the network shares.
+  local head_id
+  head_id="$(curl -s --max-time 8 "$NODE1/head" | grep -oE '"headId":"[a-f0-9]{56}"' | head -1 | cut -d'"' -f4)"
+  [ -n "$head_id" ] && blue "[settle] head $head_id" || red "[settle] could not read head id — anchors may be incomplete"
+
+  blue "[settle] draining escrows (this is the fanout-safety gate)"
+  if ! pnpm exec tsx hydra-l2-flow/16-drain-escrows.mts; then
+    red "  drain did not reach zero script UTxOs — NOT closing."
+    red "  An OPEN head keeps those funds spendable on L2; a CLOSED one whose"
+    red "  fanout fails freezes them (2026-08-28: 189.8 tADA stranded)."
+    return 1
+  fi
+
+  blue "[settle] consolidating in-head UTxOs (fewer fanout outputs)"
+  pnpm exec tsx hydra-l2-flow/consolidate-head-funds.mts || red "  (consolidate failed — continuing)"
+
+  blue "[settle] capturing pre-close head state (signed snapshot + UTxO map)"
+  CAPTURE_ROOT="$run_dir/snapshots" ./hydra-l2-flow/95-capture-head-state.sh pre-close || true
+
+  blue "[settle] Close -> contestation -> Fanout"
+  NETWORK=preprod ./hydra-l2-flow/run-hydra-e2e.sh settle \
+    || red "  (settle reported a failure — the chain is checked below regardless)"
+
+  blue "[settle] capturing post-fanout head state"
+  CAPTURE_ROOT="$run_dir/snapshots" ./hydra-l2-flow/95-capture-head-state.sh post-fanout || true
+
+  cp "$REPO/hydra-l2-flow/.native-state/settlement.json" "$run_dir/settlement.json" 2>/dev/null || true
+  blue "[settle] recording L1 anchors from the chain"
+  pnpm exec tsx hydra-l2-flow/17-record-l1-anchors.mts \
+    ${head_id:+--head-id "$head_id"} --out "$run_dir/l1-anchors.json"
+
+  # settlement.json's close/fanout hashes come from a node1.log scrape and have
+  # been wrong (2026-08-31: a closeTx that returns 404). The chain wins.
+  if [ -f "$run_dir/l1-anchors.json" ] && [ -f "$run_dir/settlement.json" ]; then
+    node -e '
+      const fs=require("fs");
+      const a=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+      const s=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));
+      let changed=false;
+      for (const k of ["closeTx","fanoutTx"]) {
+        if (a[k] && s[k]!==a[k]) { s[k+"FromLogScrape"]=s[k]; s[k]=a[k]; changed=true; }
+      }
+      if (changed) { fs.writeFileSync(process.argv[2], JSON.stringify(s,null,2)+"\n"); console.log("  settlement.json reconciled with the chain"); }
+    ' "$run_dir/l1-anchors.json" "$run_dir/settlement.json" || true
+  fi
+
+  local fan; fan="$(node -pe 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).fanoutTx||""' "$run_dir/l1-anchors.json" 2>/dev/null)"
+  if [ -n "$fan" ]; then
+    green "[settle] FANOUT ON L1: https://preprod.cardanoscan.io/transaction/$fan"
+  else
+    red "[settle] no fanout found on chain — the head did not finalize"
+  fi
+}
+
 cmd_all(){
   # db and head must succeed — everything downstream needs a funded head.
   cmd_db || { red "db step failed"; return 1; }
@@ -306,12 +388,14 @@ cmd_all(){
   # The measurement steps are independent: a skip (e.g. raw-ram on Linux) or a
   # single failure must not silently swallow the ones after it.
   cmd_raw     || red "  (raw bench did not complete)"
-  cmd_raw_ram || red "  (ram bench skipped or failed — continuing)"
+  # raw-ram is deliberately NOT in `all`: it copies the head's persistence onto a
+  # RAM disk and restarts the nodes mid-run, which is the riskiest thing we do to
+  # a head that still has to Close and Fanout. It is also macOS-only and, as the
+  # report says, a diagnostic rather than a deployment. Run it on its own.
   cmd_escrow  || red "  (escrow bench did not complete)"
+  cmd_settle  || red "  (settle did not complete — head may still be OPEN)"
   cmd_timeline
   green "=== done — evidence in hydra-l2-flow/evidence/ ==="
-  red   "NOTE: the head is left OPEN with ADA inside. Collect escrows before closing:"
-  red   "      fanout of a head holding many script UTxOs fails on Plutus ex-units."
 }
 
 # No default: `all` opens a head and commits real tADA, so it must be asked for
@@ -324,5 +408,6 @@ case "${1:-}" in
   raw-ram)  cmd_raw_ram ;;
   escrow)   cmd_escrow ;;
   timeline) cmd_timeline ;;
-  *) echo "usage: $0 {all|db|head|raw|raw-ram|escrow|timeline}"; exit 2 ;;
+  settle)   cmd_settle ;;
+  *) echo "usage: $0 {all|db|head|raw|raw-ram|escrow|timeline|settle}"; exit 2 ;;
 esac

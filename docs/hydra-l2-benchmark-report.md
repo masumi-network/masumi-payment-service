@@ -1,6 +1,6 @@
 # Masumi on Hydra L2 — benchmark report
 
-**Date:** 2026-08-28 · **Network:** Cardano **preprod** (real testnet) · **hydra-node:** 2.3.0
+**Date:** 2026-08-31 · **Network:** Cardano **preprod** (real testnet) · **hydra-node:** 2.3.0
 **Topology:** 2-party head (purchasing ⇄ selling)
 
 Everything below was measured on the live preprod network, not a local devnet. Raw evidence
@@ -16,19 +16,27 @@ Everything below was measured on the live preprod network, not a local devnet. R
 One agent paying another inside the head — a plain 1-input/1-output ADA transfer, zero fee, no
 smart contract. This is what the Catalyst milestone means by "agent-to-agent transactions".
 
-| Persistence | Sustained throughput | Latency per payment (p50) |
-|---|---|---|
-| Mac SSD | **96.8 TPS** | **38 ms** |
-| RAM disk | **1,128–1,148 TPS** | **2.7 ms** |
+| Persistence | Sustained throughput | Latency per payment (p50) | Run |
+|---|---|---|---|
+| Mac SSD | **100.0 TPS** | **39 ms** | 2026-08-31, settled on-chain |
+| Mac SSD | 96.8 TPS | 38 ms | 2026-08-28 |
+| RAM disk | **1,128–1,148 TPS** | **2.7 ms** | 2026-08-28 (diagnostic, see §3) |
 
 Every run: 10,000 transactions, **100 % confirmed, zero invalid**.
 
 **Milestone targets — 500+ TPS and under 500 ms — are met.**
 
+The 2026-08-31 SSD run is the one to cite: it is the only run whose head was also **closed and
+fanned out back to L1**, so its throughput and its settlement are the same head (§4). The RAM-disk
+figure was not re-measured that day.
+
 ### Masumi escrow payments (the product)
 
 A real Masumi payment is three transactions against the `vested_pay` V2 contract, driven by the
-payment service's own code. 20 of 20 lifecycles completed.
+payment service's own code. 20 of 20 lifecycles completed (2026-08-28, N=20).
+
+On 2026-08-31 the full refund lifecycle — lock → request-refund → authorize-refund → collect-refund —
+ran inside the settled head, 4/4 `TxValid`, each step confirming `head id == Masumi DB hash`.
 
 | Step | Rate | What happens on-chain |
 |---|---|---|
@@ -113,10 +121,48 @@ harness reported. Regenerate with `replicate-benchmark.sh timeline`.
 2026-08-28T13:43:32Z  CommitFinalized
 ```
 
+### On-chain anchors
+
+The 2026-08-31 run settled end to end on preprod. Head id
+`d276058a22ad180bc94bfc89d85d6c02c5e5a110dd5ddcd759f213b1`; view any hash at
+`https://preprod.cardanoscan.io/transaction/<hash>`.
+
+| Role | Tx | Block | Time (UTC) |
+|---|---|---|---|
+| funding/split | `b6bc7f589d2688cdd281290f9d3b4711e055c25c6798907b84a7549cd4972b55` | 5121783 | 13:40:38 |
+| **Init** | `29a86185fc14e956c3f2abdc32487c246be13deea28882d5fa147b5064bc4996` | 5121789 | 13:41:58 |
+| **Increment** | `4b7b61735af539bf39a6899e6558f42f39b75e887327a412486cd1966d2a2daa` | 5121818 | 13:52:30 |
+| **Close** | `171d99ddaa6545fe6795bd81546aa1bd5dfc23186764dfd0b6435823fd9ba2bf` | 5121841 | 14:01:02 |
+| **Fanout** | `2108fdf624e313ddbd79ad83669130bf360827b7288909cd4e7b51bca52cfc83` | 5121860 | 14:10:21 |
+
+Close and Fanout both consume assets whose minting policy **is** that head id, so they provably
+belong to this head and no other. Fanout burns all three head tokens and pays **200.000000 ADA**
+back to L1 — 10 + 45 + 5 ADA to the buyer, 25 ADA to the seller, 115 ADA to the node wallet. That
+split is the net result of everything that happened inside the head.
+
+### Why the L2 transactions are not on Cardanoscan
+
+They never touch L1, which is the entire point of a head. Cardano L1 tops out near 10-15 TPS, so
+100 TPS cannot exist there, and running the same 10,000 transactions on L1 would cost roughly
+1,700 tADA in fees rather than zero. **Their absence from L1 is the result, not a gap in it** —
+verified by sampling tx ids from `events.ndjson.gz` against Blockfrost, which returns HTTP 404.
+
+What proves the throughput is the **multi-signed `ConfirmedSnapshot`** captured in
+`evidence/2026-08-31-settled/snapshots/`: signed by both hydra-nodes rather than by our harness, and
+its balances equal the Fanout outputs above. That equality is the bridge from L2 back to L1.
+
 ### Evidence layout
 
 | Path | Contents |
 |---|---|
+| `evidence/2026-08-31-settled/SUMMARY.md` | headline numbers, Cardanoscan table, copy-paste verification |
+| `evidence/2026-08-31-settled/l1-anchors.json` | every L1 tx: role, block, slot, `valid_contract`, Cardanoscan URL |
+| `evidence/2026-08-31-settled/settlement.json` | closeTx / fanoutTx (reconciled against the chain), lovelace settled |
+| `evidence/2026-08-31-settled/snapshots/` | `/snapshot` (multi-signed), `/snapshot/utxo`, `/head` — both nodes, pre-close and post-fanout |
+| `evidence/2026-08-31-settled/bench/*/events.ndjson.gz` | **every transaction**, with sent / valid / confirmed timings |
+| `evidence/2026-08-31-settled/head-timeline.{json,txt}` | head history from hydra-node's own event store |
+
+---|---|
 | `evidence/bench/<ts>/result.json` | per-run config + results |
 | `evidence/bench/<ts>/events.ndjson` | **every transaction**, with sent / valid / confirmed timings |
 | `evidence/bench/2026-08-28-VERIFICATION-RERUN.md` | the reproduction comparison |
@@ -142,10 +188,16 @@ executed inside the head.
 
 1. **Linux/NVMe confirmation.** The claim that a real server approaches the RAM-disk figure is
    reasoned from fsync costs, not yet measured. One droplet run would settle it.
-2. **Fanout limit.** Settling a head that still holds many open escrow UTxOs fails: the fanout
-   transaction overspends the Plutus execution budget (~39 M CPU units over) even though the
-   transaction is only 6.5 KB, so Hydra's size-based partial fanout never triggers. **Collect
-   escrows before closing.** Funds remain safe and recoverable — fanout has no deadline.
+2. **Fanout and open script UTxOs.** Fanout takes the whole UTxO set in one transaction, so every
+   escrow script UTxO left in the head is validated inside a single Plutus evaluation. On 2026-08-28
+   a head carrying 29 of them (~480-byte inline datums) overspent the execution budget by 39 M units
+   on a 6.5 KB transaction — under the size limit, so Hydra's size-based partial fanout never
+   triggered, and retrying rebuilt the identical failing transaction. Mitigated by
+   `16-drain-escrows.mts`, which drives every terminal L2 cycle before Close and refuses to close
+   above a calibrated ceiling (default 10; the measured failure point is ~28). The 2026-08-31 run
+   closed and fanned out cleanly with this gate in place. Upstream splitting fanout on execution
+   units — not only on transaction size — still looks like a genuine gap worth reporting.
+
 3. **Refund and dispute flows** were not part of this measurement (validated separately in July).
 4. **Escrow throughput tuning.** Batching more escrows per cron tick is untested and is the most
    promising lever.
@@ -161,6 +213,7 @@ executed inside the head.
 ./hydra-l2-flow/replicate-benchmark.sh raw       # raw L2 bench, SSD
 ./hydra-l2-flow/replicate-benchmark.sh raw-ram   # raw L2 bench, RAM disk
 ./hydra-l2-flow/replicate-benchmark.sh escrow    # escrow lifecycles
+./hydra-l2-flow/replicate-benchmark.sh settle    # drain -> Close -> Fanout -> L1 anchors
 ./hydra-l2-flow/replicate-benchmark.sh timeline  # node-recorded history
 
 # or the whole thing (~50 min)
@@ -177,6 +230,11 @@ executed inside the head.
 - macOS for the `raw-ram` step only (`hdiutil`/`diskutil`); every other step is portable
 
 Run subcommands individually rather than `all` the first time — `head` commits real tADA.
+
+Do **not** override `CONTESTATION_PERIOD` or `DEPOSIT_PERIOD`. Both were tried on 2026-08-31 and
+both broke the run: a 60 s contestation period shrinks the head datum and lowers its stored
+`headAdaOverhead` (Close then fails H65 `ChangedHeadAdaOverhead`), and a 120 s deposit period
+expired the deposit before the increment could land.
 
 **Cost:** opening a head commits `COMMIT_ADA` (default 110) into it. Until the fanout issue above is
 resolved, that ADA stays in the head unless all escrows are collected before closing.
