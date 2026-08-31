@@ -133,11 +133,10 @@ The exact values, rationale, and the three blockers this harness shook out
 and runs Prisma migrate + seed against it. Your dev DB on 5432 is untouched.
 `down` removes it.
 
-The preprod benchmark uses port 5434 for the same container name, because 5433 is
-often already taken. Running both harnesses on one machine therefore collides: the
-second one calls `docker start` on the existing container, which keeps the port it
-was created with, and then connects to the other port. Run `down` before switching
-harnesses, or set `DB_CONTAINER` to a distinct name.
+The preprod benchmark keeps its own container, `masumi-hydra-bench-db` on port 5434,
+so both harnesses can sit on one machine. If you ran the benchmark before that split
+it may have left a `masumi-hydra-test-db` holding 5434; remove it with
+`docker rm -f masumi-hydra-test-db` and rerun.
 
 ### Useful env overrides
 

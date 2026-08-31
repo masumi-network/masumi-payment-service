@@ -40,7 +40,11 @@ NETWORK=preprod
 export NETWORK HYDRA_FLOW_NETWORK="$NETWORK"
 NODE1="${NODE1:-http://127.0.0.1:4001}"
 PREPROD_DIR="$REPO/hydra-l2-flow/preprod"
-DB_CONTAINER="${DB_CONTAINER:-masumi-hydra-test-db}"
+# Deliberately NOT run-hydra-e2e.sh's masumi-hydra-test-db. Both harnesses reuse an
+# existing container by name via `docker start`, and a container keeps the port it
+# was created with, so one shared name across two ports connects this harness to
+# the devnet harness's database (or the reverse) without saying so.
+DB_CONTAINER="${DB_CONTAINER:-masumi-hydra-bench-db}"
 DB_PORT="${DB_PORT:-5434}"          # 5433 often taken by another project
 export DATABASE_URL="postgresql://postgres:testpass@localhost:${DB_PORT}/masumi_hydra_test?schema=public"
 COMMIT_ADA="${COMMIT_ADA:-110}"
@@ -67,13 +71,32 @@ head_ada(){ curl -s --max-time 8 "$NODE1/snapshot/utxo" | jq '[to_entries[].valu
 cmd_db(){
   blue "[db] test Postgres on :$DB_PORT"
   if docker ps -a --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
+    local mapped
+    mapped=$(docker port "$DB_CONTAINER" 5432/tcp 2>/dev/null | head -1 | sed 's/.*://')
+    if [ -n "$mapped" ] && [ "$mapped" != "$DB_PORT" ]; then
+      red "  $DB_CONTAINER already exists publishing :$mapped, but DB_PORT is $DB_PORT."
+      red "  A container keeps the port it was created with. Pick one:"
+      red "    docker rm -f $DB_CONTAINER      # recreate it on :$DB_PORT"
+      red "    DB_PORT=$mapped $0 db           # keep the existing one"
+      return 1
+    fi
     docker start "$DB_CONTAINER" >/dev/null 2>&1
-  else
-    docker run -d --name "$DB_CONTAINER" -e POSTGRES_PASSWORD=testpass \
-      -e POSTGRES_DB=masumi_hydra_test -p "${DB_PORT}:5432" postgres:15 >/dev/null
+  elif ! docker run -d --name "$DB_CONTAINER" -e POSTGRES_PASSWORD=testpass \
+      -e POSTGRES_DB=masumi_hydra_test -p "${DB_PORT}:5432" postgres:15 >/dev/null; then
+    red "  could not create $DB_CONTAINER on :$DB_PORT. Is the port already taken?"
+    red "  Before this script used its own container name it shared"
+    red "  masumi-hydra-test-db; an old one may still hold :$DB_PORT."
+    return 1
   fi
   for _ in $(seq 1 30); do docker exec "$DB_CONTAINER" pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
-  npx prisma migrate deploy --config prisma/prisma.config.ts >/dev/null 2>&1
+  # pg_isready runs inside the container, so it proves nothing about the published
+  # port that DATABASE_URL actually uses. migrate deploy is the first thing to cross
+  # that boundary, so let it report instead of swallowing the failure: cmd_all gates
+  # on this return code before cmd_head commits real tADA.
+  if ! npx prisma migrate deploy --config prisma/prisma.config.ts >/dev/null 2>&1; then
+    red "  prisma migrate deploy failed against $DATABASE_URL"
+    return 1
+  fi
   npx prisma db seed --config prisma/prisma.config.ts >/dev/null 2>&1
   # 60s cooldown shortens the contractual wait before collection is legal.
   docker exec "$DB_CONTAINER" psql -U postgres -d masumi_hydra_test \
