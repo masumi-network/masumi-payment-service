@@ -4167,7 +4167,7 @@ export type PatchApiKeyData = {
          */
         UsageCreditsToAddOrRemove?: Array<{
             /**
-             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA). For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", or "<caip2Network>:native" for the gas token.
+             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA); "lovelace" is accepted and stored as the empty string. For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913". Gas-token units are not supported.
              */
             unit: string;
             /**
@@ -4176,11 +4176,11 @@ export type PatchApiKeyData = {
             amount: string;
         }>;
         /**
-         * Whether the API key is usage limited
+         * Whether the API key is usage limited. Omit to leave it unchanged.
          */
         usageLimited?: boolean;
         /**
-         * The status of the API key
+         * The status of the API key. Omit to leave it unchanged.
          */
         status?: 'Active' | 'Revoked';
         /**
@@ -4255,7 +4255,7 @@ export type PatchApiKeyResponse = PatchApiKeyResponses[keyof PatchApiKeyResponse
 export type PostApiKeyData = {
     body?: {
         /**
-         * Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend
+         * Whether the API key is usage limited. Meaning only allowed to use the specified credits or can freely spend. Omitted defaults to true for non-admin keys; admin keys are never usage limited.
          */
         usageLimited?: string;
         /**
@@ -4263,7 +4263,7 @@ export type PostApiKeyData = {
          */
         UsageCredits: Array<{
             /**
-             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA). For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", or "<caip2Network>:native" for the gas token.
+             * Asset policy id + asset name concatenated. Use an empty string for ADA/lovelace e.g (1000000 lovelace = 1 ADA); "lovelace" is accepted and stored as the empty string. For x402/EVM spending the unit is chain-qualified as "<caip2Network>:<assetAddress>" (lowercased), e.g. "eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913". Gas-token units are not supported.
              */
             unit: string;
             /**

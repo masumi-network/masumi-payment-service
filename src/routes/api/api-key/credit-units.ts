@@ -23,6 +23,18 @@ const EVM_CREDIT_UNIT_ISH = /^eip155:/i;
  * verbatim because asset-name hex is case-significant on that side.
  */
 export function normalizeCreditUnit(unit: string): string {
+	// 'lovelace' is the same asset as '', and the purchase path only ever presents it as
+	// ''. Every requested unit goes through normalizePurchaseUnit
+	// (src/utils/shared/transformers.ts) before the cost reaches the credit gate, and that
+	// gate compares units verbatim against RemainingUsageCredits. A row stored as
+	// 'lovelace' could therefore never match an ADA purchase: the key failed with
+	// `Credit unit not found:` for a balance the dashboard showed as funded, and the
+	// operator had no way to tell the two apart. Canonicalising on write also repairs an
+	// existing 'lovelace' row, because the update path matches rows on the normalized
+	// form and rewrites the unit it stores.
+	if (unit.toLowerCase() === 'lovelace') {
+		return '';
+	}
 	return EVM_CREDIT_UNIT.test(unit) ? unit.toLowerCase() : unit;
 }
 
