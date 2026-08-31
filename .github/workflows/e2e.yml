@@ -178,6 +178,15 @@ jobs:
           DATABASE_URL: '${{ steps.create-branch.outputs.connection_uri }}'
           PURCHASE_WALLET_PREPROD_MNEMONIC: '${{ secrets.PURCHASE_WALLET_PREPROD_MNEMONIC }}'
           SELLING_WALLET_PREPROD_MNEMONIC: '${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC }}'
+          # Optional extra selling wallets. globalSetup registers one agent per
+          # selling wallet, so each of these gives one more V1 flow file its own
+          # wallet instead of queueing behind the first (V1 processes one request
+          # per hot wallet per scheduler tick). Unset secrets arrive as empty
+          # strings and the seed skips them, which is the single-wallet default.
+          # Each mnemonic must be a distinct, FUNDED preprod wallet: an unfunded
+          # one still gets picked and stalls its flow.
+          SELLING_WALLET_PREPROD_MNEMONIC_2: '${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC_2 }}'
+          SELLING_WALLET_PREPROD_MNEMONIC_3: '${{ secrets.SELLING_WALLET_PREPROD_MNEMONIC_3 }}'
           # V2 mnemonics MUST be distinct from V1 mnemonics: HotWallet.walletVkey
           # is globally unique, so reusing V1 mnemonics would derive the same
           # vkeys and the V2 seed INSERT would fail with P2002
@@ -226,6 +235,32 @@ jobs:
           ENCRYPTION_KEY: '${{ secrets.ENCRYPTION_KEY }}'
           NODE_ENV: 'test'
           PORT: 3001
+          # Scheduler cadence. The production defaults (30s batching, 20s
+          # tx-sync, 15s for most actions) make every on-chain hop pay that
+          # latency twice: once for the action job that builds the tx and once
+          # for the tx-sync pass that observes it, plus a wallet-unlock tick
+          # before the next action on the same wallet.
+          #
+          # Only the jobs on the flow's critical path are shortened, and only to
+          # 10s. Running every job at its 5s floor (run 33393794038) put the API
+          # server at 17.5 scheduler job-seconds per wall second against 3.0 on
+          # the previous run, because a single job takes 1-6s and they all
+          # overlap on one event loop. Request latency followed: POST /purchase
+          # went from a 4.7s median to 21.5s, and one call passed the e2e
+          # client's timeout and failed a flow. The collection, withdrawal and
+          # auto-decision jobs are left at their defaults; no flow waits on them.
+          #
+          # Preprod block time still dominates, so this trims minutes, not hops.
+          BATCH_PAYMENT_INTERVAL: 10
+          CHECK_TX_INTERVAL: 15
+          CHECK_SET_REFUND_INTERVAL: 10
+          CHECK_UNSET_REFUND_INTERVAL: 10
+          CHECK_WALLET_TRANSACTION_HASH_INTERVAL: 10
+          CHECK_AUTHORIZE_REFUND_INTERVAL: 10
+          CHECK_SUBMIT_RESULT_INTERVAL: 10
+          REGISTER_AGENT_INTERVAL: 10
+          DEREGISTER_AGENT_INTERVAL: 10
+          CHECK_REGISTRY_TRANSACTIONS_INTERVAL: 10
 
       - name: Wait for Server Ready
         run: |
@@ -317,6 +352,18 @@ jobs:
           TEST_API_URL: http://127.0.0.1:3001
           TEST_NETWORK: Preprod
           TEST_TIMEOUT_REGISTRATION: 1800000
+          # Per-HTTP-request timeout, up from the 30s default. POST /payment and
+          # POST /purchase are CPU-heavy and share one event loop with the
+          # schedulers, so concurrent flows stretch them: run 33393794038
+          # measured a 21.5s median for POST /purchase and lost a flow to the
+          # 30s abort. These tests assert business flow, not latency.
+          TEST_TIMEOUT_API: 120000
+          # Agents (and therefore selling wallets) per payment source. Keep this
+          # in step with the SELLING_WALLET_PREPROD_MNEMONIC_* secrets set on the
+          # seed step above: asking for more agents than there are seeded wallets
+          # only logs a warning and shares wallets, but every wallet it does use
+          # must be funded. Default 1 = one agent per source, shared by all flows.
+          E2E_AGENTS_PER_SOURCE: 1
           DATABASE_URL: ${{ steps.create-branch.outputs.connection_uri }}
           BLOCKFROST_API_KEY_PREPROD: ${{ secrets.BLOCKFROST_API_KEY_PREPROD }}
 

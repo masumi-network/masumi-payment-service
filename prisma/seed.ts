@@ -45,6 +45,25 @@ function requireMnemonic(mnemonic: string | undefined, envName: string): string 
 	return mnemonic;
 }
 
+/**
+ * Read the optional numbered siblings of a wallet mnemonic env var, e.g.
+ * `SELLING_WALLET_PREPROD_MNEMONIC_2`, `..._3`, stopping at the first gap.
+ *
+ * Opt-in on purpose, and never brewed: an extra hot wallet that nobody funded
+ * still gets picked by the batch services, so seeding one without a mnemonic
+ * would stall real work. Absent env means the source keeps exactly the wallets
+ * it had before.
+ */
+function readExtraMnemonics(baseEnvName: string): string[] {
+	const mnemonics: string[] = [];
+	for (let index = 2; ; index++) {
+		const raw = process.env[`${baseEnvName}_${index}`];
+		if (raw == null || raw.trim() === '') break;
+		mnemonics.push(raw.trim());
+	}
+	return mnemonics;
+}
+
 async function queryLatestTxHash(blockfrostApiKey: string, smartContractAddress: string, networkLabel: string) {
 	const blockfrostApi = new BlockFrostAPI({
 		projectId: blockfrostApiKey,
@@ -260,6 +279,25 @@ export const seed = async (prisma: PrismaClient) => {
 				// secrets table and complicating manual recovery.
 				const purchasingUnusedAddress = (await purchasingWallet.getUnusedAddresses())[0];
 				const sellingUnusedAddress = (await sellingWallet.getUnusedAddresses())[0];
+				// Extra selling wallets, Preprod only. The e2e suite registers one
+				// agent per selling wallet so its concurrent flows stop queueing
+				// behind a single wallet (V1 processes one request per hot wallet
+				// per scheduler tick). Each extra mnemonic must be funded.
+				const extraSellingPreprod = await Promise.all(
+					readExtraMnemonics('SELLING_WALLET_PREPROD_MNEMONIC').map(async (mnemonic) => {
+						const wallet = new MeshWallet({
+							networkId: 0,
+							key: { type: 'mnemonic', words: mnemonic.split(' ') },
+						});
+						return {
+							address: (await wallet.getUnusedAddresses())[0],
+							encryptedMnemonic: encrypt(mnemonic),
+						};
+					}),
+				);
+				if (extraSellingPreprod.length > 0) {
+					console.log(`Seeding ${extraSellingPreprod.length} extra Preprod selling wallet(s) from env.`);
+				}
 				await prisma.$transaction(async (tx) => {
 					const purchasingWalletSecretId = await tx.walletSecret.create({
 						data: { encryptedMnemonic: purchasingWalletSecret },
@@ -267,6 +305,20 @@ export const seed = async (prisma: PrismaClient) => {
 					const sellingWalletSecretId = await tx.walletSecret.create({
 						data: { encryptedMnemonic: sellingWalletSecret },
 					});
+					const extraSellingWallets = [];
+					for (const extra of extraSellingPreprod) {
+						const secret = await tx.walletSecret.create({
+							data: { encryptedMnemonic: extra.encryptedMnemonic },
+						});
+						extraSellingWallets.push({
+							walletVkey: resolvePaymentKeyHash(extra.address),
+							walletAddress: extra.address,
+							note: 'Created by seeding (extra selling wallet)',
+							type: HotWalletType.Selling,
+							secretId: secret.id,
+							collectionAddress: collectionWalletPreprodAddress,
+						});
+					}
 					await tx.paymentSource.create({
 						data: {
 							smartContractAddress: smartContractAddress,
@@ -312,6 +364,7 @@ export const seed = async (prisma: PrismaClient) => {
 											secretId: sellingWalletSecretId.id,
 											collectionAddress: collectionWalletPreprodAddress,
 										},
+										...extraSellingWallets,
 									],
 								},
 							},
