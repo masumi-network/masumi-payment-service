@@ -1,5 +1,10 @@
 import { describe, expect, it } from '@jest/globals';
-import { consolidateUsageCredits, findNonCanonicalEvmCreditUnit, normalizeCreditUnit } from './credit-units';
+import {
+	consolidateUsageCredits,
+	findNonCanonicalEvmCreditUnit,
+	normalizeCreditUnit,
+	planCreditDelta,
+} from './credit-units';
 
 describe('normalizeCreditUnit', () => {
 	it('lowercases a checksummed EVM chain-qualified unit', () => {
@@ -103,5 +108,112 @@ describe('consolidateUsageCredits', () => {
 
 	it('throws on a negative amount', () => {
 		expect(() => consolidateUsageCredits([{ unit: 'lovelace', amount: -1n }])).toThrow('Invalid amount');
+	});
+});
+
+describe('planCreditDelta', () => {
+	it('spends a balance split across duplicate rows', () => {
+		// The reported bug. 5 ADA + 3 ADA shows as 8, so lowering it to 1 sends -7.
+		// Resolving the first row alone took 5 to -2 and 400'd the whole PATCH for an
+		// edit the balance covers twice over.
+		const plan = planCreditDelta(
+			[
+				{ id: 'a', unit: '', amount: 5_000_000n },
+				{ id: 'b', unit: '', amount: 3_000_000n },
+			],
+			'',
+			-7_000_000n,
+		);
+		expect(plan).toEqual({ updateId: 'a', deleteIds: ['b'], amount: 1_000_000n });
+	});
+
+	it('folds a checksummed row into the canonical one it duplicates', () => {
+		// Both rows are the same ERC-20 to the debit path, which looks the unit up
+		// lowercased. Removing the 3 the stale row holds used to land on whichever row
+		// matched first, taking it off the live balance and leaving the stale row.
+		const canonical = 'eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+		const plan = planCreditDelta(
+			[
+				{ id: 'live', unit: canonical, amount: 5_000_000n },
+				{ id: 'stale', unit: 'eip155:8453:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', amount: 3_000_000n },
+			],
+			canonical,
+			-3_000_000n,
+		);
+		expect(plan).toEqual({ updateId: 'live', deleteIds: ['stale'], amount: 5_000_000n });
+	});
+
+	it('matches a checksummed EVM row from the canonical unit', () => {
+		const plan = planCreditDelta(
+			[{ id: 'a', unit: 'eip155:8453:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', amount: 10n }],
+			'eip155:8453:0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+			5n,
+		);
+		expect(plan).toEqual({ updateId: 'a', deleteIds: [], amount: 15n });
+	});
+
+	it('keeps a row that the delta zeroes', () => {
+		// A zeroed row is the record that the key is capped on that unit. Deleting it
+		// would read as "never capped" and lose the unit the operator would retype.
+		expect(planCreditDelta([{ id: 'a', unit: '', amount: 7n }], '', -7n)).toEqual({
+			updateId: 'a',
+			deleteIds: [],
+			amount: 0n,
+		});
+	});
+
+	it('consolidates duplicates even when the delta does not move the balance', () => {
+		// Reached by topping one unit up and back down in the same submit. The rows
+		// still need folding, otherwise the next edit hits the same split balance.
+		expect(
+			planCreditDelta(
+				[
+					{ id: 'a', unit: '', amount: 4n },
+					{ id: 'b', unit: '', amount: 6n },
+				],
+				'',
+				0n,
+			),
+		).toEqual({ updateId: 'a', deleteIds: ['b'], amount: 10n });
+	});
+
+	it('refuses an overdraw against the summed balance', () => {
+		expect(
+			planCreditDelta(
+				[
+					{ id: 'a', unit: '', amount: 5n },
+					{ id: 'b', unit: '', amount: 3n },
+				],
+				'',
+				-9n,
+			),
+		).toBeNull();
+	});
+
+	it('creates a row for a positive delta on an unfunded unit', () => {
+		expect(planCreditDelta([{ id: 'a', unit: '', amount: 5n }], 'other', 12n)).toEqual({
+			updateId: null,
+			deleteIds: [],
+			amount: 12n,
+		});
+	});
+
+	it('refuses a non-positive delta on an unfunded unit', () => {
+		// Nothing to remove from, and a zero grant is made through UsageCredits on
+		// create, not through a no-op delta here.
+		expect(planCreditDelta([], 'other', 0n)).toBeNull();
+		expect(planCreditDelta([], 'other', -1n)).toBeNull();
+	});
+
+	it('leaves rows for other units alone', () => {
+		const plan = planCreditDelta(
+			[
+				{ id: 'ada', unit: '', amount: 5n },
+				{ id: 'usdm', unit: 'c48cbb', amount: 9n },
+			],
+			'',
+			1n,
+		);
+		expect(plan).toEqual({ updateId: 'ada', deleteIds: [], amount: 6n });
 	});
 });
