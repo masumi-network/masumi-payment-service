@@ -36,6 +36,10 @@ import { formatSixDecimalAmount, shortenAddress } from '@/lib/utils';
 import Head from 'next/head';
 import { useRate } from '@/lib/hooks/useRate';
 import { WalletTableSkeleton } from '@/components/skeletons/WalletTableSkeleton';
+import {
+  tableActionsCellCompactClass,
+  tableActionsHeadCompactClass,
+} from '@/components/ui/table-actions-column';
 import { Spinner } from '@/components/ui/spinner';
 import { usePaginatedWallets } from '@/lib/queries/useWallets';
 import { TransakWidget } from '@/components/wallets/TransakWidget';
@@ -266,7 +270,7 @@ export default function WalletsPage() {
                   <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                     Balance, {network === 'Mainnet' ? 'USDCx' : 'tUSDM'}
                   </th>
-                  <th className="w-20 p-4 pr-8"></th>
+                  <th className={tableActionsHeadCompactClass}></th>
                 </tr>
               </thead>
               <tbody>
@@ -379,7 +383,7 @@ export default function WalletsPage() {
                             )}
                           </div>
                         </td>
-                        <td className="p-4 pr-8">
+                        <td className={tableActionsCellCompactClass}>
                           <div className="flex justify-end">
                             {/* Every action here (fund, top up, transfer, swap) is an
                                 admin-only endpoint, so the whole menu is admin-gated. */}

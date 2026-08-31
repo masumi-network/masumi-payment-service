@@ -18,6 +18,10 @@ import { Spinner } from '@/components/ui/spinner';
 import { Tabs } from '@/components/ui/tabs';
 import { WalletDetailsDialog, WalletWithBalance } from '@/components/wallets/WalletDetailsDialog';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
+import {
+  tableActionsCellCompactClass,
+  tableActionsHeadCompactClass,
+} from '@/components/ui/table-actions-column';
 import { RefreshButton } from '@/components/RefreshButton';
 import { InboxAgentDetailsDialog } from '@/components/inbox-agents/InboxAgentDetailsDialog';
 import { RegisterInboxAgentDialog } from '@/components/inbox-agents/RegisterInboxAgentDialog';
@@ -334,7 +338,7 @@ export default function InboxAgentsPage() {
                     <th className="p-4 text-left text-sm font-medium text-muted-foreground">
                       Status
                     </th>
-                    <th className="w-24 p-4 pr-8"></th>
+                    <th className={tableActionsHeadCompactClass}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -478,7 +482,7 @@ export default function InboxAgentsPage() {
                               {parseInboxAgentStatus(agent.state)}
                             </Badge>
                           </td>
-                          <td className="p-4 pr-8">
+                          <td className={tableActionsCellCompactClass}>
                             <div className="flex items-center gap-1">
                               <Button
                                 variant="ghost"

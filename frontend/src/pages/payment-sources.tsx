@@ -24,6 +24,10 @@ import { toast } from 'react-toastify';
 import { shortenAddress, cn } from '@/lib/utils';
 import Head from 'next/head';
 import { PaymentSourceTableSkeleton } from '@/components/skeletons/PaymentSourceTableSkeleton';
+import {
+  tableActionsCellCompactClass,
+  tableActionsHeadCompactClass,
+} from '@/components/ui/table-actions-column';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Dialog,
@@ -420,7 +424,7 @@ export default function PaymentSourcesPage() {
                     <th scope="col" className="p-4 text-left text-sm font-medium">
                       Wallets
                     </th>
-                    <th scope="col" className="w-20 p-4 pr-8"></th>
+                    <th scope="col" className={tableActionsHeadCompactClass}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -511,7 +515,10 @@ export default function PaymentSourcesPage() {
                             </span>
                           </div>
                         </td>
-                        <td className="p-4 pr-8" onClick={(e) => e.stopPropagation()}>
+                        <td
+                          className={tableActionsCellCompactClass}
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div className="flex gap-2">
                             <Button
                               variant="ghost"

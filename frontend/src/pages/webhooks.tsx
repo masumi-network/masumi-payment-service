@@ -15,6 +15,10 @@ import { RefreshButton } from '@/components/RefreshButton';
 import { SearchInput } from '@/components/ui/search-input';
 import { Tabs } from '@/components/ui/tabs';
 import { WebhookDialog } from '@/components/webhooks/WebhookDialog';
+import {
+  tableActionsCellWideClass,
+  tableActionsHeadWideClass,
+} from '@/components/ui/table-actions-column';
 import { useAppContext } from '@/lib/contexts/AppContext';
 import { useWebhooks } from '@/lib/hooks/useWebhooks';
 import { shortenAddress } from '@/lib/utils';
@@ -292,7 +296,7 @@ export default function WebhooksPage() {
               </th>
               <th
                 scope="col"
-                className="p-4 pr-6 text-right text-sm font-medium text-muted-foreground"
+                className={`${tableActionsHeadWideClass} text-sm font-medium text-muted-foreground`}
               >
                 Actions
               </th>
@@ -340,7 +344,7 @@ export default function WebhooksPage() {
                   <td className="p-4 text-sm text-muted-foreground">
                     {formatWebhookDate(webhook.updatedAt)}
                   </td>
-                  <td className="p-4 pr-6">
+                  <td className={tableActionsCellWideClass}>
                     <div className="flex justify-end gap-2">
                       <Button
                         type="button"

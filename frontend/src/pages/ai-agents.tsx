@@ -17,6 +17,7 @@ import { toast } from 'react-toastify';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import Head from 'next/head';
 import { AIAgentTableSkeleton } from '@/components/skeletons/AIAgentTableSkeleton';
+import { tableActionsCellClass, tableActionsHeadClass } from '@/components/ui/table-actions-column';
 import { Spinner } from '@/components/ui/spinner';
 import { useQueryClient } from '@tanstack/react-query';
 import { useContextAgents, type AgentRelation } from '@/lib/queries/useContextAgents';
@@ -578,7 +579,7 @@ export default function AIAgentsPage() {
                     >
                       Status
                     </th>
-                    <th scope="col" className="w-20 p-4 pr-8"></th>
+                    <th scope="col" className={tableActionsHeadClass}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -767,7 +768,7 @@ export default function AIAgentsPage() {
                               {parseAgentStatus(agent.state)}
                             </Badge>
                           </td>
-                          <td className="p-4 pr-8">
+                          <td className={tableActionsCellClass}>
                             {isDeregisterableAgentState(agent.state) ? (
                               <div className="flex items-center gap-1">
                                 {/* Manage actions (verify/update/delete) only apply to agents
