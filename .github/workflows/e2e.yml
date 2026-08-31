@@ -4,12 +4,24 @@ on:
   pull_request:
     branches: [dev]
 
-# Cancel an in-flight run when a newer commit lands on the same PR. E2E uses
-# real preprod wallets; stacking runs causes UTxO contention and burns CI
-# minutes on stale commits.
+# One e2e run at a time, repository-wide. Every run drives the SAME preprod
+# wallets, which are seeded from repository secrets and shared by every branch,
+# so two runs spend from one purchasing wallet at once. On 2026-08-31 that was
+# visible in every failure: the runs at 18:32 (three at once) and 19:28 (two at
+# once) failed, the second one on
+# `BadInputsUTxO` for an input the other run had just spent, while every run
+# that had the wallets to itself passed. The pair at 21:07 and 21:09 failed
+# differently and for the same reason: the first run's locks took the wallet
+# below the funding floor the second one checked.
+#
+# `cancel-in-progress: false` on purpose. Killing an e2e job mid-flow strands
+# whatever it has already locked in the escrow contract, which is real preprod
+# ADA that no later run gets back. A superseded commit therefore finishes its
+# run and the newer one waits. GitHub keeps only ONE pending run per group, so
+# a third push supersedes the queued run rather than piling up.
 concurrency:
-  group: e2e-${{ github.ref }}
-  cancel-in-progress: true
+  group: e2e-preprod-wallets
+  cancel-in-progress: false
 
 jobs:
   e2e:
