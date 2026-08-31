@@ -162,6 +162,28 @@ export function creditUnitOptionsForKey({
   return options;
 }
 
+/** The chain-qualified EVM credit unit the debit path stores, always lowercase. */
+const EVM_CREDIT_UNIT = /^eip155:\d+:0x[0-9a-fA-F]{40}$/;
+
+/**
+ * The unit a stored row is really about, matching `normalizeCreditUnit` on the server
+ * (src/routes/api/api-key/credit-units.ts).
+ *
+ * The dialog has to group rows the way PATCH resolves them, or the two disagree about
+ * what a row IS. 'lovelace' and '' are one asset to the server, and it rewrites the
+ * unit it stores, so showing them as two rows offered an edit the API cannot express:
+ * a delta for either one is normalized to '' and applied to the ADA balance. Removing
+ * the legacy row then drained the live one. EVM units differ only in address case for
+ * the same reason.
+ *
+ * Cardano native assets are NOT touched: asset-name hex is case-significant there and
+ * the credit gate matches it byte for byte.
+ */
+export function normalizeCreditUnit(unit: string): string {
+  if (unit.toLowerCase() === 'lovelace') return ADA_CREDIT_UNIT;
+  return EVM_CREDIT_UNIT.test(unit) ? unit.toLowerCase() : unit;
+}
+
 /**
  * Sum the ledger's rows per unit.
  *
@@ -171,13 +193,18 @@ export function creditUnitOptionsForKey({
  * one unit would otherwise become two editable fields sharing a React key, two deltas
  * both diffed against a single row's balance, and a "currently" hint that reads only
  * one of them.
+ *
+ * Grouped on the NORMALIZED unit, because that is what PATCH folds a delta onto. A
+ * legacy 'lovelace' row grouped on its own read as a second asset the operator could
+ * edit or remove separately, and neither edit meant what it looked like.
  */
 export function consolidateCreditRows(
   rows: Array<{ unit: string; amount: string }>,
 ): Array<{ unit: string; amount: string }> {
   const totals = new Map<string, bigint>();
   for (const row of rows) {
-    totals.set(row.unit, (totals.get(row.unit) ?? BigInt(0)) + BigInt(row.amount));
+    const unit = normalizeCreditUnit(row.unit);
+    totals.set(unit, (totals.get(unit) ?? BigInt(0)) + BigInt(row.amount));
   }
   return Array.from(totals, ([unit, amount]) => ({ unit, amount: amount.toString() }));
 }
