@@ -8,8 +8,9 @@
  *
  * Emits:
  *   - a LIFECYCLE section: head state transitions (Init/Open/Close/Fanout …)
- *   - a THROUGHPUT section: snapshot confirmations bucketed per second, so the
- *     TPS claim can be checked directly against the node's own record
+ *   - a THROUGHPUT section: transactions applied to the local UTxO set, bucketed
+ *     per second, so the TPS claim can be cross-checked against the node's own
+ *     record. Applied is not confirmed: see the NOTE at that query.
  *   - a TOTALS section: event counts by type
  *
  * Run:
@@ -25,7 +26,9 @@ import { execFileSync } from 'node:child_process';
 const args = process.argv.slice(2);
 const jsonFlagIndex = args.indexOf('--json');
 const jsonOut = jsonFlagIndex >= 0 ? args[jsonFlagIndex + 1] : undefined;
-const positional = args.filter((a, i) => !a.startsWith('--') && i !== jsonFlagIndex + 1);
+const positional = args.filter(
+	(a, i) => !a.startsWith('--') && !(jsonFlagIndex >= 0 && i === jsonFlagIndex + 1),
+);
 const PERSIST =
 	positional[0] ?? join(process.cwd(), 'hydra-l2-flow', 'preprod', 'persistence', 'purchasing');
 const DB = join(PERSIST, 'hydra.db');
@@ -168,9 +171,12 @@ function main() {
 						.map((r) => r.split('|'))
 						.filter(([, tag]) => LIFECYCLE.has(tag))
 						.map(([time, tag]) => ({ time, tag })),
+					// appliedTxs, not confirmedTxs: this counts TransactionAppliedToLocalUTxO,
+					// which the node records on receipt, before the snapshot is multi-signed.
+					// SnapshotConfirmed is the confirmation signal, counted in eventTotals.
 					busiestSeconds: perSec.map((r) => {
 						const [sec, txs] = r.split('|');
-						return { second: `${sec}Z`, confirmedTxs: Number(txs) };
+						return { second: `${sec}Z`, appliedTxs: Number(txs) };
 					}),
 					eventTotals: Object.fromEntries(
 						totals.map((r) => {
