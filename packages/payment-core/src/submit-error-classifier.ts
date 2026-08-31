@@ -38,6 +38,26 @@ export function isDefinitiveNodeRejection(error: unknown): boolean {
 }
 
 /**
+ * A `BadInputsUTxO` rejection is definitive, but it is not a defect in the tx:
+ * it says the ledger no longer holds an input the build referenced. In practice
+ * that means another transaction from the same wallet already spent it and the
+ * UTxO snapshot the build used was stale — Blockfrost's UTxO index can lag its
+ * transaction index by tens of seconds, so a wallet that funds two batches in
+ * quick succession can build the second one from a pre-spend view.
+ *
+ * Nothing was broadcast, so reverting is safe, and a rebuild from a fresh
+ * snapshot succeeds on its own. Callers therefore requeue these requests
+ * instead of parking them in WaitingForManualAction for an operator.
+ *
+ * Deliberately narrow: only this one pattern. Every other definitive rejection
+ * (script failure, missing witness, fee too small) repeats on a rebuild, and
+ * requeuing those would spin every tick until the request's deadline.
+ */
+export function isStaleInputRejection(error: unknown): boolean {
+	return /BadInputsUTxO/.test(collectErrorText(error));
+}
+
+/**
  * Collect every plausible message string reachable from an error value. Handles
  * raw strings, `Error` instances (whose `message` is non-enumerable), and the
  * nested plain-object shape Mesh/Blockfrost throws. Cycle- and depth-guarded.
