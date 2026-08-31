@@ -18,7 +18,7 @@
  *     [persistenceDir] [--json out.json]
  *   default persistenceDir: hydra-l2-flow/preprod/persistence/purchasing
  */
-import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -54,19 +54,28 @@ const LIFECYCLE = new Set([
 ]);
 
 /**
- * One snapshot copy per run, reused by every query and removed at exit.
- * Copying is required — the live DB has a hot WAL and must never be written to
- * — but the file is >100 MB, so copying per query would be both slow and a
- * disk-filling leak.
+ * One consistent snapshot per run, reused by every query and removed at exit.
+ * Snapshotting is required: the live DB has a hot WAL and must never be written
+ * to, and the file is >100 MB so re-reading it per query would be slow.
+ *
+ * `.backup` goes through SQLite's backup API rather than copying db, -wal and
+ * -shm as three separate files. That copy is not atomic. If the node checkpoints
+ * between the db copy and the WAL copy, the WAL is reset with a new salt, SQLite
+ * ignores it, and the read silently returns a state that never existed. Measured
+ * on a synthetic store holding 3000 rows: the three-file copy reported 2673, the
+ * backup reported 3000. This file is the audit trail behind the benchmark, so a
+ * silent under-count is the one failure it must not have.
  */
 let dbCopy: string | undefined;
 function snapshotDb(): string {
 	if (dbCopy) return dbCopy;
 	const dir = mkdtempSync(join(tmpdir(), 'hydra-timeline-'));
 	const copy = join(dir, 'hydra.db');
-	copyFileSync(DB, copy);
-	for (const suffix of ['-wal', '-shm']) {
-		if (existsSync(DB + suffix)) copyFileSync(DB + suffix, copy + suffix);
+	try {
+		execFileSync('sqlite3', [DB, `.backup ${JSON.stringify(copy)}`], { stdio: 'pipe' });
+	} catch (err) {
+		const detail = (err as { stderr?: Buffer }).stderr?.toString().trim() || String(err);
+		throw new Error(`sqlite3 .backup of ${DB} failed: ${detail}`);
 	}
 	dbCopy = copy;
 	process.on('exit', () => {
