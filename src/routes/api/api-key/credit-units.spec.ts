@@ -77,10 +77,8 @@ describe('findNonCanonicalEvmCreditUnit', () => {
 		['short address', 'eip155:8453:0x' + 'a'.repeat(39)],
 		['missing 0x', 'eip155:8453:' + 'a'.repeat(40)],
 	])('rejects a near-miss EVM unit (%s)', (_label, unit) => {
-		// These must FAIL CLOSED. Stored verbatim, none of them would ever match the
-		// x402 debit lookup, and the key would then hold no rows the enforcement
-		// probe recognizes — spending with no ceiling while the dashboard shows it
-		// as funded and usage limited.
+		// Stored verbatim, none of these units would match the exact x402 debit lookup.
+		// The dashboard would show credit while every matching payment returns 402.
 		expect(findNonCanonicalEvmCreditUnit([unit])).toBe(unit);
 	});
 
@@ -238,5 +236,60 @@ describe('planCreditDelta', () => {
 			1n,
 		);
 		expect(plan).toEqual({ updateId: 'ada', deleteIds: [], amount: 6n });
+	});
+
+	it('folds a legacy lovelace row into the ADA row it duplicates', () => {
+		// The dashboard shows one ADA balance, so an edit that lowers it to 1 sends -7
+		// against the pair. Applying that to the ADA row alone took 5 to -2 and 400'd.
+		expect(
+			planCreditDelta(
+				[
+					{ id: 'row-a', unit: '', amount: 5n },
+					{ id: 'row-b', unit: 'lovelace', amount: 3n },
+				],
+				'',
+				-7n,
+			),
+		).toEqual({ updateId: 'row-a', deleteIds: ['row-b'], amount: 1n });
+	});
+
+	it('keeps the exact canonical EVM row when an alias also exists', () => {
+		// x402 debits and refunds pin a row id, and the row they pin is the canonical
+		// one. Folding onto the alias instead would retire the id they hold.
+		const canonicalUnit = 'eip155:8453:0x' + 'ab'.repeat(20);
+		const alias = 'eip155:8453:0x' + 'AB'.repeat(20);
+		expect(
+			planCreditDelta(
+				[
+					{ id: 'row-a', unit: alias, amount: 2n },
+					{ id: 'row-b', unit: canonicalUnit, amount: 3n },
+				],
+				canonicalUnit,
+				1n,
+			),
+		).toEqual({ updateId: 'row-b', deleteIds: ['row-a'], amount: 6n });
+	});
+
+	it('keeps one zero row when the aggregate is fully removed', () => {
+		expect(
+			planCreditDelta(
+				[
+					{ id: 'row-a', unit: '', amount: 5n },
+					{ id: 'row-b', unit: 'lovelace', amount: 3n },
+				],
+				'',
+				-8n,
+			),
+		).toEqual({ updateId: 'row-a', deleteIds: ['row-b'], amount: 0n });
+	});
+
+	it('canonicalizes a legacy alias with the zero delta used when enabling the cap', () => {
+		// Turning the cap on seeds a zero delta per stored unit, so the row is rewritten
+		// under the unit the exact-match debit lookup uses.
+		expect(planCreditDelta([{ id: 'row-a', unit: 'lovelace', amount: 1_000_000n }], '', 0n)).toEqual({
+			updateId: 'row-a',
+			deleteIds: [],
+			amount: 1_000_000n,
+		});
 	});
 });

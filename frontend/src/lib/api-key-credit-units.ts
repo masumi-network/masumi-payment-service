@@ -36,7 +36,15 @@ export const UNKNOWN_GROUP_ID = 'unknown';
 export type CreditChain =
   | { kind: 'cardano'; network: CardanoNetwork }
   | { kind: 'evm'; caip2Id: string }
+  | { kind: 'shared-cardano' }
   | { kind: 'unknown' };
+
+export interface CreditUnitGroup {
+  groupId: string;
+  group: string;
+  /** Present only when the group can validate and qualify a custom asset. */
+  customChain?: CreditChain;
+}
 
 export interface CreditUnitOption {
   /** Exact string written to `UsageCreditsToAddOrRemove[].unit`. */
@@ -58,13 +66,14 @@ export interface CreditUnitOption {
   chain: CreditChain;
 }
 
-function cardanoOptions(network: CardanoNetwork): CreditUnitOption[] {
+function cardanoOptions(network: CardanoNetwork, includeAda: boolean): CreditUnitOption[] {
   const group = `Cardano ${network}`;
   const groupId = `cardano:${network.toLowerCase()}`;
   const chain: CreditChain = { kind: 'cardano', network };
   const usdm = getUsdmConfig(network);
-  const options: CreditUnitOption[] = [
-    {
+  const options: CreditUnitOption[] = [];
+  if (includeAda) {
+    options.push({
       unit: ADA_CREDIT_UNIT,
       label: 'ADA',
       groupId,
@@ -72,17 +81,17 @@ function cardanoOptions(network: CardanoNetwork): CreditUnitOption[] {
       identifier: 'lovelace',
       decimals: DEFAULT_CREDIT_DECIMALS,
       chain,
-    },
-    {
-      unit: usdm.fullAssetId,
-      label: network === 'Mainnet' ? 'USDM' : 'tUSDM',
-      groupId,
-      group,
-      identifier: usdm.fullAssetId,
-      decimals: DEFAULT_CREDIT_DECIMALS,
-      chain,
-    },
-  ];
+    });
+  }
+  options.push({
+    unit: usdm.fullAssetId,
+    label: network === 'Mainnet' ? 'USDM' : 'tUSDM',
+    groupId,
+    group,
+    identifier: usdm.fullAssetId,
+    decimals: DEFAULT_CREDIT_DECIMALS,
+    chain,
+  });
   if (network === 'Mainnet') {
     options.push({
       unit: USDCX_CONFIG.fullAssetId,
@@ -123,29 +132,68 @@ function evmOptions(caip2Id: string, networks: AssetPresetNetwork[]): CreditUnit
  * already holds a row for is included too, even an unrecognised or stale one, so a
  * balance is never invisible in the UI that is supposed to manage it.
  */
-export function creditUnitOptionsForKey({
-  networkLimit,
-  chainIdLimit,
-  evmNetworks,
-  existingUnits = [],
-}: {
+type CreditUnitCatalogParameters = {
   networkLimit: CardanoNetwork[];
   chainIdLimit: string[];
   evmNetworks: AssetPresetNetwork[];
   existingUnits?: string[];
-}): CreditUnitOption[] {
+};
+
+function buildCreditUnitCatalog({
+  networkLimit,
+  chainIdLimit,
+  evmNetworks,
+  existingUnits = [],
+}: CreditUnitCatalogParameters): {
+  options: CreditUnitOption[];
+  groups: CreditUnitGroup[];
+} {
   const options: CreditUnitOption[] = [];
-  for (const network of ['Mainnet', 'Preprod'] as const) {
-    if (networkLimit.includes(network)) options.push(...cardanoOptions(network));
+  const groups: CreditUnitGroup[] = [];
+  const cardanoNetworks = (['Mainnet', 'Preprod'] as const).filter((network) =>
+    networkLimit.includes(network),
+  );
+
+  if (cardanoNetworks.length > 1) {
+    const groupId = 'cardano:all';
+    const group = 'Cardano Mainnet and Preprod';
+    groups.push({ groupId, group });
+    options.push({
+      unit: ADA_CREDIT_UNIT,
+      label: 'ADA',
+      groupId,
+      group,
+      identifier: 'lovelace',
+      decimals: DEFAULT_CREDIT_DECIMALS,
+      chain: { kind: 'shared-cardano' },
+    });
   }
+
+  for (const network of cardanoNetworks) {
+    const groupId = `cardano:${network.toLowerCase()}`;
+    const group = `Cardano ${network}`;
+    const customChain: CreditChain = { kind: 'cardano', network };
+    groups.push({ groupId, group, customChain });
+    options.push(...cardanoOptions(network, cardanoNetworks.length === 1));
+  }
+
   for (const caip2Id of chainIdLimit.filter((chainId) => chainId.startsWith('eip155:'))) {
+    const network = evmNetworks.find((candidate) => candidate.caip2Id === caip2Id);
+    if (!network) continue;
+    groups.push({
+      groupId: caip2Id,
+      group: network.displayName,
+      customChain: { kind: 'evm', caip2Id },
+    });
     options.push(...evmOptions(caip2Id, evmNetworks));
   }
 
   const known = new Set(options.map((option) => option.unit));
+  let hasUnknownGroup = false;
   for (const unit of existingUnits) {
     if (known.has(unit)) continue;
     known.add(unit);
+    hasUnknownGroup = true;
     options.push({
       unit,
       label: unit === ADA_CREDIT_UNIT ? 'ADA' : shortenCreditUnit(unit),
@@ -159,7 +207,22 @@ export function creditUnitOptionsForKey({
       chain: { kind: 'unknown' },
     });
   }
-  return options;
+  if (hasUnknownGroup) {
+    groups.push({ groupId: UNKNOWN_GROUP_ID, group: 'Already on this key' });
+  }
+
+  return { options, groups };
+}
+
+export function creditUnitOptionsForKey(
+  parameters: CreditUnitCatalogParameters,
+): CreditUnitOption[] {
+  return buildCreditUnitCatalog(parameters).options;
+}
+
+/** Picker groups, including configured EVM chains that have no preset token yet. */
+export function creditUnitGroupsForKey(parameters: CreditUnitCatalogParameters): CreditUnitGroup[] {
+  return buildCreditUnitCatalog(parameters).groups;
 }
 
 /** The chain-qualified EVM credit unit the debit path stores, always lowercase. */
@@ -295,8 +358,8 @@ export function shortenCreditUnit(unit: string): string {
  *
  * A unit dropped from `next` is zeroed rather than ignored, because otherwise removing a
  * row in the UI left the stored balance untouched and the form lied about what it saved.
- * The server keeps a zeroed row on purpose: it is the record that the key is capped on
- * that unit, and deleting it would read as "never capped" to the x402 enforcement probe.
+ * The server keeps a zeroed row so the allowance stays visible and can be funded again
+ * without retyping the unit. Missing and zero balances both block a usage-limited key.
  */
 export function creditDeltas(
   current: Array<{ unit: string; amount: string }>,
@@ -342,8 +405,8 @@ export function creditRowProblem(
   }
   // A zero balance for a unit the ledger has no row for sends no delta at all
   // (creditDeltas skips it) and the server refuses to create one (400 'Invalid
-  // amount'). The save would report success and leave the unit uncapped, which for
-  // x402 means the key keeps spending with no ceiling.
+  // amount'). The save would report success but store no allowance. A usage-limited
+  // key would still reject payments for that unit.
   if (!fundedUnits.has(row.unit) && convertDecimalToBaseUnits(row.amount, row.decimals) === '0') {
     return 'Enter an amount above zero. The node cannot store a new unit at zero.';
   }

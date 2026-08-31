@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,7 @@ import {
   buildCustomCreditUnit,
   shortenCreditUnit,
   type CreditChain,
+  type CreditUnitGroup,
   type CreditUnitOption,
 } from '@/lib/api-key-credit-units';
 
@@ -33,10 +34,14 @@ export interface CreditRow {
 interface UsageCreditsFieldProps {
   /** Units this key can actually spend, derived from its own access list. */
   options: CreditUnitOption[];
+  /** Allowed chain groups, including chains with no preset token. */
+  groups: CreditUnitGroup[];
   rows: CreditRow[];
   /** The key's stored balances in base units, used for the "currently" hint. */
   current: Array<{ unit: string; amount: string }>;
   onChange: (rows: CreditRow[]) => void;
+  onBlur?: () => void;
+  inputRef?: (element: HTMLInputElement | null) => void;
   disabled?: boolean;
   /** Message per row index, keyed the same way the form validates. */
   rowErrors?: Record<number, string | undefined>;
@@ -72,16 +77,6 @@ function currentBalanceLabel(
   }
 }
 
-/** The chain a group's units settle on, read off any option already in that group. */
-function chainForGroup(options: CreditUnitOption[], groupId: string): CreditChain {
-  return options.find((option) => option.groupId === groupId)?.chain ?? { kind: 'unknown' };
-}
-
-/** The group's display name, which unlike its id is not guaranteed unique. */
-function nameForGroup(options: CreditUnitOption[], groupId: string): string {
-  return options.find((option) => option.groupId === groupId)?.group ?? groupId;
-}
-
 interface CustomEntry {
   groupId: string;
   groupName: string;
@@ -96,37 +91,43 @@ const CUSTOM_OPTION_PREFIX = 'custom:';
 
 export function UsageCreditsField({
   options,
+  groups,
   rows,
   current,
   onChange,
+  onBlur,
+  inputRef,
   disabled = false,
   rowErrors,
   customOptions,
   onCustomOptionsChange,
 }: UsageCreditsFieldProps) {
   const [customEntry, setCustomEntry] = useState<CustomEntry | null>(null);
+  const rowInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const firstErrorIndex = rows.findIndex((_, index) => rowErrors?.[index] !== undefined);
+  useEffect(() => {
+    if (firstErrorIndex >= 0) rowInputRefs.current[firstErrorIndex]?.focus();
+  }, [firstErrorIndex]);
   // Custom names first. Without them a just-added row falls back to 'unknown unit' and
   // puts its own elided id where the symbol belongs; and a unit already on the ledger
   // appears in `options` under that same elided id, so with lookups taking the first
   // match the operator's own name has to come first to win.
   const knownOptions = useMemo(() => [...customOptions, ...options], [customOptions, options]);
+  const groupById = useMemo(() => new Map(groups.map((group) => [group.groupId, group])), [groups]);
 
   const groupedAvailable = useMemo(() => {
     const taken = new Set(rows.map((row) => row.unit));
-    const groups = new Map<string, Array<{ option: CreditUnitOption; index: number }>>();
+    const available = new Map<string, Array<{ option: CreditUnitOption; index: number }>>(
+      groups.map((group) => [group.groupId, []]),
+    );
     options.forEach((option, index) => {
       if (taken.has(option.unit)) return;
-      const bucket = groups.get(option.groupId) ?? [];
+      const bucket = available.get(option.groupId) ?? [];
       bucket.push({ option, index });
-      groups.set(option.groupId, bucket);
+      available.set(option.groupId, bucket);
     });
-    // A group whose presets are all taken still needs a row, because the custom
-    // entry below lives inside it.
-    for (const option of options) {
-      if (!groups.has(option.groupId)) groups.set(option.groupId, []);
-    }
-    return Array.from(groups.entries());
-  }, [options, rows]);
+    return Array.from(available.entries());
+  }, [groups, options, rows]);
 
   const takenUnits = useMemo(() => new Set(rows.map((row) => row.unit)), [rows]);
 
@@ -134,8 +135,7 @@ export function UsageCreditsField({
   // ledger, and those cannot take a custom asset. Once they are all placed as rows the
   // picker has nothing left to offer, so it is hidden rather than opened onto nothing.
   const hasSomethingToAdd = groupedAvailable.some(
-    ([groupId, entries]) =>
-      entries.length > 0 || chainForGroup(options, groupId).kind !== 'unknown',
+    ([groupId, entries]) => entries.length > 0 || groupById.get(groupId)?.customChain !== undefined,
   );
 
   function addCustomUnit(entry: CustomEntry) {
@@ -210,11 +210,18 @@ export function UsageCreditsField({
               <div className="flex items-center gap-2">
                 <Input
                   id={`credit-${index}`}
+                  ref={(element) => {
+                    rowInputRefs.current[index] = element;
+                    if (index === 0) inputRef?.(element);
+                  }}
                   type="text"
                   inputMode="decimal"
                   disabled={disabled}
+                  aria-invalid={rowErrors?.[index] !== undefined}
+                  aria-describedby={rowErrors?.[index] ? `credit-${index}-error` : undefined}
                   value={row.amount}
                   placeholder="0.00"
+                  onBlur={onBlur}
                   onChange={(event) => {
                     const next = [...rows];
                     next[index] = { ...row, amount: event.target.value };
@@ -229,7 +236,11 @@ export function UsageCreditsField({
                 <span className="mr-1 uppercase opacity-70">unit id</span>
                 <span className="font-mono">{option?.identifier ?? row.unit}</span>
               </p>
-              {rowErrors?.[index] && <p className="text-xs text-destructive">{rowErrors[index]}</p>}
+              {rowErrors?.[index] && (
+                <p id={`credit-${index}-error`} role="alert" className="text-xs text-destructive">
+                  {rowErrors[index]}
+                </p>
+              )}
             </div>
             <Button
               type="button"
@@ -246,7 +257,7 @@ export function UsageCreditsField({
         );
       })}
 
-      {options.length === 0 ? (
+      {groups.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           This key has no Cardano network and no EVM chain in its access list, so there is nothing
           to fund yet.
@@ -261,10 +272,12 @@ export function UsageCreditsField({
             onValueChange={(value) => {
               if (value.startsWith(CUSTOM_OPTION_PREFIX)) {
                 const groupId = value.slice(CUSTOM_OPTION_PREFIX.length);
+                const group = groupById.get(groupId);
+                if (!group?.customChain) return;
                 setCustomEntry({
                   groupId,
-                  groupName: nameForGroup(options, groupId),
-                  chain: chainForGroup(options, groupId),
+                  groupName: group.group,
+                  chain: group.customChain,
                   value: '',
                   symbol: '',
                 });
@@ -280,15 +293,16 @@ export function UsageCreditsField({
             </SelectTrigger>
             <SelectContent>
               {groupedAvailable.map(([groupId, entries]) => {
-                const chain = chainForGroup(options, groupId);
+                const group = groupById.get(groupId);
+                if (!group) return null;
                 // 'Already on this key' collects units whose chain cannot be recovered
                 // from the stored string, so it can list what is there but cannot
                 // validate anything new typed into it.
-                const acceptsCustom = chain.kind !== 'unknown';
+                const acceptsCustom = group.customChain !== undefined;
                 if (entries.length === 0 && !acceptsCustom) return null;
                 return (
                   <SelectGroup key={groupId}>
-                    <SelectLabel>{nameForGroup(options, groupId)}</SelectLabel>
+                    <SelectLabel>{group.group}</SelectLabel>
                     {entries.map(({ option, index }) => (
                       <SelectItem key={option.unit || 'ada'} value={String(index)}>
                         {option.label}
@@ -321,6 +335,8 @@ export function UsageCreditsField({
               value={customEntry.value}
               autoComplete="off"
               spellCheck={false}
+              aria-invalid={customEntry.error !== undefined}
+              aria-describedby={customEntry.error ? 'custom-credit-unit-error' : undefined}
               className="font-mono"
               placeholder={
                 customEntry.chain.kind === 'evm' ? '0x…' : '56 hex characters, then the asset name'
@@ -349,7 +365,11 @@ export function UsageCreditsField({
             Its balance is entered in base units, because nothing here records how many decimals the
             asset uses and the node stores only the unit and the amount.
           </p>
-          {customEntry.error && <p className="text-xs text-destructive">{customEntry.error}</p>}
+          {customEntry.error && (
+            <p id="custom-credit-unit-error" role="alert" className="text-xs text-destructive">
+              {customEntry.error}
+            </p>
+          )}
           <div className="flex gap-2">
             <Button
               type="button"

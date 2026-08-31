@@ -20,25 +20,25 @@ import {
 import { PatchApiKeyData, PatchApiKeyResponse } from '@/lib/api/generated/types.gen';
 import { useApiMutation } from '@/lib/hooks/useApiMutation';
 import { useForm, Controller, useWatch } from 'react-hook-form';
-import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Checkbox } from '@/components/ui/checkbox';
 import { usePaymentSourceExtendedAll } from '@/lib/hooks/usePaymentSourceExtendedAll';
 import { X402WalletScopeField } from '@/components/api-keys/X402WalletScopeField';
 import { useAllWallets } from '@/lib/queries/useWallets';
 import { shortenAddress } from '@/lib/utils';
-import {
-  convertBaseUnitsToDecimal,
-  convertDecimalToBaseUnits,
-} from '@/lib/convertDecimalToBaseUnits';
+import { convertBaseUnitsToDecimal } from '@/lib/convertDecimalToBaseUnits';
 import {
   consolidateCreditRows,
-  creditDeltas,
-  creditRowProblem,
+  creditUnitGroupsForKey,
   creditUnitOptionsForKey,
   type CreditUnitOption,
 } from '@/lib/api-key-credit-units';
 import { UsageCreditsField, type CreditRow } from '@/components/api-keys/UsageCreditsField';
+import {
+  buildUpdateApiKeySchema,
+  usageCreditDeltas,
+  type UpdateApiKeyFormValues,
+} from '@/components/api-keys/update-api-key-form';
 import { Switch } from '@/components/ui/switch';
 
 interface UpdateApiKeyDialogProps {
@@ -65,60 +65,6 @@ interface UpdateApiKeyDialogProps {
     X402WalletScopes: Array<{ evmWalletId: string }>;
   };
 }
-
-/**
- * Built per key rather than once at module scope, because two of its rules depend on
- * what the ledger already holds: a zero balance is only expressible for a unit that
- * already has a row.
- */
-function buildUpdateApiKeySchema(fundedUnits: Set<string>) {
-  return z
-    .object({
-      newToken: z
-        .string()
-        .min(15, 'Token must be at least 15 characters')
-        .optional()
-        .or(z.literal('')),
-      status: z.enum(['Active', 'Revoked']),
-      usageLimited: z.boolean(),
-      credits: z.array(z.object({ unit: z.string(), amount: z.string(), decimals: z.number() })),
-      walletScopeEnabled: z.boolean(),
-      walletScopeIds: z.array(z.string()),
-      x402WalletScopeEnabled: z.boolean(),
-      x402WalletScopeIds: z.array(z.string()),
-      evmChains: z.array(z.string()),
-    })
-    .superRefine((val, ctx) => {
-      // The balances are hidden while the cap is off, and an uncapped key ignores them.
-      // Validating them anyway blocked Update with an error rendered only inside the
-      // unmounted field, so the button looked dead and no request was made.
-      if (!val.usageLimited) return;
-      val.credits.forEach((credit, index) => {
-        const problem = creditRowProblem(credit, fundedUnits);
-        if (problem !== undefined) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: problem,
-            path: ['credits', index, 'amount'],
-          });
-        }
-      });
-      // The exact state that broke every purchase on this deployment: a key flagged
-      // usage-limited whose ledger has no row for the unit it pays in fails the credit
-      // gate with `Credit unit not found`, surfaced to the buyer as a bare 400
-      // 'Insufficient funds' with no purchase ever created.
-      if (val.usageLimited && val.credits.length === 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message:
-            'A usage-limited key needs at least one funded unit, or every payment it makes is rejected.',
-          path: ['credits'],
-        });
-      }
-    });
-}
-
-type UpdateApiKeyFormValues = z.infer<ReturnType<typeof buildUpdateApiKeySchema>>;
 
 /**
  * Get a human-readable permission label from flags.
@@ -182,6 +128,16 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
       }),
     [apiKey.NetworkLimit, apiKey.ChainIdLimit, currentCredits, evmChainOptions],
   );
+  const creditGroups = useMemo(
+    () =>
+      creditUnitGroupsForKey({
+        networkLimit: apiKey.NetworkLimit,
+        chainIdLimit: apiKey.ChainIdLimit,
+        evmNetworks: evmChainOptions,
+        existingUnits: currentCredits.map((credit) => credit.unit),
+      }),
+    [apiKey.NetworkLimit, apiKey.ChainIdLimit, currentCredits, evmChainOptions],
+  );
 
   // Seed with the key's stored balances so the dialog shows the ledger it edits. The
   // old fields were always blank deltas, so the form could never say whether a key was
@@ -208,7 +164,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
   const [customCreditOptions, setCustomCreditOptions] = useState<CreditUnitOption[]>([]);
 
   const updateApiKeySchema = useMemo(
-    () => buildUpdateApiKeySchema(new Set(currentCredits.map((credit) => credit.unit))),
+    () => buildUpdateApiKeySchema(currentCredits),
     [currentCredits],
   );
 
@@ -273,13 +229,6 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
   // because that chain existed only in the unsaved form. It appears once the grant is
   // saved, which is also when it becomes actionable.
   const evmChainsGranted = apiKey.ChainIdLimit.some((chainId) => chainId.startsWith('eip155:'));
-  // What the ledger will hold after this save. Removing a row does not remove it: the
-  // server zeroes it and keeps it, and pay.ts counts rows. Reading only the form
-  // inverted the warning on a removal, claiming wallet-bounded spending in the one
-  // state where the row still exists and every EVM payment is refused.
-  const hasEvmCreditRow =
-    currentCredits.some((credit) => credit.unit.startsWith('eip155:')) ||
-    creditRows.some((row) => row.unit.startsWith('eip155:'));
 
   // The EVM chain list loads after first paint, so the defaults above fall back to base
   // units for any chain-qualified unit. Re-seed once the real decimals are known, but
@@ -318,15 +267,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
     // shown, so a half-typed row would throw here (convertDecimalToBaseUnits rejects
     // an empty string and handleSubmit re-throws, leaving the button dead), and a
     // cleared list would send deltas that zero the ledger from a hidden section.
-    const usageCredits = data.usageLimited
-      ? creditDeltas(
-          currentCredits,
-          data.credits.map((credit) => ({
-            unit: credit.unit,
-            amount: convertDecimalToBaseUnits(credit.amount, credit.decimals),
-          })),
-        )
-      : [];
+    const usageCredits = usageCreditDeltas(data.usageLimited, currentCredits, data.credits);
 
     const walletScopeChanged =
       data.walletScopeEnabled !== apiKey.walletScopeEnabled ||
@@ -567,7 +508,7 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
             <div className="space-y-2">
               <label className="text-sm font-medium">Spending limit</label>
               <p className="text-xs text-muted-foreground">
-                Admin keys are never usage limited, so they hold no credit balances.
+                Admin keys are never usage limited, so they ignore any stored credit balances.
               </p>
             </div>
           ) : (
@@ -607,37 +548,33 @@ export function UpdateApiKeyDialog({ open, onClose, onSuccess, apiKey }: UpdateA
                     render={({ field }) => (
                       <UsageCreditsField
                         options={creditOptions}
+                        groups={creditGroups}
                         rows={field.value}
                         current={currentCredits}
                         onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        inputRef={field.ref}
                         rowErrors={creditRowErrors}
                         customOptions={customCreditOptions}
                         onCustomOptionsChange={setCustomCreditOptions}
                       />
                     )}
                   />
-                  {/* Shown from the watched values rather than read out of the resolver's
-                      array-root error, so the reason a save is blocked is always visible. */}
                   {creditRows.length === 0 && (
-                    <p className="text-xs text-destructive">
-                      A usage-limited key needs at least one funded unit. With none, every Cardano
-                      purchase is rejected as &quot;Insufficient funds&quot; before a payment is
-                      written, and{' '}
-                      {hasEvmCreditRow
-                        ? 'x402 payments are refused as well: removing an EVM row zeroes it on the server rather than deleting it, and a zeroed row still binds the cap.'
-                        : 'x402 spending is not capped at all.'}
+                    <p className="text-xs text-muted-foreground">
+                      This key has no spending allowance. Payments remain blocked until you fund the
+                      matching unit.
                     </p>
                   )}
-                  {/* The gap that makes a key look capped while it is not. pay.ts
-                      grandfathers a usage-limited key with no eip155 row to its pre-cap
-                      behaviour, so its x402 spending is bounded only by the wallet. It
-                      counts ROWS, not amounts: the first such row makes the cap binding
-                      on every granted chain, and a zeroed row still counts because the
-                      server keeps it rather than deleting it. */}
-                  {creditRows.length > 0 && evmChainsGranted && !hasEvmCreditRow && (
-                    <p className="text-xs text-amber-600 dark:text-amber-500">
-                      x402 payments on this key&apos;s EVM chains are not capped yet. Fund one of
-                      them to start the limit; it then binds every chain above.
+                  {errors.credits?.root?.message && (
+                    <p role="alert" className="text-xs text-destructive">
+                      {errors.credits.root.message}
+                    </p>
+                  )}
+                  {evmChainsGranted && (
+                    <p className="text-xs text-muted-foreground">
+                      x402 usage limits apply to each chain and asset. A missing or insufficient
+                      balance for the exact chain and asset is rejected with HTTP 402.
                     </p>
                   )}
                 </div>
