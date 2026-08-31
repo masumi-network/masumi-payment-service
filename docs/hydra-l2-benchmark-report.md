@@ -22,13 +22,53 @@ smart contract. This is what the Catalyst milestone means by "agent-to-agent tra
 | Mac SSD | 96.8 TPS | 38 ms | 2026-08-28 |
 | RAM disk | **1,128–1,148 TPS** | **2.7 ms** | 2026-08-28 (diagnostic, see §3) |
 
-Every run: 10,000 transactions, **100 % confirmed, zero invalid**.
-
-**Milestone targets — 500+ TPS and under 500 ms — are met.**
+Every run: 10,000 transactions, **100 % confirmed, zero invalid**. Throughput and latency come from
+two runs on the same head: a saturation run for TPS, a sequential run for per-payment finality.
 
 The 2026-08-31 SSD run is the one to cite: it is the only run whose head was also **closed and
 fanned out back to L1**, so its throughput and its settlement are the same head (§4). The RAM-disk
 figure was not re-measured that day.
+
+### Milestone targets
+
+The Catalyst targets are **network-level**: 500+ TPS across Masumi, under 500 ms per payment.
+
+**Latency: met, measured.** 39 ms p50 to multi-signed finality on the settled head, 13× inside the
+500 ms target. That figure comes from the sequential run, where each payment waits for snapshot
+confirmation before the next is sent, so it is per-payment finality.
+
+The saturation run reports a p50 of 4,981 ms (mean 4,992 ms) on the same head. That is **not a second
+latency figure for the same operating point.** Throughput and latency trade against each other
+through snapshot batch size, and the two runs sit at opposite ends of that curve:
+
+| In flight | Snapshot size | Snapshot rate | Throughput | p50 finality |
+|---|---|---|---|---|
+| 1 | 1 tx | 24.2 /s | 24.2 TPS | **39 ms** |
+| 500 | 100 tx | 1.01 /s | **100.0 TPS** | 4,981 ms |
+
+Batching amortises the signing round. Per-transaction snapshot cost falls from 41.3 ms to 10.0 ms,
+which buys 4.1× throughput and costs 128× latency. Both points satisfy Little's Law, so queue depth
+rather than the head sets the wait: 500 / 100.0 = 5.0 s predicted against 4,992 ms measured, within
+0.1 %.
+
+Pick the operating point from the requirement. A 500 ms budget admits far deeper batching than the
+sequential run uses, but **the intermediate windows were not measured**, so the shape of the curve
+between these two points is unknown. See [Open items](#6-open-items).
+
+**Throughput: met by horizontal scaling, extrapolated.** One head sustains a measured 100.0 TPS.
+Heads share no leader, no mempool and no snapshot round, so throughput adds across them. Five
+2-party heads, meaning **10 agents transacting pairwise**, reach 500 TPS. Masumi opens one head per
+agent pair, so head count grows with the agent population.
+
+| | Per head | 5 heads / 10 agents |
+|---|---|---|
+| Sustained TPS | 100.0, measured | 500, extrapolated |
+| Per-payment p50 | 39 ms, measured | 39 ms; heads do not interact |
+
+500 TPS is arithmetic on a measured per-head number, **not a measured network number**. Measured:
+one head, 10,000 transactions, settled on L1. Assumed: heads on adequate hardware do not contend.
+That assumption holds at the protocol layer. It is untested at the host layer, since five heads on
+one machine would share the CPU and the fsync path (§3). Tracked in [Open items](#6-open-items).
 
 ### Masumi escrow payments (the product)
 
@@ -95,6 +135,10 @@ The numbers were re-measured from scratch on a second, independent head and repr
 The RAM figure is higher on a fresh head than on one carrying hours of accumulated history.
 **Quote 744 TPS as the conservative number**, ~1,140 as the fresh-head figure.
 
+The 2026-08-28 runs are **not shipped in this repository**. `.gitignore` keeps exploratory bench
+output local and commits only the settled 2026-08-31 run, so the figures in this table are
+reproducible via [Replication](#replication) but not checkable from the tree.
+
 ### Independent corroboration
 
 Throughput was cross-checked against **hydra-node's own event store**, which is written by the node
@@ -151,6 +195,13 @@ What proves the throughput is the **multi-signed `ConfirmedSnapshot`** captured 
 `evidence/2026-08-31-settled/snapshots/`: signed by both hydra-nodes rather than by our harness, and
 its balances equal the Fanout outputs above. That equality is the bridge from L2 back to L1.
 
+One caveat on scope. `events.ndjson.gz` retains transaction **ids and timings, not bodies**, so the
+10,000 benchmark transactions cannot be re-validated from this tree. The independent check on the
+count is hydra-node's own event store, which recorded 10,216 `TransactionAppliedToLocalUTxO` and 316
+`SnapshotConfirmed` for this head (`head-timeline.txt`). One transaction body did ship: the tx
+carried inside snapshot 316. Its blake2b-256 re-derives the stated tx id, its Ed25519 witness
+verifies against that id, its fee is 0, and its output is the 115 ADA UTxO the Fanout paid on L1.
+
 ### Evidence layout
 
 | Path | Contents |
@@ -159,15 +210,11 @@ its balances equal the Fanout outputs above. That equality is the bridge from L2
 | `evidence/2026-08-31-settled/l1-anchors.json` | every L1 tx: role, block, slot, `valid_contract`, Cardanoscan URL |
 | `evidence/2026-08-31-settled/settlement.json` | closeTx / fanoutTx (reconciled against the chain), lovelace settled |
 | `evidence/2026-08-31-settled/snapshots/` | `/snapshot` (multi-signed), `/snapshot/utxo`, `/head` — both nodes, pre-close and post-fanout |
-| `evidence/2026-08-31-settled/bench/*/events.ndjson.gz` | **every transaction**, with sent / valid / confirmed timings |
+| `evidence/2026-08-31-settled/bench/*/events.ndjson.gz` | every transaction id, with sent / valid / confirmed timings (no tx bodies) |
 | `evidence/2026-08-31-settled/head-timeline.{json,txt}` | head history from hydra-node's own event store |
 
----|---|
-| `evidence/bench/<ts>/result.json` | per-run config + results |
-| `evidence/bench/<ts>/events.ndjson` | **every transaction**, with sent / valid / confirmed timings |
-| `evidence/bench/2026-08-28-VERIFICATION-RERUN.md` | the reproduction comparison |
-| `evidence/bench-escrow/2026-08-28-CORRECTED-N20/` | escrow lifecycle results |
-| `evidence/timeline/head-timeline.{txt,json}` | node-recorded head history |
+Re-running any stage writes to `evidence/bench/<ts>/`, `evidence/bench-escrow/<ts>/` and
+`evidence/timeline/`. Those paths are gitignored, so they exist only on the machine that ran them.
 
 ---
 
@@ -201,6 +248,13 @@ executed inside the head.
 3. **Refund and dispute flows** were not part of this measurement (validated separately in July).
 4. **Escrow throughput tuning.** Batching more escrows per cron tick is untested and is the most
    promising lever.
+5. **Multi-head throughput.** The 500 TPS network figure is per-head throughput multiplied by head
+   count, and has not been measured. Running five heads concurrently, ideally on separate hosts,
+   would confirm that heads do not contend.
+6. **The throughput/latency curve.** Only two operating points were measured: 1 transaction in
+   flight (24.2 TPS, 39 ms) and 500 (100.0 TPS, 4,981 ms). Sweeping the window between them would
+   show the best throughput reachable inside a 500 ms finality budget, which is the number an
+   operator actually needs.
 
 ---
 
