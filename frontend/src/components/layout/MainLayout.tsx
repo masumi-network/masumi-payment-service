@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Settings,
   Sun,
@@ -80,6 +80,23 @@ export function MainLayout({ children }: MainLayoutProps) {
   const [showNetworkSwitchConfirm, setShowNetworkSwitchConfirm] = useState(false);
   const [pendingNetwork, setPendingNetwork] = useState<'Preprod' | 'Mainnet' | null>(null);
   const isFirstNavMount = !hasAnimatedNav;
+  const sidebarNavRef = useRef<HTMLElement>(null);
+  const [sidebarNavScroll, setSidebarNavScroll] = useState({ atTop: true, atBottom: true });
+
+  const updateSidebarNavScroll = useCallback(() => {
+    const nav = sidebarNavRef.current;
+    if (!nav) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = nav;
+    const canScroll = scrollHeight - clientHeight > 1;
+    const atTop = scrollTop <= 1;
+    const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
+
+    setSidebarNavScroll({
+      atTop: !canScroll || atTop,
+      atBottom: !canScroll || atBottom,
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -210,6 +227,21 @@ export function MainLayout({ children }: MainLayoutProps) {
     ],
   );
 
+  useEffect(() => {
+    const nav = sidebarNavRef.current;
+    if (!nav) return;
+
+    const syncScrollState = () => updateSidebarNavScroll();
+    const frame = requestAnimationFrame(syncScrollState);
+    const resizeObserver = new ResizeObserver(syncScrollState);
+    resizeObserver.observe(nav);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+    };
+  }, [updateSidebarNavScroll, navItems.length, collapsed, isHovered]);
+
   const handleNetworkChange = (newNetwork: 'Preprod' | 'Mainnet') => {
     if (newNetwork === network) return;
     if (router.pathname === '/setup' || router.pathname === '/x402-setup') {
@@ -262,7 +294,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     >
       <aside
         className={cn(
-          'fixed left-0 top-0 z-40 h-screen border-r transition-[width] duration-300',
+          'fixed left-0 top-0 z-40 flex h-screen flex-col overflow-hidden border-r transition-[width] duration-300',
           'bg-[#FAFAFA] dark:bg-[#111]',
         )}
         data-collapsed={collapsed}
@@ -273,51 +305,66 @@ export function MainLayout({ children }: MainLayoutProps) {
           pointerEvents: 'auto',
         }}
       >
-        <div className="flex flex-col">
-          <div
-            className={cn(
-              'flex items-center p-2 px-4 border-b border-border',
-              collapsed && !isHovered ? 'justify-center' : 'justify-between',
-            )}
-          >
-            {!(collapsed && !isHovered) ? (
-              <Link href={railHomePath(activeRail)} key="masumi-logo-full">
-                <MasumiLogo />
-              </Link>
-            ) : (
-              <Link
-                href={railHomePath(activeRail)}
-                key="masumi-logo-icon"
-                className="flex items-center justify-center w-8 h-8"
-                style={
-                  shouldAnimateIcon && collapsed && !isHovered
-                    ? {
-                        animation: 'rotateIn 0.3s ease-out',
-                      }
-                    : undefined
-                }
-              >
-                <MasumiIconFlat className="w-6 h-6" />
-              </Link>
-            )}
-            {!(collapsed && !isHovered) && (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                className={cn(
-                  'h-8 w-8',
-                  collapsed ? 'text-muted-foreground opacity-50' : 'text-foreground opacity-100',
-                )}
-                onClick={() => setCollapsed(!collapsed)}
-              >
-                <PanelLeft className={cn('h-4 w-4 transition-transform duration-300')} />
-              </Button>
-            )}
+        <div
+          className={cn(
+            'relative z-10 shrink-0 bg-[#FAFAFA] dark:bg-[#111]',
+            !sidebarNavScroll.atTop &&
+              'after:pointer-events-none after:absolute after:-bottom-6 after:left-0 after:right-0 after:z-10 after:h-6 after:bg-gradient-to-b after:from-[#FAFAFA] after:to-transparent dark:after:from-[#111] dark:after:to-transparent',
+          )}
+        >
+          <div className="border-b border-border">
+            <div
+              className={cn(
+                'flex h-14 min-h-14 max-h-14 items-center px-4',
+                collapsed && !isHovered ? 'justify-center' : 'justify-between',
+              )}
+            >
+              {!(collapsed && !isHovered) ? (
+                <Link
+                  href={railHomePath(activeRail)}
+                  key="masumi-logo-full"
+                  className="flex h-full items-center"
+                >
+                  <MasumiLogo />
+                </Link>
+              ) : (
+                <Link
+                  href={railHomePath(activeRail)}
+                  key="masumi-logo-icon"
+                  className="flex items-center justify-center w-8 h-8"
+                  style={
+                    shouldAnimateIcon && collapsed && !isHovered
+                      ? {
+                          animation: 'rotateIn 0.3s ease-out',
+                        }
+                      : undefined
+                  }
+                >
+                  <MasumiIconFlat className="w-6 h-6" />
+                </Link>
+              )}
+              {!(collapsed && !isHovered) && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                  className={cn(
+                    'h-8 w-8',
+                    collapsed ? 'text-muted-foreground opacity-50' : 'text-foreground opacity-100',
+                  )}
+                  onClick={() => setCollapsed(!collapsed)}
+                >
+                  <PanelLeft className={cn('h-4 w-4 transition-transform duration-300')} />
+                </Button>
+              )}
+            </div>
           </div>
 
           <div
-            className={cn('p-2 w-full', collapsed && !isHovered ? 'flex justify-center' : 'px-2')}
+            className={cn(
+              'w-full px-2 pt-2 pb-0',
+              collapsed && !isHovered && 'flex justify-center',
+            )}
           >
             <NetworkSourceCard
               collapsed={collapsed && !isHovered}
@@ -327,8 +374,11 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
 
         <nav
+          ref={sidebarNavRef}
+          onScroll={updateSidebarNavScroll}
           className={cn(
-            'flex flex-col gap-1 p-2',
+            'flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overscroll-contain pb-2 pt-2',
+            '[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden',
             collapsed && !isHovered ? 'px-0 items-center' : 'px-2',
           )}
         >
@@ -437,8 +487,12 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         <div
           className={cn(
-            'absolute bottom-4 left-0 right-0 overflow-hidden transition-all duration-300',
-            collapsed && !isHovered ? 'px-0' : 'px-2',
+            'relative shrink-0 px-2 pb-2 pt-2 transition-all duration-300',
+            'bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA] to-[#FAFAFA]/80',
+            'dark:from-[#111] dark:via-[#111] dark:to-[#111]/80',
+            !sidebarNavScroll.atBottom &&
+              'before:pointer-events-none before:absolute before:-top-8 before:left-0 before:right-0 before:h-8 before:bg-gradient-to-t before:from-[#FAFAFA] before:to-transparent dark:before:from-[#111] dark:before:to-transparent',
+            collapsed && !isHovered && 'px-0',
           )}
         >
           <div className={cn('mb-2', collapsed && !isHovered ? 'flex justify-center' : '')}>
@@ -517,7 +571,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       >
         <div className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur-md">
           <div className="max-w-[1400px] mx-auto w-full">
-            <div className="h-14 px-4 flex items-center justify-between gap-4">
+            <div className="flex h-14 min-h-14 max-h-14 items-center justify-between gap-4 px-4">
               <div
                 className="flex flex-1 max-w-[190px] justify-start gap-1 relative rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background cursor-pointer items-center"
                 onClick={() => setIsSearchOpen(true)}
