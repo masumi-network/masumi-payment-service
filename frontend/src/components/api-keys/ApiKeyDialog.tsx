@@ -94,11 +94,6 @@ export function ApiKeyDialog() {
             Sign in with the <code className="text-foreground">ADMIN_KEY</code> from your node
             environment, or any other valid API key from this payment service.
           </p>
-          <p>
-            The key you enter sets the active session. Pages and actions match that key&apos;s
-            permissions: read-only keys can browse, pay keys can run payments, and admin keys can
-            manage settings and create more keys.
-          </p>
           <Link
             href={MASUMI_API_KEY_DOCS_URL}
             target="_blank"
