@@ -361,7 +361,14 @@ function SourceDropdown({
   const hasUnconfiguredChains = evmChains.some((chain) => !isX402ChainUsable(chain));
 
   return (
-    <DropdownMenuContent side="right" align="center" className="w-72">
+    <DropdownMenuContent
+      side="right"
+      align="start"
+      sideOffset={12}
+      alignOffset={-74}
+      collisionPadding={{ top: 8 }}
+      className="w-72"
+    >
       <DropdownMenuLabel className="flex items-center gap-2">
         Cardano
         <RailBadge rail="cardano" />
