@@ -100,7 +100,7 @@ export function RegisterAgentWalletSection({
                         {wallet.wallet.note
                           ? `${wallet.wallet.note} (${shortenAddress(wallet.wallet.walletAddress)})`
                           : shortenAddress(wallet.wallet.walletAddress)}{' '}
-                        — {balanceLabel} {adaUnitLabel}
+                        — {balanceLabel}
                         {!eligible ? ` (need > ${requiredAdaLabel} ${adaUnitLabel})` : ''}
                       </SelectItem>
                     );
@@ -124,8 +124,7 @@ export function RegisterAgentWalletSection({
               <div>
                 <p>
                   <span className="font-medium">
-                    {formatAssetAmount(selectedMintWallet.balance, 'lovelace', network)}{' '}
-                    {adaUnitLabel}
+                    {formatAssetAmount(selectedMintWallet.balance, 'lovelace', network)}
                   </span>{' '}
                   available
                 </p>

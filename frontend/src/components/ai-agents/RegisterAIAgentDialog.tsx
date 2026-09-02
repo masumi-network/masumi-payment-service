@@ -721,6 +721,16 @@ export function RegisterAIAgentDialog({
           </div>
         </form>
       </DialogContent>
+      <TransakWidget
+        isOpen={!!topUpWalletAddress}
+        onClose={() => setTopUpWalletAddress(null)}
+        walletAddress={topUpWalletAddress ?? ''}
+        onSuccess={() => {
+          void refetchWallets();
+        }}
+        isChild
+        elevatedGrandchildStack={elevatedChildStack}
+      />
     </Dialog>
   );
 }
